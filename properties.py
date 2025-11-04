@@ -12,7 +12,6 @@ FN_COMMANDS = [('CommandListCoreFnCenterXY', "Center XY", "Центрирова�
 
 class RZMCaptureSettings(bpy.types.PropertyGroup):
     """Настройки для оператора захвата изображений."""
-    # ИЗМЕНЕНО: Режимы теперь основаны на типе шейдинга, а не на движке
     shading_mode: EnumProperty(
         name="Shading Mode",
         items=[('SOLID', "Solid", ""), ('FLAT', "Flat", ""), ('MATERIAL', "Material Preview", ""), ('RENDERED', "Rendered", "")],
@@ -47,8 +46,7 @@ class ValueLinkProperty(bpy.types.PropertyGroup):
 class FXProperty(bpy.types.PropertyGroup): value: EnumProperty(name="Effect", items=FX_COMMANDS)
 class FNProperty(bpy.types.PropertyGroup): function_name: EnumProperty(name="Function", items=FN_COMMANDS)
 class CustomProperty(bpy.types.PropertyGroup):
-    key: StringProperty(name="Key")
-    value_type: EnumProperty(name="Type", items=[('STRING', "String", ""), ('INT', "Integer", ""), ('FLOAT', "Float", "")], default='STRING')
+    key: StringProperty(name="Key"); value_type: EnumProperty(name="Type", items=[('STRING', "String", ""), ('INT', "Integer", ""), ('FLOAT', "Float", "")], default='STRING')
     string_value: StringProperty(name="String Value"); int_value: IntProperty(name="Int Value"); float_value: FloatProperty(name="Float Value")
 class RZMenuConfig(bpy.types.PropertyGroup): canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
 class ValueProperty(bpy.types.PropertyGroup):
