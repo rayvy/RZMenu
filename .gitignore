@@ -1,32 +1,18 @@
-# Prerequisites
-*.d
+# Игнорируем скомпилированные Python-файлы
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Игнорируем резервные копии (backup)
+*.bak
+*.backup
+*~
+*.tmp
+*.old
+*.orig
+*.save
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
+# Можно также игнорировать скрытые системные файлы редакторов
+.DS_Store
+Thumbs.db
