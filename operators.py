@@ -25,12 +25,6 @@ except ImportError:
 
 qt_app, viewer_window, inspector_window = None, None, None
 
-def get_next_available_id(elements):
-    existing_ids = {elem.id for elem in elements}
-    new_id = 0
-    while new_id in existing_ids: new_id += 1
-    return new_id
-
 # --- Система Истории (Undo/Redo) ---
 class RZM_OT_RecordHistoryState(bpy.types.Operator):
     """Внутренний оператор: делает слепок rzm и сохраняет в историю."""
@@ -71,6 +65,7 @@ class RZM_OT_Redo(bpy.types.Operator):
             dict_to_rzm(state_to_restore, context.scene.rzm)
         return {'FINISHED'}
 
+# --- Сохранение / Загрузка / Сброс ---
 class RZM_OT_SaveTemplate(bpy.types.Operator):
     """Сохраняет всю структуру RZM в .rzm (zip) архив."""
     bl_idname = "rzm.save_template"
@@ -84,52 +79,28 @@ class RZM_OT_SaveTemplate(bpy.types.Operator):
         return {'RUNNING_MODAL'}
         
     def execute(self, context):
-        rzm = context.scene.rzm
-        print(f"DEBUG SAVE: Starting save to {self.filepath}")
-
         try:
-            with zipfile.ZipFile(self.filepath, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-                # 1. Сохраняем scene.json
-                scene_data = rzm_to_dict(rzm)
-                zf.writestr('scene.json', json.dumps(scene_data, indent=2, ensure_ascii=False))
-                print("DEBUG SAVE: scene.json written to archive.")
-
-                # 2. Сохраняем кастомные изображения, используя display_name как имя файла
+            with zipfile.ZipFile(self.filepath, 'w', zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr('scene.json', json.dumps(rzm_to_dict(context.scene.rzm), indent=2, ensure_ascii=False))
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    packed_count = 0
-                    for rzm_image in rzm.images:
-                        if rzm_image.source_type in {'CUSTOM', 'CAPTURED'} and rzm_image.image_pointer:
-                            bl_image = rzm_image.image_pointer
-                            
-                            if not bl_image.file_format:
-                                bl_image.file_format = 'PNG'
-                            
+                    for img in context.scene.rzm.images:
+                        if img.source_type in {'CUSTOM', 'CAPTURED'} and img.image_pointer:
+                            bl_image = img.image_pointer
+                            bl_image.file_format = bl_image.file_format or 'PNG'
                             ext = bl_image.file_format.lower().replace('jpeg', 'jpg')
-                            
-                            # ИСПРАВЛЕНО: Имя файла в архиве строго соответствует display_name
-                            filename = f"{rzm_image.display_name}.{ext}"
+                            filename = f"{img.display_name}.{ext}"
                             save_path = os.path.join(tmpdir, filename)
-                            
-                            # Сохраняем временную копию изображения
                             bl_image.save_render(save_path)
-                            
                             zf.write(save_path, arcname=f'images/{filename}')
-                            print(f"DEBUG SAVE: Packed '{filename}' into archive.")
-                            packed_count += 1
-                    print(f"DEBUG SAVE: Total custom images packed: {packed_count}")
-
             self.report({'INFO'}, f"RZM Scene saved to {self.filepath}")
-
         except Exception as e:
             self.report({'ERROR'}, f"Failed to save .rzm file: {e}")
-            print(f"ERROR on save: {e}")
             return {'CANCELLED'}
-        
         return {'FINISHED'}
 
 
 class RZM_OT_LoadTemplate(bpy.types.Operator):
-    """Загружает структуру RZM из .rzm (zip) архива, сохраняя данные при частичных ошибках."""
+    """Загружает структуру RZM из .rzm (zip) архива."""
     bl_idname = "rzm.load_template"
     bl_label = "Load RZM Scene"
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
@@ -140,35 +111,25 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
         return {'RUNNING_MODAL'}
         
     def execute(self, context):
-        print(f"DEBUG LOAD: Starting load from {self.filepath}")
-        
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 with zipfile.ZipFile(self.filepath, 'r') as zf:
                     zf.extractall(tmpdir)
-
-                # 1. Загружаем все изображения из архива в Blender
+                
                 loaded_images_map = {}
                 images_path = os.path.join(tmpdir, 'images')
                 if os.path.exists(images_path):
                     for filename in os.listdir(images_path):
-                        img_path = os.path.join(images_path, filename)
                         try:
-                            bl_image = bpy.data.images.load(img_path, check_existing=True)
+                            bl_image = bpy.data.images.load(os.path.join(images_path, filename), check_existing=True)
                             bl_image.pack()
-                            # ИСПРАВЛЕНО: Ключ - display_name, который является именем файла без расширения
                             loaded_images_map[Path(filename).stem] = bl_image
-                            print(f"DEBUG LOAD: Loaded image '{filename}' into Blender.")
                         except Exception as e:
                             print(f"WARNING: Could not load image {filename}: {e}")
-
-                # 2. Загружаем данные сцены из JSON
-                scene_file = os.path.join(tmpdir, 'scene.json')
-                with open(scene_file, 'r', encoding='utf-8') as f:
+                
+                with open(os.path.join(tmpdir, 'scene.json'), 'r', encoding='utf-8') as f:
                     data_to_load = json.load(f)
 
-                # 3. Очищаем текущие данные, НЕ СБРАСЫВАЯ ВСЮ СЦЕНУ
-                print("DEBUG LOAD: Clearing existing RZM collections...")
                 rzm = context.scene.rzm
                 rzm.images.clear()
                 rzm.elements.clear()
@@ -176,71 +137,53 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                 rzm.toggle_definitions.clear()
                 rzm.conditions.clear()
                 rzm.shapes.clear()
-                # ИЗМЕНЕНО: Очистка коллекций TexWorks
                 rzm.addons.tw_texture_configs.clear()
                 rzm.addons.tw_textures.clear()
-
-
-                # 4. Применяем загруженные данные
-                dict_to_rzm(data_to_load, rzm)
-                print("DEBUG LOAD: scene.json data applied.")
-
-                # 5. Пере-связываем указатели и обрабатываем утерянные изображения
-                lost_image_ids = set()
+                rzm.addons.tw_resources.clear()
+                rzm.addons.tw_overrides.clear()
                 
-                # Получаем путь к папке с базовыми иконками один раз
-                addon_dir = os.path.dirname(__file__)
-                assets_dir = os.path.join(addon_dir, 'base_icons')
-
+                dict_to_rzm(data_to_load, rzm)
+                
+                lost_image_ids = set()
+                assets_dir = os.path.join(os.path.dirname(__file__), 'base_icons')
                 for rzm_image in rzm.images:
-                    # --- Обработка CUSTOM и CAPTURED иконок (без изменений) ---
                     if rzm_image.source_type in {'CUSTOM', 'CAPTURED'}:
                         if rzm_image.display_name in loaded_images_map:
                             rzm_image.image_pointer = loaded_images_map[rzm_image.display_name]
                         else:
-                            print(f"WARNING: Could not find custom image for '{rzm_image.display_name}'. Marking as lost.")
                             lost_image_ids.add(rzm_image.id)
-                    
-                    # --- НОВЫЙ БЛОК: Обработка BASE иконок ---
                     elif rzm_image.source_type == 'BASE':
-                        found_file = False
-                        # Собираем базовое имя файла из ID и display_name, как в RZM_OT_LoadBaseIcons
-                        # Пример: 9999_gear
                         filename_base = f"{rzm_image.id}_{rzm_image.display_name}" if rzm_image.display_name else f"{rzm_image.id}"
-                        
-                        # Ищем файл с разными возможными расширениями
+                        found_file = False
                         for ext in ['.png', '.jpg', '.jpeg', '.tga', '.bmp']:
                             filepath = os.path.join(assets_dir, filename_base + ext)
-                            
                             if os.path.exists(filepath):
                                 try:
-                                    # check_existing=True не создаст дубликат, если картинка уже загружена
                                     bl_image = bpy.data.images.load(filepath, check_existing=True)
-                                    bl_image.pack() # Упаковываем на всякий случай
+                                    bl_image.pack()
                                     rzm_image.image_pointer = bl_image
-                                    print(f"DEBUG LOAD: Re-linked BASE icon '{filename_base}'")
                                     found_file = True
-                                    break # Нашли файл, выходим из цикла по расширениям
+                                    break
                                 except Exception as e:
                                     print(f"ERROR: Found BASE icon file '{filepath}', but failed to load: {e}")
-                        
                         if not found_file:
-                            print(f"WARNING: Could not find file for BASE icon '{filename_base}'. Marking as lost.")
                             lost_image_ids.add(rzm_image.id)
                 
                 if lost_image_ids:
-                    print(f"DEBUG LOAD: Found lost image IDs: {lost_image_ids}. Updating elements...")
                     for elem in rzm.elements:
-                        if elem.image_id in lost_image_ids:
+                        if elem.image_mode == 'SINGLE' and elem.image_id in lost_image_ids:
                             elem.image_id = -9999
-
+                        else:
+                            for cond_img in elem.conditional_images:
+                                if cond_img.image_id in lost_image_ids:
+                                    cond_img.image_id = -9999
+            
             history_manager.clear()
             bpy.ops.rzm.record_history_state()
             self.report({'INFO'}, f"RZM Scene loaded from {self.filepath}")
 
         except Exception as e:
             self.report({'ERROR'}, f"Failed to load .rzm file: {e}")
-            print(f"ERROR on load: {e}")
             return {'CANCELLED'}
             
         return {'FINISHED'}
@@ -250,7 +193,7 @@ class RZM_OT_ResetScene(bpy.types.Operator):
     """Полностью очищает все данные RZM в текущей сцене."""
     bl_idname = "rzm.reset_scene"
     bl_label = "Reset RZM Scene"
-    bl_description = "Completely clears all RZM elements, values, and toggles. This action cannot be undone by Blender's native undo"
+    bl_description = "Completely clears all RZM data. This action cannot be undone by Blender's native undo"
     bl_options = {'REGISTER'}
     
     def invoke(self, context, event):
@@ -258,15 +201,13 @@ class RZM_OT_ResetScene(bpy.types.Operator):
 
     def execute(self, context):
         rzm = context.scene.rzm
-        rzm.elements.clear()
-        rzm.rzm_values.clear()
-        rzm.toggle_definitions.clear()
-        rzm.images.clear()
-        rzm.conditions.clear()
-        rzm.shapes.clear()
-        # ИЗМЕНЕНО: Очистка коллекций TexWorks
-        rzm.addons.tw_texture_configs.clear()
-        rzm.addons.tw_textures.clear()
+        collections_to_clear = [
+            rzm.elements, rzm.rzm_values, rzm.toggle_definitions, rzm.images, 
+            rzm.conditions, rzm.shapes, rzm.addons.tw_texture_configs, 
+            rzm.addons.tw_textures, rzm.addons.tw_resources, rzm.addons.tw_overrides
+        ]
+        for coll in collections_to_clear:
+            coll.clear()
         
         context.scene.rzm_active_element_index = 0
         context.scene.rzm_active_value_index = 0
@@ -916,6 +857,34 @@ class RZM_OT_ListAction(bpy.types.Operator):
         elif self.action == 'REMOVE' and len(prop_collection) > 0:
             prop_collection.remove(len(prop_collection) - 1)
         return {'FINISHED'}
+    
+class RZM_OT_AddConditionalImage(bpy.types.Operator):
+    """Добавляет элемент в список условных изображений."""
+    bl_idname = "rzm.add_conditional_image"
+    bl_label = "Add Conditional Image"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        active_idx = context.scene.rzm_active_element_index
+        elements = context.scene.rzm.elements
+        if 0 <= active_idx < len(elements):
+            elements[active_idx].conditional_images.add()
+        return {'FINISHED'}
+
+class RZM_OT_RemoveConditionalImage(bpy.types.Operator):
+    """Удаляет элемент из списка условных изображений."""
+    bl_idname = "rzm.remove_conditional_image"
+    bl_label = "Remove Conditional Image"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        active_idx = context.scene.rzm_active_element_index
+        elements = context.scene.rzm.elements
+        if 0 <= active_idx < len(elements):
+            cond_images = elements[active_idx].conditional_images
+            if len(cond_images) > 0:
+                cond_images.remove(len(cond_images) - 1)
+        return {'FINISHED'}
 
 class RZM_OT_AddValue(bpy.types.Operator):
     bl_idname = "rzm.add_value"; bl_label = "Add Value"
@@ -1012,13 +981,116 @@ class RZM_OT_SetValueLink(bpy.types.Operator):
         active_idx = context.scene.rzm_active_element_index
         elements = context.scene.rzm.elements
         if 0 <= active_idx < len(elements):
-            elements[active_idx].value_link = self.link_target
+            elem = elements[active_idx]
+            new_link = elem.value_link.add()
+            new_link.value_name = self.link_target
+        else:
+            self.report({'WARNING'}, "No active UI element selected.")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+    
+class RZM_OT_SetValueLink(bpy.types.Operator):
+    """Добавляет значение в список value_link активного UI элемента."""
+    bl_idname = "rzm.set_value_link"
+    bl_label = "Add Value Link"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    link_target: bpy.props.StringProperty()
+
+    def execute(self, context):
+        active_idx = context.scene.rzm_active_element_index
+        elements = context.scene.rzm.elements
+        if 0 <= active_idx < len(elements):
+            elem = elements[active_idx]
+            new_link = elem.value_link.add()
+            new_link.value_name = self.link_target  # ИЗМЕНЕНО
         else:
             self.report({'WARNING'}, "No active UI element selected.")
             return {'CANCELLED'}
         return {'FINISHED'}
 
-# --- НОВЫЕ ОПЕРАТОРЫ ДЛЯ TEXWORKS ---
+class RZM_OT_RemoveValueLink(bpy.types.Operator):
+    """Удаляет элемент из списка value_link."""
+    bl_idname = "rzm.remove_value_link"
+    bl_label = "Remove Value Link"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    index_to_remove: bpy.props.IntProperty()
+
+    def execute(self, context):
+        active_idx = context.scene.rzm_active_element_index
+        elements = context.scene.rzm.elements
+        if 0 <= active_idx < len(elements):
+            links = elements[active_idx].value_link  # ИЗМЕНЕНО
+            if 0 <= self.index_to_remove < len(links):
+                links.remove(self.index_to_remove)
+        return {'FINISHED'}
+
+# --- ОПЕРАТОРЫ ДЛЯ TEXWORKS ---
+class RZM_OT_SetTwFormat(bpy.types.Operator):
+    """Внутренний оператор для установки формата DXGI из меню."""
+    bl_idname = "rzm.set_tw_format"
+    bl_label = "Set TexWorks Format"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    
+    format_to_set: bpy.props.StringProperty()
+    
+    def execute(self, context):
+        # Пытаемся получить индекс из временной переменной
+        atlas_index = getattr(context.window_manager, 'rzm_context_atlas_index', -1)
+        
+        if atlas_index != -1:
+            try:
+                # Находим нужный конфиг по индексу и меняем формат
+                configs = context.scene.rzm.addons.tw_texture_configs
+                target_config = configs[atlas_index]
+                target_config.tw_atlas_settings.tw_format = self.format_to_set
+            except (IndexError, AttributeError) as e:
+                print(f"ERROR: Could not set TW format. Index: {atlas_index}, Error: {e}")
+            finally:
+                # Обязательно удаляем временную переменную, чтобы не было мусора
+                del context.window_manager.rzm_context_atlas_index
+        else:
+            self.report({'WARNING'}, "Could not determine context for setting format.")
+
+        return {'FINISHED'}
+
+class RZM_OT_AddTwResource(bpy.types.Operator):
+    bl_idname = "rzm.add_tw_resource"
+    bl_label = "Add TexWorks Resource"
+    bl_options = {'REGISTER', 'UNDO'}
+    def execute(self, context):
+        context.scene.rzm.addons.tw_resources.add()
+        return {'FINISHED'}
+
+class RZM_OT_RemoveTwResource(bpy.types.Operator):
+    bl_idname = "rzm.remove_tw_resource"
+    bl_label = "Remove TexWorks Resource"
+    bl_options = {'REGISTER', 'UNDO'}
+    def execute(self, context):
+        coll = context.scene.rzm.addons.tw_resources
+        if len(coll) > 0:
+            coll.remove(len(coll) - 1)
+        return {'FINISHED'}
+
+class RZM_OT_AddTwOverride(bpy.types.Operator):
+    bl_idname = "rzm.add_tw_override"
+    bl_label = "Add TexWorks Override"
+    bl_options = {'REGISTER', 'UNDO'}
+    def execute(self, context):
+        context.scene.rzm.addons.tw_overrides.add()
+        return {'FINISHED'}
+
+class RZM_OT_RemoveTwOverride(bpy.types.Operator):
+    bl_idname = "rzm.remove_tw_override"
+    bl_label = "Remove TexWorks Override"
+    bl_options = {'REGISTER', 'UNDO'}
+    def execute(self, context):
+        coll = context.scene.rzm.addons.tw_overrides
+        if len(coll) > 0:
+            coll.remove(len(coll) - 1)
+        return {'FINISHED'}
+
 class RZM_OT_AddTwConfig(bpy.types.Operator):
     bl_idname = "rzm.add_tw_config"
     bl_label = "Add TexWorks Config"
@@ -1055,49 +1127,113 @@ class RZM_OT_RemoveTwTexture(bpy.types.Operator):
             coll.remove(len(coll) - 1)
         return {'FINISHED'}
 
-# --- ОПЕРАТОРЫ ДЛЯ SPECIAL VARIABLES (без изменений) ---
+class RZM_OT_AddTwAlternative(bpy.types.Operator):
+    bl_idname = "rzm.add_tw_alternative"
+    bl_label = "Add TexWorks Alternative"
+    bl_options = {'REGISTER', 'UNDO'}
+    texture_index: bpy.props.IntProperty()
+    def execute(self, context):
+        context.scene.rzm.addons.tw_textures[self.texture_index].tw_alternatives.add()
+        return {'FINISHED'}
+
+class RZM_OT_RemoveTwAlternative(bpy.types.Operator):
+    bl_idname = "rzm.remove_tw_alternative"
+    bl_label = "Remove TexWorks Alternative"
+    bl_options = {'REGISTER', 'UNDO'}
+    texture_index: bpy.props.IntProperty()
+    def execute(self, context):
+        coll = context.scene.rzm.addons.tw_textures[self.texture_index].tw_alternatives
+        if len(coll) > 0:
+            coll.remove(len(coll) - 1)
+        return {'FINISHED'}
+
+# --- ОПЕРАТОРЫ ДЛЯ SPECIAL VARIABLES ---
 class RZM_OT_AddCondition(bpy.types.Operator):
-    bl_idname = "rzm.add_condition"; bl_label = "Add Condition"; bl_options = {'REGISTER', 'UNDO'}
-    def execute(self, context): context.scene.rzm.conditions.add(); return {'FINISHED'}
+    bl_idname = "rzm.add_condition"
+    bl_label = "Add Condition"
+    bl_options = {'REGISTER', 'UNDO'}
+    def execute(self, context):
+        context.scene.rzm.conditions.add()
+        return {'FINISHED'}
 
 class RZM_OT_RemoveCondition(bpy.types.Operator):
-    bl_idname = "rzm.remove_condition"; bl_label = "Remove Condition"; bl_options = {'REGISTER', 'UNDO'}
+    bl_idname = "rzm.remove_condition"
+    bl_label = "Remove Condition"
+    bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         coll = context.scene.rzm.conditions
-        if len(coll) > 0: coll.remove(len(coll) - 1)
+        if len(coll) > 0:
+            coll.remove(len(coll) - 1)
         return {'FINISHED'}
 
 class RZM_OT_AddShape(bpy.types.Operator):
-    bl_idname = "rzm.add_shape"; bl_label = "Add Shape"; bl_options = {'REGISTER', 'UNDO'}
-    def execute(self, context): context.scene.rzm.shapes.add(); return {'FINISHED'}
+    bl_idname = "rzm.add_shape"
+    bl_label = "Add Shape"
+    bl_options = {'REGISTER', 'UNDO'}
+    def execute(self, context):
+        context.scene.rzm.shapes.add()
+        return {'FINISHED'}
 
 class RZM_OT_RemoveShape(bpy.types.Operator):
-    bl_idname = "rzm.remove_shape"; bl_label = "Remove Shape"; bl_options = {'REGISTER', 'UNDO'}
+    bl_idname = "rzm.remove_shape"
+    bl_label = "Remove Shape"
+    bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         coll = context.scene.rzm.shapes
-        if len(coll) > 0: coll.remove(len(coll) - 1)
+        if len(coll) > 0:
+            coll.remove(len(coll) - 1)
+        return {'FINISHED'}
+
+class RZM_OT_AddShapeKey(bpy.types.Operator):
+    bl_idname = "rzm.add_shape_key"
+    bl_label = "Add Shape Key"
+    bl_options = {'REGISTER', 'UNDO'}
+    shape_index: bpy.props.IntProperty()
+    def execute(self, context):
+        context.scene.rzm.shapes[self.shape_index].shape_keys.add()
+        return {'FINISHED'}
+
+class RZM_OT_RemoveShapeKey(bpy.types.Operator):
+    bl_idname = "rzm.remove_shape_key"
+    bl_label = "Remove Shape Key"
+    bl_options = {'REGISTER', 'UNDO'}
+    shape_index: bpy.props.IntProperty()
+    def execute(self, context):
+        coll = context.scene.rzm.shapes[self.shape_index].shape_keys
+        if len(coll) > 0:
+            coll.remove(len(coll) - 1)
         return {'FINISHED'}
 
 
 classes_to_register = [
-    RZM_OT_CaptureImage, RZM_OT_AutoCapture,
     RZM_OT_RecordHistoryState, RZM_OT_Undo, RZM_OT_Redo,
-    RZM_OT_SaveTemplate, RZM_OT_LoadTemplate, RZM_OT_ResetScene, RZM_OT_LoadBaseIcons,
+    RZM_OT_SaveTemplate, RZM_OT_LoadTemplate, RZM_OT_ResetScene,
     RZM_OT_LaunchViewer, RZM_OT_LaunchInspector,
-    RZM_OT_AddElement, RZM_OT_RemoveElement,
-    RZM_OT_DuplicateElement, RZM_OT_DeselectElement,
+    RZM_OT_CaptureImage, RZM_OT_AutoCapture, RZM_OT_LoadBaseIcons,
+    RZM_OT_UpdateAtlasLayout, RZM_OT_ExportAtlas, RZM_OT_AddImage, RZM_OT_RemoveImage,
+    RZM_OT_AddElement, RZM_OT_RemoveElement, RZM_OT_DuplicateElement, RZM_OT_DeselectElement,
     RZM_OT_MoveElementUp, RZM_OT_MoveElementDown,
+    RZM_OT_AddConditionalImage, RZM_OT_RemoveConditionalImage,
+    RZM_OT_ListAction,
+    RZM_OT_SetValueLink, RZM_OT_RemoveValueLink,
     RZM_OT_AddValue, RZM_OT_RemoveValue,
     RZM_OT_AddProjectToggle, RZM_OT_RemoveProjectToggle,
     RZM_OT_AssignObjectToggle, RZM_OT_RemoveObjectToggle, RZM_OT_ToggleObjectBit,
-    RZM_OT_SetValueLink, RZM_OT_ListAction, 
-    RZM_OT_UpdateAtlasLayout, RZM_OT_ExportAtlas,
-    RZM_OT_AddImage, RZM_OT_RemoveImage,
+    # Новые и обновленные операторы
+    RZM_OT_SetTwFormat,
+    RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
+    RZM_OT_AddTwOverride, RZM_OT_RemoveTwOverride,
     RZM_OT_AddTwConfig, RZM_OT_RemoveTwConfig,
     RZM_OT_AddTwTexture, RZM_OT_RemoveTwTexture,
-    RZM_OT_AddCondition, RZM_OT_RemoveCondition, RZM_OT_AddShape, RZM_OT_RemoveShape,
+    RZM_OT_AddTwAlternative, RZM_OT_RemoveTwAlternative,
+    RZM_OT_AddCondition, RZM_OT_RemoveCondition,
+    RZM_OT_AddShape, RZM_OT_RemoveShape,
+    RZM_OT_AddShapeKey, RZM_OT_RemoveShapeKey,
 ]
 def register():
-    for cls in classes_to_register: bpy.utils.register_class(cls)
+    for cls in classes_to_register:
+        bpy.utils.register_class(cls)
+
 def unregister():
-    for cls in reversed(classes_to_register): bpy.utils.unregister_class(cls)
+    for cls in reversed(classes_to_register):
+        bpy.utils.unregister_class(cls)
