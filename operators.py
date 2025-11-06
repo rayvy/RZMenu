@@ -442,7 +442,15 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
             img.uv_coords, img.uv_size = (0, 0), (0, 0)
 
         # 2. Собрать словарь размеров
-        used_image_ids = {elem.image_id for elem in rzm.elements if elem.image_id != -1}
+        used_image_ids = set()
+        for elem in rzm.elements:
+            if elem.image_mode == 'SINGLE' and elem.image_id != -1:
+                used_image_ids.add(elem.image_id)
+            else:
+                for cond_img in elem.conditional_images:
+                    if cond_img.image_id != -1:
+                        used_image_ids.add(cond_img.image_id)
+
         image_sizes_to_pack = {}
         for rzm_image in rzm.images:
             if rzm_image.id in used_image_ids and rzm_image.image_pointer:
