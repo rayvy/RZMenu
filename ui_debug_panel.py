@@ -316,14 +316,15 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         row = res_box.row(align=True); row.label(text="Texture Resources:")
         op_row = row.row(align=True); op_row.operator("rzm.add_tw_resource", text="", icon='ADD'); op_row.operator("rzm.remove_tw_resource", text="", icon='REMOVE')
         for i, item in enumerate(addons.tw_resources):
-            item_row = res_box.row(align=True); item_row.prop(item, "name", text=f"[{i}]"); item_row.prop(item, "resource_type", text="")
-            if item.resource_type == 'ON_DISK': item_row.prop(item, "path", text="")
+            item_row = res_box.row(align=True); item_row.prop(item, "tex_name", text=f"[{i}]")
+            item_row.prop(item, "tex_resource_type", text="")
+            if item.tex_resource_type == 'ON_DISK': item_row.prop(item, "tex_path", text="")
 
         over_box = main_box.box()
         row = over_box.row(align=True); row.label(text="Texture Overrides (3DMigoto):")
         op_row = row.row(align=True); op_row.operator("rzm.add_tw_override", text="", icon='ADD'); op_row.operator("rzm.remove_tw_override", text="", icon='REMOVE')
         for i, item in enumerate(addons.tw_overrides):
-            item_row = over_box.row(align=True); item_row.prop(item, "name", text=f"[{i}]"); item_row.prop(item, "hash", text="Hash"); item_row.prop(item, "resource_name", text="Resource")
+            item_row = over_box.row(align=True); item_row.prop(item, "tex_name", text=f"[{i}]"); item_row.prop(item, "tex_hash", text="Hash"); item_row.prop(item, "tex_resource_name", text="Resource")
 
         config_box = main_box.box()
         row = config_box.row(align=True); row.label(text="Global Texture Configurations:")

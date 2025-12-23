@@ -60,14 +60,14 @@ class AssignedToggle(bpy.types.PropertyGroup):
     toggle_name: StringProperty(name="Toggle Name"); bits: CollectionProperty(type=BitProperty)
 
 class TexResource(bpy.types.PropertyGroup):
-    name: StringProperty(name="Resource Name", description="Уникальное имя ресурса в проекте")
-    resource_type: EnumProperty(name="Type", items=[('EMPTY', "Empty", ""), ('ON_DISK', "On Disk", ""), ('VIRTUAL', "Virtual", "")], default='ON_DISK', description="Тип текстурного ресурса")
-    path: StringProperty(name="Path", description="Путь к файлу текстуры", subtype='FILE_PATH')
+    tex_name: StringProperty(name="Resource Name", description="Уникальное имя ресурса в проекте")
+    tex_resource_type: EnumProperty(name="Type", items=[('EMPTY', "Empty", ""), ('ON_DISK', "On Disk", ""), ('VIRTUAL', "Virtual", "")], default='ON_DISK', description="Тип текстурного ресурса")
+    tex_path: StringProperty(name="Path", description="Путь к файлу текстуры", subtype='FILE_PATH')
 
 class TexOverride(bpy.types.PropertyGroup):
-    name: StringProperty(name="Override Name", description="Имя слота для удобства")
-    hash: StringProperty(name="Hash", description="Хэш ресурса для перехвата")
-    resource_name: StringProperty(name="Resource Name", description="Имя ресурса из списка TexWorks Resources")
+    tex_name: StringProperty(name="Override Name", description="Имя слота для удобства")
+    tex_hash: StringProperty(name="Hash", description="Хэш ресурса для перехвата")
+    tex_resource_name: StringProperty(name="Resource Name", description="Имя ресурса из списка TexWorks Resources")
 
 class TexWorksAtlasConfig(bpy.types.PropertyGroup):
     tw_width: IntProperty(name="Width", default=4096, min=256); tw_height: IntProperty(name="Height", default=4096, min=256)
@@ -81,8 +81,8 @@ class TexWorksTextureConfig(bpy.types.PropertyGroup):
 class DecalConfig(bpy.types.PropertyGroup): pass
 
 class AlternativeTexture(bpy.types.PropertyGroup):
-    condition: StringProperty(name="Condition", description="Условие, при котором эта текстура будет активна")
-    resource_name: StringProperty(name="Resource Name", description="Имя ресурса из TexWorks для использования")
+    tex_condition: StringProperty(name="Condition", description="Условие, при котором эта текстура будет активна")
+    tex_resource_name: StringProperty(name="Resource Name", description="Имя ресурса из TexWorks для использования")
 
 class TexWorksTexture(bpy.types.PropertyGroup):
     tw_name: StringProperty(name="Texture Name", default="MyVirtualTexture")
