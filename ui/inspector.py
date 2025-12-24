@@ -63,23 +63,23 @@ class RZMInspectorWindow(QtWidgets.QWidget):
         self.add_line("--- Elements (Hierarchy) ---", bold=True)
         
         all_elements = list(rzm.elements)
-        elements_by_tag = {elem.tag: elem for elem in all_elements if elem.tag}
+        elements_by_id = {elem.id: elem for elem in all_elements}
         
         # Рекурсивная функция для отображения элемента и его детей
         def display_element_recursively(element, indent_level):
             # Показываем сам элемент
-            parent_info = f" (Parent: {element.parent_tag})" if element.parent_tag else " (ROOT)"
-            self.add_line(f"Tag: '{element.tag}'{parent_info}", indent_level, bold=True)
-            self.add_line(f"Class/Type: '{element.elem_class}' / '{element.elem_type}'", indent_level + 1)
+            parent_info = f" (Parent ID: {element.parent_id})" if element.parent_id != -1 else " (ROOT)"
+            self.add_line(f"ID: {element.id} | '{element.element_name}'{parent_info}", indent_level, bold=True)
+            self.add_line(f"Class: '{element.elem_class}'", indent_level + 1)
             self.add_line(f"Position: {tuple(element.position)} | Size: {tuple(element.size)}", indent_level + 1)
             
             # Показываем его детей
-            children = [e for e in all_elements if e.parent_tag == element.tag]
+            children = [e for e in all_elements if e.parent_id == element.id]
             for child in children:
                 display_element_recursively(child, indent_level + 1)
 
         # Находим и запускаем отрисовку для всех корневых элементов
-        root_elements = [elem for elem in all_elements if not elem.parent_tag or elem.parent_tag not in elements_by_tag]
+        root_elements = [elem for elem in all_elements if elem.parent_id == -1 or elem.parent_id not in elements_by_id]
         for root in root_elements:
             display_element_recursively(root, 1)
             self.add_line("- " * 20) # Разделитель между деревьями

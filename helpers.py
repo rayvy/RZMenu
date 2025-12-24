@@ -1,7 +1,4 @@
-# rz_gui_constructor/helpers.py
 import bpy
-import string
-import re
 
 def get_next_available_id(elements):
     """Находит наименьший свободный ID, заполняя пробелы."""

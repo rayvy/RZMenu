@@ -1,7 +1,6 @@
 # rz_gui_constructor/operators.py
 import bpy
 import string
-import re
 import json
 import os
 import zipfile
@@ -508,10 +507,10 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         elif bpy.data.filepath:
             export_path = os.path.dirname(bpy.data.filepath)
             print(f"DEBUG EXPORT: Using .blend file directory: {export_path}")
-        # Правило 3: Диск C:/
+        # Правило 3: Домашняя директория пользователя
         else:
-            export_path = "C:/"
-            print(f"DEBUG EXPORT: Fallback to root directory: {export_path}")
+            export_path = str(Path.home())
+            print(f"DEBUG EXPORT: Fallback to user home directory: {export_path}")
             
         if not os.path.exists(export_path):
             try:
@@ -975,26 +974,6 @@ class RZM_OT_ToggleObjectBit(bpy.types.Operator):
         new_arr = list(arr)
         new_arr[self.bit_index] = 1 - new_arr[self.bit_index]
         target_obj[self.toggle_name] = new_arr
-        return {'FINISHED'}
-    
-class RZM_OT_SetValueLink(bpy.types.Operator):
-    """Назначает значение свойству value_link активного UI элемента."""
-    bl_idname = "rzm.set_value_link"
-    bl_label = "Set Value Link"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    link_target: bpy.props.StringProperty()
-
-    def execute(self, context):
-        active_idx = context.scene.rzm_active_element_index
-        elements = context.scene.rzm.elements
-        if 0 <= active_idx < len(elements):
-            elem = elements[active_idx]
-            new_link = elem.value_link.add()
-            new_link.value_name = self.link_target
-        else:
-            self.report({'WARNING'}, "No active UI element selected.")
-            return {'CANCELLED'}
         return {'FINISHED'}
     
 class RZM_OT_SetValueLink(bpy.types.Operator):

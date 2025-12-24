@@ -54,34 +54,33 @@ class RZMViewerWindow(QtWidgets.QWidget):
         """
         blender_elements = self.context.scene.rzm.elements
         
-        # 1. Быстрый доступ к элементам по их тегу
-        elements_by_tag = {elem.tag: elem for elem in blender_elements if elem.tag}
+        # 1. Быстрый доступ к элементам по их ID
+        elements_by_id = {elem.id: elem for elem in blender_elements}
 
         # 2. Кэш для хранения уже вычисленных абсолютных позиций
         position_cache = {}
 
         def get_absolute_position(element):
             """Рекурсивно вычисляет абсолютную позицию элемента."""
-            if element.tag in position_cache:
-                return position_cache[element.tag]
+            if element.id in position_cache:
+                return position_cache[element.id]
 
             # Используем getattr для безопасности
             local_pos = getattr(element, 'position', (0, 0))
-            parent_tag = getattr(element, 'parent_tag', '')
+            parent_id = getattr(element, 'parent_id', -1)
 
             # Базовый случай: элемент верхнего уровня или его родитель не найден
-            if not parent_tag or parent_tag not in elements_by_tag:
+            if parent_id == -1 or parent_id not in elements_by_id:
                 abs_pos = QtCore.QPoint(local_pos[0], local_pos[1])
-                position_cache[element.tag] = abs_pos
+                position_cache[element.id] = abs_pos
                 return abs_pos
 
             # Рекурсивный случай: позиция родителя + своя относительная позиция
-            parent = elements_by_tag[parent_tag]
+            parent = elements_by_id[parent_id]
             parent_abs_pos = get_absolute_position(parent)
             abs_pos = parent_abs_pos + QtCore.QPoint(local_pos[0], local_pos[1])
             
-            if element.tag:
-                position_cache[element.tag] = abs_pos
+            position_cache[element.id] = abs_pos
             return abs_pos
 
         # 3. Готовим финальный список элементов для отрисовки
