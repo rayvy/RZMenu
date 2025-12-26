@@ -1,4 +1,4 @@
-# rz_gui_constructor/captures.py
+# RZMenu/captures.py
 import bpy
 import os
 import tempfile

@@ -1,6 +1,4 @@
-# rz_gui_constructor/ui_debug_panel.py
 import bpy
-from .dependencies import check_dependencies
 
 # --- UI LISTS ---
 class RZM_UL_Elements(bpy.types.UIList):
@@ -109,10 +107,18 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        if not check_dependencies():
-            layout.label(text="PySide6 не найден!", icon='ERROR'); return
-
         rzm = context.scene.rzm
+
+        # --- SAFE DEPENDENCY CHECK ---
+        # Проверяем, существует ли функция проверки зависимостей (добавляется в dependencies_panel)
+        if hasattr(context.scene, "rzm_dependencies_met"):
+            if not context.scene.rzm_dependencies_met(context):
+                layout.label(text="Required libraries missing!", icon='ERROR')
+                layout.label(text="Check 'RZ Dependencies' panel.", icon='INFO')
+                # Если библиотеки нет, не крашимся, а просто выходим
+                return 
+        # -----------------------------
+
         self.draw_elements_editor(layout, rzm, context)
         active_idx = context.scene.rzm_active_element_index
         if 0 <= active_idx < len(rzm.elements):
@@ -146,7 +152,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         
         self.draw_global_mod_settings(layout, rzm)
         self.draw_addons_settings(layout, rzm)
-        self.draw_tex_works_config(layout, rzm, context) # Передаем context
+        self.draw_tex_works_config(layout, rzm, context)
         self.draw_special_variables(layout, rzm)
         self.draw_debug_tools(layout)
 
@@ -237,7 +243,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         col.prop(item, "tile_uv"); col.prop(item, "tile_size"); col.prop(item, "color")
         col.separator()
         
-        # --- ПОЛНОСТЬЮ ПЕРЕРАБОТАННЫЙ БЛОК VALUE LINK ---
         link_box = col.box()
         row = link_box.row(align=True)
         row.label(text="Value Links:")
@@ -247,7 +252,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             link_row = link_box.row(align=True)
             link_row.prop(v_link, "value_name", text=f"[{i}]")
             
-            # Добавляем поля Min/Max если элемент - слайдер
             if item.elem_class == 'SLIDER':
                 sub_row = link_row.row(align=True)
                 sub_row.prop(v_link, "value_min", text="Min")
@@ -255,8 +259,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
 
             op = link_row.operator("rzm.remove_value_link", text="", icon='REMOVE')
             op.index_to_remove = i
-        
-        # --- КОНЕЦ ПЕРЕРАБОТАННОГО БЛОКА ---
 
         if item.elem_class == 'BUTTON':
             behavior_box = sub.box()
@@ -386,17 +388,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 s_box.prop(item, "anim_condition", text="Condition")
 
             keys_box = s_box.box()
-            
-            # --- ИСПРАВЛЕННЫЙ БЛОК ЗДЕСЬ ---
             keys_row = keys_box.row(align=True)
             keys_row.label(text="Shape Keys:")
             
-            # Создаем под-строку для кнопок внутри основной строки keys_row
             op_row = keys_row.row(align=True)
-            op_row.alignment = 'RIGHT' # Выравниваем кнопки по правому краю
+            op_row.alignment = 'RIGHT'
             op_add = op_row.operator("rzm.add_shape_key", text="", icon='ADD'); op_add.shape_index = shape_idx
             op_rem = op_row.operator("rzm.remove_shape_key", text="", icon='REMOVE'); op_rem.shape_index = shape_idx
-            # --- КОНЕЦ ИСПРАВЛЕННОГО БЛОКА ---
 
             for key_item in item.shape_keys:
                 key_box = keys_box.box()

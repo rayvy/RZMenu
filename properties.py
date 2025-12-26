@@ -1,4 +1,4 @@
-# rz_gui_constructor/properties.py
+# RZMenu/properties.py
 import bpy
 from bpy.props import (
     StringProperty, IntProperty, FloatProperty, BoolProperty,
@@ -54,7 +54,13 @@ class ValueProperty(bpy.types.PropertyGroup):
     int_value: IntProperty(name="Integer Value"); float_value: FloatProperty(name="Float Value")
 class ToggleDefinition(bpy.types.PropertyGroup):
     toggle_name: StringProperty(name="Toggle Name", description="Уникальное имя, e.g., ToggleA")
-    toggle_length: IntProperty(name="Length", default=8, min=1, max=32); toggle_is_expanded: BoolProperty(name="Expanded", default=False)
+    toggle_length: IntProperty(name="Length", default=8, min=1, max=32)
+    toggle_is_expanded: BoolProperty(name="Expanded", default=False)
+    show_occupancy: BoolProperty(
+        name="Show Slot Occupancy", 
+        default=False, 
+        description="Показать, какие объекты используют биты этого тоггла"
+    )
 class BitProperty(bpy.types.PropertyGroup): value: BoolProperty(name="Bit")
 class AssignedToggle(bpy.types.PropertyGroup):
     toggle_name: StringProperty(name="Toggle Name"); bits: CollectionProperty(type=BitProperty)
@@ -155,6 +161,30 @@ class RZMShape(bpy.types.PropertyGroup):
     
     shape_keys: CollectionProperty(type=RZMShapeKey)
 
+
+class DependencyStatus(bpy.types.PropertyGroup):
+    """Holds the status of a single dependency."""
+    name: StringProperty(name="Name")
+    
+    status: EnumProperty(
+        name="Status",
+        items=[
+            ('UNKNOWN', "Unknown", "Status not checked yet"),
+            ('NOT_FOUND', "Not Found", "Dependency is not installed"),
+            ('OUTDATED', "Outdated", "An older version is installed"),
+            ('OK', "OK", "Required version is installed"),
+            ('NEWER', "Newer", "A newer version is installed"),
+            ('INSTALLING', "Installing", "Installation in progress"),
+        ],
+        default='UNKNOWN'
+    )
+    
+    installed_version: StringProperty(name="Installed Version")
+    target_version: StringProperty(name="Target Version")
+    is_optional: BoolProperty(name="Is Optional")
+    install_progress: FloatProperty(name="Install Progress", subtype='PERCENTAGE', min=0, max=100, default=0.0)
+
+
 class RZMenuElement(bpy.types.PropertyGroup):
     element_name: StringProperty(name="Name"); id: IntProperty(name="Unique ID"); parent_id: IntProperty(name="Parent ID", default=-1)
     priority: IntProperty(name="Priority", default=0); tag: StringProperty(name="Tag")
@@ -185,9 +215,35 @@ class RZMenuElement(bpy.types.PropertyGroup):
     disable_button_nums: BoolProperty(name="Disable Button Nums", default=False)
     disable_button_popup: BoolProperty(name="Disable Button Popup", default=False)
 
+class RZMExportSettings(bpy.types.PropertyGroup):
+    mod_name: StringProperty(
+        name="Mod Name", 
+        default="My New Mod",
+        description="Имя мода для ReadMe файла"
+    )
+    
+    use_xxmi_path: BoolProperty(
+        name="Use XXMI Path",
+        default=True,
+        description="Пытаться взять путь из настроек аддона XXMI Tools"
+    )
+    
+    custom_path: StringProperty(
+        name="Custom Path", 
+        subtype='DIR_PATH',
+        description="Запасной путь, если XXMI не найден"
+    )
+    
+    overwrite_scripts: BoolProperty(
+        name="Overwrite Scripts",
+        default=False,
+        description="ВНИМАНИЕ: Перезапишет скрипты (ini/py) в целевой папке"
+    )
+
 class RZMenuProperties(bpy.types.PropertyGroup):
     version: StringProperty(name="Version", default="3.0.1")
     config: PointerProperty(type=RZMenuConfig)
+    export_settings: PointerProperty(type=RZMExportSettings)
     images: CollectionProperty(type=RZMenuImage)
     atlas_size: IntVectorProperty(name="Atlas Size", description="Calculated size (W, H) of the texture atlas", size=2)
     rzm_values: CollectionProperty(type=ValueProperty)
@@ -200,13 +256,17 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     addons: PointerProperty(type=RZMenuAddonSettings)
     conditions: CollectionProperty(type=RZMCondition)
     shapes: CollectionProperty(type=RZMShape)
+    
+    # Dependency management
+    dependency_statuses: CollectionProperty(type=DependencyStatus)
+
 
 classes_to_register = [
     RZMCaptureSettings, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
     ValueLinkProperty, RZMenuElement, TexResource, TexOverride, DecalConfig,
     AlternativeTexture, TexWorksAtlasConfig, TexWorksTextureConfig, TexWorksTexture, 
-    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, RZMenuProperties
+    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMenuProperties
 ]
 
 def register():
@@ -230,11 +290,15 @@ def register():
         description="Internal: Used to pass context to the TW format menu",
         default=-1
     )
+    bpy.types.WindowManager.rzm_dependency_install_status = StringProperty(
+        name="RZM Dependency Status",
+        description="Shows the current status message during dependency installation"
+    )
 
 def unregister():
     # Удаляем временное свойство
+    del bpy.types.WindowManager.rzm_dependency_install_status
     del bpy.types.WindowManager.rzm_context_atlas_index
-
     del bpy.types.Scene.rzm_show_captures_preview
     del bpy.types.Scene.rzm_editor_mode
     del bpy.types.Scene.rzm_show_debug_panel

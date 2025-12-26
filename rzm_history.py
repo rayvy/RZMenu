@@ -1,4 +1,4 @@
-# rz_gui_constructor/rzm_history.py
+# RZMenu/rzm_history.py
 
 class RZMHistoryManager:
     """

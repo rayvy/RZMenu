@@ -1,4 +1,4 @@
-# rz_gui_constructor/ui/inspector.py
+# RZMenu/ui/inspector.py
 # Точный инспектор. Читает весь rzm-контекст и выводит Elements как иерархию.
 
 try:

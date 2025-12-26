@@ -1,4 +1,4 @@
-# rz_gui_constructor/rzm_atlas.py
+# RZMenu/rzm_atlas.py
 import bpy
 import numpy as np
 

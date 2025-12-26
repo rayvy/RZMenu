@@ -1,4 +1,4 @@
-# rz_gui_constructor/rzm_serialization.py
+# RZMenu/rzm_serialization.py
 import bpy
 # Добавим импорты на случай, если они понадобятся для обработки специфичных типов данных
 from mathutils import Vector, Color, Euler, Quaternion

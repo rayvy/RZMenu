@@ -47,3 +47,35 @@ def find_toggle_def(context, name):
         if toggle_def.toggle_name == name:
             return toggle_def
     return None
+
+def get_toggle_slot_occupancy(context, base_name):
+    """
+    Возвращает словарь: {индекс_бита: [имена объектов]}, где слот занят данным тогглом.
+    Исключает текущий активный объект из списка имен (чтобы не дублировать визуально),
+    но учитывает его в логике, если нужно.
+    """
+    result = {}
+    active_obj = context.active_object
+    full_key = f"rzm.Toggle.{base_name}"
+    
+    for obj in context.scene.objects: # Проходим по всем объектам сцены
+        if obj == active_obj:
+            continue
+            
+        if full_key in obj.keys():
+            value = obj[full_key]
+            # Проверяем, что это массив (IDPropertyArray)
+            if hasattr(value, "to_list"):
+                 bits = value.to_list()
+            elif isinstance(value, list):
+                 bits = value
+            else:
+                 try:
+                     bits = list(value)
+                 except:
+                     continue
+
+            for i, bit in enumerate(bits):
+                if bit: # Если бит равен 1
+                    result.setdefault(i, []).append(obj.name)
+    return result

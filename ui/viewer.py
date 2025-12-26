@@ -1,4 +1,4 @@
-# rz_gui_constructor/ui/viewer.py
+# RZMenu/ui/viewer.py
 # "Железобетонная" версия. Рисует иерархию. Устойчива к ошибкам и версиям.
 
 try:
