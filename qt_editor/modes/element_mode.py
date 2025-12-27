@@ -7,54 +7,91 @@ from ..utils.image_cache import ImageCache
 # --- ITEM CLASS ---
 class RZElementItem(QtWidgets.QGraphicsRectItem):
     def __init__(self, data, bridge):
-        super().__init__(0, 0, data['w'], data['h'])
+        # Изначально создаем пустой, данные придут в update_data
+        super().__init__(0, 0, 0, 0)
         self.bridge = bridge
         self.element_id = data['id']
-        self.on_move_callback = None 
+        self.on_move_callback = None
+        
+        self._is_dragging = False 
         
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges)
         
+        # Текст (имя элемента)
         self.text_item = QtWidgets.QGraphicsTextItem("", self)
         self.text_item.setZValue(10)
         
+        # Инициализация
         self.update_data(data)
 
     def update_data(self, data):
-        """Обновление данных (Из Блендера или Менеджера)."""
+        """
+        Обновление данных. 
+        Логика: Bottom-Left Pivot. Y растет ВВЕРХ.
+        """
+        # Если тащим мышкой - не мешаем себе
+        if self._is_dragging:
+            return
+
+        # Блокируем сигнал, чтобы изменение позиции кодом не вызывало itemChange
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, False)
         
-        # 1. Размер
-        if self.rect().width() != data['w'] or self.rect().height() != data['h']:
-            self.setRect(0, 0, data['w'], data['h'])
+        # --- ГЕОМЕТРИЯ ---
+        w = int(data['w'])
+        h = int(data['h'])
+        x = int(data['x'])
+        y = int(data['y'])
 
-        # 2. Позиция (Если не тащим мышкой)
-        if not (self.isSelected() and QtWidgets.QApplication.mouseButtons() == QtCore.Qt.LeftButton):
-            self.setPos(data['x'], data['y'])
+        # [CRITICAL FIX] "Draw Up" Strategy
+        # Мы рисуем прямоугольник так, чтобы точка (0,0) была его ЛЕВЫМ НИЖНИМ углом.
+        # setRect(x, y, w, h) -> x,y это Top-Left.
+        # Чтобы (0,0) стал Bottom-Left, Top-Left должен быть (0, -h).
+        target_rect = QtCore.QRectF(0, -h, w, h)
         
-        # 3. Визуал
+        # Qt Y (Down) = -Game Y (Up). 
+        # Точка вставки (Pivot) просто инвертируется по Y.
+        target_pos = QtCore.QPointF(x, -y)
+
+        # Применяем изменения, если они есть
+        if self.rect() != target_rect:
+            self.prepareGeometryChange() # Обязательно перед сменой размеров!
+            self.setRect(target_rect)
+        
+        if self.pos() != target_pos:
+            self.setPos(target_pos)
+
+        # --- ВИЗУАЛ ---
         self.image_id = data.get('image_id', -1)
+        
         c = data.get('color', (0.5, 0.5, 0.5, 1.0))
         try:
             self.base_color = QtGui.QColor.fromRgbF(c[0], c[1], c[2], c[3])
         except:
             self.base_color = QtGui.QColor(128, 128, 128)
 
-        # [FIX] Используем правильный ключ 'element_name'
+        # Текст - ставим его немного выше нижнего края (на свой вкус) или в (0, -h)
+        # Если хочешь, чтобы текст был вверху элемента: setPos(0, -h)
+        # Если внизу: setPos(0, 0) - (высота текста)
         name = data.get('element_name', 'Unnamed')
         if self.text_item.toPlainText() != name:
             self.text_item.setPlainText(name)
             self.text_item.setDefaultTextColor(QtGui.QColor(255, 255, 255))
-            
+            # Поместим текст в левый верхний угол элемента
+            self.text_item.setPos(0, -h) 
+
+        # Разблокируем и форсируем перерисовку
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, True)
         self.update()
 
     def paint(self, painter, option, widget):
-        if self.rect().width() < 1 or self.rect().height() < 1: return
+        # Оптимизация
+        if self.rect().width() < 1 or self.rect().height() < 1:
+            return
 
         pixmap = ImageCache.instance().get_pixmap(self.image_id)
-        rect = self.rect()
+        rect = self.rect() # Это будет (0, -h, w, h)
         
         if pixmap and not pixmap.isNull():
             painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
@@ -76,11 +113,31 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             painter.setPen(pen)
             painter.drawRect(rect)
 
+    # --- DRAG LOGIC ---
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._is_dragging = True
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._is_dragging = False
+            # Финальная синхронизация
+            if self.on_move_callback:
+                # Qt Y is inverted Game Y. 
+                # Pos is Bottom-Left anchor.
+                game_y = -int(self.y())
+                self.on_move_callback(self.element_id, int(self.x()), game_y)
+        super().mouseReleaseEvent(event)
+
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
             if self.flags() & QtWidgets.QGraphicsItem.ItemSendsGeometryChanges:
-                if self.on_move_callback:
-                    self.on_move_callback(self.element_id, int(value.x()), int(value.y()))
+                if self.on_move_callback and self._is_dragging:
+                    # Qt Y (Down) -> Game Y (Up) = Просто инверсия,
+                    # так как мы теперь используем Pivot внизу.
+                    game_y = -int(value.y())
+                    self.on_move_callback(self.element_id, int(value.x()), game_y)
         return super().itemChange(change, value)
 
 
@@ -140,11 +197,20 @@ class RZViewport(QtWidgets.QGraphicsView):
         super().drawBackground(painter, rect)
         grid_size = 50
         painter.setPen(QtGui.QPen(QtGui.QColor(40, 40, 40), 1))
-        l = int(rect.left()); t = int(rect.top()); r = int(rect.right()); b = int(rect.bottom())
+        
+        # Оптимизация сетки
+        l = int(rect.left())
+        t = int(rect.top())
+        r = int(rect.right())
+        b = int(rect.bottom())
+        
         first_left = l - (l % grid_size)
         first_top = t - (t % grid_size)
-        for x in range(first_left, r, grid_size): painter.drawLine(x, t, x, b)
-        for y in range(first_top, b, grid_size): painter.drawLine(l, y, r, y)
+
+        for x in range(first_left, r, grid_size):
+            painter.drawLine(x, t, x, b)
+        for y in range(first_top, b, grid_size):
+            painter.drawLine(l, y, r, y)
 
 
 # --- CONTROLLER ---
@@ -158,6 +224,7 @@ class ElementMode(QtWidgets.QWidget):
         self.data_manager = data_manager
         
         self.scene = QtWidgets.QGraphicsScene()
+        # Большая сцена
         self.scene.setSceneRect(-10000, -10000, 20000, 20000)
         self.scene.selectionChanged.connect(self.on_selection_changed)
         
@@ -170,7 +237,7 @@ class ElementMode(QtWidgets.QWidget):
         self.view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self.show_context_menu)
         
-        self.items_map = {} # {id: RZElementItem}
+        self.items_map = {} 
 
     def on_selection_changed(self):
         items = self.scene.selectedItems()
@@ -196,19 +263,24 @@ class ElementMode(QtWidgets.QWidget):
                 parent_id = top_item.element_id
 
         add_menu = menu.addMenu(f"Add Element (Parent: {parent_id})")
+        
         scene_pos = self.view.mapToScene(pos)
-        target_x = scene_pos.x(); target_y = scene_pos.y()
+        
+        # Конвертация позиции создания
+        target_x = scene_pos.x()
+        target_y = -scene_pos.y() # Простая инверсия
         
         if parent_id != -1 and parent_id in self.items_map:
             parent_item = self.items_map[parent_id]
             local_pos = parent_item.mapFromScene(scene_pos)
-            target_x = local_pos.x(); target_y = local_pos.y()
+            target_x = local_pos.x()
+            target_y = -local_pos.y()
 
         for type_name in ['CONTAINER', 'BUTTON', 'SLIDER', 'TEXT']:
             action = add_menu.addAction(type_name.capitalize())
             def create_closure(t=type_name, pid=parent_id, x=target_x, y=target_y):
                 self.bridge.create_element(t, pid, int(x), int(y))
-                QtCore.QTimer.singleShot(50, self.rebuild_scene)
+                # Обновление само прилетит через DataManager
             action.triggered.connect(create_closure)
             
         sel_items = self.scene.selectedItems()
@@ -219,7 +291,6 @@ class ElementMode(QtWidgets.QWidget):
                 for i in sel_items:
                     if isinstance(i, RZElementItem):
                         self.bridge.delete_element(i.element_id)
-                QtCore.QTimer.singleShot(50, self.rebuild_scene)
             del_action.triggered.connect(delete_closure)
             
         menu.exec(self.view.mapToGlobal(pos))
@@ -233,15 +304,12 @@ class ElementMode(QtWidgets.QWidget):
         self.scene.blockSignals(False)
 
     def rebuild_scene(self):
-        """Перестраивает сцену и [ВАЖНО] инициализирует Data Manager."""
         if not hasattr(self.bl_context.scene, "rzm"): return
         
         ImageCache.instance().clear()
         elements = self.bl_context.scene.rzm.elements
         
-        # 1. Сбор данных в список словарей
         all_data_list = []
-        
         for elem in elements:
             if elem.image_mode == 'SINGLE' and elem.image_id != -1:
                 ImageCache.instance().pre_cache_image(elem.image_id)
@@ -252,11 +320,10 @@ class ElementMode(QtWidgets.QWidget):
             
             img_id = elem.image_id if elem.image_mode == 'SINGLE' else -1
             
-            # [FIX] Используем правильные ключи, соответствующие Blender Property
             data = {
                 'id': elem.id,
-                'element_name': elem.element_name, # <-- БЫЛО 'name', СТАЛО 'element_name'
-                'elem_class': elem.elem_class,     # <-- БЫЛО 'type', СТАЛО 'elem_class'
+                'element_name': elem.element_name,
+                'elem_class': elem.elem_class,
                 'position': [elem.position[0], elem.position[1]],
                 'x': elem.position[0],
                 'y': elem.position[1],
@@ -273,10 +340,8 @@ class ElementMode(QtWidgets.QWidget):
             }
             all_data_list.append(data)
 
-        # 2. Загружаем "Правду" в Менеджер
         self.data_manager.load_initial_data(all_data_list)
 
-        # 3. Создание / Обновление Items
         current_data_map = {d['id']: d for d in all_data_list}
         processed_ids = set()
         
@@ -291,24 +356,27 @@ class ElementMode(QtWidgets.QWidget):
                 self.scene.addItem(item)
                 self.items_map[eid] = item
 
-        # 4. Удаление устаревших
         existing_ids = list(self.items_map.keys())
         for eid in existing_ids:
             if eid not in processed_ids:
                 item = self.items_map.pop(eid)
                 self.scene.removeItem(item)
 
-        # 5. Иерархия (Parenting)
+        # PARENTING & COORDINATE FIX
         for eid, item in self.items_map.items():
             data = current_data_map[eid]
             pid = data['parent_id']
+            
+            # В "Draw Up" режиме мы используем чистую инверсию
+            target_qt_x = data['x']
+            target_qt_y = -data['y'] 
             
             if pid != -1 and pid in self.items_map:
                 parent_item = self.items_map[pid]
                 if item.parentItem() != parent_item:
                     item.setParentItem(parent_item)
-                    item.setPos(data['x'], data['y'])
+                    item.setPos(target_qt_x, target_qt_y)
             else:
                 if item.parentItem() is not None:
                     item.setParentItem(None)
-                    item.setPos(data['x'], data['y'])
+                    item.setPos(target_qt_x, target_qt_y)
