@@ -1,3 +1,4 @@
+#RZMenu/ui_debug_panel.py
 import bpy
 
 # --- UI LISTS ---

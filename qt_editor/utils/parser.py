@@ -1,4 +1,4 @@
-# qt_editor/utils/parser.py
+#RZMenu/qt_editor/utils/parser.py
 import bpy
 
 def parse_scene_elements(context):

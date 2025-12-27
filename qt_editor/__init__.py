@@ -1,3 +1,4 @@
+#RZMenu/qt_editor/__init__.py
 import sys
 import os
 from PySide6 import QtWidgets, QtGui

@@ -1,4 +1,4 @@
-# qt_editor/widgets/items/base_item.py
+#RZMenu/qt_editor/widgets/items/base_item.py
 from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsTextItem
 from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtCore import Qt, QRectF

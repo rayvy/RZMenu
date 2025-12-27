@@ -1,3 +1,4 @@
+#RZMenu/diagnose_pyside.py
 #!/usr/bin/env python3
 """
 Diagnostic and Repair script for PySide6 in Blender RZMenu addon.

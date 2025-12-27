@@ -1,4 +1,4 @@
-# rz_gui_constructor/operators/pyside_ops.py
+#RZMenu/operators/pyside_ops.py
 import bpy
 import os
 import sys

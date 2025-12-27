@@ -1,3 +1,4 @@
+#RZMenu/qt_editor/modes/shader_mode.py
 from PySide6.QtWidgets import QLabel, QVBoxLayout
 from .base_mode import BaseEditorMode
 

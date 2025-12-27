@@ -1,3 +1,4 @@
+#RZMenu/qt_editor/modes/base_mode.py
 from PySide6.QtWidgets import QWidget
 
 class BaseEditorMode(QWidget):

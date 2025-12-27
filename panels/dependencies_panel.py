@@ -1,3 +1,4 @@
+#RZMenu/panels/dependencies_panel.py
 import bpy
 from ..dependencies import is_installing, DEPS
 

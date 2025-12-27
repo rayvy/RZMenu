@@ -1,11 +1,12 @@
 # RZMenu/qt_editor/widgets/inspector.py
 
 from PySide6 import QtWidgets, QtCore, QtGui
+from .draggable_spinbox import DraggableSpinBox
 
 class InspectorWidget(QtWidgets.QWidget):
-    def __init__(self, data_manager, parent=None): # [MODIFIED]
+    def __init__(self, data_manager, parent=None):
         super().__init__(parent)
-        self.data_manager = data_manager # Сохраняем менеджер
+        self.data_manager = data_manager 
         self.current_element_id = None
         self._widgets_cache = {} 
         
@@ -38,60 +39,45 @@ class InspectorWidget(QtWidgets.QWidget):
         self.current_element_id = None
         self._clear_layout()
         self._widgets_cache = {}
-        
         lbl = QtWidgets.QLabel("No Selection")
         lbl.setAlignment(QtCore.Qt.AlignCenter)
         lbl.setStyleSheet("color: #555; margin-top: 50px;")
         self.form_layout.insertWidget(0, lbl)
 
     def set_selection(self, element_id):
-        """Вызывается Менеджером, когда сменилось выделение."""
         self.current_element_id = element_id
-        
         if element_id is None:
             self.show_empty_state()
             return
-
-        # [NEW] Берем данные МГНОВЕННО из кэша Менеджера
         data = self.data_manager.get_data(element_id)
-        
         self._clear_layout()
         self._widgets_cache = {}
-        
-        if data:
-            self._build_full_ui(data)
-        else:
-            # Если вдруг данных нет (рассинхрон), можно показать ошибку или пустоту
-            self.show_empty_state()
+        if data: self._build_full_ui(data)
+        else: self.show_empty_state()
 
     def on_element_data_changed(self, element_id):
-        """[NEW] Слот: Данные изменились (от Блендера ИЛИ от Мышки)."""
         if not self.isVisible(): return
         if element_id != self.current_element_id: return
-        
-        # Забираем свежие данные из Менеджера
         data = self.data_manager.get_data(element_id)
-        if data:
-            self._update_ui_values(data)
+        if data: self._update_ui_values(data)
 
     def _update_ui_values(self, data):
-        """Обновляет значения виджетов. Пропускает, если виджет в фокусе."""
-        
+        """Обновляет значения виджетов (безопасно)."""
         def safe_update(widget, new_val, getter, setter, transform=lambda x: x):
             try:
                 if not widget: return
-                # [CRITICAL] Если мы печатаем здесь - не обновляем извне
                 if widget.hasFocus(): return
+                if isinstance(widget, DraggableSpinBox) and widget._dragging: return
                 
                 current_val = getter()
                 target_val = transform(new_val)
                 
+                # Приведение типов для сравнения
                 if str(current_val) != str(target_val):
                     widget.blockSignals(True)
                     setter(target_val)
                     widget.blockSignals(False)
-            except Exception:
-                pass
+            except Exception: pass
 
         for prop_name, widget_obj in self._widgets_cache.items():
             if prop_name not in data: continue
@@ -106,6 +92,9 @@ class InspectorWidget(QtWidgets.QWidget):
             elif isinstance(widget_obj, QtWidgets.QComboBox):
                 safe_update(widget_obj, raw_val, widget_obj.currentText, widget_obj.setCurrentText, str)
             
+            elif isinstance(widget_obj, QtWidgets.QCheckBox):
+                safe_update(widget_obj, raw_val, widget_obj.isChecked, widget_obj.setChecked, bool)
+
             elif isinstance(widget_obj, list): # Vectors
                 if len(widget_obj) == len(raw_val):
                     for i, w in enumerate(widget_obj):
@@ -120,24 +109,33 @@ class InspectorWidget(QtWidgets.QWidget):
     # --- BUILDERS ---
     def _build_full_ui(self, data):
         self._add_header("General")
-        self.add_text_row("Name", data['element_name'], 'element_name')
-        self.add_combo_row("Class", ['CONTAINER', 'GRID_CONTAINER', 'ANCHOR', 'BUTTON', 'SLIDER', 'TEXT'], data['elem_class'], 'elem_class')
+        self.add_text_row("Name", data.get('element_name', ''), 'element_name')
+        self.add_combo_row("Class", ['CONTAINER', 'GRID_CONTAINER', 'ANCHOR', 'BUTTON', 'SLIDER', 'TEXT'], data.get('elem_class', 'CONTAINER'), 'elem_class')
+
+        # [NEW] Editor Flags
+        self._add_header("Editor Flags")
+        # Создаем горизонтальный ряд чекбоксов
+        flags_row = QtWidgets.QHBoxLayout()
+        self.add_flag_box("Hide", data.get('qt_hide', False), 'qt_hide', flags_row)
+        self.add_flag_box("Lock Pos", data.get('qt_lock_pos', False), 'qt_lock_pos', flags_row)
+        self.add_flag_box("Lock Size", data.get('qt_lock_size', False), 'qt_lock_size', flags_row)
+        self.form_layout.addLayout(flags_row)
 
         self._add_header("Transform (Local)")
-        self.add_vec2_row("Position", data['position'], 'position')
-        self.add_vec2_row("Size", data['size'], 'size')
+        self.add_vec2_row("Position", data.get('position', [0,0]), 'position')
+        self.add_vec2_row("Size", data.get('size', [100,100]), 'size')
 
         self._add_header("Style")
-        self.add_color_row("Color", data['color'], 'color')
+        self.add_color_row("Color", data.get('color', [0,0,0,0]), 'color')
 
         self._add_header("Content")
-        self.add_combo_row("Img Mode", ['SINGLE', 'CONDITIONAL_LIST', 'INDEX_LIST'], data['image_mode'], 'image_mode')
-        self.add_int_row("Image ID", data['image_id'], 'image_id')
-        self.add_text_row("Text ID", data['text_id'], 'text_id')
+        self.add_combo_row("Img Mode", ['SINGLE', 'CONDITIONAL_LIST', 'INDEX_LIST'], data.get('image_mode', 'SINGLE'), 'image_mode')
+        self.add_int_row("Image ID", data.get('image_id', -1), 'image_id')
+        self.add_text_row("Text ID", data.get('text_id', ''), 'text_id')
 
         self._add_header("Visibility")
-        self.add_combo_row("Mode", ['ALWAYS', 'CONDITIONAL'], data['visibility_mode'], 'visibility_mode')
-        self.add_text_row("Condition", data['visibility_condition'], 'visibility_condition')
+        self.add_combo_row("Mode", ['ALWAYS', 'CONDITIONAL'], data.get('visibility_mode', 'ALWAYS'), 'visibility_mode')
+        self.add_text_row("Condition", data.get('visibility_condition', ''), 'visibility_condition')
 
         self.form_layout.addStretch()
 
@@ -158,8 +156,7 @@ class InspectorWidget(QtWidgets.QWidget):
         self.form_layout.addLayout(row)
 
     def add_int_row(self, label, val, prop):
-        row, spin = self._make_row(label, QtWidgets.QSpinBox())
-        spin.setRange(-1, 999999)
+        row, spin = self._make_row(label, DraggableSpinBox()) 
         spin.setValue(int(val))
         spin.editingFinished.connect(lambda: self.update_prop(prop, spin.value()))
         self._widgets_cache[prop] = spin
@@ -178,13 +175,10 @@ class InspectorWidget(QtWidgets.QWidget):
         row.addWidget(self._make_label(label))
         spins = []
         for i, v in enumerate(vals):
-            s = QtWidgets.QSpinBox()
-            s.setRange(-9999, 9999)
+            s = DraggableSpinBox() 
             s.setValue(int(v))
-            s.setStyleSheet("background: #1e1e1e; border: 1px solid #333; color: #ddd;")
-            s.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
             s.setFixedHeight(22)
-            s.editingFinished.connect(lambda: self.update_prop_vec(prop))
+            s.editingFinished.connect(lambda p=prop, sp=spins: self.update_prop_vec(p, sp))
             row.addWidget(s)
             spins.append(s)
         self._widgets_cache[prop] = spins
@@ -195,12 +189,9 @@ class InspectorWidget(QtWidgets.QWidget):
         btn.setFixedHeight(24)
         c = QtGui.QColor.fromRgbF(val[0], val[1], val[2], val[3])
         btn.setStyleSheet(f"background-color: {c.name(QtGui.QColor.HexArgb)}; border: 1px solid #555;")
-        
         def pick():
             new = QtWidgets.QColorDialog.getColor(c, self, "Color", QtWidgets.QColorDialog.ShowAlphaChannel)
-            if new.isValid():
-                self.update_prop(prop, [new.redF(), new.greenF(), new.blueF(), new.alphaF()])
-        
+            if new.isValid(): self.update_prop(prop, [new.redF(), new.greenF(), new.blueF(), new.alphaF()])
         btn.clicked.connect(pick)
         row = QtWidgets.QHBoxLayout()
         row.addWidget(self._make_label(label))
@@ -208,11 +199,20 @@ class InspectorWidget(QtWidgets.QWidget):
         self._widgets_cache[prop] = btn
         self.form_layout.addLayout(row)
 
+    def add_flag_box(self, label, val, prop, layout):
+        cb = QtWidgets.QCheckBox(label)
+        cb.setChecked(bool(val))
+        cb.setStyleSheet("color: #ccc;")
+        cb.toggled.connect(lambda state: self.update_prop(prop, state))
+        self._widgets_cache[prop] = cb
+        layout.addWidget(cb)
+
     def _make_row(self, text, widget):
         row = QtWidgets.QHBoxLayout()
         lbl = self._make_label(text)
         row.addWidget(lbl)
-        widget.setStyleSheet("background: #1e1e1e; border: 1px solid #333; color: #ddd; selection-background-color: #555;")
+        if not isinstance(widget, DraggableSpinBox):
+             widget.setStyleSheet("background: #1e1e1e; border: 1px solid #333; color: #ddd; selection-background-color: #555;")
         row.addWidget(widget)
         return row, widget
 
@@ -224,15 +224,11 @@ class InspectorWidget(QtWidgets.QWidget):
 
     def update_prop(self, prop, val):
         if self.current_element_id is not None:
-            # [MODIFIED] Шлем в Менеджер (это обновит кэш и пнет Вьюпорт сразу же)
             self.data_manager.update_element_property(self.current_element_id, prop, val)
             
-    def update_prop_vec(self, prop):
-        spins = self._widgets_cache.get(prop)
-        if spins:
-            val = [s.value() for s in spins]
-            # [MODIFIED] Шлем в Менеджер
-            self.data_manager.update_element_property(self.current_element_id, prop, val)
+    def update_prop_vec(self, prop, spins):
+        val = [s.value() for s in spins]
+        self.data_manager.update_element_property(self.current_element_id, prop, val)
 
     def _clear_layout(self):
         while self.form_layout.count():

@@ -1,4 +1,4 @@
-# rz_gui_constructor/ui/qt_editor.py
+#RZMenu/ui/qt_editor.py
 import bpy
 import functools
 import os
