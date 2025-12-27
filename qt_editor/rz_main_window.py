@@ -1,9 +1,12 @@
+# RZMenu/qt_editor/rz_main_window.py
+
 from PySide6 import QtWidgets, QtCore, QtGui
 from .modes.element_mode import ElementMode
 from .widgets.inspector import InspectorWidget
+from .widgets.hierarchy import HierarchyWidget
 from .rz_bridge import RZBridge
+from .rz_data_manager import RZDataManager
 
-# Заглушки для будущих режимов
 class ShaderMode(QtWidgets.QLabel): pass
 class VariableMode(QtWidgets.QLabel): pass
 
@@ -14,135 +17,126 @@ class RZMainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("RZMenu Architect")
         self.resize(1200, 800)
         
-        # 1. Запускаем Мост (Bridge)
-        # Он должен жить столько же, сколько окно
+        # 1. Start Bridge & Data Manager
         self.bridge = RZBridge()
         self.bridge.start()
+        self.data_manager = RZDataManager(self.bridge)
         
-        # --- CENTRAL WIDGET ---
+        # --- UI SETUP ---
         main_widget = QtWidgets.QWidget()
         self.setCentralWidget(main_widget)
-        
-        # Корневой Layout (Вертикальный): Шапка -> Рабочая зона -> Подвал
         self.root_layout = QtWidgets.QVBoxLayout(main_widget)
         self.root_layout.setContentsMargins(0, 0, 0, 0)
         self.root_layout.setSpacing(0)
         
-        # ===========================
-        # 1. HEADER (Top Bar)
-        # ===========================
+        # TOP BAR
         self.top_bar = QtWidgets.QFrame()
-        self.top_bar.setObjectName("TopBar")
         self.top_bar.setFixedHeight(40)
         top_layout = QtWidgets.QHBoxLayout(self.top_bar)
-        top_layout.setContentsMargins(10, 0, 10, 0)
         
         self.lbl_title = QtWidgets.QLabel("RZMenu Architect")
-        self.lbl_title.setStyleSheet("font-weight: bold; color: #888; font-size: 14px;")
-        
+        self.lbl_title.setStyleSheet("font-weight: bold; color: #888;")
         self.btn_refresh = QtWidgets.QPushButton("Refresh Data")
-        self.btn_refresh.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_refresh.clicked.connect(self.on_refresh)
         
         top_layout.addWidget(self.lbl_title)
         top_layout.addStretch()
         top_layout.addWidget(self.btn_refresh)
         
-        # ===========================
-        # 2. MIDDLE AREA (Horizontal)
-        # Здесь живут Stack (Канвас) и Inspector
-        # ===========================
+        # MIDDLE AREA
         middle_widget = QtWidgets.QWidget()
         middle_layout = QtWidgets.QHBoxLayout(middle_widget)
-        middle_layout.setContentsMargins(0, 0, 0, 0)
-        middle_layout.setSpacing(0)
         
-        # A. Stack (Слева, растягивается)
+        # Hierarchy
+        self.hierarchy = HierarchyWidget()
+        self.hierarchy.bridge = self.bridge
+        self.hierarchy.setFixedWidth(250)
+        
+        # Stack
         self.stack = QtWidgets.QStackedWidget()
-        
-        # Создаем режимы (Передаем bridge в ElementMode!)
-        self.mode_element = ElementMode(context, self.bridge)
-        
-        self.mode_shader = ShaderMode("Shader Mode (Coming Soon)")
-        self.mode_shader.setAlignment(QtCore.Qt.AlignCenter)
-        self.mode_var = VariableMode("Variable Mode (Coming Soon)")
-        self.mode_var.setAlignment(QtCore.Qt.AlignCenter)
-        
+        self.mode_element = ElementMode(context, self.bridge, self.data_manager)
         self.stack.addWidget(self.mode_element)
-        self.stack.addWidget(self.mode_shader)
-        self.stack.addWidget(self.mode_var)
+        self.stack.addWidget(QtWidgets.QLabel("Shader Mode"))
+        self.stack.addWidget(QtWidgets.QLabel("Variables"))
         
-        # B. Inspector (Справа, фиксированный)
-        self.inspector = InspectorWidget(self.bridge)
+        # Inspector
+        self.inspector = InspectorWidget(self.data_manager)
         self.inspector.setFixedWidth(300)
-        # Добавляем стиль для границы слева
-        self.inspector.setStyleSheet("background-color: #222; border-left: 1px solid #3d3d3d;")
         
-        # Добавляем в среднюю зону
-        middle_layout.addWidget(self.stack, 1) # stretch=1
-        middle_layout.addWidget(self.inspector, 0) # stretch=0 (fixed)
+        middle_layout.addWidget(self.hierarchy, 0)
+        middle_layout.addWidget(self.stack, 1)
+        middle_layout.addWidget(self.inspector, 0)
         
-        # ===========================
-        # 3. FOOTER (Bottom Bar)
-        # ===========================
+        # BOTTOM BAR
         self.bottom_bar = QtWidgets.QFrame()
-        self.bottom_bar.setObjectName("BottomBar")
         self.bottom_bar.setFixedHeight(35)
         bot_layout = QtWidgets.QHBoxLayout(self.bottom_bar)
-        bot_layout.setContentsMargins(0, 0, 0, 0)
-        bot_layout.setSpacing(0)
         
-        self.btn_tab_elem = self.create_tab_btn("Element Mode", 0)
-        self.btn_tab_shad = self.create_tab_btn("Shader Mode", 1)
-        self.btn_tab_vars = self.create_tab_btn("Variables", 2)
-        
-        # Радио-группа для кнопок
-        self.tab_group = QtWidgets.QButtonGroup(self)
-        self.tab_group.addButton(self.btn_tab_elem)
-        self.tab_group.addButton(self.btn_tab_shad)
-        self.tab_group.addButton(self.btn_tab_vars)
-        self.btn_tab_elem.setChecked(True)
-        
-        bot_layout.addWidget(self.btn_tab_elem)
-        bot_layout.addWidget(self.btn_tab_shad)
-        bot_layout.addWidget(self.btn_tab_vars)
+        self.btn_elem = QtWidgets.QPushButton("Element Mode")
+        self.btn_elem.clicked.connect(lambda: self.stack.setCurrentIndex(0))
+        bot_layout.addWidget(self.btn_elem)
         bot_layout.addStretch()
         
-        # ===========================
-        # FINAL ASSEMBLY
-        # ===========================
         self.root_layout.addWidget(self.top_bar)
-        self.root_layout.addWidget(middle_widget) # Вставляем среднюю зону
+        self.root_layout.addWidget(middle_widget)
         self.root_layout.addWidget(self.bottom_bar)
         
-        # ===========================
-        # LOGIC CONNECTIONS
-        # ===========================
-        # Связываем выделение в Канвасе с Инспектором
-        self.mode_element.element_selected.connect(self.inspector.set_selection)
+        # --- CONNECTIONS ---
         
-        # Первый запуск
+        # 1. Selection
+        self.mode_element.element_selected.connect(self.data_manager.set_selection)
+        self.hierarchy.element_selected.connect(self.data_manager.set_selection)
+        
+        self.data_manager.selection_changed.connect(self.inspector.set_selection)
+        self.data_manager.selection_changed.connect(self.mode_element.select_item_by_id)
+        self.data_manager.selection_changed.connect(self.hierarchy.select_element)
+
+        # 2. Data Changes (Realtime)
+        self.data_manager.element_changed.connect(self.inspector.on_element_data_changed)
+        self.data_manager.element_changed.connect(self.mode_element.on_data_changed)
+        
+        # 3. Structure Changes (CRITICAL FIX FOR LOOP)
+        # Если Менеджер получил новые данные (от on_refresh), обновляем UI (Иерархию)
+        self.data_manager.data_reset.connect(self.on_ui_rebuild)
+        
+        # Если Блендер сообщил об изменении, запускаем on_refresh
+        self.data_manager.external_update_needed.connect(self.on_refresh)
+
+        # Start
         self.on_refresh()
 
-    def create_tab_btn(self, text, index):
-        btn = QtWidgets.QPushButton(text)
-        btn.setObjectName("ModeTab")
-        btn.setCheckable(True)
-        btn.setCursor(QtCore.Qt.PointingHandCursor)
-        # Смена режима
-        btn.clicked.connect(lambda: self.stack.setCurrentIndex(index))
-        # Скрываем/показываем инспектор в зависимости от режима (опционально)
-        # Например, в ShaderMode инспектор может быть не нужен.
-        # Пока оставим как есть.
-        return btn
+    @QtCore.Slot()
+    def changeEvent(self, event):
+        """
+        Автоматический рефреш данных, когда окно становится активным.
+        Это убирает необходимость нажимать кнопку Refresh вручную после правок в Блендере.
+        """
+        if event.type() == QtCore.QEvent.ActivationChange:
+            if self.isActiveWindow():
+                # Проверяем, жив ли мост
+                if self.bridge:
+                    # Можно добавить небольшую задержку или проверку флагов, 
+                    # чтобы не спамить, если переключение идет слишком часто.
+                    # Но пока прямой вызов безопасен благодаря DataManager.
+                    print("Window activated: Auto-syncing...")
+                    self.on_refresh()
+        
+        super().changeEvent(event)
 
     def on_refresh(self):
-        """Обновление данных из Blender."""
-        if self.stack.currentWidget() == self.mode_element:
-            self.mode_element.rebuild_scene()
+        """Запрашивает данные у Блендера."""
+        # ElementMode.rebuild_scene() вытащит данные и положит их в DataManager.
+        # Это вызовет data_manager.load_initial_data -> data_reset -> on_ui_rebuild
+        if hasattr(self.bl_context.scene, "rzm"):
+             self.mode_element.rebuild_scene()
+
+    @QtCore.Slot()
+    def on_ui_rebuild(self):
+        """Перестраивает Иерархию на основе данных в Менеджере."""
+        elements = self.data_manager.get_all_elements()
+        self.hierarchy.rebuild(elements)
 
     def closeEvent(self, event):
-        """Остановка моста при закрытии окна."""
         if self.bridge:
             self.bridge.stop()
         super().closeEvent(event)
