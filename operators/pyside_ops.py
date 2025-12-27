@@ -119,9 +119,9 @@ class RZM_OT_LaunchQTEditor(bpy.types.Operator):
         # 1. Ленивый импорт функции запуска
         if launch_qt_editor_func is None:
             try:
-                # Импортируем функцию launch_qt_editor из файла ui/qt_editor.py
-                from ..ui.qt_editor import launch_qt_editor
-                launch_qt_editor_func = launch_qt_editor
+                # Импортируем функцию launch_editor из файла qt_editor/__init__.py
+                from ..qt_editor import launch_editor
+                launch_qt_editor_func = launch_editor
             except ImportError as e:
                 self.report({'ERROR'}, f"Editor Import Error: {e}")
                 import traceback
