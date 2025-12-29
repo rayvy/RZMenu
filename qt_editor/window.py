@@ -1,4 +1,5 @@
 # RZMenu/qt_editor/window.py
+from .systems import input_manager
 from PySide6 import QtWidgets, QtCore
 from . import core, actions
 from .widgets import outliner, inspector, viewport
@@ -32,12 +33,15 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # ... Создание панелей (Outliner, Viewport, Inspector) оставляем как было ...
         self.panel_outliner = outliner.RZMOutlinerPanel()
+        self.panel_outliner.setProperty("RZ_CONTEXT", "OUTLINER")
+
         self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
         self.panel_outliner.items_reordered.connect(self.on_reorder)
         splitter.addWidget(self.panel_outliner)
         
         self.panel_viewport = viewport.RZViewportPanel()
-        # Signals...
+        self.panel_viewport.setProperty("RZ_CONTEXT", "VIEWPORT")
+
         self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
         self.panel_viewport.rz_scene.interaction_end_signal.connect(self.on_interaction_end)
@@ -45,6 +49,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         splitter.addWidget(self.panel_viewport)
         
         self.panel_inspector = inspector.RZMInspectorPanel()
+        self.panel_inspector.setProperty("RZ_CONTEXT", "INSPECTOR")
+
         self.panel_inspector.property_changed.connect(self.on_property_edited)
         splitter.addWidget(self.panel_inspector)
         
@@ -56,6 +62,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # --- BUILD TOOLBAR (Привязка кнопок) ---
         self.setup_toolbar()
+        self.input_controller = input_manager.RZInputController(self)
+        
         # Это гарантирует, что пользователь увидит данные МГНОВЕННО при открытии.
         QtCore.QTimer.singleShot(0, self.brute_force_refresh)
 

@@ -1,152 +1,71 @@
 # RZMenu/qt_editor/actions.py
-from PySide6.QtGui import QAction, QKeySequence, QIcon
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtCore import Qt, QObject
-import bpy
-from . import core
+from .systems import operators
+from .conf import defaults  # Берем дефолтные настройки клавиш
 
-class RZContext:
-    """Обертка для передачи состояния в операторы"""
-    def __init__(self, window):
-        self.window = window
-        self.selected_ids = window.selected_ids
-        self.active_id = window.active_id
-        self.scene = getattr(window.panel_viewport, 'rz_scene', None) # Доступ к сцене для viewport операций
-
-# --- BASE OPERATOR ---
-
-class RZOperator:
-    """Базовый класс для всех действий"""
-    id = ""          # Уникальный ID (напр. "rzm.delete")
-    label = ""       # Текст для UI
-    icon = None      # Имя иконки (если нужно)
-    shortcut = None  # Хоткей по умолчанию
-    tooltip = ""
-
-    def poll(self, context: RZContext) -> bool:
-        """Проверка: можно ли сейчас выполнить действие?"""
-        return True
-
-    def execute(self, context: RZContext, **kwargs):
-        """Основная логика"""
-        raise NotImplementedError
-
-# --- CONCRETE ACTIONS ---
-
-class RZ_OT_Undo(RZOperator):
-    id = "rzm.undo"
-    label = "Undo"
-    shortcut = "Ctrl+Z"
-    
-    def execute(self, context, **kwargs):
-        # ИСПОЛЬЗУЕМ ОБЕРТКУ С КОНТЕКСТОМ
-        print("RZM: Executing Undo via Wrapper")
-        core.exec_in_context(bpy.ops.ed.undo)
-        # UI обновится через Handler или таймер, но для надежности:
-        context.window.brute_force_refresh()
-
-class RZ_OT_Redo(RZOperator):
-    id = "rzm.redo"
-    label = "Redo"
-    shortcut = "Ctrl+Shift+Z"
-    
-    def execute(self, context, **kwargs):
-        print("RZM: Executing Redo via Wrapper")
-        try:
-            core.exec_in_context(bpy.ops.ed.redo)
-        except:
-            pass
-        context.window.brute_force_refresh()
-
-class RZ_OT_Delete(RZOperator):
-    id = "rzm.delete"
-    label = "Delete Selected"
-    shortcut = "Delete"
-    tooltip = "Remove selected elements from the scene"
-
-    def poll(self, context):
-        return bool(context.selected_ids)
-
-    def execute(self, context, **kwargs):
-        core.delete_elements(context.selected_ids)
-        context.window.clear_selection()
-        context.window.brute_force_refresh()
-
-class RZ_OT_Refresh(RZOperator):
-    id = "rzm.refresh"
-    label = "Force Refresh"
-    shortcut = "F5"
-    
-    def execute(self, context, **kwargs):
-        context.window.brute_force_refresh()
-
-class RZ_OT_SelectAll(RZOperator):
-    id = "rzm.select_all"
-    label = "Select All"
-    shortcut = "Ctrl+A"
-    
-    def execute(self, context, **kwargs):
-        all_data = core.get_all_elements_list()
-        all_ids = {item['id'] for item in all_data}
-        context.window.set_selection_multi(all_ids, active_id=-1)
-
-class RZ_OT_Nudge(RZOperator):
-    """Пример параметрического оператора для стрелок клавиатуры"""
-    id = "rzm.nudge"
-    label = "Nudge Element"
-    # Хоткеи задаются динамически при регистрации, т.к. их несколько
-    
-    def poll(self, context):
-        return bool(context.selected_ids)
-
-    def execute(self, context, **kwargs):
-        x = kwargs.get('x', 0)
-        y = kwargs.get('y', 0)
-        core.move_elements_delta(context.selected_ids, x, y)
-        core.commit_history("Nudge") # Важно сохранить историю
-        context.window.refresh_viewport(force=True)
-        context.window.refresh_inspector(force=True)
-
-# --- REGISTRY & MANAGER ---
-
-# Список классов операторов
-CLASSES = [
-    RZ_OT_Delete,
-    RZ_OT_Refresh,
-    RZ_OT_Undo,
-    RZ_OT_Redo,
-    RZ_OT_SelectAll,
-    RZ_OT_Nudge
-]
+# --- LEGACY MANAGER (Адаптер для window.py) ---
+# Этот класс исчезнет в Phase 3, когда мы напишем InputManager
 
 class RZActionManager(QObject):
     def __init__(self, window):
         super().__init__(window)
         self.window = window
-        self.operators = {} 
+        self.operators_instances = {} 
         self.q_actions = {}
         
-        self._register_operators()
-        self._init_qactions()
+        self._init_actions_from_registry()
 
-    def _register_operators(self):
-        for cls in CLASSES:
-            self.operators[cls.id] = cls()
+    def _init_actions_from_registry(self):
+        """
+        Создает QActions на основе реестра операторов 
+        и дефолтного конфига клавиш.
+        """
+        # 1. Берем карту клавиш из defaults.py (GLOBAL секцию для примера)
+        # В будущем тут будет полноценный Keymap Lookup
+        global_keymap = defaults.DEFAULT_CONFIG["keymaps"]["GLOBAL"]
+        
+        # Инвертируем карту: { "rzm.undo": ["Ctrl+Z"], ... }
+        # Чтобы знать, какой хоткей назначить оператору
+        op_to_shortcut = {}
+        for key, op_id in global_keymap.items():
+            # Пока поддерживаем только простые строки (без kwargs)
+            if isinstance(op_id, str):
+                op_to_shortcut[op_id] = key
 
-    def _init_qactions(self):
-        for op_id, op in self.operators.items():
-            if not op.shortcut: continue
+        # 2. Проходимся по всем операторам в реестре
+        for op_id, op_class in operators.OPERATOR_REGISTRY.items():
+            # Создаем экземпляр оператора
+            op_instance = op_class()
+            self.operators_instances[op_id] = op_instance
             
-            # Для стандартных (Undo/Delete/Refresh)
-            q_act = QAction(op.label, self.window)
-            q_act.setShortcut(QKeySequence(op.shortcut))
+            # Создаем QAction
+            q_act = QAction(op_instance.label, self.window)
+            
+            # Если есть хоткей в конфиге -> назначаем
+            if op_id in op_to_shortcut:
+                shortcut_str = op_to_shortcut[op_id]
+                # q_act.setShortcut(QKeySequence(shortcut_str))
+                # Добавляем шорткат в тултип
+                q_act.setToolTip(f"{op_instance.label} ({shortcut_str})")
+            else:
+                q_act.setToolTip(op_instance.label)
+
+            # Подключаем сигнал
+            # Важно: лямбда захватывает op_id
             q_act.triggered.connect(lambda checked=False, oid=op_id: self.run(oid))
             
+            # Добавляем в окно (чтобы работали хоткеи) и сохраняем
             self.window.addAction(q_act)
             self.q_actions[op_id] = q_act
             
-        self._register_nudge_shortcuts()
+        # 3. Ручная регистрация Nudge (стрелки)
+        # Так как в Phase 1 мы заложили их в конфиг VIEWPORT, но пока
+        # у нас нет умного InputManager, пропишем их вручную, как было,
+        # но используя оператор из реестра.
+        self._register_hardcoded_arrows()
 
-    def _register_nudge_shortcuts(self):
+    def _register_hardcoded_arrows(self):
         arrows = [
             (Qt.Key_Left,  -10, 0), (Qt.Key_Right, 10, 0),
             (Qt.Key_Up,    0, -10), (Qt.Key_Down,  0, 10),
@@ -154,14 +73,23 @@ class RZActionManager(QObject):
         for key, dx, dy in arrows:
             q_act = QAction(self.window)
             q_act.setShortcut(QKeySequence(key))
+            # Вызываем run с параметрами
             q_act.triggered.connect(lambda _, x=dx, y=dy: self.run("rzm.nudge", x=x, y=y))
             self.window.addAction(q_act)
 
     def run(self, op_id, **kwargs):
-        op = self.operators.get(op_id)
-        if not op: return
-        ctx = RZContext(self.window)
-        if not op.poll(ctx): return
+        """Единая точка запуска"""
+        op = self.operators_instances.get(op_id)
+        if not op: 
+            print(f"RZM Error: Operator {op_id} instance not found")
+            return
+        
+        # Создаем контекст
+        ctx = operators.RZContext(self.window)
+        
+        # Проверяем Poll
+        if not op.poll(ctx): 
+            return
         
         try:
             op.execute(ctx, **kwargs)
@@ -172,14 +100,22 @@ class RZActionManager(QObject):
             traceback.print_exc()
 
     def update_ui_state(self):
-        ctx = RZContext(self.window)
+        """Обновляет доступность кнопок (enable/disable)"""
+        ctx = operators.RZContext(self.window)
         for op_id, q_act in self.q_actions.items():
-            op = self.operators.get(op_id)
-            if op: q_act.setEnabled(op.poll(ctx))
-    
+            op = self.operators_instances.get(op_id)
+            if op:
+                q_act.setEnabled(op.poll(ctx))
+
     def connect_button(self, btn, op_id, **kwargs):
-        op = self.operators.get(op_id)
-        if not op: return
+        """Хелпер для кнопок в Toolbar"""
+        # Проверяем, есть ли такой оператор
+        if op_id not in self.operators_instances:
+            print(f"Warning: connect_button failed, unknown op {op_id}")
+            return
+
         btn.clicked.connect(lambda: self.run(op_id, **kwargs))
-        if op.shortcut:
-            btn.setToolTip(f"{op.label} ({op.shortcut})")
+        
+        # Если у нас уже создан QAction для этого оператора, берем тултип оттуда
+        if op_id in self.q_actions:
+            btn.setToolTip(self.q_actions[op_id].toolTip())
