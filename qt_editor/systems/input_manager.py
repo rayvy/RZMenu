@@ -6,6 +6,8 @@ from ..conf import get_config
 from ..utils import logger
 
 class RZInputController(QtCore.QObject):
+    context_changed = QtCore.Signal(str)       # "VIEWPORT"
+    operator_executed = QtCore.Signal(str)     # "Undo"
     """
     Перехватывает события клавиатуры на уровне окна.
     Определяет контекст (над какой панелью мышь).
@@ -15,9 +17,24 @@ class RZInputController(QtCore.QObject):
         super().__init__(window)
         self.window = window
         self.config = get_config()
+        self._last_context = ""
         
-        # Устанавливаем себя как фильтр событий для всего окна
+        # Таймер для отслеживания контекста под мышью (оптимизация mouseMove)
+        self._ctx_timer = QtCore.QTimer()
+        self._ctx_timer.timeout.connect(self._check_hover_context)
+        self._ctx_timer.start(100) # 10 раз в секунду проверяем контекст
+        
         self.window.installEventFilter(self)
+    
+    def _check_hover_context(self):
+        """Периодическая проверка контекста для обновления Футера"""
+        # Проверяем только если окно активно
+        if not self.window.isActiveWindow(): return
+
+        ctx = self._get_hover_context()
+        if ctx != self._last_context:
+            self._last_context = ctx
+            self.context_changed.emit(ctx)
 
     def eventFilter(self, obj, event):
         """Главный цикл обработки событий"""

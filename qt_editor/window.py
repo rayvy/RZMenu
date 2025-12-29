@@ -1,5 +1,6 @@
 # RZMenu/qt_editor/window.py
 from .systems import input_manager
+from .ui import keymap_editor 
 from PySide6 import QtWidgets, QtCore
 from . import core, actions
 from .widgets import outliner, inspector, viewport
@@ -63,7 +64,12 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # --- BUILD TOOLBAR (Привязка кнопок) ---
         self.setup_toolbar()
+        # --- INPUT CONTROLLER ---
         self.input_controller = input_manager.RZInputController(self)
+        self.input_controller.context_changed.connect(self.update_footer_context)
+        self.input_controller.operator_executed.connect(self.update_footer_op)
+
+        self.setup_footer()
 
         # Это гарантирует, что пользователь увидит данные МГНОВЕННО при открытии.
         QtCore.QTimer.singleShot(0, self.brute_force_refresh)
@@ -87,7 +93,61 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.btn_del = add_btn("Delete", "rzm.delete") # Сохраним ссылку, если захотим менять стиль
         
         self.toolbar.addStretch()
+        
+        # Кнопка настроек
+        btn_settings = QtWidgets.QPushButton("Settings")
+        btn_settings.setStyleSheet("border: none; color: #888;") 
+        # Или иконку шестеренки, если есть
+        btn_settings.clicked.connect(self.open_settings)
+        self.toolbar.addWidget(btn_settings)
 
+    def setup_footer(self):
+        # Создаем нижнюю панель
+        self.footer_layout = QtWidgets.QHBoxLayout()
+        self.footer_layout.setContentsMargins(5, 2, 5, 2)
+        
+        # Фон футера (можно в CSS вынести, но пока так)
+        footer_bg = QtWidgets.QWidget()
+        footer_bg.setStyleSheet("background-color: #222; border-top: 1px solid #333;")
+        footer_bg.setLayout(self.footer_layout)
+        # Добавляем в самый низ Main Layout
+        self.layout().addWidget(footer_bg) 
+        
+        # Label: Context
+        self.lbl_context = QtWidgets.QLabel("Context: GLOBAL")
+        self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
+        self.footer_layout.addWidget(self.lbl_context)
+        
+        # Разделитель
+        sep = QtWidgets.QLabel("|")
+        sep.setStyleSheet("color: #444; margin: 0 10px;")
+        self.footer_layout.addWidget(sep)
+        
+        # Label: Last Op
+        self.lbl_last_op = QtWidgets.QLabel("Last Op: None")
+        self.lbl_last_op.setStyleSheet("color: #888;")
+        self.footer_layout.addWidget(self.lbl_last_op)
+        
+        self.footer_layout.addStretch()
+
+    def update_footer_context(self, ctx_name):
+        self.lbl_context.setText(f"Context: {ctx_name}")
+        # Можно менять цвет в зависимости от контекста
+        if ctx_name == "VIEWPORT":
+             self.lbl_context.setStyleSheet("color: #4772b3; font-weight: bold;") # Синий
+        elif ctx_name == "OUTLINER":
+             self.lbl_context.setStyleSheet("color: #ffae00; font-weight: bold;") # Оранжевый
+        else:
+             self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
+
+    def update_footer_op(self, op_name):
+        self.lbl_last_op.setText(f"Last Op: {op_name}")
+
+    def open_settings(self):
+        """Открывает редактор кеймапа"""
+        dlg = keymap_editor.RZKeymapEditor(self)
+        dlg.exec() # Модальное окно
+    
     # --- SELECTION MANAGEMENT ---
 
     def clear_selection(self):

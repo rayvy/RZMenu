@@ -76,11 +76,28 @@ class ConfigManager:
                 base_dict[key] = value
                 
     @classmethod
-    def save_user_config(cls, data_to_save):
-        """Сохранение только пользовательской дельты (не реализовано полностью пока)"""
-        # В будущем мы будем сохранять не весь конфиг, а разницу, 
-        # но для простоты можно дампить целиком, если захочешь.
-        pass
+    def save_config(cls):
+        """Сохраняет текущий конфиг (keymaps) в JSON"""
+        if cls._config_cache is None:
+            return
+
+        user_dir = cls.get_user_dir()
+        if not user_dir: return
+
+        # Мы сохраняем не весь конфиг (системные переменные не нужны),
+        # а только то, что пользователь может менять - KEYMAPS.
+        data_to_save = {
+            "keymaps": cls._config_cache.get("keymaps", {})
+        }
+
+        config_path = os.path.join(user_dir, CONFIG_FILENAME)
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(data_to_save, f, indent=4)
+            logger.info(f"Config saved to {config_path}")
+        except Exception as e:
+            logger.error(f"Failed to save config: {e}")
 
 # Удобный алиас для импорта
 get_config = ConfigManager.get
+save_config = ConfigManager.save_config
