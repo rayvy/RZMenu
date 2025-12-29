@@ -20,10 +20,10 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self._sig_inspector = None
         
         # --- UI LAYOUT ---
-        root_layout = QtWidgets.QVBoxLayout(self) # Меняем на VBox, чтобы добавить Toolbar сверху
+        root_layout = QtWidgets.QVBoxLayout(self) 
         root_layout.setContentsMargins(0,0,0,0)
         
-        # 1. TOOLBAR AREA (Пример кнопок)
+        # 1. TOOLBAR AREA
         self.toolbar = QtWidgets.QHBoxLayout()
         self.toolbar.setContentsMargins(5,5,5,5)
         root_layout.addLayout(self.toolbar)
@@ -32,10 +32,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         root_layout.addWidget(splitter)
         
-        # ... Создание панелей (Outliner, Viewport, Inspector) оставляем как было ...
         self.panel_outliner = outliner.RZMOutlinerPanel()
         self.panel_outliner.setProperty("RZ_CONTEXT", "OUTLINER")
-
         self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
         self.panel_outliner.items_reordered.connect(self.on_reorder)
         splitter.addWidget(self.panel_outliner)
@@ -43,7 +41,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.panel_viewport = viewport.RZViewportPanel()
         self.panel_viewport.setProperty("RZ_CONTEXT", "VIEWPORT")
         self.panel_viewport.parent_window = self 
-
         self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
         self.panel_viewport.rz_scene.interaction_end_signal.connect(self.on_interaction_end)
@@ -52,36 +49,32 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         self.panel_inspector = inspector.RZMInspectorPanel()
         self.panel_inspector.setProperty("RZ_CONTEXT", "INSPECTOR")
-
         self.panel_inspector.property_changed.connect(self.on_property_edited)
         splitter.addWidget(self.panel_inspector)
         
         splitter.setSizes([200, 600, 300])
 
         # --- INIT ACTIONS ---
-        # Инициализируем менеджер. Он сам создаст скрытые QActions и привяжет хоткеи к окну
         self.action_manager = actions.RZActionManager(self)
         
-        # --- BUILD TOOLBAR (Привязка кнопок) ---
+        # --- BUILD TOOLBAR ---
         self.setup_toolbar()
-        # --- INPUT CONTROLLER ---
+        
+        # --- FIX FOOTER & SIGNALS: INIT BEFORE FOOTER SETUP ---
         self.input_controller = input_manager.RZInputController(self)
+        
+        self.setup_footer()
+        
+        # Connect signals AFTER input_controller is created
         self.input_controller.context_changed.connect(self.update_footer_context)
         self.input_controller.operator_executed.connect(self.update_footer_op)
 
-        self.setup_footer()
-
-        # Это гарантирует, что пользователь увидит данные МГНОВЕННО при открытии.
         QtCore.QTimer.singleShot(0, self.brute_force_refresh)
 
     def setup_toolbar(self):
-        """Создаем кнопки, ссылаясь на ID операторов"""
-        
-        # Функция-хелпер для создания кнопок
         def add_btn(text, op_id):
             btn = QtWidgets.QPushButton(text)
             self.toolbar.addWidget(btn)
-            # Магия здесь: связываем кнопку с логикой
             self.action_manager.connect_button(btn, op_id)
             return btn
 
@@ -90,40 +83,32 @@ class RZMEditorWindow(QtWidgets.QWidget):
         add_btn("Undo", "rzm.undo")
         add_btn("Redo", "rzm.redo")
         self.toolbar.addSpacing(20)
-        self.btn_del = add_btn("Delete", "rzm.delete") # Сохраним ссылку, если захотим менять стиль
+        self.btn_del = add_btn("Delete", "rzm.delete") 
         
         self.toolbar.addStretch()
         
-        # Кнопка настроек
         btn_settings = QtWidgets.QPushButton("Settings")
         btn_settings.setStyleSheet("border: none; color: #888;") 
-        # Или иконку шестеренки, если есть
         btn_settings.clicked.connect(self.open_settings)
         self.toolbar.addWidget(btn_settings)
 
     def setup_footer(self):
-        # Создаем нижнюю панель
         self.footer_layout = QtWidgets.QHBoxLayout()
         self.footer_layout.setContentsMargins(5, 2, 5, 2)
         
-        # Фон футера (можно в CSS вынести, но пока так)
         footer_bg = QtWidgets.QWidget()
         footer_bg.setStyleSheet("background-color: #222; border-top: 1px solid #333;")
         footer_bg.setLayout(self.footer_layout)
-        # Добавляем в самый низ Main Layout
         self.layout().addWidget(footer_bg) 
         
-        # Label: Context
         self.lbl_context = QtWidgets.QLabel("Context: GLOBAL")
         self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
         self.footer_layout.addWidget(self.lbl_context)
         
-        # Разделитель
         sep = QtWidgets.QLabel("|")
         sep.setStyleSheet("color: #444; margin: 0 10px;")
         self.footer_layout.addWidget(sep)
         
-        # Label: Last Op
         self.lbl_last_op = QtWidgets.QLabel("Last Op: None")
         self.lbl_last_op.setStyleSheet("color: #888;")
         self.footer_layout.addWidget(self.lbl_last_op)
@@ -132,21 +117,21 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
     def update_footer_context(self, ctx_name):
         self.lbl_context.setText(f"Context: {ctx_name}")
-        # Можно менять цвет в зависимости от контекста
         if ctx_name == "VIEWPORT":
-             self.lbl_context.setStyleSheet("color: #4772b3; font-weight: bold;") # Синий
+             self.lbl_context.setStyleSheet("color: #4772b3; font-weight: bold;") 
         elif ctx_name == "OUTLINER":
-             self.lbl_context.setStyleSheet("color: #ffae00; font-weight: bold;") # Оранжевый
+             self.lbl_context.setStyleSheet("color: #ffae00; font-weight: bold;") 
         else:
              self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
 
     def update_footer_op(self, op_name):
+        # --- FIX FOOTER & SIGNALS: DEBUG PRINT ---
+        print(f"DEBUG FOOTER: {op_name}")
         self.lbl_last_op.setText(f"Last Op: {op_name}")
 
     def open_settings(self):
-        """Открывает редактор кеймапа"""
         dlg = keymap_editor.RZKeymapEditor(self)
-        dlg.exec() # Модальное окно
+        dlg.exec() 
     
     # --- SELECTION MANAGEMENT ---
 
@@ -156,47 +141,36 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.sync_selection_ui()
 
     def set_selection_multi(self, ids_set, active_id):
-        """Главный метод установки выделения"""
         self.selected_ids = set(ids_set)
         
-        # Если active_id не в списке, берем первый попавшийся или -1
         if active_id != -1 and active_id not in self.selected_ids:
             active_id = -1
             
         if active_id == -1 and self.selected_ids:
-            # Берем любой, если список не пуст
             active_id = next(iter(self.selected_ids))
             
         self.active_id = active_id
         self.sync_selection_ui()
 
     def handle_outliner_selection(self, ids_list, active_id):
-        # Сигнал от Аутлайнера (список, активный)
         self.set_selection_multi(ids_list, active_id)
 
     def handle_viewport_selection(self, active_id, modifiers):
-        # Сигнал от Вьюпорта (клик по элементу)
-        # modifiers: 'CTRL', 'SHIFT' or None
-        
         new_selection = self.selected_ids.copy()
         
         if active_id == -1:
-            # Клик в пустоту
             if modifiers != 'SHIFT': 
                 new_selection.clear()
             active = -1
         else:
             if modifiers == 'SHIFT':
-                # Toggle logic
                 if active_id in new_selection:
                     new_selection.remove(active_id)
-                    # Если удалили активный, ставим новый активный
                     active = -1 if not new_selection else next(iter(new_selection))
                 else:
                     new_selection.add(active_id)
                     active = active_id
             else:
-                # Replace logic
                 new_selection = {active_id}
                 active = active_id
                 
@@ -206,15 +180,12 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
         self.refresh_viewport(force=True)
         self.refresh_inspector(force=True)
-        
-        # НОВОЕ: Обновляем состояние Action Manager (например, кнопка Delete станет серой)
         self.action_manager.update_ui_state()
 
     # --- LOGIC HANDLERS ---
     
     def on_reorder(self, target_id, insert_after_id):
         core.reorder_elements(target_id, insert_after_id)
-        # Таймер сам обновит UI
 
     def on_interaction_start(self):
         self.panel_viewport.rz_scene._is_user_interaction = True
@@ -226,12 +197,10 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.refresh_inspector(force=True)
 
     def on_viewport_move_delta(self, delta_x, delta_y):
-        # Двигаем ВСЕ выделенные элементы на дельту
         if not self.selected_ids: return
         core.move_elements_delta(self.selected_ids, delta_x, delta_y)
 
     def on_property_edited(self, key, val, idx):
-        # Inspector применяет изменения ко ВСЕМ выбранным
         core.update_property_multi(self.selected_ids, key, val, idx)
 
     # --- REFRESH LOOP ---
@@ -248,7 +217,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
             data = core.get_all_elements_list()
             self.panel_outliner.update_ui(data)
             self._sig_outliner = new_sig
-            # Восстанавливаем выделение после перерисовки (ВАЖНО: два аргумента!)
             self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
 
     def refresh_viewport(self, force=False):
@@ -259,13 +227,10 @@ class RZMEditorWindow(QtWidgets.QWidget):
             self._sig_viewport = new_sig
 
     def refresh_inspector(self, force=False):
-        # Проверяем подпись АКТИВНОГО элемента
         new_sig = core.get_element_signature(self.active_id)
         
-        # Если активный элемент удален или ничего не выбрано
         if self.active_id == -1 or new_sig == "DELETED":
             if self.selected_ids:
-                # Fallback: Если активный удален, но есть другие выделенные -> сброс к первому
                  self.active_id = next(iter(self.selected_ids))
                  new_sig = "RESET_NEEDED"
             else:

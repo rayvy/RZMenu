@@ -2,7 +2,7 @@
 import bpy
 import sys
 import os
-from bpy.app.handlers import persistent # Для хендлеров
+from bpy.app.handlers import persistent
 
 try:
     from PySide6 import QtWidgets, QtCore
@@ -26,10 +26,9 @@ def rzm_undo_redo_handler(scene):
     if _editor_instance and PYSIDE_AVAILABLE:
         try:
             if _editor_instance.isVisible():
-                # Принудительно обновляем UI, т.к. данные изменились "извне"
                 _editor_instance.brute_force_refresh()
         except RuntimeError:
-            pass # Окно уже удалено
+            pass 
 
 class RZM_OT_LaunchQTEditor(bpy.types.Operator):
     """Launch the RZMenu Qt Editor"""
@@ -65,12 +64,10 @@ class RZM_OT_LaunchQTEditor(bpy.types.Operator):
         _editor_instance.show()
         _editor_instance.activateWindow()
         
-        # Исправление свернутого состояния
         win_state = _editor_instance.windowState()
         if win_state & QtCore.Qt.WindowMinimized:
              _editor_instance.setWindowState(win_state & ~QtCore.Qt.WindowMinimized)
         
-        # Таймер для Heartbeat (проверка закрытия)
         if not bpy.app.timers.is_registered(auto_refresh_ui):
             bpy.app.timers.register(auto_refresh_ui, first_interval=0.1)
             
@@ -93,12 +90,17 @@ classes = [RZM_OT_LaunchQTEditor]
 
 def register():
     for cls in classes: bpy.utils.register_class(cls)
-    # Регистрируем слушателей отмены
+    
+    # --- FIX INIT LAGS: PREVENT DUPLICATION ---
+    if rzm_undo_redo_handler in bpy.app.handlers.undo_post:
+        bpy.app.handlers.undo_post.remove(rzm_undo_redo_handler)
+    if rzm_undo_redo_handler in bpy.app.handlers.redo_post:
+        bpy.app.handlers.redo_post.remove(rzm_undo_redo_handler)
+        
     bpy.app.handlers.undo_post.append(rzm_undo_redo_handler)
     bpy.app.handlers.redo_post.append(rzm_undo_redo_handler)
 
 def unregister():
-    # Удаляем слушателей
     if rzm_undo_redo_handler in bpy.app.handlers.undo_post:
         bpy.app.handlers.undo_post.remove(rzm_undo_redo_handler)
     if rzm_undo_redo_handler in bpy.app.handlers.redo_post:

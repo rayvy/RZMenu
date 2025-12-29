@@ -40,7 +40,7 @@
         },
         "OUTLINER": {
             "Delete": "rzm.delete",
-            "Ctrl+A": "rzm.select_all"
+            "Ctrl+V": "rzm.select_all"
         },
         "INSPECTOR": {}
     }

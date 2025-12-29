@@ -26,7 +26,6 @@ class ConfigManager:
     @classmethod
     def get_user_dir(cls):
         """Возвращает путь к папке настроек внутри аддона"""
-        # Путь: .../qt_editor/conf/../../user_data/
         current_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.dirname(os.path.dirname(current_dir)) # Выходим в корень RZMenu
         data_dir = os.path.join(root_dir, "user_data")
@@ -41,7 +40,7 @@ class ConfigManager:
 
     @classmethod
     def _load_config(cls):
-        """Загрузка: Default + User Override"""
+        """Загрузка: Default + User Override с очисткой дубликатов"""
         # 1. Берем глубокую копию дефолта
         final_config = copy.deepcopy(DEFAULT_CONFIG)
         
@@ -57,6 +56,31 @@ class ConfigManager:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     user_data = json.load(f)
                     logger.info(f"Loaded user config from {config_path}")
+                    
+                    # --- FIX KEYMAP DUPLICATES START ---
+                    # Если юзер переназначил оператор, удаляем старый бинд из дефолта
+                    user_keymaps = user_data.get("keymaps", {})
+                    default_keymaps = final_config.get("keymaps", {})
+
+                    for context, u_bindings in user_keymaps.items():
+                        if context in default_keymaps:
+                            # Проходимся по всем новым биндам юзера
+                            for _, u_op_data in u_bindings.items():
+                                # Получаем ID оператора (строка или dict)
+                                u_op_id = u_op_data if isinstance(u_op_data, str) else u_op_data.get("op")
+                                if not u_op_id: continue
+
+                                # Ищем этот ID в дефолтном конфиге и удаляем старые кнопки
+                                keys_to_remove = []
+                                for d_key, d_op_data in default_keymaps[context].items():
+                                    d_op_id = d_op_data if isinstance(d_op_data, str) else d_op_data.get("op")
+                                    if d_op_id == u_op_id:
+                                        keys_to_remove.append(d_key)
+                                
+                                for k in keys_to_remove:
+                                    del default_keymaps[context][k]
+                    # --- FIX KEYMAP DUPLICATES END ---
+
                     # 3. Слияние (Merge)
                     cls._deep_update(final_config, user_data)
             except Exception as e:
@@ -68,7 +92,7 @@ class ConfigManager:
 
     @classmethod
     def _deep_update(cls, base_dict, update_dict):
-        """Рекурсивное обновление словаря (чтобы не затирать вложенные ключи)"""
+        """Рекурсивное обновление словаря"""
         for key, value in update_dict.items():
             if isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
                 cls._deep_update(base_dict[key], value)
@@ -84,8 +108,6 @@ class ConfigManager:
         user_dir = cls.get_user_dir()
         if not user_dir: return
 
-        # Мы сохраняем не весь конфиг (системные переменные не нужны),
-        # а только то, что пользователь может менять - KEYMAPS.
         data_to_save = {
             "keymaps": cls._config_cache.get("keymaps", {})
         }
@@ -98,6 +120,5 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Failed to save config: {e}")
 
-# Удобный алиас для импорта
 get_config = ConfigManager.get
 save_config = ConfigManager.save_config
