@@ -1,7 +1,7 @@
 # RZMenu/operators/capture_ops.py
 import bpy
-from .. import captures
-from ..helpers import get_next_image_id
+from ..core import capture_logic as captures
+from ..core.utils import get_next_image_id
 
 class RZM_OT_CaptureImage(bpy.types.Operator):
     bl_idname = "rzm.capture_image"
@@ -58,7 +58,7 @@ class RZM_OT_CaptureImage(bpy.types.Operator):
             self.report({'INFO'}, f"Created new captured image with ID {new_id}.")
 
         scene.rzm_capture_overwrite_id = -1
-        bpy.ops.rzm.record_history_state()
+        
         
         # Redraw UI
         for window in context.window_manager.windows:
@@ -136,7 +136,7 @@ class RZM_OT_AutoCapture(bpy.types.Operator):
 
         self.report({'INFO'}, f"Auto-Capture finished. Created {captured_count} icons.")
         if captured_count > 0:
-            bpy.ops.rzm.record_history_state()
+            pass
             
         # Redraw UI
         for window in context.window_manager.windows:

@@ -1,6 +1,6 @@
 # RZMenu/operators/element_ops.py
 import bpy
-from ..helpers import get_next_available_id
+from ..core.utils import get_next_available_id
 
 class RZM_OT_AddElement(bpy.types.Operator):
     bl_idname = "rzm.add_element"
@@ -30,7 +30,6 @@ class RZM_OT_AddElement(bpy.types.Operator):
             new_element.grid_cell_size = 64
 
         context.scene.rzm_active_element_index = len(elements) - 1
-        bpy.ops.rzm.record_history_state()
         return {'FINISHED'}
 
 class RZM_OT_RemoveElement(bpy.types.Operator):
@@ -51,7 +50,7 @@ class RZM_OT_RemoveElement(bpy.types.Operator):
         if index > 0:
             context.scene.rzm_active_element_index = index - 1
         
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_DuplicateElement(bpy.types.Operator):
@@ -105,7 +104,7 @@ class RZM_OT_DuplicateElement(bpy.types.Operator):
         new_elem.position = new_pos
         
         context.scene.rzm_active_element_index = len(elements) - 1
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_DeselectElement(bpy.types.Operator):
@@ -140,7 +139,7 @@ class RZM_OT_MoveElementUp(bpy.types.Operator):
         elements.move(idx, idx - 1)
         scene.rzm_active_element_index = idx - 1
         
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_MoveElementDown(bpy.types.Operator):
@@ -162,7 +161,33 @@ class RZM_OT_MoveElementDown(bpy.types.Operator):
         elements.move(idx, idx + 1)
         scene.rzm_active_element_index = idx + 1
         
-        bpy.ops.rzm.record_history_state()
+        
+        return {'FINISHED'}
+    
+class RZM_OT_SetElementPosition(bpy.types.Operator):
+    """API Operator: Sets position for a specific element ID"""
+    bl_idname = "rzm.set_element_position"
+    bl_label = "Set Position"
+    bl_options = {'REGISTER', 'UNDO'} # <-- ВАЖНО: UNDO включено
+
+    element_id: bpy.props.IntProperty()
+    x: bpy.props.IntProperty()
+    y: bpy.props.IntProperty()
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        # Ищем элемент по ID
+        target = next((e for e in rzm.elements if e.id == self.element_id), None)
+        
+        if not target:
+            return {'CANCELLED'}
+        
+        # Меняем данные (Блендер запомнит это состояние)
+        target.position[0] = self.x
+        target.position[1] = self.y
+        
+        # Сообщаем всем, что данные изменились
+        # (В реальном проекте тут будет более умная система событий)
         return {'FINISHED'}
 
 classes_to_register = [
@@ -172,4 +197,5 @@ classes_to_register = [
     RZM_OT_DeselectElement,
     RZM_OT_MoveElementUp,
     RZM_OT_MoveElementDown,
+    RZM_OT_SetElementPosition
 ]

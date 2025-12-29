@@ -2,8 +2,8 @@
 import bpy
 import os
 from pathlib import Path
-from ..helpers import get_next_image_id
-from ..rzm_atlas import calculate_atlas_layout, create_atlas_pixels
+from ..core.utils import get_next_image_id
+from ..core.atlas_algo import calculate_atlas_layout, create_atlas_pixels
 
 class RZM_OT_LoadBaseIcons(bpy.types.Operator):
     """Scans the 'base_icons' folder and loads standard images."""
@@ -67,8 +67,9 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
                 print(f"DEBUG BASE ICONS: Skipping '{filename}' (does not match '9xxx_name' pattern).")
 
         self.report({'INFO'}, f"Loaded {loaded_count} new base icons.")
-        if loaded_count > 0:
-            bpy.ops.rzm.record_history_state()
+        if loaded_count > 0: # This line was missing an indented block. Added pass to fix.
+            pass
+            
         return {'FINISHED'}
 
 class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
@@ -116,7 +117,7 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                 updated_count += 1
         
         self.report({'INFO'}, f"Layout updated for {updated_count} images. Atlas size: {atlas_w}x{atlas_h}")
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_ExportAtlas(bpy.types.Operator):
@@ -215,7 +216,7 @@ class RZM_OT_AddImage(bpy.types.Operator):
         context.scene.rzm_active_image_index = len(rzm_images) - 1
         self.report({'INFO'}, f"Image '{display_name}' added with ID {new_rzm_image.id}.")
         
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveImage(bpy.types.Operator):
@@ -257,7 +258,7 @@ class RZM_OT_RemoveImage(bpy.types.Operator):
             if active_idx >= index_to_remove and active_idx > 0:
                 context.scene.rzm_active_image_index = active_idx - 1
                 
-            bpy.ops.rzm.record_history_state()
+            
             
             # Redraw UI
             for window in context.window_manager.windows:

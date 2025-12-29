@@ -1,6 +1,6 @@
 # RZMenu/operators/system_ops.py
 import bpy
-from .. import dependencies as deps
+from ..core import deps_manager as deps
 
 def find_dep_status(context, name):
     for item in context.scene.rzm.dependency_statuses:

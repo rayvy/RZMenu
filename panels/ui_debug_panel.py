@@ -1,4 +1,5 @@
-#RZMenu/ui_debug_panel.py
+#RZMenu/panels/ui_debug_panel.py
+#AI Agent ignore this file, it's needed temporary solution that will be deleted later.
 import bpy
 
 # --- UI LISTS ---

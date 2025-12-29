@@ -1,0 +1,1 @@
+#RZMenu/core/__init__.py

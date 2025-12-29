@@ -1,4 +1,4 @@
-# RZMenu/captures.py
+# RZMenu/core/capture_logic.py (ex capture_logic.py)
 import bpy
 import os
 import tempfile

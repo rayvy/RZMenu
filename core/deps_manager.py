@@ -1,4 +1,4 @@
-# RZMenu/dependencies.py
+# RZMenu/core/deps_manager.py (ex dependencies.py)
 import bpy
 import sys
 import subprocess

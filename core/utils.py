@@ -1,4 +1,4 @@
-#RZMenu/helpers.py
+#RZMenu/core/utils.py (ex rzm_utils.py)
 import bpy
 
 def get_next_available_id(elements):

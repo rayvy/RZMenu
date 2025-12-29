@@ -8,7 +8,7 @@ class RZM_OT_AddCondition(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.conditions.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveCondition(bpy.types.Operator):
@@ -19,7 +19,7 @@ class RZM_OT_RemoveCondition(bpy.types.Operator):
         coll = context.scene.rzm.conditions
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_AddShape(bpy.types.Operator):
@@ -28,7 +28,7 @@ class RZM_OT_AddShape(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.shapes.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveShape(bpy.types.Operator):
@@ -39,7 +39,7 @@ class RZM_OT_RemoveShape(bpy.types.Operator):
         coll = context.scene.rzm.shapes
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_AddShapeKey(bpy.types.Operator):
@@ -49,7 +49,7 @@ class RZM_OT_AddShapeKey(bpy.types.Operator):
     shape_index: bpy.props.IntProperty()
     def execute(self, context):
         context.scene.rzm.shapes[self.shape_index].shape_keys.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveShapeKey(bpy.types.Operator):
@@ -61,7 +61,7 @@ class RZM_OT_RemoveShapeKey(bpy.types.Operator):
         coll = context.scene.rzm.shapes[self.shape_index].shape_keys
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 classes_to_register = [

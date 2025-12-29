@@ -1,7 +1,7 @@
 # RZMenu/operators/toggle_ops.py
 import bpy
 import string
-from ..helpers import find_toggle_def
+from ..core.utils import find_toggle_def
 
 class RZM_OT_AddProjectToggle(bpy.types.Operator):
     bl_idname = "rzm.add_project_toggle"
@@ -19,7 +19,7 @@ class RZM_OT_AddProjectToggle(bpy.types.Operator):
                 new_toggle = toggle_defs.add()
                 new_toggle.toggle_name = name
                 context.scene.rzm_active_toggle_def_index = len(toggle_defs) - 1
-                bpy.ops.rzm.record_history_state()
+                
                 return {'FINISHED'}
         
         # Fallback if all letters are used
@@ -30,7 +30,7 @@ class RZM_OT_AddProjectToggle(bpy.types.Operator):
                 new_toggle = toggle_defs.add()
                 new_toggle.toggle_name = name
                 context.scene.rzm_active_toggle_def_index = len(toggle_defs) - 1
-                bpy.ops.rzm.record_history_state()
+                
                 return {'FINISHED'}
             i += 1
 
@@ -46,7 +46,7 @@ class RZM_OT_RemoveProjectToggle(bpy.types.Operator):
             toggle_defs.remove(index)
             if index > 0:
                 context.scene.rzm_active_toggle_def_index = index - 1
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
     
 class RZM_OT_AssignObjectToggle(bpy.types.Operator):
@@ -68,7 +68,7 @@ class RZM_OT_AssignObjectToggle(bpy.types.Operator):
         
         prop_name = f"rzm.Toggle.{self.toggle_name}"
         target_obj[prop_name] = [0] * toggle_def.toggle_length
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveObjectToggle(bpy.types.Operator):
@@ -86,7 +86,7 @@ class RZM_OT_RemoveObjectToggle(bpy.types.Operator):
         # The toggle_name passed from the UI is the full property key
         if self.toggle_name in target_obj:
             del target_obj[self.toggle_name]
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_ToggleObjectBit(bpy.types.Operator):
@@ -110,7 +110,7 @@ class RZM_OT_ToggleObjectBit(bpy.types.Operator):
         # This operation is frequent, maybe don't record history for every bit toggle
         # to avoid flooding the undo stack. This is a design choice.
         # For now, we will record it.
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
     
 class RZM_OT_SelectOccupyingObjects(bpy.types.Operator):

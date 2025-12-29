@@ -1,4 +1,4 @@
-# RZMenu/rzm_atlas.py
+# RZMenu/core/atlas_algo.py (ex rzm_atlas.py)
 import bpy
 import numpy as np
 
