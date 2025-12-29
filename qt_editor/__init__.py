@@ -1,6 +1,7 @@
 # RZMenu/qt_editor/__init__.py
 import bpy
 import sys
+import os # Добавлено
 
 try:
     from PySide6 import QtWidgets, QtCore
@@ -16,7 +17,7 @@ else:
 _editor_instance = None
 
 class RZM_OT_LaunchQTEditor(bpy.types.Operator):
-    """Launch the RZMenu Qt Editor (Brute Force Mode)"""
+    """Launch the RZMenu Qt Editor"""
     bl_idname = "rzm.launch_qt_editor"
     bl_label = "Launch RZM Editor"
     
@@ -31,20 +32,31 @@ class RZM_OT_LaunchQTEditor(bpy.types.Operator):
             self.report({'ERROR'}, "PySide6 not installed")
             return {'CANCELLED'}
         
-        # 1. Инициализация
+        # --- FIX DPI ISSUES ---
+        # Устанавливаем переменные окружения ДО создания QApplication
+        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+        
         app = QtWidgets.QApplication.instance()
         if not app:
+            # Если Blender еще не создал Qt контекст, создаем его
             app = QtWidgets.QApplication(sys.argv)
         
         # 2. Создание окна
         if _editor_instance is None:
-            _editor_instance = window.RZMEditorWindow()
+            # Защита от повторного открытия при ошибках
+            try:
+                _editor_instance = window.RZMEditorWindow()
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to open window: {e}")
+                import traceback
+                traceback.print_exc()
+                return {'CANCELLED'}
         
         # 3. Показ
         _editor_instance.show()
         _editor_instance.activateWindow()
         
-        # Исправление ошибки с атрибутом Qt
+        # Fix minimized state
         win_state = _editor_instance.windowState()
         if win_state & QtCore.Qt.WindowMinimized:
              _editor_instance.setWindowState(win_state & ~QtCore.Qt.WindowMinimized)
@@ -56,16 +68,26 @@ class RZM_OT_LaunchQTEditor(bpy.types.Operator):
         return {'FINISHED'}
 
 def auto_refresh_ui():
-    """HEARTBEAT: Обновляет UI каждые 0.1 сек"""
+    """HEARTBEAT"""
     global _editor_instance
-    if _editor_instance is None or not _editor_instance.isVisible():
-        return 1.0 
     
+    # Если окно закрыто или уничтожено - останавливаем таймер
+    if _editor_instance is None:
+        return None
+        
     try:
+        if not _editor_instance.isVisible():
+             return 1.0 # Редкая проверка, если окно скрыто
+             
         if hasattr(_editor_instance, "brute_force_refresh"):
             _editor_instance.brute_force_refresh()
+            
+    except RuntimeError:
+        # C++ объект удален (окно закрыли крестиком)
+        _editor_instance = None
+        return None
     except Exception as e:
-        print(f"RZM Qt Heartbeat Error: {e}")
+        print(f"RZM Heartbeat Error: {e}")
         return None 
         
     return 0.1

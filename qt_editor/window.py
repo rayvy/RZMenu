@@ -1,36 +1,39 @@
 # RZMenu/qt_editor/window.py
 from PySide6 import QtWidgets, QtCore
-from . import core
+from . import core, actions
 from .widgets import outliner, inspector, viewport
 
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RZMenu Editor (Fixed)")
+        self.setWindowTitle("RZMenu Editor (Multi-Select)")
         self.resize(1100, 600)
         
+        # --- STATE ---
+        self.selected_ids = set() # Set[int]
+        self.active_id = -1       # int (last selected)
+        
+        self._sig_viewport = None
+        self._sig_outliner = None
+        self._sig_inspector = None
+        
+        # --- UI LAYOUT ---
         main_layout = QtWidgets.QHBoxLayout(self)
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         main_layout.addWidget(splitter)
         
         # 1. Outliner
         self.panel_outliner = outliner.RZMOutlinerPanel()
-        self.panel_outliner.selection_changed.connect(self.set_selection_from_ui)
-        # --- НОВОЕ: Подключение сортировки ---
-        self.panel_outliner.items_reordered.connect(self.on_outliner_reorder)
-        # -------------------------------------
+        self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
+        self.panel_outliner.items_reordered.connect(self.on_reorder)
         splitter.addWidget(self.panel_outliner)
         
         # 2. Viewport
         self.panel_viewport = viewport.RZViewportPanel()
-        # Движение (Drag) -> Быстрое обновление
-        self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move)
-        # Начало драга -> Ставим флаг "Не обновлять из блендера"
+        self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
-        # Конец драга -> Undo Push и снимаем флаг
         self.panel_viewport.rz_scene.interaction_end_signal.connect(self.on_interaction_end)
-        
-        self.panel_viewport.rz_scene.selection_changed_signal.connect(self.set_selection_from_ui)
+        self.panel_viewport.rz_scene.selection_changed_signal.connect(self.handle_viewport_selection)
         splitter.addWidget(self.panel_viewport)
         
         # 3. Inspector
@@ -39,52 +42,100 @@ class RZMEditorWindow(QtWidgets.QWidget):
         splitter.addWidget(self.panel_inspector)
         
         splitter.setSizes([200, 600, 300])
-        self.selected_id = -1
-        self._sig_viewport = None
-        self._sig_outliner = None
-        self._sig_inspector = None
 
-    # --- HANDLERS ---
+        # --- ACTIONS ---
+        self.action_manager = actions.RZActionManager(self)
+
+    # --- SELECTION MANAGEMENT ---
+
+    def clear_selection(self):
+        self.selected_ids.clear()
+        self.active_id = -1
+        self.sync_selection_ui()
+
+    def set_selection_multi(self, ids_set, active_id):
+        """Главный метод установки выделения"""
+        self.selected_ids = set(ids_set)
+        
+        # Если active_id не в списке, берем первый попавшийся или -1
+        if active_id != -1 and active_id not in self.selected_ids:
+            active_id = -1
+            
+        if active_id == -1 and self.selected_ids:
+            # Берем любой, если список не пуст
+            active_id = next(iter(self.selected_ids))
+            
+        self.active_id = active_id
+        self.sync_selection_ui()
+
+    def handle_outliner_selection(self, ids_list, active_id):
+        # Сигнал от Аутлайнера (список, активный)
+        self.set_selection_multi(ids_list, active_id)
+
+    def handle_viewport_selection(self, active_id, modifiers):
+        # Сигнал от Вьюпорта (клик по элементу)
+        # modifiers: 'CTRL', 'SHIFT' or None
+        
+        new_selection = self.selected_ids.copy()
+        
+        if active_id == -1:
+            # Клик в пустоту
+            if modifiers != 'SHIFT': 
+                new_selection.clear()
+            active = -1
+        else:
+            if modifiers == 'SHIFT':
+                # Toggle logic
+                if active_id in new_selection:
+                    new_selection.remove(active_id)
+                    # Если удалили активный, ставим новый активный
+                    active = -1 if not new_selection else next(iter(new_selection))
+                else:
+                    new_selection.add(active_id)
+                    active = active_id
+            else:
+                # Replace logic
+                new_selection = {active_id}
+                active = active_id
+                
+        self.set_selection_multi(new_selection, active)
+
+    def sync_selection_ui(self):
+        """Обновляет визуальное состояние виджетов без вызова их сигналов"""
+        # 1. Outliner (ВАЖНО: передаем два аргумента!)
+        self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
+        
+        # 2. Viewport (перерисовка рамок выделения)
+        self.refresh_viewport(force=True)
+        
+        # 3. Inspector
+        self.refresh_inspector(force=True)
+
+    # --- LOGIC HANDLERS ---
     
-    def on_outliner_reorder(self, target_id, insert_after_id):
-        # Вызываем Core для перестановки элементов в Blender
+    def on_reorder(self, target_id, insert_after_id):
         core.reorder_elements(target_id, insert_after_id)
-        # Опционально: сразу коммитим историю, чтобы CTRL+Z работал для сортировки
-        core.commit_history("RZM Reorder Elements")
-        # UI обновится сам, когда отработает таймер проверки подписи (signature check)
+        # Таймер сам обновит UI
 
     def on_interaction_start(self):
-        # Сообщаем сцене, что юзер трогает её руками
         self.panel_viewport.rz_scene._is_user_interaction = True
 
     def on_interaction_end(self):
-        # Юзер отпустил мышь.
-        # 1. Фиксируем историю
-        core.commit_history("RZM Viewport Move")
-        # 2. Разрешаем обновления
+        core.commit_history("RZM Transformation")
         self.panel_viewport.rz_scene._is_user_interaction = False
-        # 3. Форсируем обновление, чтобы данные синхронизировались идеально
         self.refresh_viewport(force=True)
         self.refresh_inspector(force=True)
 
-    def on_viewport_move(self, uid, x, y):
-        # Используем FAST update (без undo_push, без проверок контекста)
-        core.update_property_fast(uid, 'position', int(x), 0)
-        core.update_property_fast(uid, 'position', int(y), 1)
+    def on_viewport_move_delta(self, delta_x, delta_y):
+        # Двигаем ВСЕ выделенные элементы на дельту
+        if not self.selected_ids: return
+        core.move_elements_delta(self.selected_ids, delta_x, delta_y)
 
     def on_property_edited(self, key, val, idx):
-        # В инспекторе изменения точечные, можно сразу с Undo
-        core.update_property_fast(self.selected_id, key, val, idx)
-        core.commit_history(f"RZM Property {key}")
+        # Inspector применяет изменения ко ВСЕМ выбранным
+        core.update_property_multi(self.selected_ids, key, val, idx)
 
-    def set_selection_from_ui(self, elem_id):
-        if self.selected_id == elem_id: return
-        self.selected_id = elem_id
-        self.panel_outliner.set_selection_silent(elem_id)
-        self.refresh_viewport(force=True)
-        self.refresh_inspector(force=True)
-
-    # --- REFRESH ---
+    # --- REFRESH LOOP ---
     
     def brute_force_refresh(self):
         if not self.isVisible(): return
@@ -98,30 +149,33 @@ class RZMEditorWindow(QtWidgets.QWidget):
             data = core.get_all_elements_list()
             self.panel_outliner.update_ui(data)
             self._sig_outliner = new_sig
-            self.panel_outliner.set_selection_silent(self.selected_id)
+            # Восстанавливаем выделение после перерисовки (ВАЖНО: два аргумента!)
+            self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
 
     def refresh_viewport(self, force=False):
         new_sig = core.get_viewport_signature()
         if force or (new_sig != self._sig_viewport):
             data = core.get_viewport_data()
-            self.panel_viewport.rz_scene.update_scene(data, self.selected_id)
+            self.panel_viewport.rz_scene.update_scene(data, self.selected_ids, self.active_id)
             self._sig_viewport = new_sig
 
     def refresh_inspector(self, force=False):
-        if self.selected_id == -1:
-            if self._sig_inspector != "EMPTY":
-                self.panel_inspector.update_ui(None)
-                self._sig_inspector = "EMPTY"
-            return
+        # Проверяем подпись АКТИВНОГО элемента
+        new_sig = core.get_element_signature(self.active_id)
         
-        new_sig = core.get_element_signature(self.selected_id)
-        if new_sig == "DELETED":
-            self.selected_id = -1
-            self.panel_inspector.update_ui(None)
-            self._sig_inspector = "EMPTY"
-            return
+        # Если активный элемент удален или ничего не выбрано
+        if self.active_id == -1 or new_sig == "DELETED":
+            if self.selected_ids:
+                # Fallback: Если активный удален, но есть другие выделенные -> сброс к первому
+                 self.active_id = next(iter(self.selected_ids))
+                 new_sig = "RESET_NEEDED"
+            else:
+                if self._sig_inspector != "EMPTY":
+                    self.panel_inspector.update_ui(None)
+                    self._sig_inspector = "EMPTY"
+                return
 
         if force or (new_sig != self._sig_inspector):
-            details = core.get_element_details(self.selected_id)
+            details = core.get_selection_details(self.selected_ids, self.active_id)
             self.panel_inspector.update_ui(details)
             self._sig_inspector = new_sig

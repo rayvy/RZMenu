@@ -156,7 +156,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         self.draw_addons_settings(layout, rzm)
         self.draw_tex_works_config(layout, rzm, context)
         self.draw_special_variables(layout, rzm)
-        self.draw_debug_tools(layout)
+        # self.draw_debug_tools(layout)
 
     def draw_elements_editor(self, layout, rzm, context):
         layout.separator()
