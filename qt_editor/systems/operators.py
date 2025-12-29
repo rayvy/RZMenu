@@ -152,6 +152,19 @@ class RZ_OT_ViewportArrow(RZOperator):
             h_bar.setValue(h_bar.value() + x)
             v_bar.setValue(v_bar.value() + y)
 
+class RZ_OT_ViewReset(RZOperator):
+    """Сбрасывает зум и позицию вьюпорта в дефолт"""
+    id = "rzm.view_reset"
+    label = "Reset View"
+    
+    def execute(self, context, **kwargs):
+        view = context.window.panel_viewport
+        view.resetTransform() # Сброс зума (scale)
+        view.centerOn(0, 0)   # Сброс позиции
+        # Можно добавить дефолтный scale, если нужно не 100%
+        # view.scale(1.0, 1.0) 
+
+
 # ... (Обновляем список классов) ...
 
 _CLASSES = [
@@ -161,7 +174,8 @@ _CLASSES = [
     RZ_OT_Redo,
     RZ_OT_SelectAll,
     RZ_OT_Nudge,
-    RZ_OT_ViewportArrow
+    RZ_OT_ViewportArrow,
+    RZ_OT_ViewReset
 ]
 
 OPERATOR_REGISTRY = {}

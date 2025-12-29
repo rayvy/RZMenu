@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
         "VIEWPORT": {
             "Delete": "rzm.delete",
             "Ctrl+A": "rzm.select_all",
+            "Home": "rzm.view_reset",
             # Умные стрелки (Move Object OR Pan View)
             "Left":  {"op": "rzm.viewport_arrow", "args": {"x": -10, "y": 0}},
             "Right": {"op": "rzm.viewport_arrow", "args": {"x": 10, "y": 0}},

@@ -41,6 +41,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         self.panel_viewport = viewport.RZViewportPanel()
         self.panel_viewport.setProperty("RZ_CONTEXT", "VIEWPORT")
+        self.panel_viewport.parent_window = self 
 
         self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
@@ -63,7 +64,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # --- BUILD TOOLBAR (Привязка кнопок) ---
         self.setup_toolbar()
         self.input_controller = input_manager.RZInputController(self)
-        
+
         # Это гарантирует, что пользователь увидит данные МГНОВЕННО при открытии.
         QtCore.QTimer.singleShot(0, self.brute_force_refresh)
 
