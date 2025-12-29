@@ -419,13 +419,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                     row.prop(key_item, "anim_start_frame", text="Start (0-1)")
                     row.prop(key_item, "anim_end_frame", text="End (0-1)")
 
-    def draw_debug_tools(self, layout):
-        layout.separator()
-        box = layout.box()
-        box.label(text="Debug Tools:")
-        row = box.row(align=True)
-        row.operator("rzm.launch_viewer", text="Viewer")
-        row.operator("rzm.launch_inspector", text="Inspector")
+    # def draw_debug_tools(self, layout):
+    #     layout.separator()
+    #     box = layout.box()
+    #     box.label(text="Debug Tools:")
+    #     row = box.row(align=True)
+    #     row.operator("rzm.launch_viewer", text="Viewer")
+    #     row.operator("rzm.launch_inspector", text="Inspector")
 
 classes_to_register = [
     RZM_UL_Elements, RZM_UL_Images, RZM_UL_Values, RZM_UL_ProjectToggles,

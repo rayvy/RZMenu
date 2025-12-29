@@ -3,7 +3,7 @@ bl_info = {
     "name": "RZMenu Constructor",
     "author": "Rayvich & Gemini",
     "version": (3, 0, 0),
-    "blender": (4, 1, 0), # Blender 5.0 alpha обычно совместим с манифестом 4.x
+    "blender": (4, 1, 0), 
     "location": "View3D > N Panel > RZ Constructor",
     "description": "Comprehensive scene-based UI editor (Refactored Core).",
     "category": "UI",
@@ -26,19 +26,20 @@ try:
 except Exception:
     pass
 
-# --- ИМПОРТ НОВОЙ СТРУКТУРЫ ---
-# Важен порядок: Сначала Data (свойства), потом Core/Operators/Panels
+# --- ИМПОРТ МОДУЛЕЙ ---
 from .data import properties
 from . import operators
 from . import panels
-
-# Core не требует регистрации классов bpy, но нужен для работы операторов
 from . import core 
+
+# !!! ДОБАВЛЕНО: Импорт модуля редактора
+from . import qt_editor 
 
 modules = [
     properties, # Свойства (PropertyGroups)
-    operators,  # Операторы
-    panels,     # Интерфейс
+    operators,  # Стандартные операторы Блендера
+    panels,     # Нативный UI
+    qt_editor,  # !!! ДОБАВЛЕНО: Qt Редактор (содержит свой оператор запуска)
 ]
 
 # --- АВТОЗАПУСК ПРОВЕРКИ ---
@@ -60,7 +61,7 @@ def register():
     if auto_check_dependencies not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(auto_check_dependencies)
     
-    print("RZMenu Constructor (Refactored): Registered successfully.")
+    print("RZMenu Constructor: Registered successfully.")
 
 def unregister():
     if auto_check_dependencies in bpy.app.handlers.load_post:
