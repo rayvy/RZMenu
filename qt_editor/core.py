@@ -151,3 +151,66 @@ def update_property_fast(element_id, prop_name, value, sub_index=None):
 def commit_history(msg):
     """Вызывается ОДИН раз, когда мышку отпустили."""
     safe_undo_push(msg)
+
+def reorder_elements(target_id, insert_after_id):
+    """
+    Перемещает элемент с target_id в позицию сразу после insert_after_id.
+    Если insert_after_id is None, перемещает в начало списка.
+    """
+    if not bpy.context or not bpy.context.scene: return
+
+    elements = bpy.context.scene.rzm.elements
+    
+    # 1. Ищем текущие индексы
+    target_idx = -1
+    anchor_idx = -1
+    
+    for i, elem in enumerate(elements):
+        if elem.id == target_id:
+            target_idx = i
+        if insert_after_id is not None and elem.id == insert_after_id:
+            anchor_idx = i
+    
+    # Если целевой элемент не найден - выходим
+    if target_idx == -1:
+        return
+
+    # 2. Вычисляем новый индекс (to_index)
+    to_index = 0
+    
+    if insert_after_id is None:
+        # Перенос в самое начало
+        to_index = 0
+    else:
+        # Если якорь не найден, ничего не делаем
+        if anchor_idx == -1:
+            return
+            
+        if target_idx == anchor_idx:
+            return # Пытаемся вставить сами после себя
+
+        # Логика смещения индексов для move(from, to):
+        if target_idx < anchor_idx:
+            # Двигаем ВНИЗ (target был выше anchor).
+            # Пример: [A(0), B(1), C(2)]. Move A after B.
+            # target=0, anchor=1. 
+            # move(0, 1) -> [B, A, C]. A встает на индекс 1 (бывший B). B смещается на 0.
+            # Результат: A после B.
+            to_index = anchor_idx
+        else:
+            # Двигаем ВВЕРХ (target был ниже anchor).
+            # Пример: [A(0), B(1), C(2)]. Move C after A.
+            # target=2, anchor=0.
+            # move(2, 1) -> [A, C, B]. C встает на индекс 1.
+            # Нам нужно встать ПОСЛЕ anchor, т.е. anchor + 1.
+            to_index = anchor_idx + 1
+
+    # 3. Применяем перемещение
+    # Защита от выхода за границы (хотя логика выше должна быть верной)
+    max_idx = len(elements) - 1
+    if to_index > max_idx: to_index = max_idx
+    
+    if target_idx != to_index:
+        elements.move(target_idx, to_index)
+        # Добавляем в историю Undo, чтобы перемещение можно было отменить
+        safe_undo_push(message="RZM: Reorder List")

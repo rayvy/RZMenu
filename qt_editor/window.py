@@ -16,6 +16,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # 1. Outliner
         self.panel_outliner = outliner.RZMOutlinerPanel()
         self.panel_outliner.selection_changed.connect(self.set_selection_from_ui)
+        # --- НОВОЕ: Подключение сортировки ---
+        self.panel_outliner.items_reordered.connect(self.on_outliner_reorder)
+        # -------------------------------------
         splitter.addWidget(self.panel_outliner)
         
         # 2. Viewport
@@ -36,7 +39,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         splitter.addWidget(self.panel_inspector)
         
         splitter.setSizes([200, 600, 300])
-        
         self.selected_id = -1
         self._sig_viewport = None
         self._sig_outliner = None
@@ -44,6 +46,13 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
     # --- HANDLERS ---
     
+    def on_outliner_reorder(self, target_id, insert_after_id):
+        # Вызываем Core для перестановки элементов в Blender
+        core.reorder_elements(target_id, insert_after_id)
+        # Опционально: сразу коммитим историю, чтобы CTRL+Z работал для сортировки
+        core.commit_history("RZM Reorder Elements")
+        # UI обновится сам, когда отработает таймер проверки подписи (signature check)
+
     def on_interaction_start(self):
         # Сообщаем сцене, что юзер трогает её руками
         self.panel_viewport.rz_scene._is_user_interaction = True
@@ -62,18 +71,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # Используем FAST update (без undo_push, без проверок контекста)
         core.update_property_fast(uid, 'position', int(x), 0)
         core.update_property_fast(uid, 'position', int(y), 1)
-        # Примечание: Инспектор обновлять не обязательно в реальном времени, 
-        # если это тормозит, но можно попробовать:
-        # self.refresh_inspector(force=True) 
 
     def on_property_edited(self, key, val, idx):
         # В инспекторе изменения точечные, можно сразу с Undo
-        # НО! Нужно использовать safe_undo_push внутри update_property
-        # Давай лучше разделим и здесь, если используем DraggableNumber
-        # Но пока оставим старый метод для одиночных кликов.
-        # Для DraggableNumber лучше реализовать логику start/end drag тоже,
-        # но для простоты пусть пока пишет каждый раз, там частота меньше.
-        # ВАЖНО: нужно обновить core.update_property чтобы он использовал safe_undo_push
         core.update_property_fast(self.selected_id, key, val, idx)
         core.commit_history(f"RZM Property {key}")
 
@@ -101,8 +101,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
             self.panel_outliner.set_selection_silent(self.selected_id)
 
     def refresh_viewport(self, force=False):
-        # Внутри update_scene теперь есть проверка _is_user_interaction,
-        # так что можно вызывать смело.
         new_sig = core.get_viewport_signature()
         if force or (new_sig != self._sig_viewport):
             data = core.get_viewport_data()
@@ -110,7 +108,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
             self._sig_viewport = new_sig
 
     def refresh_inspector(self, force=False):
-        # (Код инспектора без изменений)
         if self.selected_id == -1:
             if self._sig_inspector != "EMPTY":
                 self.panel_inspector.update_ui(None)
