@@ -1,115 +1,185 @@
 # RZMenu/qt_editor/actions.py
-from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QKeySequence, QIcon
+from PySide6.QtCore import Qt, QObject
 import bpy
 from . import core
 
 class RZContext:
-    """Контейнер контекста, передаваемый в действия."""
+    """Обертка для передачи состояния в операторы"""
     def __init__(self, window):
         self.window = window
-        self.selected_ids = window.selected_ids  # Set[int]
-        self.active_id = window.active_id        # int
-        self.scene_name = core.get_scene_info().get("scene_name", "Unknown")
+        self.selected_ids = window.selected_ids
+        self.active_id = window.active_id
+        self.scene = getattr(window.panel_viewport, 'rz_scene', None) # Доступ к сцене для viewport операций
 
-class RZActionDefinition:
-    """Описание действия: Логика + UI данные"""
-    def __init__(self, uid, name, func, shortcut=None):
-        self.uid = uid
-        self.name = name
-        self.func = func
-        self.shortcut = shortcut
+# --- BASE OPERATOR ---
 
-# --- ФУНКЦИИ ДЕЙСТВИЙ (Pure Logic) ---
+class RZOperator:
+    """Базовый класс для всех действий"""
+    id = ""          # Уникальный ID (напр. "rzm.delete")
+    label = ""       # Текст для UI
+    icon = None      # Имя иконки (если нужно)
+    shortcut = None  # Хоткей по умолчанию
+    tooltip = ""
 
-def action_refresh(ctx: RZContext):
-    """Принудительное обновление UI"""
-    ctx.window.brute_force_refresh()
+    def poll(self, context: RZContext) -> bool:
+        """Проверка: можно ли сейчас выполнить действие?"""
+        return True
 
-def action_delete(ctx: RZContext):
-    """Удаление выбранных элементов"""
-    if not ctx.selected_ids:
-        return
+    def execute(self, context: RZContext, **kwargs):
+        """Основная логика"""
+        raise NotImplementedError
+
+# --- CONCRETE ACTIONS ---
+
+class RZ_OT_Undo(RZOperator):
+    id = "rzm.undo"
+    label = "Undo"
+    shortcut = "Ctrl+Z"
     
-    # 1. Вызов Core
-    core.delete_elements(ctx.selected_ids)
+    def execute(self, context, **kwargs):
+        # ИСПОЛЬЗУЕМ ОБЕРТКУ С КОНТЕКСТОМ
+        print("RZM: Executing Undo via Wrapper")
+        core.exec_in_context(bpy.ops.ed.undo)
+        # UI обновится через Handler или таймер, но для надежности:
+        context.window.brute_force_refresh()
+
+class RZ_OT_Redo(RZOperator):
+    id = "rzm.redo"
+    label = "Redo"
+    shortcut = "Ctrl+Shift+Z"
     
-    # 2. Сброс выделения в UI
-    ctx.window.clear_selection()
+    def execute(self, context, **kwargs):
+        print("RZM: Executing Redo via Wrapper")
+        try:
+            core.exec_in_context(bpy.ops.ed.redo)
+        except:
+            pass
+        context.window.brute_force_refresh()
+
+class RZ_OT_Delete(RZOperator):
+    id = "rzm.delete"
+    label = "Delete Selected"
+    shortcut = "Delete"
+    tooltip = "Remove selected elements from the scene"
+
+    def poll(self, context):
+        return bool(context.selected_ids)
+
+    def execute(self, context, **kwargs):
+        core.delete_elements(context.selected_ids)
+        context.window.clear_selection()
+        context.window.brute_force_refresh()
+
+class RZ_OT_Refresh(RZOperator):
+    id = "rzm.refresh"
+    label = "Force Refresh"
+    shortcut = "F5"
     
-    # 3. Обновление
-    ctx.window.brute_force_refresh()
+    def execute(self, context, **kwargs):
+        context.window.brute_force_refresh()
 
-def action_undo(ctx: RZContext):
-    """Blender Native Undo"""
-    try:
-        bpy.ops.ed.undo()
-    except Exception as e:
-        print(f"Undo Failed: {e}")
-    ctx.window.brute_force_refresh()
+class RZ_OT_SelectAll(RZOperator):
+    id = "rzm.select_all"
+    label = "Select All"
+    shortcut = "Ctrl+A"
+    
+    def execute(self, context, **kwargs):
+        all_data = core.get_all_elements_list()
+        all_ids = {item['id'] for item in all_data}
+        context.window.set_selection_multi(all_ids, active_id=-1)
 
-def action_redo(ctx: RZContext):
-    """Blender Native Redo"""
-    try:
-        bpy.ops.ed.redo()
-    except:
-        pass
-    ctx.window.brute_force_refresh()
+class RZ_OT_Nudge(RZOperator):
+    """Пример параметрического оператора для стрелок клавиатуры"""
+    id = "rzm.nudge"
+    label = "Nudge Element"
+    # Хоткеи задаются динамически при регистрации, т.к. их несколько
+    
+    def poll(self, context):
+        return bool(context.selected_ids)
 
-def action_select_all(ctx: RZContext):
-    """Выбрать все (пример)"""
-    all_data = core.get_all_elements_list()
-    all_ids = {item['id'] for item in all_data}
-    ctx.window.set_selection_multi(all_ids, active_id=-1)
+    def execute(self, context, **kwargs):
+        x = kwargs.get('x', 0)
+        y = kwargs.get('y', 0)
+        core.move_elements_delta(context.selected_ids, x, y)
+        core.commit_history("Nudge") # Важно сохранить историю
+        context.window.refresh_viewport(force=True)
+        context.window.refresh_inspector(force=True)
 
+# --- REGISTRY & MANAGER ---
 
-# --- РЕЕСТР ДЕЙСТВИЙ ---
-# Здесь мы мапим UID -> Логика -> Хоткей
-ACTIONS_REGISTRY = [
-    RZActionDefinition("REFRESH", "Force Refresh", action_refresh, "F5"),
-    RZActionDefinition("DELETE", "Delete Selected", action_delete, "Delete"),
-    RZActionDefinition("UNDO", "Undo", action_undo, "Ctrl+Z"),
-    RZActionDefinition("REDO", "Redo", action_redo, "Ctrl+Shift+Z"),
-    RZActionDefinition("SELECT_ALL", "Select All", action_select_all, "Ctrl+A"),
+# Список классов операторов
+CLASSES = [
+    RZ_OT_Delete,
+    RZ_OT_Refresh,
+    RZ_OT_Undo,
+    RZ_OT_Redo,
+    RZ_OT_SelectAll,
+    RZ_OT_Nudge
 ]
 
-
-class RZActionManager:
+class RZActionManager(QObject):
     def __init__(self, window):
+        super().__init__(window)
         self.window = window
-        self.q_actions = {} # uid -> QAction
-        self.setup_actions()
-
-    def setup_actions(self):
-        """Создает QAction для каждого определения и вешает на окно"""
-        for definition in ACTIONS_REGISTRY:
-            # Создаем QAction
-            q_act = QAction(definition.name, self.window)
-            
-            if definition.shortcut:
-                q_act.setShortcut(QKeySequence(definition.shortcut))
-                
-            # Важный момент: замыкание для передачи контекста
-            # Используем lambda с capture variable, чтобы не потерять func
-            func_ref = definition.func
-            q_act.triggered.connect(lambda checked=False, f=func_ref: self.execute_action(f))
-            
-            # Добавляем к окну (для работы шорткатов)
-            self.window.addAction(q_act)
-            self.q_actions[definition.uid] = q_act
-
-    def execute_action(self, func):
-        """Единая точка входа для выполнения команд"""
-        # 1. Собираем контекст на момент нажатия
-        ctx = RZContext(self.window)
+        self.operators = {} 
+        self.q_actions = {}
         
-        # 2. Выполняем функцию
+        self._register_operators()
+        self._init_qactions()
+
+    def _register_operators(self):
+        for cls in CLASSES:
+            self.operators[cls.id] = cls()
+
+    def _init_qactions(self):
+        for op_id, op in self.operators.items():
+            if not op.shortcut: continue
+            
+            # Для стандартных (Undo/Delete/Refresh)
+            q_act = QAction(op.label, self.window)
+            q_act.setShortcut(QKeySequence(op.shortcut))
+            q_act.triggered.connect(lambda checked=False, oid=op_id: self.run(oid))
+            
+            self.window.addAction(q_act)
+            self.q_actions[op_id] = q_act
+            
+        self._register_nudge_shortcuts()
+
+    def _register_nudge_shortcuts(self):
+        arrows = [
+            (Qt.Key_Left,  -10, 0), (Qt.Key_Right, 10, 0),
+            (Qt.Key_Up,    0, -10), (Qt.Key_Down,  0, 10),
+        ]
+        for key, dx, dy in arrows:
+            q_act = QAction(self.window)
+            q_act.setShortcut(QKeySequence(key))
+            q_act.triggered.connect(lambda _, x=dx, y=dy: self.run("rzm.nudge", x=x, y=y))
+            self.window.addAction(q_act)
+
+    def run(self, op_id, **kwargs):
+        op = self.operators.get(op_id)
+        if not op: return
+        ctx = RZContext(self.window)
+        if not op.poll(ctx): return
+        
         try:
-            func(ctx)
+            op.execute(ctx, **kwargs)
+            self.update_ui_state()
         except Exception as e:
-            print(f"RZ Action Error: {e}")
+            print(f"Op Error {op_id}: {e}")
             import traceback
             traceback.print_exc()
 
-    def get_action(self, uid):
-        return self.q_actions.get(uid)
+    def update_ui_state(self):
+        ctx = RZContext(self.window)
+        for op_id, q_act in self.q_actions.items():
+            op = self.operators.get(op_id)
+            if op: q_act.setEnabled(op.poll(ctx))
+    
+    def connect_button(self, btn, op_id, **kwargs):
+        op = self.operators.get(op_id)
+        if not op: return
+        btn.clicked.connect(lambda: self.run(op_id, **kwargs))
+        if op.shortcut:
+            btn.setToolTip(f"{op.label} ({op.shortcut})")

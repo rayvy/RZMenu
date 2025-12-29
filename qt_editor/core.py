@@ -3,6 +3,63 @@ import bpy
 
 # --- ЧТЕНИЕ (READ) ---
 
+def get_stable_context():
+    """
+    Ищет валидный 3D Viewport для выполнения операторов.
+    Без этого bpy.ops.ed.undo() не сработает из Qt окна.
+    """
+    # 1. Сначала пробуем текущий, если вдруг он валиден
+    if bpy.context.area and bpy.context.area.type == 'VIEW_3D':
+        return bpy.context.copy()
+
+    # 2. Ищем перебором
+    for window in bpy.context.window_manager.windows:
+        screen = window.screen
+        for area in screen.areas:
+            if area.type == 'VIEW_3D':
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                if not region and area.regions: 
+                    region = area.regions[0]
+                    
+                return {
+                    'window': window,
+                    'screen': screen,
+                    'area': area,
+                    'region': region,
+                    'scene': window.scene,
+                    'workspace': window.workspace,
+                }
+    return {}
+
+def exec_in_context(op_func, **kwargs):
+    """
+    Выполняет оператор (op_func) внутри правильного контекста.
+    Пример: exec_in_context(bpy.ops.ed.undo)
+    """
+    ctx = get_stable_context()
+    if not ctx:
+        print("RZM Error: Could not find 3D View context for operator.")
+        return {'CANCELLED'}
+
+    try:
+        # Для Blender 3.2+
+        if hasattr(bpy.context, "temp_override"):
+            with bpy.context.temp_override(**ctx):
+                return op_func(**kwargs)
+        else:
+            # Legacy (Blender < 3.2)
+            return op_func(ctx, **kwargs)
+    except Exception as e:
+        print(f"RZM Op Error: {e}")
+        return {'CANCELLED'}
+
+def refresh_viewports():
+    """Принудительно обновляет 3D окна Blender"""
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
 def get_scene_info():
     if not bpy.context or not bpy.context.scene:
         return {"count": 0, "name": "No Scene"}
@@ -95,91 +152,74 @@ def get_viewport_signature():
 # --- ЗАПИСЬ (WRITE) ---
 
 def safe_undo_push(message):
-    for window in bpy.context.window_manager.windows:
-        screen = window.screen
-        for area in screen.areas:
-            if area.type == 'VIEW_3D':
-                with bpy.context.temp_override(window=window, area=area):
-                    bpy.ops.ed.undo_push(message=message)
-                return
-    # Fallback
-    try: bpy.ops.ed.undo_push(message=message)
-    except: pass
+    """Обертка для создания точки отмены"""
+    # undo_push тоже требует контекста!
+    exec_in_context(bpy.ops.ed.undo_push, message=message)
+    refresh_viewports()
+
+def commit_history(msg):
+    safe_undo_push(msg)
 
 def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mode=False):
-    """
-    Применяет значение ко ВСЕМ переданным ID.
-    Если fast_mode=True, не вызывает Undo (для драга).
-    """
     if not target_ids: return
-    
     changed = False
     elements = bpy.context.scene.rzm.elements
     
     for elem in elements:
         if elem.id in target_ids:
             current_val = getattr(elem, prop_name)
-            
-            # Векторное свойство (Position, Size)
             if sub_index is not None:
                 if current_val[sub_index] != value:
                     current_val[sub_index] = value
                     changed = True
-            # Скалярное свойство (Name, Class)
             else:
                 if current_val != value:
                     setattr(elem, prop_name, value)
                     changed = True
-                    
+    
+    # Обновляем Blender Viewport (чтобы изменения отрисовались сразу, если они видны там)
+    if changed:
+        refresh_viewports()
+        
     if changed and not fast_mode:
         safe_undo_push(f"RZM: Change {prop_name}")
 
 def move_elements_delta(target_ids, delta_x, delta_y):
-    """
-    Сдвигает группу элементов на смещение (Delta).
-    Используется для перетаскивания во вьюпорте.
-    """
     if not target_ids: return
     elements = bpy.context.scene.rzm.elements
-    
+    changed = False
     for elem in elements:
         if elem.id in target_ids:
             elem.position[0] += int(delta_x)
             elem.position[1] += int(delta_y)
+            changed = True
+    if changed:
+        refresh_viewports()
 
 def delete_elements(target_ids):
     if not target_ids: return
-    
-    # Удаляем с конца, чтобы не сбить индексы, хотя 'remove' по индексу работает иначе.
-    # В CollectionProperty лучше собирать индексы для удаления.
     elements = bpy.context.scene.rzm.elements
-    
-    # Собираем индексы
     indices_to_remove = []
     for i, elem in enumerate(elements):
         if elem.id in target_ids:
             indices_to_remove.append(i)
-            
-    # Удаляем (важно: от большего к меньшему)
+    
     for idx in sorted(indices_to_remove, reverse=True):
         elements.remove(idx)
         
     safe_undo_push("RZM: Delete Elements")
+    refresh_viewports()
 
 def reorder_elements(target_id, insert_after_id):
-    # Reorder пока работает только для одного элемента (Drag&Drop сложен для мульти)
+    # ... (логика та же) ...
     if not bpy.context or not bpy.context.scene: return
-
     elements = bpy.context.scene.rzm.elements
     target_idx = -1
     anchor_idx = -1
-    
     for i, elem in enumerate(elements):
         if elem.id == target_id: target_idx = i
         if insert_after_id is not None and elem.id == insert_after_id: anchor_idx = i
-    
     if target_idx == -1: return
-
     to_index = 0
     if insert_after_id is None:
         to_index = 0
@@ -187,13 +227,12 @@ def reorder_elements(target_id, insert_after_id):
         if anchor_idx == -1: return
         if target_idx == anchor_idx: return
         to_index = anchor_idx if target_idx < anchor_idx else anchor_idx + 1
-
     max_idx = len(elements) - 1
     if to_index > max_idx: to_index = max_idx
-    
     if target_idx != to_index:
         elements.move(target_idx, to_index)
         safe_undo_push("RZM: Reorder")
+        refresh_viewports()
 
 def commit_history(msg):
     safe_undo_push(msg)

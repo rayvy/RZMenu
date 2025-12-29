@@ -6,45 +6,78 @@ from .widgets import outliner, inspector, viewport
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RZMenu Editor (Multi-Select)")
+        self.setWindowTitle("RZMenu Editor (Unified Ops)")
         self.resize(1100, 600)
         
         # --- STATE ---
-        self.selected_ids = set() # Set[int]
-        self.active_id = -1       # int (last selected)
+        self.selected_ids = set()
+        self.active_id = -1
         
         self._sig_viewport = None
         self._sig_outliner = None
         self._sig_inspector = None
         
         # --- UI LAYOUT ---
-        main_layout = QtWidgets.QHBoxLayout(self)
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        main_layout.addWidget(splitter)
+        root_layout = QtWidgets.QVBoxLayout(self) # Меняем на VBox, чтобы добавить Toolbar сверху
+        root_layout.setContentsMargins(0,0,0,0)
         
-        # 1. Outliner
+        # 1. TOOLBAR AREA (Пример кнопок)
+        self.toolbar = QtWidgets.QHBoxLayout()
+        self.toolbar.setContentsMargins(5,5,5,5)
+        root_layout.addLayout(self.toolbar)
+        
+        # 2. MAIN CONTENT
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        root_layout.addWidget(splitter)
+        
+        # ... Создание панелей (Outliner, Viewport, Inspector) оставляем как было ...
         self.panel_outliner = outliner.RZMOutlinerPanel()
         self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
         self.panel_outliner.items_reordered.connect(self.on_reorder)
         splitter.addWidget(self.panel_outliner)
         
-        # 2. Viewport
         self.panel_viewport = viewport.RZViewportPanel()
+        # Signals...
         self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
         self.panel_viewport.rz_scene.interaction_end_signal.connect(self.on_interaction_end)
         self.panel_viewport.rz_scene.selection_changed_signal.connect(self.handle_viewport_selection)
         splitter.addWidget(self.panel_viewport)
         
-        # 3. Inspector
         self.panel_inspector = inspector.RZMInspectorPanel()
         self.panel_inspector.property_changed.connect(self.on_property_edited)
         splitter.addWidget(self.panel_inspector)
         
         splitter.setSizes([200, 600, 300])
 
-        # --- ACTIONS ---
+        # --- INIT ACTIONS ---
+        # Инициализируем менеджер. Он сам создаст скрытые QActions и привяжет хоткеи к окну
         self.action_manager = actions.RZActionManager(self)
+        
+        # --- BUILD TOOLBAR (Привязка кнопок) ---
+        self.setup_toolbar()
+        # Это гарантирует, что пользователь увидит данные МГНОВЕННО при открытии.
+        QtCore.QTimer.singleShot(0, self.brute_force_refresh)
+
+    def setup_toolbar(self):
+        """Создаем кнопки, ссылаясь на ID операторов"""
+        
+        # Функция-хелпер для создания кнопок
+        def add_btn(text, op_id):
+            btn = QtWidgets.QPushButton(text)
+            self.toolbar.addWidget(btn)
+            # Магия здесь: связываем кнопку с логикой
+            self.action_manager.connect_button(btn, op_id)
+            return btn
+
+        add_btn("Refresh", "rzm.refresh")
+        self.toolbar.addSpacing(20)
+        add_btn("Undo", "rzm.undo")
+        add_btn("Redo", "rzm.redo")
+        self.toolbar.addSpacing(20)
+        self.btn_del = add_btn("Delete", "rzm.delete") # Сохраним ссылку, если захотим менять стиль
+        
+        self.toolbar.addStretch()
 
     # --- SELECTION MANAGEMENT ---
 
@@ -101,15 +134,12 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.set_selection_multi(new_selection, active)
 
     def sync_selection_ui(self):
-        """Обновляет визуальное состояние виджетов без вызова их сигналов"""
-        # 1. Outliner (ВАЖНО: передаем два аргумента!)
         self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
-        
-        # 2. Viewport (перерисовка рамок выделения)
         self.refresh_viewport(force=True)
-        
-        # 3. Inspector
         self.refresh_inspector(force=True)
+        
+        # НОВОЕ: Обновляем состояние Action Manager (например, кнопка Delete станет серой)
+        self.action_manager.update_ui_state()
 
     # --- LOGIC HANDLERS ---
     
