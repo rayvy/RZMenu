@@ -2,7 +2,7 @@
 import bpy
 import sys
 import os
-from bpy.app.handlers import persistent
+from . import core
 
 try:
     from PySide6 import QtWidgets, QtCore
@@ -15,20 +15,93 @@ if PYSIDE_AVAILABLE:
 else:
     window = None
 
-_editor_instance = None
+# --- INTEGRATION MANAGER ---
 
-# --- HANDLERS (СЛУШАТЕЛИ) ---
+class IntegrationManager:
+    _app = None
+    _window = None
+    
+    @classmethod
+    def get_app(cls):
+        # Гарантируем Singleton QApplication
+        app = QtWidgets.QApplication.instance()
+        if not app:
+            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+            app = QtWidgets.QApplication(sys.argv)
+        return app
 
-@persistent
-def rzm_undo_redo_handler(scene):
-    """Вызывается Blender'ом после Undo/Redo"""
-    global _editor_instance
-    if _editor_instance and PYSIDE_AVAILABLE:
-        try:
-            if _editor_instance.isVisible():
-                _editor_instance.brute_force_refresh()
-        except RuntimeError:
-            pass 
+    @staticmethod
+    def process_qt_events():
+        """
+        Магия плавности. Вызывается Blender'ом каждые ~10мс.
+        Обрабатывает клики, наведения и отрисовку Qt.
+        """
+        app = QtWidgets.QApplication.instance()
+        if app:
+            app.processEvents()
+        
+        # Если окно закрыто - останавливаем таймер, чтобы не жрать ресурсы
+        if IntegrationManager._window and not IntegrationManager._window.isVisible():
+             IntegrationManager.stop()
+             return None # Отмена таймера
+             
+        return 0.01 # Повторить через 10мс
+
+    @classmethod
+    def on_depsgraph_update(cls, scene, depsgraph):
+        """
+        Реакция на изменения в Blender.
+        """
+        if core.IS_UPDATING_FROM_QT:
+            return
+
+        if cls._window and cls._window.isVisible():
+            # Вызываем обновление напрямую. 
+            # Благодаря "ленивым" проверкам (signature check) в window.py,
+            # это не будет тормозить, если данные не изменились.
+            cls._window.sync_from_blender()
+
+    @classmethod
+    def launch(cls, context):
+        if not PYSIDE_AVAILABLE:
+            return {'CANCELLED'}
+
+        cls._app = cls.get_app()
+        
+        # Создаем окно, если нет, или показываем существующее
+        if cls._window is None:
+            cls._window = window.RZMEditorWindow()
+        
+        cls._window.show()
+        cls._window.activateWindow()
+        
+        # Разворачиваем, если свернуто
+        win_state = cls._window.windowState()
+        if win_state & QtCore.Qt.WindowMinimized:
+             cls._window.setWindowState(win_state & ~QtCore.Qt.WindowMinimized)
+
+        # 1. Запускаем "Сердцебиение" интерфейса
+        if not bpy.app.timers.is_registered(cls.process_qt_events):
+            bpy.app.timers.register(cls.process_qt_events, persistent=True)
+            
+        # 2. Подписываемся на обновления данных
+        if cls.on_depsgraph_update not in bpy.app.handlers.depsgraph_update_post:
+            bpy.app.handlers.depsgraph_update_post.append(cls.on_depsgraph_update)
+            
+        # Первичное обновление данных
+        cls._window.sync_from_blender()
+
+    @classmethod
+    def stop(cls):
+        # Очистка
+        if bpy.app.timers.is_registered(cls.process_qt_events):
+            bpy.app.timers.unregister(cls.process_qt_events)
+        
+        if cls.on_depsgraph_update in bpy.app.handlers.depsgraph_update_post:
+            bpy.app.handlers.depsgraph_update_post.remove(cls.on_depsgraph_update)
+        
+        # Не уничтожаем окно полностью, чтобы сохранить его положение/размер,
+        # но можно и cls._window = None, если нужно освободить память.
 
 class RZM_OT_LaunchQTEditor(bpy.types.Operator):
     """Launch the RZMenu Qt Editor"""
@@ -40,72 +113,14 @@ class RZM_OT_LaunchQTEditor(bpy.types.Operator):
         return PYSIDE_AVAILABLE
 
     def execute(self, context):
-        global _editor_instance
-        
-        if not PYSIDE_AVAILABLE:
-            self.report({'ERROR'}, "PySide6 not installed")
-            return {'CANCELLED'}
-        
-        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-        
-        app = QtWidgets.QApplication.instance()
-        if not app:
-            app = QtWidgets.QApplication(sys.argv)
-        
-        if _editor_instance is None:
-            try:
-                _editor_instance = window.RZMEditorWindow()
-            except Exception as e:
-                self.report({'ERROR'}, f"Failed to open window: {e}")
-                import traceback
-                traceback.print_exc()
-                return {'CANCELLED'}
-        
-        _editor_instance.show()
-        _editor_instance.activateWindow()
-        
-        win_state = _editor_instance.windowState()
-        if win_state & QtCore.Qt.WindowMinimized:
-             _editor_instance.setWindowState(win_state & ~QtCore.Qt.WindowMinimized)
-        
-        if not bpy.app.timers.is_registered(auto_refresh_ui):
-            bpy.app.timers.register(auto_refresh_ui, first_interval=0.1)
-            
+        IntegrationManager.launch(context)
         return {'FINISHED'}
-
-def auto_refresh_ui():
-    """Таймер для проверки жизни окна"""
-    global _editor_instance
-    if _editor_instance is None:
-        return None  
-    try:
-        if not _editor_instance.isVisible():
-             return 1.0 
-    except RuntimeError:
-        _editor_instance = None
-        return None
-    return 0.1
 
 classes = [RZM_OT_LaunchQTEditor]
 
 def register():
     for cls in classes: bpy.utils.register_class(cls)
-    
-    # --- FIX INIT LAGS: PREVENT DUPLICATION ---
-    if rzm_undo_redo_handler in bpy.app.handlers.undo_post:
-        bpy.app.handlers.undo_post.remove(rzm_undo_redo_handler)
-    if rzm_undo_redo_handler in bpy.app.handlers.redo_post:
-        bpy.app.handlers.redo_post.remove(rzm_undo_redo_handler)
-        
-    bpy.app.handlers.undo_post.append(rzm_undo_redo_handler)
-    bpy.app.handlers.redo_post.append(rzm_undo_redo_handler)
 
 def unregister():
-    if rzm_undo_redo_handler in bpy.app.handlers.undo_post:
-        bpy.app.handlers.undo_post.remove(rzm_undo_redo_handler)
-    if rzm_undo_redo_handler in bpy.app.handlers.redo_post:
-        bpy.app.handlers.redo_post.remove(rzm_undo_redo_handler)
-        
-    if bpy.app.timers.is_registered(auto_refresh_ui):
-        bpy.app.timers.unregister(auto_refresh_ui)
+    IntegrationManager.stop()
     for cls in classes: bpy.utils.unregister_class(cls)

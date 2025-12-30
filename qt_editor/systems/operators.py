@@ -37,7 +37,7 @@ class RZ_OT_Undo(RZOperator):
     
     def execute(self, context, **kwargs):
         core.exec_in_context(bpy.ops.ed.undo)
-        context.window.brute_force_refresh()
+        context.window.sync_from_blender()
 
 class RZ_OT_Redo(RZOperator):
     id = "rzm.redo"
@@ -48,7 +48,7 @@ class RZ_OT_Redo(RZOperator):
             core.exec_in_context(bpy.ops.ed.redo)
         except:
             pass
-        context.window.brute_force_refresh()
+        context.window.sync_from_blender()
 
 class RZ_OT_Delete(RZOperator):
     id = "rzm.delete"
@@ -61,14 +61,14 @@ class RZ_OT_Delete(RZOperator):
     def execute(self, context, **kwargs):
         core.delete_elements(context.selected_ids)
         context.window.clear_selection()
-        context.window.brute_force_refresh()
+        context.window.sync_from_blender()
 
 class RZ_OT_Refresh(RZOperator):
     id = "rzm.refresh"
     label = "Force Refresh"
     
     def execute(self, context, **kwargs):
-        context.window.brute_force_refresh()
+        context.window.sync_from_blender()
 
 class RZ_OT_SelectAll(RZOperator):
     id = "rzm.select_all"
@@ -154,7 +154,7 @@ class RZ_OT_CreateElement(RZOperator):
         if new_id:
             # Сразу выделяем созданный элемент
             context.window.set_selection_multi({new_id}, active_id=new_id)
-            context.window.brute_force_refresh()
+            context.window.sync_from_blender()
 
 _CLASSES = [
     RZ_OT_Delete,
