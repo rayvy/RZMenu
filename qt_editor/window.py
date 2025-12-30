@@ -36,7 +36,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.panel_outliner.setProperty("RZ_CONTEXT", "OUTLINER")
         self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
         self.panel_outliner.items_reordered.connect(self.on_reorder)
-        # Подключаем сигналы переключения видимости из аутлайнера
         self.panel_outliner.req_toggle_hide.connect(lambda uid: self.action_manager.run("rzm.toggle_hide", override_ids=[uid]))
         self.panel_outliner.req_toggle_selectable.connect(lambda uid: self.action_manager.run("rzm.toggle_selectable", override_ids=[uid]))
         splitter.addWidget(self.panel_outliner)
@@ -45,6 +44,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.panel_viewport.setProperty("RZ_CONTEXT", "VIEWPORT")
         self.panel_viewport.parent_window = self 
         self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
+        # Подключаем сигнал ресайза
+        self.panel_viewport.rz_scene.element_resized_signal.connect(self.on_viewport_resize)
+        
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
         self.panel_viewport.rz_scene.interaction_end_signal.connect(self.on_interaction_end)
         self.panel_viewport.rz_scene.selection_changed_signal.connect(self.handle_viewport_selection)
@@ -69,16 +71,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.input_controller.operator_executed.connect(self.update_footer_op)
 
     def sync_from_blender(self):
-        """
-        Вызывается IntegrationManager'ом при событиях depsgraph (Undo/Redo/Changes).
-        """
         if not self.isVisible(): return
-        
-        # Блокировка во время интерактива (drag & drop), чтобы не сбрасывать позицию
-        if self.panel_viewport.rz_scene._is_user_interaction:
-            return
-
-        # Запускаем полное обновление UI
+        if self.panel_viewport.rz_scene._is_user_interaction: return
         self.brute_force_refresh()
 
     def setup_toolbar(self):
@@ -206,7 +200,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
     def sync_selection_ui(self):
         self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
-        # Для визуальной отзывчивости (подсветка рамок) обновляем немедленно
         self.refresh_viewport(force=True)
         self.refresh_inspector(force=True)
         self.action_manager.update_ui_state()
@@ -229,19 +222,18 @@ class RZMEditorWindow(QtWidgets.QWidget):
         if not self.selected_ids: return
         core.move_elements_delta(self.selected_ids, delta_x, delta_y)
 
+    def on_viewport_resize(self, uid, x, y, w, h):
+        # Вызываем новый метод в core
+        core.resize_element(uid, x, y, w, h)
+
     def on_property_edited(self, key, val, idx):
         core.update_property_multi(self.selected_ids, key, val, idx)
 
     # --- REFRESH LOOP ---
     
     def brute_force_refresh(self):
-        """
-        Основной цикл обновления данных из Blender.
-        """
         if not self.isVisible(): return
-        
-        if self.panel_viewport.rz_scene._is_user_interaction:
-            return
+        if self.panel_viewport.rz_scene._is_user_interaction: return
 
         self.refresh_outliner()
         self.refresh_viewport()
