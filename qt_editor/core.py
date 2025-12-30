@@ -346,8 +346,16 @@ def get_selection_details(selected_ids, active_id):
             "is_multi": len(selected_ids) > 1
         }
 
+        # Grid Props (чтение)
         if hasattr(target, "grid_cell_size"):
             data["grid_cell_size"] = target.grid_cell_size
+        
+        # Если свойства не объявлены в PropertyGroup, используем getattr с дефолтом
+        # или считаем, что пользователь добавит их в `rzm.elements`
+        data["grid_rows"] = getattr(target, "grid_rows", 2)
+        data["grid_cols"] = getattr(target, "grid_cols", 2)
+        data["grid_gap"] = getattr(target, "grid_gap", 5)
+        data["grid_padding"] = getattr(target, "grid_padding", 5)
             
         return data
         
@@ -401,7 +409,13 @@ def get_element_signature(active_id):
         img_id = getattr(target, "image_id", -1)
         is_h = getattr(target, "qt_hide", False)
         is_l = getattr(target, "qt_locked", False)
-        return hash((target.id, target.element_name, target.position[:], target.size[:], img_id, is_h, is_l))
+        # Grid signature
+        g_rows = getattr(target, "grid_rows", 0)
+        g_cols = getattr(target, "grid_cols", 0)
+        g_pad = getattr(target, "grid_padding", 0)
+        g_gap = getattr(target, "grid_gap", 0)
+        return hash((target.id, target.element_name, target.position[:], target.size[:], 
+                     img_id, is_h, is_l, g_rows, g_cols, g_pad, g_gap))
     return "DELETED"
 
 def get_viewport_signature():
@@ -505,7 +519,13 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
             "is_hidden": ("qt_hide", None),
             "is_locked": ("qt_locked", None),
             "is_selectable": ("qt_selectable", None),
-            "color": ("color", None)
+            "color": ("color", None),
+            # Grid Props
+            "grid_rows": ("grid_rows", None),
+            "grid_cols": ("grid_cols", None),
+            "grid_gap": ("grid_gap", None),
+            "grid_padding": ("grid_padding", None),
+            "grid_cell_size": ("grid_cell_size", None),
         }
 
         bl_prop = prop_name
@@ -533,7 +553,14 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
                         if current_val != value:
                             setattr(elem, bl_prop, value)
                             changed = True
-        
+                else:
+                    # Fallback для динамических свойств, если их нет в классе
+                    # Пытаемся установить как IDProperty (через item access)
+                    try:
+                        elem[bl_prop] = value
+                        changed = True
+                    except: pass
+
         if changed:
             refresh_viewports()
         if changed and not fast_mode:
@@ -665,8 +692,6 @@ def reparent_element(child_id, new_parent_id):
     finally:
         IS_UPDATING_FROM_QT = False
 
-# --- COPY / PASTE / DUPLICATE ---
-
 def duplicate_elements(target_ids):
     global IS_UPDATING_FROM_QT
     IS_UPDATING_FROM_QT = True
@@ -675,7 +700,6 @@ def duplicate_elements(target_ids):
         if not bpy.context or not bpy.context.scene: return []
         elements = bpy.context.scene.rzm.elements
         
-        # 1. Collect sources
         sources = []
         for elem in elements:
             if elem.id in target_ids:
@@ -684,8 +708,6 @@ def duplicate_elements(target_ids):
         if not sources: return []
 
         new_ids = []
-        
-        # 2. Clone
         for src in sources:
             new_id = get_next_available_id(elements)
             new_elem = elements.add()
@@ -693,12 +715,10 @@ def duplicate_elements(target_ids):
             new_elem.element_name = src.element_name + "_copy"
             new_elem.elem_class = src.elem_class
             
-            # Props
-            new_elem.position = (src.position[0] + 20, src.position[1] - 20) # Offset
+            new_elem.position = (src.position[0] + 20, src.position[1] - 20) 
             new_elem.size = src.size[:]
-            new_elem.parent_id = src.parent_id # Keep parent
+            new_elem.parent_id = src.parent_id 
             
-            # Flags
             if hasattr(src, "qt_hide"): new_elem.qt_hide = src.qt_hide
             if hasattr(src, "qt_locked"): new_elem.qt_locked = src.qt_locked
             if hasattr(src, "color"): new_elem.color = src.color[:]
@@ -713,7 +733,6 @@ def duplicate_elements(target_ids):
         IS_UPDATING_FROM_QT = False
 
 def copy_elements(target_ids):
-    """Saves element data to internal clipboard"""
     global _INTERNAL_CLIPBOARD
     _INTERNAL_CLIPBOARD.clear()
     
@@ -731,7 +750,6 @@ def copy_elements(target_ids):
                 "color": list(elem.color) if hasattr(elem, "color") else [1,1,1,1],
                 "hide": getattr(elem, "qt_hide", False),
                 "lock": getattr(elem, "qt_locked", False),
-                # Special props
                 "grid_cell": getattr(elem, "grid_cell_size", 20)
             }
             _INTERNAL_CLIPBOARD.append(data)
@@ -739,11 +757,6 @@ def copy_elements(target_ids):
     print(f"RZM: Copied {len(_INTERNAL_CLIPBOARD)} elements.")
 
 def paste_elements(target_x=None, target_y=None):
-    """
-    Pastes elements.
-    If target_x/y (Blender coords) provided: paste centering around that point.
-    If None: paste at original coords (duplicate in place).
-    """
     global IS_UPDATING_FROM_QT, _INTERNAL_CLIPBOARD
     if not _INTERNAL_CLIPBOARD: return []
     
@@ -753,15 +766,13 @@ def paste_elements(target_x=None, target_y=None):
         elements = bpy.context.scene.rzm.elements
         new_ids = []
 
-        # Calculate Offset
         offset_x = 0
         offset_y = 0
         
         if target_x is not None and target_y is not None:
-            # Find center of clipboard items
             min_x = min(item["pos"][0] for item in _INTERNAL_CLIPBOARD)
             max_x = max(item["pos"][0] for item in _INTERNAL_CLIPBOARD)
-            min_y = min(item["pos"][1] for item in _INTERNAL_CLIPBOARD) # Blender Y
+            min_y = min(item["pos"][1] for item in _INTERNAL_CLIPBOARD)
             max_y = max(item["pos"][1] for item in _INTERNAL_CLIPBOARD)
             
             center_x = (min_x + max_x) / 2
@@ -782,7 +793,7 @@ def paste_elements(target_x=None, target_y=None):
             
             new_elem.position = (px, py)
             new_elem.size = item["size"]
-            new_elem.parent_id = -1 # Reset parent to root on paste to be safe
+            new_elem.parent_id = -1 
             
             if "color" in item: new_elem.color = item["color"]
             if "hide" in item: new_elem.qt_hide = item["hide"]
@@ -795,6 +806,82 @@ def paste_elements(target_x=None, target_y=None):
         safe_undo_push("RZM: Paste")
         refresh_viewports()
         return new_ids
+
+    finally:
+        IS_UPDATING_FROM_QT = False
+
+def align_elements(target_ids, mode):
+    """
+    mode: 'LEFT', 'RIGHT', 'TOP', 'BOTTOM', 'CENTER_X', 'CENTER_Y'
+    """
+    global IS_UPDATING_FROM_QT
+    IS_UPDATING_FROM_QT = True
+    try:
+        if not target_ids or len(target_ids) < 2: return
+        elements = bpy.context.scene.rzm.elements
+        selection = [e for e in elements if e.id in target_ids]
+        if not selection: return
+
+        # Blender Y is UP. 
+        # But UI Alignment is Visual (Qt Y Down).
+        # We need to translate logic carefully.
+        # PosX, PosY are Blender coords.
+        
+        # LEFT: Min X
+        if mode == 'LEFT':
+            target_val = min(e.position[0] for e in selection)
+            for e in selection: e.position[0] = target_val
+            
+        # RIGHT: Max Right Edge. Right = PosX + Width.
+        elif mode == 'RIGHT':
+            target_right = max(e.position[0] + e.size[0] for e in selection)
+            for e in selection:
+                e.position[0] = target_right - e.size[0]
+                
+        # TOP (Visual Top):
+        # Qt Top = Min Y. 
+        # Blender Y = -QtY. So Min QtY -> Max Blender Y.
+        # Align to Max Y.
+        elif mode == 'TOP':
+            target_val = max(e.position[1] for e in selection)
+            for e in selection: e.position[1] = target_val
+            
+        # BOTTOM (Visual Bottom):
+        # Qt Bottom = Max (Y+H).
+        # Blender Bottom Edge = Y - H (since Y is top-left in Qt inversion logic, but in Blender Y is pos).
+        # Let's verify: In Blender, if (0,0) is origin.
+        # Qt(0,0) -> Bl(0,0).
+        # Qt(0, 100) -> Bl(0, -100).
+        # Rect Height 50.
+        # Item 1: QtPos(0, 10) -> BlPos(0, -10). Visually high.
+        # Item 2: QtPos(0, 100) -> BlPos(0, -100). Visually low.
+        # Align Bottom -> Align to Item 2's bottom edge.
+        # Item 2 Bottom Edge (Qt) = 100 + 50 = 150.
+        # In Blender: BlPos - Height = -100 - 50 = -150.
+        # So we want min(pos_y - height).
+        elif mode == 'BOTTOM':
+            target_bottom = min(e.position[1] - e.size[1] for e in selection)
+            for e in selection:
+                e.position[1] = target_bottom + e.size[1]
+        
+        # CENTER X
+        elif mode == 'CENTER_X':
+            min_x = min(e.position[0] for e in selection)
+            max_r = max(e.position[0] + e.size[0] for e in selection)
+            center = (min_x + max_r) / 2
+            for e in selection:
+                e.position[0] = int(center - e.size[0] / 2)
+                
+        # CENTER Y
+        elif mode == 'CENTER_Y':
+            max_y = max(e.position[1] for e in selection) # Top
+            min_b = min(e.position[1] - e.size[1] for e in selection) # Bottom
+            center = (max_y + min_b) / 2
+            for e in selection:
+                e.position[1] = int(center + e.size[1] / 2)
+
+        safe_undo_push(f"RZM: Align {mode}")
+        refresh_viewports()
 
     finally:
         IS_UPDATING_FROM_QT = False
