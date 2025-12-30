@@ -2,42 +2,37 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from .base import RZDraggableNumber, RZSmartSlider
 
+# ... (RZColorButton оставляем без изменений) ...
 class RZColorButton(QtWidgets.QPushButton):
     colorChanged = QtCore.Signal(list)
-
     def __init__(self, text="Click to set"):
         super().__init__(text)
         self._color = [1.0, 1.0, 1.0, 1.0]
         self.clicked.connect(self._pick_color)
         self.update_style()
-
     def set_color(self, rgba):
+        if not rgba or len(rgba) < 3: rgba = [1.0, 1.0, 1.0, 1.0]
+        if len(rgba) == 3: rgba = list(rgba) + [1.0]
         self._color = rgba
         self.update_style()
-
     def update_style(self):
         r, g, b, _ = [int(c * 255) for c in self._color]
-        # Calculate perceived brightness for text contrast
         luminance = (0.299 * r + 0.587 * g + 0.114 * b)
         contrast = "black" if luminance > 128 else "white"
         self.setStyleSheet(f"background-color: rgb({r},{g},{b}); color: {contrast}; border: 1px solid #555;")
-
     def _pick_color(self):
-        # Convert stored float 0-1 to QColor (0-255)
         current_qcolor = QtGui.QColor()
         current_qcolor.setRgbF(*self._color)
-
         dialog = QtWidgets.QColorDialog(current_qcolor, self)
         dialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
-        
         if dialog.exec():
             c = dialog.selectedColor()
             new_rgba = [c.redF(), c.greenF(), c.blueF(), c.alphaF()]
             self.set_color(new_rgba)
             self.colorChanged.emit(new_rgba)
 
+
 class RZMInspectorPanel(QtWidgets.QWidget):
-    # key, val, sub_index
     property_changed = QtCore.Signal(str, object, object) 
 
     def __init__(self):
@@ -63,7 +58,7 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         self.table_raw.setHorizontalHeaderLabels(["Key", "Value"])
         self.table_raw.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         self.table_raw.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
-        self.table_raw.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers) # Read-only
+        self.table_raw.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers) 
         layout_raw.addWidget(self.table_raw)
         self.tabs.addTab(self.tab_raw, "Raw Data")
         
@@ -71,6 +66,7 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         self._block_signals = False
 
     def _init_properties_ui(self):
+        # ... (Код создания UI без изменений) ...
         # === GROUP: IDENTITY ===
         grp_ident = QtWidgets.QGroupBox("Identity")
         form_ident = QtWidgets.QFormLayout(grp_ident)
@@ -79,41 +75,35 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         form_ident.addRow("ID:", self.lbl_id)
         
         self.name_edit = QtWidgets.QLineEdit()
-        self.name_edit.editingFinished.connect(lambda: self.emit_change('name', self.name_edit.text()))
+        self.name_edit.editingFinished.connect(lambda: self.emit_change('element_name', self.name_edit.text()))
         form_ident.addRow("Name:", self.name_edit)
         
         self.cb_class = QtWidgets.QComboBox()
         self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
+        self.cb_class.setEnabled(True) 
         self.cb_class.currentTextChanged.connect(lambda t: self.emit_change('class_type', t))
         form_ident.addRow("Class:", self.cb_class)
-        
         self.layout_props.addWidget(grp_ident)
         
         # === GROUP: TRANSFORM ===
         self.grp_trans = QtWidgets.QGroupBox("Transform")
         layout_trans = QtWidgets.QVBoxLayout(self.grp_trans)
         
-        # X / Y
         self.sl_x = RZSmartSlider(label_text="X", is_int=True)
         self.sl_x.value_changed.connect(lambda v: self.emit_change('pos_x', int(v)))
         layout_trans.addWidget(self.sl_x)
-        
         self.sl_y = RZSmartSlider(label_text="Y", is_int=True)
         self.sl_y.value_changed.connect(lambda v: self.emit_change('pos_y', int(v)))
         layout_trans.addWidget(self.sl_y)
-        
-        # W / H
         self.sl_w = RZSmartSlider(label_text="W", is_int=True)
         self.sl_w.value_changed.connect(lambda v: self.emit_change('width', int(v)))
         layout_trans.addWidget(self.sl_w)
-        
         self.sl_h = RZSmartSlider(label_text="H", is_int=True)
         self.sl_h.value_changed.connect(lambda v: self.emit_change('height', int(v)))
         layout_trans.addWidget(self.sl_h)
-        
         self.layout_props.addWidget(self.grp_trans)
 
-        # === GROUP: GRID (Placeholder for dynamic visibility) ===
+        # === GROUP: GRID ===
         self.grp_grid = QtWidgets.QGroupBox("Grid Settings")
         layout_grid = QtWidgets.QVBoxLayout(self.grp_grid)
         layout_grid.addWidget(QtWidgets.QLabel("Cell Size:"))
@@ -125,26 +115,21 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         # === GROUP: STYLE ===
         grp_style = QtWidgets.QGroupBox("Style")
         layout_style = QtWidgets.QVBoxLayout(grp_style)
-        
         self.btn_color = RZColorButton()
         self.btn_color.colorChanged.connect(lambda c: self.emit_change('color', c))
         layout_style.addWidget(QtWidgets.QLabel("Color:"))
         layout_style.addWidget(self.btn_color)
-        
         self.layout_props.addWidget(grp_style)
         
         # === GROUP: EDITOR ===
         grp_edit = QtWidgets.QGroupBox("Editor Flags")
         layout_edit = QtWidgets.QVBoxLayout(grp_edit)
-        
         self.chk_hide = QtWidgets.QCheckBox("Is Hidden")
         self.chk_hide.toggled.connect(lambda v: self.emit_change('is_hidden', v))
         layout_edit.addWidget(self.chk_hide)
-        
         self.chk_lock = QtWidgets.QCheckBox("Lock Transform")
         self.chk_lock.toggled.connect(lambda v: self.emit_change('is_locked', v))
         layout_edit.addWidget(self.chk_lock)
-        
         self.layout_props.addWidget(grp_edit)
 
     def emit_change(self, key, val, sub=None):
@@ -152,9 +137,6 @@ class RZMInspectorPanel(QtWidgets.QWidget):
             self.property_changed.emit(key, val, sub)
 
     def update_ui(self, props):
-        """
-        Main entry point to populate inspector from backend data.
-        """
         self._block_signals = True
         
         if props and props.get('exists'):
@@ -162,15 +144,18 @@ class RZMInspectorPanel(QtWidgets.QWidget):
             self.tab_props.setEnabled(True)
             self.tab_raw.setEnabled(True)
             
+            # ВАЖНО: Проверка Lock
+            is_locked = props.get('is_locked', False)
+            # Блокируем группу трансформаций если locked
+            self.grp_trans.setEnabled(not is_locked)
+            
             # --- Identity ---
             self.lbl_id.setText(f"ID: {props.get('id')}")
             self.name_edit.setText(props.get('name', ''))
-            
             class_type = props.get('class_type', 'CONTAINER')
             self.cb_class.setCurrentText(class_type)
             
             # --- Dynamic Visibility ---
-            # Show grid settings only if class is GRID_CONTAINER
             is_grid = (class_type == "GRID_CONTAINER")
             self.grp_grid.setVisible(is_grid)
             if is_grid:
@@ -188,10 +173,10 @@ class RZMInspectorPanel(QtWidgets.QWidget):
             
             # --- Flags ---
             self.chk_hide.setChecked(props.get('is_hidden', False))
-            self.chk_lock.setChecked(props.get('is_locked', False))
+            self.chk_lock.setChecked(is_locked)
             
             # --- Raw Data Tab ---
-            self.table_raw.setRowCount(0) # Clear
+            self.table_raw.setRowCount(0)
             sorted_keys = sorted(props.keys())
             self.table_raw.setRowCount(len(sorted_keys))
             for r, key in enumerate(sorted_keys):

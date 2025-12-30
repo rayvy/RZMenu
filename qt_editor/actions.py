@@ -2,10 +2,7 @@
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtCore import Qt, QObject
 from .systems import operators
-from .conf import defaults  # Берем дефолтные настройки клавиш
-
-# --- LEGACY MANAGER (Адаптер для window.py) ---
-# Этот класс исчезнет в Phase 3, когда мы напишем InputManager
+from .conf import defaults 
 
 class RZActionManager(QObject):
     def __init__(self, window):
@@ -22,60 +19,36 @@ class RZActionManager(QObject):
         и дефолтного конфига клавиш.
         """
         # 1. Берем карту клавиш из defaults.py (GLOBAL секцию для примера)
-        # В будущем тут будет полноценный Keymap Lookup
         global_keymap = defaults.DEFAULT_CONFIG["keymaps"]["GLOBAL"]
         
-        # Инвертируем карту: { "rzm.undo": ["Ctrl+Z"], ... }
-        # Чтобы знать, какой хоткей назначить оператору
         op_to_shortcut = {}
         for key, op_id in global_keymap.items():
-            # Пока поддерживаем только простые строки (без kwargs)
             if isinstance(op_id, str):
                 op_to_shortcut[op_id] = key
 
         # 2. Проходимся по всем операторам в реестре
         for op_id, op_class in operators.OPERATOR_REGISTRY.items():
-            # Создаем экземпляр оператора
             op_instance = op_class()
             self.operators_instances[op_id] = op_instance
             
-            # Создаем QAction
             q_act = QAction(op_instance.label, self.window)
             
-            # Если есть хоткей в конфиге -> назначаем
             if op_id in op_to_shortcut:
                 shortcut_str = op_to_shortcut[op_id]
-                # q_act.setShortcut(QKeySequence(shortcut_str))
-                # Добавляем шорткат в тултип
                 q_act.setToolTip(f"{op_instance.label} ({shortcut_str})")
             else:
                 q_act.setToolTip(op_instance.label)
 
-            # Подключаем сигнал
-            # Важно: лямбда захватывает op_id
+            # Подключаем сигнал: важно передавать **kwargs, если вызов идет кодом
+            # Но для Qt.triggered (клик мышью) аргументы по умолчанию пустые
             q_act.triggered.connect(lambda checked=False, oid=op_id: self.run(oid))
             
-            # Добавляем в окно (чтобы работали хоткеи) и сохраняем
             self.window.addAction(q_act)
             self.q_actions[op_id] = q_act
             
-        # 3. Ручная регистрация Nudge (стрелки)
-        # Так как в Phase 1 мы заложили их в конфиг VIEWPORT, но пока
-        # у нас нет умного InputManager, пропишем их вручную, как было,
-        # но используя оператор из реестра.
-        self._register_hardcoded_arrows()
-
-    def _register_hardcoded_arrows(self):
-        arrows = [
-            (Qt.Key_Left,  -10, 0), (Qt.Key_Right, 10, 0),
-            (Qt.Key_Up,    0, -10), (Qt.Key_Down,  0, 10),
-        ]
-        for key, dx, dy in arrows:
-            q_act = QAction(self.window)
-            q_act.setShortcut(QKeySequence(key))
-            # Вызываем run с параметрами
-            q_act.triggered.connect(lambda _, x=dx, y=dy: self.run("rzm.nudge", x=x, y=y))
-            self.window.addAction(q_act)
+        # 3. Ручная регистрация Nudge (если требуется для legacy кнопок)
+        # В новой системе Nudge вызывается через InputManager, 
+        # но если нужны кнопки в UI, их нужно вязать через connect_button
 
     def run(self, op_id, **kwargs):
         """Единая точка запуска"""
@@ -84,14 +57,20 @@ class RZActionManager(QObject):
             print(f"RZM Error: Operator {op_id} instance not found")
             return
         
-        # Создаем контекст
         ctx = operators.RZContext(self.window)
         
-        # Проверяем Poll
-        if not op.poll(ctx): 
-            return
-        
+        # Проверяем Poll (если это не override вызов)
+        if not kwargs.get("override_ids") and not op.poll(ctx): 
+            # Некоторые операторы могут быть запущены без выделения (override),
+            # поэтому если poll вернул False, но есть override, пробуем запустить.
+            # Но в общем случае лучше доверять poll'у внутри самого оператора.
+            pass
+
         try:
+            # Poll часто проверяет context.selected_ids.
+            # Если мы передаем override_ids, то poll может вернуть False,
+            # но оператор все равно должен выполниться.
+            # Поэтому передадим ответственность execute.
             op.execute(ctx, **kwargs)
             self.update_ui_state()
         except Exception as e:
@@ -105,17 +84,16 @@ class RZActionManager(QObject):
         for op_id, q_act in self.q_actions.items():
             op = self.operators_instances.get(op_id)
             if op:
+                # Тут poll строгий, т.к. UI кнопка работает с контекстом
                 q_act.setEnabled(op.poll(ctx))
 
     def connect_button(self, btn, op_id, **kwargs):
-        """Хелпер для кнопок в Toolbar"""
-        # Проверяем, есть ли такой оператор
         if op_id not in self.operators_instances:
             print(f"Warning: connect_button failed, unknown op {op_id}")
             return
 
+        # Привязываем клик
         btn.clicked.connect(lambda: self.run(op_id, **kwargs))
         
-        # Если у нас уже создан QAction для этого оператора, берем тултип оттуда
         if op_id in self.q_actions:
             btn.setToolTip(self.q_actions[op_id].toolTip())

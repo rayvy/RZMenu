@@ -1,4 +1,4 @@
-# qt_editor/conf/defaults.py
+# RZMenu/qt_editor/conf/defaults.py
 
 DEFAULT_CONFIG = {
     "system": {
@@ -28,20 +28,33 @@ DEFAULT_CONFIG = {
             "Delete": "rzm.delete",
             "Ctrl+A": "rzm.select_all",
             "Home": "rzm.view_reset",
-            # Умные стрелки (Move Object OR Pan View)
-            "Left":  {"op": "rzm.viewport_arrow", "args": {"x": -10, "y": 0}},
-            "Right": {"op": "rzm.viewport_arrow", "args": {"x": 10, "y": 0}},
-            "Up":    {"op": "rzm.viewport_arrow", "args": {"x": 0, "y": -10}}, # Y вверх в Qt отрицательный (обычно)
-            "Down":  {"op": "rzm.viewport_arrow", "args": {"x": 0, "y": 10}}
+            "H": "rzm.toggle_hide",
+            "Alt+H": "rzm.unhide_all",
+            # Пример сложного биндинга (оператор + аргументы)
+            "L": {"op": "rzm.toggle_lock", "args": {}}, 
+            
+            # Навигация стрелками (сдвиг элементов)
+            "Left":  {"op": "rzm.nudge", "args": {"x": -10, "y": 0}},
+            "Right": {"op": "rzm.nudge", "args": {"x": 10, "y": 0}},
+            "Up":    {"op": "rzm.nudge", "args": {"x": 0, "y": -10}}, 
+            "Down":  {"op": "rzm.nudge", "args": {"x": 0, "y": 10}},
+            
+            # Навигация с Shift (сдвиг по 1 пикселю)
+            "Shift+Left":  {"op": "rzm.nudge", "args": {"x": -1, "y": 0}},
+            "Shift+Right": {"op": "rzm.nudge", "args": {"x": 1, "y": 0}},
+            "Shift+Up":    {"op": "rzm.nudge", "args": {"x": 0, "y": -1}}, 
+            "Shift+Down":  {"op": "rzm.nudge", "args": {"x": 0, "y": 1}}
         },
         # Контекст Аутлайнера
         "OUTLINER": {
             "Delete": "rzm.delete",
-            "Ctrl+A": "rzm.select_all"
+            "Ctrl+A": "rzm.select_all",
+            "H": "rzm.toggle_hide",
+            "Alt+H": "rzm.unhide_all"
         },
         # Контекст Инспектора
         "INSPECTOR": {
-            # Тут можно добавить copy/paste свойств
+            # Тут можно добавить copy/paste свойств в будущем
         }
     }
 }

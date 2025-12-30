@@ -148,19 +148,19 @@ def get_selection_details(selected_ids, active_id):
     return None
 
 def get_viewport_data():
-    """
-    Данные для отрисовки Viewport.
-    Исправлено: добавлены parent_id и флаги отображения.
-    """
     results = []
     if not bpy.context or not bpy.context.scene: return results
     
     for elem in bpy.context.scene.rzm.elements:
         img_id = getattr(elem, "image_id", -1)
         pid = getattr(elem, "parent_id", -1)
-        
-        # Если это TEXT, нам нужен текст
         text_content = getattr(elem, "text_string", elem.element_name)
+        
+        # Color Conversion
+        color_list = None
+        if hasattr(elem, "color"):
+            color_list = list(elem.color) # [r, g, b] or [r, g, b, a]
+            if len(color_list) == 3: color_list.append(1.0)
         
         results.append({
             "id": elem.id, 
@@ -173,6 +173,7 @@ def get_viewport_data():
             "image_id": img_id,
             "parent_id": pid,
             "text_content": text_content,
+            "color": color_list,
             "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),
             "is_locked": getattr(elem, "qt_locked", False)
@@ -269,6 +270,24 @@ def safe_undo_push(message):
 
 def commit_history(msg):
     safe_undo_push(msg)
+
+def unhide_all_elements():
+    global IS_UPDATING_FROM_QT
+    IS_UPDATING_FROM_QT = True
+    try:
+        if not bpy.context or not bpy.context.scene: return
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if getattr(elem, "qt_hide", False):
+                elem.qt_hide = False
+                changed = True
+        
+        if changed:
+            safe_undo_push("RZM: Unhide All")
+            refresh_viewports()
+    finally:
+        IS_UPDATING_FROM_QT = False
 
 def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mode=False):
     global IS_UPDATING_FROM_QT

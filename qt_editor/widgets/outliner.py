@@ -35,23 +35,24 @@ class RZDraggableTree(QtWidgets.QTreeWidget):
         if column == 1:
             # Visibility Column
             self.toggle_hide_signal.emit(elem_id)
-            # Optimistic update (backend will confirm later)
-            current_vis = item.text(1)
-            item.setText(1, "❌" if current_vis == "👁" else "👁")
+            # Оптимистичное обновление UI (пока ждем ответа от Blender)
+            curr = item.text(1)
+            item.setText(1, "❌" if curr == "👁" else "👁")
             
         elif column == 2:
             # Selectable/Locked Column
             self.toggle_selectable_signal.emit(elem_id)
-            current_sel = item.text(2)
-            item.setText(2, "🔒" if current_sel == "➤" else "➤")
+            curr = item.text(2)
+            item.setText(2, "🔒" if curr == "➤" else "➤")
 
     def dropEvent(self, event):
         source_items = self.selectedItems()
-        if not source_items:
-            return
+        if not source_items: return
 
+        # Стандартная обработка перемещения Qt
         super().dropEvent(event)
 
+        # Вычисляем, куда упало
         first_item = source_items[0]
         moved_id = first_item.data(0, QtCore.Qt.UserRole)
         
@@ -97,8 +98,7 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
         self._block_signals = False
 
     def _on_qt_selection_changed(self):
-        if self._block_signals:
-            return
+        if self._block_signals: return
 
         selected_items = self.tree.selectedItems()
         ids = [item.data(0, QtCore.Qt.UserRole) for item in selected_items]
@@ -114,8 +114,7 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
 
     def update_ui(self, elements_list):
         """
-        Rebuilds the tree efficiently (O(n)).
-        elements_list: list of dicts.
+        Rebuilds the tree.
         """
         self._block_signals = True
         
@@ -143,7 +142,7 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
             item.setText(0, data.get('name', 'Unnamed'))
             item.setData(0, QtCore.Qt.UserRole, uid)
             
-            # Icons
+            # Icons based on class
             ctype = data.get('class_type', 'CONTAINER')
             icon = QtWidgets.QStyle.SP_FileIcon
             if "CONTAINER" in ctype: icon = QtWidgets.QStyle.SP_DirIcon
@@ -152,13 +151,16 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
             item.setIcon(0, self.style().standardIcon(icon))
 
             # Column 1: Visible
-            # Logic: is_hidden=True -> Eye Closed (or X)
-            vis_char = "❌" if data.get('is_hidden', False) else "👁"
+            # Logic: is_hidden=True -> X, else Eye
+            is_hidden = data.get('is_hidden', False)
+            vis_char = "❌" if is_hidden else "👁"
             item.setText(1, vis_char)
             item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+            # Подкрасим скрытые
+            if is_hidden:
+                item.setForeground(0, QtGui.QColor("#888"))
 
-            # Column 2: Selectable (Locked)
-            # Logic: is_selectable=False -> Lock icon
+            # Column 2: Selectable
             is_sel = data.get('is_selectable', True)
             sel_char = "➤" if is_sel else "🔒"
             item.setText(2, sel_char)
@@ -166,25 +168,25 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
             
             item_map[uid] = item
 
-        # 3. Build Hierarchy (Parenting)
+        # 3. Build Hierarchy
         for data in elements_list:
             uid = data['id']
             pid = data.get('parent_id', -1)
             item = item_map[uid]
 
-            # If parent exists in map and isn't self (avoid recursion)
             if pid in item_map and pid != uid:
                 parent_item = item_map[pid]
                 parent_item.addChild(item)
             else:
-                # Root item
                 self.tree.addTopLevelItem(item)
 
         # 4. Restore state
         for uid, item in item_map.items():
             if uid in expanded_ids:
                 item.setExpanded(True)
-            # Always expand root items by default if list is small? Optional.
+            # Expand root by default if needed
+            if item.parent() is None:
+                item.setExpanded(True)
 
         self._block_signals = False
 
@@ -192,6 +194,10 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
         self._block_signals = True
         self.tree.clearSelection()
         
+        if not ids_set:
+            self._block_signals = False
+            return
+
         it = QtWidgets.QTreeWidgetItemIterator(self.tree)
         item_to_focus = None
         while it.value():

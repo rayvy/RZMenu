@@ -137,6 +137,13 @@ class RZ_OT_ToggleHide(RZOperator):
         core.toggle_editor_flag(ids, "is_hidden")
         context.window.sync_from_blender()
 
+class RZ_OT_UnhideAll(RZOperator):
+    id = "rzm.unhide_all"
+    label = "Unhide All Elements"
+    def execute(self, context, **kwargs):
+        core.unhide_all_elements()
+        context.window.sync_from_blender()
+
 class RZ_OT_ToggleLock(RZOperator):
     id = "rzm.toggle_lock"
     label = "Toggle Lock"
@@ -159,7 +166,8 @@ _CLASSES = [
     RZ_OT_Delete, RZ_OT_Refresh, RZ_OT_Undo, RZ_OT_Redo,
     RZ_OT_SelectAll, RZ_OT_Nudge, RZ_OT_ViewportArrow, RZ_OT_ViewReset,
     RZ_OT_CreateElement,
-    RZ_OT_ToggleHide, RZ_OT_ToggleLock, RZ_OT_ToggleSelectable
+    RZ_OT_ToggleHide, RZ_OT_ToggleLock, RZ_OT_ToggleSelectable,
+    RZ_OT_UnhideAll
 ]
 
 OPERATOR_REGISTRY = {}
