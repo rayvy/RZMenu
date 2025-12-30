@@ -1,6 +1,7 @@
 # RZMenu/qt_editor/widgets/inspector.py
 from PySide6 import QtWidgets, QtCore, QtGui
 from .base import RZDraggableNumber, RZSmartSlider
+from .. import actions
 
 # ... (RZColorButton оставляем без изменений) ...
 class RZColorButton(QtWidgets.QPushButton):
@@ -64,9 +65,23 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         
         self.has_data = False
         self._block_signals = False
+        
+        # Получаем доступ к ActionManager через родительское окно (dirty but works)
+        # Лучше было бы передавать его, но пока через self.window()
+        self.act_man = None
+
+    def _get_action_manager(self):
+        if not self.act_man:
+            # Ищем родительское окно RZMEditorWindow
+            curr = self.parent()
+            while curr:
+                if hasattr(curr, "action_manager"):
+                    self.act_man = curr.action_manager
+                    break
+                curr = curr.parent()
+        return self.act_man
 
     def _init_properties_ui(self):
-        # ... (Код создания UI без изменений) ...
         # === GROUP: IDENTITY ===
         grp_ident = QtWidgets.QGroupBox("Identity")
         form_ident = QtWidgets.QFormLayout(grp_ident)
@@ -85,6 +100,32 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         form_ident.addRow("Class:", self.cb_class)
         self.layout_props.addWidget(grp_ident)
         
+        # === GROUP: ALIGNMENT (NEW) ===
+        self.grp_align = QtWidgets.QGroupBox("Alignment")
+        layout_align = QtWidgets.QHBoxLayout(self.grp_align)
+        layout_align.setSpacing(2)
+        
+        # Unicode icons: ⇠ (Left), ⇢ (Right), ⇡ (Top), ⇣ (Bottom), ⌖ (Center)
+        # But standard chars like |←, →|, etc usually clearer
+        btns = [
+            ("⇤", "LEFT", "Align Left"),
+            ("⇥", "RIGHT", "Align Right"),
+            ("⤒", "TOP", "Align Top"),
+            ("⤓", "BOTTOM", "Align Bottom"),
+            ("⌖X", "CENTER_X", "Align Center X"),
+            ("⌖Y", "CENTER_Y", "Align Center Y")
+        ]
+        
+        for txt, mode, tooltip in btns:
+            b = QtWidgets.QPushButton(txt)
+            b.setFixedWidth(30)
+            b.setToolTip(tooltip)
+            # Замыкание
+            b.clicked.connect(lambda checked=False, m=mode: self._on_align_click(m))
+            layout_align.addWidget(b)
+            
+        self.layout_props.addWidget(self.grp_align)
+
         # === GROUP: TRANSFORM ===
         self.grp_trans = QtWidgets.QGroupBox("Transform")
         layout_trans = QtWidgets.QVBoxLayout(self.grp_trans)
@@ -103,13 +144,38 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         layout_trans.addWidget(self.sl_h)
         self.layout_props.addWidget(self.grp_trans)
 
-        # === GROUP: GRID ===
+        # === GROUP: GRID (EXTENDED) ===
         self.grp_grid = QtWidgets.QGroupBox("Grid Settings")
         layout_grid = QtWidgets.QVBoxLayout(self.grp_grid)
-        layout_grid.addWidget(QtWidgets.QLabel("Cell Size:"))
-        self.sl_cell = RZSmartSlider(label_text="Px", is_int=True)
+        
+        # Cell Size
+        h_cell = QtWidgets.QHBoxLayout()
+        h_cell.addWidget(QtWidgets.QLabel("Cell Size:"))
+        self.sl_cell = RZSmartSlider(label_text="", is_int=True)
         self.sl_cell.value_changed.connect(lambda v: self.emit_change('grid_cell_size', int(v)))
-        layout_grid.addWidget(self.sl_cell)
+        h_cell.addWidget(self.sl_cell)
+        layout_grid.addLayout(h_cell)
+        
+        # Rows / Cols
+        h_rc = QtWidgets.QHBoxLayout()
+        self.sl_rows = RZSmartSlider(label_text="R", is_int=True)
+        self.sl_rows.value_changed.connect(lambda v: self.emit_change('grid_rows', int(v)))
+        self.sl_cols = RZSmartSlider(label_text="C", is_int=True)
+        self.sl_cols.value_changed.connect(lambda v: self.emit_change('grid_cols', int(v)))
+        h_rc.addWidget(self.sl_rows)
+        h_rc.addWidget(self.sl_cols)
+        layout_grid.addLayout(h_rc)
+
+        # Padding / Gap
+        h_pg = QtWidgets.QHBoxLayout()
+        self.sl_pad = RZSmartSlider(label_text="P", is_int=True)
+        self.sl_pad.value_changed.connect(lambda v: self.emit_change('grid_padding', int(v)))
+        self.sl_gap = RZSmartSlider(label_text="G", is_int=True)
+        self.sl_gap.value_changed.connect(lambda v: self.emit_change('grid_gap', int(v)))
+        h_pg.addWidget(self.sl_pad)
+        h_pg.addWidget(self.sl_gap)
+        layout_grid.addLayout(h_pg)
+
         self.layout_props.addWidget(self.grp_grid)
         
         # === GROUP: STYLE ===
@@ -132,6 +198,11 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         layout_edit.addWidget(self.chk_lock)
         self.layout_props.addWidget(grp_edit)
 
+    def _on_align_click(self, mode):
+        man = self._get_action_manager()
+        if man:
+            man.run("rzm.align", mode=mode)
+
     def emit_change(self, key, val, sub=None):
         if self.has_data and not self._block_signals:
             self.property_changed.emit(key, val, sub)
@@ -144,9 +215,7 @@ class RZMInspectorPanel(QtWidgets.QWidget):
             self.tab_props.setEnabled(True)
             self.tab_raw.setEnabled(True)
             
-            # ВАЖНО: Проверка Lock
             is_locked = props.get('is_locked', False)
-            # Блокируем группу трансформаций если locked
             self.grp_trans.setEnabled(not is_locked)
             
             # --- Identity ---
@@ -155,11 +224,19 @@ class RZMInspectorPanel(QtWidgets.QWidget):
             class_type = props.get('class_type', 'CONTAINER')
             self.cb_class.setCurrentText(class_type)
             
-            # --- Dynamic Visibility ---
+            # --- Alignment ---
+            # Доступно только если выделено > 1 элемента
+            self.grp_align.setVisible(props.get('is_multi', False))
+
+            # --- Dynamic Visibility for Grid ---
             is_grid = (class_type == "GRID_CONTAINER")
             self.grp_grid.setVisible(is_grid)
             if is_grid:
                 self.sl_cell.set_value_from_backend(props.get('grid_cell_size', 20))
+                self.sl_rows.set_value_from_backend(props.get('grid_rows', 2))
+                self.sl_cols.set_value_from_backend(props.get('grid_cols', 2))
+                self.sl_pad.set_value_from_backend(props.get('grid_padding', 5))
+                self.sl_gap.set_value_from_backend(props.get('grid_gap', 5))
 
             # --- Transform ---
             self.sl_x.set_value_from_backend(props.get('pos_x', 0))
