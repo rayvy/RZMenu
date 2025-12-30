@@ -15,10 +15,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.selected_ids = set()
         self.active_id = -1
         
-        # Грязный флаг: если True, значит данные в Blender изменились
-        # и нам нужно обновить UI при следующем "ударе сердца".
-        self._is_dirty = False 
-        
         self._sig_viewport = None
         self._sig_outliner = None
         self._sig_inspector = None
@@ -40,6 +36,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.panel_outliner.setProperty("RZ_CONTEXT", "OUTLINER")
         self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
         self.panel_outliner.items_reordered.connect(self.on_reorder)
+        # Подключаем сигналы переключения видимости из аутлайнера
+        self.panel_outliner.req_toggle_hide.connect(lambda uid: self.action_manager.run("rzm.toggle_hide", override_ids=[uid]))
+        self.panel_outliner.req_toggle_selectable.connect(lambda uid: self.action_manager.run("rzm.toggle_selectable", override_ids=[uid]))
         splitter.addWidget(self.panel_outliner)
         
         self.panel_viewport = viewport.RZViewportPanel()
@@ -69,23 +68,18 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.input_controller.context_changed.connect(self.update_footer_context)
         self.input_controller.operator_executed.connect(self.update_footer_op)
 
-        # --- ИЗМЕНЕНИЕ ---
-        # УДАЛЯЕМ QTimer (_heartbeat). 
-        # Теперь нас обновляет IntegrationManager снаружи.
-        # self._heartbeat = QtCore.QTimer(self) ... -> DELETE
-
-    # --- ИЗМЕНЕНИЕ: Убираем mark_dirty и _check_dirty_and_refresh ---
-    
     def sync_from_blender(self):
         """
-        Бывший brute_force_refresh.
-        Вызывается IntegrationManager'ом только при реальных событиях depsgraph.
+        Вызывается IntegrationManager'ом при событиях depsgraph (Undo/Redo/Changes).
         """
         if not self.isVisible(): return
         
-        # Блокировка во время интерактива (drag & drop)
+        # Блокировка во время интерактива (drag & drop), чтобы не сбрасывать позицию
         if self.panel_viewport.rz_scene._is_user_interaction:
             return
+
+        # Запускаем полное обновление UI
+        self.brute_force_refresh()
 
     def setup_toolbar(self):
         def add_btn(text, op_id):
@@ -141,7 +135,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
              self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
 
     def update_footer_op(self, op_name):
-        # print(f"DEBUG FOOTER: {op_name}") # Можно уменьшить спам в консоль
         self.lbl_last_op.setText(f"Last Op: {op_name}")
 
     def open_settings(self):
@@ -171,23 +164,16 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.set_selection_multi(ids_list, active_id)
 
     def handle_viewport_selection(self, target_data, modifiers):
-        """
-        Обрабатывает выделение из вьюпорта.
-        """
         new_selection = self.selected_ids.copy()
         new_active = -1
 
-        # 1. BOX SELECT (Список ID)
         if isinstance(target_data, list):
             items_ids = set(target_data)
             if modifiers == 'SHIFT':
-                # Add to selection
                 new_selection.update(items_ids)
             elif modifiers == 'CTRL':
-                # Remove from selection
                 new_selection.difference_update(items_ids)
             else:
-                # Replace
                 new_selection = items_ids
             
             if items_ids:
@@ -195,17 +181,14 @@ class RZMEditorWindow(QtWidgets.QWidget):
             elif new_selection:
                 new_active = next(iter(new_selection))
 
-        # 2. SINGLE CLICK (Один ID)
         else:
             active_id = target_data
             if active_id == -1:
-                # Клик в пустоту
                 if modifiers != 'SHIFT' and modifiers != 'CTRL': 
                     new_selection.clear()
                 new_active = -1
             else:
                 if modifiers == 'SHIFT':
-                    # Toggle logic
                     if active_id in new_selection:
                         new_selection.remove(active_id)
                         new_active = -1 if not new_selection else next(iter(new_selection))
@@ -213,11 +196,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
                         new_selection.add(active_id)
                         new_active = active_id
                 elif modifiers == 'CTRL':
-                    # Deselect specific
                     if active_id in new_selection:
                         new_selection.remove(active_id)
                 else:
-                    # Replace logic
                     new_selection = {active_id}
                     new_active = active_id
                 
@@ -225,8 +206,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
     def sync_selection_ui(self):
         self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
-        # При изменении выделения внутри Qt нам не нужно ждать хартбита,
-        # обновляем визуал сразу для отзывчивости
+        # Для визуальной отзывчивости (подсветка рамок) обновляем немедленно
         self.refresh_viewport(force=True)
         self.refresh_inspector(force=True)
         self.action_manager.update_ui_state()
@@ -242,7 +222,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def on_interaction_end(self):
         core.commit_history("RZM Transformation")
         self.panel_viewport.rz_scene._is_user_interaction = False
-        # Сразу обновляем, чтобы убрать возможный рассинхрон после дропа
         self.refresh_viewport(force=True)
         self.refresh_inspector(force=True)
 
@@ -257,12 +236,10 @@ class RZMEditorWindow(QtWidgets.QWidget):
     
     def brute_force_refresh(self):
         """
-        По-прежнему тяжелый метод, но теперь вызывается контролируемо.
+        Основной цикл обновления данных из Blender.
         """
         if not self.isVisible(): return
         
-        # Если пользователь сейчас тянет объект мышкой (drag),
-        # то обновление из Блендера сломает ему интеракшн. Блокируем.
         if self.panel_viewport.rz_scene._is_user_interaction:
             return
 

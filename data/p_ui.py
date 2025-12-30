@@ -44,5 +44,8 @@ class RZMenuElement(bpy.types.PropertyGroup):
     qt_lock_pos: BoolProperty(name="Lock Position QT Editor", default=False)
     qt_lock_size: BoolProperty(name="Lock Size in QT Editor", default=False)
     qt_selectable: BoolProperty(name="Selectable in QT Editor", default=True)
+    qt_test_value_int: IntProperty(name="QT Int Value", default=0)
+    qt_test_value_float: FloatProperty(name="QT Float Value", default=0.0)
+    qt_test_value_bool: BoolProperty(name="QT Bool Value", default=False)
     disable_button_nums: BoolProperty(name="Disable Button Nums", default=False)
     disable_button_popup: BoolProperty(name="Disable Button Popup", default=False)

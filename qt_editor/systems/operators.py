@@ -5,7 +5,6 @@ from .. import core
 from ..utils import logger
 
 # --- CONTEXT ---
-
 class RZContext:
     def __init__(self, window):
         self.window = window
@@ -17,7 +16,6 @@ class RZContext:
             self.scene = None
 
 # --- BASE OPERATOR ---
-
 class RZOperator:
     id = ""          
     label = ""       
@@ -29,35 +27,32 @@ class RZOperator:
     def execute(self, context: RZContext, **kwargs):
         raise NotImplementedError
 
-# --- CONCRETE OPERATORS ---
+# --- OPERATORS ---
 
 class RZ_OT_Undo(RZOperator):
     id = "rzm.undo"
     label = "Undo"
-    
     def execute(self, context, **kwargs):
         core.exec_in_context(bpy.ops.ed.undo)
+        # Fix: Sync UI after Undo
         context.window.sync_from_blender()
 
 class RZ_OT_Redo(RZOperator):
     id = "rzm.redo"
     label = "Redo"
-    
     def execute(self, context, **kwargs):
         try:
             core.exec_in_context(bpy.ops.ed.redo)
         except:
             pass
+        # Fix: Sync UI after Redo
         context.window.sync_from_blender()
 
 class RZ_OT_Delete(RZOperator):
     id = "rzm.delete"
     label = "Delete Selected"
     flags = {"REQUIRES_SELECTION"}
-
-    def poll(self, context):
-        return bool(context.selected_ids)
-
+    def poll(self, context): return bool(context.selected_ids)
     def execute(self, context, **kwargs):
         core.delete_elements(context.selected_ids)
         context.window.clear_selection()
@@ -66,14 +61,12 @@ class RZ_OT_Delete(RZOperator):
 class RZ_OT_Refresh(RZOperator):
     id = "rzm.refresh"
     label = "Force Refresh"
-    
     def execute(self, context, **kwargs):
         context.window.sync_from_blender()
 
 class RZ_OT_SelectAll(RZOperator):
     id = "rzm.select_all"
     label = "Select All"
-    
     def execute(self, context, **kwargs):
         all_data = core.get_all_elements_list()
         all_ids = {item['id'] for item in all_data}
@@ -83,52 +76,33 @@ class RZ_OT_Nudge(RZOperator):
     id = "rzm.nudge"
     label = "Nudge Element"
     flags = {"REQUIRES_SELECTION"}
-    
-    def poll(self, context):
-        return bool(context.selected_ids)
-
+    def poll(self, context): return bool(context.selected_ids)
     def execute(self, context, **kwargs):
         x = kwargs.get('x', 0)
         y = kwargs.get('y', 0)
-        
         if x == 0 and y == 0: return
-
         core.move_elements_delta(context.selected_ids, x, y)
         core.commit_history("Nudge")
-        
         context.window.refresh_viewport(force=True)
         context.window.refresh_inspector(force=True)
 
 class RZ_OT_ViewportArrow(RZOperator):
-    """
-    Умная навигация стрелками:
-    - Если есть выделение -> Двигает объекты (Nudge).
-    - Если нет выделения -> Двигает 'камеру' (Pan View).
-    """
     id = "rzm.viewport_arrow"
     label = "Viewport Navigation"
-    
     def execute(self, context, **kwargs):
         x = kwargs.get('x', 0)
         y = kwargs.get('y', 0)
-        
-        # 1. Режим NUDGE (Движение объектов)
         if context.selected_ids:
             core.move_elements_delta(context.selected_ids, x, y)
             core.commit_history("Nudge")
             context.window.refresh_viewport(force=True)
             context.window.refresh_inspector(force=True)
-            
-        # 2. Режим PAN (Скроллинг вьюпорта)
         else:
-            # --- FIX VIEWPORT ARROWS ---
-            # Используем новый метод pan_view в RZViewportPanel
             context.window.panel_viewport.pan_view(x, y)
 
 class RZ_OT_ViewReset(RZOperator):
     id = "rzm.view_reset"
     label = "Reset View"
-    
     def execute(self, context, **kwargs):
         view = context.window.panel_viewport
         view.resetTransform() 
@@ -137,35 +111,55 @@ class RZ_OT_ViewReset(RZOperator):
 class RZ_OT_CreateElement(RZOperator):
     id = "rzm.create"
     label = "Create Element"
-    
     def execute(self, context, **kwargs):
         class_type = kwargs.get('class_type', 'CONTAINER')
         x = kwargs.get('x', 0)
         y = kwargs.get('y', 0)
-        
-        # Определяем родителя: если есть Активный элемент, используем его
         parent_id = -1
         if context.active_id != -1:
-            # Можно добавить проверку, существует ли еще этот элемент, но core это обработает
             parent_id = context.active_id
-            
         new_id = core.create_element(class_type, x, y, parent_id)
-        
         if new_id:
-            # Сразу выделяем созданный элемент
             context.window.set_selection_multi({new_id}, active_id=new_id)
             context.window.sync_from_blender()
 
+class RZ_OT_ToggleHide(RZOperator):
+    id = "rzm.toggle_hide"
+    label = "Toggle Hide"
+    flags = {"REQUIRES_SELECTION"}
+    def poll(self, context): 
+        # Добавляем возможность запуска через override_ids (как в outliner)
+        return bool(context.selected_ids) or kwargs.get("override_ids")
+
+    def execute(self, context, **kwargs):
+        # Поддержка override_ids для кликов по иконкам в аутлайнере
+        ids = kwargs.get("override_ids", context.selected_ids)
+        core.toggle_editor_flag(ids, "is_hidden")
+        context.window.sync_from_blender()
+
+class RZ_OT_ToggleLock(RZOperator):
+    id = "rzm.toggle_lock"
+    label = "Toggle Lock"
+    flags = {"REQUIRES_SELECTION"}
+    def poll(self, context): return bool(context.selected_ids)
+    def execute(self, context, **kwargs):
+        core.toggle_editor_flag(context.selected_ids, "is_locked")
+        context.window.sync_from_blender()
+
+class RZ_OT_ToggleSelectable(RZOperator):
+    id = "rzm.toggle_selectable"
+    label = "Toggle Selectable"
+    def poll(self, context): return bool(context.selected_ids) or kwargs.get("override_ids")
+    def execute(self, context, **kwargs):
+        ids = kwargs.get("override_ids", context.selected_ids)
+        core.toggle_editor_flag(ids, "is_selectable")
+        context.window.sync_from_blender()
+
 _CLASSES = [
-    RZ_OT_Delete,
-    RZ_OT_Refresh,
-    RZ_OT_Undo,
-    RZ_OT_Redo,
-    RZ_OT_SelectAll,
-    RZ_OT_Nudge,
-    RZ_OT_ViewportArrow,
-    RZ_OT_ViewReset,
-    RZ_OT_CreateElement
+    RZ_OT_Delete, RZ_OT_Refresh, RZ_OT_Undo, RZ_OT_Redo,
+    RZ_OT_SelectAll, RZ_OT_Nudge, RZ_OT_ViewportArrow, RZ_OT_ViewReset,
+    RZ_OT_CreateElement,
+    RZ_OT_ToggleHide, RZ_OT_ToggleLock, RZ_OT_ToggleSelectable
 ]
 
 OPERATOR_REGISTRY = {}
@@ -174,7 +168,6 @@ def register_operators():
     OPERATOR_REGISTRY.clear()
     for cls in _CLASSES:
         if not cls.id:
-            logger.warn(f"Operator {cls.__name__} has no ID!")
             continue
         OPERATOR_REGISTRY[cls.id] = cls
 

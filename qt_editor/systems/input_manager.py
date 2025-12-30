@@ -37,6 +37,7 @@ class RZInputController(QtCore.QObject):
 
     def _handle_keypress(self, event):
         focused_widget = QtWidgets.QApplication.focusWidget()
+        # Don't trigger hotkeys if typing in a text field
         if isinstance(focused_widget, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
             return False
 
@@ -88,20 +89,29 @@ class RZInputController(QtCore.QObject):
         return "GLOBAL"
 
     def _lookup_keymap(self, context, key_seq):
+        # 1. User Config
         keymaps = self.config.get("keymaps", {})
         
-        if context in keymaps:
-            if key_seq in keymaps[context]:
-                return keymaps[context][key_seq]
+        if context in keymaps and key_seq in keymaps[context]:
+            return keymaps[context][key_seq]
+        if "GLOBAL" in keymaps and key_seq in keymaps["GLOBAL"]:
+            return keymaps["GLOBAL"][key_seq]
+            
+        # 2. Hardcoded Defaults (Fallback)
+        # H -> Hide, L -> Lock Pos, Shift+L -> Lock Size, Alt+L -> Selectable
+        defaults = {
+            "H": "rzm.toggle_hide",
+            "L": {"op": "rzm.toggle_lock", "args": {"type": "POS"}},
+            "Shift+L": {"op": "rzm.toggle_lock", "args": {"type": "SIZE"}},
+            "Alt+L": "rzm.toggle_selectable"
+        }
         
-        if "GLOBAL" in keymaps:
-            if key_seq in keymaps["GLOBAL"]:
-                return keymaps["GLOBAL"][key_seq]
-                
+        if key_seq in defaults:
+            return defaults[key_seq]
+
         return None
 
     def _execute_operator(self, op_data):
-        """Запуск оператора по ID"""
         op_id = None
         op_kwargs = {}
         
@@ -123,10 +133,7 @@ class RZInputController(QtCore.QObject):
         
         if op_inst.poll(ctx):
             try:
-                # --- FIX SIGNALS: EMIT BEFORE EXECUTION ---
-                # Отправляем сигнал перед выполнением, чтобы UI обновился или лог записался
                 self.operator_executed.emit(op_inst.label or op_id)
-                
                 op_inst.execute(ctx, **op_kwargs)
                 return True 
             except Exception as e:
