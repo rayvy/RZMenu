@@ -157,8 +157,6 @@ class RZ_OT_ToggleSelectable(RZOperator):
         core.toggle_editor_flag(ids, "is_selectable")
         context.window.sync_from_blender()
 
-# --- DUPLICATE / COPY / PASTE ---
-
 class RZ_OT_Duplicate(RZOperator):
     id = "rzm.duplicate"
     label = "Duplicate"
@@ -182,28 +180,14 @@ class RZ_OT_Paste(RZOperator):
     id = "rzm.paste"
     label = "Paste"
     def execute(self, context, **kwargs):
-        # Если use_mouse=True, пытаемся найти координаты мыши во вьюпорте
         target_x = None
         target_y = None
-        
         use_mouse = kwargs.get('use_mouse', False)
-        
         if use_mouse:
-            # Магия получения координат курсора
             viewport = context.window.panel_viewport
-            
-            # 1. Глобальные координаты курсора
             global_pos = QtGui.QCursor.pos()
-            
-            # 2. Локальные координаты виджета
             view_pos = viewport.mapFromGlobal(global_pos)
-            
-            # 3. Координаты сцены (Qt Scene Coords)
             scene_pos = viewport.mapToScene(view_pos)
-            
-            # 4. Конвертация в Blender Coords (Y-up)
-            # У нас есть хелпер в core, но он для дельты. 
-            # Для абсолюта: BlenderX = QtX, BlenderY = -QtY
             target_x = int(scene_pos.x())
             target_y = int(-scene_pos.y())
             
@@ -212,13 +196,24 @@ class RZ_OT_Paste(RZOperator):
             context.window.set_selection_multi(new_ids, active_id=-1)
             context.window.sync_from_blender()
 
+class RZ_OT_Align(RZOperator):
+    id = "rzm.align"
+    label = "Align Elements"
+    flags = {"REQUIRES_SELECTION"}
+    def poll(self, context): return len(context.selected_ids) > 1
+    def execute(self, context, **kwargs):
+        mode = kwargs.get('mode', 'LEFT')
+        core.align_elements(context.selected_ids, mode)
+        context.window.sync_from_blender()
+
 _CLASSES = [
     RZ_OT_Delete, RZ_OT_Refresh, RZ_OT_Undo, RZ_OT_Redo,
     RZ_OT_SelectAll, RZ_OT_Nudge, RZ_OT_ViewportArrow, RZ_OT_ViewReset,
     RZ_OT_CreateElement,
     RZ_OT_ToggleHide, RZ_OT_ToggleLock, RZ_OT_ToggleSelectable,
     RZ_OT_UnhideAll,
-    RZ_OT_Duplicate, RZ_OT_Copy, RZ_OT_Paste
+    RZ_OT_Duplicate, RZ_OT_Copy, RZ_OT_Paste,
+    RZ_OT_Align
 ]
 
 OPERATOR_REGISTRY = {}
