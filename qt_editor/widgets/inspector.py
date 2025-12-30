@@ -1,246 +1,180 @@
 # RZMenu/qt_editor/widgets/inspector.py
 from PySide6 import QtWidgets, QtCore, QtGui
-from .base import RZDraggableNumber
-
-class RZCollapsibleGroup(QtWidgets.QWidget):
-    """Виджет-группа со сворачиваемым содержимым"""
-    def __init__(self, title="", parent=None):
-        super().__init__(parent)
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(0)
-
-        self.toggle_btn = QtWidgets.QToolButton()
-        self.toggle_btn.setText(f"▼ {title}")
-        self.toggle_btn.setCheckable(True)
-        self.toggle_btn.setChecked(True)
-        self.toggle_btn.setStyleSheet("QToolButton { border: none; font-weight: bold; color: #ccc; text-align: left; background: #333; padding: 4px; }")
-        self.toggle_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.toggle_btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.toggle_btn.clicked.connect(self.on_toggle)
-        
-        self.layout.addWidget(self.toggle_btn)
-
-        self.content_area = QtWidgets.QWidget()
-        self.content_layout = QtWidgets.QFormLayout(self.content_area)
-        self.content_layout.setContentsMargins(4, 4, 4, 4)
-        self.layout.addWidget(self.content_area)
-
-    def on_toggle(self):
-        checked = self.toggle_btn.isChecked()
-        self.toggle_btn.setText(f"{'▼' if checked else '▶'} {self.toggle_btn.text()[2:]}")
-        self.content_area.setVisible(checked)
-
-    def add_row(self, label, widget):
-        self.content_layout.addRow(label, widget)
-
+from .base import RZDraggableNumber, RZSmartSlider # RZDraggableNumber is alias to RZSmartSlider
 
 class RZColorButton(QtWidgets.QPushButton):
-    """Кнопка для выбора цвета"""
-    colorChanged = QtCore.Signal(list) # [r, g, b, a]
+    colorChanged = QtCore.Signal(list)
 
-    def __init__(self):
-        super().__init__()
-        self.setFlat(True)
-        self.setAutoFillBackground(True)
-        self.setMinimumHeight(20)
-        self._current_color = [1.0, 1.0, 1.0, 1.0]
+    def __init__(self, text="Click to set"):
+        super().__init__(text)
+        self._color = [1.0, 1.0, 1.0, 1.0]
         self.clicked.connect(self._pick_color)
         self.update_style()
 
     def set_color(self, rgba):
-        self._current_color = rgba
+        self._color = rgba
         self.update_style()
 
     def update_style(self):
-        r, g, b, _ = [int(c * 255) for c in self._current_color]
-        # Показываем цвет фона кнопки, текст контрастный
-        text_col = "black" if (r*0.299 + g*0.587 + b*0.114) > 186 else "white"
-        self.setStyleSheet(f"background-color: rgb({r},{g},{b}); border: 1px solid #555; border-radius: 3px;")
+        r, g, b, _ = [int(c * 255) for c in self._color]
+        contrast = "black" if (r+g+b) > 380 else "white"
+        self.setStyleSheet(f"background-color: rgb({r},{g},{b}); color: {contrast}; border: 1px solid #555;")
 
     def _pick_color(self):
-        # MOCK: В реальности здесь QtWidgets.QColorDialog
-        print("[MOCK] Opening Color Dialog...")
-        # Для теста просто инвертируем цвет или ставим рандом
+        # Mock color dialog
         import random
-        new_color = [random.random(), random.random(), random.random(), 1.0]
-        self.set_color(new_color)
-        self.colorChanged.emit(new_color)
-
+        new_c = [random.random(), random.random(), random.random(), 1.0]
+        self.set_color(new_c)
+        self.colorChanged.emit(new_c)
 
 class RZMInspectorPanel(QtWidgets.QWidget):
-    property_changed = QtCore.Signal(str, object, object)
+    property_changed = QtCore.Signal(str, object, object) # key, val, sub_index
 
     def __init__(self):
         super().__init__()
-        main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        # Хедер
-        self.lbl_info = QtWidgets.QLabel("No Selection")
-        self.lbl_info.setAlignment(QtCore.Qt.AlignCenter)
-        self.lbl_info.setStyleSheet("font-weight: bold; color: #888; padding: 5px; background: #222;")
-        main_layout.addWidget(self.lbl_info)
-
-        # Скролл зона
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
-        main_layout.addWidget(scroll)
-
-        self.container = QtWidgets.QWidget()
-        self.layout = QtWidgets.QVBoxLayout(self.container)
-        scroll.setWidget(self.container)
-
-        self._init_ui()
+        self.tabs = QtWidgets.QTabWidget()
+        layout.addWidget(self.tabs)
         
-        # State storage
+        # --- TAB 1: Properties ---
+        self.tab_props = QtWidgets.QWidget()
+        self.layout_props = QtWidgets.QVBoxLayout(self.tab_props)
+        self.tabs.addTab(self.tab_props, "Properties")
+        
+        self._init_properties_ui()
+        self.layout_props.addStretch()
+
+        # --- TAB 2: Raw Data ---
+        self.tab_raw = QtWidgets.QWidget()
+        layout_raw = QtWidgets.QVBoxLayout(self.tab_raw)
+        self.table_raw = QtWidgets.QTableWidget(0, 2)
+        self.table_raw.setHorizontalHeaderLabels(["Key", "Value"])
+        self.table_raw.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        layout_raw.addWidget(self.table_raw)
+        self.tabs.addTab(self.tab_raw, "Raw Data")
+        
         self.has_data = False
         self._block_signals = False
+
+    def _init_properties_ui(self):
+        # Using QToolBox-like approach with Groups or actual QToolBox. 
+        # Using specific Groups as requested.
         
-        # Spacer
-        self.layout.addStretch()
-
-    def _init_ui(self):
-        # --- GROUP: MAIN ---
-        self.grp_main = RZCollapsibleGroup("Main")
-        self.layout.addWidget(self.grp_main)
-
+        # === GROUP: IDENTITY ===
+        grp_ident = QtWidgets.QGroupBox("Identity")
+        form_ident = QtWidgets.QFormLayout(grp_ident)
+        
+        self.lbl_id = QtWidgets.QLabel("ID: None")
+        form_ident.addRow("ID:", self.lbl_id)
+        
         self.name_edit = QtWidgets.QLineEdit()
         self.name_edit.editingFinished.connect(lambda: self.emit_change('name', self.name_edit.text()))
-        self.grp_main.add_row("Name:", self.name_edit)
-
-        # Class Type
-        self.cb_class = QtWidgets.QComboBox()
-        self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "SLIDER", "TEXT", "ANCHOR"])
-        self.cb_class.currentTextChanged.connect(lambda t: self.emit_change('class_type', t))
-        self.grp_main.add_row("Type:", self.cb_class)
-
-        # --- GROUP: TRANSFORM ---
-        self.grp_trans = RZCollapsibleGroup("Transform")
-        self.layout.addWidget(self.grp_trans)
-
-        # Pos
-        self.pos_x = RZDraggableNumber(is_int=True)
-        self.pos_y = RZDraggableNumber(is_int=True)
-        self.pos_x.value_changed.connect(lambda v: self.emit_change('pos_x', int(v)))
-        self.pos_y.value_changed.connect(lambda v: self.emit_change('pos_y', int(v)))
+        form_ident.addRow("Name:", self.name_edit)
         
-        row_pos = QtWidgets.QHBoxLayout()
-        row_pos.addWidget(QtWidgets.QLabel("X:"))
-        row_pos.addWidget(self.pos_x)
-        row_pos.addWidget(QtWidgets.QLabel("Y:"))
-        row_pos.addWidget(self.pos_y)
-        self.grp_trans.add_row("Position:", row_pos)
-
-        # Size
-        self.size_w = RZDraggableNumber(is_int=True)
-        self.size_h = RZDraggableNumber(is_int=True)
-        self.size_w.value_changed.connect(lambda v: self.emit_change('width', int(v)))
-        self.size_h.value_changed.connect(lambda v: self.emit_change('height', int(v)))
-
-        row_size = QtWidgets.QHBoxLayout()
-        row_size.addWidget(QtWidgets.QLabel("W:"))
-        row_size.addWidget(self.size_w)
-        row_size.addWidget(QtWidgets.QLabel("H:"))
-        row_size.addWidget(self.size_h)
-        self.grp_trans.add_row("Size:", row_size)
-
-        # --- GROUP: STYLE ---
-        self.grp_style = RZCollapsibleGroup("Style")
-        self.layout.addWidget(self.grp_style)
-
-        self.color_btn = RZColorButton()
-        self.color_btn.colorChanged.connect(lambda c: self.emit_change('color', c))
-        self.grp_style.add_row("Color:", self.color_btn)
-
-        # --- GROUP: CONTENT ---
-        self.grp_content = RZCollapsibleGroup("Content")
-        self.layout.addWidget(self.grp_content)
-
-        self.text_id_edit = QtWidgets.QLineEdit()
-        self.text_id_edit.setPlaceholderText("Text Key ID...")
-        self.text_id_edit.editingFinished.connect(lambda: self.emit_change('text_id', self.text_id_edit.text()))
-        self.grp_content.add_row("Text ID:", self.text_id_edit)
-
-        self.img_id_edit = QtWidgets.QLineEdit()
-        self.img_id_edit.setPlaceholderText("Image Key ID...")
-        self.img_id_edit.editingFinished.connect(lambda: self.emit_change('image_id', self.img_id_edit.text()))
-        self.grp_content.add_row("Image ID:", self.img_id_edit)
-
-        # --- GROUP: SETTINGS ---
-        self.grp_settings = RZCollapsibleGroup("Settings")
-        self.layout.addWidget(self.grp_settings)
-
+        self.cb_class = QtWidgets.QComboBox()
+        self.cb_class.addItems(["CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
+        self.cb_class.currentTextChanged.connect(lambda t: self.emit_change('class_type', t))
+        form_ident.addRow("Class:", self.cb_class)
+        
+        self.layout_props.addWidget(grp_ident)
+        
+        # === GROUP: TRANSFORM ===
+        grp_trans = QtWidgets.QGroupBox("Transform")
+        layout_trans = QtWidgets.QVBoxLayout(grp_trans)
+        
+        # X / Y
+        self.sl_x = RZSmartSlider(label_text="X", is_int=True)
+        self.sl_x.value_changed.connect(lambda v: self.emit_change('pos_x', int(v)))
+        layout_trans.addWidget(self.sl_x)
+        
+        self.sl_y = RZSmartSlider(label_text="Y", is_int=True)
+        self.sl_y.value_changed.connect(lambda v: self.emit_change('pos_y', int(v)))
+        layout_trans.addWidget(self.sl_y)
+        
+        # W / H
+        self.sl_w = RZSmartSlider(label_text="W", is_int=True)
+        self.sl_w.value_changed.connect(lambda v: self.emit_change('width', int(v)))
+        layout_trans.addWidget(self.sl_w)
+        
+        self.sl_h = RZSmartSlider(label_text="H", is_int=True)
+        self.sl_h.value_changed.connect(lambda v: self.emit_change('height', int(v)))
+        layout_trans.addWidget(self.sl_h)
+        
+        self.chk_formula = QtWidgets.QCheckBox("Use Formula")
+        # Placeholder logic
+        layout_trans.addWidget(self.chk_formula)
+        
+        self.layout_props.addWidget(grp_trans)
+        
+        # === GROUP: STYLE ===
+        grp_style = QtWidgets.QGroupBox("Style")
+        layout_style = QtWidgets.QVBoxLayout(grp_style)
+        
+        self.btn_color = RZColorButton()
+        self.btn_color.colorChanged.connect(lambda c: self.emit_change('color', c))
+        layout_style.addWidget(QtWidgets.QLabel("Color:"))
+        layout_style.addWidget(self.btn_color)
+        
+        self.layout_props.addWidget(grp_style)
+        
+        # === GROUP: EDITOR ===
+        grp_edit = QtWidgets.QGroupBox("Editor Flags")
+        layout_edit = QtWidgets.QVBoxLayout(grp_edit)
+        
         self.chk_hide = QtWidgets.QCheckBox("Is Hidden")
         self.chk_hide.toggled.connect(lambda v: self.emit_change('is_hidden', v))
-        self.grp_settings.add_row("", self.chk_hide)
-
-        self.chk_lock = QtWidgets.QCheckBox("Lock Transformation")
+        layout_edit.addWidget(self.chk_hide)
+        
+        self.chk_lock = QtWidgets.QCheckBox("Lock Transform")
         self.chk_lock.toggled.connect(lambda v: self.emit_change('is_locked', v))
-        self.grp_settings.add_row("", self.chk_lock)
+        layout_edit.addWidget(self.chk_lock)
+        
+        self.layout_props.addWidget(grp_edit)
 
-
-    def emit_change(self, key, val, idx=None):
+    def emit_change(self, key, val, sub=None):
         if self.has_data and not self._block_signals:
-            self.property_changed.emit(key, val, idx)
+            self.property_changed.emit(key, val, sub)
 
     def update_ui(self, props):
-        """
-        props structure expected:
-        {
-            'exists': bool,
-            'id': int,
-            'name': str,
-            'class_type': str,
-            'pos_x': int, 'pos_y': int,
-            'width': int, 'height': int,
-            'color': [r,g,b,a],
-            'text_id': str,
-            'image_id': str,
-            'is_hidden': bool,
-            'is_locked': bool,
-            'is_multi': bool, ...
-        }
-        """
         self._block_signals = True
         
         if props and props.get('exists'):
             self.has_data = True
-            self.container.setEnabled(True)
+            self.tab_props.setEnabled(True)
+            self.tab_raw.setEnabled(True)
             
-            # Заголовок
-            count = len(props.get('selected_ids', []))
-            if props.get('is_multi'):
-                self.lbl_info.setText(f"Multi-Edit ({count} items)")
-                self.name_edit.setPlaceholderText("Mixed Names...")
-                self.name_edit.clear()
-            else:
-                self.lbl_info.setText(f"ID: {props['id']} ({props['class_type']})")
-                self.name_edit.setText(props.get('name', ''))
-
-            # Данные (берем от активного или последнего)
-            # Если ключа нет в словаре, используем дефолт
+            # Identity
+            self.lbl_id.setText(f"ID: {props.get('id')}")
+            self.name_edit.setText(props.get('name', ''))
             self.cb_class.setCurrentText(props.get('class_type', 'CONTAINER'))
             
-            self.pos_x.set_value_from_backend(props.get('pos_x', 0))
-            self.pos_y.set_value_from_backend(props.get('pos_y', 0))
-            self.size_w.set_value_from_backend(props.get('width', 100))
-            self.size_h.set_value_from_backend(props.get('height', 100))
+            # Transform
+            self.sl_x.set_value_from_backend(props.get('pos_x', 0))
+            self.sl_y.set_value_from_backend(props.get('pos_y', 0))
+            self.sl_w.set_value_from_backend(props.get('width', 100))
+            self.sl_h.set_value_from_backend(props.get('height', 100))
             
-            color = props.get('color', [0.5, 0.5, 0.5, 1.0])
-            self.color_btn.set_color(color)
-
-            self.text_id_edit.setText(props.get('text_id', ''))
-            self.img_id_edit.setText(props.get('image_id', ''))
-
+            # Style
+            color = props.get('color', [1,1,1,1])
+            self.btn_color.set_color(color)
+            
+            # Flags
             self.chk_hide.setChecked(props.get('is_hidden', False))
             self.chk_lock.setChecked(props.get('is_locked', False))
+            
+            # Update Raw Data Table (Simple dump)
+            self.table_raw.setRowCount(len(props))
+            for r, (k, v) in enumerate(props.items()):
+                self.table_raw.setItem(r, 0, QtWidgets.QTableWidgetItem(str(k)))
+                self.table_raw.setItem(r, 1, QtWidgets.QTableWidgetItem(str(v)))
 
         else:
             self.has_data = False
-            self.container.setEnabled(False)
-            self.lbl_info.setText("No Selection")
+            self.tab_props.setEnabled(False)
+            self.tab_raw.setEnabled(False)
+            self.lbl_id.setText("No Selection")
             self.name_edit.clear()
-        
+
         self._block_signals = False

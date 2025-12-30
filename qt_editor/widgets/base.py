@@ -1,78 +1,122 @@
 # RZMenu/qt_editor/widgets/base.py
 from PySide6 import QtWidgets, QtCore, QtGui
 
-class RZDraggableNumber(QtWidgets.QWidget):
+class RZSmartSlider(QtWidgets.QWidget):
     """
-    Гибрид Label и SpinBox.
-    - Клик: Ввод текста.
-    - Драг (зажать и тянуть): Изменение значения.
+    Умный слайдер: Лейбл (драг) + Спинбокс + Кнопки +/-.
+    Заменяет старый RZDraggableNumber, сохраняя совместимость.
     """
-    # Сигнал отправляет (имя_свойства, новое_значение, индекс_вектора)
+    # Сигнал: (новое_значение). Тип float, но если is_int=True, отправляет целое как float
     value_changed = QtCore.Signal(float)
 
-    def __init__(self, value=0.0, is_int=True):
-        super().__init__()
+    def __init__(self, value=0.0, is_int=True, parent=None, label_text="Value"):
+        super().__init__(parent)
         self.is_int = is_int
-        self.current_value = value
-        self.drag_start_x = 0
-        self.drag_start_value = 0
-        self.is_dragging = False
-
-        # UI Layout
+        self._value = int(value) if is_int else float(value)
+        self._step = 1 if is_int else 0.1
+        
+        # Layout
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0,0,0,0)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        # 1. Draggable Label (Overlay logic handled via event filter or custom widget)
+        # Для простоты делаем кастомный QLabel внутри
+        self.label = _RZDragLabel(label_text)
+        self.label.drag_delta.connect(self._on_label_drag)
+        layout.addWidget(self.label)
+
+        # 2. Button [-]
+        self.btn_minus = QtWidgets.QPushButton("-")
+        self.btn_minus.setFixedSize(16, 20)
+        self.btn_minus.clicked.connect(self._decrement)
+        self.btn_minus.setStyleSheet("padding: 0px; border: none; background: #444; color: #ccc;")
+        layout.addWidget(self.btn_minus)
+
+        # 3. SpinBox
+        if self.is_int:
+            self.spin = QtWidgets.QSpinBox()
+            self.spin.setRange(-999999, 999999)
+        else:
+            self.spin = QtWidgets.QDoubleSpinBox()
+            self.spin.setRange(-999999.0, 999999.0)
+            self.spin.setDecimals(2)
         
-        # Поле ввода (скрываем рамки, чтобы выглядело как лейбл)
-        self.input = QtWidgets.QLineEdit(str(value))
-        self.input.setStyleSheet("background: transparent; border: none; color: white;")
-        self.input.editingFinished.connect(self.finish_edit)
+        self.spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons) # Скрываем встроенные стрелки, у нас свои
+        self.spin.setStyleSheet("background: #222; color: #eee; border: 1px solid #444; border-radius: 2px;")
+        self.spin.setValue(self._value)
+        self.spin.valueChanged.connect(self._on_spin_changed)
         
-        # Курсор "Resize" при наведении
+        # Expanding spinbox
+        self.spin.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        layout.addWidget(self.spin)
+
+        # 4. Button [+]
+        self.btn_plus = QtWidgets.QPushButton("+")
+        self.btn_plus.setFixedSize(16, 20)
+        self.btn_plus.clicked.connect(self._increment)
+        self.btn_plus.setStyleSheet("padding: 0px; border: none; background: #444; color: #ccc;")
+        layout.addWidget(self.btn_plus)
+
+    def _on_spin_changed(self, val):
+        self._value = val
+        self.value_changed.emit(float(self._value))
+
+    def _on_label_drag(self, delta_x):
+        # Scale sensitivity
+        scale = self._step
+        change = delta_x * scale
+        new_val = self._value + change
+        self.set_value(new_val)
+
+    def _increment(self):
+        self.set_value(self._value + self._step)
+
+    def _decrement(self):
+        self.set_value(self._value - self._step)
+
+    def set_value(self, val):
+        if self.is_int:
+            val = int(val)
+        self.spin.setValue(val) # Signal will be emitted by spinbox
+
+    def get_value(self):
+        return self._value
+    
+    # --- Compatibility Methods for RZDraggableNumber ---
+    def set_value_from_backend(self, val):
+        self.spin.blockSignals(True)
+        self.set_value(val)
+        self.spin.blockSignals(False)
+        self._value = self.spin.value()
+
+class _RZDragLabel(QtWidgets.QLabel):
+    """Helper label that emits drag deltas"""
+    drag_delta = QtCore.Signal(int)
+
+    def __init__(self, text=""):
+        super().__init__(text)
         self.setCursor(QtCore.Qt.SizeHorCursor)
-        
-        layout.addWidget(self.input)
-        
-        # Стили
-        self.setStyleSheet("background-color: #333; border-radius: 3px;")
-        self.setFixedWidth(80) # Фиксированная ширина как в Блендере
+        self.setStyleSheet("color: #aaa; padding-right: 4px;")
+        self._drag_start_x = 0
+        self._dragging = False
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
-            self.is_dragging = True
-            self.drag_start_x = event.globalPos().x()
-            self.drag_start_value = self.current_value
-            self.input.clearFocus() # Убираем фокус ввода текста
+            self._dragging = True
+            self._drag_start_x = event.globalPos().x()
 
     def mouseMoveEvent(self, event):
-        if self.is_dragging:
-            delta = event.globalPos().x() - self.drag_start_x
-            # Чувствительность (Shift = медленнее)
-            scale = 0.1 if (event.modifiers() & QtCore.Qt.ShiftModifier) else 1.0
-            
-            new_val = self.drag_start_value + (delta * scale)
-            if self.is_int: new_val = int(new_val)
-            
-            self.update_internal(new_val)
-            self.value_changed.emit(new_val)
+        if self._dragging:
+            current_x = event.globalPos().x()
+            delta = current_x - self._drag_start_x
+            self._drag_start_x = current_x # Reset for relative delta
+            self.drag_delta.emit(delta)
 
     def mouseReleaseEvent(self, event):
-        self.is_dragging = False
+        self._dragging = False
 
-    def finish_edit(self):
-        """Когда нажали Enter в поле ввода"""
-        try:
-            val = float(self.input.text())
-            if self.is_int: val = int(val)
-            self.update_internal(val)
-            self.value_changed.emit(val)
-        except ValueError:
-            self.update_internal(self.current_value) # Вернуть как было
-
-    def update_internal(self, val):
-        self.current_value = val
-        self.input.setText(str(val))
-
-    def set_value_from_backend(self, val):
-        """Вызывается извне для синхронизации"""
-        if not self.input.hasFocus() and not self.is_dragging:
-            self.update_internal(val)
+# Alias for backward compatibility
+# Старый код, ожидающий RZDraggableNumber(value=0, is_int=True), будет работать,
+# так как аргументы конструктора RZSmartSlider совпадают.
+RZDraggableNumber = RZSmartSlider
