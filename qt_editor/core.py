@@ -3,6 +3,7 @@ import bpy
 
 # --- GLOBAL FLAGS ---
 IS_UPDATING_FROM_QT = False 
+_INTERNAL_CLIPBOARD = [] # List of dicts
 
 # --- ЧТЕНИЕ (READ) ---
 
@@ -541,16 +542,12 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
         IS_UPDATING_FROM_QT = False
 
 def resize_element(elem_id, x, y, w, h):
-    """
-    Атомарное обновление позиции и размера.
-    """
     global IS_UPDATING_FROM_QT
     IS_UPDATING_FROM_QT = True
     try:
         elements = bpy.context.scene.rzm.elements
         target = next((e for e in elements if e.id == elem_id), None)
         if target:
-            # Обновляем все 4 свойства разом
             target.position[0] = int(x)
             target.position[1] = int(y)
             target.size[0] = int(w)
@@ -665,5 +662,139 @@ def reparent_element(child_id, new_parent_id):
             target.parent_id = new_parent_id
             safe_undo_push("RZM: Reparent")
             refresh_viewports()
+    finally:
+        IS_UPDATING_FROM_QT = False
+
+# --- COPY / PASTE / DUPLICATE ---
+
+def duplicate_elements(target_ids):
+    global IS_UPDATING_FROM_QT
+    IS_UPDATING_FROM_QT = True
+    try:
+        if not target_ids: return []
+        if not bpy.context or not bpy.context.scene: return []
+        elements = bpy.context.scene.rzm.elements
+        
+        # 1. Collect sources
+        sources = []
+        for elem in elements:
+            if elem.id in target_ids:
+                sources.append(elem)
+        
+        if not sources: return []
+
+        new_ids = []
+        
+        # 2. Clone
+        for src in sources:
+            new_id = get_next_available_id(elements)
+            new_elem = elements.add()
+            new_elem.id = new_id
+            new_elem.element_name = src.element_name + "_copy"
+            new_elem.elem_class = src.elem_class
+            
+            # Props
+            new_elem.position = (src.position[0] + 20, src.position[1] - 20) # Offset
+            new_elem.size = src.size[:]
+            new_elem.parent_id = src.parent_id # Keep parent
+            
+            # Flags
+            if hasattr(src, "qt_hide"): new_elem.qt_hide = src.qt_hide
+            if hasattr(src, "qt_locked"): new_elem.qt_locked = src.qt_locked
+            if hasattr(src, "color"): new_elem.color = src.color[:]
+            
+            new_ids.append(new_id)
+
+        safe_undo_push("RZM: Duplicate")
+        refresh_viewports()
+        return new_ids
+
+    finally:
+        IS_UPDATING_FROM_QT = False
+
+def copy_elements(target_ids):
+    """Saves element data to internal clipboard"""
+    global _INTERNAL_CLIPBOARD
+    _INTERNAL_CLIPBOARD.clear()
+    
+    if not target_ids: return
+    if not bpy.context or not bpy.context.scene: return
+    elements = bpy.context.scene.rzm.elements
+    
+    for elem in elements:
+        if elem.id in target_ids:
+            data = {
+                "name": elem.element_name,
+                "class": elem.elem_class,
+                "pos": list(elem.position),
+                "size": list(elem.size),
+                "color": list(elem.color) if hasattr(elem, "color") else [1,1,1,1],
+                "hide": getattr(elem, "qt_hide", False),
+                "lock": getattr(elem, "qt_locked", False),
+                # Special props
+                "grid_cell": getattr(elem, "grid_cell_size", 20)
+            }
+            _INTERNAL_CLIPBOARD.append(data)
+    
+    print(f"RZM: Copied {len(_INTERNAL_CLIPBOARD)} elements.")
+
+def paste_elements(target_x=None, target_y=None):
+    """
+    Pastes elements.
+    If target_x/y (Blender coords) provided: paste centering around that point.
+    If None: paste at original coords (duplicate in place).
+    """
+    global IS_UPDATING_FROM_QT, _INTERNAL_CLIPBOARD
+    if not _INTERNAL_CLIPBOARD: return []
+    
+    IS_UPDATING_FROM_QT = True
+    try:
+        if not bpy.context or not bpy.context.scene: return []
+        elements = bpy.context.scene.rzm.elements
+        new_ids = []
+
+        # Calculate Offset
+        offset_x = 0
+        offset_y = 0
+        
+        if target_x is not None and target_y is not None:
+            # Find center of clipboard items
+            min_x = min(item["pos"][0] for item in _INTERNAL_CLIPBOARD)
+            max_x = max(item["pos"][0] for item in _INTERNAL_CLIPBOARD)
+            min_y = min(item["pos"][1] for item in _INTERNAL_CLIPBOARD) # Blender Y
+            max_y = max(item["pos"][1] for item in _INTERNAL_CLIPBOARD)
+            
+            center_x = (min_x + max_x) / 2
+            center_y = (min_y + max_y) / 2
+            
+            offset_x = target_x - center_x
+            offset_y = target_y - center_y
+
+        for item in _INTERNAL_CLIPBOARD:
+            new_id = get_next_available_id(elements)
+            new_elem = elements.add()
+            new_elem.id = new_id
+            new_elem.element_name = item["name"]
+            new_elem.elem_class = item["class"]
+            
+            px = int(item["pos"][0] + offset_x)
+            py = int(item["pos"][1] + offset_y)
+            
+            new_elem.position = (px, py)
+            new_elem.size = item["size"]
+            new_elem.parent_id = -1 # Reset parent to root on paste to be safe
+            
+            if "color" in item: new_elem.color = item["color"]
+            if "hide" in item: new_elem.qt_hide = item["hide"]
+            if "lock" in item: new_elem.qt_locked = item["lock"]
+            if "grid_cell" in item and hasattr(new_elem, "grid_cell_size"):
+                 new_elem.grid_cell_size = item["grid_cell"]
+            
+            new_ids.append(new_id)
+            
+        safe_undo_push("RZM: Paste")
+        refresh_viewports()
+        return new_ids
+
     finally:
         IS_UPDATING_FROM_QT = False
