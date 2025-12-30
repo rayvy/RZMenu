@@ -1,6 +1,7 @@
 # RZMenu/qt_editor/widgets/viewport.py
 from PySide6 import QtWidgets, QtCore, QtGui
-# from ..systems import operators # Не используем (Mock)
+from .. import core
+from ..utils.image_cache import ImageCache
 
 # Цветовая схема
 COLORS_BY_TYPE = {
@@ -17,7 +18,7 @@ COLOR_ACTIVE = QtGui.QColor(255, 140, 0)
 COLOR_LOCKED = QtGui.QColor(255, 50, 50)
 
 class RZElementItem(QtWidgets.QGraphicsRectItem):
-    def __init__(self, uid, x, y, w, h, name, elem_type="CONTAINER"):
+    def __init__(self, uid, blender_x, blender_y, w, h, name, elem_type="CONTAINER"):
         super().__init__(0, 0, w, h)
         self.uid = uid
         self.elem_type = elem_type
@@ -26,22 +27,22 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         # State
         self.is_active = False
         self.is_locked = False
-        self.image_id = None
+        self.image_id = -1
         
-        self.setPos(x, y)
+        # Convert Coords: Blender (Y-Up) -> Qt (Y-Down)
+        qx, qy = core.to_qt_coords(blender_x, blender_y)
+        self.setPos(qx, qy)
         
         # Флаги
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | 
             QtWidgets.QGraphicsItem.ItemIsSelectable
-            # ItemIsMovable контролируется через locked состояние
+            # ItemIsMovable отключен, мы двигаем вручную через mouseMoveEvent сцены
         )
 
     def set_data_state(self, locked, img_id):
         self.is_locked = locked
         self.image_id = img_id
-        # Если залочен, сцена не должна его двигать, 
-        # но мы также можем отключить флаг для надежности (хотя движение обрабатывает Scene mouseMove)
         self.update()
 
     def set_visual_state(self, is_selected, is_active):
@@ -58,37 +59,56 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             
         self.update() # Trigger paint
     
-    def update_geometry(self, x, y, w, h):
-        self.setPos(x, y)
+    def update_geometry(self, blender_x, blender_y, w, h):
+        qx, qy = core.to_qt_coords(blender_x, blender_y)
+        self.setPos(qx, qy)
         self.setRect(0, 0, w, h)
     
     def paint(self, painter, option, widget):
-        """Кастомная отрисовка в стиле 'Legacy'"""
+        """
+        Кастомная отрисовка:
+        1. Картинка (если есть в кэше)
+        2. Полупрозрачный фон (Overlay)
+        3. Текст
+        4. Рамки
+        """
         rect = self.rect()
         
-        # 1. Background
-        bg_color = COLORS_BY_TYPE.get(self.elem_type, QtGui.QColor(50, 50, 50))
+        # --- 1. Image Layer ---
+        has_image = False
+        if self.image_id != -1:
+            pix = ImageCache.instance().get_pixmap(self.image_id)
+            if pix and not pix.isNull():
+                painter.drawPixmap(rect.toRect(), pix)
+                has_image = True
+            else:
+                # Если картинка назначена, но не загрузилась (или Placeholder)
+                pass
+
+        # --- 2. Background Layer ---
+        bg_color = COLORS_BY_TYPE.get(self.elem_type, QtGui.QColor(50, 50, 50)).lighter(100) # copy
+        
+        if has_image:
+            # Если есть картинка, делаем фон полупрозрачным, чтобы подкрасить картинку
+            # или сделать интерфейс читаемым
+            bg_color.setAlpha(50) 
+        else:
+            bg_color.setAlpha(255)
+
         if self.is_locked:
-            # Слегка затемняем залоченные
             bg_color = bg_color.darker(120)
             
         painter.fillRect(rect, bg_color)
         
-        # 2. Image Placeholder
-        if self.image_id and str(self.image_id).strip() != "":
-            painter.save()
-            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 50), 2, QtCore.Qt.DashLine))
-            painter.drawLine(rect.topLeft(), rect.bottomRight())
-            painter.drawLine(rect.topRight(), rect.bottomLeft())
-            
-            font = painter.font()
-            font.setBold(True)
-            painter.setFont(font)
-            painter.setPen(QtGui.QColor(255, 255, 255, 100))
-            painter.drawText(rect, QtCore.Qt.AlignCenter, "IMG")
-            painter.restore()
+        # Placeholder visual logic (Optional)
+        if not has_image and self.image_id != -1:
+             painter.save()
+             painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 50), 2, QtCore.Qt.DashLine))
+             painter.drawLine(rect.topLeft(), rect.bottomRight())
+             painter.drawLine(rect.topRight(), rect.bottomLeft())
+             painter.restore()
 
-        # 3. Border (Selection / Active)
+        # --- 3. Border (Selection / Active) ---
         border_width = 1.0
         border_color = QtGui.QColor(0, 0, 0)
         
@@ -103,26 +123,30 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             
         pen = QtGui.QPen(border_color, border_width)
         
-        # Пунктир для контейнеров (для стиля)
         if self.elem_type == "GRID_CONTAINER":
             pen.setStyle(QtCore.Qt.DashLine)
             
         painter.setPen(pen)
         painter.drawRect(rect)
 
-        # 4. Text Label (Name)
+        # --- 4. Text Label (Name) ---
+        # Тень текста для читаемости на картинке
+        painter.setPen(QtGui.QColor(0, 0, 0))
+        text_rect = rect.adjusted(6, 6, -4, -4)
+        painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self.name)
+        
         painter.setPen(QtGui.QColor(255, 255, 255))
-        # Рисуем текст в левом верхнем углу с небольшим отступом
         text_rect = rect.adjusted(5, 5, -5, -5)
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self.name)
         
-        # 5. Lock Icon Indicator
+        # --- 5. Lock Icon ---
         if self.is_locked:
             painter.setPen(COLOR_LOCKED)
             painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, "🔒")
 
 
 class RZViewportScene(QtWidgets.QGraphicsScene):
+    # Сигнал перемещения: (delta_x_blender, delta_y_blender)
     item_moved_signal = QtCore.Signal(float, float) 
     selection_changed_signal = QtCore.Signal(object, object)
     interaction_start_signal = QtCore.Signal()
@@ -139,7 +163,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
     def _init_background(self):
         self.setSceneRect(-10000, -10000, 20000, 20000)
         self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor(30, 30, 30)))
-        # Grid logic can be added here if needed
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton:
@@ -155,7 +178,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             if isinstance(item, RZElementItem):
                 self._handle_item_click(item, event, modifier_str)
                 
-                # Check Lock before dragging
                 if not item.is_locked:
                     self._is_dragging_items = True
                     self._drag_start_pos = event.scenePos()
@@ -166,14 +188,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 super().mousePressEvent(event)
 
     def _handle_item_click(self, clicked_item, event, modifier_str):
-        # ... (Код аналогичен прошлой версии, логика циклического выделения)
         items_under = [i for i in self.items(event.scenePos()) if isinstance(i, RZElementItem)]
         if not items_under: return
-        
-        # Mocking parent window access for logical correctness in standalone
-        # В реальном коде: current_ids = self.views()[0].parent_window.selected_ids
-        # Здесь упростим, предполагая, что RZElementItem знает, выбран он или нет (Qt state)
-        current_selected = [i for i in self.items() if i.isSelected()]
         
         target_uid = clicked_item.uid
         if modifier_str is None and len(items_under) > 1:
@@ -194,20 +210,19 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
     def mouseMoveEvent(self, event):
         if self._is_dragging_items and self._drag_start_pos:
             current_pos = event.scenePos()
-            delta = current_pos - self._drag_start_pos
+            qt_delta = current_pos - self._drag_start_pos
             
-            # Фильтруем перемещение только для незалоченных элементов
-            # (Логика backend'а тоже должна это проверять, но здесь для визуала)
-            # В данном примере просто эмитим дельту
+            # Конвертируем дельту Qt в дельту Blender
+            dx_bl, dy_bl = core.to_blender_delta(qt_delta.x(), qt_delta.y())
             
-            self.item_moved_signal.emit(delta.x(), delta.y())
+            self.item_moved_signal.emit(dx_bl, dy_bl)
             self._drag_start_pos = current_pos
             
-            # Визуальный сдвиг
-            # (В реальном приложении лучше ждать ответа от backend, но для плавности двигаем сами)
+            # Визуальный сдвиг в Qt (для плавности)
+            # Мы двигаем на qt_delta
             for item in self.selectedItems():
                 if isinstance(item, RZElementItem) and not item.is_locked:
-                    item.moveBy(delta.x(), delta.y())
+                    item.moveBy(qt_delta.x(), qt_delta.y())
         else:
             super().mouseMoveEvent(event)
 
@@ -227,22 +242,30 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         incoming_ids = {d['id'] for d in elements_data}
         current_ids = set(self._items_map.keys())
 
-        # Remove
+        # 1. Предварительная загрузка изображений в кэш
+        # Это важно сделать ДО создания элементов, чтобы paint() отработал корректно
+        cache = ImageCache.instance()
+        for data in elements_data:
+            img_id = data.get('image_id', -1)
+            if img_id != -1:
+                cache.pre_cache_image(img_id)
+
+        # 2. Удаление устаревших
         for uid in (current_ids - incoming_ids):
             item = self._items_map[uid]
             self.removeItem(item)
             del self._items_map[uid]
 
-        # Update / Create
+        # 3. Обновление / Создание
         for data in elements_data:
             uid = data['id']
-            # Получаем расширенные данные
             ctype = data.get('class_type', 'CONTAINER')
             is_locked = data.get('is_locked', False)
-            img_id = data.get('image_id', None)
+            img_id = data.get('image_id', -1)
             
             if uid in self._items_map:
                 item = self._items_map[uid]
+                # Передаем сырые Blender координаты, внутри RZElementItem они конвертируются
                 item.update_geometry(data['pos_x'], data['pos_y'], data['width'], data['height'])
                 item.name = data['name']
                 item.elem_type = ctype
@@ -255,14 +278,13 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 self.addItem(item)
                 self._items_map[uid] = item
             
-            # Обновляем специфичные свойства
             item.set_data_state(is_locked, img_id)
             
             is_sel = uid in selected_ids
             is_act = uid == active_id
             item.set_visual_state(is_sel, is_act)
 
-# Класс RZViewportPanel остается без существенных изменений, так как он просто контейнер для сцены
+
 class RZViewportPanel(QtWidgets.QGraphicsView):
     def __init__(self):
         super().__init__()
@@ -277,9 +299,6 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
         self._is_panning = False
         self._pan_start_pos = QtCore.QPoint()
 
-    # ... Остальные методы (wheelEvent, mousePressEvent для Pan/BoxSelect) аналогичны предыдущей версии
-    # ... Важно сохранить BoxSelect logic из прошлого ответа
-    
     def wheelEvent(self, event):
         zoom_in_factor = 1.15
         zoom_out_factor = 1 / zoom_in_factor
@@ -297,7 +316,6 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             event.accept()
             return
         
-        # Box Select Logic Check
         if event.button() == QtCore.Qt.LeftButton:
             item = self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform())
             if not isinstance(item, RZElementItem):

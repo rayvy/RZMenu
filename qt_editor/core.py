@@ -2,23 +2,13 @@
 import bpy
 
 # --- GLOBAL FLAGS ---
-# Если True, значит изменение инициировано нами (из Qt),
-# и мы не должны триггерить полную перерисовку UI в ответ на depsgraph.
 IS_UPDATING_FROM_QT = False 
 
 # --- ЧТЕНИЕ (READ) ---
 
 def get_active_object_safe():
-    """
-    Безопасный способ получить активный объект, 
-    даже если фокус у окна Qt, а не у 3D Viewport.
-    """
-    # 1. Если контекст есть (мышь над Blender), берем быстро
     if getattr(bpy.context, "active_object", None):
         return bpy.context.active_object
-    
-    # 2. Если контекст потерян (мышь над Qt), берем через слой
-    # Это спасает от AttributeError: 'Context' object has no attribute 'active_object'
     try:
         return bpy.context.view_layer.objects.active
     except AttributeError:
@@ -28,22 +18,15 @@ def get_selected_objects_safe():
     try:
         return bpy.context.selected_objects
     except AttributeError:
-        # Fallback через view_layer
         try:
             return [o for o in bpy.context.view_layer.objects if o.select_get()]
         except:
             return []
 
 def get_stable_context():
-    """
-    Ищет валидный 3D Viewport.
-    Оптимизация: Сначала быстрый чек, потом перебор.
-    """
-    # 1. Сначала пробуем текущий
     if bpy.context.area and bpy.context.area.type == 'VIEW_3D':
         return bpy.context.copy()
 
-    # 2. Ищем перебором (как было)
     for window in bpy.context.window_manager.windows:
         screen = window.screen
         for area in screen.areas:
@@ -77,7 +60,6 @@ def exec_in_context(op_func, **kwargs):
         return {'CANCELLED'}
 
 def refresh_viewports():
-    """Обновляет 3D окна Blender"""
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
             if area.type == 'VIEW_3D':
@@ -109,13 +91,14 @@ def get_selection_details(selected_ids, active_id):
     elements = bpy.context.scene.rzm.elements
     target = next((e for e in elements if e.id == active_id), None)
     
-    # Логика: если активный не найден среди элементов (например это меш),
-    # пробуем найти первый из выделенных
     if not target and selected_ids:
         first_id = list(selected_ids)[0]
         target = next((e for e in elements if e.id == first_id), None)
 
     if target:
+        # Получаем image_id, если он есть
+        img_id = getattr(target, "image_id", -1)
+        
         return {
             "exists": True,
             "id": target.id,
@@ -126,6 +109,7 @@ def get_selection_details(selected_ids, active_id):
             "pos_y": target.position[1],
             "width": target.size[0],
             "height": target.size[1],
+            "image_id": img_id,
             "is_multi": len(selected_ids) > 1
         }
     return None
@@ -134,15 +118,24 @@ def get_viewport_data():
     results = []
     if not bpy.context or not bpy.context.scene: return results
     for elem in bpy.context.scene.rzm.elements:
+        # Извлекаем image_id для кэширования
+        img_id = getattr(elem, "image_id", -1)
+        
         results.append({
             "id": elem.id, 
             "name": elem.element_name,
-            "pos_x": elem.position[0], "pos_y": elem.position[1],
-            "width": elem.size[0], "height": elem.size[1],
+            "class_type": elem.elem_class,
+            "pos_x": elem.position[0], 
+            "pos_y": elem.position[1],
+            "width": elem.size[0], 
+            "height": elem.size[1],
+            "image_id": img_id,
+            # Можно добавить флаг locked, если он есть в модели
+            "is_locked": False 
         })
     return results
 
-# --- ПОДПИСИ (SIGNATURES) - Оставляем как есть ---
+# --- SIGNATURES ---
 def get_structure_signature():
     if not bpy.context or not bpy.context.scene: return None
     items = []
@@ -154,17 +147,37 @@ def get_element_signature(active_id):
     if not bpy.context or not bpy.context.scene: return None
     target = next((e for e in bpy.context.scene.rzm.elements if e.id == active_id), None)
     if target:
-        return hash((target.id, target.element_name, target.position[:], target.size[:]))
+        # Добавляем image_id в сигнатуру, чтобы UI обновлялся при смене картинки
+        img_id = getattr(target, "image_id", -1)
+        return hash((target.id, target.element_name, target.position[:], target.size[:], img_id))
     return "DELETED"
 
 def get_viewport_signature():
     if not bpy.context or not bpy.context.scene: return None
     items = []
     for elem in bpy.context.scene.rzm.elements:
-        items.append((elem.id, elem.position[0], elem.position[1], elem.size[0], elem.size[1]))
+        # Добавляем image_id, чтобы вьюпорт перерисовывался при смене картинки
+        img_id = getattr(elem, "image_id", -1)
+        items.append((elem.id, elem.position[0], elem.position[1], elem.size[0], elem.size[1], img_id))
     return hash(tuple(items))
 
-# --- ЗАПИСЬ (WRITE) С ОПТИМИЗАЦИЕЙ ---
+# --- MATH CONVERSION ---
+
+def to_qt_coords(blender_x, blender_y):
+    """
+    Blender: Y Up
+    Qt: Y Down
+    """
+    return int(blender_x), int(-blender_y)
+
+def to_blender_delta(qt_dx, qt_dy):
+    """
+    Если мы тянем мышь вниз (Qt +Y),
+    в Blender это движение вниз (-Y).
+    """
+    return int(qt_dx), int(-qt_dy)
+
+# --- WRITE ---
 
 def get_next_available_id(elements):
     if len(elements) == 0: return 1
@@ -175,7 +188,7 @@ def get_next_available_id(elements):
 
 def create_element(class_type, pos_x, pos_y, parent_id=-1):
     global IS_UPDATING_FROM_QT
-    IS_UPDATING_FROM_QT = True  # Блокируем обновление UI от depsgraph
+    IS_UPDATING_FROM_QT = True
     try:
         if not bpy.context or not bpy.context.scene: return None
         rzm = bpy.context.scene.rzm
@@ -184,16 +197,10 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         new_id = get_next_available_id(elements)
         new_element = elements.add()
         new_element.id = new_id
-        
-        try:
-            new_element.elem_class = class_type
-        except TypeError:
-            new_element.elem_class = 'CONTAINER'
-
+        new_element.elem_class = class_type
         new_element.element_name = f"{class_type.capitalize()}_{new_id}"
         new_element.position = (int(pos_x), int(pos_y))
         
-        # Размеры
         if class_type == 'BUTTON': new_element.size = (120, 30)
         elif class_type == 'TEXT': new_element.size = (100, 25)
         elif class_type == 'SLIDER': new_element.size = (150, 20)
@@ -202,17 +209,12 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         
         if parent_id != -1 and hasattr(new_element, "parent_id"):
             new_element.parent_id = parent_id
-
-        if class_type == 'GRID_CONTAINER':
-            if hasattr(new_element, "grid_min_cells"): new_element.grid_min_cells = (1, 1)
-            if hasattr(new_element, "grid_max_cells"): new_element.grid_max_cells = (5, 5)
-            if hasattr(new_element, "grid_cell_size"): new_element.grid_cell_size = 64
             
         safe_undo_push(f"RZM: Create {class_type}")
         refresh_viewports()
         return new_id
     finally:
-        IS_UPDATING_FROM_QT = False # Снимаем блокировку
+        IS_UPDATING_FROM_QT = False
 
 def safe_undo_push(message):
     exec_in_context(bpy.ops.ed.undo_push, message=message)
@@ -231,15 +233,17 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
         
         for elem in elements:
             if elem.id in target_ids:
-                current_val = getattr(elem, prop_name)
-                if sub_index is not None:
-                    if current_val[sub_index] != value:
-                        current_val[sub_index] = value
-                        changed = True
-                else:
-                    if current_val != value:
-                        setattr(elem, prop_name, value)
-                        changed = True
+                if hasattr(elem, prop_name):
+                    current_val = getattr(elem, prop_name)
+                    if sub_index is not None:
+                        # Для векторов/массивов
+                        if current_val[sub_index] != value:
+                            current_val[sub_index] = value
+                            changed = True
+                    else:
+                        if current_val != value:
+                            setattr(elem, prop_name, value)
+                            changed = True
         
         if changed:
             refresh_viewports()
