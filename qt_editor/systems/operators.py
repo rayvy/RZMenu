@@ -1,6 +1,6 @@
 # RZMenu/qt_editor/systems/operators.py
 import bpy
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 from .. import core
 from ..utils import logger
 
@@ -34,7 +34,6 @@ class RZ_OT_Undo(RZOperator):
     label = "Undo"
     def execute(self, context, **kwargs):
         core.exec_in_context(bpy.ops.ed.undo)
-        # Fix: Sync UI after Undo
         context.window.sync_from_blender()
 
 class RZ_OT_Redo(RZOperator):
@@ -45,7 +44,6 @@ class RZ_OT_Redo(RZOperator):
             core.exec_in_context(bpy.ops.ed.redo)
         except:
             pass
-        # Fix: Sync UI after Redo
         context.window.sync_from_blender()
 
 class RZ_OT_Delete(RZOperator):
@@ -128,11 +126,8 @@ class RZ_OT_ToggleHide(RZOperator):
     label = "Toggle Hide"
     flags = {"REQUIRES_SELECTION"}
     def poll(self, context): 
-        # Добавляем возможность запуска через override_ids (как в outliner)
         return bool(context.selected_ids) or kwargs.get("override_ids")
-
     def execute(self, context, **kwargs):
-        # Поддержка override_ids для кликов по иконкам в аутлайнере
         ids = kwargs.get("override_ids", context.selected_ids)
         core.toggle_editor_flag(ids, "is_hidden")
         context.window.sync_from_blender()
@@ -162,12 +157,68 @@ class RZ_OT_ToggleSelectable(RZOperator):
         core.toggle_editor_flag(ids, "is_selectable")
         context.window.sync_from_blender()
 
+# --- DUPLICATE / COPY / PASTE ---
+
+class RZ_OT_Duplicate(RZOperator):
+    id = "rzm.duplicate"
+    label = "Duplicate"
+    flags = {"REQUIRES_SELECTION"}
+    def poll(self, context): return bool(context.selected_ids)
+    def execute(self, context, **kwargs):
+        new_ids = core.duplicate_elements(context.selected_ids)
+        if new_ids:
+            context.window.set_selection_multi(new_ids, active_id=-1)
+            context.window.sync_from_blender()
+
+class RZ_OT_Copy(RZOperator):
+    id = "rzm.copy"
+    label = "Copy"
+    flags = {"REQUIRES_SELECTION"}
+    def poll(self, context): return bool(context.selected_ids)
+    def execute(self, context, **kwargs):
+        core.copy_elements(context.selected_ids)
+
+class RZ_OT_Paste(RZOperator):
+    id = "rzm.paste"
+    label = "Paste"
+    def execute(self, context, **kwargs):
+        # Если use_mouse=True, пытаемся найти координаты мыши во вьюпорте
+        target_x = None
+        target_y = None
+        
+        use_mouse = kwargs.get('use_mouse', False)
+        
+        if use_mouse:
+            # Магия получения координат курсора
+            viewport = context.window.panel_viewport
+            
+            # 1. Глобальные координаты курсора
+            global_pos = QtGui.QCursor.pos()
+            
+            # 2. Локальные координаты виджета
+            view_pos = viewport.mapFromGlobal(global_pos)
+            
+            # 3. Координаты сцены (Qt Scene Coords)
+            scene_pos = viewport.mapToScene(view_pos)
+            
+            # 4. Конвертация в Blender Coords (Y-up)
+            # У нас есть хелпер в core, но он для дельты. 
+            # Для абсолюта: BlenderX = QtX, BlenderY = -QtY
+            target_x = int(scene_pos.x())
+            target_y = int(-scene_pos.y())
+            
+        new_ids = core.paste_elements(target_x, target_y)
+        if new_ids:
+            context.window.set_selection_multi(new_ids, active_id=-1)
+            context.window.sync_from_blender()
+
 _CLASSES = [
     RZ_OT_Delete, RZ_OT_Refresh, RZ_OT_Undo, RZ_OT_Redo,
     RZ_OT_SelectAll, RZ_OT_Nudge, RZ_OT_ViewportArrow, RZ_OT_ViewReset,
     RZ_OT_CreateElement,
     RZ_OT_ToggleHide, RZ_OT_ToggleLock, RZ_OT_ToggleSelectable,
-    RZ_OT_UnhideAll
+    RZ_OT_UnhideAll,
+    RZ_OT_Duplicate, RZ_OT_Copy, RZ_OT_Paste
 ]
 
 OPERATOR_REGISTRY = {}
