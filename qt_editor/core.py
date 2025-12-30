@@ -151,6 +151,73 @@ def get_viewport_signature():
 
 # --- ЗАПИСЬ (WRITE) ---
 
+def get_next_available_id(elements):
+    """Возвращает следующий свободный ID (int)"""
+    if len(elements) == 0:
+        return 1
+    # Ищем максимальный существующий ID
+    max_id = 0
+    for el in elements:
+        if el.id > max_id:
+            max_id = el.id
+    return max_id + 1
+
+def create_element(class_type, pos_x, pos_y, parent_id=-1):
+    """Создает новый элемент указанного типа в координатах x,y"""
+    if not bpy.context or not bpy.context.scene: return None
+    
+    rzm = bpy.context.scene.rzm
+    elements = rzm.elements
+    
+    new_id = get_next_available_id(elements)
+    
+    # Добавляем в коллекцию Blender
+    new_element = elements.add()
+    new_element.id = new_id
+    
+    # Важно: сначала устанавливаем class_type (Blender валидирует Enum здесь)
+    try:
+        new_element.elem_class = class_type
+    except TypeError:
+        print(f"RZM Error: Unknown class type '{class_type}'. Fallback to CONTAINER.")
+        new_element.elem_class = 'CONTAINER'
+
+    new_element.element_name = f"{class_type.capitalize()}_{new_id}"
+    
+    # Позиция
+    new_element.position = (int(pos_x), int(pos_y))
+    
+    # --- НАСТРОЙКА РАЗМЕРОВ ПО ТИПАМ ---
+    if class_type == 'BUTTON':
+        new_element.size = (120, 30)
+    elif class_type == 'TEXT':
+        new_element.size = (100, 25)
+    elif class_type == 'SLIDER':
+        new_element.size = (150, 20)
+    elif class_type == 'ANCHOR':
+        new_element.size = (30, 30)
+    else:
+        # Container, Grid Container
+        new_element.size = (150, 100) 
+    
+    # Родитель
+    if parent_id != -1 and hasattr(new_element, "parent_id"):
+        new_element.parent_id = parent_id
+
+    # Специфичные настройки (Grid)
+    if class_type == 'GRID_CONTAINER':
+        if hasattr(new_element, "grid_min_cells"):
+            new_element.grid_min_cells = (1, 1)
+        if hasattr(new_element, "grid_max_cells"):
+            new_element.grid_max_cells = (5, 5)
+        if hasattr(new_element, "grid_cell_size"):
+            new_element.grid_cell_size = 64
+            
+    safe_undo_push(f"RZM: Create {class_type}")
+    refresh_viewports()
+    
+    return new_id
+
 def safe_undo_push(message):
     """Обертка для создания точки отмены"""
     # undo_push тоже требует контекста!
@@ -233,6 +300,3 @@ def reorder_elements(target_id, insert_after_id):
         elements.move(target_idx, to_index)
         safe_undo_push("RZM: Reorder")
         refresh_viewports()
-
-def commit_history(msg):
-    safe_undo_push(msg)

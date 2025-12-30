@@ -134,6 +134,28 @@ class RZ_OT_ViewReset(RZOperator):
         view.resetTransform() 
         view.centerOn(0, 0)   
 
+class RZ_OT_CreateElement(RZOperator):
+    id = "rzm.create"
+    label = "Create Element"
+    
+    def execute(self, context, **kwargs):
+        class_type = kwargs.get('class_type', 'CONTAINER')
+        x = kwargs.get('x', 0)
+        y = kwargs.get('y', 0)
+        
+        # Определяем родителя: если есть Активный элемент, используем его
+        parent_id = -1
+        if context.active_id != -1:
+            # Можно добавить проверку, существует ли еще этот элемент, но core это обработает
+            parent_id = context.active_id
+            
+        new_id = core.create_element(class_type, x, y, parent_id)
+        
+        if new_id:
+            # Сразу выделяем созданный элемент
+            context.window.set_selection_multi({new_id}, active_id=new_id)
+            context.window.brute_force_refresh()
+
 _CLASSES = [
     RZ_OT_Delete,
     RZ_OT_Refresh,
@@ -142,7 +164,8 @@ _CLASSES = [
     RZ_OT_SelectAll,
     RZ_OT_Nudge,
     RZ_OT_ViewportArrow,
-    RZ_OT_ViewReset
+    RZ_OT_ViewReset,
+    RZ_OT_CreateElement
 ]
 
 OPERATOR_REGISTRY = {}

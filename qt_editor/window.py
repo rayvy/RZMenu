@@ -60,12 +60,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # --- BUILD TOOLBAR ---
         self.setup_toolbar()
         
-        # --- FIX FOOTER & SIGNALS: INIT BEFORE FOOTER SETUP ---
         self.input_controller = input_manager.RZInputController(self)
-        
         self.setup_footer()
         
-        # Connect signals AFTER input_controller is created
         self.input_controller.context_changed.connect(self.update_footer_context)
         self.input_controller.operator_executed.connect(self.update_footer_op)
 
@@ -125,7 +122,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
              self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
 
     def update_footer_op(self, op_name):
-        # --- FIX FOOTER & SIGNALS: DEBUG PRINT ---
         print(f"DEBUG FOOTER: {op_name}")
         self.lbl_last_op.setText(f"Last Op: {op_name}")
 
@@ -155,26 +151,61 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def handle_outliner_selection(self, ids_list, active_id):
         self.set_selection_multi(ids_list, active_id)
 
-    def handle_viewport_selection(self, active_id, modifiers):
+    def handle_viewport_selection(self, target_data, modifiers):
+        """
+        Обрабатывает выделение из вьюпорта.
+        target_data: может быть int (ID одного элемента) или list (список ID из Box Select)
+        """
         new_selection = self.selected_ids.copy()
-        
-        if active_id == -1:
-            if modifiers != 'SHIFT': 
-                new_selection.clear()
-            active = -1
-        else:
+        new_active = -1
+
+        # 1. BOX SELECT (Список ID)
+        if isinstance(target_data, list):
+            items_ids = set(target_data)
             if modifiers == 'SHIFT':
-                if active_id in new_selection:
-                    new_selection.remove(active_id)
-                    active = -1 if not new_selection else next(iter(new_selection))
-                else:
-                    new_selection.add(active_id)
-                    active = active_id
+                # Add to selection
+                new_selection.update(items_ids)
+                # Active stays same or picks one from new
+            elif modifiers == 'CTRL':
+                # Remove from selection
+                new_selection.difference_update(items_ids)
             else:
-                new_selection = {active_id}
-                active = active_id
+                # Replace
+                new_selection = items_ids
+            
+            # Определяем активный (берем первый попавшийся из списка)
+            if items_ids:
+                new_active = list(items_ids)[0]
+            elif new_selection:
+                new_active = next(iter(new_selection))
+
+        # 2. SINGLE CLICK (Один ID)
+        else:
+            active_id = target_data
+            if active_id == -1:
+                # Клик в пустоту
+                if modifiers != 'SHIFT' and modifiers != 'CTRL': 
+                    new_selection.clear()
+                new_active = -1
+            else:
+                if modifiers == 'SHIFT':
+                    # Toggle logic
+                    if active_id in new_selection:
+                        new_selection.remove(active_id)
+                        new_active = -1 if not new_selection else next(iter(new_selection))
+                    else:
+                        new_selection.add(active_id)
+                        new_active = active_id
+                elif modifiers == 'CTRL':
+                    # Deselect specific (редкий кейс для клика, обычно для box)
+                    if active_id in new_selection:
+                        new_selection.remove(active_id)
+                else:
+                    # Replace logic
+                    new_selection = {active_id}
+                    new_active = active_id
                 
-        self.set_selection_multi(new_selection, active)
+        self.set_selection_multi(new_selection, new_active)
 
     def sync_selection_ui(self):
         self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
