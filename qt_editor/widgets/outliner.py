@@ -1,8 +1,9 @@
 # RZMenu/qt_editor/widgets/outliner.py
 from PySide6 import QtWidgets, QtCore, QtGui
 
-class RZMDraggableList(QtWidgets.QListWidget):
-    internal_reorder_signal = QtCore.Signal(int, object)
+class RZDraggableTree(QtWidgets.QTreeWidget):
+    """Иерархическое дерево с поддержкой перетаскивания (Re-parenting)"""
+    internal_reorder_signal = QtCore.Signal(int, object) # moved_id, new_parent_id
 
     def __init__(self):
         super().__init__()
@@ -10,126 +11,179 @@ class RZMDraggableList(QtWidgets.QListWidget):
         self.setAcceptDrops(True)
         self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
         self.setDefaultDropAction(QtCore.Qt.MoveAction)
-        
-        # ВКЛЮЧАЕМ МУЛЬТИ-ВЫДЕЛЕНИЕ
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.setHeaderLabels(["Name", "Vis"])
+        
+        # Настройка колонок
+        self.setColumnWidth(0, 200)
+        self.setColumnWidth(1, 30)
+        self.header().setStretchLastSection(False)
+        self.header().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self.header().setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
 
     def dropEvent(self, event):
-        if event.source() != self: return
-
-        # Reorder разрешаем только если тащим ОДИН элемент (для упрощения)
-        selected_items = self.selectedItems()
-        if len(selected_items) != 1:
-            event.ignore()
-            return
-
-        target_item = selected_items[0]
-        target_id = target_item.data(QtCore.Qt.UserRole)
+        # Стандартная обработка перемещения внутри дерева
+        # Qt сам обработает визуальное перемещение, но нам нужно отправить сигнал
+        # в backend, чтобы обновить реальные данные.
         
-        pos = event.position().toPoint()
-        dest_item = self.itemAt(pos)
-        insert_after_id = -1 
+        source_items = self.selectedItems()
+        if not source_items: return
 
-        if dest_item is None:
-            count = self.count()
-            if count > 0:
-                insert_after_id = self.item(count - 1).data(QtCore.Qt.UserRole)
-            else:
-                insert_after_id = None
-        else:
-            indicator = self.dropIndicatorPosition()
-            dest_row = self.row(dest_item)
-            dest_id = dest_item.data(QtCore.Qt.UserRole)
+        # Определяем цель
+        target_item = self.itemAt(event.position().toPoint())
+        drop_indicator = self.dropIndicatorPosition()
+        
+        target_id = None # Root
+        if target_item:
+            target_id = target_item.data(0, QtCore.Qt.UserRole)
+            
+            # Если кидаем "между" элементами, родителем становится родитель таргета
+            if drop_indicator != QtWidgets.QAbstractItemView.OnItem:
+                parent = target_item.parent()
+                target_id = parent.data(0, QtCore.Qt.UserRole) if parent else None
 
-            if indicator == QtWidgets.QAbstractItemView.AboveItem:
-                if dest_row == 0: insert_after_id = None
-                else: insert_after_id = self.item(dest_row - 1).data(QtCore.Qt.UserRole)
-            elif indicator == QtWidgets.QAbstractItemView.BelowItem or indicator == QtWidgets.QAbstractItemView.OnItem:
-                insert_after_id = dest_id
-            elif indicator == QtWidgets.QAbstractItemView.OnViewport:
-                if self.count() > 0:
-                    insert_after_id = self.item(self.count()-1).data(QtCore.Qt.UserRole)
-                else:
-                    insert_after_id = None
+        # Вызываем базовый метод, чтобы Qt обновил UI (опционально, можно блокировать)
+        super().dropEvent(event)
 
-        if target_id != insert_after_id:
-            self.internal_reorder_signal.emit(target_id, insert_after_id)
-        event.ignore() 
+        # Эмитим сигнал для каждого перемещенного элемента
+        # (Упрощенно: считаем, что перемещаем под нового родителя)
+        for item in source_items:
+            moved_id = item.data(0, QtCore.Qt.UserRole)
+            # Внимание: здесь мы предполагаем изменение родителя.
+            # Если нужно точное изменение порядка (index), потребуется более сложная логика.
+            # Для заглушки достаточно смены родителя.
+            self.internal_reorder_signal.emit(moved_id, target_id)
 
 
 class RZMOutlinerPanel(QtWidgets.QWidget):
     # (Список выбранных ID, Активный ID)
     selection_changed = QtCore.Signal(list, int)
-    items_reordered = QtCore.Signal(int, object)
+    items_reordered = QtCore.Signal(int, object) # id, new_parent
 
     def __init__(self):
         super().__init__()
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
-        self.list_widget = RZMDraggableList()
         
-        # Подключаем сигнал изменения выделения
-        self.list_widget.itemSelectionChanged.connect(self._on_qt_selection_changed)
-        
-        self.list_widget.internal_reorder_signal.connect(self.items_reordered)
+        self.tree = RZDraggableTree()
+        self.tree.itemSelectionChanged.connect(self._on_qt_selection_changed)
+        self.tree.internal_reorder_signal.connect(self.items_reordered)
         
         # Стили
-        self.list_widget.setStyleSheet("""
-            QListWidget { background-color: #2b2b2b; border: none; }
-            QListWidget::item { padding: 5px; color: #e0e0e0; }
-            QListWidget::item:selected { background-color: #405560; color: white; }
+        self.tree.setStyleSheet("""
+            QTreeWidget { background-color: #2b2b2b; border: none; font-size: 12px; }
+            QTreeWidget::item { padding: 4px; color: #e0e0e0; }
+            QTreeWidget::item:selected { background-color: #405560; color: white; }
+            QTreeWidget::item:hover { background-color: #333; }
         """)
-        layout.addWidget(self.list_widget)
+        layout.addWidget(self.tree)
         
         self._block_signals = False
 
     def _on_qt_selection_changed(self):
         if self._block_signals: return
         
-        selected_items = self.list_widget.selectedItems()
-        ids = [item.data(QtCore.Qt.UserRole) for item in selected_items]
+        selected_items = self.tree.selectedItems()
+        ids = [item.data(0, QtCore.Qt.UserRole) for item in selected_items]
         
-        # Определяем активный (последний в списке current)
-        current = self.list_widget.currentItem()
+        current = self.tree.currentItem()
         active_id = -1
         if current and current.isSelected():
-            active_id = current.data(QtCore.Qt.UserRole)
+            active_id = current.data(0, QtCore.Qt.UserRole)
         elif ids:
             active_id = ids[0]
             
         self.selection_changed.emit(ids, active_id)
 
     def set_selection_silent(self, ids_set, active_id):
-        """Программно ставит выделение (из window.py)"""
         self._block_signals = True
-        self.list_widget.clearSelection()
+        self.tree.clearSelection()
         
+        iterator = QtWidgets.QTreeWidgetItemIterator(self.tree)
         item_to_focus = None
         
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            uid = item.data(QtCore.Qt.UserRole)
+        while iterator.value():
+            item = iterator.value()
+            uid = item.data(0, QtCore.Qt.UserRole)
             if uid in ids_set:
                 item.setSelected(True)
                 if uid == active_id:
                     item_to_focus = item
+            iterator += 1
         
         if item_to_focus:
-            self.list_widget.setCurrentItem(item_to_focus)
+            self.tree.setCurrentItem(item_to_focus)
+            self.tree.scrollToItem(item_to_focus)
             
         self._block_signals = False
 
     def update_ui(self, elements_list):
-        self._block_signals = True # Блокируем сигналы при перестройке
-        scroll_pos = self.list_widget.verticalScrollBar().value()
+        """
+        Builds the tree hierarchy.
+        Expects elements_list to contain dicts with 'id', 'name', 'parent_id', 'class_type', 'is_hidden'.
+        """
+        self._block_signals = True
         
-        self.list_widget.clear()
+        # Сохраняем состояние разворачивания (expanded)
+        expanded_ids = set()
+        iterator = QtWidgets.QTreeWidgetItemIterator(self.tree)
+        while iterator.value():
+            item = iterator.value()
+            if item.isExpanded():
+                expanded_ids.add(item.data(0, QtCore.Qt.UserRole))
+            iterator += 1
+
+        self.tree.clear()
         
-        for item_data in elements_list:
-            text = f"[{item_data['id']}] {item_data['name']}"
-            w_item = QtWidgets.QListWidgetItem(text)
-            w_item.setData(QtCore.Qt.UserRole, item_data['id'])
-            self.list_widget.addItem(w_item)
+        # 1. Map id -> data
+        data_map = {d['id']: d for d in elements_list}
+        # 2. Map id -> QTreeWidgetItem
+        item_map = {}
+        
+        # Создаем все айтемы
+        for data in elements_list:
+            item = QtWidgets.QTreeWidgetItem()
+            item.setText(0, data.get('name', 'Unnamed'))
+            item.setData(0, QtCore.Qt.UserRole, data['id'])
             
-        self.list_widget.verticalScrollBar().setValue(scroll_pos)
+            # Icon setup based on type
+            ctype = data.get('class_type', 'CONTAINER')
+            icon = QtWidgets.QStyle.SP_FileIcon
+            if "CONTAINER" in ctype:
+                icon = QtWidgets.QStyle.SP_DirIcon
+            elif "BUTTON" in ctype:
+                icon = QtWidgets.QStyle.SP_DialogOkButton
+            elif "TEXT" in ctype:
+                icon = QtWidgets.QStyle.SP_FileDialogDetailedView
+            
+            item.setIcon(0, self.style().standardIcon(icon))
+            
+            # Visibility Column
+            vis_text = "👁" if not data.get('is_hidden', False) else "❌"
+            item.setText(1, vis_text)
+            item.setTextAlignment(1, QtCore.Qt.AlignCenter)
+            
+            item_map[data['id']] = item
+
+        # 3. Build Hierarchy
+        for data in elements_list:
+            uid = data['id']
+            pid = data.get('parent_id') # Может быть None или -1
+            
+            item = item_map[uid]
+            
+            if pid is not None and pid in item_map:
+                parent_item = item_map[pid]
+                parent_item.addChild(item)
+            else:
+                self.tree.addTopLevelItem(item)
+                
+        # Восстанавливаем Expanded
+        for uid, item in item_map.items():
+            if uid in expanded_ids:
+                item.setExpanded(True)
+            # Всегда разворачиваем рут, если это удобно
+            if item.parent() is None:
+                item.setExpanded(True)
+
         self._block_signals = False
