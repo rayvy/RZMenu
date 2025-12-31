@@ -2,18 +2,19 @@
 import bpy
 import sys
 import os
-from . import core
 
+# Try to import PySide6
 try:
     from PySide6 import QtWidgets, QtCore
     PYSIDE_AVAILABLE = True
 except ImportError:
     PYSIDE_AVAILABLE = False
 
+# NEW: Import the refactored main window
 if PYSIDE_AVAILABLE:
-    from . import window
+    from . import main_window
 else:
-    window = None
+    main_window = None
 
 # --- INTEGRATION MANAGER ---
 
@@ -23,85 +24,66 @@ class IntegrationManager:
     
     @classmethod
     def get_app(cls):
-        # Гарантируем Singleton QApplication
+        """Ensures a singleton QApplication instance exists."""
         app = QtWidgets.QApplication.instance()
         if not app:
-            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+            # High-DPI scaling can be enabled here if needed
+            # os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
             app = QtWidgets.QApplication(sys.argv)
         return app
 
     @staticmethod
     def process_qt_events():
         """
-        Магия плавности. Вызывается Blender'ом каждые ~10мс.
-        Обрабатывает клики, наведения и отрисовку Qt.
+        Keeps the Qt event loop running smoothly inside Blender's modal context.
+        This is called by a Blender timer.
         """
         app = QtWidgets.QApplication.instance()
         if app:
             app.processEvents()
         
-        # Если окно закрыто - останавливаем таймер, чтобы не жрать ресурсы
+        # If the window has been closed by the user, stop the timer.
         if IntegrationManager._window and not IntegrationManager._window.isVisible():
              IntegrationManager.stop()
-             return None # Отмена таймера
+             return None # Unregisters the timer
              
-        return 0.01 # Повторить через 10мс
-
-    @classmethod
-    def on_depsgraph_update(cls, scene, depsgraph):
-        """
-        Реакция на изменения в Blender.
-        """
-        if core.IS_UPDATING_FROM_QT:
-            return
-
-        if cls._window and cls._window.isVisible():
-            # Вызываем обновление напрямую. 
-            # Благодаря "ленивым" проверкам (signature check) в window.py,
-            # это не будет тормозить, если данные не изменились.
-            cls._window.sync_from_blender()
+        return 0.01 # Repeat every 10ms
 
     @classmethod
     def launch(cls, context):
+        """Launches the editor window."""
         if not PYSIDE_AVAILABLE:
+            print("PySide6 is not available. Cannot launch RZMenu Editor.")
             return {'CANCELLED'}
 
         cls._app = cls.get_app()
         
-        # Создаем окно, если нет, или показываем существующее
+        # Create a new window instance if it doesn't exist, or just show it.
         if cls._window is None:
-            cls._window = window.RZMEditorWindow()
+            cls._window = main_window.RZMEditorWindow()
         
         cls._window.show()
         cls._window.activateWindow()
         
-        # Разворачиваем, если свернуто
-        win_state = cls._window.windowState()
-        if win_state & QtCore.Qt.WindowMinimized:
-             cls._window.setWindowState(win_state & ~QtCore.Qt.WindowMinimized)
+        # Bring to front if minimized
+        if cls._window.windowState() & QtCore.Qt.WindowState.WindowMinimized:
+             cls._window.setWindowState(cls._window.windowState() & ~QtCore.Qt.WindowState.WindowMinimized)
 
-        # 1. Запускаем "Сердцебиение" интерфейса
+        # Register the Qt event loop timer if it's not already running.
         if not bpy.app.timers.is_registered(cls.process_qt_events):
             bpy.app.timers.register(cls.process_qt_events, persistent=True)
-            
-        # 2. Подписываемся на обновления данных
-        if cls.on_depsgraph_update not in bpy.app.handlers.depsgraph_update_post:
-            bpy.app.handlers.depsgraph_update_post.append(cls.on_depsgraph_update)
-            
-        # Первичное обновление данных
-        cls._window.sync_from_blender()
 
     @classmethod
     def stop(cls):
-        # Очистка
+        """Cleans up resources, particularly the Blender timer."""
         if bpy.app.timers.is_registered(cls.process_qt_events):
             bpy.app.timers.unregister(cls.process_qt_events)
         
-        if cls.on_depsgraph_update in bpy.app.handlers.depsgraph_update_post:
-            bpy.app.handlers.depsgraph_update_post.remove(cls.on_depsgraph_update)
-        
-        # Не уничтожаем окно полностью, чтобы сохранить его положение/размер,
-        # но можно и cls._window = None, если нужно освободить память.
+        # We don't destroy the window, just let it be garbage collected
+        # if the reference is lost. This preserves its size and position.
+        if cls._window:
+            cls._window.close() # Ensure the window's closeEvent is called
+            cls._window = None
 
 class RZM_OT_LaunchQTEditor(bpy.types.Operator):
     """Launch the RZMenu Qt Editor"""
@@ -119,8 +101,10 @@ class RZM_OT_LaunchQTEditor(bpy.types.Operator):
 classes = [RZM_OT_LaunchQTEditor]
 
 def register():
-    for cls in classes: bpy.utils.register_class(cls)
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
 def unregister():
     IntegrationManager.stop()
-    for cls in classes: bpy.utils.unregister_class(cls)
+    for cls in classes:
+        bpy.utils.unregister_class(cls)
