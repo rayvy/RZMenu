@@ -4,6 +4,7 @@ from .ui import keymap_editor
 from PySide6 import QtWidgets, QtCore
 from . import core, actions
 from .widgets import outliner, inspector, viewport
+import datetime
 
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -202,31 +203,49 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def on_interaction_start(self):
         self.panel_viewport.rz_scene._is_user_interaction = True
     def on_interaction_end(self):
+        # Когда отпустили мышь - фиксируем историю и делаем ОДИН полный рефреш,
+        # чтобы убедиться, что Blender и Qt в точности совпадают.
         core.commit_history("RZM Transformation")
         self.panel_viewport.rz_scene._is_user_interaction = False
-        # Тут не нужно вызывать refresh вручную, commit_history вызовет signals в core
+        self.refresh_viewport(force=True)
+        self.refresh_inspector(force=True)
     def on_viewport_move_delta(self, delta_x, delta_y):
         if not self.selected_ids: return
-        core.move_elements_delta(self.selected_ids, delta_x, delta_y)
+        # SILENT=TRUE! 
+        # Мы говорим ядру: "Обнови цифры в Blender, но не триггери перерисовку UI".
+        # Viewport сам уже подвинул QGraphicsItem через item.moveBy()
+        core.move_elements_delta(self.selected_ids, delta_x, delta_y, silent=True)
+        
+        # Опционально: можно обновить Inspector точечно, если очень хочется видеть бегущие цифры,
+        # но это тоже может вызвать лаги. Пока оставим выключенным для скорости.
+        # Если нужны бегущие цифры в инспекторе без лагов - это делается через сигналы Qt напрямую, минуя core.
+
+    def on_viewport_resize(self, uid, x, y, w, h):
+        # То же самое для ресайза
+        core.resize_element(uid, x, y, w, h, silent=True)
     def on_viewport_resize(self, uid, x, y, w, h):
         core.resize_element(uid, x, y, w, h)
     def on_property_edited(self, key, val, idx):
         core.update_property_multi(self.selected_ids, key, val, idx)
 
-    # --- REFRESH SLOTS ---
     def refresh_outliner(self):
-        # Больше никаких проверок хешей!
+        # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        # print(f"[{t}] >>> [EVENT] UI UPDATE: Outliner")
+        
         data = core.get_all_elements_list()
         self.panel_outliner.update_ui(data)
         self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
 
     def refresh_viewport(self, force=False):
-        # Данные берем всегда, но это быстро. 
-        # Оптимизация на стороне ViewportScene (diffing)
+        # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        # print(f"[{t}] >>> [EVENT] UI UPDATE: Viewport")
+        
         data = core.get_viewport_data()
         self.panel_viewport.rz_scene.update_scene(data, self.selected_ids, self.active_id)
 
     def refresh_inspector(self, force=False):
-        # Inspector быстро обновляется
+        # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        # print(f"[{t}] >>> [EVENT] UI UPDATE: Inspector")
+        
         details = core.get_selection_details(self.selected_ids, self.active_id)
         self.panel_inspector.update_ui(details)

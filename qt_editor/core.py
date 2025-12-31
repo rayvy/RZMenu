@@ -187,19 +187,12 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
         elements = bpy.context.scene.rzm.elements
         
         map_props = {
-            "pos_x": ("position", 0),
-            "pos_y": ("position", 1),
-            "width": ("size", 0),
-            "height": ("size", 1),
-            "is_hidden": ("qt_hide", None),
-            "is_locked": ("qt_locked", None),
-            "is_selectable": ("qt_selectable", None),
-            "color": ("color", None),
-            # Grid Props
-            "grid_rows": ("grid_rows", None),
-            "grid_cols": ("grid_cols", None),
-            "grid_gap": ("grid_gap", None),
-            "grid_padding": ("grid_padding", None),
+            "pos_x": ("position", 0), "pos_y": ("position", 1),
+            "width": ("size", 0), "height": ("size", 1),
+            "is_hidden": ("qt_hide", None), "is_locked": ("qt_locked", None),
+            "is_selectable": ("qt_selectable", None), "color": ("color", None),
+            "grid_rows": ("grid_rows", None), "grid_cols": ("grid_cols", None),
+            "grid_gap": ("grid_gap", None), "grid_padding": ("grid_padding", None),
             "grid_cell_size": ("grid_cell_size", None),
         }
 
@@ -208,10 +201,8 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
 
         if prop_name in map_props:
             bl_prop, fixed_idx = map_props[prop_name]
-            if fixed_idx is not None:
-                bl_idx = fixed_idx
+            if fixed_idx is not None: bl_idx = fixed_idx
         
-        # Маппинг и логика обновления (сокращено для примера, логика та же)
         for elem in elements:
             if elem.id in target_ids:
                 if hasattr(elem, bl_prop):
@@ -230,39 +221,25 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
                             setattr(elem, bl_prop, value)
                             changed = True
                 else:
-                    # Fallback для динамических свойств, если их нет в классе
-                    # Пытаемся установить как IDProperty (через item access)
                     try:
                         elem[bl_prop] = value
                         changed = True
                     except: pass
-                # ... (логика присвоения, как была) ...
-                # Для краткости представим, что присвоение произошло
-                if prop_name == "pos_x": elem.position[0] = value
-                elif prop_name == "pos_y": elem.position[1] = value
-                elif prop_name == "width": elem.size[0] = value
-                elif prop_name == "height": elem.size[1] = value
-                elif prop_name == "element_name": elem.element_name = value
-                elif prop_name == "color": elem.color = value
-                else: 
-                     try: setattr(elem, prop_name, value)
-                     except: pass
-                changed = True
 
         if changed:
             if not fast_mode: safe_undo_push(f"RZM: Change {prop_name}")
             
-            # EVENT TRIGGERS
+            # SIGNAL LOGIC
             if prop_name in ["pos_x", "pos_y", "width", "height"]:
                 SIGNALS.transform_changed.emit()
-                SIGNALS.data_changed.emit() # Inspector тоже должен знать
-            elif prop_name in ["element_name", "is_hidden", "qt_hide", "is_locked"]:
+                SIGNALS.data_changed.emit()
+            elif prop_name in ["element_name", "is_hidden", "qt_hide", "is_locked", "is_selectable"]:
                 SIGNALS.structure_changed.emit()
                 SIGNALS.data_changed.emit()
+                SIGNALS.transform_changed.emit() # update visual state
             else:
                 SIGNALS.data_changed.emit()
-                SIGNALS.transform_changed.emit() # На всякий случай
-
+                SIGNALS.transform_changed.emit() # color changes etc
     finally:
         IS_UPDATING_FROM_QT = False
 
@@ -284,7 +261,7 @@ def resize_element(elem_id, x, y, w, h):
     finally:
         IS_UPDATING_FROM_QT = False
 
-def move_elements_delta(target_ids, delta_x, delta_y):
+def move_elements_delta(target_ids, delta_x, delta_y, silent=False):
     global IS_UPDATING_FROM_QT
     IS_UPDATING_FROM_QT = True
     try:
@@ -296,10 +273,31 @@ def move_elements_delta(target_ids, delta_x, delta_y):
                 elem.position[0] += int(delta_x)
                 elem.position[1] += int(delta_y)
                 changed = True
-        if changed:
-             # EVENT TRIGGER
+        
+        # ГЛАВНОЕ ИЗМЕНЕНИЕ:
+        # Если silent=True, мы НЕ шлем сигнал. 
+        # Вьюпорт сам знает, что он подвинул, ему не нужно подтверждение.
+        if changed and not silent:
              SIGNALS.transform_changed.emit()
              SIGNALS.data_changed.emit()
+    finally:
+        IS_UPDATING_FROM_QT = False
+
+def resize_element(elem_id, x, y, w, h, silent=False):
+    global IS_UPDATING_FROM_QT
+    IS_UPDATING_FROM_QT = True
+    try:
+        elements = bpy.context.scene.rzm.elements
+        target = next((e for e in elements if e.id == elem_id), None)
+        if target:
+            target.position[0] = int(x)
+            target.position[1] = int(y)
+            target.size[0] = int(w)
+            target.size[1] = int(h)
+            
+            if not silent:
+                SIGNALS.transform_changed.emit()
+                SIGNALS.data_changed.emit()
     finally:
         IS_UPDATING_FROM_QT = False
 
@@ -346,9 +344,6 @@ def reorder_elements(target_id, insert_after_id):
             if anchor_idx == -1: return 
             if target_idx == anchor_idx: return
             to_index = anchor_idx if target_idx < anchor_idx else anchor_idx + 1 
-        # ... (Логика reorder без изменений) ...
-        # Предположим, elements.move() сработал
-        safe_undo_push("RZM: Reorder")
         
         max_idx = len(elements) - 1
         if to_index > max_idx: to_index = max_idx
@@ -356,10 +351,7 @@ def reorder_elements(target_id, insert_after_id):
         if target_idx != to_index:
             elements.move(target_idx, to_index)
             safe_undo_push("RZM: Reorder")
-            refresh_viewports()
-        # EVENT TRIGGER
-        SIGNALS.structure_changed.emit()
-    except: pass
+            SIGNALS.structure_changed.emit()
     finally:
         IS_UPDATING_FROM_QT = False
 
@@ -385,17 +377,11 @@ def toggle_editor_flag(target_ids, flag_name):
         
         if changed:
             safe_undo_push(f"RZM: Toggle {flag_name}")
-            refresh_viewports()
+            SIGNALS.structure_changed.emit()
+            SIGNALS.data_changed.emit()
+            SIGNALS.transform_changed.emit()
     finally:
         IS_UPDATING_FROM_QT = False
-    # ... (Логика toggle без изменений) ...
-    # Представим, что флаг сменился
-    safe_undo_push(f"RZM: Toggle {flag_name}")
-    
-    # EVENT TRIGGER
-    SIGNALS.structure_changed.emit() # Иконки в аутлайнере
-    SIGNALS.data_changed.emit()      # Чекбоксы в инспекторе
-    SIGNALS.transform_changed.emit() # Видимость/Лок во вьюпорте
 
 def reparent_element(child_id, new_parent_id):
     global IS_UPDATING_FROM_QT
@@ -406,15 +392,10 @@ def reparent_element(child_id, new_parent_id):
         if target:
             target.parent_id = new_parent_id
             safe_undo_push("RZM: Reparent")
-            refresh_viewports()
+            SIGNALS.structure_changed.emit()
+            SIGNALS.transform_changed.emit() # Parent changes pos calculation usually
     finally:
         IS_UPDATING_FROM_QT = False
-    # ... (Логика reparent) ...
-    safe_undo_push("RZM: Reparent")
-    
-    # EVENT TRIGGER
-    SIGNALS.structure_changed.emit()
-    SIGNALS.transform_changed.emit()
 
 def duplicate_elements(target_ids):
     global IS_UPDATING_FROM_QT
@@ -450,36 +431,65 @@ def duplicate_elements(target_ids):
             new_ids.append(new_id)
 
         safe_undo_push("RZM: Duplicate")
-        refresh_viewports()
+        SIGNALS.structure_changed.emit()
+        SIGNALS.transform_changed.emit()
         return new_ids
 
     finally:
         IS_UPDATING_FROM_QT = False
 
-def copy_elements(target_ids):
-    global _INTERNAL_CLIPBOARD
-    _INTERNAL_CLIPBOARD.clear()
-    # ... (Логика duplicate) ...
-    safe_undo_push("RZM: Duplicate")
-    
-    # EVENT TRIGGER
-    SIGNALS.structure_changed.emit()
-    SIGNALS.transform_changed.emit()
-    return [] # Возвращаем ID (в реальном коде)
-
 def paste_elements(target_x=None, target_y=None):
-    # ... (Логика paste) ...
-    safe_undo_push("RZM: Paste")
+    global IS_UPDATING_FROM_QT, _INTERNAL_CLIPBOARD
+    if not _INTERNAL_CLIPBOARD: return []
     
-    # EVENT TRIGGER
-    SIGNALS.structure_changed.emit()
-    SIGNALS.transform_changed.emit()
-    return []
+    IS_UPDATING_FROM_QT = True
+    try:
+        if not bpy.context or not bpy.context.scene: return []
+        elements = bpy.context.scene.rzm.elements
+        new_ids = []
+
+        offset_x = 0
+        offset_y = 0
+        
+        if target_x is not None and target_y is not None:
+            if _INTERNAL_CLIPBOARD:
+                min_x = min(item["pos"][0] for item in _INTERNAL_CLIPBOARD)
+                min_y = min(item["pos"][1] for item in _INTERNAL_CLIPBOARD)
+                # Simple offset logic
+                offset_x = target_x - min_x
+                offset_y = target_y - min_y
+
+        for item in _INTERNAL_CLIPBOARD:
+            new_id = get_next_available_id(elements)
+            new_elem = elements.add()
+            new_elem.id = new_id
+            new_elem.element_name = item["name"]
+            new_elem.elem_class = item["class"]
+            
+            px = int(item["pos"][0] + offset_x)
+            py = int(item["pos"][1] + offset_y)
+            
+            new_elem.position = (px, py)
+            new_elem.size = item["size"]
+            new_elem.parent_id = -1 
+            
+            if "color" in item: new_elem.color = item["color"]
+            if "hide" in item: new_elem.qt_hide = item["hide"]
+            if "lock" in item: new_elem.qt_locked = item["lock"]
+            if "grid_cell" in item and hasattr(new_elem, "grid_cell_size"):
+                 new_elem.grid_cell_size = item["grid_cell"]
+            
+            new_ids.append(new_id)
+            
+        safe_undo_push("RZM: Paste")
+        SIGNALS.structure_changed.emit()
+        SIGNALS.transform_changed.emit()
+        return new_ids
+
+    finally:
+        IS_UPDATING_FROM_QT = False
 
 def align_elements(target_ids, mode):
-    """
-    mode: 'LEFT', 'RIGHT', 'TOP', 'BOTTOM', 'CENTER_X', 'CENTER_Y'
-    """
     global IS_UPDATING_FROM_QT
     IS_UPDATING_FROM_QT = True
     try:
@@ -487,79 +497,57 @@ def align_elements(target_ids, mode):
         elements = bpy.context.scene.rzm.elements
         selection = [e for e in elements if e.id in target_ids]
         if not selection: return
-    # ... (Логика align) ...
-    safe_undo_push(f"RZM: Align {mode}")
-    
-    # EVENT TRIGGER
-    SIGNALS.transform_changed.emit()
-    SIGNALS.data_changed.emit()
-
-        # Blender Y is UP. 
-        # But UI Alignment is Visual (Qt Y Down).
-        # We need to translate logic carefully.
-        # PosX, PosY are Blender coords.
         
-        # LEFT: Min X
+        # ... (Логика выравнивания, копируем из старого core.py или 5 итерации) ...
+        # Для краткости:
         if mode == 'LEFT':
-            target_val = min(e.position[0] for e in selection)
-            for e in selection: e.position[0] = target_val
-            
-        # RIGHT: Max Right Edge. Right = PosX + Width.
+            val = min(e.position[0] for e in selection)
+            for e in selection: e.position[0] = val
         elif mode == 'RIGHT':
-            target_right = max(e.position[0] + e.size[0] for e in selection)
-            for e in selection:
-                e.position[0] = target_right - e.size[0]
-                
-        # TOP (Visual Top):
-        # Qt Top = Min Y. 
-        # Blender Y = -QtY. So Min QtY -> Max Blender Y.
-        # Align to Max Y.
+            val = max(e.position[0] + e.size[0] for e in selection)
+            for e in selection: e.position[0] = val - e.size[0]
         elif mode == 'TOP':
-            target_val = max(e.position[1] for e in selection)
-            for e in selection: e.position[1] = target_val
-            
-        # BOTTOM (Visual Bottom):
-        # Qt Bottom = Max (Y+H).
-        # Blender Bottom Edge = Y - H (since Y is top-left in Qt inversion logic, but in Blender Y is pos).
-        # Let's verify: In Blender, if (0,0) is origin.
-        # Qt(0,0) -> Bl(0,0).
-        # Qt(0, 100) -> Bl(0, -100).
-        # Rect Height 50.
-        # Item 1: QtPos(0, 10) -> BlPos(0, -10). Visually high.
-        # Item 2: QtPos(0, 100) -> BlPos(0, -100). Visually low.
-        # Align Bottom -> Align to Item 2's bottom edge.
-        # Item 2 Bottom Edge (Qt) = 100 + 50 = 150.
-        # In Blender: BlPos - Height = -100 - 50 = -150.
-        # So we want min(pos_y - height).
+            val = max(e.position[1] for e in selection)
+            for e in selection: e.position[1] = val
         elif mode == 'BOTTOM':
-            target_bottom = min(e.position[1] - e.size[1] for e in selection)
-            for e in selection:
-                e.position[1] = target_bottom + e.size[1]
-        
-        # CENTER X
+            val = min(e.position[1] - e.size[1] for e in selection)
+            for e in selection: e.position[1] = val + e.size[1]
         elif mode == 'CENTER_X':
             min_x = min(e.position[0] for e in selection)
             max_r = max(e.position[0] + e.size[0] for e in selection)
             center = (min_x + max_r) / 2
-            for e in selection:
-                e.position[0] = int(center - e.size[0] / 2)
-                
-        # CENTER Y
+            for e in selection: e.position[0] = int(center - e.size[0] / 2)
         elif mode == 'CENTER_Y':
-            max_y = max(e.position[1] for e in selection) # Top
-            min_b = min(e.position[1] - e.size[1] for e in selection) # Bottom
+            max_y = max(e.position[1] for e in selection)
+            min_b = min(e.position[1] - e.size[1] for e in selection)
             center = (max_y + min_b) / 2
-            for e in selection:
-                e.position[1] = int(center + e.size[1] / 2)
+            for e in selection: e.position[1] = int(center + e.size[1] / 2)
 
         safe_undo_push(f"RZM: Align {mode}")
-        refresh_viewports()
-def unhide_all_elements():
-    # ...
-    safe_undo_push("RZM: Unhide All")
-    SIGNALS.structure_changed.emit()
-    SIGNALS.transform_changed.emit()
+        SIGNALS.transform_changed.emit()
+        SIGNALS.data_changed.emit()
 
+    finally:
+        IS_UPDATING_FROM_QT = False
+
+def unhide_all_elements():
+    global IS_UPDATING_FROM_QT
+    IS_UPDATING_FROM_QT = True
+    try:
+        if not bpy.context or not bpy.context.scene: return
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if getattr(elem, "qt_hide", False):
+                elem.qt_hide = False
+                changed = True
+        
+        if changed:
+            safe_undo_push("RZM: Unhide All")
+            SIGNALS.structure_changed.emit()
+            SIGNALS.transform_changed.emit()
+    finally:
+        IS_UPDATING_FROM_QT = False
 def copy_elements(target_ids):
     # Copy не меняет сцену, сигналы не нужны
     pass
