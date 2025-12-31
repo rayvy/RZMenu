@@ -5,28 +5,24 @@ from typing import Optional
 
 from ..backend.dtos import RZElement
 
+# RZColorButton (оставь как есть или скопируй из прошлого ответа, там всё ок)
 class RZColorButton(QtWidgets.QPushButton):
-    """A simple color picker button."""
     colorChanged = Signal(list)
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self._color = [1.0, 1.0, 1.0, 1.0]
         self.clicked.connect(self._pick_color)
         self.update_style()
-
     def set_color(self, rgba: list):
         if not rgba or len(rgba) < 3: rgba = [1.0, 1.0, 1.0, 1.0]
         if len(rgba) == 3: rgba = list(rgba) + [1.0]
         self._color = rgba
         self.update_style()
-
     def update_style(self):
         r, g, b, _ = [int(c * 255) for c in self._color]
         luminance = (0.299 * r + 0.587 * g + 0.114 * b)
         text_color = "black" if luminance > 128 else "white"
         self.setStyleSheet(f"background-color: rgb({r},{g},{b}); color: {text_color}; border: 1px solid #555;")
-
     def _pick_color(self):
         current_qcolor = QtGui.QColor.fromRgbF(*self._color)
         dialog = QtWidgets.QColorDialog(current_qcolor, self)
@@ -37,13 +33,8 @@ class RZColorButton(QtWidgets.QPushButton):
             self.set_color(new_rgba)
             self.colorChanged.emit(new_rgba)
 
-
 class InspectorView(QtWidgets.QWidget):
-    """
-    A "dumb" view for displaying and editing the properties of a single RZElement.
-    It is populated by a DTO and emits signals when values are changed by the user.
-    """
-    property_changed = Signal(int, str, object)  # id, key, value
+    property_changed = Signal(int, str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -51,10 +42,9 @@ class InspectorView(QtWidgets.QWidget):
         self._block_signals = False
         
         self._setup_ui()
-        self.set_selection(None) # Start in a disabled state
+        self.set_selection(None)
 
     def _setup_ui(self):
-        """Initializes all the input widgets."""
         main_layout = QtWidgets.QVBoxLayout(self)
         
         # --- Identity ---
@@ -75,7 +65,7 @@ class InspectorView(QtWidgets.QWidget):
         self.spin_h = QtWidgets.QSpinBox()
         for spin in [self.spin_x, self.spin_y, self.spin_w, self.spin_h]:
             spin.setRange(-10000, 10000)
-            spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons) # Compact view
+            spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
         form_trans.addRow("Pos X:", self.spin_x)
         form_trans.addRow("Pos Y:", self.spin_y)
         form_trans.addRow("Width:", self.spin_w)
@@ -100,7 +90,7 @@ class InspectorView(QtWidgets.QWidget):
         self.btn_color.colorChanged.connect(lambda c: self._emit_change('style', {'color': c}))
 
     def set_selection(self, element: Optional[RZElement]):
-        """Populates the inspector fields from a DTO or clears them."""
+        """Populates the inspector fields. CRITICAL: Doesn't overwrite if user is typing."""
         self._block_signals = True
         
         is_valid = element is not None
@@ -118,17 +108,28 @@ class InspectorView(QtWidgets.QWidget):
         else:
             self._current_id = element.id
             self.lbl_id.setText(str(element.id))
-            self.name_edit.setText(element.name)
-            self.spin_x.setValue(int(element.pos_x))
-            self.spin_y.setValue(int(element.pos_y))
-            self.spin_w.setValue(int(element.width))
-            self.spin_h.setValue(int(element.height))
+            
+            # --- FIX: CHECK FOCUS BEFORE UPDATING ---
+            if not self.name_edit.hasFocus():
+                self.name_edit.setText(element.name)
+            
+            if not self.spin_x.hasFocus():
+                self.spin_x.setValue(int(element.pos_x))
+            
+            if not self.spin_y.hasFocus():
+                self.spin_y.setValue(int(element.pos_y))
+            
+            if not self.spin_w.hasFocus():
+                self.spin_w.setValue(int(element.width))
+            
+            if not self.spin_h.hasFocus():
+                self.spin_h.setValue(int(element.height))
+            
             self.btn_color.set_color(element.style.get('color', []))
 
         self._block_signals = False
 
     def _emit_change(self, key: str, value: object):
-        """Emits the property_changed signal if not blocked."""
         if self._block_signals or self._current_id is None:
             return
         self.property_changed.emit(self._current_id, key, value)

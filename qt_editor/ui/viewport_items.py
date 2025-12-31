@@ -1,20 +1,17 @@
 # RZMenu/qt_editor/ui/viewport_items.py
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from PySide6.QtCore import Qt, Signal, QPointF, QRectF
-from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem, QGraphicsTextItem, QGraphicsPixmapItem
-from typing import List
+from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QObject # <--- Added QObject
+from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem, QGraphicsTextItem
 
-# This is a forward reference for type hinting. We only import it for that.
+from typing import List
 from ..backend.dtos import RZElement
 
 # --- Constants ---
 HANDLE_SIZE = 8
 MIN_ITEM_SIZE = 10
 
-# --- Reusable Handle for Resizing ---
-
-class RZHandleItem(QGraphicsRectItem):
+class RZHandleItem(QObject, QGraphicsRectItem): # <--- FIXED: Inherit from QObject first!
     """A draggable handle for resizing a parent item."""
     
     dragged = Signal(object, QPointF)
@@ -24,7 +21,10 @@ class RZHandleItem(QGraphicsRectItem):
     TOP_LEFT, TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT = range(8)
 
     def __init__(self, handle_type: int, parent: QGraphicsItem):
-        super().__init__(0, 0, HANDLE_SIZE, HANDLE_SIZE, parent)
+        # Initialize both bases
+        QGraphicsRectItem.__init__(self, 0, 0, HANDLE_SIZE, HANDLE_SIZE, parent)
+        QObject.__init__(self) # Init signal machinery
+        
         self.handle_type = handle_type
         
         self.setBrush(QtGui.QBrush(Qt.GlobalColor.white))
@@ -64,12 +64,9 @@ class RZHandleItem(QGraphicsRectItem):
         self.drag_finished.emit()
         event.accept()
 
-# --- Main Element Item ---
-
-class RZElementItem(QGraphicsRectItem):
+class RZElementItem(QObject, QGraphicsRectItem): # <--- FIXED: Inherit QObject for signals
     """
     A 'dumb' graphical representation of an RZElement.
-    It receives a DTO and renders itself. It emits signals on user interaction.
     """
     selected = Signal(int, str)
     moved = Signal(int, float, float)
@@ -78,10 +75,12 @@ class RZElementItem(QGraphicsRectItem):
     interaction_finished = Signal(int)
 
     def __init__(self, dto: RZElement, parent_item: QGraphicsItem = None):
-        super().__init__(parent_item)
+        QGraphicsRectItem.__init__(self, parent_item)
+        QObject.__init__(self)
+        
         self.uid = dto.id
         self._is_resizing = False
-        self._dto_cache: RZElement = dto # Cache for painting
+        self._dto_cache: RZElement = dto
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
@@ -104,22 +103,26 @@ class RZElementItem(QGraphicsRectItem):
     def update_from_dto(self, dto: RZElement):
         self._dto_cache = dto
         
+        # Invert Y for Qt
         self.setPos(dto.pos_x, -dto.pos_y)
         self.setRect(0, 0, dto.width, dto.height)
         
         self.setVisible(not dto.is_hidden)
+        # Fix locking: if locked, movable is False
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, not dto.is_locked)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, dto.is_selectable)
         self.setOpacity(0.6 if not dto.is_selectable else 1.0)
         
         self._text.setPlainText(dto.name)
-        self.set_handles_visible(self.isSelected())
+        
+        # Only show handles if selected AND NOT LOCKED
+        show_handles = self.isSelected() and not dto.is_locked
+        self.set_handles_visible(show_handles)
+        
         self._update_handles_pos()
         self.update()
 
     def set_handles_visible(self, visible: bool):
-        if not self.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsMovable:
-            visible = False
         for handle in self._handles:
             handle.setVisible(visible)
 
@@ -145,6 +148,7 @@ class RZElementItem(QGraphicsRectItem):
         if not self._is_resizing: return
         self._is_resizing = False
         pos, rect = self.pos(), self.rect()
+        # Emit Blender coordinates (Y is inverted)
         self.resized.emit(self.uid, pos.x(), -pos.y(), rect.width(), rect.height())
         self.interaction_finished.emit(self.uid)
 
@@ -188,6 +192,7 @@ class RZElementItem(QGraphicsRectItem):
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged and self.scene() and self.mouseGrabber:
             new_pos = value
+            # Emit Blender coordinates
             self.moved.emit(self.uid, new_pos.x(), -new_pos.y())
         return super().itemChange(change, value)
     
@@ -197,9 +202,16 @@ class RZElementItem(QGraphicsRectItem):
         dto = self._dto_cache
         
         color_tuple = dto.style.get('color', (0.2, 0.2, 0.2, 0.8))
+        # Ensure we have RGBA
+        if len(color_tuple) < 3: color_tuple = [0.5, 0.5, 0.5, 1.0]
+        elif len(color_tuple) == 3: color_tuple = list(color_tuple) + [1.0]
+
         r, g, b = [int(c * 255) for c in color_tuple[:3]]
-        a = int(color_tuple[3] * 255) if len(color_tuple) > 3 else 200
+        a = int(color_tuple[3] * 255)
         bg_color = QtGui.QColor(r, g, b, a)
+
+        if dto.is_locked:
+             bg_color = bg_color.darker(150)
 
         painter.fillRect(rect, bg_color)
         
@@ -217,9 +229,3 @@ class RZElementItem(QGraphicsRectItem):
         if dto.is_locked:
             painter.setPen(QtGui.QColor("red"))
             painter.drawText(rect.adjusted(0, 5, -5, 0), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop, "🔒")
-
-    def shape(self) -> QtGui.QPainterPath:
-        """Override shape for more accurate selection, especially for non-rectangular items in future."""
-        path = QtGui.QPainterPath()
-        path.addRect(self.rect())
-        return path
