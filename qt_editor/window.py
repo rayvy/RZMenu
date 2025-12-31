@@ -44,7 +44,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.panel_viewport.setProperty("RZ_CONTEXT", "VIEWPORT")
         self.panel_viewport.parent_window = self 
         self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
-        # Подключаем сигнал ресайза
         self.panel_viewport.rz_scene.element_resized_signal.connect(self.on_viewport_resize)
         
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
@@ -65,6 +64,12 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.setup_toolbar()
         
         self.input_controller = input_manager.RZInputController(self)
+        # --- CONNECT ALT SIGNAL (SAFE) ---
+        if hasattr(self.input_controller, "alt_mode_changed"):
+            self.input_controller.alt_mode_changed.connect(self.panel_viewport.set_alt_mode)
+        else:
+            print("[RZM] Warning: 'alt_mode_changed' signal missing. Restart Blender to update input_manager.")
+        
         self.setup_footer()
         
         self.input_controller.context_changed.connect(self.update_footer_context)
@@ -223,7 +228,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         core.move_elements_delta(self.selected_ids, delta_x, delta_y)
 
     def on_viewport_resize(self, uid, x, y, w, h):
-        # Вызываем новый метод в core
         core.resize_element(uid, x, y, w, h)
 
     def on_property_edited(self, key, val, idx):

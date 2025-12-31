@@ -1,4 +1,3 @@
-
 # RZMenu/qt_editor/widgets/viewport.py
 from PySide6 import QtWidgets, QtCore, QtGui
 import shiboken6
@@ -20,9 +19,7 @@ COLOR_LOCKED = QtGui.QColor(255, 50, 50)
 HANDLE_SIZE = 8
 
 class RZHandleItem(QtWidgets.QGraphicsRectItem):
-    """
-    Ручка для изменения размера (Gizmo Handle).
-    """
+    # ... (Без изменений, копируем класс из прошлого шага)
     # Типы ручек
     TOP_LEFT = 0
     TOP = 1
@@ -38,9 +35,8 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         self.handle_type = handle_type
         self.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
         self.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0), 1))
-        self.setZValue(100) # Поверх элемента
+        self.setZValue(100) 
         
-        # Определяем курсор
         cursors = {
             self.TOP_LEFT: QtCore.Qt.SizeFDiagCursor,
             self.BOTTOM_RIGHT: QtCore.Qt.SizeFDiagCursor,
@@ -63,12 +59,10 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
-        # Начинаем перетаскивание, блокируем событие, чтобы родитель не двигался
         event.accept()
 
     def mouseMoveEvent(self, event):
         if event.buttons() & QtCore.Qt.LeftButton:
-            # Передаем дельту родительскому элементу
             delta = event.scenePos() - event.lastScenePos()
             self.parentItem().handle_resize(self.handle_type, delta)
             event.accept()
@@ -76,6 +70,7 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
             super().mouseMoveEvent(event)
 
 class RZElementItem(QtWidgets.QGraphicsRectItem):
+    # ... (Без изменений)
     def __init__(self, uid, w, h, name, elem_type="CONTAINER"):
         super().__init__(0, 0, w, h)
         self.uid = uid
@@ -83,14 +78,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.name = name
         self.text_content = name
         
-        # State
         self.is_active = False
         self.is_locked = False
         self.image_id = -1
         self.is_selectable = True
         self.custom_color = None 
         
-        self.handles = {} # {type: RZHandleItem}
+        self.handles = {} 
 
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | 
@@ -98,27 +92,18 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         )
 
     def create_handles(self):
-        """Создает 8 ручек, если их еще нет"""
         if self.handles: return
-        
         for h_type in range(8):
             handle = RZHandleItem(h_type, self)
             self.handles[h_type] = handle
         self.update_handles_pos()
 
     def update_handles_pos(self):
-        """Расставляет ручки по краям текущего rect"""
         if not self.handles: return
-        
         rect = self.rect()
         w, h = rect.width(), rect.height()
         hs = HANDLE_SIZE
-        hh = hs / 2 # half handle
-        
-        # Координаты ручек (центры)
-        # 0 1 2
-        # 7   3
-        # 6 5 4
+        hh = hs / 2 
         
         positions = {
             RZHandleItem.TOP_LEFT:     (-hh, -hh),
@@ -138,87 +123,47 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def set_handles_visible(self, visible):
         if not self.handles and visible:
             self.create_handles()
-        
         for handle in self.handles.values():
             handle.setVisible(visible)
 
     def handle_resize(self, h_type, delta):
-        """
-        Логика изменения размера при перетаскивании ручки.
-        h_type: тип ручки
-        delta: QPointF смещения мыши
-        """
         if self.is_locked: return
 
         r = self.rect()
         cur_pos = self.pos()
-        
         dx = delta.x()
         dy = delta.y()
-        
         new_x = cur_pos.x()
         new_y = cur_pos.y()
         new_w = r.width()
         new_h = r.height()
-        
-        # Min size
         MIN_SIZE = 10
         
-        # Logic depends on handle type
-        # Top/Left handles affect Position AND Size (Qt coords: Y down)
-        
-        # Horizontal
         if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.LEFT, RZHandleItem.BOTTOM_LEFT):
-            # Тянем влево: x уменьшается, w увеличивается
-            # Но мы не можем просто уменьшить x, если w достигнет минимума
-            if new_w - dx < MIN_SIZE:
-                dx = new_w - MIN_SIZE
-            
+            if new_w - dx < MIN_SIZE: dx = new_w - MIN_SIZE
             new_x += dx
             new_w -= dx
             
         elif h_type in (RZHandleItem.TOP_RIGHT, RZHandleItem.RIGHT, RZHandleItem.BOTTOM_RIGHT):
-            # Тянем вправо: w увеличивается
-            if new_w + dx < MIN_SIZE:
-                dx = MIN_SIZE - new_w
+            if new_w + dx < MIN_SIZE: dx = MIN_SIZE - new_w
             new_w += dx
 
-        # Vertical
         if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP, RZHandleItem.TOP_RIGHT):
-            # Тянем вверх: y уменьшается, h увеличивается
-            if new_h - dy < MIN_SIZE:
-                dy = new_h - MIN_SIZE
-            new_x += 0 # Y handled below, X handled above
+            if new_h - dy < MIN_SIZE: dy = new_h - MIN_SIZE
+            new_x += 0 
             new_y += dy
             new_h -= dy
             
         elif h_type in (RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_RIGHT):
-            # Тянем вниз: h увеличивается
-            if new_h + dy < MIN_SIZE:
-                dy = MIN_SIZE - new_h
+            if new_h + dy < MIN_SIZE: dy = MIN_SIZE - new_h
             new_h += dy
 
-        # 1. Визуальное обновление (мгновенно)
         self.setRect(0, 0, new_w, new_h)
         self.setPos(new_x, new_y)
-        self.update_handles_pos() # Двигаем ручки следом
-        
-        # 2. Сигнал в систему (для записи в Blender)
-        # Конвертация координат обратно в Blender (Y up) не требуется для Width/Height,
-        # но требуется для PosX/PosY.
-        # Однако, RZViewportScene обычно отправляет Qt координаты, а core конвертирует.
-        # Проверим core.resize_element: он принимает Qt X/Y? Нет, он пишет в Blender.
-        # Значит нам нужно сконвертировать X/Y здесь перед отправкой.
-        
-        bl_x, bl_y = core.to_blender_delta(new_x, new_y) 
-        # Стоп. to_blender_delta конвертирует дельту. А нам нужны абсолютные координаты.
-        # core.to_qt_coords: QtX = BlX, QtY = -BlY.
-        # Значит BlX = QtX, BlY = -QtY.
+        self.update_handles_pos() 
         
         final_bl_x = int(new_x)
         final_bl_y = int(-new_y)
-        
-        # Сигнал идет через сцену
         self.scene().element_resized_signal.emit(self.uid, final_bl_x, final_bl_y, int(new_w), int(new_h))
 
     def set_data_state(self, locked, img_id, is_selectable, text_content, color=None):
@@ -227,7 +172,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.is_selectable = is_selectable
         self.text_content = text_content if text_content else self.name
         self.custom_color = color
-        
         self.setOpacity(0.5 if not is_selectable else 1.0)
         self.update()
 
@@ -235,15 +179,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         if self.isSelected() != is_selected:
             self.setSelected(is_selected)
         self.is_active = is_active
-        
         if is_active: self.setZValue(20)
         elif is_selected: self.setZValue(10)
         else: self.setZValue(1)
-        
-        # Показываем ручки только если выделен, активен и не залочен
         show_handles = is_selected and not self.is_locked
         self.set_handles_visible(show_handles)
-        
         self.update() 
     
     def update_size(self, w, h):
@@ -253,7 +193,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     
     def paint(self, painter, option, widget):
         rect = self.rect()
-        
         if self.elem_type == 'TEXT':
             painter.setPen(QtGui.QColor(255, 255, 255))
             painter.drawText(rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, self.text_content)
@@ -318,7 +257,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
 class RZViewportScene(QtWidgets.QGraphicsScene):
     item_moved_signal = QtCore.Signal(float, float) 
-    element_resized_signal = QtCore.Signal(int, int, int, int, int) # uid, x, y, w, h
+    element_resized_signal = QtCore.Signal(int, int, int, int, int)
     selection_changed_signal = QtCore.Signal(object, object)
     interaction_start_signal = QtCore.Signal()
     interaction_end_signal = QtCore.Signal()
@@ -329,6 +268,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self._drag_start_pos = None
         self._is_dragging_items = False
         self._items_map = {} 
+        self.is_alt_mode = False # NEW Flag
         self._init_background()
 
     def _init_background(self):
@@ -340,15 +280,22 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             return 
         
         if event.button() == QtCore.Qt.LeftButton:
+            # Если активен Alt Mode, блокируем обычную логику выделения (пока просто игнорим)
+            # В будущем здесь будет логика эмуляции клика (OnPress)
+            if self.is_alt_mode:
+                # Stub for Emulation Logic
+                # event.accept()
+                super().mousePressEvent(event) # Пока пропускаем для теста
+                return
+
             item = self.item_at_event(event)
             modifiers = event.modifiers()
             modifier_str = None
             if modifiers & QtCore.Qt.ControlModifier: modifier_str = 'CTRL'
             elif modifiers & QtCore.Qt.ShiftModifier: modifier_str = 'SHIFT'
 
-            # Если клик попал в ручку (RZHandleItem), отдаем событие ей, не меняя выделение
             if isinstance(item, RZHandleItem):
-                self.interaction_start_signal.emit() # Начало изменения размера
+                self.interaction_start_signal.emit()
                 super().mousePressEvent(event)
                 return
 
@@ -386,7 +333,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self.selection_changed_signal.emit(target_uid, modifier_str)
 
     def mouseMoveEvent(self, event):
-        # Если тащим сам элемент
+        if self.is_alt_mode:
+             super().mouseMoveEvent(event)
+             return
+
         if self._is_dragging_items and self._drag_start_pos:
             current_pos = event.scenePos()
             qt_delta = current_pos - self._drag_start_pos
@@ -399,7 +349,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             for item in self.selectedItems():
                 if isinstance(item, RZElementItem) and not item.is_locked:
                     item.moveBy(qt_delta.x(), qt_delta.y())
-                    # При перемещении ручки тоже должны двигаться (они дети, двигаются сами)
         else:
             super().mouseMoveEvent(event)
 
@@ -409,9 +358,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             self._drag_start_pos = None
             self.interaction_end_signal.emit()
         
-        # Если тянули ручку
-        # RZHandleItem перехватывает mousePress, но Release может прийти в сцену
-        # Проверяем флаг интеракции
         if self._is_user_interaction and not self._is_dragging_items:
              self.interaction_end_signal.emit()
              
@@ -504,6 +450,17 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
         
         self.parent_window = None 
 
+    def set_alt_mode(self, active):
+        """Включает визуальный режим эмуляции"""
+        self.rz_scene.is_alt_mode = active
+        if active:
+            # Синяя рамка и курсор-рука
+            self.setStyleSheet("border: 2px solid #4772b3;") 
+            self.setCursor(QtCore.Qt.PointingHandCursor)
+        else:
+            self.setStyleSheet("border: none;")
+            self.setCursor(QtCore.Qt.ArrowCursor)
+
     def contextMenuEvent(self, event):
         if not self.parent_window or not hasattr(self.parent_window, "action_manager"):
             return
@@ -554,11 +511,11 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             event.accept()
             return
         if event.button() == QtCore.Qt.LeftButton:
-            # Если кликаем по ручке, View не должен включать RubberBand
             item = self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform())
             is_gizmo = isinstance(item, RZHandleItem)
             
-            if not isinstance(item, RZElementItem) and not is_gizmo:
+            # Если мы в Alt режиме, не включаем RubberBand
+            if not self.rz_scene.is_alt_mode and not isinstance(item, RZElementItem) and not is_gizmo:
                 self.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
             else:
                 self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
