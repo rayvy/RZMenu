@@ -71,11 +71,26 @@ class RZContextManager:
         return RZContext(self)
     
     def get_debug_string(self) -> str:
+        # Импорт внутри метода, чтобы избежать circular import, так как враппер тоже может ссылаться на что-то
+        # Или используем snapshot, который у нас уже есть. 
+        # Но для чистоты в manager.py лучше получить данные "сырыми" или через snapshot.
+        
+        # Давай создадим временный snapshot прямо тут, чтобы использовать мощь Wrappers
+        snap = self.get_snapshot()
+        
+        hover_info = "None"
+        if snap.hover_element and snap.hover_element.exists:
+            # ВОТ ОНО! Читаем класс и имя через обертку
+            hover_info = f"{snap.hover_element.class_type} ('{snap.hover_element.name}')"
+        elif self._hover_id != -1:
+            hover_info = f"ID {self._hover_id} (Not Found)"
+
         return (
             f"--- RZ CONTEXT ---\n"
             f"State:     {self._current_state.name}\n"
             f"Area:      {self._hover_area}\n"
             f"Hover ID:  {self._hover_id}\n"
+            f"Hover:     {hover_info}\n"  # <--- Теперь тут будет класс!
             f"Selected:  {list(self._selected_ids)}\n"
-            f"Scene Pos: ({self._mouse_scene_pos[0]:.1f}, {self._mouse_scene_pos[1]:.1f})\n"
+            f"Scene Pos: ({self._mouse_scene_pos[0]:.1f}, {self._mouse_scene_pos[1]:.1f})"
         )
