@@ -1,5 +1,6 @@
 # RZMenu/qt_editor/widgets/outliner.py
 from PySide6 import QtWidgets, QtCore, QtGui
+from ..context import RZContextManager
 
 class RZDraggableTree(QtWidgets.QTreeWidget):
     """
@@ -69,7 +70,6 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
     selection_changed = QtCore.Signal(list, int)
     items_reordered = QtCore.Signal(int, object)
     
-    # Forwarding widget signals to system
     req_toggle_hide = QtCore.Signal(int)
     req_toggle_selectable = QtCore.Signal(int)
 
@@ -96,6 +96,26 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
 
         layout.addWidget(self.tree)
         self._block_signals = False
+        
+        # Enable mouse tracking for hover detection if needed in future
+        self.setMouseTracking(True)
+
+    def enterEvent(self, event):
+        # We don't track exact scene coords in Outliner yet, but we set the area
+        RZContextManager.get_instance().update_mouse(
+            QtGui.QCursor.pos(),
+            (0.0, 0.0),
+            area="OUTLINER"
+        )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        RZContextManager.get_instance().update_mouse(
+            QtGui.QCursor.pos(),
+            (0.0, 0.0),
+            area="NONE"
+        )
+        super().leaveEvent(event)
 
     def _on_qt_selection_changed(self):
         if self._block_signals: return

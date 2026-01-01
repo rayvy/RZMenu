@@ -4,6 +4,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from . import operators
 from ..conf import get_config
 from ..utils import logger
+from ..context import RZContextManager
 
 class RZInputController(QtCore.QObject):
     context_changed = QtCore.Signal(str)       
@@ -21,6 +22,8 @@ class RZInputController(QtCore.QObject):
         
         self.window.installEventFilter(self)
     
+    # ... (Keep existing _check_hover_context, eventFilter, _handle_keypress, _get_key_sequence, _get_hover_context, _lookup_keymap methods) ...
+
     def _check_hover_context(self):
         if not self.window.isActiveWindow(): return
 
@@ -37,7 +40,6 @@ class RZInputController(QtCore.QObject):
 
     def _handle_keypress(self, event):
         focused_widget = QtWidgets.QApplication.focusWidget()
-        # Don't trigger hotkeys if typing in a text field
         if isinstance(focused_widget, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
             return False
 
@@ -89,23 +91,18 @@ class RZInputController(QtCore.QObject):
         return "GLOBAL"
 
     def _lookup_keymap(self, context, key_seq):
-        # 1. User Config
         keymaps = self.config.get("keymaps", {})
-        
         if context in keymaps and key_seq in keymaps[context]:
             return keymaps[context][key_seq]
         if "GLOBAL" in keymaps and key_seq in keymaps["GLOBAL"]:
             return keymaps["GLOBAL"][key_seq]
             
-        # 2. Hardcoded Defaults (Fallback)
-        # H -> Hide, L -> Lock Pos, Shift+L -> Lock Size, Alt+L -> Selectable
         defaults = {
             "H": "rzm.toggle_hide",
             "L": {"op": "rzm.toggle_lock", "args": {"type": "POS"}},
             "Shift+L": {"op": "rzm.toggle_lock", "args": {"type": "SIZE"}},
             "Alt+L": "rzm.toggle_selectable"
         }
-        
         if key_seq in defaults:
             return defaults[key_seq]
 
@@ -128,12 +125,15 @@ class RZInputController(QtCore.QObject):
             logger.warn(f"Keymap points to unknown operator: {op_id}")
             return False
             
-        ctx = operators.RZContext(self.window)
+        # Create Snapshot from Manager
+        ctx = RZContextManager.get_instance().get_snapshot()
         op_inst = op_class()
         
         if op_inst.poll(ctx):
             try:
                 self.operator_executed.emit(op_inst.label or op_id)
+                # Inject window
+                op_kwargs['window'] = self.window
                 op_inst.execute(ctx, **op_kwargs)
                 return True 
             except Exception as e:

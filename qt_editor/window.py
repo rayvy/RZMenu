@@ -1,20 +1,18 @@
 # RZMenu/qt_editor/window.py
+import datetime
+from PySide6 import QtWidgets, QtCore
+
+from . import core, actions
 from .systems import input_manager
 from .ui import keymap_editor 
-from PySide6 import QtWidgets, QtCore
-from . import core, actions
 from .widgets import outliner, inspector, viewport
-import datetime
+from .context import RZContextManager
 
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RZMenu Editor (Event Driven)")
+        self.setWindowTitle("RZMenu Editor (Context Driven)")
         self.resize(1100, 600)
-        
-        # --- STATE ---
-        self.selected_ids = set()
-        self.active_id = -1
         
         # --- UI LAYOUT ---
         root_layout = QtWidgets.QVBoxLayout(self) 
@@ -67,25 +65,27 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.input_controller.context_changed.connect(self.update_footer_context)
         self.input_controller.operator_executed.connect(self.update_footer_op)
 
-        # === THE BIG CHANGE: CONNECTING SIGNALS ===
-        # Вместо Polling мы слушаем Nerve System из core
+        # === SIGNAL CONNECTIONS ===
+        # 1. Data Changes (Blender -> UI)
         core.SIGNALS.structure_changed.connect(self.refresh_outliner)
-        core.SIGNALS.structure_changed.connect(self.refresh_viewport) # Новые объекты надо рисовать
+        core.SIGNALS.structure_changed.connect(self.refresh_viewport)
         
         core.SIGNALS.transform_changed.connect(self.refresh_viewport)
-        core.SIGNALS.transform_changed.connect(self.refresh_inspector) # Координаты в инспекторе
+        core.SIGNALS.transform_changed.connect(self.refresh_inspector)
         
         core.SIGNALS.data_changed.connect(self.refresh_inspector)
-        core.SIGNALS.data_changed.connect(self.refresh_outliner) # Имена/Флаги
-        core.SIGNALS.data_changed.connect(self.refresh_viewport) # Цвета/Текст
+        core.SIGNALS.data_changed.connect(self.refresh_outliner)
+        core.SIGNALS.data_changed.connect(self.refresh_viewport)
 
-        # Первичная инициализация
+        # 2. Context Changes (Internal Logic -> UI)
+        # When the Manager changes selection, we update all panels.
+        core.SIGNALS.selection_changed.connect(self.on_context_selection_changed)
+
+        # Initial Refresh
         self.full_refresh()
 
     def sync_from_blender(self):
-        """
-        Вызывается из __init__.py только при Undo/Redo (внешние изменения).
-        """
+        """Called by __init__.py on Undo/Redo/External changes."""
         if not self.isVisible(): return
         if self.panel_viewport.rz_scene._is_user_interaction: return
         self.full_refresh()
@@ -93,8 +93,13 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def full_refresh(self):
         self.refresh_outliner()
         self.refresh_viewport(force=True)
-        self.refresh_inspector(force=True)
+        # Inspector refresh depends on selection, which relies on the ContextManager
+        # We trigger the context update explicitly to ensure UI sync
+        self.on_context_selection_changed()
 
+    # -------------------------------------------------------------------------
+    # UI SETUP
+    # -------------------------------------------------------------------------
     def setup_toolbar(self):
         def add_btn(text, op_id):
             btn = QtWidgets.QPushButton(text)
@@ -144,108 +149,140 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def open_settings(self):
         dlg = keymap_editor.RZKeymapEditor(self)
         dlg.exec() 
-    
-    # --- SELECTION MANAGEMENT ---
-    def clear_selection(self):
-        self.selected_ids.clear()
-        self.active_id = -1
-        self.sync_selection_ui()
 
-    def set_selection_multi(self, ids_set, active_id):
-        self.selected_ids = set(ids_set)
-        if active_id != -1 and active_id not in self.selected_ids: active_id = -1
-        if active_id == -1 and self.selected_ids: active_id = next(iter(self.selected_ids))
-        self.active_id = active_id
-        self.sync_selection_ui()
+    # -------------------------------------------------------------------------
+    # SELECTION & CONTEXT HANDLERS
+    # -------------------------------------------------------------------------
+
+    def on_context_selection_changed(self):
+        """
+        Triggered when RZContextManager emits selection_changed.
+        Updates all UI panels to reflect the new state.
+        """
+        ctx = RZContextManager.get_instance().get_snapshot()
+        
+        # 1. Outliner
+        self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
+        
+        # 2. Viewport (Visuals only, avoiding full rebuild)
+        if hasattr(self.panel_viewport.rz_scene, 'update_selection_visuals'):
+            self.panel_viewport.rz_scene.update_selection_visuals(ctx.selected_ids, ctx.active_id)
+        else:
+            self.refresh_viewport(force=False)
+            
+        # 3. Inspector
+        self.refresh_inspector()
+        
+        # 4. Actions
+        self.action_manager.update_ui_state()
 
     def handle_outliner_selection(self, ids_list, active_id):
-        self.set_selection_multi(ids_list, active_id)
+        """User clicked in Outliner -> Update Manager."""
+        RZContextManager.get_instance().set_selection(set(ids_list), active_id)
 
     def handle_viewport_selection(self, target_data, modifiers):
-        new_selection = self.selected_ids.copy()
+        """
+        User clicked in Viewport -> Calculate new selection logic -> Update Manager.
+        """
+        ctx = RZContextManager.get_instance().get_snapshot()
+        current_selection = set(ctx.selected_ids)
+        current_active = ctx.active_id
+        
+        new_selection = current_selection.copy()
         new_active = -1
+
+        # target_data can be a list (RubberBand) or int (Single Click)
         if isinstance(target_data, list):
             items_ids = set(target_data)
-            if modifiers == 'SHIFT': new_selection.update(items_ids)
-            elif modifiers == 'CTRL': new_selection.difference_update(items_ids)
-            else: new_selection = items_ids
-            if items_ids: new_active = list(items_ids)[0]
-            elif new_selection: new_active = next(iter(new_selection))
+            if modifiers == 'SHIFT': 
+                new_selection.update(items_ids)
+            elif modifiers == 'CTRL': 
+                new_selection.difference_update(items_ids)
+            else: 
+                new_selection = items_ids
+            
+            if items_ids:
+                new_active = list(items_ids)[0]
+            elif new_selection:
+                new_active = next(iter(new_selection))
         else:
-            active_id = target_data
-            if active_id == -1:
-                if modifiers != 'SHIFT' and modifiers != 'CTRL': new_selection.clear()
+            clicked_id = target_data
+            if clicked_id == -1:
+                # Clicked on empty space
+                if modifiers != 'SHIFT' and modifiers != 'CTRL': 
+                    new_selection.clear()
                 new_active = -1
             else:
                 if modifiers == 'SHIFT':
-                    if active_id in new_selection:
-                        new_selection.remove(active_id)
+                    if clicked_id in new_selection:
+                        new_selection.remove(clicked_id)
                         new_active = -1 if not new_selection else next(iter(new_selection))
                     else:
-                        new_selection.add(active_id)
-                        new_active = active_id
+                        new_selection.add(clicked_id)
+                        new_active = clicked_id
                 elif modifiers == 'CTRL':
-                    if active_id in new_selection: new_selection.remove(active_id)
+                    if clicked_id in new_selection: 
+                        new_selection.remove(clicked_id)
                 else:
-                    new_selection = {active_id}
-                    new_active = active_id
-        self.set_selection_multi(new_selection, new_active)
+                    new_selection = {clicked_id}
+                    new_active = clicked_id
 
-    def sync_selection_ui(self):
-        self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
-        self.refresh_viewport(force=False) # Не форсим, только селект
-        self.refresh_inspector(force=True)
-        self.action_manager.update_ui_state()
+        RZContextManager.get_instance().set_selection(new_selection, new_active)
 
-    # --- LOGIC HANDLERS ---
+    # -------------------------------------------------------------------------
+    # CORE INTERACTION LOGIC
+    # -------------------------------------------------------------------------
+
     def on_reorder(self, target_id, insert_after_id):
         core.reorder_elements(target_id, insert_after_id)
+
     def on_interaction_start(self):
         self.panel_viewport.rz_scene._is_user_interaction = True
+
     def on_interaction_end(self):
-        # Когда отпустили мышь - фиксируем историю и делаем ОДИН полный рефреш,
-        # чтобы убедиться, что Blender и Qt в точности совпадают.
         core.commit_history("RZM Transformation")
         self.panel_viewport.rz_scene._is_user_interaction = False
         self.refresh_viewport(force=True)
         self.refresh_inspector(force=True)
+
     def on_viewport_move_delta(self, delta_x, delta_y):
-        if not self.selected_ids: return
-        # SILENT=TRUE! 
-        # Мы говорим ядру: "Обнови цифры в Blender, но не триггери перерисовку UI".
-        # Viewport сам уже подвинул QGraphicsItem через item.moveBy()
-        core.move_elements_delta(self.selected_ids, delta_x, delta_y, silent=True)
-        
-        # Опционально: можно обновить Inspector точечно, если очень хочется видеть бегущие цифры,
-        # но это тоже может вызвать лаги. Пока оставим выключенным для скорости.
-        # Если нужны бегущие цифры в инспекторе без лагов - это делается через сигналы Qt напрямую, минуя core.
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if not ctx.selected_ids: return
+        # Silent update to Blender data
+        core.move_elements_delta(ctx.selected_ids, delta_x, delta_y, silent=True)
 
     def on_viewport_resize(self, uid, x, y, w, h):
-        # То же самое для ресайза
         core.resize_element(uid, x, y, w, h, silent=True)
-    def on_viewport_resize(self, uid, x, y, w, h):
-        core.resize_element(uid, x, y, w, h)
+
     def on_property_edited(self, key, val, idx):
-        core.update_property_multi(self.selected_ids, key, val, idx)
+        ctx = RZContextManager.get_instance().get_snapshot()
+        core.update_property_multi(ctx.selected_ids, key, val, idx)
+
+    # -------------------------------------------------------------------------
+    # REFRESH HANDLERS
+    # -------------------------------------------------------------------------
 
     def refresh_outliner(self):
         # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
         # print(f"[{t}] >>> [EVENT] UI UPDATE: Outliner")
-        
         data = core.get_all_elements_list()
+        
+        ctx = RZContextManager.get_instance().get_snapshot()
         self.panel_outliner.update_ui(data)
-        self.panel_outliner.set_selection_silent(self.selected_ids, self.active_id)
+        self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
 
     def refresh_viewport(self, force=False):
         # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
         # print(f"[{t}] >>> [EVENT] UI UPDATE: Viewport")
-        
         data = core.get_viewport_data()
-        self.panel_viewport.rz_scene.update_scene(data, self.selected_ids, self.active_id)
+        
+        ctx = RZContextManager.get_instance().get_snapshot()
+        self.panel_viewport.rz_scene.update_scene(data, ctx.selected_ids, ctx.active_id)
 
     def refresh_inspector(self, force=False):
         # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
         # print(f"[{t}] >>> [EVENT] UI UPDATE: Inspector")
+        ctx = RZContextManager.get_instance().get_snapshot()
         
-        details = core.get_selection_details(self.selected_ids, self.active_id)
+        details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
         self.panel_inspector.update_ui(details)

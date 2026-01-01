@@ -19,7 +19,6 @@ COLOR_LOCKED = QtGui.QColor(255, 50, 50)
 HANDLE_SIZE = 8
 
 class RZHandleItem(QtWidgets.QGraphicsRectItem):
-    # ... (Без изменений, копируем класс из прошлого шага)
     # Типы ручек
     TOP_LEFT = 0
     TOP = 1
@@ -70,7 +69,6 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
             super().mouseMoveEvent(event)
 
 class RZElementItem(QtWidgets.QGraphicsRectItem):
-    # ... (Без изменений)
     def __init__(self, uid, w, h, name, elem_type="CONTAINER"):
         super().__init__(0, 0, w, h)
         self.uid = uid
@@ -93,7 +91,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
     def create_handles(self):
         if self.handles: return
-        for h_type in range(8):
+        for h_type, handle_id in enumerate(range(8)):
             handle = RZHandleItem(h_type, self)
             self.handles[h_type] = handle
         self.update_handles_pos()
@@ -268,7 +266,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self._drag_start_pos = None
         self._is_dragging_items = False
         self._items_map = {} 
-        self.is_alt_mode = False # NEW Flag
+        self.is_alt_mode = False 
         self._init_background()
 
     def _init_background(self):
@@ -280,12 +278,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             return 
         
         if event.button() == QtCore.Qt.LeftButton:
-            # Если активен Alt Mode, блокируем обычную логику выделения (пока просто игнорим)
-            # В будущем здесь будет логика эмуляции клика (OnPress)
             if self.is_alt_mode:
-                # Stub for Emulation Logic
-                # event.accept()
-                super().mousePressEvent(event) # Пока пропускаем для теста
+                super().mousePressEvent(event)
                 return
 
             item = self.item_at_event(event)
@@ -366,6 +360,19 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
     def item_at_event(self, event):
         return self.itemAt(event.scenePos(), QtGui.QTransform())
 
+    def update_selection_visuals(self, selected_ids, active_id):
+        """
+        Efficiently updates only the selection/active state of existing items.
+        Does not add/remove items or change properties.
+        """
+        if self._is_user_interaction: 
+            return
+
+        for uid, item in self._items_map.items():
+            is_sel = uid in selected_ids
+            is_act = uid == active_id
+            item.set_visual_state(is_sel, is_act)
+
     def update_scene(self, elements_data, selected_ids, active_id):
         if self._is_user_interaction: return
         
@@ -373,6 +380,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         current_ids = set(self._items_map.keys())
 
         cache = ImageCache.instance()
+        # Пре-кэширование и удаление старых
         for data in elements_data:
             img_id = data.get('image_id', -1)
             if img_id != -1: cache.pre_cache_image(img_id)
@@ -389,6 +397,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 if not shiboken6.isValid(item):
                     del self._items_map[uid]
 
+        # Основной цикл обновления/создания
         for data in elements_data:
             uid = data['id']
             qx, qy = core.to_qt_coords(data['pos_x'], data['pos_y'])
@@ -401,6 +410,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             text_content = data.get('text_content', '')
             color = data.get('color', None)
             
+            # Создаем или получаем
             if uid in self._items_map:
                 item = self._items_map[uid]
                 item.name = data['name']
@@ -410,6 +420,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 self.addItem(item)
                 self._items_map[uid] = item
             
+            # Обновляем свойства
             item.update_size(data['width'], data['height'])
             item.setPos(qx, qy)
             item.set_data_state(is_locked, img_id, is_sel_able, text_content, color)
@@ -419,6 +430,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             is_act = uid == active_id
             item.set_visual_state(is_sel, is_act)
 
+        # Парентинг (иерархия в Qt сцене)
         for data in elements_data:
             uid = data['id']
             pid = data.get('parent_id', -1)
