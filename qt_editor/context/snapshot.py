@@ -17,7 +17,6 @@ class RZContext:
         
         self._mouse_screen = manager._mouse_screen_pos 
         self._mouse_scene = manager._mouse_scene_pos
-        self._modifiers = frozenset(manager._modifiers)
         self._tags = set(manager._state_tags)
 
     # Standard Props
@@ -45,18 +44,7 @@ class RZContext:
     @property
     def state(self) -> RZInteractionState:
         return self._state
-
-    @property
-    def modifiers(self) -> Set[str]:
-        return self._modifiers
-
-    @property
-    def is_shift(self) -> bool: return 'SHIFT' in self._modifiers
-    @property
-    def is_ctrl(self) -> bool: return 'CTRL' in self._modifiers
-    @property
-    def is_alt(self) -> bool: return 'ALT' in self._modifiers
-
+    
     @property
     def mouse_screen_pos(self): return self._mouse_screen
     @property

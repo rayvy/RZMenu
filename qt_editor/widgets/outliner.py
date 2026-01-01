@@ -104,7 +104,6 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
         RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(),
             (0.0, 0.0),
-            set(), # Пустые модификаторы или можно читать через QApplication.keyboardModifiers()
             area="OUTLINER"
         )
         super().enterEvent(event)
@@ -113,7 +112,6 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
         RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(),
             (0.0, 0.0),
-            set(),
             area="NONE"
         )
         super().leaveEvent(event)

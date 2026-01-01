@@ -27,7 +27,6 @@ class RZContextManager:
         
         self._mouse_screen_pos: QPoint = QPoint(0, 0)
         self._mouse_scene_pos: Tuple[float, float] = (0.0, 0.0)
-        self._modifiers: Set[str] = set()
         
         self._state_tags: Set[str] = set()
         self._initialized = True
@@ -54,10 +53,9 @@ class RZContextManager:
     def set_hover_id(self, uid: int):
         self._hover_id = uid
 
-    def update_input(self, screen_pos: QPoint, scene_pos: Tuple[float, float], modifiers: Set[str], area: str = "NONE"):
+    def update_input(self, screen_pos: QPoint, scene_pos: Tuple[float, float], area: str = "NONE"):
         self._mouse_screen_pos = screen_pos
         self._mouse_scene_pos = scene_pos
-        self._modifiers = modifiers
         
         # Если зона изменилась, сообщаем UI (футеру)
         if self._hover_area != area:
@@ -80,5 +78,4 @@ class RZContextManager:
             f"Hover ID:  {self._hover_id}\n"
             f"Selected:  {list(self._selected_ids)}\n"
             f"Scene Pos: ({self._mouse_scene_pos[0]:.1f}, {self._mouse_scene_pos[1]:.1f})\n"
-            f"Modifiers: {list(self._modifiers)}\n"
         )

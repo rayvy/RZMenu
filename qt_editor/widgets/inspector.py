@@ -276,7 +276,6 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(),
             (0.0, 0.0),
-            set(),
             area="INSPECTOR"
         )
         super().enterEvent(event)
@@ -285,7 +284,6 @@ class RZMInspectorPanel(QtWidgets.QWidget):
         RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(),
             (0.0, 0.0),
-            set(),
             area="NONE"
         )
         super().leaveEvent(event)

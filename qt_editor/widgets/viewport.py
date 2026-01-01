@@ -516,13 +516,13 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
 
     def enterEvent(self, event):
         RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(), (0,0), set(), area="VIEWPORT"
+            QtGui.QCursor.pos(), (0,0), area="VIEWPORT"
         )
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(), (0,0), set(), area="NONE"
+            QtGui.QCursor.pos(), (0,0), area="NONE"
         )
         super().leaveEvent(event)
 
@@ -563,14 +563,7 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
         scene_pos_qt = self.mapToScene(event.pos())
         scene_x, scene_y = scene_pos_qt.x(), -scene_pos_qt.y()
 
-        # 2. Модификаторы в Set
-        mods = set()
-        q_mods = event.modifiers()
-        if q_mods & QtCore.Qt.ShiftModifier: mods.add('SHIFT')
-        if q_mods & QtCore.Qt.ControlModifier: mods.add('CTRL')
-        if q_mods & QtCore.Qt.AltModifier: mods.add('ALT')
-
-        # 3. Hover (ищем элемент под мышкой)
+        # 2. Hover (ищем элемент под мышкой)
         items = self.scene().items(scene_pos_qt)
         hover_uid = -1
         for it in items:
@@ -578,16 +571,11 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
                 hover_uid = it.uid
                 break
         
-        # 4. Обновление Менеджера
+        # 3. Обновление Менеджера
         mgr = RZContextManager.get_instance()
-        mgr.update_input(screen_pos, (scene_x, scene_y), mods, area="VIEWPORT")
+        mgr.update_input(screen_pos, (scene_x, scene_y), area="VIEWPORT")
         mgr.set_hover_id(hover_uid)
         
-        # Если состояние IDLE и мы нашли элемент -> можно считать HOVERING
-        if mgr._current_state == RZInteractionState.IDLE and hover_uid != -1:
-             # Тут можно было бы делать set_state(HOVERING), но пока оставим IDLE
-             pass 
-
         if self._is_panning:
             delta = event.pos() - self._pan_start_pos
             self._pan_start_pos = event.pos()
