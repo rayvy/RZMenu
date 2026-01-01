@@ -51,6 +51,7 @@ class RZActionManager(QObject):
         
         # Create Snapshot
         ctx = RZContextManager.get_instance().get_snapshot()
+        ctx.window = self.window # <--- "Грязный" хак, но необходимый для UI-операторов
         
         # Helper: Check poll if not strictly overridden
         # Note: If 'override_ids' are passed, we often assume the caller knows what they are doing,
@@ -73,6 +74,7 @@ class RZActionManager(QObject):
     def update_ui_state(self):
         """Updates Enabled/Disabled state of QActions based on current context."""
         ctx = RZContextManager.get_instance().get_snapshot()
+        ctx.window = self.window # <--- "Грязный" хак, но необходимый для UI-операторов
         
         for op_id, q_act in self.q_actions.items():
             op = self.operators_instances.get(op_id)

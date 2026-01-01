@@ -78,9 +78,16 @@ class RZContextManager:
     def clear_tags(self):
         self._state_tags.clear()
 
-    # -------------------------------------------------------------------------
-    # Snapshot Factory
-    # -------------------------------------------------------------------------
-
     def get_snapshot(self) -> RZContext:
         return RZContext(self)
+    
+    def get_debug_string(self) -> str:
+        return (
+            f"--- RZ CONTEXT DEBUG ---\n"
+            f"Active ID: {self._active_id}\n"
+            f"Selected:  {list(self._selected_ids)}\n"
+            f"Hover:     '{self._hover_area}'\n"
+            f"Mouse SCR: ({self._mouse_screen_pos.x()}, {self._mouse_screen_pos.y()})\n"
+            f"Mouse SCN: ({self._mouse_scene_pos[0]:.1f}, {self._mouse_scene_pos[1]:.1f})\n"
+            f"Tags:      {list(self._state_tags)}"
+        )

@@ -21,7 +21,8 @@ DEFAULT_CONFIG = {
         "GLOBAL": {
             "Ctrl+Z": "rzm.undo",
             "Ctrl+Shift+Z": "rzm.redo",
-            "F5": "rzm.refresh"
+            "F5": "rzm.refresh",
+            "Alt+C": "rzm.toggle_debug"
         },
         # Контекст Вьюпорта
         "VIEWPORT": {

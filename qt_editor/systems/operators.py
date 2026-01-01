@@ -203,6 +203,16 @@ class RZ_OT_Align(RZOperator):
         mode = kwargs.get('mode', 'LEFT')
         core.align_elements(context.selected_ids, mode)
 
+class RZ_OT_ToggleDebug(RZOperator):
+    id = "rzm.toggle_debug"
+    label = "Toggle Debug Info"
+    
+    def execute(self, context, **kwargs):
+        # context.window должен быть доступен (пробрасывается из input_manager/actions)
+        if hasattr(context, 'window') and context.window:
+            context.window.toggle_debug_panel()
+        return
+
 # --- REGISTRY ---
 
 _CLASSES = [
@@ -212,7 +222,8 @@ _CLASSES = [
     RZ_OT_ToggleHide, RZ_OT_ToggleLock, RZ_OT_ToggleSelectable,
     RZ_OT_UnhideAll,
     RZ_OT_Duplicate, RZ_OT_Copy, RZ_OT_Paste,
-    RZ_OT_Align
+    RZ_OT_Align,
+    RZ_OT_ToggleDebug
 ]
 
 OPERATOR_REGISTRY = {}

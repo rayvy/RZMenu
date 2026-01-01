@@ -1,6 +1,7 @@
 # RZMenu/qt_editor/window.py
 import datetime
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
+from .context import RZContextManager
 
 from . import core, actions
 from .systems import input_manager
@@ -80,7 +81,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # 2. Context Changes (Internal Logic -> UI)
         # When the Manager changes selection, we update all panels.
         core.SIGNALS.selection_changed.connect(self.on_context_selection_changed)
-
+        
+        # some debug stuff
+        self.setup_debug_overlay()
         # Initial Refresh
         self.full_refresh()
 
@@ -160,6 +163,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         Updates all UI panels to reflect the new state.
         """
         ctx = RZContextManager.get_instance().get_snapshot()
+        # ctx.window = self.window # <--- "Грязный" хак, но необходимый для UI-операторов
         
         # 1. Outliner
         self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
@@ -286,3 +290,47 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
         self.panel_inspector.update_ui(details)
+    
+    def setup_debug_overlay(self):
+        self.debug_label = QtWidgets.QLabel(self)
+        self.debug_label.setStyleSheet("""
+            background-color: rgba(0, 0, 0, 200);
+            color: #00ff00;
+            font-family: Consolas, monospace;
+            font-size: 11px;
+            padding: 5px;
+            border: 1px solid #00ff00;
+        """)
+        self.debug_label.setVisible(False)
+        self.debug_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents) # Чтобы клики проходили сквозь
+        
+        # Таймер для обновления текста
+        self.debug_timer = QtCore.QTimer(self)
+        self.debug_timer.timeout.connect(self._update_debug_text)
+
+        # Позиционирование лейбла (внизу справа)
+        self.debug_label.move(10, self.height() - 100)
+        self.debug_label.resize(300, 100)
+
+    def resizeEvent(self, event):
+        # Обновляем позицию при ресайзе окна
+        if hasattr(self, 'debug_label'):
+            self.debug_label.move(10, self.height() - 110)
+        super().resizeEvent(event)
+
+    def toggle_debug_panel(self):
+        """Вызывается оператором"""
+        is_visible = not self.debug_label.isVisible()
+        self.debug_label.setVisible(is_visible)
+        
+        if is_visible:
+            self.debug_timer.start(50) # 20 FPS
+            self._update_debug_text()
+        else:
+            self.debug_timer.stop()
+
+    def _update_debug_text(self):
+        # Правильный вызов через импортированный класс
+        txt = RZContextManager.get_instance().get_debug_string()
+        self.debug_label.setText(txt)
+        self.debug_label.adjustSize()

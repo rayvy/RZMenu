@@ -127,6 +127,7 @@ class RZInputController(QtCore.QObject):
             
         # Create Snapshot from Manager
         ctx = RZContextManager.get_instance().get_snapshot()
+        ctx.window = self.window # <--- "Грязный" хак, но необходимый для UI-операторов
         op_inst = op_class()
         
         if op_inst.poll(ctx):
