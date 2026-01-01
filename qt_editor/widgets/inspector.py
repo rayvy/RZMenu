@@ -2,6 +2,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from .base import RZDraggableNumber, RZSmartSlider
 from .. import actions
+from ..context import RZContextManager
 
 # ... (RZColorButton оставляем без изменений) ...
 class RZColorButton(QtWidgets.QPushButton):
@@ -270,3 +271,21 @@ class RZMInspectorPanel(QtWidgets.QWidget):
             self.table_raw.setRowCount(0)
 
         self._block_signals = False
+
+    def enterEvent(self, event):
+        RZContextManager.get_instance().update_input(
+            QtGui.QCursor.pos(),
+            (0.0, 0.0),
+            set(),
+            area="INSPECTOR"
+        )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        RZContextManager.get_instance().update_input(
+            QtGui.QCursor.pos(),
+            (0.0, 0.0),
+            set(),
+            area="NONE"
+        )
+        super().leaveEvent(event)

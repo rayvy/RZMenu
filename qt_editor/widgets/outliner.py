@@ -101,18 +101,19 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
         self.setMouseTracking(True)
 
     def enterEvent(self, event):
-        # We don't track exact scene coords in Outliner yet, but we set the area
-        RZContextManager.get_instance().update_mouse(
+        RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(),
             (0.0, 0.0),
+            set(), # Пустые модификаторы или можно читать через QApplication.keyboardModifiers()
             area="OUTLINER"
         )
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        RZContextManager.get_instance().update_mouse(
+        RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(),
             (0.0, 0.0),
+            set(),
             area="NONE"
         )
         super().leaveEvent(event)

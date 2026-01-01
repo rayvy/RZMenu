@@ -1,13 +1,36 @@
 # RZMenu/qt_editor/window.py
 import datetime
 from PySide6 import QtWidgets, QtCore, QtGui
-from .context import RZContextManager
 
 from . import core, actions
 from .systems import input_manager
 from .ui import keymap_editor 
 from .widgets import outliner, inspector, viewport
 from .context import RZContextManager
+
+# --- HELPER CLASS FOR CONTEXT AWARENESS ---
+class RZContextContainer(QtWidgets.QWidget):
+    """
+    Простой контейнер, который сообщает ContextManager, 
+    что мышь находится над ним.
+    Используется для Header, Footer и будущих панелей.
+    """
+    def __init__(self, area_name, parent=None):
+        super().__init__(parent)
+        self.area_name = area_name
+    
+    def enterEvent(self, event):
+        RZContextManager.get_instance().update_input(
+            QtGui.QCursor.pos(), (0,0), set(), area=self.area_name
+        )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        RZContextManager.get_instance().update_input(
+            QtGui.QCursor.pos(), (0,0), set(), area="NONE"
+        )
+        super().leaveEvent(event)
+
 
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -19,34 +42,43 @@ class RZMEditorWindow(QtWidgets.QWidget):
         root_layout = QtWidgets.QVBoxLayout(self) 
         root_layout.setContentsMargins(0,0,0,0)
         
-        # 1. TOOLBAR
-        self.toolbar = QtWidgets.QHBoxLayout()
-        self.toolbar.setContentsMargins(5,5,5,5)
-        root_layout.addLayout(self.toolbar)
+        # --- INIT ACTIONS (нужен для кнопок в тулбаре) ---
+        self.action_manager = actions.RZActionManager(self)
+
+        # 1. TOOLBAR (HEADER)
+        # Оборачиваем в наш контекстный контейнер
+        self.toolbar_container = RZContextContainer("HEADER", self)
+        self.toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_container)
+        self.toolbar_layout.setContentsMargins(5,5,5,5)
+        self.setup_toolbar() # Наполняем кнопками
+        root_layout.addWidget(self.toolbar_container)
         
-        # 2. CONTENT
+        # 2. CONTENT (Splitter)
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         root_layout.addWidget(splitter)
         
+        # Outliner
         self.panel_outliner = outliner.RZMOutlinerPanel()
-        self.panel_outliner.setProperty("RZ_CONTEXT", "OUTLINER")
+        # setProperty оставим для совместимости со старым input_manager, если он еще жив
+        self.panel_outliner.setProperty("RZ_CONTEXT", "OUTLINER") 
         self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
         self.panel_outliner.items_reordered.connect(self.on_reorder)
         self.panel_outliner.req_toggle_hide.connect(lambda uid: self.action_manager.run("rzm.toggle_hide", override_ids=[uid]))
         self.panel_outliner.req_toggle_selectable.connect(lambda uid: self.action_manager.run("rzm.toggle_selectable", override_ids=[uid]))
         splitter.addWidget(self.panel_outliner)
         
+        # Viewport
         self.panel_viewport = viewport.RZViewportPanel()
         self.panel_viewport.setProperty("RZ_CONTEXT", "VIEWPORT")
         self.panel_viewport.parent_window = self 
         self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
         self.panel_viewport.rz_scene.element_resized_signal.connect(self.on_viewport_resize)
-        
         self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
         self.panel_viewport.rz_scene.interaction_end_signal.connect(self.on_interaction_end)
         self.panel_viewport.rz_scene.selection_changed_signal.connect(self.handle_viewport_selection)
         splitter.addWidget(self.panel_viewport)
         
+        # Inspector
         self.panel_inspector = inspector.RZMInspectorPanel()
         self.panel_inspector.setProperty("RZ_CONTEXT", "INSPECTOR")
         self.panel_inspector.property_changed.connect(self.on_property_edited)
@@ -54,17 +86,24 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         splitter.setSizes([200, 600, 300])
 
-        # --- INIT ACTIONS ---
-        self.action_manager = actions.RZActionManager(self)
-        self.setup_toolbar()
-        
+        # 3. FOOTER
+        # Оборачиваем в контекстный контейнер
+        self.footer_container = RZContextContainer("FOOTER", self)
+        # Стилизуем сам контейнер
+        self.footer_container.setStyleSheet("background-color: #222; border-top: 1px solid #333;")
+        self.footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
+        self.footer_layout.setContentsMargins(5, 2, 5, 2)
+        self.setup_footer() # Наполняем лейблами
+        root_layout.addWidget(self.footer_container)
+
+        # --- SYSTEMS ---
         self.input_controller = input_manager.RZInputController(self)
         if hasattr(self.input_controller, "alt_mode_changed"):
             self.input_controller.alt_mode_changed.connect(self.panel_viewport.set_alt_mode)
         
-        self.setup_footer()
-        self.input_controller.context_changed.connect(self.update_footer_context)
         self.input_controller.operator_executed.connect(self.update_footer_op)
+        # Примечание: context_changed от input_manager больше не нужен для футера, 
+        # так как мы слушаем core.SIGNALS.context_updated
 
         # === SIGNAL CONNECTIONS ===
         # 1. Data Changes (Blender -> UI)
@@ -78,12 +117,15 @@ class RZMEditorWindow(QtWidgets.QWidget):
         core.SIGNALS.data_changed.connect(self.refresh_outliner)
         core.SIGNALS.data_changed.connect(self.refresh_viewport)
 
-        # 2. Context Changes (Internal Logic -> UI)
-        # When the Manager changes selection, we update all panels.
+        # 2. Context Changes (Manager -> UI)
+        # Selection changed -> Update Panels
         core.SIGNALS.selection_changed.connect(self.on_context_selection_changed)
+        # Area changed -> Update Footer
+        core.SIGNALS.context_updated.connect(self.on_context_area_changed)
         
-        # some debug stuff
+        # --- DEBUG OVERLAY ---
         self.setup_debug_overlay()
+        
         # Initial Refresh
         self.full_refresh()
 
@@ -96,55 +138,70 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def full_refresh(self):
         self.refresh_outliner()
         self.refresh_viewport(force=True)
-        # Inspector refresh depends on selection, which relies on the ContextManager
-        # We trigger the context update explicitly to ensure UI sync
         self.on_context_selection_changed()
 
     # -------------------------------------------------------------------------
     # UI SETUP
     # -------------------------------------------------------------------------
     def setup_toolbar(self):
+        # Используем self.toolbar_layout, который создан в init
         def add_btn(text, op_id):
             btn = QtWidgets.QPushButton(text)
-            self.toolbar.addWidget(btn)
+            self.toolbar_layout.addWidget(btn)
             self.action_manager.connect_button(btn, op_id)
             return btn
 
         add_btn("Refresh", "rzm.refresh")
-        self.toolbar.addSpacing(20)
+        self.toolbar_layout.addSpacing(20)
         add_btn("Undo", "rzm.undo")
         add_btn("Redo", "rzm.redo")
-        self.toolbar.addSpacing(20)
+        self.toolbar_layout.addSpacing(20)
         self.btn_del = add_btn("Delete", "rzm.delete") 
-        self.toolbar.addStretch()
-        btn_settings = QtWidgets.QPushButton("Settings")
+        self.toolbar_layout.addStretch()
+        
+        btn_settings = QtWidgets.QPushButton("Preferences")
         btn_settings.setStyleSheet("border: none; color: #888;") 
         btn_settings.clicked.connect(self.open_settings)
-        self.toolbar.addWidget(btn_settings)
+        self.toolbar_layout.addWidget(btn_settings)
 
     def setup_footer(self):
-        self.footer_layout = QtWidgets.QHBoxLayout()
-        self.footer_layout.setContentsMargins(5, 2, 5, 2)
-        footer_bg = QtWidgets.QWidget()
-        footer_bg.setStyleSheet("background-color: #222; border-top: 1px solid #333;")
-        footer_bg.setLayout(self.footer_layout)
-        self.layout().addWidget(footer_bg) 
-        self.lbl_context = QtWidgets.QLabel("Context: GLOBAL")
-        self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
+        # Используем self.footer_layout
+        
+        self.lbl_context = QtWidgets.QLabel("Context: NONE")
+        self.lbl_context.setStyleSheet("color: #666; font-weight: bold;")
         self.footer_layout.addWidget(self.lbl_context)
+        
         sep = QtWidgets.QLabel("|")
         sep.setStyleSheet("color: #444; margin: 0 10px;")
         self.footer_layout.addWidget(sep)
+        
         self.lbl_last_op = QtWidgets.QLabel("Last Op: None")
         self.lbl_last_op.setStyleSheet("color: #888;")
         self.footer_layout.addWidget(self.lbl_last_op)
+        
         self.footer_layout.addStretch()
 
-    def update_footer_context(self, ctx_name):
-        self.lbl_context.setText(f"Context: {ctx_name}")
-        if ctx_name == "VIEWPORT": self.lbl_context.setStyleSheet("color: #4772b3; font-weight: bold;") 
-        elif ctx_name == "OUTLINER": self.lbl_context.setStyleSheet("color: #ffae00; font-weight: bold;") 
-        else: self.lbl_context.setStyleSheet("color: #aaa; font-weight: bold;")
+    # --- FOOTER UPDATES ---
+    def on_context_area_changed(self):
+        """Called instantly via signal when hover area changes."""
+        ctx = RZContextManager.get_instance().get_snapshot()
+        area = ctx.hover_area
+        
+        self.lbl_context.setText(f"Context: {area}")
+        
+        # Color coding
+        if area == "VIEWPORT":
+            self.lbl_context.setStyleSheet("color: #4772b3; font-weight: bold;") 
+        elif area == "OUTLINER":
+            self.lbl_context.setStyleSheet("color: #ffae00; font-weight: bold;") 
+        elif area == "INSPECTOR":
+            self.lbl_context.setStyleSheet("color: #44aa44; font-weight: bold;")
+        elif area == "HEADER":
+            self.lbl_context.setStyleSheet("color: #cc88cc; font-weight: bold;")
+        elif area == "FOOTER":
+            self.lbl_context.setStyleSheet("color: #88cccc; font-weight: bold;")
+        else:
+            self.lbl_context.setStyleSheet("color: #666; font-weight: bold;")
 
     def update_footer_op(self, op_name):
         self.lbl_last_op.setText(f"Last Op: {op_name}")
@@ -158,17 +215,12 @@ class RZMEditorWindow(QtWidgets.QWidget):
     # -------------------------------------------------------------------------
 
     def on_context_selection_changed(self):
-        """
-        Triggered when RZContextManager emits selection_changed.
-        Updates all UI panels to reflect the new state.
-        """
         ctx = RZContextManager.get_instance().get_snapshot()
-        # ctx.window = self.window # <--- "Грязный" хак, но необходимый для UI-операторов
         
         # 1. Outliner
         self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
         
-        # 2. Viewport (Visuals only, avoiding full rebuild)
+        # 2. Viewport
         if hasattr(self.panel_viewport.rz_scene, 'update_selection_visuals'):
             self.panel_viewport.rz_scene.update_selection_visuals(ctx.selected_ids, ctx.active_id)
         else:
@@ -181,21 +233,15 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.action_manager.update_ui_state()
 
     def handle_outliner_selection(self, ids_list, active_id):
-        """User clicked in Outliner -> Update Manager."""
         RZContextManager.get_instance().set_selection(set(ids_list), active_id)
 
     def handle_viewport_selection(self, target_data, modifiers):
-        """
-        User clicked in Viewport -> Calculate new selection logic -> Update Manager.
-        """
         ctx = RZContextManager.get_instance().get_snapshot()
         current_selection = set(ctx.selected_ids)
-        current_active = ctx.active_id
         
         new_selection = current_selection.copy()
         new_active = -1
 
-        # target_data can be a list (RubberBand) or int (Single Click)
         if isinstance(target_data, list):
             items_ids = set(target_data)
             if modifiers == 'SHIFT': 
@@ -205,14 +251,11 @@ class RZMEditorWindow(QtWidgets.QWidget):
             else: 
                 new_selection = items_ids
             
-            if items_ids:
-                new_active = list(items_ids)[0]
-            elif new_selection:
-                new_active = next(iter(new_selection))
+            if items_ids: new_active = list(items_ids)[0]
+            elif new_selection: new_active = next(iter(new_selection))
         else:
             clicked_id = target_data
             if clicked_id == -1:
-                # Clicked on empty space
                 if modifiers != 'SHIFT' and modifiers != 'CTRL': 
                     new_selection.clear()
                 new_active = -1
@@ -234,7 +277,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         RZContextManager.get_instance().set_selection(new_selection, new_active)
 
     # -------------------------------------------------------------------------
-    # CORE INTERACTION LOGIC
+    # LOGIC HANDLERS
     # -------------------------------------------------------------------------
 
     def on_reorder(self, target_id, insert_after_id):
@@ -252,7 +295,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def on_viewport_move_delta(self, delta_x, delta_y):
         ctx = RZContextManager.get_instance().get_snapshot()
         if not ctx.selected_ids: return
-        # Silent update to Blender data
         core.move_elements_delta(ctx.selected_ids, delta_x, delta_y, silent=True)
 
     def on_viewport_resize(self, uid, x, y, w, h):
@@ -263,34 +305,28 @@ class RZMEditorWindow(QtWidgets.QWidget):
         core.update_property_multi(ctx.selected_ids, key, val, idx)
 
     # -------------------------------------------------------------------------
-    # REFRESH HANDLERS
+    # REFRESH
     # -------------------------------------------------------------------------
 
     def refresh_outliner(self):
-        # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        # print(f"[{t}] >>> [EVENT] UI UPDATE: Outliner")
         data = core.get_all_elements_list()
-        
         ctx = RZContextManager.get_instance().get_snapshot()
         self.panel_outliner.update_ui(data)
         self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
 
     def refresh_viewport(self, force=False):
-        # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        # print(f"[{t}] >>> [EVENT] UI UPDATE: Viewport")
         data = core.get_viewport_data()
-        
         ctx = RZContextManager.get_instance().get_snapshot()
         self.panel_viewport.rz_scene.update_scene(data, ctx.selected_ids, ctx.active_id)
 
     def refresh_inspector(self, force=False):
-        # t = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        # print(f"[{t}] >>> [EVENT] UI UPDATE: Inspector")
         ctx = RZContextManager.get_instance().get_snapshot()
-        
         details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
         self.panel_inspector.update_ui(details)
     
+    # -------------------------------------------------------------------------
+    # DEBUG OVERLAY
+    # -------------------------------------------------------------------------
     def setup_debug_overlay(self):
         self.debug_label = QtWidgets.QLabel(self)
         self.debug_label.setStyleSheet("""
@@ -302,35 +338,31 @@ class RZMEditorWindow(QtWidgets.QWidget):
             border: 1px solid #00ff00;
         """)
         self.debug_label.setVisible(False)
-        self.debug_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents) # Чтобы клики проходили сквозь
+        self.debug_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents) 
         
-        # Таймер для обновления текста
         self.debug_timer = QtCore.QTimer(self)
         self.debug_timer.timeout.connect(self._update_debug_text)
 
-        # Позиционирование лейбла (внизу справа)
-        self.debug_label.move(10, self.height() - 100)
-        self.debug_label.resize(300, 100)
+        # Начальная позиция
+        self.debug_label.move(10, self.height() - 120) 
+        self.debug_label.resize(300, 110)
 
     def resizeEvent(self, event):
-        # Обновляем позицию при ресайзе окна
+        # При ресайзе держим панель внизу
         if hasattr(self, 'debug_label'):
-            self.debug_label.move(10, self.height() - 110)
+            self.debug_label.move(10, self.height() - 130)
         super().resizeEvent(event)
 
     def toggle_debug_panel(self):
-        """Вызывается оператором"""
         is_visible = not self.debug_label.isVisible()
         self.debug_label.setVisible(is_visible)
-        
         if is_visible:
-            self.debug_timer.start(50) # 20 FPS
+            self.debug_timer.start(50) 
             self._update_debug_text()
         else:
             self.debug_timer.stop()
 
     def _update_debug_text(self):
-        # Правильный вызов через импортированный класс
         txt = RZContextManager.get_instance().get_debug_string()
         self.debug_label.setText(txt)
         self.debug_label.adjustSize()

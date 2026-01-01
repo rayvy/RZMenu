@@ -3,6 +3,8 @@ from PySide6 import QtWidgets, QtCore, QtGui
 import shiboken6
 from .. import core
 from ..utils.image_cache import ImageCache
+from ..context import RZContextManager
+from ..context.states import RZInteractionState
 
 # Цвета
 COLORS_BY_TYPE = {
@@ -457,16 +459,26 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+        
         self._is_panning = False
         self._pan_start_pos = QtCore.QPoint()
-        
         self.parent_window = None 
 
+        # --- CONNECT STATE MACHINE ---
+        # Сцена знает, когда начинается драг элементов, сообщаем менеджеру
+        self.rz_scene.interaction_start_signal.connect(self._on_interaction_start)
+        self.rz_scene.interaction_end_signal.connect(self._on_interaction_end)
+
+    def _on_interaction_start(self):
+        # В будущем можно различать RESIZING, если сцена передаст тип
+        RZContextManager.get_instance().set_state(RZInteractionState.DRAGGING)
+
+    def _on_interaction_end(self):
+        RZContextManager.get_instance().set_state(RZInteractionState.IDLE)
+
     def set_alt_mode(self, active):
-        """Включает визуальный режим эмуляции"""
         self.rz_scene.is_alt_mode = active
         if active:
-            # Синяя рамка и курсор-рука
             self.setStyleSheet("border: 2px solid #4772b3;") 
             self.setCursor(QtCore.Qt.PointingHandCursor)
         else:
@@ -474,18 +486,16 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             self.setCursor(QtCore.Qt.ArrowCursor)
 
     def contextMenuEvent(self, event):
-        if not self.parent_window or not hasattr(self.parent_window, "action_manager"):
-            return
-
+        if not self.parent_window or not hasattr(self.parent_window, "action_manager"): return
         menu = QtWidgets.QMenu(self)
-        
         def add_op(op_id):
             if op_id in self.parent_window.action_manager.q_actions:
                 action = self.parent_window.action_manager.q_actions[op_id]
                 menu.addAction(action)
 
         item = self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform())
-        hit_element = isinstance(item, RZElementItem)
+        # Проверяем, элемент ли это (по наличию uid)
+        hit_element = hasattr(item, 'uid') 
 
         if hit_element:
             menu.addSection("Element Actions")
@@ -499,12 +509,22 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             add_op("rzm.select_all")
             add_op("rzm.view_reset")
             add_op("rzm.unhide_all")
-            
         menu.addSeparator()
         add_op("rzm.undo")
         add_op("rzm.redo")
-        
         menu.exec(event.globalPos())
+
+    def enterEvent(self, event):
+        RZContextManager.get_instance().update_input(
+            QtGui.QCursor.pos(), (0,0), set(), area="VIEWPORT"
+        )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        RZContextManager.get_instance().update_input(
+            QtGui.QCursor.pos(), (0,0), set(), area="NONE"
+        )
+        super().leaveEvent(event)
 
     def wheelEvent(self, event):
         zoom_in_factor = 1.15
@@ -520,20 +540,54 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             self._is_panning = True
             self._pan_start_pos = event.pos()
             self.setCursor(QtCore.Qt.ClosedHandCursor)
+            RZContextManager.get_instance().set_state(RZInteractionState.PANNING)
             event.accept()
             return
+
         if event.button() == QtCore.Qt.LeftButton:
             item = self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform())
-            is_gizmo = isinstance(item, RZHandleItem)
+            is_gizmo = hasattr(item, 'handle_type')
+            is_element = hasattr(item, 'uid')
             
-            # Если мы в Alt режиме, не включаем RubberBand
-            if not self.rz_scene.is_alt_mode and not isinstance(item, RZElementItem) and not is_gizmo:
+            if not self.rz_scene.is_alt_mode and not is_element and not is_gizmo:
                 self.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
+                RZContextManager.get_instance().set_state(RZInteractionState.BOX_SELECT)
             else:
                 self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+                
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        # 1. Сбор данных
+        screen_pos = event.globalPos()
+        scene_pos_qt = self.mapToScene(event.pos())
+        scene_x, scene_y = scene_pos_qt.x(), -scene_pos_qt.y()
+
+        # 2. Модификаторы в Set
+        mods = set()
+        q_mods = event.modifiers()
+        if q_mods & QtCore.Qt.ShiftModifier: mods.add('SHIFT')
+        if q_mods & QtCore.Qt.ControlModifier: mods.add('CTRL')
+        if q_mods & QtCore.Qt.AltModifier: mods.add('ALT')
+
+        # 3. Hover (ищем элемент под мышкой)
+        items = self.scene().items(scene_pos_qt)
+        hover_uid = -1
+        for it in items:
+            if hasattr(it, 'uid'): # Утиная типизация (RZElementItem)
+                hover_uid = it.uid
+                break
+        
+        # 4. Обновление Менеджера
+        mgr = RZContextManager.get_instance()
+        mgr.update_input(screen_pos, (scene_x, scene_y), mods, area="VIEWPORT")
+        mgr.set_hover_id(hover_uid)
+        
+        # Если состояние IDLE и мы нашли элемент -> можно считать HOVERING
+        if mgr._current_state == RZInteractionState.IDLE and hover_uid != -1:
+             # Тут можно было бы делать set_state(HOVERING), но пока оставим IDLE
+             pass 
+
         if self._is_panning:
             delta = event.pos() - self._pan_start_pos
             self._pan_start_pos = event.pos()
@@ -541,23 +595,30 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
             event.accept()
             return
+            
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton:
             self._is_panning = False
             self.setCursor(QtCore.Qt.ArrowCursor)
+            RZContextManager.get_instance().set_state(RZInteractionState.IDLE)
             event.accept()
             return
+            
         if self.dragMode() == QtWidgets.QGraphicsView.RubberBandDrag:
             selected_items = self.scene().selectedItems()
-            ids = [item.uid for item in selected_items if isinstance(item, RZElementItem)]
+            ids = [item.uid for item in selected_items if hasattr(item, 'uid')]
             modifier_str = None
             if event.modifiers() & QtCore.Qt.ShiftModifier: modifier_str = 'SHIFT'
+            
             if not ids and modifier_str is None:
                 self.rz_scene.selection_changed_signal.emit(-1, None)
             elif ids:
                 self.rz_scene.selection_changed_signal.emit(ids, modifier_str)
+            
             self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
             self.scene().clearSelection()
+            RZContextManager.get_instance().set_state(RZInteractionState.IDLE)
+            
         super().mouseReleaseEvent(event)

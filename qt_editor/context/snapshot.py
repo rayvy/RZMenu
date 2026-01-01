@@ -1,64 +1,65 @@
 # RZMenu/qt_editor/context/snapshot.py
 from typing import Set, Tuple, List, Optional, TYPE_CHECKING
 from .wrappers import RZElementWrapper
+from .states import RZInteractionState
 
 if TYPE_CHECKING:
     from .manager import RZContextManager
-    from PySide6.QtCore import QPoint
 
 class RZContext:
-    """
-    An immutable snapshot of the application state.
-    """
     def __init__(self, manager: 'RZContextManager'):
-        self._active_id: int = manager._active_id
-        self._selected_ids: Set[int] = set(manager._selected_ids)
+        self._active_id = manager._active_id
+        self._selected_ids = set(manager._selected_ids)
         
-        # NEW: Hover state
-        self._hover_id: int = manager._hover_id
-        self._hover_area: str = manager._hover_area
-        self._mouse_screen_pos = manager._mouse_screen_pos 
-        self._mouse_scene_pos: Tuple[float, float] = manager._mouse_scene_pos
+        self._state = manager._current_state
+        self._hover_id = manager._hover_id
+        self._hover_area = manager._hover_area
         
-        self._state_tags: Set[str] = set(manager._state_tags)
+        self._mouse_screen = manager._mouse_screen_pos 
+        self._mouse_scene = manager._mouse_scene_pos
+        self._modifiers = frozenset(manager._modifiers)
+        self._tags = set(manager._state_tags)
 
+    # Standard Props
     @property
-    def active_id(self) -> int:
-        return self._active_id
-
+    def active_id(self) -> int: return self._active_id
     @property
-    def selected_ids(self) -> Set[int]:
-        return frozenset(self._selected_ids)
-
+    def selected_ids(self) -> Set[int]: return frozenset(self._selected_ids)
     @property
     def active_element(self) -> Optional[RZElementWrapper]:
-        if self._active_id == -1: return None
-        return RZElementWrapper(self._active_id)
-
+        return RZElementWrapper(self._active_id) if self._active_id != -1 else None
     @property
     def selected_elements(self) -> List[RZElementWrapper]:
         return [RZElementWrapper(uid) for uid in self._selected_ids]
-
+    
+    # Hover Props
     @property
-    def hover_id(self) -> int:
-        return self._hover_id
-
+    def hover_id(self) -> int: return self._hover_id
     @property
     def hover_element(self) -> Optional[RZElementWrapper]:
-        if self._hover_id == -1: return None
-        return RZElementWrapper(self._hover_id)
+        return RZElementWrapper(self._hover_id) if self._hover_id != -1 else None
+    @property
+    def hover_area(self) -> str: return self._hover_area
+
+    # State & Input Props
+    @property
+    def state(self) -> RZInteractionState:
+        return self._state
 
     @property
-    def hover_area(self) -> str:
-        return self._hover_area
+    def modifiers(self) -> Set[str]:
+        return self._modifiers
 
     @property
-    def mouse_screen_pos(self):
-        return self._mouse_screen_pos
+    def is_shift(self) -> bool: return 'SHIFT' in self._modifiers
+    @property
+    def is_ctrl(self) -> bool: return 'CTRL' in self._modifiers
+    @property
+    def is_alt(self) -> bool: return 'ALT' in self._modifiers
 
     @property
-    def mouse_scene_pos(self) -> Tuple[float, float]:
-        return self._mouse_scene_pos
+    def mouse_screen_pos(self): return self._mouse_screen
+    @property
+    def mouse_scene_pos(self) -> Tuple[float, float]: return self._mouse_scene
 
-    def has_tag(self, tag: str) -> bool:
-        return tag in self._state_tags
+    def has_tag(self, tag: str) -> bool: return tag in self._tags

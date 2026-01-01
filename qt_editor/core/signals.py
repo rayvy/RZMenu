@@ -6,9 +6,9 @@ class RZSignalManager(QObject):
     transform_changed = Signal()  # Pos/Size changed (Viewport)
     data_changed = Signal()       # Props changed (Inspector)
     selection_changed = Signal()  # Selection changed
+    
+    # NEW: Context/Hover Area changed (для мгновенного обновления футера)
+    context_updated = Signal()
 
-# Global Instance
 SIGNALS = RZSignalManager()
-
-# Global Flag to prevent infinite loops (Blender -> Qt -> Blender)
 IS_UPDATING_FROM_QT = False
