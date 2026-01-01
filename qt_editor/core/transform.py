@@ -1,7 +1,7 @@
 # RZMenu/qt_editor/transform.py
 import bpy
 from . import signals
-from . import context
+from . import blender_bridge
 
 def resize_element(elem_id, x, y, w, h, silent=False):
     signals.IS_UPDATING_FROM_QT = True
@@ -69,7 +69,7 @@ def align_elements(target_ids, mode):
             center = (max_y + min_b) / 2
             for e in selection: e.position[1] = int(center + e.size[1] / 2)
 
-        context.safe_undo_push(f"RZM: Align {mode}")
+        blender_bridge.safe_undo_push(f"RZM: Align {mode}")
         signals.SIGNALS.transform_changed.emit()
         signals.SIGNALS.data_changed.emit()
     finally:

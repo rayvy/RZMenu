@@ -1,4 +1,4 @@
-# RZMenu/qt_editor/context.py
+# RZMenu/qt_editor/blender_bridge.py
 import bpy
 
 def get_stable_context():

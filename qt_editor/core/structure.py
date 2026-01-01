@@ -1,7 +1,7 @@
 # RZMenu/qt_editor/structure.py
 import bpy
 from . import signals
-from . import context
+from . import blender_bridge
 
 def get_next_available_id(elements):
     if len(elements) == 0: return 1
@@ -29,7 +29,7 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         
         if parent_id != -1: new_element.parent_id = parent_id
             
-        context.safe_undo_push(f"RZM: Create {class_type}")
+        blender_bridge.safe_undo_push(f"RZM: Create {class_type}")
         
         signals.SIGNALS.structure_changed.emit()
         signals.SIGNALS.transform_changed.emit()
@@ -46,7 +46,7 @@ def delete_elements(target_ids):
         for idx in sorted(to_del, reverse=True):
             elements.remove(idx)
             
-        context.safe_undo_push("RZM: Delete Elements")
+        blender_bridge.safe_undo_push("RZM: Delete Elements")
         signals.SIGNALS.structure_changed.emit()
         signals.SIGNALS.transform_changed.emit()
     finally:
@@ -78,7 +78,7 @@ def reorder_elements(target_id, insert_after_id):
         
         if target_idx != to_index:
             elements.move(target_idx, to_index)
-            context.safe_undo_push("RZM: Reorder")
+            blender_bridge.safe_undo_push("RZM: Reorder")
             signals.SIGNALS.structure_changed.emit()
     finally:
         signals.IS_UPDATING_FROM_QT = False
@@ -90,7 +90,7 @@ def reparent_element(child_id, new_parent_id):
         target = next((e for e in elements if e.id == child_id), None)
         if target:
             target.parent_id = new_parent_id
-            context.safe_undo_push("RZM: Reparent")
+            blender_bridge.safe_undo_push("RZM: Reparent")
             signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.transform_changed.emit()
     finally:
@@ -120,7 +120,7 @@ def duplicate_elements(target_ids):
             if hasattr(src, "color"): new_elem.color = src.color[:]
             new_ids.append(new_id)
 
-        context.safe_undo_push("RZM: Duplicate")
+        blender_bridge.safe_undo_push("RZM: Duplicate")
         signals.SIGNALS.structure_changed.emit()
         signals.SIGNALS.transform_changed.emit()
         return new_ids
@@ -128,4 +128,4 @@ def duplicate_elements(target_ids):
         signals.IS_UPDATING_FROM_QT = False
 
 def commit_history(msg):
-    context.safe_undo_push(msg)
+    blender_bridge.safe_undo_push(msg)

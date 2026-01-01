@@ -1,7 +1,7 @@
 # RZMenu/qt_editor/props.py
 import bpy
 from . import signals
-from . import context
+from . import blender_bridge
 
 def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mode=False):
     signals.IS_UPDATING_FROM_QT = True
@@ -48,7 +48,7 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
                     except: pass
 
         if changed:
-            if not fast_mode: context.safe_undo_push(f"RZM: Change {prop_name}")
+            if not fast_mode: blender_bridge.safe_undo_push(f"RZM: Change {prop_name}")
             
             if prop_name in ["pos_x", "pos_y", "width", "height"]:
                 signals.SIGNALS.transform_changed.emit()
@@ -80,7 +80,7 @@ def toggle_editor_flag(target_ids, flag_name):
                 changed = True
         
         if changed:
-            context.safe_undo_push(f"RZM: Toggle {flag_name}")
+            blender_bridge.safe_undo_push(f"RZM: Toggle {flag_name}")
             signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.data_changed.emit()
             signals.SIGNALS.transform_changed.emit()
@@ -99,7 +99,7 @@ def unhide_all_elements():
                 changed = True
         
         if changed:
-            context.safe_undo_push("RZM: Unhide All")
+            blender_bridge.safe_undo_push("RZM: Unhide All")
             signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.transform_changed.emit()
     finally:

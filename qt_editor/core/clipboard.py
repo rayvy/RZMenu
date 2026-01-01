@@ -2,7 +2,7 @@
 import bpy
 from . import structure
 from . import signals
-from . import context
+from . import blender_bridge
 
 _INTERNAL_CLIPBOARD = []
 
@@ -69,7 +69,7 @@ def paste_elements(target_x=None, target_y=None):
             
             new_ids.append(new_id)
             
-        context.safe_undo_push("RZM: Paste")
+        blender_bridge.safe_undo_push("RZM: Paste")
         signals.SIGNALS.structure_changed.emit()
         signals.SIGNALS.transform_changed.emit()
         return new_ids

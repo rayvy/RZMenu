@@ -4,7 +4,7 @@
 
 from .signals import SIGNALS, IS_UPDATING_FROM_QT
 from .maths import to_qt_coords, to_blender_delta
-from .context import get_stable_context, exec_in_context, refresh_viewports, safe_undo_push
+from .blender_bridge import get_stable_context, exec_in_context, refresh_viewports, safe_undo_push
 
 from .read import (
     get_all_elements_list,
