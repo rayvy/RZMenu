@@ -4,7 +4,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from . import core, actions
 from .systems import input_manager
-from .widgets import keymap_editor
+from .widgets import preferences # NEW IMPORT
 from .widgets import outliner, inspector, viewport
 from .context import RZContextManager
 from .widgets.lib import theme
@@ -48,6 +48,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # Viewport
         self.panel_viewport = viewport.RZViewportPanel()
+        self.panel_viewport.parent_window = self # Link for context menu
         splitter.addWidget(self.panel_viewport)
         
         # Inspector
@@ -166,8 +167,32 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.lbl_last_op.setText(f"Last Op: {op_name}")
 
     def open_settings(self):
-        dlg = keymap_editor.RZKeymapEditor(self)
+        # UPDATED: Now opens the full Preferences Dialog
+        dlg = preferences.RZPreferencesDialog(self)
+        
+        # DIRTY HACK connection:
+        # При смене темы в диалоге мы получаем готовый QSS и применяем его ко всему окну
+        dlg.req_global_stylesheet_update.connect(self.apply_global_theme)
+        
         dlg.exec() 
+
+    def apply_global_theme(self, qss):
+        """
+        Slot to hot-reload the theme for the main window and its children.
+        Triggered by the Preferences dialog.
+        """
+        self.setStyleSheet(qss)
+        
+        # Обновляем специфичные виджеты, которые кэшируют кисти или стили
+        # Например Viewport использует QGraphicsScene с закешированными Brush/Pen
+        self.panel_viewport.rz_scene._init_background() # Re-read theme colors
+        self.panel_viewport.rz_scene.update()           # Force redraw
+        
+        # Перерисовываем футер (он меняет цвета динамически в коде)
+        self.on_context_area_changed()
+        
+        # Принудительно обновляем вьюпорт (хендлы, сетки)
+        self.refresh_viewport(force=True)
 
     # -------------------------------------------------------------------------
     # SELECTION & CONTEXT HANDLERS
