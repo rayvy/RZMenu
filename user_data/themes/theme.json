@@ -1,0 +1,55 @@
+{
+    "meta": {
+        "name": "The Matrix",
+        "author": "Neo",
+        "version": "1.1"
+    },
+    "colors": {
+        "bg_root": "#000000",
+        "bg_panel": "#050505",
+        "bg_header": "#001100",
+        "bg_input": "#000000",
+        
+        "text_main": "#00FF41",
+        "text_dark": "#008F11",
+        "text_disabled": "#003B00",
+        "text_bright": "#D3FFD3",
+        
+        "border_main": "#003B00",
+        "border_input": "#008F11",
+        "border_contrast": "#00FF41",
+        
+        "accent": "#00FF41",
+        "accent_hover": "#50FF80",
+        "accent_text": "#000000",
+        
+        "selection": "#002200",
+        "warning": "#FFFF00",
+        "error": "#FF0000",
+        "success": "#00FF00",
+
+        "vp_bg": "#000000",
+        "vp_selection": "#00FF41",
+        "vp_active": "#FFFFFF",
+        "vp_locked": "#FF0000",
+        "vp_handle": "#00FF41",
+        "vp_handle_border": "#000000",
+        
+        "vp_type_container": "rgba(0, 50, 0, 100)",
+        "vp_type_grid_container": "rgba(0, 80, 0, 50)",
+        "vp_type_button": "rgba(0, 255, 65, 50)",
+        "vp_type_slider": "rgba(0, 100, 0, 255)",
+        "vp_type_anchor": "rgba(255, 0, 0, 100)",
+        "vp_type_text": "rgba(0, 0, 0, 0)",
+
+        "ctx_viewport": "#00FF41",
+        "ctx_outliner": "#008F11",
+        "ctx_inspector": "#008F11",
+        "ctx_header": "#003B00",
+        "ctx_footer": "#003B00",
+        
+        "debug_bg": "rgba(0, 20, 0, 240)",
+        "debug_border": "#00FF41",
+        "debug_text": "#00FF41"
+    }
+}

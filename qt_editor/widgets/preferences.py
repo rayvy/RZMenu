@@ -1,6 +1,6 @@
 # RZMenu/qt_editor/widgets/preferences.py
 from PySide6 import QtWidgets, QtCore, QtGui
-from .lib.theme import get_current_theme, generate_stylesheet
+from .lib.theme import get_current_theme, generate_stylesheet, get_theme_manager
 from .lib.widgets import RZPanelWidget, RZLabel, RZComboBox, RZGroupBox
 from .lib.base import RZSmartSlider 
 from .keymap_editor import RZKeymapPanel
@@ -67,7 +67,11 @@ class RZAppearancePanel(QtWidgets.QWidget):
         l_theme = QtWidgets.QHBoxLayout(grp_theme)
         
         self.combo_themes = RZComboBox()
-        self.combo_themes.addItems(["Dark", "Light", "Blue"])
+        
+        # Load themes from manager
+        themes = get_theme_manager().get_available_themes()
+        display_themes = [t.title() for t in themes]
+        self.combo_themes.addItems(display_themes)
         
         # Читаем из конфига
         cfg = get_config()

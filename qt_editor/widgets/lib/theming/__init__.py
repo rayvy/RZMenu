@@ -3,4 +3,3 @@ from .manager import ThemeManager
 
 # Singleton instance for global access
 THEME_MANAGER = ThemeManager()
-
