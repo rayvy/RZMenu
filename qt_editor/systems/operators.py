@@ -180,8 +180,12 @@ class RZ_OT_Paste(RZOperator):
         target_x = None
         target_y = None
         
-        # Если вызвано мышкой (например, из контекстного меню)
-        if kwargs.get('use_mouse', False):
+        # Priority 1: Use mouse position if we are in the Viewport
+        if context.hover_area == "VIEWPORT":
+            target_x, target_y = context.mouse_scene_pos
+        
+        # Priority 2: Use explicit use_mouse flag (fallback for context menu or legacy)
+        elif kwargs.get('use_mouse', False):
             win = kwargs.get('window')
             if win:
                 viewport = win.panel_viewport
@@ -191,14 +195,11 @@ class RZ_OT_Paste(RZOperator):
                 target_x = int(scene_pos.x())
                 target_y = int(-scene_pos.y())
             
-        # Вызов ядра
+        # Call core logic
         new_ids = core.paste_elements(target_x, target_y)
         
-        # Выделение новых объектов
+        # Select new objects
         if new_ids:
-            # Обратите внимание: set_selection ожидает set, а new_ids это list.
-            # RZContextManager в manager.py умеет конвертировать, так что тут ошибки не будет, 
-            # но для чистоты кода лучше передать set(new_ids).
             RZContextManager.get_instance().set_selection(set(new_ids), -1)
 
 class RZ_OT_Align(RZOperator):

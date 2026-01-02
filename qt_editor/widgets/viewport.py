@@ -377,7 +377,11 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
         menu.exec(event.globalPos())
 
     def enterEvent(self, event):
-        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0,0), area="VIEWPORT")
+        # Update context with current mouse position on enter
+        global_pos = QtGui.QCursor.pos()
+        view_pos = self.mapFromGlobal(global_pos)
+        scene_pos = self.mapToScene(view_pos)
+        RZContextManager.get_instance().update_input(global_pos, (scene_pos.x(), -scene_pos.y()), area="VIEWPORT")
         super().enterEvent(event)
 
     def leaveEvent(self, event):
