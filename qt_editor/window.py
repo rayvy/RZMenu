@@ -4,7 +4,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from . import core, actions
 from .systems import input_manager
-from .ui import keymap_editor 
+from .widgets import keymap_editor
 from .widgets import outliner, inspector, viewport
 from .context import RZContextManager
 
