@@ -1,125 +1,377 @@
-# RZMenu/qt_editor/ui/theme.py
-
+# RZMenu/qt_editor/widgets/lib/theme.py
 import bpy
-from ..utils import logger
-from ..conf import get_config
+from ...utils import logger
+from ...conf import get_config
 
-def blender_to_hex(color_tuple):
-    """Конвертирует (0.1, 0.2, 0.9) -> #1933E5"""
-    try:
-        # Blender может возвращать 3 (RGB) или 4 (RGBA) канала
-        r, g, b = color_tuple[0], color_tuple[1], color_tuple[2]
-        return "#{:02x}{:02x}{:02x}".format(
-            int(min(1.0, r) * 255),
-            int(min(1.0, g) * 255),
-            int(min(1.0, b) * 255)
-        )
-    except Exception:
-        return "#ff00ff" # Маджента как индикатор ошибки
+# -----------------------------------------------------------------------------
+# Theme Dictionaries
+# -----------------------------------------------------------------------------
 
-def get_current_theme():
-    """
-    Пытается прочитать активную тему Blender.
-    Если не выходит - возвращает fallback из конфига.
-    """
-    conf = get_config()
-    fallback = conf["theme_fallback"]
+THEME_DARK = {
+    "name": "Default Dark",
     
-    # Результирующий словарь цветов
-    theme = fallback.copy()
+    # Base
+    "bg_root": "#20232A",
+    "bg_panel": "#2C313A",
+    "bg_header": "#3A404A",
+    "bg_input": "#252930",
     
-    try:
-        if not bpy.context or not bpy.context.preferences:
-            logger.warn("Blender context missing, using fallback theme.")
-            return theme
+    # Text
+    "text_main": "#E0E2E4",
+    "text_dark": "#9DA5B4",
+    "text_disabled": "#6A717C",
+    "text_bright": "#FFFFFF",
+    
+    # Borders
+    "border_main": "#3A404A",
+    "border_input": "#4A505A",
+    "border_contrast": "#5F6672",
+    
+    # Accents
+    "accent": "#5298D4",
+    "accent_hover": "#6AACDE",
+    "accent_text": "#FFFFFF",
+    
+    # Special
+    "selection": "#4A6E91",
+    "warning": "#FFB86C",
+    "error": "#FF5555",
+    "success": "#50FA7B",
+    
+    # --- Viewport Specific ---
+    "vp_bg": "#1E1E1E",
+    "vp_selection": "#FFFFFF",
+    "vp_active": "#FF8C00",
+    "vp_locked": "#FF3232",
+    "vp_handle": "#FFFFFF",
+    "vp_handle_border": "#000000",
+    "vp_type_container": "rgba(60, 60, 60, 200)",
+    "vp_type_grid_container": "rgba(50, 50, 55, 200)",
+    "vp_type_button": "rgba(70, 90, 110, 255)",
+    "vp_type_slider": "rgba(70, 110, 90, 255)",
+    "vp_type_anchor": "rgba(255, 0, 0, 100)",
+    "vp_type_text": "rgba(0, 0, 0, 0)",
 
-        b_theme = bpy.context.preferences.themes[0]
-        ui = b_theme.user_interface
+    # Context Colors (for footer, etc)
+    "ctx_viewport": "#4772b3",
+    "ctx_outliner": "#ffae00",
+    "ctx_inspector": "#44aa44",
+    "ctx_header": "#cc88cc",
+    "ctx_footer": "#88cccc",
+    
+    # Debug
+    "debug_bg": "rgba(0, 0, 0, 200)",
+    "debug_border": "#00ff00",
+    "debug_text": "#00ff00",
+}
 
-        # --- МАППИНГ ЦВЕТОВ BLENDER -> RZM ---
+THEME_LIGHT = {
+    "name": "Default Light",
+
+    # Base
+    "bg_root": "#F0F0F0",
+    "bg_panel": "#E1E1E1",
+    "bg_header": "#D5D5D5",
+    "bg_input": "#FFFFFF",
+
+    # Text
+    "text_main": "#222222",
+    "text_dark": "#555555",
+    "text_disabled": "#999999",
+    "text_bright": "#000000",
+
+    # Borders
+    "border_main": "#C0C0C0",
+    "border_input": "#B0B0B0",
+    "border_contrast": "#909090",
+
+    # Accents
+    "accent": "#007ACC",
+    "accent_hover": "#3399DD",
+    "accent_text": "#FFFFFF",
+
+    # Special
+    "selection": "#99CCFF",
+    "warning": "#F0A020",
+    "error": "#D04040",
+    "success": "#20A050",
+
+    # --- Viewport Specific ---
+    "vp_bg": "#A0A0A0",
+    "vp_selection": "#000000",
+    "vp_active": "#FF8C00",
+    "vp_locked": "#D04040",
+    "vp_handle": "#000000",
+    "vp_handle_border": "#FFFFFF",
+    "vp_type_container": "rgba(180, 180, 180, 200)",
+    "vp_type_grid_container": "rgba(170, 170, 175, 200)",
+    "vp_type_button": "rgba(150, 170, 190, 255)",
+    "vp_type_slider": "rgba(150, 190, 170, 255)",
+    "vp_type_anchor": "rgba(255, 0, 0, 100)",
+    "vp_type_text": "rgba(0, 0, 0, 0)",
+
+    # Context Colors
+    "ctx_viewport": "#007ACC",
+    "ctx_outliner": "#E09000",
+    "ctx_inspector": "#109010",
+    "ctx_header": "#B060B0",
+    "ctx_footer": "#40B0B0",
+
+    # Debug
+    "debug_bg": "rgba(255, 255, 255, 200)",
+    "debug_border": "#FF0000",
+    "debug_text": "#FF0000",
+}
+
+THEME_BLUE = {
+    "name": "Blue Theme",
+
+    # Base
+    "bg_root": "#1A1F2E",
+    "bg_panel": "#2A3441",
+    "bg_header": "#3A4551",
+    "bg_input": "#1E2530",
+
+    # Text
+    "text_main": "#E8ECF0",
+    "text_dark": "#A8B3C1",
+    "text_disabled": "#647085",
+    "text_bright": "#FFFFFF",
+
+    # Borders
+    "border_main": "#4A5561",
+    "border_input": "#5A6571",
+    "border_contrast": "#6A7581",
+
+    # Accents
+    "accent": "#4FC3F7",
+    "accent_hover": "#81D4FA",
+    "accent_text": "#FFFFFF",
+
+    # Special
+    "selection": "#4A6FA5",
+    "warning": "#FFD54F",
+    "error": "#E57373",
+    "success": "#81C784",
+
+    # --- Viewport Specific ---
+    "vp_bg": "#0F1419",
+    "vp_selection": "#FFFFFF",
+    "vp_active": "#4FC3F7",
+    "vp_locked": "#E57373",
+    "vp_handle": "#FFFFFF",
+    "vp_handle_border": "#000000",
+    "vp_type_container": "rgba(40, 50, 70, 200)",
+    "vp_type_grid_container": "rgba(30, 40, 55, 200)",
+    "vp_type_button": "rgba(50, 70, 90, 255)",
+    "vp_type_slider": "rgba(50, 90, 70, 255)",
+    "vp_type_anchor": "rgba(255, 0, 0, 100)",
+    "vp_type_text": "rgba(0, 0, 0, 0)",
+
+    # Context Colors
+    "ctx_viewport": "#4FC3F7",
+    "ctx_outliner": "#FFD54F",
+    "ctx_inspector": "#81C784",
+    "ctx_header": "#BA68C8",
+    "ctx_footer": "#4DD0E1",
+
+    # Debug
+    "debug_bg": "rgba(0, 0, 0, 200)",
+    "debug_border": "#4FC3F7",
+    "debug_text": "#4FC3F7",
+}
+
+
+# -----------------------------------------------------------------------------
+# Theme Manager Class
+# -----------------------------------------------------------------------------
+
+class ThemeManager:
+    """Manages color themes and generates Qt stylesheets."""
+    
+    def __init__(self):
+        self._themes = {
+            "dark": THEME_DARK,
+            "light": THEME_LIGHT,
+            "blue": THEME_BLUE,
+        }
+        self._current_theme_name = "dark"
+        self._current_theme_dict = self._themes[self._current_theme_name]
+
+    def set_theme(self, name: str):
+        """Sets the active theme by name ('dark' or 'light')."""
+        if name in self._themes:
+            self._current_theme_name = name
+            self._current_theme_dict = self._themes[name]
+        else:
+            logger.warn(f"Theme '{name}' not found. Using '{self._current_theme_name}'.")
+
+    def get_theme(self) -> dict:
+        """Returns the dictionary of the currently active theme."""
+        return self._current_theme_dict
+
+    def generate_stylesheet(self) -> str:
+        """Generates a full QSS string for the application based on the current theme."""
+        t = self.get_theme()
         
-        # Фон редакторов (темно-серый)
-        # Обычно wcol_regular.item или outline
-        theme["bg_dark"] = blender_to_hex(ui.wcol_regular.outline) # Самый темный
-        theme["bg_panel"] = blender_to_hex(ui.wcol_regular.inner)  # Чуть светлее
+        return f"""
+        /* --- Root & Panels --- */
+        QWidget, QDialog {{
+            background-color: {t['bg_root']};
+            color: {t['text_main']};
+            font-family: sans-serif; 
+            font-size: 10pt;
+        }}
+        
+        #RZMEditorWindow {{
+            background-color: {t['bg_root']};
+        }}
+        
+        RZMInspectorPanel, RZMOutlinerPanel, RZViewportPanel {{
+            background-color: {t['bg_panel']};
+            border: 1px solid {t['border_main']};
+            border-radius: 4px;
+        }}
 
-        # Текст
-        theme["text_main"] = blender_to_hex(ui.wcol_text.text)
-        theme["text_dim"] = blender_to_hex(ui.wcol_text.text_sel) # Часто серый
+        /* --- Groups & Tabs --- */
+        QGroupBox {{
+            background-color: {t['bg_panel']};
+            border: 1px solid {t['border_main']};
+            border-radius: 4px;
+            margin-top: 6px;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 0 4px;
+            left: 10px;
+            background-color: {t['bg_panel']};
+            color: {t['text_dark']};
+        }}
+        
+        QTabWidget::pane {{
+            border: 1px solid {t['border_main']};
+            background: {t['bg_panel']};
+        }}
+        QTabBar::tab {{
+            background: {t['bg_root']};
+            color: {t['text_dark']};
+            padding: 5px 10px;
+            border: 1px solid {t['border_main']};
+            border-bottom: none;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }}
+        QTabBar::tab:selected, QTabBar::tab:hover {{
+            background: {t['bg_panel']};
+            color: {t['text_main']};
+        }}
 
-        # Акцент (Выделение)
-        # Берем из Text Selection Background или Active Item
-        theme["accent"] = blender_to_hex(ui.wcol_text.item) 
-        theme["accent_hover"] = blender_to_hex(ui.wcol_tool.inner)
-        theme["selection"] = blender_to_hex(ui.wcol_list_item.item)
+        /* --- Inputs & Controls --- */
+        QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
+            background-color: {t['bg_input']};
+            border: 1px solid {t['border_input']};
+            border-radius: 3px;
+            padding: 3px;
+            color: {t['text_main']};
+        }}
+        QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
+            border: 1px solid {t['accent']};
+        }}
+        QComboBox::drop-down {{
+            border-left: 1px solid {t['border_input']};
+        }}
+        
+        /* --- Buttons --- */
+        QPushButton {{
+            background-color: {t['bg_header']};
+            color: {t['text_main']};
+            border: 1px solid {t['border_input']};
+            border-radius: 3px;
+            padding: 4px 10px;
+        }}
+        QPushButton:hover {{
+            background-color: {t['accent_hover']};
+            color: {t['accent_text']};
+        }}
+        QPushButton:pressed {{
+            background-color: {t['accent']};
+        }}
+        QPushButton:disabled {{
+            color: {t['text_disabled']};
+            background-color: {t['bg_input']};
+        }}
+        
+        #BtnSpecial {{ /* Example for specific buttons */
+            border: none;
+            color: {t['text_dark']};
+        }}
+        
+        /* --- Sliders --- */
+        RZSmartSlider QPushButton {{
+             background: {t['bg_header']};
+             border: none;
+             padding: 0px;
+        }}
+         _RZDragLabel {{
+            color: {t['text_dark']};
+            padding-right: 4px;
+         }}
 
-        logger.info("Synced theme with Blender.")
+        /* --- Tables & Trees --- */
+        QHeaderView::section {{
+            background-color: {t['bg_header']};
+            padding: 4px;
+            border: 1px solid {t['border_main']};
+            color: {t['text_dark']};
+        }}
+        QTableWidget, QTreeWidget {{
+            background-color: {t['bg_input']};
+            border: 1px solid {t['border_main']};
+        }}
+        QTableWidget::item, QTreeWidget::item {{
+            color: {t['text_main']};
+        }}
+        QTableWidget::item:selected, QTreeWidget::item:selected {{
+            background-color: {t['selection']};
+            color: {t['text_bright']};
+        }}
+        
+        /* --- Splitter --- */
+        QSplitter::handle {{
+            background-color: {t['bg_root']};
+        }}
+        QSplitter::handle:hover {{
+            background-color: {t['accent']};
+        }}
 
-    except Exception as e:
-        logger.warn(f"Failed to sync theme: {e}")
-    
-    return theme
+        /* --- Scrollbars --- */
+        QScrollBar:vertical {{
+            border: none;
+            background: {t['bg_root']};
+            width: 10px;
+            margin: 0px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {t['bg_header']};
+            min-height: 20px;
+            border-radius: 4px;
+        }}
+        """
 
-def generate_stylesheet(theme):
-    """Генерирует QSS строку для приложения"""
-    return f"""
-    QWidget {{
-        background-color: {theme['bg_dark']};
-        color: {theme['text_main']};
-        font-family: sans-serif; 
-        font-size: 10pt;
-    }}
+# -----------------------------------------------------------------------------
+# Singleton Instance
+# -----------------------------------------------------------------------------
+
+# A single instance of the manager to be used across the application
+THEME_MANAGER = ThemeManager()
+
+# Helper function for easy access
+def get_theme_manager() -> ThemeManager:
+    return THEME_MANAGER
+
+def get_current_theme() -> dict:
+    return THEME_MANAGER.get_theme()
     
-    /* Сплиттер (разделитель) */
-    QSplitter::handle {{
-        background-color: {theme['bg_dark']};
-        border: 1px solid {theme['bg_panel']};
-    }}
-    
-    /* Поля ввода */
-    QLineEdit {{
-        background-color: {theme['bg_panel']};
-        border: 1px solid {theme['bg_dark']};
-        border-radius: 3px;
-        padding: 2px;
-        color: {theme['text_main']};
-    }}
-    QLineEdit:focus {{
-        border: 1px solid {theme['accent']};
-    }}
-    
-    /* Кнопки */
-    QPushButton {{
-        background-color: {theme['bg_panel']};
-        border: 1px solid {theme['bg_dark']};
-        border-radius: 3px;
-        padding: 4px 10px;
-    }}
-    QPushButton:hover {{
-        background-color: {theme['accent']};
-        color: white;
-    }}
-    QPushButton:pressed {{
-        background-color: {theme['active_border']};
-    }}
-    QPushButton:disabled {{
-        color: {theme['text_dim']};
-        background-color: {theme['bg_dark']};
-    }}
-    
-    /* Скроллбары (попытка стилизовать под Blender) */
-    QScrollBar:vertical {{
-        border: none;
-        background: {theme['bg_dark']};
-        width: 10px;
-        margin: 0px;
-    }}
-    QScrollBar::handle:vertical {{
-        background: {theme['bg_panel']};
-        min-height: 20px;
-        border-radius: 4px;
-    }}
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-        height: 0px;
-    }}
-    """
+def generate_stylesheet() -> str:
+    return THEME_MANAGER.generate_stylesheet()

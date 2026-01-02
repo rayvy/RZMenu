@@ -1,50 +1,43 @@
 # RZMenu/qt_editor/widgets/outliner.py
 from PySide6 import QtWidgets, QtCore, QtGui
 from ..context import RZContextManager
+from .lib.theme import get_current_theme
+from .lib.trees import RZDraggableTreeWidget
+from .lib.widgets import RZPanelWidget
 
-class RZDraggableTree(QtWidgets.QTreeWidget):
+class RZDraggableTree(RZDraggableTreeWidget):
     """
-    Drag & Drop enabled tree with specific column interactions.
+    Drag & Drop enabled tree with specific column interactions for outliner.
     """
-    internal_reorder_signal = QtCore.Signal(int, object) 
-    
     # Signals for column clicks: (element_id)
     toggle_hide_signal = QtCore.Signal(int)
     toggle_selectable_signal = QtCore.Signal(int)
 
     def __init__(self):
         super().__init__()
-        self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
-        self.setDefaultDropAction(QtCore.Qt.MoveAction)
-        
+
         self.setHeaderLabels(["Name", "Vis", "Sel"])
         self.header().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
         self.header().setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
         self.header().setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
         self.setColumnWidth(1, 30)
         self.setColumnWidth(2, 30)
-        
-        self.itemClicked.connect(self._on_item_clicked)
 
     def _on_item_clicked(self, item, column):
+        """Override base class to handle specific column clicks."""
         elem_id = item.data(0, QtCore.Qt.UserRole)
-        if elem_id is None: return
+        if elem_id is None:
+            return
 
         if column == 1:
             # Visibility Column
             self.toggle_hide_signal.emit(elem_id)
-            # Оптимистичное обновление UI (пока ждем ответа от Blender)
-            curr = item.text(1)
-            item.setText(1, "❌" if curr == "👁" else "👁")
-            
         elif column == 2:
             # Selectable/Locked Column
             self.toggle_selectable_signal.emit(elem_id)
-            curr = item.text(2)
-            item.setText(2, "🔒" if curr == "➤" else "➤")
+        else:
+            # For column 0, call parent handler
+            super()._on_item_clicked(item, column)
 
     def dropEvent(self, event):
         source_items = self.selectedItems()
@@ -66,7 +59,7 @@ class RZDraggableTree(QtWidgets.QTreeWidget):
         self.internal_reorder_signal.emit(moved_id, new_parent_id)
 
 
-class RZMOutlinerPanel(QtWidgets.QWidget):
+class RZMOutlinerPanel(RZPanelWidget):
     selection_changed = QtCore.Signal(list, int)
     items_reordered = QtCore.Signal(int, object)
     
@@ -75,44 +68,30 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("RZMOutlinerPanel")
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.tree = RZDraggableTree()
         
-        # Wiring internal tree signals
-        self.tree.internal_reorder_signal.connect(self.items_reordered)
+        self.tree.items_reordered.connect(self.items_reordered)
         self.tree.itemSelectionChanged.connect(self._on_qt_selection_changed)
         self.tree.toggle_hide_signal.connect(self.req_toggle_hide)
         self.tree.toggle_selectable_signal.connect(self.req_toggle_selectable)
 
-        # Styles
-        self.tree.setStyleSheet("""
-            QTreeWidget { background-color: #2b2b2b; border: none; font-size: 12px; }
-            QTreeWidget::item { padding: 4px; color: #e0e0e0; }
-            QTreeWidget::item:selected { background-color: #405560; color: white; }
-            QTreeWidget::item:hover { background-color: #333; }
-        """)
-
         layout.addWidget(self.tree)
         self._block_signals = False
-        
-        # Enable mouse tracking for hover detection if needed in future
         self.setMouseTracking(True)
 
     def enterEvent(self, event):
         RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(),
-            (0.0, 0.0),
-            area="OUTLINER"
+            QtGui.QCursor.pos(), (0.0, 0.0), area="OUTLINER"
         )
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(),
-            (0.0, 0.0),
-            area="NONE"
+            QtGui.QCursor.pos(), (0.0, 0.0), area="NONE"
         )
         super().leaveEvent(event)
 
@@ -132,28 +111,18 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
         self.selection_changed.emit(ids, active_id)
 
     def update_ui(self, elements_list):
-        """
-        Rebuilds the tree.
-        """
         self._block_signals = True
-        
-        # 1. Save state (expanded items)
-        expanded_ids = set()
-        it = QtWidgets.QTreeWidgetItemIterator(self.tree)
-        while it.value():
-            item = it.value()
-            if item.isExpanded():
-                expanded_ids.add(item.data(0, QtCore.Qt.UserRole))
-            it += 1
 
+        expanded_ids = self.tree.get_expanded_item_ids()
         self.tree.clear()
         
         if not elements_list:
             self._block_signals = False
             return
 
-        # 2. Create all items map
         item_map = {}
+        theme = get_current_theme()
+        disabled_color = QtGui.QColor(theme.get('text_disabled', '#999999'))
         
         for data in elements_list:
             item = QtWidgets.QTreeWidgetItem()
@@ -161,7 +130,6 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
             item.setText(0, data.get('name', 'Unnamed'))
             item.setData(0, QtCore.Qt.UserRole, uid)
             
-            # Icons based on class
             ctype = data.get('class_type', 'CONTAINER')
             icon = QtWidgets.QStyle.SP_FileIcon
             if "CONTAINER" in ctype: icon = QtWidgets.QStyle.SP_DirIcon
@@ -169,43 +137,29 @@ class RZMOutlinerPanel(QtWidgets.QWidget):
             elif "TEXT" in ctype: icon = QtWidgets.QStyle.SP_FileDialogDetailedView
             item.setIcon(0, self.style().standardIcon(icon))
 
-            # Column 1: Visible
-            # Logic: is_hidden=True -> X, else Eye
             is_hidden = data.get('is_hidden', False)
-            vis_char = "❌" if is_hidden else "👁"
-            item.setText(1, vis_char)
+            item.setText(1, "❌" if is_hidden else "👁")
             item.setTextAlignment(1, QtCore.Qt.AlignCenter)
-            # Подкрасим скрытые
             if is_hidden:
-                item.setForeground(0, QtGui.QColor("#888"))
+                item.setForeground(0, disabled_color)
 
-            # Column 2: Selectable
             is_sel = data.get('is_selectable', True)
-            sel_char = "➤" if is_sel else "🔒"
-            item.setText(2, sel_char)
+            item.setText(2, "➤" if is_sel else "🔒")
             item.setTextAlignment(2, QtCore.Qt.AlignCenter)
             
             item_map[uid] = item
 
-        # 3. Build Hierarchy
         for data in elements_list:
             uid = data['id']
             pid = data.get('parent_id', -1)
-            item = item_map[uid]
+            if uid in item_map:
+                item = item_map[uid]
+                if pid in item_map and pid != uid:
+                    item_map[pid].addChild(item)
+                else:
+                    self.tree.addTopLevelItem(item)
 
-            if pid in item_map and pid != uid:
-                parent_item = item_map[pid]
-                parent_item.addChild(item)
-            else:
-                self.tree.addTopLevelItem(item)
-
-        # 4. Restore state
-        for uid, item in item_map.items():
-            if uid in expanded_ids:
-                item.setExpanded(True)
-            # Expand root by default if needed
-            if item.parent() is None:
-                item.setExpanded(True)
+        self.tree.set_expanded_items(expanded_ids)
 
         self._block_signals = False
 

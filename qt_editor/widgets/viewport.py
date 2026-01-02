@@ -5,58 +5,41 @@ from .. import core
 from ..utils.image_cache import ImageCache
 from ..context import RZContextManager
 from ..context.states import RZInteractionState
+from .lib.theme import get_current_theme
 
-# Цвета
-COLORS_BY_TYPE = {
-    'CONTAINER': QtGui.QColor(60, 60, 60, 200),
-    'GRID_CONTAINER': QtGui.QColor(50, 50, 55, 200),
-    'BUTTON': QtGui.QColor(70, 90, 110, 255),
-    'SLIDER': QtGui.QColor(70, 110, 90, 255),
-    'TEXT': QtGui.QColor(0, 0, 0, 0), 
-    'ANCHOR': QtGui.QColor(255, 0, 0, 100)
-}
-COLOR_SELECTED = QtGui.QColor(255, 255, 255)
-COLOR_ACTIVE = QtGui.QColor(255, 140, 0)
-COLOR_LOCKED = QtGui.QColor(255, 50, 50)
 HANDLE_SIZE = 8
 
 class RZHandleItem(QtWidgets.QGraphicsRectItem):
-    # Типы ручек
-    TOP_LEFT = 0
-    TOP = 1
-    TOP_RIGHT = 2
-    RIGHT = 3
-    BOTTOM_RIGHT = 4
-    BOTTOM = 5
-    BOTTOM_LEFT = 6
-    LEFT = 7
+    # Handle types
+    TOP_LEFT, TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT = range(8)
 
     def __init__(self, handle_type, parent):
         super().__init__(0, 0, HANDLE_SIZE, HANDLE_SIZE, parent)
         self.handle_type = handle_type
-        self.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
-        self.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0), 1))
+        
+        t = get_current_theme()
+        self.normal_brush = QtGui.QBrush(QtGui.QColor(t.get('vp_handle', '#FFFFFF')))
+        self.hover_brush = QtGui.QBrush(QtGui.QColor(t.get('vp_active', '#FF8C00')))
+        
+        self.setBrush(self.normal_brush)
+        self.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_handle_border', '#000000')), 1))
         self.setZValue(100) 
         
         cursors = {
-            self.TOP_LEFT: QtCore.Qt.SizeFDiagCursor,
-            self.BOTTOM_RIGHT: QtCore.Qt.SizeFDiagCursor,
-            self.TOP_RIGHT: QtCore.Qt.SizeBDiagCursor,
-            self.BOTTOM_LEFT: QtCore.Qt.SizeBDiagCursor,
-            self.TOP: QtCore.Qt.SizeVerCursor,
-            self.BOTTOM: QtCore.Qt.SizeVerCursor,
-            self.LEFT: QtCore.Qt.SizeHorCursor,
-            self.RIGHT: QtCore.Qt.SizeHorCursor,
+            self.TOP_LEFT: QtCore.Qt.SizeFDiagCursor, self.BOTTOM_RIGHT: QtCore.Qt.SizeFDiagCursor,
+            self.TOP_RIGHT: QtCore.Qt.SizeBDiagCursor, self.BOTTOM_LEFT: QtCore.Qt.SizeBDiagCursor,
+            self.TOP: QtCore.Qt.SizeVerCursor, self.BOTTOM: QtCore.Qt.SizeVerCursor,
+            self.LEFT: QtCore.Qt.SizeHorCursor, self.RIGHT: QtCore.Qt.SizeHorCursor,
         }
         self.setCursor(cursors.get(handle_type, QtCore.Qt.ArrowCursor))
         self.setAcceptHoverEvents(True)
 
     def hoverEnterEvent(self, event):
-        self.setBrush(QtGui.QBrush(COLOR_ACTIVE))
+        self.setBrush(self.hover_brush)
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
-        self.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
+        self.setBrush(self.normal_brush)
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
@@ -77,15 +60,12 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.elem_type = elem_type
         self.name = name
         self.text_content = name
-        
         self.is_active = False
         self.is_locked = False
         self.image_id = -1
         self.is_selectable = True
         self.custom_color = None 
-        
         self.handles = {} 
-
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | 
             QtWidgets.QGraphicsItem.ItemIsSelectable
@@ -93,97 +73,69 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
     def create_handles(self):
         if self.handles: return
-        for h_type, handle_id in enumerate(range(8)):
-            handle = RZHandleItem(h_type, self)
-            self.handles[h_type] = handle
+        for h_type in range(8):
+            self.handles[h_type] = RZHandleItem(h_type, self)
         self.update_handles_pos()
 
     def update_handles_pos(self):
         if not self.handles: return
         rect = self.rect()
         w, h = rect.width(), rect.height()
-        hs = HANDLE_SIZE
-        hh = hs / 2 
+        hs, hh = HANDLE_SIZE, HANDLE_SIZE / 2
         
-        positions = {
-            RZHandleItem.TOP_LEFT:     (-hh, -hh),
-            RZHandleItem.TOP:          (w/2 - hh, -hh),
-            RZHandleItem.TOP_RIGHT:    (w - hh, -hh),
-            RZHandleItem.RIGHT:        (w - hh, h/2 - hh),
-            RZHandleItem.BOTTOM_RIGHT: (w - hh, h - hh),
-            RZHandleItem.BOTTOM:       (w/2 - hh, h - hh),
-            RZHandleItem.BOTTOM_LEFT:  (-hh, h - hh),
-            RZHandleItem.LEFT:         (-hh, h/2 - hh),
-        }
-        
-        for h_type, (x, y) in positions.items():
+        positions = [
+            (-hh, -hh), (w/2 - hh, -hh), (w - hh, -hh),
+            (w - hh, h/2 - hh), (w - hh, h - hh), (w/2 - hh, h - hh),
+            (-hh, h - hh), (-hh, h/2 - hh)
+        ]
+        for h_type, pos in enumerate(positions):
             if h_type in self.handles:
-                self.handles[h_type].setPos(x, y)
+                self.handles[h_type].setPos(*pos)
 
     def set_handles_visible(self, visible):
-        if not self.handles and visible:
-            self.create_handles()
-        for handle in self.handles.values():
-            handle.setVisible(visible)
+        if not self.handles and visible: self.create_handles()
+        for handle in self.handles.values(): handle.setVisible(visible)
 
     def handle_resize(self, h_type, delta):
         if self.is_locked: return
-
-        r = self.rect()
-        cur_pos = self.pos()
-        dx = delta.x()
-        dy = delta.y()
-        new_x = cur_pos.x()
-        new_y = cur_pos.y()
-        new_w = r.width()
-        new_h = r.height()
+        r, pos, dx, dy = self.rect(), self.pos(), delta.x(), delta.y()
+        nx, ny, nw, nh = pos.x(), pos.y(), r.width(), r.height()
         MIN_SIZE = 10
         
-        if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.LEFT, RZHandleItem.BOTTOM_LEFT):
-            if new_w - dx < MIN_SIZE: dx = new_w - MIN_SIZE
-            new_x += dx
-            new_w -= dx
-            
-        elif h_type in (RZHandleItem.TOP_RIGHT, RZHandleItem.RIGHT, RZHandleItem.BOTTOM_RIGHT):
-            if new_w + dx < MIN_SIZE: dx = MIN_SIZE - new_w
-            new_w += dx
+        if h_type in (self.LEFT, self.TOP_LEFT, self.BOTTOM_LEFT):
+            if nw - dx < MIN_SIZE: dx = nw - MIN_SIZE
+            nx += dx; nw -= dx
+        elif h_type in (self.RIGHT, self.TOP_RIGHT, self.BOTTOM_RIGHT):
+            if nw + dx < MIN_SIZE: dx = MIN_SIZE - nw
+            nw += dx
 
-        if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP, RZHandleItem.TOP_RIGHT):
-            if new_h - dy < MIN_SIZE: dy = new_h - MIN_SIZE
-            new_x += 0 
-            new_y += dy
-            new_h -= dy
-            
-        elif h_type in (RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_RIGHT):
-            if new_h + dy < MIN_SIZE: dy = MIN_SIZE - new_h
-            new_h += dy
+        if h_type in (self.TOP, self.TOP_LEFT, self.TOP_RIGHT):
+            if nh - dy < MIN_SIZE: dy = nh - MIN_SIZE
+            ny += dy; nh -= dy
+        elif h_type in (self.BOTTOM, self.BOTTOM_LEFT, self.BOTTOM_RIGHT):
+            if nh + dy < MIN_SIZE: dy = MIN_SIZE - nh
+            nh += dy
 
-        self.setRect(0, 0, new_w, new_h)
-        self.setPos(new_x, new_y)
+        self.setRect(0, 0, nw, nh)
+        self.setPos(nx, ny)
         self.update_handles_pos() 
-        
-        final_bl_x = int(new_x)
-        final_bl_y = int(-new_y)
-        self.scene().element_resized_signal.emit(self.uid, final_bl_x, final_bl_y, int(new_w), int(new_h))
+        self.scene().element_resized_signal.emit(self.uid, int(nx), int(-ny), int(nw), int(nh))
 
     def set_data_state(self, locked, img_id, is_selectable, text_content, color=None):
-        self.is_locked = locked
-        self.image_id = img_id
-        self.is_selectable = is_selectable
+        self.is_locked, self.image_id, self.is_selectable = locked, img_id, is_selectable
         self.text_content = text_content if text_content else self.name
         self.custom_color = color
         self.setOpacity(0.5 if not is_selectable else 1.0)
         self.update()
 
     def set_visual_state(self, is_selected, is_active):
-        if self.isSelected() != is_selected:
-            self.setSelected(is_selected)
+        if self.isSelected() != is_selected: self.setSelected(is_selected)
         self.is_active = is_active
-        if is_active: self.setZValue(20)
-        elif is_selected: self.setZValue(10)
-        else: self.setZValue(1)
-        show_handles = is_selected and not self.is_locked
-        self.set_handles_visible(show_handles)
+        z_val = 1
+        if is_active: z_val = 20
+        elif is_selected: z_val = 10
+        self.setZValue(z_val)
+        self.set_handles_visible(is_selected and not self.is_locked)
         self.update() 
     
     def update_size(self, w, h):
@@ -193,11 +145,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     
     def paint(self, painter, option, widget):
         rect = self.rect()
+        t = get_current_theme()
+        
         if self.elem_type == 'TEXT':
-            painter.setPen(QtGui.QColor(255, 255, 255))
+            painter.setPen(QtGui.QColor(t.get('text_bright', '#FFF')))
             painter.drawText(rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, self.text_content)
             if self.isSelected():
-                 painter.setPen(QtGui.QPen(COLOR_SELECTED, 1, QtCore.Qt.DashLine))
+                 painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_selection', '#FFF')), 1, QtCore.Qt.DashLine))
                  painter.drawRect(rect)
             return
 
@@ -213,47 +167,33 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             a = int(self.custom_color[3]*255) if len(self.custom_color) > 3 else 255
             bg_color = QtGui.QColor(r, g, b, a)
         else:
-            bg_color = COLORS_BY_TYPE.get(self.elem_type, QtGui.QColor(50, 50, 50, 200))
+            color_key = f"vp_type_{self.elem_type.lower()}"
+            bg_color = QtGui.QColor(t.get(color_key, "rgba(50,50,50,200)"))
         
-        if has_image and not self.custom_color:
-            bg_color.setAlpha(30)
-
-        if self.is_locked:
-            bg_color = bg_color.darker(120)
-            
+        if has_image and not self.custom_color: bg_color.setAlpha(30)
+        if self.is_locked: bg_color = bg_color.darker(120)
         painter.fillRect(rect, bg_color)
         
-        border_width = 1.0
-        border_color = QtGui.QColor(0, 0, 0, 150)
-        
+        border_width, border_color_str = 1.0, t.get('vp_handle_border', '#000')
         if self.is_active:
-            border_color = COLOR_ACTIVE
+            border_color_str = t.get('vp_active', '#FF8C00')
             border_width = 2.0
         elif self.isSelected():
-            border_color = COLOR_SELECTED
-            border_width = 1.0
+            border_color_str = t.get('vp_selection', '#FFF')
         elif self.is_locked:
-            border_color = QtGui.QColor(50, 0, 0)
-            
-        pen = QtGui.QPen(border_color, border_width)
-        if self.elem_type == "GRID_CONTAINER":
-            pen.setStyle(QtCore.Qt.DashLine)
-            
+            border_color_str = t.get('vp_locked', '#F00')
+        pen = QtGui.QPen(QtGui.QColor(border_color_str), border_width)
+        if self.elem_type == "GRID_CONTAINER": pen.setStyle(QtCore.Qt.DashLine)
         painter.setPen(pen)
         painter.drawRect(rect)
 
-        painter.setPen(QtGui.QColor(0, 0, 0))
-        text_rect = rect.adjusted(6, 6, -4, -4)
-        painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self.name)
-        
-        painter.setPen(QtGui.QColor(255, 255, 255))
         text_rect = rect.adjusted(5, 5, -5, -5)
+        painter.setPen(QtGui.QColor(t.get('text_bright', '#FFF')))
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self.name)
         
         if self.is_locked:
-            painter.setPen(COLOR_LOCKED)
+            painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
             painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, "🔒")
-
 
 class RZViewportScene(QtWidgets.QGraphicsScene):
     item_moved_signal = QtCore.Signal(float, float) 
@@ -264,84 +204,65 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
     def __init__(self):
         super().__init__()
-        self._is_user_interaction = False
-        self._drag_start_pos = None
-        self._is_dragging_items = False
+        self._is_user_interaction, self._is_dragging_items = False, False
+        self._drag_start_pos, self.is_alt_mode = None, False
         self._items_map = {} 
-        self.is_alt_mode = False 
         self._init_background()
 
     def _init_background(self):
         self.setSceneRect(-10000, -10000, 20000, 20000)
-        self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor(30, 30, 30)))
+        t = get_current_theme()
+        self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor(t.get('vp_bg', '#1E1E1E'))))
 
     def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.MiddleButton:
-            return 
+        if event.button() == QtCore.Qt.MiddleButton: return 
+        if self.is_alt_mode:
+            super().mousePressEvent(event)
+            return
+
+        item = self.itemAt(event.scenePos(), QtGui.QTransform())
+        if isinstance(item, RZHandleItem):
+            self.interaction_start_signal.emit()
+            super().mousePressEvent(event)
+            return
+
+        modifier_str = 'CTRL' if event.modifiers() & QtCore.Qt.ControlModifier else 'SHIFT' if event.modifiers() & QtCore.Qt.ShiftModifier else None
         
-        if event.button() == QtCore.Qt.LeftButton:
-            if self.is_alt_mode:
-                super().mousePressEvent(event)
-                return
-
-            item = self.item_at_event(event)
-            modifiers = event.modifiers()
-            modifier_str = None
-            if modifiers & QtCore.Qt.ControlModifier: modifier_str = 'CTRL'
-            elif modifiers & QtCore.Qt.ShiftModifier: modifier_str = 'SHIFT'
-
-            if isinstance(item, RZHandleItem):
+        if isinstance(item, RZElementItem):
+            if not item.is_selectable:
+                event.ignore(); return
+            self._handle_item_click(item, event, modifier_str)
+            if not item.is_locked:
+                self._is_dragging_items = True
+                self._drag_start_pos = event.scenePos()
                 self.interaction_start_signal.emit()
-                super().mousePressEvent(event)
-                return
-
-            if isinstance(item, RZElementItem):
-                if not item.is_selectable:
-                    event.ignore() 
-                    return
-
-                self._handle_item_click(item, event, modifier_str)
-                
-                if not item.is_locked:
-                    self._is_dragging_items = True
-                    self._drag_start_pos = event.scenePos()
-                    self.interaction_start_signal.emit()
-                
-                event.accept() 
-            else:
-                super().mousePressEvent(event)
+            event.accept() 
+        else:
+            super().mousePressEvent(event)
 
     def _handle_item_click(self, clicked_item, event, modifier_str):
         items_under = [i for i in self.items(event.scenePos()) if isinstance(i, RZElementItem) and i.is_selectable]
         if not items_under: return
+        
         target_uid = clicked_item.uid
         if modifier_str is None and len(items_under) > 1:
-            current_index = -1
-            for idx, item in enumerate(items_under):
-                if item.isSelected():
-                    current_index = idx
-                    break
-            if current_index != -1:
-                next_index = (current_index + 1) % len(items_under)
-                target_uid = items_under[next_index].uid
-            else:
+            try:
+                current_index = [i.isSelected() for i in items_under].index(True)
+                target_uid = items_under[(current_index + 1) % len(items_under)].uid
+            except ValueError:
                 target_uid = items_under[0].uid
         self.selection_changed_signal.emit(target_uid, modifier_str)
 
     def mouseMoveEvent(self, event):
         if self.is_alt_mode:
-             super().mouseMoveEvent(event)
-             return
+             super().mouseMoveEvent(event); return
 
         if self._is_dragging_items and self._drag_start_pos:
             current_pos = event.scenePos()
             qt_delta = current_pos - self._drag_start_pos
-            
             dx_bl, dy_bl = core.to_blender_delta(qt_delta.x(), qt_delta.y())
             self.item_moved_signal.emit(dx_bl, dy_bl)
-            
             self._drag_start_pos = current_pos
-            
             for item in self.selectedItems():
                 if isinstance(item, RZElementItem) and not item.is_locked:
                     item.moveBy(qt_delta.x(), qt_delta.y())
@@ -350,108 +271,64 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
     def mouseReleaseEvent(self, event):
         if self._is_dragging_items:
-            self._is_dragging_items = False
-            self._drag_start_pos = None
+            self._is_dragging_items, self._drag_start_pos = False, None
             self.interaction_end_signal.emit()
-        
-        if self._is_user_interaction and not self._is_dragging_items:
+        elif self._is_user_interaction:
              self.interaction_end_signal.emit()
-             
         super().mouseReleaseEvent(event)
 
-    def item_at_event(self, event):
-        return self.itemAt(event.scenePos(), QtGui.QTransform())
-
     def update_selection_visuals(self, selected_ids, active_id):
-        """
-        Efficiently updates only the selection/active state of existing items.
-        Does not add/remove items or change properties.
-        """
-        if self._is_user_interaction: 
-            return
-
+        if self._is_user_interaction: return
         for uid, item in self._items_map.items():
-            is_sel = uid in selected_ids
-            is_act = uid == active_id
-            item.set_visual_state(is_sel, is_act)
+            item.set_visual_state(uid in selected_ids, uid == active_id)
 
     def update_scene(self, elements_data, selected_ids, active_id):
         if self._is_user_interaction: return
         
         incoming_ids = {d['id'] for d in elements_data}
         current_ids = set(self._items_map.keys())
-
         cache = ImageCache.instance()
-        # Пре-кэширование и удаление старых
+
         for data in elements_data:
-            img_id = data.get('image_id', -1)
-            if img_id != -1: cache.pre_cache_image(img_id)
+            if data.get('image_id', -1) != -1: cache.pre_cache_image(data['image_id'])
 
         for uid in (current_ids - incoming_ids):
-            item = self._items_map.get(uid)
-            if item and shiboken6.isValid(item):
-                self.removeItem(item)
-            del self._items_map[uid]
+            if uid in self._items_map and shiboken6.isValid(self._items_map[uid]):
+                self.removeItem(self._items_map[uid])
+            if uid in self._items_map: del self._items_map[uid]
         
-        for uid in incoming_ids:
-            if uid in self._items_map:
-                item = self._items_map[uid]
-                if not shiboken6.isValid(item):
-                    del self._items_map[uid]
-
-        # Основной цикл обновления/создания
         for data in elements_data:
             uid = data['id']
             qx, qy = core.to_qt_coords(data['pos_x'], data['pos_y'])
-            
-            ctype = data.get('class_type', 'CONTAINER')
-            is_locked = data.get('is_locked', False)
-            is_hidden = data.get('is_hidden', False)
-            is_sel_able = data.get('is_selectable', True)
-            img_id = data.get('image_id', -1)
-            text_content = data.get('text_content', '')
-            color = data.get('color', None)
-            
-            # Создаем или получаем
-            if uid in self._items_map:
-                item = self._items_map[uid]
-                item.name = data['name']
-                item.elem_type = ctype
-            else:
-                item = RZElementItem(uid, data['width'], data['height'], data['name'], ctype)
+            item = self._items_map.get(uid)
+            if not item or not shiboken6.isValid(item):
+                item = RZElementItem(uid, data['width'], data['height'], data['name'], data.get('class_type', 'CONTAINER'))
                 self.addItem(item)
                 self._items_map[uid] = item
-            
-            # Обновляем свойства
+            else:
+                item.name = data['name']
+                item.elem_type = data.get('class_type', 'CONTAINER')
+
             item.update_size(data['width'], data['height'])
             item.setPos(qx, qy)
-            item.set_data_state(is_locked, img_id, is_sel_able, text_content, color)
-            item.setVisible(not is_hidden)
+            item.set_data_state(data.get('is_locked', False), data.get('image_id', -1), 
+                                data.get('is_selectable', True), data.get('text_content', ''), data.get('color', None))
+            item.setVisible(not data.get('is_hidden', False))
+            item.set_visual_state(uid in selected_ids, uid == active_id)
 
-            is_sel = uid in selected_ids
-            is_act = uid == active_id
-            item.set_visual_state(is_sel, is_act)
-
-        # Парентинг (иерархия в Qt сцене)
         for data in elements_data:
-            uid = data['id']
-            pid = data.get('parent_id', -1)
-            if uid not in self._items_map: continue
-            item = self._items_map[uid]
-            if pid != -1 and pid in self._items_map:
-                parent_item = self._items_map[pid]
-                if item.parentItem() != parent_item:
-                    item.setParentItem(parent_item)
-            else:
-                if item.parentItem() is not None:
-                    item.setParentItem(None)
-        
+            uid, pid = data['id'], data.get('parent_id', -1)
+            if uid in self._items_map and pid != -1 and pid in self._items_map:
+                item, parent_item = self._items_map[uid], self._items_map[pid]
+                if item.parentItem() != parent_item: item.setParentItem(parent_item)
+            elif uid in self._items_map and self._items_map[uid].parentItem() is not None:
+                self._items_map[uid].setParentItem(None)
         self.update()
-
 
 class RZViewportPanel(QtWidgets.QGraphicsView):
     def __init__(self):
         super().__init__()
+        self.setObjectName("RZViewportPanel")
         self.rz_scene = RZViewportScene()
         self.setScene(self.rz_scene)
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
@@ -459,18 +336,13 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
-        
         self._is_panning = False
         self._pan_start_pos = QtCore.QPoint()
         self.parent_window = None 
-
-        # --- CONNECT STATE MACHINE ---
-        # Сцена знает, когда начинается драг элементов, сообщаем менеджеру
         self.rz_scene.interaction_start_signal.connect(self._on_interaction_start)
         self.rz_scene.interaction_end_signal.connect(self._on_interaction_end)
 
     def _on_interaction_start(self):
-        # В будущем можно различать RESIZING, если сцена передаст тип
         RZContextManager.get_instance().set_state(RZInteractionState.DRAGGING)
 
     def _on_interaction_end(self):
@@ -478,8 +350,10 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
 
     def set_alt_mode(self, active):
         self.rz_scene.is_alt_mode = active
+        t = get_current_theme()
         if active:
-            self.setStyleSheet("border: 2px solid #4772b3;") 
+            color = t.get('ctx_viewport', '#4772b3')
+            self.setStyleSheet(f"border: 2px solid {color};") 
             self.setCursor(QtCore.Qt.PointingHandCursor)
         else:
             self.setStyleSheet("border: none;")
@@ -488,90 +362,55 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
     def contextMenuEvent(self, event):
         if not self.parent_window or not hasattr(self.parent_window, "action_manager"): return
         menu = QtWidgets.QMenu(self)
+        am = self.parent_window.action_manager
         def add_op(op_id):
-            if op_id in self.parent_window.action_manager.q_actions:
-                action = self.parent_window.action_manager.q_actions[op_id]
-                menu.addAction(action)
-
-        item = self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform())
-        # Проверяем, элемент ли это (по наличию uid)
-        hit_element = hasattr(item, 'uid') 
+            if op_id in am.q_actions: menu.addAction(am.q_actions[op_id])
+        
+        hit_element = hasattr(self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform()), 'uid')
 
         if hit_element:
-            menu.addSection("Element Actions")
-            add_op("rzm.toggle_hide")
-            add_op("rzm.toggle_lock")
-            add_op("rzm.toggle_selectable")
-            menu.addSeparator()
-            add_op("rzm.delete")
+            menu.addSection("Element"); add_op("rzm.toggle_hide"); add_op("rzm.toggle_lock"); add_op("rzm.toggle_selectable")
+            menu.addSeparator(); add_op("rzm.delete")
         else:
-            menu.addSection("General")
-            add_op("rzm.select_all")
-            add_op("rzm.view_reset")
-            add_op("rzm.unhide_all")
-        menu.addSeparator()
-        add_op("rzm.undo")
-        add_op("rzm.redo")
+            menu.addSection("General"); add_op("rzm.select_all"); add_op("rzm.view_reset"); add_op("rzm.unhide_all")
+        menu.addSeparator(); add_op("rzm.undo"); add_op("rzm.redo")
         menu.exec(event.globalPos())
 
     def enterEvent(self, event):
-        RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(), (0,0), area="VIEWPORT"
-        )
+        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0,0), area="VIEWPORT")
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(), (0,0), area="NONE"
-        )
+        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0,0), area="NONE")
         super().leaveEvent(event)
 
     def wheelEvent(self, event):
-        zoom_in_factor = 1.15
-        zoom_out_factor = 1 / zoom_in_factor
+        factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
         current_scale = self.transform().m11()
-        if event.angleDelta().y() > 0:
-            if current_scale < 5.0: self.scale(zoom_in_factor, zoom_in_factor)
-        else:
-            if current_scale > 0.1: self.scale(zoom_out_factor, zoom_out_factor)
+        if (factor > 1 and current_scale < 5.0) or (factor < 1 and current_scale > 0.1):
+            self.scale(factor, factor)
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton:
-            self._is_panning = True
-            self._pan_start_pos = event.pos()
+            self._is_panning = True; self._pan_start_pos = event.pos()
             self.setCursor(QtCore.Qt.ClosedHandCursor)
             RZContextManager.get_instance().set_state(RZInteractionState.PANNING)
-            event.accept()
-            return
-
-        if event.button() == QtCore.Qt.LeftButton:
-            item = self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform())
-            is_gizmo = hasattr(item, 'handle_type')
-            is_element = hasattr(item, 'uid')
-            
-            if not self.rz_scene.is_alt_mode and not is_element and not is_gizmo:
-                self.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
-                RZContextManager.get_instance().set_state(RZInteractionState.BOX_SELECT)
-            else:
-                self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
-                
+            event.accept(); return
+        
+        item = self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform())
+        if not self.rz_scene.is_alt_mode and not hasattr(item, 'uid') and not hasattr(item, 'handle_type'):
+            self.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
+            RZContextManager.get_instance().set_state(RZInteractionState.BOX_SELECT)
+        else:
+            self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        # 1. Сбор данных
-        screen_pos = event.globalPos()
-        scene_pos_qt = self.mapToScene(event.pos())
+        screen_pos, scene_pos_qt = event.globalPos(), self.mapToScene(event.pos())
         scene_x, scene_y = scene_pos_qt.x(), -scene_pos_qt.y()
-
-        # 2. Hover (ищем элемент под мышкой)
-        items = self.scene().items(scene_pos_qt)
         hover_uid = -1
-        for it in items:
-            if hasattr(it, 'uid'): # Утиная типизация (RZElementItem)
-                hover_uid = it.uid
-                break
-        
-        # 3. Обновление Менеджера
+        for it in self.scene().items(scene_pos_qt):
+            if hasattr(it, 'uid'): hover_uid = it.uid; break
         mgr = RZContextManager.get_instance()
         mgr.update_input(screen_pos, (scene_x, scene_y), area="VIEWPORT")
         mgr.set_hover_id(hover_uid)
@@ -581,32 +420,21 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             self._pan_start_pos = event.pos()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
-            event.accept()
-            return
-            
+            event.accept(); return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton:
-            self._is_panning = False
-            self.setCursor(QtCore.Qt.ArrowCursor)
+            self._is_panning = False; self.setCursor(QtCore.Qt.ArrowCursor)
             RZContextManager.get_instance().set_state(RZInteractionState.IDLE)
-            event.accept()
-            return
+            event.accept(); return
             
         if self.dragMode() == QtWidgets.QGraphicsView.RubberBandDrag:
-            selected_items = self.scene().selectedItems()
-            ids = [item.uid for item in selected_items if hasattr(item, 'uid')]
-            modifier_str = None
-            if event.modifiers() & QtCore.Qt.ShiftModifier: modifier_str = 'SHIFT'
-            
-            if not ids and modifier_str is None:
-                self.rz_scene.selection_changed_signal.emit(-1, None)
-            elif ids:
-                self.rz_scene.selection_changed_signal.emit(ids, modifier_str)
-            
+            ids = [item.uid for item in self.scene().selectedItems() if hasattr(item, 'uid')]
+            modifier_str = 'SHIFT' if event.modifiers() & QtCore.Qt.ShiftModifier else None
+            if ids or modifier_str is None:
+                self.rz_scene.selection_changed_signal.emit(ids or -1, modifier_str)
             self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
             self.scene().clearSelection()
             RZContextManager.get_instance().set_state(RZInteractionState.IDLE)
-            
         super().mouseReleaseEvent(event)

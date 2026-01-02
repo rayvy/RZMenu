@@ -2,6 +2,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from ..conf import get_config, save_config
 from ..systems import operators
+from .lib.theme import get_current_theme
 
 class KeyCaptureDialog(QtWidgets.QDialog):
     """Диалог "Нажмите любую клавишу..." """
@@ -61,7 +62,8 @@ class RZKeymapEditor(QtWidgets.QDialog):
         
         # --- Help Text ---
         info = QtWidgets.QLabel("Double-click on an item to rebind.")
-        info.setStyleSheet("color: #888;")
+        theme = get_current_theme()
+        info.setStyleSheet(f"color: {theme.get('text_disabled', '#888')};")
         layout.addWidget(info)
         
         # --- Buttons ---
@@ -83,14 +85,17 @@ class RZKeymapEditor(QtWidgets.QDialog):
         keymaps = self.config.get("keymaps", {})
         
         # Проходим по контекстам (GLOBAL, VIEWPORT...)
+        theme = get_current_theme()
+        bg_header = QtGui.QColor(theme.get('bg_header', '#3A404A'))
+
         for context_name, mapping in keymaps.items():
             context_item = QtWidgets.QTreeWidgetItem(self.tree)
             context_item.setText(0, context_name)
             context_item.setExpanded(True)
             # Визуально выделим контекст
-            context_item.setBackground(0, QtGui.QColor(60, 60, 60))
-            context_item.setBackground(1, QtGui.QColor(60, 60, 60))
-            context_item.setBackground(2, QtGui.QColor(60, 60, 60))
+            context_item.setBackground(0, bg_header)
+            context_item.setBackground(1, bg_header)
+            context_item.setBackground(2, bg_header)
             
             # Проходим по биндингам
             # mapping: { "Ctrl+Z": "rzm.undo", "Left": {"op":...} }
@@ -149,7 +154,8 @@ class RZKeymapEditor(QtWidgets.QDialog):
         item.setText(1, new_key)
         item.setData(1, QtCore.Qt.UserRole, new_key)
         # Подсветка изменения
-        item.setForeground(1, QtGui.QColor("#ffaa00"))
+        theme = get_current_theme()
+        item.setForeground(1, QtGui.QColor(theme.get('warning', '#ffaa00')))
 
     def save_and_close(self):
         # Сохраняем в JSON
