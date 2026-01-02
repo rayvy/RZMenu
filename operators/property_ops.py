@@ -28,7 +28,7 @@ class RZM_OT_ListAction(bpy.types.Operator):
         elif self.action == 'REMOVE' and len(prop_collection) > 0:
             prop_collection.remove(len(prop_collection) - 1)
             
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
     
 class RZM_OT_AddConditionalImage(bpy.types.Operator):
@@ -42,7 +42,7 @@ class RZM_OT_AddConditionalImage(bpy.types.Operator):
         elements = context.scene.rzm.elements
         if 0 <= active_idx < len(elements):
             elements[active_idx].conditional_images.add()
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_RemoveConditionalImage(bpy.types.Operator):
@@ -58,7 +58,7 @@ class RZM_OT_RemoveConditionalImage(bpy.types.Operator):
             cond_images = elements[active_idx].conditional_images
             if len(cond_images) > 0:
                 cond_images.remove(len(cond_images) - 1)
-                bpy.ops.rzm.record_history_state()
+                
         return {'FINISHED'}
 
 class RZM_OT_AddValue(bpy.types.Operator):
@@ -72,7 +72,7 @@ class RZM_OT_AddValue(bpy.types.Operator):
         new_val = values.add()
         new_val.value_name = f"$NewValue_{len(values)}"
         context.scene.rzm_active_value_index = len(values) - 1
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveValue(bpy.types.Operator):
@@ -88,7 +88,7 @@ class RZM_OT_RemoveValue(bpy.types.Operator):
             values.remove(index)
             if index > 0:
                 context.scene.rzm_active_value_index = index - 1
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_SetValueLink(bpy.types.Operator):
@@ -106,7 +106,7 @@ class RZM_OT_SetValueLink(bpy.types.Operator):
             elem = elements[active_idx]
             new_link = elem.value_link.add()
             new_link.value_name = self.link_target
-            bpy.ops.rzm.record_history_state()
+            
         else:
             self.report({'WARNING'}, "No active UI element selected.")
             return {'CANCELLED'}
@@ -127,7 +127,7 @@ class RZM_OT_RemoveValueLink(bpy.types.Operator):
             links = elements[active_idx].value_link
             if 0 <= self.index_to_remove < len(links):
                 links.remove(self.index_to_remove)
-                bpy.ops.rzm.record_history_state()
+                
         return {'FINISHED'}
 
 classes_to_register = [

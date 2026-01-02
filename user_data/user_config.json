@@ -1,0 +1,88 @@
+{
+    "keymaps": {
+        "GLOBAL": {
+            "Ctrl+Z": "rzm.undo",
+            "Ctrl+Shift+Z": "rzm.redo",
+            "F5": "rzm.refresh",
+            "Alt+C": "rzm.toggle_debug"
+        },
+        "VIEWPORT": {
+            "Delete": "rzm.delete",
+            "Ctrl+A": "rzm.select_all",
+            "Home": "rzm.view_reset",
+            "H": "rzm.toggle_hide",
+            "Alt+H": "rzm.unhide_all",
+            "L": {
+                "op": "rzm.toggle_lock",
+                "args": {}
+            },
+            "Left": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": -10,
+                    "y": 0
+                }
+            },
+            "Right": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": 10,
+                    "y": 0
+                }
+            },
+            "Up": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": 0,
+                    "y": -10
+                }
+            },
+            "Down": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": 0,
+                    "y": 10
+                }
+            },
+            "Shift+Left": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": -1,
+                    "y": 0
+                }
+            },
+            "Shift+Right": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": 1,
+                    "y": 0
+                }
+            },
+            "Shift+Up": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": 0,
+                    "y": -1
+                }
+            },
+            "Shift+Down": {
+                "op": "rzm.nudge",
+                "args": {
+                    "x": 0,
+                    "y": 1
+                }
+            }
+        },
+        "OUTLINER": {
+            "Delete": "rzm.delete",
+            "Ctrl+A": "rzm.select_all",
+            "H": "rzm.toggle_hide",
+            "Alt+H": "rzm.unhide_all"
+        },
+        "INSPECTOR": {}
+    },
+    "appearance": {
+        "theme": "dark",
+        "custom_bg_path": ""
+    }
+}

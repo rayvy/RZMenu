@@ -1,0 +1,82 @@
+#RZMenu/core/utils.py (ex rzm_utils.py)
+import bpy
+
+def get_next_available_id(elements):
+    """Находит наименьший свободный ID, заполняя пробелы."""
+    existing_ids = {elem.id for elem in elements}
+    new_id = 0
+    while new_id in existing_ids: new_id += 1
+    return new_id
+
+def get_next_image_id(images_collection):
+    """Находит наименьший свободный числовой ID для изображения."""
+    existing_ids = {img.id for img in images_collection}
+    new_id = 0
+    while new_id in existing_ids:
+        new_id += 1
+    print(f"DEBUG: Found next available image ID: {new_id}")
+    return new_id
+
+def get_assignable_toggles(context):
+    """
+    ИЗМЕНЕНО: Генерирует список имен тогглов для назначения, учитывая префикс 'rzm.Toggle.'.
+    """
+    if not context.active_object:
+        return []
+    
+    obj = context.active_object
+    
+    # Все тогглы, определенные в проекте (например, "A", "Hat", "Bikini")
+    project_toggles = context.scene.rzm.toggle_definitions
+    project_toggle_names = {toggle_def.toggle_name for toggle_def in project_toggles}
+    
+    # Находим все свойства на объекте, которые начинаются с 'rzm.Toggle.'
+    existing_toggles_on_obj = set()
+    for key in obj.keys():
+        if key.startswith("rzm.Toggle."):
+            # Извлекаем чистое имя тоггла (например, из "rzm.Toggle.Hat" получаем "Hat")
+            base_name = key.replace("rzm.Toggle.", "", 1)
+            existing_toggles_on_obj.add(base_name)
+    
+    # Возвращаем те имена из проекта, которых еще нет на объекте
+    return sorted(list(project_toggle_names - existing_toggles_on_obj))
+
+
+def find_toggle_def(context, name):
+    """Находит определение тоггла по имени."""
+    for toggle_def in context.scene.rzm.toggle_definitions:
+        if toggle_def.toggle_name == name:
+            return toggle_def
+    return None
+
+def get_toggle_slot_occupancy(context, base_name):
+    """
+    Возвращает словарь: {индекс_бита: [имена объектов]}, где слот занят данным тогглом.
+    Исключает текущий активный объект из списка имен (чтобы не дублировать визуально),
+    но учитывает его в логике, если нужно.
+    """
+    result = {}
+    active_obj = context.active_object
+    full_key = f"rzm.Toggle.{base_name}"
+    
+    for obj in context.scene.objects: # Проходим по всем объектам сцены
+        if obj == active_obj:
+            continue
+            
+        if full_key in obj.keys():
+            value = obj[full_key]
+            # Проверяем, что это массив (IDPropertyArray)
+            if hasattr(value, "to_list"):
+                 bits = value.to_list()
+            elif isinstance(value, list):
+                 bits = value
+            else:
+                 try:
+                     bits = list(value)
+                 except:
+                     continue
+
+            for i, bit in enumerate(bits):
+                if bit: # Если бит равен 1
+                    result.setdefault(i, []).append(obj.name)
+    return result

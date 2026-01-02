@@ -34,7 +34,7 @@ class RZM_OT_AddTwResource(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.addons.tw_resources.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwResource(bpy.types.Operator):
@@ -45,7 +45,7 @@ class RZM_OT_RemoveTwResource(bpy.types.Operator):
         coll = context.scene.rzm.addons.tw_resources
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_AddTwOverride(bpy.types.Operator):
@@ -54,7 +54,7 @@ class RZM_OT_AddTwOverride(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.addons.tw_overrides.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwOverride(bpy.types.Operator):
@@ -65,7 +65,7 @@ class RZM_OT_RemoveTwOverride(bpy.types.Operator):
         coll = context.scene.rzm.addons.tw_overrides
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_AddTwConfig(bpy.types.Operator):
@@ -74,7 +74,7 @@ class RZM_OT_AddTwConfig(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.addons.tw_texture_configs.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwConfig(bpy.types.Operator):
@@ -85,7 +85,7 @@ class RZM_OT_RemoveTwConfig(bpy.types.Operator):
         coll = context.scene.rzm.addons.tw_texture_configs
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_AddTwTexture(bpy.types.Operator):
@@ -94,7 +94,7 @@ class RZM_OT_AddTwTexture(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.addons.tw_textures.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwTexture(bpy.types.Operator):
@@ -105,7 +105,7 @@ class RZM_OT_RemoveTwTexture(bpy.types.Operator):
         coll = context.scene.rzm.addons.tw_textures
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 class RZM_OT_AddTwAlternative(bpy.types.Operator):
@@ -115,7 +115,7 @@ class RZM_OT_AddTwAlternative(bpy.types.Operator):
     texture_index: bpy.props.IntProperty()
     def execute(self, context):
         context.scene.rzm.addons.tw_textures[self.texture_index].tw_alternatives.add()
-        bpy.ops.rzm.record_history_state()
+        
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwAlternative(bpy.types.Operator):
@@ -127,7 +127,7 @@ class RZM_OT_RemoveTwAlternative(bpy.types.Operator):
         coll = context.scene.rzm.addons.tw_textures[self.texture_index].tw_alternatives
         if len(coll) > 0:
             coll.remove(len(coll) - 1)
-            bpy.ops.rzm.record_history_state()
+            
         return {'FINISHED'}
 
 classes_to_register = [

@@ -1,6 +1,6 @@
 #RZMenu/panels/dependencies_panel.py
 import bpy
-from ..dependencies import is_installing, DEPS
+from ..core.deps_manager import is_installing, DEPS
 
 class RZ_PT_DependenciesPanel(bpy.types.Panel):
     bl_label = "RZ Dependencies"

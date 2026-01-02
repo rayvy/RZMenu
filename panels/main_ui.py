@@ -1,4 +1,4 @@
-#RZMenu/panels/main_ui.py
+# RZMenu/panels/main_ui.py
 import bpy
 import os
 
@@ -7,8 +7,8 @@ class RZM_MT_AssignToggleMenu(bpy.types.Menu):
     bl_label = "Assign Toggle"
     bl_idname = "RZM_MT_assign_toggle_menu"
     def draw(self, context):
-        # Используем ..helpers (две точки), так как мы внутри папки panels
-        from ..helpers import get_assignable_toggles 
+        # FIX IMPORT: helpers -> core.utils
+        from ..core.utils import get_assignable_toggles 
         layout = self.layout
         assignable = get_assignable_toggles(context)
         if not assignable:
@@ -26,25 +26,20 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     bl_category = 'RZ Constructor'
     bl_order = 0
     
+    # ... (draw_capture_pro_ui и draw_captures_preview_ui оставляем без изменений) ...
     def draw_capture_pro_ui(self, context, layout):
         settings = context.scene.rzm_capture_settings
-
         capture_box = layout.box()
         capture_box.label(text="Image Capture (Pro)", icon='RESTRICT_RENDER_OFF')
-        
         col = capture_box.column(align=True)
         col.label(text="Shading Mode:")
         col.prop(settings, "shading_mode", text="")
-        
         if settings.shading_mode == 'RENDERED':
             col.prop(settings, "add_temp_light")
-        
         col.separator()
         col.prop(settings, "use_overlays", text="Include Viewport Overlays")
         col.prop(settings, "resolution", text="Image Size (px)")
-
         capture_box.separator()
-
         row = capture_box.row(align=True)
         row.prop(context.scene, "rzm_capture_overwrite_id", text="Overwrite ID")
         row.operator("rzm.capture_image", text="Capture")
@@ -52,46 +47,29 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     def draw_captures_preview_ui(self, context, layout):
         scene = context.scene
         rzm = scene.rzm
-
         captured_images = sorted(
             [img for img in rzm.images if img.source_type == 'CAPTURED'],
-            key=lambda i: i.id, 
-            reverse=True
+            key=lambda i: i.id, reverse=True
         )
-
         preview_box = layout.box()
-        
         row = preview_box.row()
         icon = 'TRIA_DOWN' if scene.rzm_show_captures_preview else 'TRIA_RIGHT'
         row.prop(scene, "rzm_show_captures_preview", text="CAPTURE PREVIEW", icon=icon, emboss=False)
-        
         if scene.rzm_show_captures_preview:
             if not captured_images:
                 preview_box.label(text="No captured images yet.", icon='INFO')
                 return
-
             grid = preview_box.column_flow(columns=4, align=True)
-            
             for rzm_image in captured_images:
                 item_box = grid.box()
-                
                 if rzm_image.image_pointer:
-                    item_box.template_ID_preview(
-                        rzm_image, 
-                        "image_pointer", 
-                        rows=3, 
-                        cols=3,
-                        hide_buttons=True
-                    )
+                    item_box.template_ID_preview(rzm_image, "image_pointer", rows=3, cols=3, hide_buttons=True)
                 else:
                     item_box.label(text="<Missing>", icon='ERROR')
-                
                 info_row = item_box.row(align=True)
                 info_row.alignment = 'LEFT'
-                
                 name_row = info_row.split(factor=0.85)
                 name_row.label(text=f"ID {rzm_image.id}: {rzm_image.display_name}")
-                
                 op = info_row.operator("rzm.remove_image", text="", icon='TRASH', emboss=False)
                 op.image_id_to_remove = rzm_image.id
 
@@ -99,16 +77,14 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        # --- БЛОК: Управление файлами и историей ---
+        # --- БЛОК: Управление файлами ---
         file_box = layout.box()
         row = file_box.row(align=True)
-        row.operator("rzm.save_template", text="Save", icon='FILE_TICK')
-        row.operator("rzm.load_template", text="Load", icon='FILE_FOLDER')
+        row.operator("rzm.save_template", text="Save .rzm", icon='FILE_TICK')
+        row.operator("rzm.load_template", text="Load .rzm", icon='FILE_FOLDER')
         
+        # History кнопки удалены (используй Ctrl+Z)
         history_row = file_box.row(align=True)
-        history_row.operator("rzm.undo", text="", icon='LOOP_BACK')
-        history_row.operator("rzm.redo", text="", icon='LOOP_FORWARDS')
-        history_row.separator()
         history_row.operator("rzm.reset_scene", text="Reset Scene", icon='TRASH')
         
         layout.separator()
@@ -143,17 +119,17 @@ class VIEW3D_PT_RZMObjectPanel(bpy.types.Panel):
     bl_order = 1
 
     def draw(self, context):
-        # ИСПОЛЬЗУЕМ ..helpers (две точки)
-        from ..helpers import get_toggle_slot_occupancy, find_toggle_def
+        # FIX IMPORT: helpers -> core.utils
+        from ..core.utils import get_toggle_slot_occupancy, find_toggle_def
         
         layout = self.layout
         target_obj = context.active_object
-
         if not target_obj:
             layout.label(text="Select an object to see its properties.", icon='INFO')
             return
 
-        # --- БЛОК ТОГГЛОВ ---
+        # ... (Код ниже оставляем как есть, логика не менялась) ...
+        # (Просто убедись, что закрываешь скобки и отступы верно)
         box = layout.box()
         row = box.row(align=True)
         row.label(text="RZ-Toggles", icon='CHECKBOX_HLT')
@@ -201,7 +177,6 @@ class VIEW3D_PT_RZMObjectPanel(bpy.types.Panel):
                 occupancy = get_toggle_slot_occupancy(context, base_name)
                 info_col = sub_box.column(align=True)
                 info_col.separator()
-                
                 if not any(occupancy):
                     info_col.label(text="All other slots free", icon='INFO')
                 else:
@@ -220,44 +195,34 @@ class VIEW3D_PT_RZMObjectPanel(bpy.types.Panel):
                             slot_row.label(text="", icon='BLANK1')
                             slot_row.label(text=f"Slot {i+1}: <Free>", icon='CHECKBOX_DEHLT')
 
+# ... (Остальные панели без изменений) ...
 class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
     bl_label = "Mod Export Manager"
     bl_idname = "VIEW3D_PT_rzm_export_manager"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'RZ Constructor'
-    # Вкладываем в главную панель
     bl_parent_id = "VIEW3D_PT_rz_constructor_panel"
     bl_order = 99 
 
     def draw(self, context):
         layout = self.layout
         rzm = context.scene.rzm
-        
-        # ЗАЩИТА ОТ ОШИБОК
         if not hasattr(rzm, "export_settings") or not rzm.export_settings:
             layout.label(text="Settings loading...", icon='INFO')
             return
-
         settings = rzm.export_settings
-        
         box = layout.box()
         box.label(text="Target Settings:", icon='FILE_FOLDER')
         box.prop(settings, "mod_name")
         box.prop(settings, "use_xxmi_path")
-        
         final_path = ""
-        # 1. XXMI Path
         if settings.use_xxmi_path:
              if hasattr(context.scene, 'xxmi') and hasattr(context.scene.xxmi, 'destination_path'):
                  final_path = context.scene.xxmi.destination_path
-        
-        # 2. Custom Path
         if not final_path:
             final_path = settings.custom_path
             box.prop(settings, "custom_path")
-
-        # Индикация
         if final_path:
             abs_path = bpy.path.abspath(final_path)
             if os.path.exists(abs_path):
@@ -266,22 +231,16 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
                 box.label(text="Target does not exist", icon='INFO')
         else:
             box.label(text="No path set", icon='ERROR')
-
         layout.separator()
-
-        # Кнопки
         if hasattr(bpy.ops.rzm, "export_atlas"):
             row = layout.row()
             row.scale_y = 1.3
             row.operator("rzm.export_atlas", text="Update Atlas (Quick)", icon='FILE_REFRESH')
-        
         col = layout.column(align=True)
         col.separator()
         col.label(text="Initialization:", icon='PACKAGE')
-        
         sub_box = col.box()
         sub_box.prop(settings, "overwrite_scripts", text="Force Overwrite")
-        
         if hasattr(bpy.ops.rzm, "initialize_mod"):
             sub_box.operator("rzm.initialize_mod", text="Initialize Mod", icon='MOD_BUILD')
 
@@ -291,4 +250,3 @@ classes_to_register = [
     VIEW3D_PT_RZMObjectPanel,
     VIEW3D_PT_RZM_ExportManager
 ]
-# Функции register/unregister здесь не нужны, так как они вызываются из panels/__init__.py
