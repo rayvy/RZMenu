@@ -83,6 +83,14 @@ class RZMOutlinerPanel(RZPanelWidget):
         self._block_signals = False
         self.setMouseTracking(True)
 
+    def update_theme_styles(self):
+        """Re-apply tree styling."""
+        if hasattr(self, 'tree'):
+            self.tree.apply_theme()
+            # Хамское обновление, чтобы перерисовались хедеры
+            self.tree.style().unpolish(self.tree)
+            self.tree.style().polish(self.tree)
+
     def enterEvent(self, event):
         RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(), (0.0, 0.0), area="OUTLINER"

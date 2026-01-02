@@ -1,1 +1,0 @@
-#Delete, this file was migrated to qt_editor/widgets/lib/base.py

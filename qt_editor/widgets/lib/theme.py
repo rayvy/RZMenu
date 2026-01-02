@@ -68,59 +68,61 @@ THEME_DARK = {
 THEME_LIGHT = {
     "name": "Default Light",
 
-    # Base
-    "bg_root": "#F0F0F0",
-    "bg_panel": "#E1E1E1",
-    "bg_header": "#D5D5D5",
-    "bg_input": "#FFFFFF",
+    # Base (смещены в сторону холодного серо-голубого)
+    "bg_root": "#F0F4F8",       # Мягкий светло-голубой фон
+    "bg_panel": "#FFFFFF",      # Чистый белый для панелей для контраста
+    "bg_header": "#E1E8EE",     # Светло-серый хедер
+    "bg_input": "#F7F9FB",      # Очень светлый инпут
 
-    # Text
-    "text_main": "#222222",
-    "text_dark": "#555555",
-    "text_disabled": "#999999",
-    "text_bright": "#000000",
+    # Text (менее контрастный черный)
+    "text_main": "#2C3E50",     # Темно-синий/серый вместо черного
+    "text_dark": "#546E7A",     # Мягкий серый
+    "text_disabled": "#B0BEC5",
+    "text_bright": "#2C3E50",   # В светлой теме bright текст темный
 
     # Borders
-    "border_main": "#C0C0C0",
-    "border_input": "#B0B0B0",
-    "border_contrast": "#909090",
+    "border_main": "#CFD8DC",
+    "border_input": "#DDE3EA",
+    "border_contrast": "#B0BEC5",
 
     # Accents
-    "accent": "#007ACC",
-    "accent_hover": "#3399DD",
+    "accent": "#29B6F6",        # Свежий голубой
+    "accent_hover": "#4FC3F7",
     "accent_text": "#FFFFFF",
 
     # Special
-    "selection": "#99CCFF",
-    "warning": "#F0A020",
-    "error": "#D04040",
-    "success": "#20A050",
+    "selection": "#B3E5FC",     # Светло-голубое выделение
+    "warning": "#FFB74D",
+    "error": "#E57373",
+    "success": "#81C784",
 
     # --- Viewport Specific ---
-    "vp_bg": "#A0A0A0",
-    "vp_selection": "#000000",
-    "vp_active": "#FF8C00",
-    "vp_locked": "#D04040",
-    "vp_handle": "#000000",
-    "vp_handle_border": "#FFFFFF",
-    "vp_type_container": "rgba(180, 180, 180, 200)",
-    "vp_type_grid_container": "rgba(170, 170, 175, 200)",
-    "vp_type_button": "rgba(150, 170, 190, 255)",
-    "vp_type_slider": "rgba(150, 190, 170, 255)",
-    "vp_type_anchor": "rgba(255, 0, 0, 100)",
+    "vp_bg": "#CFD8DC",         # Нейтральный фон вьюпорта
+    "vp_selection": "#0288D1",
+    "vp_active": "#29B6F6",
+    "vp_locked": "#D32F2F",
+    "vp_handle": "#FFFFFF",
+    "vp_handle_border": "#0288D1",
+
+    # Полупрозрачные цвета для элементов во вьюпорте
+    "vp_type_container": "rgba(255, 255, 255, 200)",
+    "vp_type_grid_container": "rgba(245, 245, 250, 200)",
+    "vp_type_button": "rgba(225, 245, 254, 255)",
+    "vp_type_slider": "rgba(224, 242, 241, 255)",
+    "vp_type_anchor": "rgba(239, 83, 80, 100)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
 
     # Context Colors
-    "ctx_viewport": "#007ACC",
-    "ctx_outliner": "#E09000",
-    "ctx_inspector": "#109010",
-    "ctx_header": "#B060B0",
-    "ctx_footer": "#40B0B0",
+    "ctx_viewport": "#29B6F6",
+    "ctx_outliner": "#FFA726",
+    "ctx_inspector": "#66BB6A",
+    "ctx_header": "#AB47BC",
+    "ctx_footer": "#26C6DA",
 
     # Debug
-    "debug_bg": "rgba(255, 255, 255, 200)",
-    "debug_border": "#FF0000",
-    "debug_text": "#FF0000",
+    "debug_bg": "rgba(255, 255, 255, 220)",
+    "debug_border": "#29B6F6",
+    "debug_text": "#01579B",
 }
 
 THEME_BLUE = {

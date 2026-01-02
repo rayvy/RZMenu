@@ -1,7 +1,6 @@
 # RZMenu/qt_editor/widgets/preferences.py
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.theme import get_current_theme, get_theme_manager, generate_stylesheet
-# Исправленные импорты:
 from .lib.widgets import RZPanelWidget, RZLabel, RZComboBox, RZGroupBox
 from .lib.base import RZSmartSlider 
 from .keymap_editor import RZKeymapPanel
@@ -16,8 +15,12 @@ class RZSidebarItem(QtWidgets.QPushButton):
         self.setAutoExclusive(True)
         self.setFixedHeight(40)
         self.setCursor(QtCore.Qt.PointingHandCursor)
-        
+
+        # Initial style
         self.setStyleSheet(self._get_style(False))
+
+        # UPDATE: Ensure style refreshes when state changes (clicked by user)
+        self.toggled.connect(lambda checked: self.setStyleSheet(self._get_style(checked)))
         
     def _get_style(self, active):
         t = get_current_theme()
@@ -198,21 +201,43 @@ class RZPreferencesDialog(QtWidgets.QDialog):
 
     def _on_theme_changed_internal(self):
         """
-        Вызывается когда панель Appearance сменила тему.
-        Генерируем новый QSS и отправляем наверх в window.py.
+        Called when Appearance panel changes the theme.
+        Generates new QSS and forces a deep, aggressive update of all widgets.
         """
-        new_qss = generate_stylesheet()
-        
-        # Обновляем стиль самого диалога
-        self.setStyleSheet(new_qss)
-        
-        # Обновляем стиль сайдбара
+        # 1. IMPORTANT: Update the container styles (sidebar & content stack bg)
+        # This was missing in previous iterations, causing the background to stay old
+        self.update_style()
+
+        # 2. Update Sidebar Items (Custom logic for checked state)
         for i in range(self.sidebar_layout.count()):
             w = self.sidebar_layout.itemAt(i).widget()
             if isinstance(w, RZSidebarItem):
                 w.setStyleSheet(w._get_style(w.isChecked()))
+
+        # 3. Deep Aggressive Update for all Inner Widgets
+        # We search for ALL widgets to ensure we hit nested layouts/stack pages
+        all_widgets = self.findChildren(QtWidgets.QWidget)
+
+        for widget in all_widgets:
+            # Skip the sidebar items as we handled them above
+            if isinstance(widget, RZSidebarItem):
+                continue
+
+            # Check for our custom 'apply_theme' method (Duck Typing)
+            # This covers RZGroupBox, RZLabel, RZComboBox, RZLineEdit, etc.
+            if hasattr(widget, 'apply_theme') and callable(widget.apply_theme):
+                widget.apply_theme()
                 
-        # Эмитим сигнал наружу
+                # FORCE Qt to un-cache the style for this widget
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+
+            # Special handling for RZSmartSlider (Composite widget)
+            if hasattr(widget, 'spin') and hasattr(widget, 'label') and hasattr(widget, 'apply_theme'):
+                widget.apply_theme()
+
+        # 4. Emit signal to main window to update the rest of the app
+        new_qss = generate_stylesheet() # Ensure we send the fresh QSS
         self.req_global_stylesheet_update.emit(new_qss)
 
     def update_style(self):
@@ -221,5 +246,5 @@ class RZPreferencesDialog(QtWidgets.QDialog):
         self.sidebar_container.setStyleSheet(f"background-color: {t['bg_input']}; border-right: 1px solid {t['border_main']};")
         self.content_stack.setStyleSheet(f"background-color: {t['bg_root']};")
         
-        # Re-apply global stylesheet
+        # Re-apply global stylesheet to this dialog
         self.setStyleSheet(generate_stylesheet())

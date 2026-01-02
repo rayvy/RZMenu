@@ -269,6 +269,24 @@ class RZMInspectorPanel(RZPanelWidget):
 
         self._block_signals = False
 
+    def update_theme_styles(self):
+        """Force manual theme update for widgets that cache colors."""
+        from .lib.base import RZSmartSlider
+
+        # 1. Generic update: Find ALL children that have an 'apply_theme' method
+        # This covers RZGroupBox, RZLabel, RZComboBox, RZPushButton, RZLineEdit, etc.
+        for widget in self.findChildren(QtWidgets.QWidget):
+            if hasattr(widget, 'apply_theme') and callable(widget.apply_theme):
+                widget.apply_theme()
+
+        # 2. Update Sliders specifically (they are complex widgets)
+        for sl in self.findChildren(RZSmartSlider):
+            sl.apply_theme()
+
+        # 3. Update Color Button
+        if hasattr(self, 'btn_color'):
+            self.btn_color.update_style()
+
     def enterEvent(self, event):
         RZContextManager.get_instance().update_input(
             QtGui.QCursor.pos(), (0.0, 0.0), area="INSPECTOR"

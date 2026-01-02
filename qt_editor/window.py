@@ -181,17 +181,29 @@ class RZMEditorWindow(QtWidgets.QWidget):
         Slot to hot-reload the theme for the main window and its children.
         Triggered by the Preferences dialog.
         """
+        # 1. Apply global CSS (handles standard widgets like QWidget, QPushButton bg)
         self.setStyleSheet(qss)
-        
-        # Обновляем специфичные виджеты, которые кэшируют кисти или стили
-        # Например Viewport использует QGraphicsScene с закешированными Brush/Pen
-        self.panel_viewport.rz_scene._init_background() # Re-read theme colors
-        self.panel_viewport.rz_scene.update()           # Force redraw
-        
-        # Перерисовываем футер (он меняет цвета динамически в коде)
+
+        # 2. Viewport: Re-read theme colors for custom GraphicsItems
+        self.panel_viewport.rz_scene._init_background() # Re-read theme colors (bg brush)
+        self.panel_viewport.rz_scene.update()           # Force redraw of items
+
+        # 3. Viewport Border & Footer Text (Dynamic code-based styling)
+        # Calling this refreshes the context-based coloring (border and labels)
         self.on_context_area_changed()
-        
-        # Принудительно обновляем вьюпорт (хендлы, сетки)
+
+        # 4. Inspector: Force update of sliders and inputs
+        if hasattr(self, 'panel_inspector'):
+            self.panel_inspector.update_theme_styles()
+
+        # 5. Outliner: Force update of tree widget
+        if hasattr(self, 'panel_outliner'):
+            self.panel_outliner.update_theme_styles()
+
+        # 6. Preferences Dialog (if open and accessible)
+        # The dialog updates itself internally via its own signals, so we are good here.
+
+        # 7. Force Viewport Handles update
         self.refresh_viewport(force=True)
 
     # -------------------------------------------------------------------------
