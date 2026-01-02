@@ -9,9 +9,6 @@ from ..conf.manager import get_config, set_config_value
 from ..core.signals import SIGNALS
 
 class RZFilePicker(QtWidgets.QWidget):
-    """
-    Widget to select a file path.
-    """
     pathChanged = QtCore.Signal(str)
 
     def __init__(self, parent=None):
@@ -45,9 +42,6 @@ class RZFilePicker(QtWidgets.QWidget):
 
 
 class RZSidebarItem(QtWidgets.QPushButton):
-    """
-    Стилизованная кнопка для бокового меню.
-    """
     def __init__(self, text, icon_name=None, parent=None):
         super().__init__(text, parent)
         self.setCheckable(True)
@@ -89,9 +83,6 @@ class RZSidebarItem(QtWidgets.QPushButton):
 
 
 class RZAppearancePanel(QtWidgets.QWidget):
-    """
-    Панель внешнего вида. Динамический редактор цветов.
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
@@ -103,18 +94,14 @@ class RZAppearancePanel(QtWidgets.QWidget):
         l_sel = QtWidgets.QHBoxLayout(grp_selector)
         
         self.combo_themes = RZComboBox()
-        # Загружаем список доступных тем
-        themes = get_theme_manager()._themes.keys() # Access keys directly for now
+        themes = get_theme_manager().get_available_themes()
         self.combo_themes.addItems(list(themes))
         
-        # Читаем из конфига
         cfg = get_config()
         current_theme_key = cfg.get("appearance", {}).get("theme", "dark")
         
-        # Устанавливаем в UI
         index = self.combo_themes.findText(current_theme_key, QtCore.Qt.MatchFixedString | QtCore.Qt.MatchCaseSensitive)
-        if index < 0: 
-             # Try case-insensitive lookup
+        if index < 0:
              for i in range(self.combo_themes.count()):
                  if self.combo_themes.itemText(i).lower() == current_theme_key.lower():
                      index = i
@@ -129,7 +116,7 @@ class RZAppearancePanel(QtWidgets.QWidget):
         l_sel.addStretch()
         layout.addWidget(grp_selector)
         
-        # --- DYNAMIC COLOR EDITOR ---
+        # --- DYNAMIC EDITOR ---
         self.scroll_area = QtWidgets.QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
@@ -156,17 +143,14 @@ class RZAppearancePanel(QtWidgets.QWidget):
         btn_layout.addWidget(self.btn_save_copy)
         layout.addLayout(btn_layout)
 
-        # Build the UI based on current theme data
         self._build_editor_ui()
 
     def _on_theme_changed(self, text):
         theme_key = text
         set_config_value("appearance", "theme", theme_key)
-        # Rebuild UI to reflect new theme values
         self._build_editor_ui()
 
     def _build_editor_ui(self):
-        # Clear previous UI
         while self.editor_layout.count():
             item = self.editor_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
@@ -183,16 +167,18 @@ class RZAppearancePanel(QtWidgets.QWidget):
         self.combo_bg_type.addItems(["Solid Color", "Image"])
         
         self.file_picker = RZFilePicker()
+        bg_type = theme.get("bg_type", "solid")
         bg_image_path = theme.get("bg_image", "")
         
-        if bg_image_path:
+        # Sync UI state with Data state
+        if bg_type == "image":
             self.combo_bg_type.setCurrentText("Image")
-            self.file_picker.set_path(bg_image_path)
             self.file_picker.setVisible(True)
         else:
             self.combo_bg_type.setCurrentText("Solid Color")
-            self.file_picker.set_path("")
             self.file_picker.setVisible(False)
+            
+        self.file_picker.set_path(bg_image_path)
             
         self.combo_bg_type.currentTextChanged.connect(self._on_bg_type_changed)
         self.file_picker.pathChanged.connect(self._on_bg_image_changed)
@@ -203,19 +189,14 @@ class RZAppearancePanel(QtWidgets.QWidget):
         
         # Categorize keys
         categories = {
-            "Backgrounds": [],
-            "Text & Typography": [],
-            "Borders": [],
-            "Accents": [],
-            "Viewport": [],
-            "Context": [],
-            "Special": [],
-            "Misc": []
+            "Backgrounds": [], "Text & Typography": [], "Borders": [],
+            "Accents": [], "Viewport": [], "Context": [], "Special": [], "Misc": []
         }
         
         sorted_keys = sorted(theme.keys())
         for key in sorted_keys:
-            if key in ["name", "bg_image"]: continue # Skip metadata and special keys
+            if key in ["name", "id", "author", "bg_image", "bg_type", "panel_opacity", "overlay_color", "overlay_opacity", "_root_path"]: 
+                continue 
             
             if key.startswith("bg_"): categories["Backgrounds"].append(key)
             elif key.startswith("text_"): categories["Text & Typography"].append(key)
@@ -226,128 +207,111 @@ class RZAppearancePanel(QtWidgets.QWidget):
             elif key in ["selection", "warning", "error", "success"]: categories["Special"].append(key)
             else: categories["Misc"].append(key)
             
-        # Create GroupBoxes
         for cat_name, keys in categories.items():
             if not keys: continue
-            
             grp = RZGroupBox(cat_name)
             form = QtWidgets.QFormLayout(grp)
             form.setLabelAlignment(QtCore.Qt.AlignLeft)
             form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
             
             for key in keys:
-                # Color Button
                 val = theme[key]
-                # Filter out non-colors if any exist in json
                 if not isinstance(val, str) or (not val.startswith("#") and not val.startswith("rgba")):
-                     # Could be an image path or number, skip for now
                      continue
 
                 btn = RZColorButton()
-                btn.set_color(val) # Now safe to pass string!
+                btn.set_color(val)
                 btn.setFixedHeight(25)
-                
-                # Connect change signal
-                # btn emits [r, g, b, a] list. We need to convert back to hex/rgba string for config.
                 btn.colorChanged.connect(lambda col_list, k=key: self._on_color_modified(k, col_list))
                 
                 lbl = RZLabel(key.replace("_", " ").title())
                 form.addRow(lbl, btn)
             
             self.editor_layout.addWidget(grp)
-            
         self.editor_layout.addStretch()
 
     def _on_bg_type_changed(self, text):
         theme = get_current_theme()
-        if text == "Solid Color":
-            self.file_picker.setVisible(False)
-            theme["bg_image"] = ""
-        else:
-            self.file_picker.setVisible(True)
-            
-        self._on_color_modified(None, None)
-
+        new_type = "solid" if text == "Solid Color" else "image"
+        print(f"[DEBUG-THEME] UI: Background Type changed to {new_type}") # [DEBUG-THEME]
+        
+        # Update Data
+        theme["bg_type"] = new_type
+        
+        # Update UI visibility
+        self.file_picker.setVisible(new_type == "image")
+        
+        # Force Refresh
+        self._trigger_global_refresh()
+  
     def _on_bg_image_changed(self, path):
         theme = get_current_theme()
+        print(f"[DEBUG-THEME] UI: Background Image path changed to {path}") # [DEBUG-THEME]
         theme["bg_image"] = path
-        self._on_color_modified(None, None)
+        theme["bg_type"] = "image" # Auto-switch to image mode
+        
+        # Sync Combo UI
+        self.combo_bg_type.blockSignals(True)
+        self.combo_bg_type.setCurrentText("Image")
+        self.combo_bg_type.blockSignals(False)
+        self.file_picker.setVisible(True)
+        
+        self._trigger_global_refresh()
 
     def _on_color_modified(self, key, color_list):
         if key is not None:
-            # Convert [r, g, b, a] to Hex String
-            # Using QColor helper
             c = QtGui.QColor()
             c.setRgbF(color_list[0], color_list[1], color_list[2], color_list[3])
             
-            # If alpha is 1, use simple Hex, else HexArgb or rgba string
             if color_list[3] >= 0.99:
-                new_val = c.name() # #RRGGBB
+                new_val = c.name() 
             else:
                 new_val = c.name(QtGui.QColor.HexArgb) # #AARRGGBB
                 
-            # 1. Update In-Memory Theme (Hack for instant preview)
             get_current_theme()[key] = new_val
         
-        # 2. Trigger Global Refresh
-        # Since we modified the dict in place, generating stylesheet will pick it up.
+        self._trigger_global_refresh()
+
+    def _trigger_global_refresh(self):
         new_qss = generate_stylesheet()
-        
-        # Find parent dialog and ask for update
         parent_dlg = self.window()
         if hasattr(parent_dlg, 'req_global_stylesheet_update'):
              parent_dlg.req_global_stylesheet_update.emit(new_qss)
-             # Also Force update self to see result immediately
              parent_dlg.update_deep_style()
 
     def _on_save_clicked(self):
-        """Saves current theme changes to its JSON file."""
         theme_id = self.combo_themes.currentText().lower()
         theme_data = get_current_theme()
-        
-        # Check if it's a built-in theme (they shouldn't be overwritten in user_data ideally, 
-        # but the manager will save them to user_data/themes/ which takes precedence)
         get_theme_manager().save_theme(theme_id, theme_data)
-        QtWidgets.QMessageBox.information(self, "Theme Saved", f"Theme '{theme_id}' has been saved to your user themes.")
+        QtWidgets.QMessageBox.information(self, "Theme Saved", f"Theme '{theme_id}' saved.")
 
     def _on_save_copy_clicked(self):
-        """Creates a new theme from current settings."""
         new_name, ok = QtWidgets.QInputDialog.getText(
             self, "Save Theme Copy", 
-            "Enter name for the new theme:",
+            "Enter name:",
             text=self.combo_themes.currentText() + "_Copy"
         )
-        
         if ok and new_name:
             theme_id = new_name.lower().replace(" ", "_")
             theme_data = get_current_theme()
-            
-            # 1. Save to disk
             get_theme_manager().save_theme(theme_id, theme_data)
             
-            # 2. Refresh Combo Box
             self.combo_themes.blockSignals(True)
             self.combo_themes.clear()
             themes = get_theme_manager().get_available_themes()
             self.combo_themes.addItems(list(themes))
             
-            # Select the new theme
             index = self.combo_themes.findText(theme_id, QtCore.Qt.MatchFixedString)
             if index >= 0:
                 self.combo_themes.setCurrentIndex(index)
             self.combo_themes.blockSignals(False)
             
-            # 3. Update Config
             set_config_value("appearance", "theme", theme_id)
-            
-            QtWidgets.QMessageBox.information(self, "Theme Created", f"Theme '{new_name}' created and set as active.")
+            QtWidgets.QMessageBox.information(self, "Theme Created", f"Theme '{new_name}' created.")
 
 
 class RZPreferencesDialog(QtWidgets.QDialog):
-    """
-    Главное окно настроек. Слушает глобальный сигнал конфигурации для самообновления.
-    """
-    req_global_stylesheet_update = QtCore.Signal(str) # For window.py
+    req_global_stylesheet_update = QtCore.Signal(str) 
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -355,40 +319,33 @@ class RZPreferencesDialog(QtWidgets.QDialog):
         self.resize(900, 700)
         self.setObjectName("RZPreferencesDialog") 
         
-        # Main Layout
         main_layout = QtWidgets.QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # Left: Sidebar
         self.sidebar_container = QtWidgets.QWidget()
         self.sidebar_layout = QtWidgets.QVBoxLayout(self.sidebar_container)
         self.sidebar_layout.setContentsMargins(0, 10, 0, 10)
         self.sidebar_layout.setSpacing(2)
         self.sidebar_layout.setAlignment(QtCore.Qt.AlignTop)
         
-        # Right: Stack
         self.content_stack = QtWidgets.QStackedWidget()
         
         main_layout.addWidget(self.sidebar_container, 1) 
-        main_layout.addWidget(self.content_stack, 4) # More space for content
+        main_layout.addWidget(self.content_stack, 4) 
         
         self._setup_panels()
         self.update_style()
         
-        # Подписываемся на глобальные изменения конфига (например, если сменили тему извне)
         SIGNALS.config_changed.connect(self.on_global_config_changed)
 
     def _setup_panels(self):
-        # 1. Appearance
         self.panel_appearance = RZAppearancePanel(self)
         self._add_tab("Appearance", self.panel_appearance)
         
-        # 2. Keymap
         self.panel_keymap = RZKeymapPanel(self)
         self._add_tab("Keybinding", self.panel_keymap)
         
-        # 3. Dummy
         self._add_tab("System", QtWidgets.QLabel("System settings placeholder..."))
         
         if self.sidebar_layout.count() > 0:
@@ -406,9 +363,7 @@ class RZPreferencesDialog(QtWidgets.QDialog):
             self.update_deep_style()
 
     def update_deep_style(self):
-        """Aggressive style refresh for the dialog itself."""
         self.update_style()
-
         for i in range(self.sidebar_layout.count()):
             w = self.sidebar_layout.itemAt(i).widget()
             if isinstance(w, RZSidebarItem):
@@ -417,15 +372,12 @@ class RZPreferencesDialog(QtWidgets.QDialog):
         all_widgets = self.findChildren(QtWidgets.QWidget)
         for widget in all_widgets:
             if isinstance(widget, RZSidebarItem): continue
-
             if hasattr(widget, 'apply_theme') and callable(widget.apply_theme):
                 widget.apply_theme()
                 widget.style().unpolish(widget)
                 widget.style().polish(widget)
-                
             if isinstance(widget, RZColorButton):
                  widget.update_style()
-
             if hasattr(widget, 'spin') and hasattr(widget, 'label') and hasattr(widget, 'apply_theme'):
                 widget.apply_theme()
 

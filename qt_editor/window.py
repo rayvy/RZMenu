@@ -17,6 +17,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.setObjectName("RZMEditorWindow")
         self.setWindowTitle("RZMenu Editor (Context Driven)")
         self.resize(1100, 600)
+
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         
         # --- THEME & STYLING ---
         self.setStyleSheet(theme.generate_stylesheet())
