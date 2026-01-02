@@ -8,6 +8,42 @@ from .keymap_editor import RZKeymapPanel
 from ..conf.manager import get_config, set_config_value
 from ..core.signals import SIGNALS
 
+class RZFilePicker(QtWidgets.QWidget):
+    """
+    Widget to select a file path.
+    """
+    pathChanged = QtCore.Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        self.line_edit = QtWidgets.QLineEdit()
+        self.line_edit.setReadOnly(True)
+        self.line_edit.setPlaceholderText("Select image...")
+
+        self.btn_browse = QtWidgets.QPushButton("...")
+        self.btn_browse.setFixedWidth(30)
+        self.btn_browse.clicked.connect(self._on_browse)
+
+        layout.addWidget(self.line_edit)
+        layout.addWidget(self.btn_browse)
+
+    def set_path(self, path):
+        self.line_edit.setText(path or "")
+
+    def _on_browse(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Select Background Image", "", 
+            "Images (*.png *.jpg *.jpeg *.gif);;All Files (*)"
+        )
+        if path:
+            self.set_path(path)
+            self.pathChanged.emit(path)
+
+
 class RZSidebarItem(QtWidgets.QPushButton):
     """
     Стилизованная кнопка для бокового меню.
@@ -106,6 +142,20 @@ class RZAppearancePanel(QtWidgets.QWidget):
         self.scroll_area.setWidget(self.editor_content)
         layout.addWidget(self.scroll_area)
         
+        # --- BOTTOM BUTTONS ---
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.btn_save = QtWidgets.QPushButton("Save Theme")
+        self.btn_save.setFixedHeight(30)
+        self.btn_save_copy = QtWidgets.QPushButton("Save Copy As...")
+        self.btn_save_copy.setFixedHeight(30)
+        
+        self.btn_save.clicked.connect(self._on_save_clicked)
+        self.btn_save_copy.clicked.connect(self._on_save_copy_clicked)
+        
+        btn_layout.addWidget(self.btn_save)
+        btn_layout.addWidget(self.btn_save_copy)
+        layout.addLayout(btn_layout)
+
         # Build the UI based on current theme data
         self._build_editor_ui()
 
@@ -123,6 +173,34 @@ class RZAppearancePanel(QtWidgets.QWidget):
 
         theme = get_current_theme()
         
+        # --- Window Background Group ---
+        grp_bg = RZGroupBox("Window Background")
+        form_bg = QtWidgets.QFormLayout(grp_bg)
+        form_bg.setLabelAlignment(QtCore.Qt.AlignLeft)
+        form_bg.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
+        
+        self.combo_bg_type = RZComboBox()
+        self.combo_bg_type.addItems(["Solid Color", "Image"])
+        
+        self.file_picker = RZFilePicker()
+        bg_image_path = theme.get("bg_image", "")
+        
+        if bg_image_path:
+            self.combo_bg_type.setCurrentText("Image")
+            self.file_picker.set_path(bg_image_path)
+            self.file_picker.setVisible(True)
+        else:
+            self.combo_bg_type.setCurrentText("Solid Color")
+            self.file_picker.set_path("")
+            self.file_picker.setVisible(False)
+            
+        self.combo_bg_type.currentTextChanged.connect(self._on_bg_type_changed)
+        self.file_picker.pathChanged.connect(self._on_bg_image_changed)
+        
+        form_bg.addRow(RZLabel("Background Type:"), self.combo_bg_type)
+        form_bg.addRow(RZLabel("Image Path:"), self.file_picker)
+        self.editor_layout.addWidget(grp_bg)
+        
         # Categorize keys
         categories = {
             "Backgrounds": [],
@@ -137,7 +215,7 @@ class RZAppearancePanel(QtWidgets.QWidget):
         
         sorted_keys = sorted(theme.keys())
         for key in sorted_keys:
-            if key == "name": continue
+            if key in ["name", "bg_image"]: continue # Skip metadata and special keys
             
             if key.startswith("bg_"): categories["Backgrounds"].append(key)
             elif key.startswith("text_"): categories["Text & Typography"].append(key)
@@ -180,27 +258,38 @@ class RZAppearancePanel(QtWidgets.QWidget):
             
         self.editor_layout.addStretch()
 
-    def _on_color_modified(self, key, color_list):
-        # Convert [r, g, b, a] to Hex String
-        # Using QColor helper
-        c = QtGui.QColor()
-        c.setRgbF(color_list[0], color_list[1], color_list[2], color_list[3])
-        
-        # If alpha is 1, use simple Hex, else HexArgb or rgba string
-        if color_list[3] >= 0.99:
-            new_val = c.name() # #RRGGBB
+    def _on_bg_type_changed(self, text):
+        theme = get_current_theme()
+        if text == "Solid Color":
+            self.file_picker.setVisible(False)
+            theme["bg_image"] = ""
         else:
-            new_val = c.name(QtGui.QColor.HexArgb) # #AARRGGBB
+            self.file_picker.setVisible(True)
             
-        # 1. Update In-Memory Theme (Hack for instant preview)
-        get_current_theme()[key] = new_val
+        self._on_color_modified(None, None)
+
+    def _on_bg_image_changed(self, path):
+        theme = get_current_theme()
+        theme["bg_image"] = path
+        self._on_color_modified(None, None)
+
+    def _on_color_modified(self, key, color_list):
+        if key is not None:
+            # Convert [r, g, b, a] to Hex String
+            # Using QColor helper
+            c = QtGui.QColor()
+            c.setRgbF(color_list[0], color_list[1], color_list[2], color_list[3])
+            
+            # If alpha is 1, use simple Hex, else HexArgb or rgba string
+            if color_list[3] >= 0.99:
+                new_val = c.name() # #RRGGBB
+            else:
+                new_val = c.name(QtGui.QColor.HexArgb) # #AARRGGBB
+                
+            # 1. Update In-Memory Theme (Hack for instant preview)
+            get_current_theme()[key] = new_val
         
         # 2. Trigger Global Refresh
-        # We need a way to say "Theme data changed, please repaint" without saving to disk every ms
-        # For now, let's allow it to repaint.
-        # Ideally, we should have a "Dirty" state and save later. 
-        # But to keep it simple, we just emit the signal.
-        
         # Since we modified the dict in place, generating stylesheet will pick it up.
         new_qss = generate_stylesheet()
         
@@ -210,6 +299,48 @@ class RZAppearancePanel(QtWidgets.QWidget):
              parent_dlg.req_global_stylesheet_update.emit(new_qss)
              # Also Force update self to see result immediately
              parent_dlg.update_deep_style()
+
+    def _on_save_clicked(self):
+        """Saves current theme changes to its JSON file."""
+        theme_id = self.combo_themes.currentText().lower()
+        theme_data = get_current_theme()
+        
+        # Check if it's a built-in theme (they shouldn't be overwritten in user_data ideally, 
+        # but the manager will save them to user_data/themes/ which takes precedence)
+        get_theme_manager().save_theme(theme_id, theme_data)
+        QtWidgets.QMessageBox.information(self, "Theme Saved", f"Theme '{theme_id}' has been saved to your user themes.")
+
+    def _on_save_copy_clicked(self):
+        """Creates a new theme from current settings."""
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self, "Save Theme Copy", 
+            "Enter name for the new theme:",
+            text=self.combo_themes.currentText() + "_Copy"
+        )
+        
+        if ok and new_name:
+            theme_id = new_name.lower().replace(" ", "_")
+            theme_data = get_current_theme()
+            
+            # 1. Save to disk
+            get_theme_manager().save_theme(theme_id, theme_data)
+            
+            # 2. Refresh Combo Box
+            self.combo_themes.blockSignals(True)
+            self.combo_themes.clear()
+            themes = get_theme_manager().get_available_themes()
+            self.combo_themes.addItems(list(themes))
+            
+            # Select the new theme
+            index = self.combo_themes.findText(theme_id, QtCore.Qt.MatchFixedString)
+            if index >= 0:
+                self.combo_themes.setCurrentIndex(index)
+            self.combo_themes.blockSignals(False)
+            
+            # 3. Update Config
+            set_config_value("appearance", "theme", theme_id)
+            
+            QtWidgets.QMessageBox.information(self, "Theme Created", f"Theme '{new_name}' created and set as active.")
 
 
 class RZPreferencesDialog(QtWidgets.QDialog):

@@ -2,6 +2,7 @@
 import os
 import json
 import copy
+import shutil
 from ....conf import get_config
 from . import definitions
 from .generator import generate_qss
@@ -113,3 +114,103 @@ class ThemeManager:
         """
         theme_dict = self.get_theme(name)
         return generate_qss(theme_dict)
+
+    def save_theme(self, theme_id, flat_data):
+        """
+        Persists the theme data to a JSON file in user_data/themes/.
+        Reconstructs the structured format and handles asset copying.
+        """
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+        themes_dir = os.path.join(base_dir, "user_data", "themes")
+        
+        theme_id = theme_id.lower().replace(" ", "_")
+        target_dir = os.path.join(themes_dir, theme_id)
+        os.makedirs(target_dir, exist_ok=True)
+        
+        json_path = os.path.join(target_dir, "theme.json")
+        
+        # 1. Initialize Meta with defaults or existing values
+        meta = {
+            "id": theme_id,
+            "name": theme_id.replace("_", " ").title(),
+            "author": "User"
+        }
+        
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    old_data = json.load(f)
+                    for key in ["id", "name", "author"]:
+                        if key in old_data:
+                            meta[key] = old_data[key]
+            except Exception as e:
+                print(f"RZMenu: Error reading existing theme meta: {e}")
+
+        # 2. Separate Flat Data into Structured Categories
+        colors = {}
+        styles = {}
+        
+        color_prefixes = ("bg_", "text_", "border_", "vp_", "ctx_")
+        special_colors = ("selection", "warning", "error", "success", "accent")
+        
+        for key, val in flat_data.items():
+            if key == "name": continue
+            
+            # Handle bg_image specifically (Asset management)
+            if key == "bg_image":
+                if val and os.path.exists(val):
+                    # Check if file is outside the theme folder
+                    assets_dir = os.path.join(target_dir, "assets")
+                    abs_val = os.path.abspath(val)
+                    
+                    if not abs_val.startswith(os.path.abspath(target_dir)):
+                        os.makedirs(assets_dir, exist_ok=True)
+                        filename = os.path.basename(val)
+                        new_path = os.path.join(assets_dir, filename)
+                        try:
+                            shutil.copy2(val, new_path)
+                            styles[key] = f"assets/{filename}"
+                        except Exception as e:
+                            print(f"RZMenu: Failed to copy asset {val}: {e}")
+                            styles[key] = val # Fallback
+                    else:
+                        # Already in theme folder, make relative if possible
+                        if "assets" in abs_val:
+                            styles[key] = f"assets/{os.path.basename(val)}"
+                        else:
+                            styles[key] = val
+                else:
+                    styles[key] = val
+                continue
+
+            # Categorize everything else
+            is_color = any(key.startswith(p) for p in color_prefixes) or \
+                       any(s in key for s in special_colors)
+            
+            if is_color:
+                colors[key] = val
+            else:
+                # If it's not a known color prefix, put it in colors as fallback
+                # unless it's a structural key we want to skip
+                colors[key] = val
+
+        # 3. Construct Final JSON Structure
+        output = {
+            "id": meta["id"],
+            "name": meta["name"],
+            "author": meta["author"],
+            "colors": colors,
+            "styles": styles
+        }
+        
+        # 4. Write to File
+        try:
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(output, f, indent=4)
+            
+            # 5. Reload Themes to update internal state
+            self.load_user_themes()
+            print(f"RZMenu: Theme '{theme_id}' saved successfully to {json_path}")
+            
+        except Exception as e:
+            print(f"RZMenu: Failed to save theme: {e}")
