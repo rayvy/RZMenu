@@ -65,41 +65,40 @@ graph TD
     User[User Interaction] -->|Visual Edit| Qt[Qt Editor]
     Qt -->|Update| Blender[Blender Data]
     Blender -->|One-Click Export| Compiler[Logic Compiler]
-    Compiler -->|Inject| Ini[.ini Config File]
-    Ini -->|Play| Game[Game Runtime (Zero Deps)]
-📦 Installation
+    Compiler -->|Inject| Ini[ini Config File]
+    Ini -->|Play| Game[Game Runtime - Zero Deps]
+```
+
+---
+
+## 📦 Installation
+
 RZM is designed to be effortless.
 
-Download the latest release .zip.
+1. Download the latest release `.zip`.
+2. Open Blender -> **Edit** -> **Preferences** -> **Add-ons**.
+3. Click **Install...** and select the zip file.
+4. Enable the addon.
+5. RZM automatically handles environment setup and PySide6 dependencies.
 
-Open Blender -> Edit -> Preferences -> Add-ons.
+## 🖼 Gallery
 
-Click Install... and select the zip file.
+### The Qt Editor
+![Qt Editor Screenshot](https://placehold.co/600x400?text=Qt+Editor+Screenshot)
 
-Enable the addon.
+*(Replace the link above with your actual screenshot)*
+*(R: nah, later)*
 
-RZM automatically handles environment setup and PySide6 dependencies.
+### The Workflow
+![Workflow Screenshot](https://placehold.co/600x400?text=Workflow+Screenshot)
+*(Replace the link above with your actual screenshot)*
 
-🖼 Gallery
-The Qt Editor
-[Insert Screenshot of your custom PySide Window here]
+---
 
-The Workflow
-[Insert Screenshot showing the 'Autopilot' or Export process]
+## 🤝 Credits & Acknowledgements
 
-🤝 Credits & Acknowledgements
-Rayvich: Core Architect, UI/UX Design, Python Engineering.
+* **Rayvich:** Core Architect, UI/UX Design, Python Engineering.
+* **Zlevir:** For the original concept and permission that started this journey.
+* **Community:** The 100k+ modding community for feedback and testing.
 
-Zlevir: For the original concept and permission that started this journey.
-
-Community: The 100k+ modding community for feedback and testing.
-
-Project is currently in active development (v3.1 Beta).
-
-
-### Что изменилось:
-* **Badge:** Добавил `Output: Standalone / Zero Dep`. Это сразу говорит технарям: "О, мне не нужно будет объяснять юзерам, как ставить библиотеки".
-* **Smart Compilation:** Теперь это ключевое описание. Ты "компилируешь" сложное в простое.
-* **Direct Injection:** Описал процесс как "Встраивание", а не использование API.
-
-Теперь это звучит как мощный, профессиональный инструмент, который уважает время и созда
+> *Project is currently in active development (v3.1 Beta).*
