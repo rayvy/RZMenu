@@ -5,6 +5,10 @@ DEFAULT_CONFIG = {
         "version": "2.1.0",
         "ui_scale": 1.0,
     },
+    "appearance": {
+        "theme": "dark",        # dark, light, blue
+        "custom_bg_path": ""    # Задел на будущее
+    },
     "theme_fallback": {
         "bg_dark": "#1d1d1d",
         "bg_panel": "#2b2b2b",

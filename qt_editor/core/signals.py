@@ -1,4 +1,4 @@
-# RZMenu/qt_editor/signals.py
+# RZMenu/qt_editor/core/signals.py
 from PySide6.QtCore import QObject, Signal
 
 class RZSignalManager(QObject):
@@ -7,8 +7,12 @@ class RZSignalManager(QObject):
     data_changed = Signal()       # Props changed (Inspector)
     selection_changed = Signal()  # Selection changed
     
-    # NEW: Context/Hover Area changed (для мгновенного обновления футера)
+    # Context/Hover Area changed
     context_updated = Signal()
+
+    # NEW: Config/Theme changed
+    # Отправляет ключ изменившейся секции (например, "appearance")
+    config_changed = Signal(str) 
 
 SIGNALS = RZSignalManager()
 IS_UPDATING_FROM_QT = False

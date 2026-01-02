@@ -4,14 +4,12 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from . import core, actions
 from .systems import input_manager
-from .widgets import preferences # NEW IMPORT
+from .widgets import preferences
 from .widgets import outliner, inspector, viewport
 from .context import RZContextManager
 from .widgets.lib import theme
 from .widgets.lib.widgets import RZContextAwareWidget
-
-# RZContextContainer moved to widgets.lib.widgets as RZContextAwareWidget
-
+from .core.signals import SIGNALS
 
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -97,6 +95,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
         core.SIGNALS.selection_changed.connect(self.on_context_selection_changed)
         core.SIGNALS.context_updated.connect(self.on_context_area_changed)
+
+        # NEW: Global Config Listeners
+        SIGNALS.config_changed.connect(self.on_config_changed)
         
         # --- DEBUG OVERLAY ---
         self.setup_debug_overlay()
@@ -133,7 +134,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.toolbar_layout.addStretch()
         
         btn_settings = QtWidgets.QPushButton("Preferences")
-        btn_settings.setObjectName("BtnSpecial") # Use ID for special styling
+        btn_settings.setObjectName("BtnSpecial")
         btn_settings.clicked.connect(self.open_settings)
         self.toolbar_layout.addWidget(btn_settings)
 
@@ -150,7 +151,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.footer_layout.addWidget(self.lbl_last_op)
         
         self.footer_layout.addStretch()
-        self.on_context_area_changed() # Initial style update
+        self.on_context_area_changed() 
 
     # --- FOOTER UPDATES ---
     def on_context_area_changed(self):
@@ -167,59 +168,52 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.lbl_last_op.setText(f"Last Op: {op_name}")
 
     def open_settings(self):
-        # UPDATED: Now opens the full Preferences Dialog
+        # Открываем диалог. Он сам подпишется на сигналы.
         dlg = preferences.RZPreferencesDialog(self)
-        
-        # DIRTY HACK connection:
-        # При смене темы в диалоге мы получаем готовый QSS и применяем его ко всему окну
-        dlg.req_global_stylesheet_update.connect(self.apply_global_theme)
-        
         dlg.exec() 
+
+    def on_config_changed(self, section):
+        """Реакция на глобальное изменение конфига."""
+        if section == "appearance":
+            # Перегенерируем QSS на основе нового состояния конфига
+            qss = theme.generate_stylesheet()
+            self.apply_global_theme(qss)
 
     def apply_global_theme(self, qss):
         """
-        Slot to hot-reload the theme for the main window and its children.
-        Triggered by the Preferences dialog.
+        Deep update of the Main Window.
         """
-        # 1. Apply global CSS (handles standard widgets like QWidget, QPushButton bg)
         self.setStyleSheet(qss)
 
-        # 2. Viewport: Re-read theme colors for custom GraphicsItems
-        self.panel_viewport.rz_scene._init_background() # Re-read theme colors (bg brush)
-        self.panel_viewport.rz_scene.update()           # Force redraw of items
+        # 2. Viewport
+        self.panel_viewport.rz_scene._init_background()
+        self.panel_viewport.rz_scene.update()
 
-        # 3. Viewport Border & Footer Text (Dynamic code-based styling)
-        # Calling this refreshes the context-based coloring (border and labels)
+        # 3. Footer
         self.on_context_area_changed()
 
-        # 4. Inspector: Force update of sliders and inputs
+        # 4. Inspector
         if hasattr(self, 'panel_inspector'):
             self.panel_inspector.update_theme_styles()
 
-        # 5. Outliner: Force update of tree widget
+        # 5. Outliner
         if hasattr(self, 'panel_outliner'):
             self.panel_outliner.update_theme_styles()
 
-        # 6. Preferences Dialog (if open and accessible)
-        # The dialog updates itself internally via its own signals, so we are good here.
-
-        # 7. Force Viewport Handles update
+        # 6. Viewport Handles
         self.refresh_viewport(force=True)
 
     # -------------------------------------------------------------------------
     # SELECTION & CONTEXT HANDLERS
     # -------------------------------------------------------------------------
-
+    # (Остальной код без изменений)
     def on_context_selection_changed(self):
         ctx = RZContextManager.get_instance().get_snapshot()
-        
         self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
-        
         if hasattr(self.panel_viewport.rz_scene, 'update_selection_visuals'):
             self.panel_viewport.rz_scene.update_selection_visuals(ctx.selected_ids, ctx.active_id)
         else:
             self.refresh_viewport(force=False)
-            
         self.refresh_inspector()
         self.action_manager.update_ui_state()
 
@@ -231,7 +225,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         current_selection = set(ctx.selected_ids)
         new_selection = current_selection.copy()
         new_active = -1
-
         if isinstance(target_data, list):
             items_ids = set(target_data)
             if modifiers == 'SHIFT': new_selection.update(items_ids)
@@ -259,10 +252,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
                     new_active = clicked_id
         RZContextManager.get_instance().set_selection(new_selection, new_active)
 
-    # -------------------------------------------------------------------------
-    # LOGIC HANDLERS
-    # -------------------------------------------------------------------------
-
     def on_reorder(self, target_id, insert_after_id):
         core.reorder_elements(target_id, insert_after_id)
 
@@ -287,10 +276,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         ctx = RZContextManager.get_instance().get_snapshot()
         core.update_property_multi(ctx.selected_ids, key, val, idx)
 
-    # -------------------------------------------------------------------------
-    # REFRESH
-    # -------------------------------------------------------------------------
-
     def refresh_outliner(self):
         data = core.get_all_elements_list()
         ctx = RZContextManager.get_instance().get_snapshot()
@@ -307,9 +292,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
         self.panel_inspector.update_ui(details)
     
-    # -------------------------------------------------------------------------
-    # DEBUG OVERLAY
-    # -------------------------------------------------------------------------
     def setup_debug_overlay(self):
         t = theme.get_current_theme()
         self.debug_label = QtWidgets.QLabel(self)
@@ -323,10 +305,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         """)
         self.debug_label.setVisible(False)
         self.debug_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents) 
-        
         self.debug_timer = QtCore.QTimer(self)
         self.debug_timer.timeout.connect(self._update_debug_text)
-
         self.debug_label.move(10, self.height() - 120) 
         self.debug_label.resize(300, 110)
 

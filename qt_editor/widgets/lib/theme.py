@@ -1,10 +1,9 @@
 # RZMenu/qt_editor/widgets/lib/theme.py
-import bpy
 from ...utils import logger
 from ...conf import get_config
 
 # -----------------------------------------------------------------------------
-# Theme Dictionaries
+# Theme Dictionaries (Палитры остаются без изменений)
 # -----------------------------------------------------------------------------
 
 THEME_DARK = {
@@ -189,7 +188,9 @@ THEME_BLUE = {
 # -----------------------------------------------------------------------------
 
 class ThemeManager:
-    """Manages color themes and generates Qt stylesheets."""
+    """
+    Stateless manager. Colors are retrieved based on the Global Config.
+    """
     
     def __init__(self):
         self._themes = {
@@ -197,23 +198,20 @@ class ThemeManager:
             "light": THEME_LIGHT,
             "blue": THEME_BLUE,
         }
-        self._current_theme_name = "dark"
-        self._current_theme_dict = self._themes[self._current_theme_name]
 
     def set_theme(self, name: str):
-        """Sets the active theme by name ('dark' or 'light')."""
-        if name in self._themes:
-            self._current_theme_name = name
-            self._current_theme_dict = self._themes[name]
-        else:
-            logger.warn(f"Theme '{name}' not found. Using '{self._current_theme_name}'.")
+        """Deprecated for direct use. Use ConfigManager.set_value instead."""
+        pass 
 
     def get_theme(self) -> dict:
-        """Returns the dictionary of the currently active theme."""
-        return self._current_theme_dict
+        """Fetch current theme based on ConfigManager."""
+        cfg = get_config()
+        # Safe access to nested dict
+        theme_name = cfg.get("appearance", {}).get("theme", "dark")
+        return self._themes.get(theme_name, self._themes["dark"])
 
     def generate_stylesheet(self) -> str:
-        """Generates a full QSS string for the application based on the current theme."""
+        """Generates a full QSS string based on the CURRENT config theme."""
         t = self.get_theme()
         
         return f"""
@@ -365,10 +363,8 @@ class ThemeManager:
 # Singleton Instance
 # -----------------------------------------------------------------------------
 
-# A single instance of the manager to be used across the application
 THEME_MANAGER = ThemeManager()
 
-# Helper function for easy access
 def get_theme_manager() -> ThemeManager:
     return THEME_MANAGER
 
