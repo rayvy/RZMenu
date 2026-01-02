@@ -5,8 +5,8 @@ import json
 import copy
 from ..utils import logger
 from .defaults import DEFAULT_CONFIG
+from ..core.signals import SIGNALS # NEW IMPORT
 
-# Имя файла пользовательских настроек
 CONFIG_FILENAME = "user_config.json"
 
 class ConfigManager:
@@ -23,11 +23,15 @@ class ConfigManager:
             cls._config_cache = cls._load_config()
         return cls._config_cache
 
+    # ... (get_user_dir и _load_config оставляем без изменений, они хорошие) ...
+    # Единственное, в _load_config внутри блока try/except можно оставить всё как есть,
+    # так как _deep_update корректно сольет новые дефолты appearance с пустотой юзера.
+    
     @classmethod
     def get_user_dir(cls):
         """Возвращает путь к папке настроек внутри аддона"""
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        root_dir = os.path.dirname(os.path.dirname(current_dir)) # Выходим в корень RZMenu
+        root_dir = os.path.dirname(os.path.dirname(current_dir)) 
         data_dir = os.path.join(root_dir, "user_data")
         
         if not os.path.exists(data_dir):
@@ -40,14 +44,11 @@ class ConfigManager:
 
     @classmethod
     def _load_config(cls):
-        """Загрузка: Default + User Override с очисткой дубликатов"""
-        # 1. Берем глубокую копию дефолта
+        # ... (Код загрузки оставляем старый, он рабочий) ...
+        # (Вставь сюда код из предыдущего твоего файла manager.py, он корректен)
         final_config = copy.deepcopy(DEFAULT_CONFIG)
-        
-        # 2. Ищем пользовательский JSON
         user_dir = cls.get_user_dir()
-        if not user_dir:
-            return final_config
+        if not user_dir: return final_config
 
         config_path = os.path.join(user_dir, CONFIG_FILENAME)
         
@@ -92,24 +93,44 @@ class ConfigManager:
 
     @classmethod
     def _deep_update(cls, base_dict, update_dict):
-        """Рекурсивное обновление словаря"""
         for key, value in update_dict.items():
             if isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
                 cls._deep_update(base_dict[key], value)
             else:
                 base_dict[key] = value
-                
+
+    @classmethod
+    def set_value(cls, section, key, value):
+        """
+        NEW: Устанавливает значение в конфиг и сохраняет его.
+        Пример: set_value("appearance", "theme", "light")
+        """
+        cfg = cls.get()
+        if section not in cfg:
+            cfg[section] = {}
+        
+        if cfg[section].get(key) == value:
+            return # No change
+
+        cfg[section][key] = value
+        cls.save_config() # Auto-save on change
+        
+        # Уведомляем систему
+        SIGNALS.config_changed.emit(section)
+
     @classmethod
     def save_config(cls):
-        """Сохраняет текущий конфиг (keymaps) в JSON"""
+        """Сохраняет текущий конфиг (keymaps + appearance) в JSON"""
         if cls._config_cache is None:
             return
 
         user_dir = cls.get_user_dir()
         if not user_dir: return
 
+        # Сохраняем только то, что должно быть персистентным
         data_to_save = {
-            "keymaps": cls._config_cache.get("keymaps", {})
+            "keymaps": cls._config_cache.get("keymaps", {}),
+            "appearance": cls._config_cache.get("appearance", DEFAULT_CONFIG["appearance"])
         }
 
         config_path = os.path.join(user_dir, CONFIG_FILENAME)
@@ -122,3 +143,4 @@ class ConfigManager:
 
 get_config = ConfigManager.get
 save_config = ConfigManager.save_config
+set_config_value = ConfigManager.set_value # Export helper
