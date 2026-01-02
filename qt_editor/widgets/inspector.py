@@ -2,60 +2,9 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
 from .lib.theme import get_current_theme
-from .lib.widgets import RZPanelWidget, RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox
+from .lib.widgets import RZPanelWidget, RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton
 from .. import actions
 from ..context import RZContextManager
-
-class RZColorButton(QtWidgets.QPushButton):
-    """A button that shows a color and opens a color picker on click."""
-    colorChanged = QtCore.Signal(list)
-
-    def __init__(self, text="Click to set"):
-        super().__init__(text)
-        self._color = [1.0, 1.0, 1.0, 1.0]
-        self.clicked.connect(self._pick_color)
-        self.update_style()
-
-    def set_color(self, rgba):
-        if not rgba or len(rgba) < 3: rgba = [1.0, 1.0, 1.0, 1.0]
-        if len(rgba) == 3: rgba = list(rgba) + [1.0]
-        self._color = rgba
-        self.update_style()
-
-    def update_style(self):
-        """Update only the dynamic parts of the style (background and text color)."""
-        r, g, b, _ = [int(c * 255) for c in self._color]
-        luminance = (0.299 * r + 0.587 * g + 0.114 * b)
-
-        theme = get_current_theme()
-        contrast_color = theme.get('text_bright', '#000000') if luminance > 128 else theme.get('text_bright', '#FFFFFF')
-
-        # Use theme colors for consistent styling
-        border_color = theme.get('border_input', '#444')
-        border_radius = "3px"
-        padding = "4px 8px"
-
-        self.setStyleSheet(f"""
-            background-color: rgb({r},{g},{b});
-            color: {contrast_color};
-            border: 1px solid {border_color};
-            border-radius: {border_radius};
-            padding: {padding};
-        """)
-
-    def _pick_color(self):
-        current_qcolor = QtGui.QColor()
-        current_qcolor.setRgbF(*self._color)
-        
-        dialog = QtWidgets.QColorDialog(current_qcolor, self)
-        dialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
-        
-        if dialog.exec():
-            c = dialog.selectedColor()
-            new_rgba = [c.redF(), c.greenF(), c.blueF(), c.alphaF()]
-            self.set_color(new_rgba)
-            self.colorChanged.emit(new_rgba)
-
 
 class RZMInspectorPanel(RZPanelWidget):
     property_changed = QtCore.Signal(str, object, object) 

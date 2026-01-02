@@ -82,7 +82,7 @@
         "INSPECTOR": {}
     },
     "appearance": {
-        "theme": "matrix_theme",
+        "theme": "light",
         "custom_bg_path": ""
     }
 }

@@ -3,12 +3,90 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from ...context import RZContextManager
 from .theme import get_current_theme
 
+# --- RZColorButton (Moved from inspector.py & Upgraded) ---
+class RZColorButton(QtWidgets.QPushButton):
+    """
+    Универсальная кнопка цвета.
+    Input: set_color() принимает list [r,g,b] (0-1) ИЛИ string "#HEX" / "rgba(...)".
+    Output: colorChanged emit list [r,g,b,a] (0-1) для совместимости с инспектором.
+    """
+    colorChanged = QtCore.Signal(list)
+
+    def __init__(self, text=""):
+        super().__init__(text)
+        self._qcolor = QtGui.QColor(255, 255, 255) # Internal state is always QColor
+        self.clicked.connect(self._pick_color)
+        self.update_style()
+
+    def set_color(self, color_data):
+        """Smart setter that handles both Blender floats and CSS strings."""
+        if not color_data:
+            return
+
+        if isinstance(color_data, str):
+            # Handle Hex/CSS String
+            self._qcolor.setNamedColor(color_data)
+            # Fallback for complex css like rgba() if setNamedColor fails, try ctor
+            if not self._qcolor.isValid():
+                 self._qcolor = QtGui.QColor(color_data)
+        
+        elif isinstance(color_data, (list, tuple)):
+            # Handle Blender Float List [1.0, 0.5, 0.0]
+            if len(color_data) >= 3:
+                r, g, b = color_data[0], color_data[1], color_data[2]
+                a = color_data[3] if len(color_data) > 3 else 1.0
+                self._qcolor.setRgbF(r, g, b, a)
+
+        if not self._qcolor.isValid():
+            self._qcolor = QtGui.QColor(255, 0, 255) # Debug Pink
+
+        self.update_style()
+
+    def update_style(self):
+        """Update style using the internal QColor."""
+        if not self._qcolor.isValid(): return
+
+        r, g, b, a = self._qcolor.red(), self._qcolor.green(), self._qcolor.blue(), self._qcolor.alpha()
+        
+        # Calculate luminance for text contrast
+        luminance = (0.299 * r + 0.587 * g + 0.114 * b)
+        
+        theme = get_current_theme()
+        # Fallback if theme is not fully loaded yet
+        text_bright = theme.get('text_bright', '#FFFFFF')
+        text_main = theme.get('text_main', '#000000')
+        border_col = theme.get('border_input', '#444')
+
+        contrast_color = text_main if luminance > 128 else text_bright
+        
+        # Format as rgba for CSS
+        bg_style = f"rgba({r},{g},{b},{a})"
+
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {bg_style};
+                color: {contrast_color};
+                border: 1px solid {border_col};
+                border-radius: 3px;
+                padding: 4px 8px;
+            }}
+        """)
+
+    def _pick_color(self):
+        dialog = QtWidgets.QColorDialog(self._qcolor, self)
+        dialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
+        
+        if dialog.exec():
+            c = dialog.selectedColor()
+            self._qcolor = c
+            self.update_style()
+            # Emit as float list [r, g, b, a] (0.0 - 1.0)
+            self.colorChanged.emit([c.redF(), c.greenF(), c.blueF(), c.alphaF()])
+
+
+# --- Existing Widgets (No changes below, just re-exporting) ---
 
 class RZContextAwareWidget(QtWidgets.QWidget):
-    """
-    Base widget that automatically reports mouse enter/leave events to ContextManager.
-    """
-
     def __init__(self, area_name, parent=None):
         super().__init__(parent)
         self.area_name = area_name
@@ -28,29 +106,15 @@ class RZContextAwareWidget(QtWidgets.QWidget):
 
 
 class RZStyledWidget(QtWidgets.QWidget):
-    """
-    Base widget with theming support. Automatically applies theme colors.
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
-
-    def apply_theme(self):
-        """Override this method to apply theme-specific styling."""
-        pass
-
+    def apply_theme(self): pass
 
 class RZPanelWidget(RZStyledWidget):
-    """
-    Base panel widget with common panel styling (borders, background).
-    """
-
     def __init__(self, object_name="", parent=None):
         super().__init__(parent)
-        if object_name:
-            self.setObjectName(object_name)
-
+        if object_name: self.setObjectName(object_name)
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -61,16 +125,10 @@ class RZPanelWidget(RZStyledWidget):
             }}
         """)
 
-
 class RZGroupBox(QtWidgets.QGroupBox):
-    """
-    Themed group box with consistent styling.
-    """
-
     def __init__(self, title="", parent=None):
         super().__init__(title, parent)
         self.apply_theme()
-
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -90,16 +148,10 @@ class RZGroupBox(QtWidgets.QGroupBox):
             }}
         """)
 
-
 class RZPushButton(QtWidgets.QPushButton):
-    """
-    Themed push button with consistent styling.
-    """
-
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.apply_theme()
-
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -123,30 +175,18 @@ class RZPushButton(QtWidgets.QPushButton):
             }}
         """)
 
-
 class RZLabel(QtWidgets.QLabel):
-    """
-    Themed label with consistent text color.
-    """
-
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.apply_theme()
-
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"color: {theme.get('text_main', '#E0E2E4')};")
 
-
 class RZSpinBox(QtWidgets.QSpinBox):
-    """
-    Themed spin box with consistent styling.
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
-
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -157,21 +197,13 @@ class RZSpinBox(QtWidgets.QSpinBox):
                 padding: 3px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QSpinBox:focus {{
-                border: 1px solid {theme.get('accent', '#5298D4')};
-            }}
+            QSpinBox:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
         """)
 
-
 class RZDoubleSpinBox(QtWidgets.QDoubleSpinBox):
-    """
-    Themed double spin box with consistent styling.
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
-
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -182,21 +214,13 @@ class RZDoubleSpinBox(QtWidgets.QDoubleSpinBox):
                 padding: 3px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QDoubleSpinBox:focus {{
-                border: 1px solid {theme.get('accent', '#5298D4')};
-            }}
+            QDoubleSpinBox:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
         """)
 
-
 class RZComboBox(QtWidgets.QComboBox):
-    """
-    Themed combo box with consistent styling.
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
-
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -207,24 +231,14 @@ class RZComboBox(QtWidgets.QComboBox):
                 padding: 3px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QComboBox:focus {{
-                border: 1px solid {theme.get('accent', '#5298D4')};
-            }}
-            QComboBox::drop-down {{
-                border-left: 1px solid {theme.get('border_input', '#4A505A')};
-            }}
+            QComboBox:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
+            QComboBox::drop-down {{ border-left: 1px solid {theme.get('border_input', '#4A505A')}; }}
         """)
 
-
 class RZLineEdit(QtWidgets.QLineEdit):
-    """
-    Themed line edit with consistent styling.
-    """
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
-
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -235,7 +249,5 @@ class RZLineEdit(QtWidgets.QLineEdit):
                 padding: 3px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QLineEdit:focus {{
-                border: 1px solid {theme.get('accent', '#5298D4')};
-            }}
+            QLineEdit:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
         """)
