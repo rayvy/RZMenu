@@ -8,7 +8,16 @@ THEME_DARK = {
     "bg_panel": "#2C313A",
     "bg_header": "#3A404A",
     "bg_input": "#252930",
+    "bg_scope": "Unified",
     
+    # --- Background Settings (Step 5 New) ---
+    "bg_type": "solid",       # solid, image
+    "bg_image": "",
+    "bg_fit": "Cover",        # Cover, Contain, Stretch, Tile
+    "panel_opacity": 1.0,     # 0.0 - 1.0 (Glass Effect)
+    "overlay_color": "#000000", # Цвет тонировки (пока используется для затемнения панелей)
+    "overlay_opacity": 0.0,     # Сила тонировки
+
     # Text
     "text_main": "#E0E2E4",
     "text_dark": "#9DA5B4",
@@ -45,7 +54,7 @@ THEME_DARK = {
     "vp_type_anchor": "rgba(255, 0, 0, 100)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
 
-    # Context Colors (for footer, etc)
+    # Context Colors
     "ctx_viewport": "#4772b3",
     "ctx_outliner": "#ffae00",
     "ctx_inspector": "#44aa44",
@@ -58,20 +67,22 @@ THEME_DARK = {
     "debug_text": "#00ff00",
 }
 
+# (Остальные темы LIGHT и BLUE можно оставить как есть, они унаследуют новые ключи через логику менеджера, или можно добавить их туда тоже для чистоты, но для теста достаточно DARK)
 THEME_LIGHT = {
     "name": "Default Light",
-
-    # Base (смещены в сторону холодного серо-голубого)
-    "bg_root": "#F0F4F8",       # Мягкий светло-голубой фон
-    "bg_panel": "#FFFFFF",      # Чистый белый для панелей для контраста
-    "bg_header": "#E1E8EE",     # Светло-серый хедер
-    "bg_input": "#F7F9FB",      # Очень светлый инпут
-
-    # Text (менее контрастный черный)
-    "text_main": "#2C3E50",     # Темно-синий/серый вместо черного
-    "text_dark": "#546E7A",     # Мягкий серый
+    "bg_root": "#F0F4F8",
+    "bg_panel": "#FFFFFF",
+    "bg_header": "#E1E8EE",
+    "bg_input": "#F7F9FB",
+    "bg_scope": "Unified",
+    "bg_fit": "Cover",
+    "panel_opacity": 1.0,
+    # ... (копируйте остальное из предыдущего файла definitions.py, если нужно, или оставьте как было)
+    # Text
+    "text_main": "#2C3E50",     
+    "text_dark": "#546E7A",     
     "text_disabled": "#B0BEC5",
-    "text_bright": "#2C3E50",   # В светлой теме bright текст темный
+    "text_bright": "#2C3E50",
 
     # Borders
     "border_main": "#CFD8DC",
@@ -79,25 +90,24 @@ THEME_LIGHT = {
     "border_contrast": "#B0BEC5",
 
     # Accents
-    "accent": "#29B6F6",        # Свежий голубой
+    "accent": "#29B6F6",        
     "accent_hover": "#4FC3F7",
     "accent_text": "#FFFFFF",
 
     # Special
-    "selection": "#B3E5FC",     # Светло-голубое выделение
+    "selection": "#B3E5FC",
     "warning": "#FFB74D",
     "error": "#E57373",
     "success": "#81C784",
 
     # --- Viewport Specific ---
-    "vp_bg": "#CFD8DC",         # Нейтральный фон вьюпорта
+    "vp_bg": "#CFD8DC",         
     "vp_selection": "#0288D1",
     "vp_active": "#29B6F6",
     "vp_locked": "#D32F2F",
     "vp_handle": "#FFFFFF",
     "vp_handle_border": "#0288D1",
 
-    # Полупрозрачные цвета для элементов во вьюпорте
     "vp_type_container": "rgba(255, 255, 255, 200)",
     "vp_type_grid_container": "rgba(245, 245, 250, 200)",
     "vp_type_button": "rgba(225, 245, 254, 255)",
@@ -105,14 +115,12 @@ THEME_LIGHT = {
     "vp_type_anchor": "rgba(239, 83, 80, 100)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
 
-    # Context Colors
     "ctx_viewport": "#29B6F6",
     "ctx_outliner": "#FFA726",
     "ctx_inspector": "#66BB6A",
     "ctx_header": "#AB47BC",
     "ctx_footer": "#26C6DA",
 
-    # Debug
     "debug_bg": "rgba(255, 255, 255, 220)",
     "debug_border": "#29B6F6",
     "debug_text": "#01579B",
@@ -120,13 +128,14 @@ THEME_LIGHT = {
 
 THEME_BLUE = {
     "name": "Blue Theme",
-
-    # Base
     "bg_root": "#1A1F2E",
     "bg_panel": "#2A3441",
     "bg_header": "#3A4551",
     "bg_input": "#1E2530",
-
+    "bg_scope": "Unified",
+    "bg_fit": "Cover",
+    "panel_opacity": 1.0,
+    # ... (аналогично)
     # Text
     "text_main": "#E8ECF0",
     "text_dark": "#A8B3C1",
@@ -163,16 +172,13 @@ THEME_BLUE = {
     "vp_type_anchor": "rgba(255, 0, 0, 100)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
 
-    # Context Colors
     "ctx_viewport": "#4FC3F7",
     "ctx_outliner": "#FFD54F",
     "ctx_inspector": "#81C784",
     "ctx_header": "#BA68C8",
     "ctx_footer": "#4DD0E1",
 
-    # Debug
     "debug_bg": "rgba(0, 0, 0, 200)",
     "debug_border": "#4FC3F7",
     "debug_text": "#4FC3F7",
 }
-

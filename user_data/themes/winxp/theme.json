@@ -1,0 +1,60 @@
+{
+    "id": "winxp",
+    "name": "Windows XP Luna (Actually Accurate)",
+    "author": "User",
+    "colors": {
+        "bg_root": "#ECE9D8",
+        "bg_panel": "#F1EFE2",
+        "bg_header": "#0054E3",
+        "bg_input": "#FFFFFF",
+        "bg_scope": "Unified",
+        "bg_fit": "Cover",
+
+        "text_main": "#000000",
+        "text_dark": "#1A1A1A",
+        "text_disabled": "#7A7A7A",
+        "text_bright": "#FFFFFF",
+
+        "border_main": "#7F9DB9",
+        "border_input": "#7F9DB9",
+        "border_contrast": "#0054E3",
+
+        "accent": "#0054E3",
+        "accent_hover": "#3B7CFF",
+        "accent_text": "#FFFFFF",
+
+        "selection": "#316AC5",
+
+        "warning": "#F6C344",
+        "error": "#CC0000",
+        "success": "#339933",
+
+        /* ВЬЮПОРТ — НЕ ЧЁРНЫЙ */
+        "vp_bg": "#DCE6F2",
+        "vp_selection": "#FFFFFF",
+        "vp_active": "#0054E3",
+        "vp_locked": "#CC0000",
+        "vp_handle": "#FFFFFF",
+        "vp_handle_border": "#000000",
+
+        "vp_type_container": "rgba(241, 239, 226, 255)",
+        "vp_type_grid_container": "rgba(220, 230, 242, 255)",
+        "vp_type_button": "rgba(198, 211, 255, 255)",
+        "vp_type_slider": "rgba(173, 209, 255, 255)",
+        "vp_type_anchor": "rgba(255, 0, 0, 120)",
+        "vp_type_text": "rgba(0, 0, 0, 0)",
+
+        "ctx_viewport": "#0054E3",
+        "ctx_outliner": "#F6C344",
+        "ctx_inspector": "#339933",
+        "ctx_header": "#0A246A",
+        "ctx_footer": "#3B7CFF",
+
+        "debug_bg": "rgba(255, 255, 225, 240)",
+        "debug_border": "#0054E3",
+        "debug_text": "#000000"
+    },
+    "styles": {
+        "panel_opacity": 1.0
+    }
+}

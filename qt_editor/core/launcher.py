@@ -3,6 +3,7 @@ import os
 import bpy
 from PySide6 import QtWidgets, QtCore
 from .. import window
+from . import signals
 
 try:
     from PySide6 import QtWidgets, QtCore
@@ -34,18 +35,31 @@ class IntegrationManager:
         return 0.01
 
     @classmethod
-    def on_depsgraph_update(cls, scene, depsgraph):
+    @bpy.app.handlers.persistent
+    def on_depsgraph_update(cls, scene, depsgraph=None):
         """
         Реакция на внешние изменения (Undo/Redo или манипуляции в Blender UI).
         """
-        # Если изменение вызвано нашим же Qt кодом (core.IS_UPDATING_FROM_QT), игнорируем,
+        # Если изменение вызвано нашим же Qt кодом (signals.IS_UPDATING_FROM_QT), игнорируем,
         # так как сигналы внутри core уже обновили UI мгновенно.
-        if core.IS_UPDATING_FROM_QT:
+        if signals.IS_UPDATING_FROM_QT:
             return
 
         # Если изменение внешнее - просим окно перечитать данные
         if cls._window and cls._window.isVisible():
             cls._window.sync_from_blender()
+
+    @classmethod
+    @bpy.app.handlers.persistent
+    def on_undo_redo(cls, scene):
+        """
+        Force update on Undo/Redo.
+        """
+        if cls._window and cls._window.isVisible():
+            # Use a small timer to ensure Blender state is fully restored
+            # and we are not in the middle of a context-restricted area.
+            # We call full_refresh directly to bypass any interaction checks if necessary.
+            QtCore.QTimer.singleShot(0, lambda: cls._window.full_refresh() if cls._window else None)
 
     @classmethod
     def launch(cls, context):
@@ -70,6 +84,11 @@ class IntegrationManager:
         if cls.on_depsgraph_update not in bpy.app.handlers.depsgraph_update_post:
             bpy.app.handlers.depsgraph_update_post.append(cls.on_depsgraph_update)
             
+        if cls.on_undo_redo not in bpy.app.handlers.undo_post:
+            bpy.app.handlers.undo_post.append(cls.on_undo_redo)
+        if cls.on_undo_redo not in bpy.app.handlers.redo_post:
+            bpy.app.handlers.redo_post.append(cls.on_undo_redo)
+
         cls._window.sync_from_blender()
 
     @classmethod
@@ -79,3 +98,8 @@ class IntegrationManager:
         
         if cls.on_depsgraph_update in bpy.app.handlers.depsgraph_update_post:
             bpy.app.handlers.depsgraph_update_post.remove(cls.on_depsgraph_update)
+            
+        if cls.on_undo_redo in bpy.app.handlers.undo_post:
+            bpy.app.handlers.undo_post.remove(cls.on_undo_redo)
+        if cls.on_undo_redo in bpy.app.handlers.redo_post:
+            bpy.app.handlers.redo_post.remove(cls.on_undo_redo)

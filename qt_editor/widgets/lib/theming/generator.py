@@ -3,8 +3,7 @@ import os
 
 def _rgba(hex_color, alpha_override=None):
     """
-    Converts a HEX color to an rgba(r, g, b, a) string.
-    Supports #RGB, #RRGGBB, #AARRGGBB.
+    Converts HEX to rgba(). 
     """
     if not isinstance(hex_color, str) or not hex_color.startswith("#"):
         return hex_color
@@ -34,80 +33,139 @@ def _rgba(hex_color, alpha_override=None):
         return hex_color
 
 def generate_qss(t: dict) -> str:
-    """
-    Generates a full QSS string with absolute asset path resolution and glass-effect panels.
-    """
-    print(f"[DEBUG-THEME] Generating QSS for theme... {t.get('name')}") # [DEBUG-THEME]
-    
-    # --- ASSET RESOLUTION ---
-    bg_image = t.get("bg_image", "")
-    root_path = t.get("_root_path", "")
+    # --- 1. SETUP VARS ---
+    bg_scope = t.get("bg_scope", "Unified")
     bg_type = t.get("bg_type", "solid")
+    bg_root_col = t.get('bg_root', '#20232A')
     
-    print(f"[DEBUG-THEME] Raw values: bg_image={bg_image}, bg_type={bg_type}, root_path={root_path}") # [DEBUG-THEME]
+    # Calculate Panel Color with Opacity
+    # This acts as the "Tint" or "Glass Color"
+    panel_opacity = float(t.get("panel_opacity", 1.0))
+    bg_panel_raw = t.get('bg_panel', '#2C313A')
+    bg_panel_rgba = _rgba(bg_panel_raw, panel_opacity)
     
-    full_bg_path = ""
-    
-    if bg_image:
-        if os.path.isabs(bg_image):
-            clean_path = bg_image
-        elif root_path:
-            clean_path = os.path.join(root_path, bg_image)
-        else:
-            clean_path = bg_image
-            
-        # Normalize for Qt Style Sheet (always forward slashes)
-        full_bg_path = clean_path.replace("\\", "/")
-            
-    print(f"[DEBUG-THEME] Final full_bg_path: {full_bg_path}") # [DEBUG-THEME]
-
-    # --- STYLE CONFIGS ---
-    panel_opacity = float(t.get("panel_opacity", 0.9))
-    overlay_color = t.get("overlay_color", "#000000")
-    overlay_opacity = float(t.get("overlay_opacity", 0.0))
-    
-    # Root Background Logic
-    root_bg_css = f"background-color: {t.get('bg_root', '#20232A')};"
-    
-    if bg_type == "image" and full_bg_path:
-        print("[DEBUG-THEME] IMAGE MODE ACTIVE") # [DEBUG-THEME]
-        root_bg_css = f"""
-            background-color: {t.get('bg_root', '#000000')};
-            background-image: url("{full_bg_path}");
-            background-position: center;
-            background-repeat: no-repeat;
-        """
-    
-    print(f"[DEBUG-THEME] Final root_bg_css: {root_bg_css}") # [DEBUG-THEME]
-
-    panel_bg = _rgba(t.get('bg_panel', '#2C313A'), panel_opacity)
     border_main = t.get('border_main', '#3A404A')
+
+    # --- 2. GENERATE BACKGROUND CSS RULES ---
+    # This string will be injected either into #RZMEditorWindow (Unified) 
+    # OR into #RZMInspectorPanel etc (Individual)
     
+    complex_bg_css = ""
+    
+    if bg_type == "image":
+        bg_image = t.get("bg_image", "")
+        root_path = t.get("_root_path", "")
+        bg_fit = t.get("bg_fit", "Cover") 
+        full_bg_path = ""
+        
+        if bg_image:
+            if os.path.isabs(bg_image): clean_path = bg_image
+            elif root_path: clean_path = os.path.join(root_path, bg_image)
+            else: clean_path = bg_image
+            full_bg_path = clean_path.replace("\\", "/")
+            
+        if full_bg_path:
+            if bg_fit in ["Stretch", "Cover"]:
+                # Force stretch using border-image
+                complex_bg_css = f"""
+                    border-image: url("{full_bg_path}") 0 0 0 0 stretch stretch;
+                    background-image: none;
+                """
+            elif bg_fit == "Tile":
+                # Strict repeat settings
+                complex_bg_css = f"""
+                    border-image: none;
+                    background-image: url("{full_bg_path}");
+                    background-repeat: repeat;
+                    background-position: top left;
+                    background-origin: content; 
+                """
+            else: # Contain / Center
+                complex_bg_css = f"""
+                    border-image: none;
+                    background-image: url("{full_bg_path}");
+                    background-repeat: no-repeat;
+                    background-position: center;
+                """
+
+    elif bg_type == "gradient":
+        c1 = t.get("bg_grad_1", "#333")
+        c2 = t.get("bg_grad_2", "#000")
+        direction = t.get("bg_grad_dir", "Vertical")
+        
+        coords = "x1:0, y1:0, x2:0, y2:1"
+        if direction == "Horizontal": coords = "x1:0, y1:0, x2:1, y2:0"
+        elif direction == "Diagonal": coords = "x1:0, y1:0, x2:1, y2:1"
+        
+        complex_bg_css = f"""
+            background: qlineargradient(spread:pad, {coords}, stop:0 {c1}, stop:1 {c2}); 
+            border-image: none;
+        """
+
+    # --- 3. CONSTRUCT SELECTORS ---
+    
+    # Defaults
+    window_bg_rules = f"background-color: {bg_root_col};"
+    panel_bg_rules = f"background-color: {bg_panel_rgba};" # Glass by default
+    
+    if bg_scope == "Unified":
+        # Window gets the fancy background
+        # Panels get the transparent color
+        if bg_type != "solid":
+            window_bg_rules = f"""
+                background-color: {bg_root_col};
+                {complex_bg_css}
+            """
+            
+    else: # Individual Mode
+        # Window is solid
+        # Panels get the fancy background
+        if bg_type != "solid":
+            # NOTE: We must ensure children don't inherit this image!
+            # We apply it to the ID selector.
+            panel_bg_rules = f"""
+                background-color: {bg_panel_rgba};
+                {complex_bg_css}
+            """
+
     return f"""
-    /* --- Root & Panels --- */
+    /* --- GLOBAL RESET --- */
     QWidget, QDialog {{
-        background-color: {t.get('bg_root', '#20232A')};
+        background-color: {bg_root_col};
         color: {t.get('text_main', '#E0E2E4')};
         font-family: sans-serif; 
         font-size: 10pt;
     }}
     
+    /* --- MAIN WINDOW --- */
     #RZMEditorWindow {{
-        {root_bg_css}
+        {window_bg_rules}
     }}
-    
-    RZMInspectorPanel, RZMOutlinerPanel, RZViewportPanel {{
-        background-color: {panel_bg};
+
+    /* --- PANELS --- */
+    /* Using specific IDs to prevent leakage */
+    #RZMInspectorPanel, #RZMOutlinerPanel, #RZViewportPanel {{
+        {panel_bg_rules}
         border: 1px solid {border_main};
         border-radius: 4px;
     }}
+    
+    /* FIX: Prevent background image inheritance in Individual Mode */
+    /* This ensures buttons inside the inspector don't get the background image */
+    #RZMInspectorPanel QWidget, #RZMOutlinerPanel QWidget {{
+        background-image: none;
+        border-image: none;
+        background-color: transparent; 
+    }}
 
-    /* --- Groups & Tabs --- */
+    /* --- CHILD CONTAINERS (Tabs, Groups) --- */
+    /* They need to be transparent to show the panel's background */
+    
     QGroupBox {{
-        background-color: {panel_bg};
         border: 1px solid {border_main};
         border-radius: 4px;
         margin-top: 6px;
+        background-color: {_rgba(t.get('bg_panel', '#333'), 0.3)}; /* Slight tint for groups */
     }}
     QGroupBox::title {{
         subcontrol-origin: margin;
@@ -120,8 +178,9 @@ def generate_qss(t: dict) -> str:
     
     QTabWidget::pane {{
         border: 1px solid {border_main};
-        background: {panel_bg};
+        background-color: transparent; /* Transparent to see panel bg */
     }}
+    
     QTabBar::tab {{
         background: {t.get('bg_root', '#222')};
         color: {t.get('text_dark', '#999')};
@@ -132,11 +191,11 @@ def generate_qss(t: dict) -> str:
         border-top-right-radius: 4px;
     }}
     QTabBar::tab:selected, QTabBar::tab:hover {{
-        background: {panel_bg};
+        background: {bg_panel_rgba};
         color: {t.get('text_main', '#EEE')};
     }}
 
-    /* --- Inputs & Controls --- */
+    /* --- WIDGETS --- */
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
         background-color: {t.get('bg_input', '#252930')};
         border: 1px solid {t.get('border_input', '#444')};
@@ -151,7 +210,6 @@ def generate_qss(t: dict) -> str:
         border-left: 1px solid {t.get('border_input', '#444')};
     }}
     
-    /* --- Buttons --- */
     QPushButton {{
         background-color: {t.get('bg_header', '#3A404A')};
         color: {t.get('text_main', '#EEE')};
@@ -171,23 +229,13 @@ def generate_qss(t: dict) -> str:
         background-color: {t.get('bg_input', '#222')};
     }}
     
-    #BtnSpecial {{
-        border: none;
-        color: {t.get('text_dark', '#999')};
-    }}
+    #BtnSpecial {{ border: none; color: {t.get('text_dark', '#999')}; }}
     
-    /* --- Sliders --- */
-    RZSmartSlider QPushButton {{
-         background: {t.get('bg_header', '#333')};
-         border: none;
-         padding: 0px;
-    }}
-     _RZDragLabel {{
-        color: {t.get('text_dark', '#999')};
-        padding-right: 4px;
-     }}
+    /* Sliders Custom */
+    RZSmartSlider QPushButton {{ background: {t.get('bg_header', '#333')}; border: none; padding: 0px; }}
+    _RZDragLabel {{ color: {t.get('text_dark', '#999')}; padding-right: 4px; }}
 
-    /* --- Tables & Trees --- */
+    /* Tables & Trees */
     QHeaderView::section {{
         background-color: {t.get('bg_header', '#333')};
         padding: 4px;
@@ -195,35 +243,22 @@ def generate_qss(t: dict) -> str:
         color: {t.get('text_dark', '#999')};
     }}
     QTableWidget, QTreeWidget {{
-        background-color: {t.get('bg_input', '#222')};
+        background-color: {t.get('bg_input', '#222')}; /* Keep inputs solid usually */
         border: 1px solid {border_main};
     }}
-    QTableWidget::item, QTreeWidget::item {{
-        color: {t.get('text_main', '#EEE')};
-    }}
+    QTableWidget::item, QTreeWidget::item {{ color: {t.get('text_main', '#EEE')}; }}
     QTableWidget::item:selected, QTreeWidget::item:selected {{
         background-color: {t.get('selection', '#4A6E91')};
         color: {t.get('text_bright', '#FFF')};
     }}
     
-    /* --- Splitter --- */
-    QSplitter::handle {{
-        background-color: {t.get('bg_root', '#222')};
-    }}
-    QSplitter::handle:hover {{
-        background-color: {t.get('accent', '#529')};
-    }}
-
-    /* --- Scrollbars --- */
+    /* Splitter */
+    QSplitter::handle {{ background-color: transparent; }}
+    
     QScrollBar:vertical {{
-        border: none;
-        background: {t.get('bg_root', '#222')};
-        width: 10px;
-        margin: 0px;
+        border: none; background: {t.get('bg_root', '#222')}; width: 10px; margin: 0px;
     }}
     QScrollBar::handle:vertical {{
-        background: {t.get('bg_header', '#444')};
-        min-height: 20px;
-        border-radius: 4px;
+        background: {t.get('bg_header', '#444')}; min-height: 20px; border-radius: 4px;
     }}
     """

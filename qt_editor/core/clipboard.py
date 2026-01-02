@@ -46,6 +46,9 @@ def paste_elements(target_x=None, target_y=None):
             min_y = min(item["pos"][1] for item in _INTERNAL_CLIPBOARD)
             offset_x = target_x - min_x
             offset_y = target_y - min_y
+        else:
+            offset_x = 5
+            offset_y = 5
 
         for item in _INTERNAL_CLIPBOARD:
             new_id = structure.get_next_available_id(elements)
