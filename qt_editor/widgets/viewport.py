@@ -2,6 +2,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 import shiboken6
 from .. import core
+from ..systems.layout import GridSolver
 from ..utils.image_cache import ImageCache
 from ..context import RZContextManager
 from ..context.states import RZInteractionState
@@ -87,6 +88,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.custom_color = None 
         self.handles = {} 
         self.alignment = "BOTTOM_LEFT"
+        self._is_layout_controlled = False
+        
+        # Grid properties
+        self.grid_padding = 0
+        self.grid_gap = 0
+        self.grid_cell_size = 50
+        self.grid_cols = 0
         
         # Interaction state
         self._initial_rect = None
@@ -96,6 +104,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | 
             QtWidgets.QGraphicsItem.ItemIsSelectable
         )
+
+    def get_inner_origin(self):
+        """Returns the top-left coordinate of the content area relative to (0,0) origin."""
+        r = self.rect()
+        return r.topLeft()
 
     def get_anchor_offset(self, w, h, alignment):
         """Calculates the visual offset based on the anchor point."""
@@ -197,12 +210,19 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.update_visual_rect(nw, nh)
         scene.element_resized_signal.emit(self.uid, int(nx), int(-ny), int(nw), int(nh))
 
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None):
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None, grid_props=None):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
         self.alignment = alignment
         self.custom_color = color
+        
+        if grid_props:
+            self.grid_padding = grid_props.get('padding', 0)
+            self.grid_gap = grid_props.get('gap', 0)
+            self.grid_cell_size = grid_props.get('cell_size', 50)
+            self.grid_cols = grid_props.get('cols', 0)
+
         self.setOpacity(0.5 if not is_selectable else 1.0)
         self.update()
 
@@ -374,8 +394,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 event.ignore(); return
             self._handle_item_click(item, event, modifier_str)
             
-            # Only start dragging if the clicked item is not position-locked
-            if not item.is_locked_pos:
+            # Only start dragging if the clicked item is not position-locked and not layout-controlled
+            if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False):
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
                 self._drag_origin = event.scenePos()
@@ -412,8 +432,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             is_ctrl = modifiers & QtCore.Qt.ControlModifier
 
             selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
-            # Filter items that are position-locked
-            movable_items = [item for item in selected_items if not item.is_locked_pos]
+            # Filter items that are position-locked or layout-controlled
+            movable_items = [item for item in selected_items if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False)]
             if not movable_items:
                 return
 
@@ -492,12 +512,21 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
             item.update_size(data['width'], data['height'])
             item.setPos(qx, qy)
+            
+            grid_props = {
+                'padding': data.get('grid_padding', 0),
+                'gap': data.get('grid_gap', 0),
+                'cell_size': data.get('grid_cell_size', 50),
+                'cols': data.get('grid_cols', 0)
+            }
+            
             item.set_data_state(data.get('is_locked_pos', False), data.get('is_locked_size', False), 
                                 data.get('image_id', -1), data.get('is_selectable', True), 
                                 data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), 
-                                data.get('color', None))
+                                data.get('color', None), grid_props=grid_props)
             item.setVisible(not data.get('is_hidden', False))
             item.set_visual_state(uid in selected_ids, uid == active_id)
+            item._is_layout_controlled = False # Reset for layout pass
 
         for data in elements_data:
             uid, pid = data['id'], data.get('parent_id', -1)
@@ -506,6 +535,38 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 if item.parentItem() != parent_item: item.setParentItem(parent_item)
             elif uid in self._items_map and self._items_map[uid].parentItem() is not None:
                 self._items_map[uid].setParentItem(None)
+        
+        # Pass 5: Layout Calculation
+        for item in self._items_map.values():
+            if item.elem_type == "GRID_CONTAINER":
+                children = [c for c in item.childItems() if isinstance(c, RZElementItem)]
+                if not children: continue
+                
+                # Sort by Blender order if possible, here we just use what we have
+                container_data = {
+                    'width': item.rect().width(),
+                    'grid_padding': item.grid_padding,
+                    'grid_gap': item.grid_gap,
+                    'grid_cell_size': item.grid_cell_size,
+                    'grid_cols': item.grid_cols
+                }
+                
+                children_sizes = [(c.rect().width(), c.rect().height()) for c in children]
+                offsets = GridSolver.calculate_layout(container_data, len(children), children_sizes)
+                
+                inner_origin = item.get_inner_origin()
+                for i, child in enumerate(children):
+                    if i >= len(offsets): break
+                    
+                    target_tl_x = inner_origin.x() + offsets[i][0]
+                    target_tl_y = inner_origin.y() + offsets[i][1]
+                    
+                    # Adjust for child's anchor
+                    off_x, off_y = child.get_anchor_offset(child.rect().width(), child.rect().height(), child.alignment)
+                    child.setPos(target_tl_x - off_x, target_tl_y - off_y)
+                    
+                    child._is_layout_controlled = True
+
         self.update()
 
 class RZViewportPanel(QtWidgets.QGraphicsView):

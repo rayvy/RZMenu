@@ -90,7 +90,11 @@ def get_viewport_data():
             "is_selectable": getattr(elem, "qt_selectable", True),
             "is_locked_pos": getattr(elem, "qt_lock_pos", False),
             "is_locked_size": getattr(elem, "qt_lock_size", False),
-            "alignment": getattr(elem, "alignment", "BOTTOM_LEFT")
+            "alignment": getattr(elem, "alignment", "BOTTOM_LEFT"),
+            "grid_padding": getattr(elem, "grid_padding", 0),
+            "grid_gap": getattr(elem, "grid_gap", 0),
+            "grid_cell_size": getattr(elem, "grid_cell_size", 50),
+            "grid_cols": getattr(elem, "grid_cols", 0)
         })
     return results
 
