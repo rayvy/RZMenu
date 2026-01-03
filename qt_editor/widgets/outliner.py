@@ -139,11 +139,19 @@ class RZMOutlinerPanel(RZPanelWidget):
             item.setData(0, QtCore.Qt.UserRole, uid)
             
             ctype = data.get('class_type', 'CONTAINER')
-            icon = QtWidgets.QStyle.SP_FileIcon
-            if "CONTAINER" in ctype: icon = QtWidgets.QStyle.SP_DirIcon
-            elif "BUTTON" in ctype: icon = QtWidgets.QStyle.SP_DialogOkButton
-            elif "TEXT" in ctype: icon = QtWidgets.QStyle.SP_FileDialogDetailedView
-            item.setIcon(0, self.style().standardIcon(icon))
+            
+            # MODERNIZATION: Mapping to standard Qt icons for cleaner look
+            icon_enum = QtWidgets.QStyle.StandardPixmap.SP_FileIcon # Default
+            if "CONTAINER" in ctype:
+                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_DirIcon
+            elif "BUTTON" in ctype:
+                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_DialogOkButton
+            elif "TEXT" in ctype:
+                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_FileIcon
+            elif "SLIDER" in ctype:
+                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton
+            
+            item.setIcon(0, self.style().standardIcon(icon_enum))
 
             is_hidden = data.get('is_hidden', False)
             item.setText(1, "❌" if is_hidden else "👁")

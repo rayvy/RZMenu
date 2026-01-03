@@ -309,8 +309,11 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.debug_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents) 
         self.debug_timer = QtCore.QTimer(self)
         self.debug_timer.timeout.connect(self._update_debug_text)
-        self.debug_label.move(10, self.height() - 120) 
+        self.debug_label.move(10, self.height() - 130) 
         self.debug_label.resize(300, 110)
+        
+        # Ensure it stays on top of the viewport
+        self.debug_label.raise_()
 
     def resizeEvent(self, event):
         if hasattr(self, 'debug_label'):
@@ -321,6 +324,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         is_visible = not self.debug_label.isVisible()
         self.debug_label.setVisible(is_visible)
         if is_visible:
+            self.debug_label.raise_() # Safety raise
             self.debug_timer.start(50) 
             self._update_debug_text()
         else:

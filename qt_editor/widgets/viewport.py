@@ -35,6 +35,8 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
 
     def hoverEnterEvent(self, event):
+        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
+            return
         self.setBrush(self.hover_brush)
         super().hoverEnterEvent(event)
 
@@ -42,7 +44,24 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         self.setBrush(self.normal_brush)
         super().hoverLeaveEvent(event)
 
+    def shape(self):
+        """Improve hit-testing by providing a larger interaction area."""
+        path = QtGui.QPainterPath()
+        # Add 4px margin for easier grabbing
+        path.addRect(self.rect().adjusted(-4, -4, 4, 4))
+        return path
+
+    def paint(self, painter, option, widget):
+        """Visual polish: rounded handles with antialiasing."""
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setBrush(self.brush())
+        painter.setPen(self.pen())
+        painter.drawRoundedRect(self.rect(), 2, 2)
+
     def mousePressEvent(self, event):
+        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
+            event.ignore()
+            return
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -102,17 +121,17 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         nx, ny, nw, nh = pos.x(), pos.y(), r.width(), r.height()
         MIN_SIZE = 10
         
-        if h_type in (self.LEFT, self.TOP_LEFT, self.BOTTOM_LEFT):
+        if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
             if nw - dx < MIN_SIZE: dx = nw - MIN_SIZE
             nx += dx; nw -= dx
-        elif h_type in (self.RIGHT, self.TOP_RIGHT, self.BOTTOM_RIGHT):
+        elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
             if nw + dx < MIN_SIZE: dx = MIN_SIZE - nw
             nw += dx
 
-        if h_type in (self.TOP, self.TOP_LEFT, self.TOP_RIGHT):
+        if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
             if nh - dy < MIN_SIZE: dy = nh - MIN_SIZE
             ny += dy; nh -= dy
-        elif h_type in (self.BOTTOM, self.BOTTOM_LEFT, self.BOTTOM_RIGHT):
+        elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
             if nh + dy < MIN_SIZE: dy = MIN_SIZE - nh
             nh += dy
 
@@ -207,12 +226,71 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self._is_user_interaction, self._is_dragging_items = False, False
         self._drag_start_pos, self.is_alt_mode = None, False
         self._items_map = {} 
-        self._init_background()
+        self.setSceneRect(-10000, -10000, 20000, 20000)
+        
+        # Accumulators for sub-pixel precision in Blender deltas
+        self._accum_x = 0.0
+        self._accum_y = 0.0
+
+    def drawBackground(self, painter, rect):
+        """Infinite Grid Drawing."""
+        t = get_current_theme()
+        
+        # Fill Background
+        bg_color = QtGui.QColor(t.get('vp_bg', '#1E1E1E'))
+        painter.fillRect(rect, bg_color)
+
+        # Draw Grid
+        grid_color = QtGui.QColor(t.get('vp_grid_color', 'rgba(255, 255, 255, 30)'))
+        
+        left = int(rect.left())
+        right = int(rect.right())
+        top = int(rect.top())
+        bottom = int(rect.bottom())
+
+        # Determine grid steps
+        grid_step = 100
+        major_step = 500
+        
+        # Draw Secondary Grid
+        painter.setPen(QtGui.QPen(grid_color, 0.5))
+        
+        first_x = left - (left % grid_step)
+        first_y = top - (top % grid_step)
+
+        # Draw vertical lines
+        for x in range(first_x, right + grid_step, grid_step):
+            if x % major_step != 0:
+                painter.drawLine(x, top, x, bottom)
+
+        # Draw horizontal lines
+        for y in range(first_y, bottom + grid_step, grid_step):
+            if y % major_step != 0:
+                painter.drawLine(left, y, right, y)
+
+        # Draw Major Grid
+        major_color = grid_color.lighter(150)
+        major_color.setAlpha(min(grid_color.alpha() * 2, 255))
+        painter.setPen(QtGui.QPen(major_color, 1.0))
+        
+        first_major_x = left - (left % major_step)
+        first_major_y = top - (top % major_step)
+
+        for x in range(first_major_x, right + major_step, major_step):
+            painter.drawLine(x, top, x, bottom)
+        for y in range(first_major_y, bottom + major_step, major_step):
+            painter.drawLine(left, y, right, y)
+        
+        # Draw Axis (Origin)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 80), 1.5))
+        if left <= 0 <= right:
+            painter.drawLine(0, top, 0, bottom)
+        if top <= 0 <= bottom:
+            painter.drawLine(left, 0, right, 0)
 
     def _init_background(self):
-        self.setSceneRect(-10000, -10000, 20000, 20000)
-        t = get_current_theme()
-        self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor(t.get('vp_bg', '#1E1E1E'))))
+        # We now use drawBackground, but keep this for backward compatibility or initial setup
+        self.update()
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton: return 
@@ -232,9 +310,13 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             if not item.is_selectable:
                 event.ignore(); return
             self._handle_item_click(item, event, modifier_str)
+            
+            # Only start dragging if the clicked item is not locked
             if not item.is_locked:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
+                self._accum_x = 0.0
+                self._accum_y = 0.0
                 self.interaction_start_signal.emit()
             event.accept() 
         else:
@@ -260,12 +342,35 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         if self._is_dragging_items and self._drag_start_pos:
             current_pos = event.scenePos()
             qt_delta = current_pos - self._drag_start_pos
-            dx_bl, dy_bl = core.to_blender_delta(qt_delta.x(), qt_delta.y())
-            self.item_moved_signal.emit(dx_bl, dy_bl)
+            
+            # ARCHITECT FIX: Abort drag if any selected item is locked
+            selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
+            if any(item.is_locked for item in selected_items):
+                return
+
+            # Visual movement in Qt (always smooth with floats)
+            for item in selected_items:
+                item.moveBy(qt_delta.x(), qt_delta.y())
+
+            # PRECISION FIX: Accumulate sub-pixel deltas
+            # Manual conversion to avoid dependence on core.maths.int() casts
+            dx_bl = float(qt_delta.x())
+            dy_bl = float(-qt_delta.y())
+            
+            self._accum_x += dx_bl
+            self._accum_y += dy_bl
+            
+            # Only emit signal when accumulated delta reaches a whole pixel
+            if abs(self._accum_x) >= 1.0 or abs(self._accum_y) >= 1.0:
+                emit_x = int(self._accum_x)
+                emit_y = int(self._accum_y)
+                
+                self.item_moved_signal.emit(float(emit_x), float(emit_y))
+                
+                self._accum_x -= emit_x
+                self._accum_y -= emit_y
+
             self._drag_start_pos = current_pos
-            for item in self.selectedItems():
-                if isinstance(item, RZElementItem) and not item.is_locked:
-                    item.moveBy(qt_delta.x(), qt_delta.y())
         else:
             super().mouseMoveEvent(event)
 

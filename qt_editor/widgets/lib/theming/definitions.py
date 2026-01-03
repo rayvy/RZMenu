@@ -47,6 +47,7 @@ THEME_DARK = {
     "vp_locked": "#FF3232",
     "vp_handle": "#FFFFFF",
     "vp_handle_border": "#000000",
+    "vp_grid_color": "rgba(255, 255, 255, 30)",
     "vp_type_container": "rgba(60, 60, 60, 200)",
     "vp_type_grid_container": "rgba(50, 50, 55, 200)",
     "vp_type_button": "rgba(70, 90, 110, 255)",
@@ -107,6 +108,7 @@ THEME_LIGHT = {
     "vp_locked": "#D32F2F",
     "vp_handle": "#FFFFFF",
     "vp_handle_border": "#0288D1",
+    "vp_grid_color": "rgba(0, 0, 0, 40)",
 
     "vp_type_container": "rgba(255, 255, 255, 200)",
     "vp_type_grid_container": "rgba(245, 245, 250, 200)",
@@ -165,6 +167,7 @@ THEME_BLUE = {
     "vp_locked": "#E57373",
     "vp_handle": "#FFFFFF",
     "vp_handle_border": "#000000",
+    "vp_grid_color": "rgba(255, 255, 255, 30)",
     "vp_type_container": "rgba(40, 50, 70, 200)",
     "vp_type_grid_container": "rgba(30, 40, 55, 200)",
     "vp_type_button": "rgba(50, 70, 90, 255)",
