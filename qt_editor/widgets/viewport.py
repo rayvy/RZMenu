@@ -85,6 +85,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.is_selectable = True
         self.custom_color = None 
         self.handles = {} 
+        
+        # Interaction state
+        self._initial_rect = None
+        self._aspect_ratio = 1.0
+
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | 
             QtWidgets.QGraphicsItem.ItemIsSelectable
@@ -117,28 +122,54 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
     def handle_resize(self, h_type, delta):
         if self.is_locked: return
+        
+        scene = self.scene()
+        modifiers = QtWidgets.QApplication.keyboardModifiers()
+        is_ctrl = modifiers & QtCore.Qt.ControlModifier
+        is_shift = modifiers & QtCore.Qt.ShiftModifier
+        
+        if self._initial_rect is None:
+            self._initial_rect = self.rect()
+            self._aspect_ratio = self._initial_rect.width() / max(self._initial_rect.height(), 1)
+
         r, pos, dx, dy = self.rect(), self.pos(), delta.x(), delta.y()
         nx, ny, nw, nh = pos.x(), pos.y(), r.width(), r.height()
-        MIN_SIZE = 10
+        MIN_SIZE = 5
+        
+        grid_size = scene.grid_size if (scene.snap_enabled or is_ctrl) else 1
         
         if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
-            if nw - dx < MIN_SIZE: dx = nw - MIN_SIZE
             nx += dx; nw -= dx
         elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
-            if nw + dx < MIN_SIZE: dx = MIN_SIZE - nw
             nw += dx
 
         if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
-            if nh - dy < MIN_SIZE: dy = nh - MIN_SIZE
             ny += dy; nh -= dy
         elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
-            if nh + dy < MIN_SIZE: dy = MIN_SIZE - nh
             nh += dy
 
-        self.setRect(0, 0, nw, nh)
+        # Apply Aspect Ratio (Shift)
+        if is_shift:
+            if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
+                nh = nw / self._aspect_ratio
+                if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
+                    ny = pos.y() + (r.height() - nh)
+            elif h_type in (RZHandleItem.LEFT, RZHandleItem.RIGHT):
+                nh = nw / self._aspect_ratio
+            elif h_type in (RZHandleItem.TOP, RZHandleItem.BOTTOM):
+                nw = nh * self._aspect_ratio
+
+        # Apply Snapping
+        if scene.snap_enabled or is_ctrl:
+            nw = max(grid_size, round(nw / grid_size) * grid_size)
+            nh = max(grid_size, round(nh / grid_size) * grid_size)
+            nx = round(nx / grid_size) * grid_size
+            ny = round(ny / grid_size) * grid_size
+
+        self.setRect(0, 0, max(MIN_SIZE, nw), max(MIN_SIZE, nh))
         self.setPos(nx, ny)
         self.update_handles_pos() 
-        self.scene().element_resized_signal.emit(self.uid, int(nx), int(-ny), int(nw), int(nh))
+        scene.element_resized_signal.emit(self.uid, int(nx), int(-ny), int(nw), int(nh))
 
     def set_data_state(self, locked, img_id, is_selectable, text_content, color=None):
         self.is_locked, self.image_id, self.is_selectable = locked, img_id, is_selectable
@@ -225,48 +256,46 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         super().__init__()
         self._is_user_interaction, self._is_dragging_items = False, False
         self._drag_start_pos, self.is_alt_mode = None, False
+        self._drag_origin = None # Fixed origin for smart axis lock
         self._items_map = {} 
         self.setSceneRect(-10000, -10000, 20000, 20000)
+        
+        # Grid settings
+        self.grid_size = 20
+        self.snap_enabled = False
         
         # Accumulators for sub-pixel precision in Blender deltas
         self._accum_x = 0.0
         self._accum_y = 0.0
+        self._axis_lock = None # 'X' or 'Y'
+
+    def _apply_snap(self, value, step):
+        return round(value / step) * step
 
     def drawBackground(self, painter, rect):
         """Infinite Grid Drawing."""
         t = get_current_theme()
-        
-        # Fill Background
         bg_color = QtGui.QColor(t.get('vp_bg', '#1E1E1E'))
         painter.fillRect(rect, bg_color)
 
-        # Draw Grid
         grid_color = QtGui.QColor(t.get('vp_grid_color', 'rgba(255, 255, 255, 30)'))
         
-        left = int(rect.left())
-        right = int(rect.right())
-        top = int(rect.top())
-        bottom = int(rect.bottom())
+        left, right = int(rect.left()), int(rect.right())
+        top, bottom = int(rect.top()), int(rect.bottom())
 
         # Determine grid steps
-        grid_step = 100
-        major_step = 500
+        step = self.grid_size
+        major_step = step * 5
         
         # Draw Secondary Grid
         painter.setPen(QtGui.QPen(grid_color, 0.5))
-        
-        first_x = left - (left % grid_step)
-        first_y = top - (top % grid_step)
+        first_x = left - (left % step)
+        first_y = top - (top % step)
 
-        # Draw vertical lines
-        for x in range(first_x, right + grid_step, grid_step):
-            if x % major_step != 0:
-                painter.drawLine(x, top, x, bottom)
-
-        # Draw horizontal lines
-        for y in range(first_y, bottom + grid_step, grid_step):
-            if y % major_step != 0:
-                painter.drawLine(left, y, right, y)
+        for x in range(first_x, right + step, step):
+            if x % major_step != 0: painter.drawLine(x, top, x, bottom)
+        for y in range(first_y, bottom + step, step):
+            if y % major_step != 0: painter.drawLine(left, y, right, y)
 
         # Draw Major Grid
         major_color = grid_color.lighter(150)
@@ -275,21 +304,17 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         
         first_major_x = left - (left % major_step)
         first_major_y = top - (top % major_step)
-
         for x in range(first_major_x, right + major_step, major_step):
             painter.drawLine(x, top, x, bottom)
         for y in range(first_major_y, bottom + major_step, major_step):
             painter.drawLine(left, y, right, y)
         
-        # Draw Axis (Origin)
+        # Draw Axis
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 80), 1.5))
-        if left <= 0 <= right:
-            painter.drawLine(0, top, 0, bottom)
-        if top <= 0 <= bottom:
-            painter.drawLine(left, 0, right, 0)
+        if left <= 0 <= right: painter.drawLine(0, top, 0, bottom)
+        if top <= 0 <= bottom: painter.drawLine(left, 0, right, 0)
 
     def _init_background(self):
-        # We now use drawBackground, but keep this for backward compatibility or initial setup
         self.update()
 
     def mousePressEvent(self, event):
@@ -315,8 +340,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             if not item.is_locked:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
+                self._drag_origin = event.scenePos()
                 self._accum_x = 0.0
                 self._accum_y = 0.0
+                self._axis_lock = None
                 self.interaction_start_signal.emit()
             event.accept() 
         else:
@@ -341,43 +368,53 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
         if self._is_dragging_items and self._drag_start_pos:
             current_pos = event.scenePos()
-            qt_delta = current_pos - self._drag_start_pos
             
-            # ARCHITECT FIX: Abort drag if any selected item is locked
+            modifiers = QtWidgets.QApplication.keyboardModifiers()
+            is_shift = modifiers & QtCore.Qt.ShiftModifier
+            is_ctrl = modifiers & QtCore.Qt.ControlModifier
+
             selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
             if any(item.is_locked for item in selected_items):
                 return
 
-            # Visual movement in Qt (always smooth with floats)
+            # Dynamic Smart Axis Lock (Shift)
+            if is_shift and self._drag_origin:
+                total_move = current_pos - self._drag_origin
+                # Dynamically determine the dominant axis from origin
+                if abs(total_move.x()) > abs(total_move.y()):
+                    current_pos.setY(self._drag_origin.y())
+                else:
+                    current_pos.setX(self._drag_origin.x())
+
+            qt_delta = current_pos - self._drag_start_pos
+            dx, dy = qt_delta.x(), qt_delta.y()
+
+            # Snapping (Ctrl or Global)
+            if self.snap_enabled or is_ctrl:
+                dx = self._apply_snap(dx, self.grid_size)
+                dy = self._apply_snap(dy, self.grid_size)
+
+            if dx == 0 and dy == 0: return
+
+            # Visual movement
             for item in selected_items:
-                item.moveBy(qt_delta.x(), qt_delta.y())
+                item.moveBy(dx, dy)
 
-            # PRECISION FIX: Accumulate sub-pixel deltas
-            # Manual conversion to avoid dependence on core.maths.int() casts
-            dx_bl = float(qt_delta.x())
-            dy_bl = float(-qt_delta.y())
+            # Signal to core
+            self.item_moved_signal.emit(float(dx), float(-dy))
             
-            self._accum_x += dx_bl
-            self._accum_y += dy_bl
-            
-            # Only emit signal when accumulated delta reaches a whole pixel
-            if abs(self._accum_x) >= 1.0 or abs(self._accum_y) >= 1.0:
-                emit_x = int(self._accum_x)
-                emit_y = int(self._accum_y)
-                
-                self.item_moved_signal.emit(float(emit_x), float(emit_y))
-                
-                self._accum_x -= emit_x
-                self._accum_y -= emit_y
-
-            self._drag_start_pos = current_pos
+            # Update start pos for next move event
+            self._drag_start_pos += QtCore.QPointF(dx, dy)
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self._is_dragging_items:
             self._is_dragging_items, self._drag_start_pos = False, None
+            self._axis_lock = None
             self.interaction_end_signal.emit()
+            for item in self.items():
+                if isinstance(item, RZElementItem): item._initial_rect = None
         elif self._is_user_interaction:
              self.interaction_end_signal.emit()
         super().mouseReleaseEvent(event)
@@ -444,8 +481,73 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
         self._is_panning = False
         self._pan_start_pos = QtCore.QPoint()
         self.parent_window = None 
+        
+        # Overlay UI
+        self.setup_overlay_ui()
+        
         self.rz_scene.interaction_start_signal.connect(self._on_interaction_start)
         self.rz_scene.interaction_end_signal.connect(self._on_interaction_end)
+
+    def setup_overlay_ui(self):
+        self.overlay_container = QtWidgets.QFrame(self)
+        self.overlay_container.setObjectName("ViewportOverlay")
+        self.overlay_container.setStyleSheet("""
+            #ViewportOverlay {
+                background-color: rgba(30, 30, 30, 180);
+                border: 1px solid rgba(255, 255, 255, 30);
+                border-radius: 4px;
+            }
+            QPushButton { background: transparent; border: none; padding: 4px; color: #BBB; }
+            QPushButton:hover { color: #FFF; background: rgba(255,255,255,20); }
+        """)
+        
+        layout = QtWidgets.QHBoxLayout(self.overlay_container)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(8)
+        
+        self.btn_settings = QtWidgets.QPushButton("⚙")
+        self.btn_settings.setToolTip("Viewport Settings")
+        self.btn_settings.clicked.connect(self.show_settings_menu)
+        layout.addWidget(self.btn_settings)
+        
+        self.overlay_container.adjustSize()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Position overlay at top right
+        margin = 10
+        self.overlay_container.move(self.width() - self.overlay_container.width() - margin, margin)
+
+    def show_settings_menu(self):
+        menu = QtWidgets.QMenu(self)
+        
+        # Snap Toggle
+        act_snap = menu.addAction("Snap Enabled")
+        act_snap.setCheckable(True)
+        act_snap.setChecked(self.rz_scene.snap_enabled)
+        def toggle_snap(checked):
+            self.rz_scene.snap_enabled = checked
+            self.viewport().update()
+        act_snap.triggered.connect(toggle_snap)
+        
+        menu.addSeparator()
+        
+        # Grid Size options
+        menu.addSection("Grid Size")
+        for size in [10, 25, 50, 100, 200]:
+            act = menu.addAction(f"{size} px")
+            act.setCheckable(True)
+            act.setChecked(self.rz_scene.grid_size == size)
+            
+            # Using lambda with explicit argument capture to avoid loop-scope and signal-argument issues
+            def set_grid_size(val):
+                self.rz_scene.grid_size = val
+                self.rz_scene.update()
+                self.viewport().update()
+                
+            act.triggered.connect(lambda _, s=size: set_grid_size(s))
+            
+        menu.exec(QtGui.QCursor.pos())
 
     def _on_interaction_start(self):
         RZContextManager.get_instance().set_state(RZInteractionState.DRAGGING)
