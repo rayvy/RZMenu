@@ -80,11 +80,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.name = name
         self.text_content = name
         self.is_active = False
-        self.is_locked = False
+        self.is_locked_pos = False
+        self.is_locked_size = False
         self.image_id = -1
         self.is_selectable = True
         self.custom_color = None 
         self.handles = {} 
+        self.alignment = "BOTTOM_LEFT"
         
         # Interaction state
         self._initial_rect = None
@@ -95,6 +97,27 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             QtWidgets.QGraphicsItem.ItemIsSelectable
         )
 
+    def get_anchor_offset(self, w, h, alignment):
+        """Calculates the visual offset based on the anchor point."""
+        offsets = {
+            "TOP_LEFT": (0, 0),
+            "TOP_CENTER": (-w / 2, 0),
+            "TOP_RIGHT": (-w, 0),
+            "CENTER_LEFT": (0, -h / 2),
+            "CENTER": (-w / 2, -h / 2),
+            "CENTER_RIGHT": (-w, -h / 2),
+            "BOTTOM_LEFT": (0, -h),
+            "BOTTOM_CENTER": (-w / 2, -h),
+            "BOTTOM_RIGHT": (-w, -h),
+        }
+        return offsets.get(alignment, (0, 0))
+
+    def update_visual_rect(self, w, h):
+        """Updates the internal rect based on anchor."""
+        dx, dy = self.get_anchor_offset(w, h, self.alignment)
+        self.setRect(dx, dy, w, h)
+        self.update_handles_pos()
+
     def create_handles(self):
         if self.handles: return
         for h_type in range(8):
@@ -103,14 +126,14 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
     def update_handles_pos(self):
         if not self.handles: return
-        rect = self.rect()
-        w, h = rect.width(), rect.height()
+        r = self.rect()
+        x, y, w, h = r.x(), r.y(), r.width(), r.height()
         hs, hh = HANDLE_SIZE, HANDLE_SIZE / 2
         
         positions = [
-            (-hh, -hh), (w/2 - hh, -hh), (w - hh, -hh),
-            (w - hh, h/2 - hh), (w - hh, h - hh), (w/2 - hh, h - hh),
-            (-hh, h - hh), (-hh, h/2 - hh)
+            (x - hh, y - hh), (x + w / 2 - hh, y - hh), (x + w - hh, y - hh),
+            (x + w - hh, y + h / 2 - hh), (x + w - hh, y + h - hh), (x + w / 2 - hh, y + h - hh),
+            (x - hh, y + h - hh), (x - hh, y + h / 2 - hh)
         ]
         for h_type, pos in enumerate(positions):
             if h_type in self.handles:
@@ -121,7 +144,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         for handle in self.handles.values(): handle.setVisible(visible)
 
     def handle_resize(self, h_type, delta):
-        if self.is_locked: return
+        if self.is_locked_size: return
         
         scene = self.scene()
         modifiers = QtWidgets.QApplication.keyboardModifiers()
@@ -132,48 +155,53 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             self._initial_rect = self.rect()
             self._aspect_ratio = self._initial_rect.width() / max(self._initial_rect.height(), 1)
 
-        r, pos, dx, dy = self.rect(), self.pos(), delta.x(), delta.y()
-        nx, ny, nw, nh = pos.x(), pos.y(), r.width(), r.height()
-        MIN_SIZE = 5
+        r = self.rect()
+        pos = self.pos()
+        nx, ny = pos.x(), pos.y()
+        nw, nh = r.width(), r.height()
+        dx, dy = delta.x(), delta.y()
         
+        MIN_SIZE = 5
         grid_size = scene.grid_size if (scene.snap_enabled or is_ctrl) else 1
         
+        # Resizing logic is now more complex because of anchor.
+        # For simplicity, we calculate new width/height first.
         if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
-            nx += dx; nw -= dx
+            nw -= dx
         elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
             nw += dx
 
         if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
-            ny += dy; nh -= dy
+            nh -= dy
         elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
             nh += dy
 
-        # Apply Aspect Ratio (Shift)
+        # Apply constraints
         if is_shift:
             if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
                 nh = nw / self._aspect_ratio
-                if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
-                    ny = pos.y() + (r.height() - nh)
             elif h_type in (RZHandleItem.LEFT, RZHandleItem.RIGHT):
                 nh = nw / self._aspect_ratio
             elif h_type in (RZHandleItem.TOP, RZHandleItem.BOTTOM):
                 nw = nh * self._aspect_ratio
 
-        # Apply Snapping
         if scene.snap_enabled or is_ctrl:
             nw = max(grid_size, round(nw / grid_size) * grid_size)
             nh = max(grid_size, round(nh / grid_size) * grid_size)
-            nx = round(nx / grid_size) * grid_size
-            ny = round(ny / grid_size) * grid_size
 
-        self.setRect(0, 0, max(MIN_SIZE, nw), max(MIN_SIZE, nh))
-        self.setPos(nx, ny)
-        self.update_handles_pos() 
+        nw = max(MIN_SIZE, nw)
+        nh = max(MIN_SIZE, nh)
+
+        # In Blender, resizing doesn't move the 'position' (which is the anchor point).
+        # Our UI reflects this: we just update size.
+        self.update_visual_rect(nw, nh)
         scene.element_resized_signal.emit(self.uid, int(nx), int(-ny), int(nw), int(nh))
 
-    def set_data_state(self, locked, img_id, is_selectable, text_content, color=None):
-        self.is_locked, self.image_id, self.is_selectable = locked, img_id, is_selectable
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None):
+        self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
+        self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
+        self.alignment = alignment
         self.custom_color = color
         self.setOpacity(0.5 if not is_selectable else 1.0)
         self.update()
@@ -185,17 +213,20 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         if is_active: z_val = 20
         elif is_selected: z_val = 10
         self.setZValue(z_val)
-        self.set_handles_visible(is_selected and not self.is_locked)
+        # Handles visible if selected and not size-locked
+        self.set_handles_visible(is_selected and not self.is_locked_size)
         self.update() 
     
     def update_size(self, w, h):
-        self.setRect(0, 0, w, h)
-        self.update_handles_pos()
+        self.update_visual_rect(w, h)
         self.update() 
     
     def paint(self, painter, option, widget):
         rect = self.rect()
         t = get_current_theme()
+        
+        # Visual visual for anchor/origin
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
         if self.elem_type == 'TEXT':
             painter.setPen(QtGui.QColor(t.get('text_bright', '#FFF')))
@@ -221,7 +252,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             bg_color = QtGui.QColor(t.get(color_key, "rgba(50,50,50,200)"))
         
         if has_image and not self.custom_color: bg_color.setAlpha(30)
-        if self.is_locked: bg_color = bg_color.darker(120)
+        if self.is_locked_pos or self.is_locked_size: bg_color = bg_color.darker(120)
         painter.fillRect(rect, bg_color)
         
         border_width, border_color_str = 1.0, t.get('vp_handle_border', '#000')
@@ -230,20 +261,27 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             border_width = 2.0
         elif self.isSelected():
             border_color_str = t.get('vp_selection', '#FFF')
-        elif self.is_locked:
+        elif self.is_locked_pos or self.is_locked_size:
             border_color_str = t.get('vp_locked', '#F00')
+        
         pen = QtGui.QPen(QtGui.QColor(border_color_str), border_width)
         if self.elem_type == "GRID_CONTAINER": pen.setStyle(QtCore.Qt.DashLine)
         painter.setPen(pen)
         painter.drawRect(rect)
 
+        # Draw Marker at Origin (Local 0,0)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 180), 1.0))
+        painter.drawLine(-4, 0, 4, 0)
+        painter.drawLine(0, -4, 0, 4)
+
         text_rect = rect.adjusted(5, 5, -5, -5)
         painter.setPen(QtGui.QColor(t.get('text_bright', '#FFF')))
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self.name)
         
-        if self.is_locked:
+        if self.is_locked_pos or self.is_locked_size:
+            lock_txt = "🔒" if self.is_locked_pos and self.is_locked_size else "🔒P" if self.is_locked_pos else "🔒S"
             painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
-            painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, "🔒")
+            painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, lock_txt)
 
 class RZViewportScene(QtWidgets.QGraphicsScene):
     item_moved_signal = QtCore.Signal(float, float) 
@@ -374,13 +412,14 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             is_ctrl = modifiers & QtCore.Qt.ControlModifier
 
             selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
-            if any(item.is_locked for item in selected_items):
+            # Filter items that are position-locked
+            movable_items = [item for item in selected_items if not item.is_locked_pos]
+            if not movable_items:
                 return
 
             # Dynamic Smart Axis Lock (Shift)
             if is_shift and self._drag_origin:
                 total_move = current_pos - self._drag_origin
-                # Dynamically determine the dominant axis from origin
                 if abs(total_move.x()) > abs(total_move.y()):
                     current_pos.setY(self._drag_origin.y())
                 else:
@@ -389,7 +428,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             qt_delta = current_pos - self._drag_start_pos
             dx, dy = qt_delta.x(), qt_delta.y()
 
-            # Snapping (Ctrl or Global)
+            # Snapping
             if self.snap_enabled or is_ctrl:
                 dx = self._apply_snap(dx, self.grid_size)
                 dy = self._apply_snap(dy, self.grid_size)
@@ -397,13 +436,13 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             if dx == 0 and dy == 0: return
 
             # Visual movement
-            for item in selected_items:
+            for item in movable_items:
                 item.moveBy(dx, dy)
 
             # Signal to core
+            movable_ids = [item.uid for item in movable_items]
             self.item_moved_signal.emit(float(dx), float(-dy))
             
-            # Update start pos for next move event
             self._drag_start_pos += QtCore.QPointF(dx, dy)
         else:
             super().mouseMoveEvent(event)
@@ -453,8 +492,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
             item.update_size(data['width'], data['height'])
             item.setPos(qx, qy)
-            item.set_data_state(data.get('is_locked', False), data.get('image_id', -1), 
-                                data.get('is_selectable', True), data.get('text_content', ''), data.get('color', None))
+            item.set_data_state(data.get('is_locked_pos', False), data.get('is_locked_size', False), 
+                                data.get('image_id', -1), data.get('is_selectable', True), 
+                                data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), 
+                                data.get('color', None))
             item.setVisible(not data.get('is_hidden', False))
             item.set_visual_state(uid in selected_ids, uid == active_id)
 

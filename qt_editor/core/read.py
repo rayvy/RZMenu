@@ -57,7 +57,8 @@ def get_selection_details(selected_ids, active_id):
             "image_id": get_uniform("image_id"),
             "color": color_vals, 
             "is_hidden": get_uniform("qt_hide"),
-            "is_locked": get_uniform("qt_locked"),
+            "is_locked_pos": get_uniform("qt_lock_pos"),
+            "is_locked_size": get_uniform("qt_lock_size"),
             "alignment": get_uniform("alignment"),
             "text_align": get_uniform("text_align"),
             "is_multi": len(selected_ids) > 1,
@@ -87,7 +88,9 @@ def get_viewport_data():
             "text_content": getattr(elem, "text_string", elem.element_name),
             "color": color_list, "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),
-            "is_locked": getattr(elem, "qt_locked", False)
+            "is_locked_pos": getattr(elem, "qt_lock_pos", False),
+            "is_locked_size": getattr(elem, "qt_lock_size", False),
+            "alignment": getattr(elem, "alignment", "BOTTOM_LEFT")
         })
     return results
 

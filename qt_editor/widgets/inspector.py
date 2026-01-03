@@ -165,9 +165,16 @@ class RZMInspectorPanel(RZPanelWidget):
         self.chk_hide = QtWidgets.QCheckBox("Is Hidden")
         self.chk_hide.toggled.connect(lambda v: self.emit_change('is_hidden', v))
         layout_edit.addWidget(self.chk_hide)
-        self.chk_lock = QtWidgets.QCheckBox("Lock Transform")
-        self.chk_lock.toggled.connect(lambda v: self.emit_change('is_locked', v))
-        layout_edit.addWidget(self.chk_lock)
+        
+        h_locks = QtWidgets.QHBoxLayout()
+        self.chk_lock_pos = QtWidgets.QCheckBox("Lock Pos")
+        self.chk_lock_pos.toggled.connect(lambda v: self.emit_change('is_locked_pos', v))
+        self.chk_lock_size = QtWidgets.QCheckBox("Lock Size")
+        self.chk_lock_size.toggled.connect(lambda v: self.emit_change('is_locked_size', v))
+        h_locks.addWidget(self.chk_lock_pos)
+        h_locks.addWidget(self.chk_lock_size)
+        layout_edit.addLayout(h_locks)
+        
         self.layout_props.addWidget(grp_edit)
 
     def emit_change(self, key, val, sub=None):
@@ -191,9 +198,13 @@ class RZMInspectorPanel(RZPanelWidget):
             self.tab_props.setEnabled(True)
             self.tab_raw.setEnabled(True)
             
-            is_locked = props.get('is_locked', False)
-            # If is_locked is None (mixed), we treat as locked for safety or just keep enabled
-            self.grp_trans.setEnabled(is_locked is not True)
+            is_locked_pos = props.get('is_locked_pos', False)
+            is_locked_size = props.get('is_locked_size', False)
+            
+            self.sl_x.setEnabled(is_locked_pos is not True)
+            self.sl_y.setEnabled(is_locked_pos is not True)
+            self.sl_w.setEnabled(is_locked_size is not True)
+            self.sl_h.setEnabled(is_locked_size is not True)
             
             self.lbl_id.setText(f"ID: {props.get('id')}" if not props.get('is_multi') else "Multiple Selection")
             self.name_edit.setText(props.get('name', ''))
@@ -244,9 +255,10 @@ class RZMInspectorPanel(RZPanelWidget):
             # Color is complex, for now we just show active or default
             self.btn_color.set_color(props.get('color', [1.0, 1.0, 1.0, 1.0]))
             
-            # Checkboxes: Mixed state handled as 'False' for now (Qt doesn't easily show mixed in QCheckBox without TriState)
+            # Checkboxes
             self.chk_hide.setChecked(props.get('is_hidden') is True)
-            self.chk_lock.setChecked(is_locked is True)
+            self.chk_lock_pos.setChecked(is_locked_pos is True)
+            self.chk_lock_size.setChecked(is_locked_size is True)
             
             self.table_raw.setRowCount(0)
             sorted_keys = sorted(props.keys())

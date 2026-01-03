@@ -13,7 +13,9 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
         map_props = {
             "pos_x": ("position", 0), "pos_y": ("position", 1),
             "width": ("size", 0), "height": ("size", 1),
-            "is_hidden": ("qt_hide", None), "is_locked": ("qt_locked", None),
+            "is_hidden": ("qt_hide", None), 
+            "is_locked_pos": ("qt_lock_pos", None),
+            "is_locked_size": ("qt_lock_size", None),
             "is_selectable": ("qt_selectable", None), "color": ("color", None),
             "grid_rows": ("grid_rows", None), "grid_cols": ("grid_cols", None),
             "grid_gap": ("grid_gap", None),             "grid_padding": ("grid_padding", None),
@@ -66,7 +68,10 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
 
 def toggle_editor_flag(target_ids, flag_name):
     map_flags = {
-        "is_hidden": "qt_hide", "is_locked": "qt_locked", "is_selectable": "qt_selectable"
+        "is_hidden": "qt_hide", 
+        "is_locked_pos": "qt_lock_pos", 
+        "is_locked_size": "qt_lock_size",
+        "is_selectable": "qt_selectable"
     }
     bl_prop = map_flags.get(flag_name)
     if not bl_prop: return
