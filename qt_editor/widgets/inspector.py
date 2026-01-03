@@ -2,15 +2,24 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
 from .lib.theme import get_current_theme
-from .lib.widgets import RZPanelWidget, RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton
+from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton
+from .panel_base import RZEditorPanel
 from .. import actions
 from ..context import RZContextManager
 
-class RZMInspectorPanel(RZPanelWidget):
+class RZMInspectorPanel(RZEditorPanel):
+    """Property inspector panel for editing selected element attributes."""
+    
+    # Panel Registry Metadata
+    PANEL_ID = "INSPECTOR"
+    PANEL_NAME = "Inspector"
+    PANEL_ICON = "settings"
+    
+    # Signals
     property_changed = QtCore.Signal(str, object, object) 
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
         self.setObjectName("RZMInspectorPanel")
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)

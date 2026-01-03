@@ -7,6 +7,7 @@ from ..utils.image_cache import ImageCache
 from ..context import RZContextManager
 from ..context.states import RZInteractionState
 from .lib.theme import get_current_theme
+from .panel_base import RZEditorPanel
 
 HANDLE_SIZE = 8
 
@@ -569,10 +570,14 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
         self.update()
 
-class RZViewportPanel(QtWidgets.QGraphicsView):
-    def __init__(self):
-        super().__init__()
-        self.setObjectName("RZViewportPanel")
+class RZViewportView(QtWidgets.QGraphicsView):
+    """
+    The actual QGraphicsView for rendering the viewport scene.
+    This is the internal view component, wrapped by RZViewportPanel.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("RZViewportView")
         self.rz_scene = RZViewportScene()
         self.setScene(self.rz_scene)
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
@@ -751,3 +756,47 @@ class RZViewportPanel(QtWidgets.QGraphicsView):
             self.scene().clearSelection()
             RZContextManager.get_instance().set_state(RZInteractionState.IDLE)
         super().mouseReleaseEvent(event)
+
+
+class RZViewportPanel(RZEditorPanel):
+    """
+    Container panel for the viewport, following the RZEditorPanel architecture.
+    Wraps RZViewportView and exposes its scene for external access.
+    """
+    
+    # Panel Registry Metadata
+    PANEL_ID = "VIEWPORT"
+    PANEL_NAME = "Viewport"
+    PANEL_ICON = "globe"
+    
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.setObjectName("RZViewportPanel")
+        
+        # Create the internal view
+        self.view = RZViewportView(self)
+        
+        # Set up layout - viewport fills the entire panel
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.view)
+    
+    @property
+    def rz_scene(self) -> RZViewportScene:
+        """Convenience property to access the scene directly."""
+        return self.view.rz_scene
+    
+    @property
+    def parent_window(self):
+        """Get the parent window reference from the view."""
+        return self.view.parent_window
+    
+    @parent_window.setter
+    def parent_window(self, value):
+        """Set the parent window reference on the view."""
+        self.view.parent_window = value
+    
+    def set_alt_mode(self, active: bool):
+        """Proxy method to set alt mode on the view."""
+        self.view.set_alt_mode(active)

@@ -4,7 +4,7 @@ from ..context import RZContextManager
 from ..utils.icons import IconManager
 from .lib.theme import get_current_theme
 from .lib.trees import RZDraggableTreeWidget
-from .lib.widgets import RZPanelWidget
+from .panel_base import RZEditorPanel
 
 class RZDraggableTree(RZDraggableTreeWidget):
     """
@@ -60,15 +60,22 @@ class RZDraggableTree(RZDraggableTreeWidget):
         self.internal_reorder_signal.emit(moved_id, new_parent_id)
 
 
-class RZMOutlinerPanel(RZPanelWidget):
+class RZMOutlinerPanel(RZEditorPanel):
+    """Hierarchical tree view of all elements in the menu structure."""
+    
+    # Panel Registry Metadata
+    PANEL_ID = "OUTLINER"
+    PANEL_NAME = "Outliner"
+    PANEL_ICON = "list"
+    
+    # Signals
     selection_changed = QtCore.Signal(list, int)
     items_reordered = QtCore.Signal(int, object)
-    
     req_toggle_hide = QtCore.Signal(int)
     req_toggle_selectable = QtCore.Signal(int)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
         self.setObjectName("RZMOutlinerPanel")
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

@@ -6,6 +6,7 @@ from . import core, actions
 from .systems import input_manager
 from .widgets import preferences
 from .widgets import outliner, inspector, viewport
+from .widgets.panel_factory import PanelFactory
 from .context import RZContextManager
 from .widgets.lib import theme
 from .widgets.lib.widgets import RZContextAwareWidget
@@ -22,6 +23,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # --- THEME & STYLING ---
         self.setStyleSheet(theme.generate_stylesheet())
+        
+        # --- REGISTER PANELS ---
+        self._register_panels()
         
         # --- UI LAYOUT ---
         root_layout = QtWidgets.QVBoxLayout(self) 
@@ -42,17 +46,17 @@ class RZMEditorWindow(QtWidgets.QWidget):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         root_layout.addWidget(splitter)
         
-        # Outliner
-        self.panel_outliner = outliner.RZMOutlinerPanel()
+        # Outliner (via Factory)
+        self.panel_outliner = PanelFactory.create_panel("OUTLINER")
         splitter.addWidget(self.panel_outliner)
         
-        # Viewport
-        self.panel_viewport = viewport.RZViewportPanel()
-        self.panel_viewport.parent_window = self # Link for context menu
+        # Viewport (via Factory)
+        self.panel_viewport = PanelFactory.create_panel("VIEWPORT")
+        self.panel_viewport.parent_window = self  # Link for context menu
         splitter.addWidget(self.panel_viewport)
         
-        # Inspector
-        self.panel_inspector = inspector.RZMInspectorPanel()
+        # Inspector (via Factory)
+        self.panel_inspector = PanelFactory.create_panel("INSPECTOR")
         splitter.addWidget(self.panel_inspector)
         
         splitter.setSizes([200, 600, 300])
@@ -106,6 +110,12 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # Initial Refresh
         self.full_refresh()
+
+    def _register_panels(self):
+        """Register all panel classes with the PanelFactory."""
+        PanelFactory.register(outliner.RZMOutlinerPanel)
+        PanelFactory.register(inspector.RZMInspectorPanel)
+        PanelFactory.register(viewport.RZViewportPanel)
 
     def sync_from_blender(self):
         if not self.isVisible(): return
