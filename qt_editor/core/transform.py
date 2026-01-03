@@ -8,8 +8,8 @@ def resize_element(elem_id, x, y, w, h, silent=False):
     try:
         elements = bpy.context.scene.rzm.elements
         target = next((e for e in elements if e.id == elem_id), None)
-        # Check for lock flag in Blender property
-        if target and not getattr(target, "qt_locked", False):
+        # ARCHITECT FIX: Check for split lock flag (size)
+        if target and not getattr(target, "qt_lock_size", False):
             target.position[0] = int(x)
             target.position[1] = int(y)
             target.size[0] = int(w)
@@ -28,7 +28,8 @@ def move_elements_delta(target_ids, delta_x, delta_y, silent=False):
         elements = bpy.context.scene.rzm.elements
         changed = False
         for elem in elements:
-            if elem.id in target_ids and not getattr(elem, "qt_locked", False):
+            # ARCHITECT FIX: Check for split lock flag (position)
+            if elem.id in target_ids and not getattr(elem, "qt_lock_pos", False):
                 elem.position[0] += int(delta_x)
                 elem.position[1] += int(delta_y)
                 changed = True

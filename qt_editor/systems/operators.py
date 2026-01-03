@@ -140,7 +140,10 @@ class RZ_OT_ToggleLock(RZOperator):
     label = "Lock"
     requires_selection = True
     def execute(self, context: RZContext, **kwargs):
-        core.toggle_editor_flag(context.selected_ids, "is_locked")
+        # Default to position lock if not specified
+        lock_type = kwargs.get("type", "POS")
+        flag = "is_locked_pos" if lock_type == "POS" else "is_locked_size"
+        core.toggle_editor_flag(context.selected_ids, flag)
 
 class RZ_OT_ToggleSelectable(RZOperator):
     id = "rzm.toggle_selectable"

@@ -57,7 +57,7 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
             if prop_name in ["pos_x", "pos_y", "width", "height"]:
                 signals.SIGNALS.transform_changed.emit()
                 signals.SIGNALS.data_changed.emit()
-            elif prop_name in ["element_name", "is_hidden", "qt_hide", "is_locked"]:
+            elif prop_name in ["element_name", "is_hidden", "qt_hide", "is_locked_pos", "is_locked_size"]:
                 signals.SIGNALS.structure_changed.emit()
                 signals.SIGNALS.data_changed.emit()
             else:

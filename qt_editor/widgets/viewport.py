@@ -35,7 +35,7 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
 
     def hoverEnterEvent(self, event):
-        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
+        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
             return
         self.setBrush(self.hover_brush)
         super().hoverEnterEvent(event)
@@ -59,7 +59,7 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         painter.drawRoundedRect(self.rect(), 2, 2)
 
     def mousePressEvent(self, event):
-        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
+        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
             event.ignore()
             return
         event.accept()
@@ -374,8 +374,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 event.ignore(); return
             self._handle_item_click(item, event, modifier_str)
             
-            # Only start dragging if the clicked item is not locked
-            if not item.is_locked:
+            # Only start dragging if the clicked item is not position-locked
+            if not item.is_locked_pos:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
                 self._drag_origin = event.scenePos()
