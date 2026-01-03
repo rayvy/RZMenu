@@ -1,4 +1,12 @@
 # RZMenu/qt_editor/window.py
+"""
+Main Editor Window for RZMenu.
+
+ARCHITECTURE (Phase 8.3):
+- Window manages RZAreaWidget containers, NOT specific panels
+- Panels are AUTONOMOUS - they subscribe to core.SIGNALS themselves
+- No direct panel references are stored (prevents RuntimeError on panel swap)
+"""
 import datetime
 from PySide6 import QtWidgets, QtCore, QtGui
 
@@ -7,10 +15,12 @@ from .systems import input_manager
 from .widgets import preferences
 from .widgets import outliner, inspector, viewport
 from .widgets.panel_factory import PanelFactory
+from .widgets.area import RZAreaWidget
 from .context import RZContextManager
 from .widgets.lib import theme
 from .widgets.lib.widgets import RZContextAwareWidget
 from .core.signals import SIGNALS
+
 
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -42,24 +52,24 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.setup_toolbar() 
         root_layout.addWidget(self.toolbar_container)
         
-        # 2. CONTENT (Splitter)
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        root_layout.addWidget(splitter)
+        # 2. CONTENT (Splitter with RZAreaWidgets)
+        # Areas are autonomous - they manage their own panels
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        root_layout.addWidget(self.splitter)
         
-        # Outliner (via Factory)
-        self.panel_outliner = PanelFactory.create_panel("OUTLINER")
-        splitter.addWidget(self.panel_outliner)
+        # Area 1: Outliner (default)
+        self.area_outliner = RZAreaWidget(initial_panel_id="OUTLINER")
+        self.splitter.addWidget(self.area_outliner)
         
-        # Viewport (via Factory)
-        self.panel_viewport = PanelFactory.create_panel("VIEWPORT")
-        self.panel_viewport.parent_window = self  # Link for context menu
-        splitter.addWidget(self.panel_viewport)
+        # Area 2: Viewport (default)
+        self.area_viewport = RZAreaWidget(initial_panel_id="VIEWPORT")
+        self.splitter.addWidget(self.area_viewport)
         
-        # Inspector (via Factory)
-        self.panel_inspector = PanelFactory.create_panel("INSPECTOR")
-        splitter.addWidget(self.panel_inspector)
+        # Area 3: Inspector (default)
+        self.area_inspector = RZAreaWidget(initial_panel_id="INSPECTOR")
+        self.splitter.addWidget(self.area_inspector)
         
-        splitter.setSizes([200, 600, 300])
+        self.splitter.setSizes([200, 600, 300])
 
         # 3. FOOTER
         self.footer_container = RZContextAwareWidget("FOOTER", self)
@@ -70,46 +80,26 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
         # --- SYSTEMS ---
         self.input_controller = input_manager.RZInputController(self)
+        
+        # Connect alt_mode to area (which will proxy to current panel if it's a viewport)
         if hasattr(self.input_controller, "alt_mode_changed"):
-            self.input_controller.alt_mode_changed.connect(self.panel_viewport.set_alt_mode)
+            self.input_controller.alt_mode_changed.connect(self._broadcast_alt_mode)
         
         self.input_controller.operator_executed.connect(self.update_footer_op)
 
-        # === SIGNAL CONNECTIONS ===
-        self.panel_outliner.selection_changed.connect(self.handle_outliner_selection)
-        self.panel_outliner.items_reordered.connect(self.on_reorder)
-        self.panel_outliner.req_toggle_hide.connect(lambda uid: self.action_manager.run("rzm.toggle_hide", override_ids=[uid]))
-        self.panel_outliner.req_toggle_selectable.connect(lambda uid: self.action_manager.run("rzm.toggle_selectable", override_ids=[uid]))
+        # === WINDOW-LEVEL SIGNAL CONNECTIONS ===
+        # Only connect signals that the WINDOW needs to handle
+        # Panels handle their own data subscriptions autonomously
         
-        self.panel_viewport.rz_scene.item_moved_signal.connect(self.on_viewport_move_delta)
-        self.panel_viewport.rz_scene.element_resized_signal.connect(self.on_viewport_resize)
-        self.panel_viewport.rz_scene.interaction_start_signal.connect(self.on_interaction_start)
-        self.panel_viewport.rz_scene.interaction_end_signal.connect(self.on_interaction_end)
-        self.panel_viewport.rz_scene.selection_changed_signal.connect(self.handle_viewport_selection)
-        
-        self.panel_inspector.property_changed.connect(self.on_property_edited)
-
-        core.SIGNALS.structure_changed.connect(self.refresh_outliner)
-        core.SIGNALS.structure_changed.connect(self.refresh_viewport)
-        
-        core.SIGNALS.transform_changed.connect(self.refresh_viewport)
-        core.SIGNALS.transform_changed.connect(self.refresh_inspector)
-        
-        core.SIGNALS.data_changed.connect(self.refresh_inspector)
-        core.SIGNALS.data_changed.connect(self.refresh_outliner)
-        core.SIGNALS.data_changed.connect(self.refresh_viewport)
-
-        core.SIGNALS.selection_changed.connect(self.on_context_selection_changed)
-        core.SIGNALS.context_updated.connect(self.on_context_area_changed)
-
-        # NEW: Global Config Listeners
+        SIGNALS.context_updated.connect(self.on_context_area_changed)
         SIGNALS.config_changed.connect(self.on_config_changed)
+        SIGNALS.selection_changed.connect(self._on_selection_changed)
         
         # --- DEBUG OVERLAY ---
         self.setup_debug_overlay()
         
-        # Initial Refresh
-        self.full_refresh()
+        # Initial trigger - panels will respond to this signal
+        self._trigger_initial_refresh()
 
     def _register_panels(self):
         """Register all panel classes with the PanelFactory."""
@@ -117,15 +107,38 @@ class RZMEditorWindow(QtWidgets.QWidget):
         PanelFactory.register(inspector.RZMInspectorPanel)
         PanelFactory.register(viewport.RZViewportPanel)
 
+    def _trigger_initial_refresh(self):
+        """Trigger initial data load by emitting structure_changed signal."""
+        # Panels are autonomous and will respond to this signal
+        SIGNALS.structure_changed.emit()
+
+    def _broadcast_alt_mode(self, active):
+        """Broadcast alt_mode to all viewport panels in all areas."""
+        for area in [self.area_outliner, self.area_viewport, self.area_inspector]:
+            panel = area.get_current_panel()
+            if panel and hasattr(panel, 'set_alt_mode'):
+                panel.set_alt_mode(active)
+
+    def _on_selection_changed(self):
+        """Update action manager UI state when selection changes."""
+        self.action_manager.update_ui_state()
+
     def sync_from_blender(self):
-        if not self.isVisible(): return
-        if self.panel_viewport.rz_scene._is_user_interaction: return
-        self.full_refresh()
+        """Called externally to sync data from Blender."""
+        if not self.isVisible():
+            return
+        # Check if any viewport is in user interaction mode
+        for area in [self.area_outliner, self.area_viewport, self.area_inspector]:
+            panel = area.get_current_panel()
+            if panel and hasattr(panel, 'rz_scene'):
+                if panel.rz_scene._is_user_interaction:
+                    return
+        # Trigger refresh via signals - panels handle themselves
+        SIGNALS.structure_changed.emit()
 
     def full_refresh(self):
-        self.refresh_outliner()
-        self.refresh_viewport(force=True)
-        self.on_context_selection_changed()
+        """Trigger a full refresh of all panels via signals."""
+        SIGNALS.structure_changed.emit()
 
     # -------------------------------------------------------------------------
     # UI SETUP
@@ -180,130 +193,33 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.lbl_last_op.setText(f"Last Op: {op_name}")
 
     def open_settings(self):
-        # Открываем диалог. Он сам подпишется на сигналы.
         dlg = preferences.RZPreferencesDialog(self)
         dlg.exec() 
 
     def on_config_changed(self, section):
-        """Реакция на глобальное изменение конфига."""
+        """React to global config changes."""
         if section == "appearance":
-            # Перегенерируем QSS на основе нового состояния конфига
             qss = theme.generate_stylesheet()
             self.apply_global_theme(qss)
 
     def apply_global_theme(self, qss):
-        """
-        Deep update of the Main Window.
-        """
+        """Deep update of the Main Window and all areas."""
         self.setStyleSheet(qss)
 
-        # 2. Viewport
-        self.panel_viewport.rz_scene._init_background()
-        self.panel_viewport.rz_scene.update()
+        # Update all Areas (they will update their current panels)
+        for area in [self.area_outliner, self.area_viewport, self.area_inspector]:
+            if hasattr(area, 'update_theme_styles'):
+                area.update_theme_styles()
 
-        # 3. Footer
+        # Footer
         self.on_context_area_changed()
-
-        # 4. Inspector
-        if hasattr(self, 'panel_inspector'):
-            self.panel_inspector.update_theme_styles()
-
-        # 5. Outliner
-        if hasattr(self, 'panel_outliner'):
-            self.panel_outliner.update_theme_styles()
-
-        # 6. Viewport Handles
-        self.refresh_viewport(force=True)
+        
+        # Trigger refresh for visual updates
+        SIGNALS.structure_changed.emit()
 
     # -------------------------------------------------------------------------
-    # SELECTION & CONTEXT HANDLERS
+    # DEBUG OVERLAY
     # -------------------------------------------------------------------------
-    # (Остальной код без изменений)
-    def on_context_selection_changed(self):
-        ctx = RZContextManager.get_instance().get_snapshot()
-        self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
-        if hasattr(self.panel_viewport.rz_scene, 'update_selection_visuals'):
-            self.panel_viewport.rz_scene.update_selection_visuals(ctx.selected_ids, ctx.active_id)
-        else:
-            self.refresh_viewport(force=False)
-        self.refresh_inspector()
-        self.action_manager.update_ui_state()
-
-    def handle_outliner_selection(self, ids_list, active_id):
-        RZContextManager.get_instance().set_selection(set(ids_list), active_id)
-
-    def handle_viewport_selection(self, target_data, modifiers):
-        ctx = RZContextManager.get_instance().get_snapshot()
-        current_selection = set(ctx.selected_ids)
-        new_selection = current_selection.copy()
-        new_active = -1
-        if isinstance(target_data, list):
-            items_ids = set(target_data)
-            if modifiers == 'SHIFT': new_selection.update(items_ids)
-            elif modifiers == 'CTRL': new_selection.difference_update(items_ids)
-            else: new_selection = items_ids
-            if items_ids: new_active = list(items_ids)[0]
-            elif new_selection: new_active = next(iter(new_selection))
-        else:
-            clicked_id = target_data
-            if clicked_id == -1:
-                if modifiers not in ['SHIFT', 'CTRL']: new_selection.clear()
-                new_active = -1
-            else:
-                if modifiers == 'SHIFT':
-                    if clicked_id in new_selection:
-                        new_selection.remove(clicked_id)
-                        new_active = -1 if not new_selection else next(iter(new_selection))
-                    else:
-                        new_selection.add(clicked_id)
-                        new_active = clicked_id
-                elif modifiers == 'CTRL':
-                    if clicked_id in new_selection: new_selection.remove(clicked_id)
-                else:
-                    new_selection = {clicked_id}
-                    new_active = clicked_id
-        RZContextManager.get_instance().set_selection(new_selection, new_active)
-
-    def on_reorder(self, target_id, insert_after_id):
-        core.reorder_elements(target_id, insert_after_id)
-
-    def on_interaction_start(self):
-        self.panel_viewport.rz_scene._is_user_interaction = True
-
-    def on_interaction_end(self):
-        core.commit_history("RZM Transformation")
-        self.panel_viewport.rz_scene._is_user_interaction = False
-        self.refresh_viewport(force=True)
-        self.refresh_inspector(force=True)
-
-    def on_viewport_move_delta(self, delta_x, delta_y):
-        ctx = RZContextManager.get_instance().get_snapshot()
-        if not ctx.selected_ids: return
-        core.move_elements_delta(ctx.selected_ids, delta_x, delta_y, silent=True)
-
-    def on_viewport_resize(self, uid, x, y, w, h):
-        core.resize_element(uid, x, y, w, h, silent=True)
-
-    def on_property_edited(self, key, val, idx):
-        ctx = RZContextManager.get_instance().get_snapshot()
-        core.update_property_multi(ctx.selected_ids, key, val, idx)
-
-    def refresh_outliner(self):
-        data = core.get_all_elements_list()
-        ctx = RZContextManager.get_instance().get_snapshot()
-        self.panel_outliner.update_ui(data)
-        self.panel_outliner.set_selection_silent(ctx.selected_ids, ctx.active_id)
-
-    def refresh_viewport(self, force=False):
-        data = core.get_viewport_data()
-        ctx = RZContextManager.get_instance().get_snapshot()
-        self.panel_viewport.rz_scene.update_scene(data, ctx.selected_ids, ctx.active_id)
-
-    def refresh_inspector(self, force=False):
-        ctx = RZContextManager.get_instance().get_snapshot()
-        details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
-        self.panel_inspector.update_ui(details)
-    
     def setup_debug_overlay(self):
         t = theme.get_current_theme()
         self.debug_label = QtWidgets.QLabel(self)
@@ -334,7 +250,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         is_visible = not self.debug_label.isVisible()
         self.debug_label.setVisible(is_visible)
         if is_visible:
-            self.debug_label.raise_() # Safety raise
+            self.debug_label.raise_()
             self.debug_timer.start(50) 
             self._update_debug_text()
         else:

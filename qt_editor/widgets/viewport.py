@@ -1,7 +1,12 @@
 # RZMenu/qt_editor/widgets/viewport.py
+"""
+Viewport Panel - Visual canvas for element manipulation.
+Autonomous panel that subscribes to core.SIGNALS for data updates.
+"""
 from PySide6 import QtWidgets, QtCore, QtGui
 import shiboken6
 from .. import core
+from ..core.signals import SIGNALS
 from ..systems.layout import GridSolver
 from ..utils.image_cache import ImageCache
 from ..context import RZContextManager
@@ -673,12 +678,43 @@ class RZViewportView(QtWidgets.QGraphicsView):
             self.setStyleSheet("border: none;")
             self.setCursor(QtCore.Qt.ArrowCursor)
 
+    def _find_action_manager(self):
+        """Find action_manager by traversing up to the main window."""
+        # First try explicit parent_window
+        if self.parent_window and hasattr(self.parent_window, "action_manager"):
+            return self.parent_window.action_manager
+        
+        # Traverse up widget hierarchy
+        widget = self
+        while widget:
+            parent = widget.parent()
+            if parent is None:
+                if hasattr(widget, 'action_manager'):
+                    return widget.action_manager
+                break
+            if hasattr(parent, 'action_manager'):
+                return parent.action_manager
+            widget = parent
+        
+        # Fallback: try window()
+        try:
+            win = self.window()
+            if win and hasattr(win, 'action_manager'):
+                return win.action_manager
+        except:
+            pass
+        
+        return None
+
     def contextMenuEvent(self, event):
-        if not self.parent_window or not hasattr(self.parent_window, "action_manager"): return
+        am = self._find_action_manager()
+        if not am:
+            return
+        
         menu = QtWidgets.QMenu(self)
-        am = self.parent_window.action_manager
         def add_op(op_id):
-            if op_id in am.q_actions: menu.addAction(am.q_actions[op_id])
+            if op_id in am.q_actions: 
+                menu.addAction(am.q_actions[op_id])
         
         hit_element = hasattr(self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform()), 'uid')
 
@@ -762,6 +798,9 @@ class RZViewportPanel(RZEditorPanel):
     """
     Container panel for the viewport, following the RZEditorPanel architecture.
     Wraps RZViewportView and exposes its scene for external access.
+    
+    AUTONOMOUS: Subscribes to SIGNALS.structure_changed, SIGNALS.transform_changed,
+    SIGNALS.selection_changed to update itself without window.py intervention.
     """
     
     # Panel Registry Metadata
@@ -781,6 +820,123 @@ class RZViewportPanel(RZEditorPanel):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self.view)
+        
+        # Connect scene signals to internal handlers
+        self.view.rz_scene.item_moved_signal.connect(self._on_item_moved)
+        self.view.rz_scene.element_resized_signal.connect(self._on_element_resized)
+        self.view.rz_scene.interaction_start_signal.connect(self._on_interaction_start)
+        self.view.rz_scene.interaction_end_signal.connect(self._on_interaction_end)
+        self.view.rz_scene.selection_changed_signal.connect(self._on_selection_changed)
+    
+    def _connect_signals(self):
+        """Connect to core signals for autonomous updates."""
+        SIGNALS.structure_changed.connect(self.refresh_data)
+        SIGNALS.transform_changed.connect(self.refresh_data)
+        SIGNALS.selection_changed.connect(self._on_global_selection_changed)
+        SIGNALS.data_changed.connect(self.refresh_data)
+    
+    def _disconnect_signals(self):
+        """Disconnect from core signals to prevent calls to deleted objects."""
+        try:
+            SIGNALS.structure_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            SIGNALS.transform_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            SIGNALS.selection_changed.disconnect(self._on_global_selection_changed)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            SIGNALS.data_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+    
+    def refresh_data(self):
+        """Fetch and display current viewport data from core."""
+        if not self._is_panel_active:
+            return
+        # Don't refresh during user interaction
+        if self.view.rz_scene._is_user_interaction:
+            return
+        data = core.get_viewport_data()
+        ctx = RZContextManager.get_instance().get_snapshot()
+        self.view.rz_scene.update_scene(data, ctx.selected_ids, ctx.active_id)
+    
+    def _on_global_selection_changed(self):
+        """Update selection visuals when global selection changes."""
+        if not self._is_panel_active:
+            return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if hasattr(self.view.rz_scene, 'update_selection_visuals'):
+            self.view.rz_scene.update_selection_visuals(ctx.selected_ids, ctx.active_id)
+    
+    def _on_item_moved(self, delta_x, delta_y):
+        """Handle element movement from viewport."""
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.move_elements_delta(ctx.selected_ids, delta_x, delta_y, silent=True)
+    
+    def _on_element_resized(self, uid, x, y, w, h):
+        """Handle element resize from viewport."""
+        core.resize_element(uid, x, y, w, h, silent=True)
+    
+    def _on_interaction_start(self):
+        """Mark interaction as active."""
+        self.view.rz_scene._is_user_interaction = True
+    
+    def _on_interaction_end(self):
+        """Commit changes and refresh."""
+        core.commit_history("RZM Transformation")
+        self.view.rz_scene._is_user_interaction = False
+        # Force refresh after interaction
+        self.refresh_data()
+    
+    def _on_selection_changed(self, target_data, modifiers):
+        """Handle selection changes from viewport interaction."""
+        ctx = RZContextManager.get_instance().get_snapshot()
+        current_selection = set(ctx.selected_ids)
+        new_selection = current_selection.copy()
+        new_active = -1
+        
+        if isinstance(target_data, list):
+            # Box selection
+            items_ids = set(target_data)
+            if modifiers == 'SHIFT':
+                new_selection.update(items_ids)
+            elif modifiers == 'CTRL':
+                new_selection.difference_update(items_ids)
+            else:
+                new_selection = items_ids
+            if items_ids:
+                new_active = list(items_ids)[0]
+            elif new_selection:
+                new_active = next(iter(new_selection))
+        else:
+            # Single item click
+            clicked_id = target_data
+            if clicked_id == -1:
+                if modifiers not in ['SHIFT', 'CTRL']:
+                    new_selection.clear()
+                new_active = -1
+            else:
+                if modifiers == 'SHIFT':
+                    if clicked_id in new_selection:
+                        new_selection.remove(clicked_id)
+                        new_active = -1 if not new_selection else next(iter(new_selection))
+                    else:
+                        new_selection.add(clicked_id)
+                        new_active = clicked_id
+                elif modifiers == 'CTRL':
+                    if clicked_id in new_selection:
+                        new_selection.remove(clicked_id)
+                else:
+                    new_selection = {clicked_id}
+                    new_active = clicked_id
+        
+        RZContextManager.get_instance().set_selection(new_selection, new_active)
     
     @property
     def rz_scene(self) -> RZViewportScene:
@@ -800,3 +956,9 @@ class RZViewportPanel(RZEditorPanel):
     def set_alt_mode(self, active: bool):
         """Proxy method to set alt mode on the view."""
         self.view.set_alt_mode(active)
+    
+    def update_theme_styles(self):
+        """Update viewport theme."""
+        if hasattr(self.view, 'rz_scene'):
+            self.view.rz_scene._init_background()
+            self.view.rz_scene.update()

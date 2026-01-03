@@ -1,22 +1,30 @@
 # RZMenu/qt_editor/widgets/inspector.py
+"""
+Inspector Panel - Property editor for selected elements.
+Autonomous panel that subscribes to core.SIGNALS for data updates.
+"""
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
 from .lib.theme import get_current_theme
 from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton
 from .panel_base import RZEditorPanel
-from .. import actions
+from .. import core
+from ..core.signals import SIGNALS
 from ..context import RZContextManager
 
+
 class RZMInspectorPanel(RZEditorPanel):
-    """Property inspector panel for editing selected element attributes."""
+    """
+    Property inspector panel for editing selected element attributes.
+    
+    AUTONOMOUS: Subscribes to SIGNALS.selection_changed, SIGNALS.data_changed,
+    SIGNALS.transform_changed to update itself without window.py intervention.
+    """
     
     # Panel Registry Metadata
     PANEL_ID = "INSPECTOR"
     PANEL_NAME = "Inspector"
     PANEL_ICON = "settings"
-    
-    # Signals
-    property_changed = QtCore.Signal(str, object, object) 
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -50,17 +58,35 @@ class RZMInspectorPanel(RZEditorPanel):
         
         self.has_data = False
         self._block_signals = False
-        self.act_man = None
 
-    def _get_action_manager(self):
-        if not self.act_man:
-            curr = self.parent()
-            while curr:
-                if hasattr(curr, "action_manager"):
-                    self.act_man = curr.action_manager
-                    break
-                curr = curr.parent()
-        return self.act_man
+    def _connect_signals(self):
+        """Connect to core signals for autonomous updates."""
+        SIGNALS.selection_changed.connect(self.refresh_data)
+        SIGNALS.data_changed.connect(self.refresh_data)
+        SIGNALS.transform_changed.connect(self.refresh_data)
+    
+    def _disconnect_signals(self):
+        """Disconnect from core signals to prevent calls to deleted objects."""
+        try:
+            SIGNALS.selection_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            SIGNALS.data_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            SIGNALS.transform_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+    
+    def refresh_data(self):
+        """Fetch and display current selection details from core."""
+        if not self._is_panel_active:
+            return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
+        self.update_ui(details)
 
     def _init_properties_ui(self):
         # === GROUP: IDENTITY ===
@@ -71,12 +97,12 @@ class RZMInspectorPanel(RZEditorPanel):
         form_ident.addRow("ID:", self.lbl_id)
 
         self.name_edit = RZLineEdit()
-        self.name_edit.editingFinished.connect(lambda: self.emit_change('element_name', self.name_edit.text()))
+        self.name_edit.editingFinished.connect(lambda: self._emit_change('element_name', self.name_edit.text()))
         form_ident.addRow("Name:", self.name_edit)
         
         self.cb_class = RZComboBox()
         self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
-        self.cb_class.currentTextChanged.connect(lambda t: self.emit_change('class_type', t))
+        self.cb_class.currentTextChanged.connect(lambda t: self._emit_change('class_type', t))
         form_ident.addRow("Class:", self.cb_class)
         self.layout_props.addWidget(grp_ident)
         
@@ -90,12 +116,12 @@ class RZMInspectorPanel(RZEditorPanel):
             "CENTER_LEFT", "CENTER", "CENTER_RIGHT", 
             "TOP_LEFT", "TOP_CENTER", "TOP_RIGHT"
         ])
-        self.cb_anchor.currentTextChanged.connect(lambda t: self.emit_change('alignment', t))
+        self.cb_anchor.currentTextChanged.connect(lambda t: self._emit_change('alignment', t))
         layout_anchor.addRow("Anchor:", self.cb_anchor)
         
         self.cb_text_align = RZComboBox()
         self.cb_text_align.addItems(["LEFT", "CENTER", "RIGHT"])
-        self.cb_text_align.currentTextChanged.connect(lambda t: self.emit_change('text_align', t))
+        self.cb_text_align.currentTextChanged.connect(lambda t: self._emit_change('text_align', t))
         self.row_text_align = layout_anchor.addRow("Text Align:", self.cb_text_align)
         
         self.layout_props.addWidget(self.grp_anchor)
@@ -104,23 +130,23 @@ class RZMInspectorPanel(RZEditorPanel):
         self.grp_trans = RZGroupBox("Transform")
         layout_trans = QtWidgets.QVBoxLayout(self.grp_trans)
         self.sl_x = RZSmartSlider(label_text="X", is_int=True)
-        self.sl_x.value_changed.connect(lambda v: self.emit_change('pos_x', int(v)))
-        self.sl_x.math_requested.connect(lambda op: self.emit_math('pos_x', op))
+        self.sl_x.value_changed.connect(lambda v: self._emit_change('pos_x', int(v)))
+        self.sl_x.math_requested.connect(lambda op: self._emit_math('pos_x', op))
         layout_trans.addWidget(self.sl_x)
         
         self.sl_y = RZSmartSlider(label_text="Y", is_int=True)
-        self.sl_y.value_changed.connect(lambda v: self.emit_change('pos_y', int(v)))
-        self.sl_y.math_requested.connect(lambda op: self.emit_math('pos_y', op))
+        self.sl_y.value_changed.connect(lambda v: self._emit_change('pos_y', int(v)))
+        self.sl_y.math_requested.connect(lambda op: self._emit_math('pos_y', op))
         layout_trans.addWidget(self.sl_y)
         
         self.sl_w = RZSmartSlider(label_text="W", is_int=True)
-        self.sl_w.value_changed.connect(lambda v: self.emit_change('width', int(v)))
-        self.sl_w.math_requested.connect(lambda op: self.emit_math('width', op))
+        self.sl_w.value_changed.connect(lambda v: self._emit_change('width', int(v)))
+        self.sl_w.math_requested.connect(lambda op: self._emit_math('width', op))
         layout_trans.addWidget(self.sl_w)
         
         self.sl_h = RZSmartSlider(label_text="H", is_int=True)
-        self.sl_h.value_changed.connect(lambda v: self.emit_change('height', int(v)))
-        self.sl_h.math_requested.connect(lambda op: self.emit_math('height', op))
+        self.sl_h.value_changed.connect(lambda v: self._emit_change('height', int(v)))
+        self.sl_h.math_requested.connect(lambda op: self._emit_math('height', op))
         layout_trans.addWidget(self.sl_h)
         self.layout_props.addWidget(self.grp_trans)
 
@@ -130,29 +156,29 @@ class RZMInspectorPanel(RZEditorPanel):
         h_cell = QtWidgets.QHBoxLayout()
         h_cell.addWidget(RZLabel("Cell Size:"))
         self.sl_cell = RZSmartSlider(label_text="", is_int=True)
-        self.sl_cell.value_changed.connect(lambda v: self.emit_change('grid_cell_size', int(v)))
-        self.sl_cell.math_requested.connect(lambda op: self.emit_math('grid_cell_size', op))
+        self.sl_cell.value_changed.connect(lambda v: self._emit_change('grid_cell_size', int(v)))
+        self.sl_cell.math_requested.connect(lambda op: self._emit_math('grid_cell_size', op))
         h_cell.addWidget(self.sl_cell)
         layout_grid.addLayout(h_cell)
         
         h_rc = QtWidgets.QHBoxLayout()
         self.sl_rows = RZSmartSlider(label_text="R", is_int=True)
-        self.sl_rows.value_changed.connect(lambda v: self.emit_change('grid_rows', int(v)))
-        self.sl_rows.math_requested.connect(lambda op: self.emit_math('grid_rows', op))
+        self.sl_rows.value_changed.connect(lambda v: self._emit_change('grid_rows', int(v)))
+        self.sl_rows.math_requested.connect(lambda op: self._emit_math('grid_rows', op))
         self.sl_cols = RZSmartSlider(label_text="C", is_int=True)
-        self.sl_cols.value_changed.connect(lambda v: self.emit_change('grid_cols', int(v)))
-        self.sl_cols.math_requested.connect(lambda op: self.emit_math('grid_cols', op))
+        self.sl_cols.value_changed.connect(lambda v: self._emit_change('grid_cols', int(v)))
+        self.sl_cols.math_requested.connect(lambda op: self._emit_math('grid_cols', op))
         h_rc.addWidget(self.sl_rows)
         h_rc.addWidget(self.sl_cols)
         layout_grid.addLayout(h_rc)
         
         h_pg = QtWidgets.QHBoxLayout()
         self.sl_pad = RZSmartSlider(label_text="P", is_int=True)
-        self.sl_pad.value_changed.connect(lambda v: self.emit_change('grid_padding', int(v)))
-        self.sl_pad.math_requested.connect(lambda op: self.emit_math('grid_padding', op))
+        self.sl_pad.value_changed.connect(lambda v: self._emit_change('grid_padding', int(v)))
+        self.sl_pad.math_requested.connect(lambda op: self._emit_math('grid_padding', op))
         self.sl_gap = RZSmartSlider(label_text="G", is_int=True)
-        self.sl_gap.value_changed.connect(lambda v: self.emit_change('grid_gap', int(v)))
-        self.sl_gap.math_requested.connect(lambda op: self.emit_math('grid_gap', op))
+        self.sl_gap.value_changed.connect(lambda v: self._emit_change('grid_gap', int(v)))
+        self.sl_gap.math_requested.connect(lambda op: self._emit_math('grid_gap', op))
         h_pg.addWidget(self.sl_pad)
         h_pg.addWidget(self.sl_gap)
         layout_grid.addLayout(h_pg)
@@ -163,7 +189,7 @@ class RZMInspectorPanel(RZEditorPanel):
         grp_style = RZGroupBox("Style")
         layout_style = QtWidgets.QVBoxLayout(grp_style)
         self.btn_color = RZColorButton()
-        self.btn_color.colorChanged.connect(lambda c: self.emit_change('color', c))
+        self.btn_color.colorChanged.connect(lambda c: self._emit_change('color', c))
         layout_style.addWidget(RZLabel("Color:"))
         layout_style.addWidget(self.btn_color)
         self.layout_props.addWidget(grp_style)
@@ -172,31 +198,36 @@ class RZMInspectorPanel(RZEditorPanel):
         grp_edit = RZGroupBox("Editor Flags")
         layout_edit = QtWidgets.QVBoxLayout(grp_edit)
         self.chk_hide = QtWidgets.QCheckBox("Is Hidden")
-        self.chk_hide.toggled.connect(lambda v: self.emit_change('is_hidden', v))
+        self.chk_hide.toggled.connect(lambda v: self._emit_change('is_hidden', v))
         layout_edit.addWidget(self.chk_hide)
         
         h_locks = QtWidgets.QHBoxLayout()
         self.chk_lock_pos = QtWidgets.QCheckBox("Lock Pos")
-        self.chk_lock_pos.toggled.connect(lambda v: self.emit_change('is_locked_pos', v))
+        self.chk_lock_pos.toggled.connect(lambda v: self._emit_change('is_locked_pos', v))
         self.chk_lock_size = QtWidgets.QCheckBox("Lock Size")
-        self.chk_lock_size.toggled.connect(lambda v: self.emit_change('is_locked_size', v))
+        self.chk_lock_size.toggled.connect(lambda v: self._emit_change('is_locked_size', v))
         h_locks.addWidget(self.chk_lock_pos)
         h_locks.addWidget(self.chk_lock_size)
         layout_edit.addLayout(h_locks)
         
         self.layout_props.addWidget(grp_edit)
 
-    def emit_change(self, key, val, sub=None):
+    def _emit_change(self, key, val, sub=None):
+        """Handle property changes - directly update core."""
         if self.has_data and not self._block_signals:
             # Filter out UI placeholders
-            if val == "Mixed": return
-            self.property_changed.emit(key, val, sub)
+            if val == "Mixed": 
+                return
+            # Directly update core instead of emitting signal
+            ctx = RZContextManager.get_instance().get_snapshot()
+            if ctx.selected_ids:
+                core.update_property_multi(ctx.selected_ids, key, val, sub)
 
-    def emit_math(self, key, op_str):
+    def _emit_math(self, key, op_str):
         """Triggers a relative math operation via core."""
         ctx = RZContextManager.get_instance().get_snapshot()
-        if not ctx.selected_ids: return
-        import core
+        if not ctx.selected_ids: 
+            return
         core.perform_math_operation(list(ctx.selected_ids), key, op_str)
 
     def update_ui(self, props):

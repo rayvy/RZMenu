@@ -1,10 +1,17 @@
 # RZMenu/qt_editor/widgets/outliner.py
+"""
+Outliner Panel - Hierarchical tree view of menu elements.
+Autonomous panel that subscribes to core.SIGNALS for data updates.
+"""
 from PySide6 import QtWidgets, QtCore, QtGui
+from .. import core
+from ..core.signals import SIGNALS
 from ..context import RZContextManager
 from ..utils.icons import IconManager
 from .lib.theme import get_current_theme
 from .lib.trees import RZDraggableTreeWidget
 from .panel_base import RZEditorPanel
+
 
 class RZDraggableTree(RZDraggableTreeWidget):
     """
@@ -61,18 +68,21 @@ class RZDraggableTree(RZDraggableTreeWidget):
 
 
 class RZMOutlinerPanel(RZEditorPanel):
-    """Hierarchical tree view of all elements in the menu structure."""
+    """
+    Hierarchical tree view of all elements in the menu structure.
+    
+    AUTONOMOUS: Subscribes to SIGNALS.structure_changed, SIGNALS.selection_changed,
+    SIGNALS.data_changed to update itself without window.py intervention.
+    """
     
     # Panel Registry Metadata
     PANEL_ID = "OUTLINER"
     PANEL_NAME = "Outliner"
     PANEL_ICON = "list"
     
-    # Signals
+    # Signals for external communication (reordering, selection from user)
     selection_changed = QtCore.Signal(list, int)
     items_reordered = QtCore.Signal(int, object)
-    req_toggle_hide = QtCore.Signal(int)
-    req_toggle_selectable = QtCore.Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -82,14 +92,68 @@ class RZMOutlinerPanel(RZEditorPanel):
 
         self.tree = RZDraggableTree()
         
-        self.tree.items_reordered.connect(self.items_reordered)
+        # Internal tree signals -> panel handlers
+        self.tree.items_reordered.connect(self._on_items_reordered)
         self.tree.itemSelectionChanged.connect(self._on_qt_selection_changed)
-        self.tree.toggle_hide_signal.connect(self.req_toggle_hide)
-        self.tree.toggle_selectable_signal.connect(self.req_toggle_selectable)
+        self.tree.toggle_hide_signal.connect(self._on_toggle_hide)
+        self.tree.toggle_selectable_signal.connect(self._on_toggle_selectable)
 
         layout.addWidget(self.tree)
         self._block_signals = False
         self.setMouseTracking(True)
+
+    def _connect_signals(self):
+        """Connect to core signals for autonomous updates."""
+        SIGNALS.structure_changed.connect(self.refresh_data)
+        SIGNALS.selection_changed.connect(self.sync_selection)
+        SIGNALS.data_changed.connect(self.refresh_data)
+    
+    def _disconnect_signals(self):
+        """Disconnect from core signals to prevent calls to deleted objects."""
+        try:
+            SIGNALS.structure_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            SIGNALS.selection_changed.disconnect(self.sync_selection)
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            SIGNALS.data_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
+    
+    def refresh_data(self):
+        """Fetch and display current element list from core."""
+        if not self._is_panel_active:
+            return
+        data = core.get_all_elements_list()
+        self.update_ui(data)
+        # Also sync selection after data refresh
+        self.sync_selection()
+    
+    def sync_selection(self):
+        """Sync tree selection with context manager."""
+        if not self._is_panel_active:
+            return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        self.set_selection_silent(ctx.selected_ids, ctx.active_id)
+
+    def _on_items_reordered(self, target_id, new_parent_id):
+        """Handle drag-drop reordering."""
+        core.reorder_elements(target_id, new_parent_id)
+    
+    def _on_toggle_hide(self, uid):
+        """Handle visibility toggle via action manager."""
+        am = self.get_action_manager()
+        if am:
+            am.run("rzm.toggle_hide", override_ids=[uid])
+    
+    def _on_toggle_selectable(self, uid):
+        """Handle selectable toggle via action manager."""
+        am = self.get_action_manager()
+        if am:
+            am.run("rzm.toggle_selectable", override_ids=[uid])
 
     def update_theme_styles(self):
         """Re-apply tree styling."""
@@ -112,6 +176,7 @@ class RZMOutlinerPanel(RZEditorPanel):
         super().leaveEvent(event)
 
     def _on_qt_selection_changed(self):
+        """Handle user selection in tree -> update context manager."""
         if self._block_signals: return
 
         selected_items = self.tree.selectedItems()
@@ -124,7 +189,8 @@ class RZMOutlinerPanel(RZEditorPanel):
         elif ids:
             active_id = ids[0]
 
-        self.selection_changed.emit(ids, active_id)
+        # Update context manager directly (which will emit selection_changed)
+        RZContextManager.get_instance().set_selection(set(ids), active_id)
 
     def update_ui(self, elements_list):
         self._block_signals = True
