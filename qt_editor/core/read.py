@@ -1,5 +1,6 @@
 # RZMenu/qt_editor/read.py
 import bpy
+from ..utils.image_cache import ImageCache
 
 def get_all_elements_list():
     results = []
@@ -126,6 +127,9 @@ def get_available_images() -> list[dict]:
         return results
         
     for img in rzm.images:
+        # Force cache loading if not already present
+        ImageCache.instance().pre_cache_image(img.id)
+        
         results.append({
             'id': img.id,
             'name': img.display_name
