@@ -21,7 +21,7 @@ from .context import RZContextManager
 from .widgets.lib import theme
 from .widgets.lib.widgets import RZContextAwareWidget
 from .core.signals import SIGNALS
-
+from .conf.manager import get_config, set_config_value
 
 class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -55,17 +55,27 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.setup_toolbar() 
         self.root_layout.addWidget(self.toolbar_container)
         
-        # 2. CONTENT (Dynamic Splitter)
-        # Placeholder for the layout root, will be set by apply_layout
-        self.splitter = None 
-        self.apply_layout("Default")
-
-        # 3. FOOTER
+        # 2. FOOTER (Создаем ДО контента, чтобы UI элементы существовали)
         self.footer_container = RZContextAwareWidget("FOOTER", self)
         self.footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
         self.footer_layout.setContentsMargins(5, 2, 5, 2)
         self.setup_footer() 
+        # Добавляем футер в layout пока в конец. 
+        # apply_layout вставит сплиттер между хедером (0) и футером (1).
         self.root_layout.addWidget(self.footer_container)
+
+        # 3. CONTENT (Dynamic Splitter & Config Load)
+        self.splitter = None 
+        
+        # Читаем конфиг
+        from .conf.manager import get_config, set_config_value
+        last_layout = get_config().get("system", {}).get("last_layout", "Default")
+        
+        # Применяем лайаут (он вставится по индексу 1)
+        self.apply_layout(last_layout)
+        
+        # Теперь UI готов, можно безопасно обновить выбор в комбобоксе
+        self._update_layout_combo(select_name=last_layout)
 
         # Connect alt_mode to areas
         if hasattr(self.input_controller, "alt_mode_changed"):
@@ -190,6 +200,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def _on_layout_combo_changed(self, name):
         """Handle user changing layout via combo box."""
         self.apply_layout(name)
+        # Persist layout choice
+        set_config_value("system", "last_layout", name)
 
     # -------------------------------------------------------------------------
     # UI SETUP

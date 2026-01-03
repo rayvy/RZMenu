@@ -130,7 +130,8 @@ class ConfigManager:
         # Сохраняем только то, что должно быть персистентным
         data_to_save = {
             "keymaps": cls._config_cache.get("keymaps", {}),
-            "appearance": cls._config_cache.get("appearance", DEFAULT_CONFIG["appearance"])
+            "appearance": cls._config_cache.get("appearance", DEFAULT_CONFIG["appearance"]),
+            "system": cls._config_cache.get("system", {})
         }
 
         config_path = os.path.join(user_dir, CONFIG_FILENAME)

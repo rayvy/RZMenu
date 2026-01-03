@@ -241,6 +241,9 @@ class RZMInspectorPanel(RZEditorPanel):
             # Directly update core instead of emitting signal
             ctx = RZContextManager.get_instance().get_snapshot()
             if ctx.selected_ids:
+                # Type safety for Blender integers
+                if key in ['pos_x', 'pos_y', 'width', 'height']:
+                    val = int(float(val))
                 core.update_property_multi(ctx.selected_ids, key, val, sub)
 
     def _emit_math(self, key, op_str):

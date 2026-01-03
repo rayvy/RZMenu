@@ -54,7 +54,9 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
         if changed:
             if not fast_mode: blender_bridge.safe_undo_push(f"RZM: Change {prop_name}")
             
+            # CRITICAL: Always cast transform deltas/values to int for these props
             if prop_name in ["pos_x", "pos_y", "width", "height"]:
+                # The values are already set in loop, but we must ensure SIGNALS are sent
                 signals.SIGNALS.transform_changed.emit()
                 signals.SIGNALS.data_changed.emit()
             elif prop_name in ["element_name", "is_hidden", "qt_hide", "is_locked_pos", "is_locked_size"]:
