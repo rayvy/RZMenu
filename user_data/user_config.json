@@ -82,7 +82,7 @@
         "INSPECTOR": {}
     },
     "appearance": {
-        "theme": "dark",
+        "theme": "frutiger_xp_luna",
         "custom_bg_path": ""
     }
 }

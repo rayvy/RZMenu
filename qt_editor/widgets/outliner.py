@@ -1,6 +1,7 @@
 # RZMenu/qt_editor/widgets/outliner.py
 from PySide6 import QtWidgets, QtCore, QtGui
 from ..context import RZContextManager
+from ..utils.icons import IconManager
 from .lib.theme import get_current_theme
 from .lib.trees import RZDraggableTreeWidget
 from .lib.widgets import RZPanelWidget
@@ -140,18 +141,18 @@ class RZMOutlinerPanel(RZPanelWidget):
             
             ctype = data.get('class_type', 'CONTAINER')
             
-            # MODERNIZATION: Mapping to standard Qt icons for cleaner look
-            icon_enum = QtWidgets.QStyle.StandardPixmap.SP_FileIcon # Default
-            if "CONTAINER" in ctype:
-                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_DirIcon
-            elif "BUTTON" in ctype:
-                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_DialogOkButton
-            elif "TEXT" in ctype:
-                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_FileIcon
-            elif "SLIDER" in ctype:
-                icon_enum = QtWidgets.QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton
+            # MODERNIZATION: Custom Icon System with Fallback
+            icon_map = {
+                "CONTAINER": ("folder", QtWidgets.QStyle.StandardPixmap.SP_DirIcon),
+                "BUTTON": ("button", QtWidgets.QStyle.StandardPixmap.SP_DialogOkButton),
+                "TEXT": ("text", QtWidgets.QStyle.StandardPixmap.SP_FileIcon),
+                "SLIDER": ("slider", QtWidgets.QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton),
+                "GRID_CONTAINER": ("grid", QtWidgets.QStyle.StandardPixmap.SP_FileDialogDetailedView),
+            }
             
-            item.setIcon(0, self.style().standardIcon(icon_enum))
+            name, sp = icon_map.get(ctype, ("file", QtWidgets.QStyle.StandardPixmap.SP_FileIcon))
+            icon = IconManager.get_instance().get_icon(name, fallback_sp=sp)
+            item.setIcon(0, icon)
 
             is_hidden = data.get('is_hidden', False)
             item.setText(1, "❌" if is_hidden else "👁")
