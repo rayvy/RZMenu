@@ -140,8 +140,10 @@ class RZMOutlinerPanel(RZEditorPanel):
         self.set_selection_silent(ctx.selected_ids, ctx.active_id)
 
     def _on_items_reordered(self, target_id, new_parent_id):
-        """Handle drag-drop reordering."""
+        """Handle drag-drop reordering and broadcast to all panels."""
         core.reorder_elements(target_id, new_parent_id)
+        # Emit signal so ALL panels update (including other outliners/viewports)
+        SIGNALS.structure_changed.emit()
     
     def _on_toggle_hide(self, uid):
         """Handle visibility toggle via action manager."""

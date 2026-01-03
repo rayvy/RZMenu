@@ -888,11 +888,13 @@ class RZViewportPanel(RZEditorPanel):
         self.view.rz_scene._is_user_interaction = True
     
     def _on_interaction_end(self):
-        """Commit changes and refresh."""
+        """Commit changes and broadcast updates to all panels."""
         core.commit_history("RZM Transformation")
         self.view.rz_scene._is_user_interaction = False
-        # Force refresh after interaction
-        self.refresh_data()
+        
+        # Emit global signals so ALL panels update (including other viewports/outliners)
+        SIGNALS.structure_changed.emit()
+        SIGNALS.transform_changed.emit()
     
     def _on_selection_changed(self, target_data, modifiers):
         """Handle selection changes from viewport interaction."""
