@@ -77,3 +77,4 @@ class RZImageComboBox(QtWidgets.QComboBox):
             event.acceptProposedAction()
         except (ValueError, TypeError):
             pass
+

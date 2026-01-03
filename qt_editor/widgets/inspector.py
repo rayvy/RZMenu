@@ -324,7 +324,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.btn_color.set_color(props.get('color', [1.0, 1.0, 1.0, 1.0]))
             
             # Image ID
-            # 1. Populate combo with latest available images
+            # 1. Populate combo with latest available images (including source_type info)
             all_images = core.read.get_available_images()
             self.cb_image.update_items(all_images)
             # 2. Select current image

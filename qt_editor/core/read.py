@@ -132,6 +132,7 @@ def get_available_images() -> list[dict]:
         
         results.append({
             'id': img.id,
-            'name': img.display_name
+            'name': img.display_name,
+            'source_type': getattr(img, 'source_type', 'CUSTOM')
         })
     return results

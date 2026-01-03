@@ -37,3 +37,25 @@ def refresh_viewports():
 def safe_undo_push(message):
     exec_in_context(bpy.ops.ed.undo_push, message=message)
     refresh_viewports()
+
+def import_image_from_dialog():
+    """Open QFileDialog to select and import images into Blender."""
+    from PySide6 import QtWidgets
+    from .signals import SIGNALS
+    
+    files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+        None, "Select Images to Import", "", 
+        "Images (*.png *.jpg *.jpeg *.tga *.bmp);;All Files (*)"
+    )
+    
+    if not files:
+        return
+
+    # Importing images into Blender
+    for path in files:
+        if hasattr(bpy.ops.rzm, "add_image"):
+            bpy.ops.rzm.add_image(filepath=path)
+        else:
+            print(f"BlenderBridge: rzm.add_image not found for {path}")
+            
+    SIGNALS.structure_changed.emit()
