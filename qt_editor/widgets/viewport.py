@@ -461,13 +461,25 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
             if dx == 0 and dy == 0: return
 
-            # Visual movement
+            # Use accumulators to handle floating point deltas from Qt
+            self._accum_x += dx
+            self._accum_y += dy
+            
+            # Only signal core if we have at least 1px of movement in Blender space (int)
+            blender_dx = int(self._accum_x)
+            blender_dy = int(self._accum_y)
+            
+            if blender_dx != 0 or blender_dy != 0:
+                # Subtract the integer part we are sending to core from the accumulators
+                self._accum_x -= blender_dx
+                self._accum_y -= blender_dy
+                
+                # Signal to core (inverted Y for Blender)
+                self.item_moved_signal.emit(float(blender_dx), float(-blender_dy))
+
+            # Visual movement (smooth in Qt)
             for item in movable_items:
                 item.moveBy(dx, dy)
-
-            # Signal to core
-            movable_ids = [item.uid for item in movable_items]
-            self.item_moved_signal.emit(float(dx), float(-dy))
             
             self._drag_start_pos += QtCore.QPointF(dx, dy)
         else:
@@ -602,6 +614,57 @@ class RZViewportView(QtWidgets.QGraphicsView):
         
         self.rz_scene.interaction_start_signal.connect(self._on_interaction_start)
         self.rz_scene.interaction_end_signal.connect(self._on_interaction_end)
+
+    def keyPressEvent(self, event):
+        modifiers = event.modifiers()
+        key = event.key()
+        
+        # Shift + A: Add Menu
+        if key == QtCore.Qt.Key_A and (modifiers & QtCore.Qt.ShiftModifier):
+            # Map global cursor to scene
+            scene_pos = self.mapToScene(self.mapFromGlobal(QtGui.QCursor.pos()))
+            self.open_add_menu(scene_pos)
+            event.accept()
+            return
+
+        # Ctrl + A: Select All
+        elif key == QtCore.Qt.Key_A and (modifiers & QtCore.Qt.ControlModifier):
+            items = [i for i in self.scene().items() if isinstance(i, RZElementItem) and i.is_selectable]
+            ids = [i.uid for i in items]
+            if ids:
+                self.rz_scene.selection_changed_signal.emit(ids, None)
+            event.accept()
+            return
+            
+        super().keyPressEvent(event)
+
+    def open_add_menu(self, scene_pos):
+        """Opens menu to add new elements at the specified scene position."""
+        menu = QtWidgets.QMenu(self)
+        menu.addSection("Add Element")
+        
+        types = [
+            ("Container", "CONTAINER"),
+            ("Grid Container", "GRID_CONTAINER"),
+            ("Button", "BUTTON"),
+            ("Text", "TEXT"),
+            ("Slider", "SLIDER"),
+            ("Anchor", "ANCHOR")
+        ]
+        
+        for label, class_type in types:
+            action = menu.addAction(label)
+            # Use funky closure for the lambda
+            action.triggered.connect(lambda _, ct=class_type, sp=scene_pos: self._create_at_pos(ct, sp))
+            
+        menu.exec(QtGui.QCursor.pos())
+
+    def _create_at_pos(self, class_type, scene_pos):
+        # Convert scene Y to Blender Y (inverted)
+        bx = scene_pos.x()
+        by = -scene_pos.y()
+        from .. import core
+        core.create_element(class_type, bx, by)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat("application/x-rzmenu-image-id"):
@@ -759,7 +822,16 @@ class RZViewportView(QtWidgets.QGraphicsView):
             menu.addSection("Element"); add_op("rzm.toggle_hide"); add_op("rzm.toggle_lock"); add_op("rzm.toggle_selectable")
             menu.addSeparator(); add_op("rzm.delete")
         else:
+            scene_pos = self.mapToScene(event.pos())
+            add_menu = menu.addMenu("Add")
+            types = [("Container", "CONTAINER"), ("Grid Container", "GRID_CONTAINER"), ("Button", "BUTTON"), ("Text", "TEXT"), ("Slider", "SLIDER"), ("Anchor", "ANCHOR")]
+            for label, ct in types:
+                act = add_menu.addAction(label)
+                act.triggered.connect(lambda _, c=ct, p=scene_pos: self._create_at_pos(c, p))
+            
+            menu.addSeparator()
             menu.addSection("General"); add_op("rzm.select_all"); add_op("rzm.view_reset"); add_op("rzm.unhide_all")
+        
         menu.addSeparator(); add_op("rzm.undo"); add_op("rzm.redo")
         menu.exec(event.globalPos())
 
