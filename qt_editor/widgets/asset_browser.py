@@ -56,6 +56,12 @@ class RZAssetBrowserPanel(RZEditorPanel):
         self.btn_import.clicked.connect(blender_bridge.import_image_from_dialog)
         toolbar.addWidget(self.btn_import)
         
+        self.btn_reload = QtWidgets.QPushButton("↺")
+        self.btn_reload.setToolTip("Reload Base Icons & Refresh List")
+        self.btn_reload.setFixedWidth(30)
+        self.btn_reload.clicked.connect(self.on_reload_clicked)
+        toolbar.addWidget(self.btn_reload)
+        
         toolbar.addStretch()
 
         toolbar.addWidget(QtWidgets.QLabel("Filter:"))
@@ -87,6 +93,18 @@ class RZAssetBrowserPanel(RZEditorPanel):
 
     def refresh_data(self):
         """Initial refresh entry point."""
+        # Auto-load check: if no images, try to load base icons once
+        images = read.get_available_images()
+        if not images:
+            print("AssetBrowser: No images found, auto-reloading base icons...")
+            blender_bridge.reload_base_icons()
+            return # reload_base_icons will emit structure_changed, triggering this again
+            
+        self.rebuild_view()
+
+    def on_reload_clicked(self):
+        """Manually trigger base icon reload from Blender."""
+        blender_bridge.reload_base_icons()
         self.rebuild_view()
 
     def rebuild_view(self):

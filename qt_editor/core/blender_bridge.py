@@ -59,3 +59,15 @@ def import_image_from_dialog():
             print(f"BlenderBridge: rzm.add_image not found for {path}")
             
     SIGNALS.structure_changed.emit()
+
+def reload_base_icons():
+    """Triggers rzm.load_base_icons operator and refreshes UI."""
+    from .signals import SIGNALS
+    try:
+        if hasattr(bpy.ops.rzm, "load_base_icons"):
+            bpy.ops.rzm.load_base_icons()
+            SIGNALS.structure_changed.emit()
+        else:
+            print("BlenderBridge: rzm.load_base_icons not found")
+    except Exception as e:
+        print(f"BlenderBridge: Failed to reload base icons: {e}")
