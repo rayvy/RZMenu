@@ -590,6 +590,9 @@ class RZViewportView(QtWidgets.QGraphicsView):
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+        
+        self.setAcceptDrops(True)
+        
         self._is_panning = False
         self._pan_start_pos = QtCore.QPoint()
         self.parent_window = None 
@@ -599,6 +602,40 @@ class RZViewportView(QtWidgets.QGraphicsView):
         
         self.rz_scene.interaction_start_signal.connect(self._on_interaction_start)
         self.rz_scene.interaction_end_signal.connect(self._on_interaction_end)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-rzmenu-image-id"):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-rzmenu-image-id"):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasFormat("application/x-rzmenu-image-id"):
+            data = event.mimeData().data("application/x-rzmenu-image-id")
+            try:
+                image_id = int(data.data().decode('utf-8'))
+                
+                # Get drop position in scene
+                scene_pos = self.mapToScene(event.position().toPoint())
+                
+                # Convert to Blender coords (Y is flipped in our UI)
+                bx = scene_pos.x()
+                by = -scene_pos.y()
+                
+                from .. import core
+                core.create_element_with_image(image_id, bx, by)
+                
+                event.acceptProposedAction()
+            except (ValueError, TypeError):
+                event.ignore()
+        else:
+            super().dropEvent(event)
 
     def setup_overlay_ui(self):
         self.overlay_container = QtWidgets.QFrame(self)

@@ -32,7 +32,8 @@ from .structure import (
     reparent_element,
     duplicate_elements,
     commit_history,
-    import_image_from_path
+    import_image_from_path,
+    create_element_with_image
 )
 
 from .props import (

@@ -145,3 +145,48 @@ def import_image_from_path(filepath):
         print(f"Core: Failed to import image: {e}")
     finally:
         signals.IS_UPDATING_FROM_QT = False
+
+def create_element_with_image(image_id, x, y):
+    """Create a new element with an image at a specific position."""
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        if not bpy.context or not bpy.context.scene: return
+        rzm = bpy.context.scene.rzm
+        elements = rzm.elements
+        images = rzm.images
+        
+        new_id = get_next_available_id(elements)
+        new_element = elements.add()
+        new_element.id = new_id
+        new_element.elem_class = 'BUTTON'
+        
+        # Try to find image to get name and size
+        img_meta = next((img for img in images if img.id == image_id), None)
+        if img_meta:
+            new_element.element_name = f"Img_{img_meta.display_name}_{new_id}"
+            
+            # Default size
+            w, h = 100, 100
+            
+            # If image pointer exists, try to get real size
+            if hasattr(img_meta, 'image_pointer') and img_meta.image_pointer:
+                real_w, real_h = img_meta.image_pointer.size
+                if real_w > 0 and real_h > 0:
+                    # Scale to fit max 100x100 but keep aspect ratio
+                    scale = min(100 / real_w, 100 / real_h)
+                    w, h = int(real_w * scale), int(real_h * scale)
+            
+            new_element.size = (w, h)
+        else:
+            new_element.element_name = f"Button_Img_{new_id}"
+            new_element.size = (100, 100)
+            
+        new_element.image_id = image_id
+        new_element.position = (int(x), int(y))
+        
+        blender_bridge.safe_undo_push(f"RZM: Create Image Element")
+        signals.SIGNALS.structure_changed.emit()
+        signals.SIGNALS.transform_changed.emit()
+        return new_id
+    finally:
+        signals.IS_UPDATING_FROM_QT = False
