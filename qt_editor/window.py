@@ -12,6 +12,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 from . import core, actions
 from .systems import input_manager
+from .systems.layout_manager import LayoutManager
 from .widgets import preferences
 from .widgets import outliner, inspector, viewport
 from .widgets.panel_factory import PanelFactory
@@ -37,60 +38,42 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # --- REGISTER PANELS ---
         self._register_panels()
         
-        # --- UI LAYOUT ---
-        root_layout = QtWidgets.QVBoxLayout(self) 
-        root_layout.setContentsMargins(5,5,5,5)
-        root_layout.setSpacing(5)
-        
-        # --- INIT ACTIONS ---
+        # --- INIT SYSTEMS ---
+        self.layout_manager = LayoutManager()
         self.action_manager = actions.RZActionManager(self)
-
+        self.input_controller = input_manager.RZInputController(self)
+        
+        # --- UI LAYOUT ---
+        self.root_layout = QtWidgets.QVBoxLayout(self) 
+        self.root_layout.setContentsMargins(5,5,5,5)
+        self.root_layout.setSpacing(5)
+        
         # 1. TOOLBAR (HEADER)
         self.toolbar_container = RZContextAwareWidget("HEADER", self)
         self.toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_container)
         self.toolbar_layout.setContentsMargins(5,5,5,5)
         self.setup_toolbar() 
-        root_layout.addWidget(self.toolbar_container)
+        self.root_layout.addWidget(self.toolbar_container)
         
-        # 2. CONTENT (Splitter with RZAreaWidgets)
-        # Areas are autonomous - they manage their own panels
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        root_layout.addWidget(self.splitter)
-        
-        # Area 1: Outliner (default)
-        self.area_outliner = RZAreaWidget(initial_panel_id="OUTLINER")
-        self.splitter.addWidget(self.area_outliner)
-        
-        # Area 2: Viewport (default)
-        self.area_viewport = RZAreaWidget(initial_panel_id="VIEWPORT")
-        self.splitter.addWidget(self.area_viewport)
-        
-        # Area 3: Inspector (default)
-        self.area_inspector = RZAreaWidget(initial_panel_id="INSPECTOR")
-        self.splitter.addWidget(self.area_inspector)
-        
-        self.splitter.setSizes([200, 600, 300])
+        # 2. CONTENT (Dynamic Splitter)
+        # Placeholder for the layout root, will be set by apply_layout
+        self.splitter = None 
+        self.apply_layout("Default")
 
         # 3. FOOTER
         self.footer_container = RZContextAwareWidget("FOOTER", self)
         self.footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
         self.footer_layout.setContentsMargins(5, 2, 5, 2)
         self.setup_footer() 
-        root_layout.addWidget(self.footer_container)
+        self.root_layout.addWidget(self.footer_container)
 
-        # --- SYSTEMS ---
-        self.input_controller = input_manager.RZInputController(self)
-        
-        # Connect alt_mode to area (which will proxy to current panel if it's a viewport)
+        # Connect alt_mode to areas
         if hasattr(self.input_controller, "alt_mode_changed"):
             self.input_controller.alt_mode_changed.connect(self._broadcast_alt_mode)
         
         self.input_controller.operator_executed.connect(self.update_footer_op)
 
         # === WINDOW-LEVEL SIGNAL CONNECTIONS ===
-        # Only connect signals that the WINDOW needs to handle
-        # Panels handle their own data subscriptions autonomously
-        
         SIGNALS.context_updated.connect(self.on_context_area_changed)
         SIGNALS.config_changed.connect(self.on_config_changed)
         SIGNALS.selection_changed.connect(self._on_selection_changed)
@@ -98,7 +81,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # --- DEBUG OVERLAY ---
         self.setup_debug_overlay()
         
-        # Initial trigger - panels will respond to this signal
+        # Initial trigger
         self._trigger_initial_refresh()
 
     def _register_panels(self):
@@ -109,12 +92,17 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
     def _trigger_initial_refresh(self):
         """Trigger initial data load by emitting structure_changed signal."""
-        # Panels are autonomous and will respond to this signal
         SIGNALS.structure_changed.emit()
+
+    def _get_all_areas(self):
+        """Helper to find all RZAreaWidget instances in the current layout."""
+        if self.splitter:
+            return self.splitter.findChildren(RZAreaWidget)
+        return []
 
     def _broadcast_alt_mode(self, active):
         """Broadcast alt_mode to all viewport panels in all areas."""
-        for area in [self.area_outliner, self.area_viewport, self.area_inspector]:
+        for area in self._get_all_areas():
             panel = area.get_current_panel()
             if panel and hasattr(panel, 'set_alt_mode'):
                 panel.set_alt_mode(active)
@@ -127,18 +115,80 @@ class RZMEditorWindow(QtWidgets.QWidget):
         """Called externally to sync data from Blender."""
         if not self.isVisible():
             return
+        
         # Check if any viewport is in user interaction mode
-        for area in [self.area_outliner, self.area_viewport, self.area_inspector]:
+        for area in self._get_all_areas():
             panel = area.get_current_panel()
             if panel and hasattr(panel, 'rz_scene'):
                 if panel.rz_scene._is_user_interaction:
                     return
+        
         # Trigger refresh via signals - panels handle themselves
         SIGNALS.structure_changed.emit()
 
     def full_refresh(self):
         """Trigger a full refresh of all panels via signals."""
         SIGNALS.structure_changed.emit()
+
+    # -------------------------------------------------------------------------
+    # LAYOUT MANAGEMENT
+    # -------------------------------------------------------------------------
+    def apply_layout(self, layout_name):
+        """Reconstruct the central widget tree based on saved layout data."""
+        # 1. Get Data
+        data = self.layout_manager.get_layout_data(layout_name)
+        
+        # 2. Build new widget tree
+        new_splitter = self.layout_manager.build_layout(data)
+        
+        # 3. Swap in UI
+        if self.splitter:
+            # Remove old splitter from layout
+            self.root_layout.removeWidget(self.splitter)
+            self.splitter.deleteLater()
+            self.splitter = None
+        
+        self.splitter = new_splitter
+        
+        # Insert between Header (index 0) and Footer (index 2, currently missing, so insert at 1)
+        # Note: In __init__, we add Header, then call this, then add Footer.
+        # So usually insert at index 1 is safe.
+        self.root_layout.insertWidget(1, self.splitter)
+        
+        # 4. Refresh Data
+        # Give UI a moment to layout before requesting data
+        QtCore.QTimer.singleShot(50, self.full_refresh)
+
+    def save_current_layout(self):
+        """Open dialog to save current layout."""
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Save Layout", "Layout Name:"
+        )
+        if ok and name:
+            self.layout_manager.save_layout(name, self.splitter)
+            self._update_layout_combo(select_name=name)
+
+    def reset_layout(self):
+        """Reset to default layout."""
+        self.apply_layout("Default")
+        self._update_layout_combo(select_name="Default")
+
+    def _update_layout_combo(self, select_name=None):
+        """Refresh the combo box items."""
+        self.combo_layouts.blockSignals(True)
+        self.combo_layouts.clear()
+        
+        names = self.layout_manager.get_layout_names()
+        self.combo_layouts.addItems(names)
+        
+        if select_name and select_name in names:
+            self.combo_layouts.setCurrentText(select_name)
+            
+        self.combo_layouts.blockSignals(False)
+
+    def _on_layout_combo_changed(self, name):
+        """Handle user changing layout via combo box."""
+        self.apply_layout(name)
 
     # -------------------------------------------------------------------------
     # UI SETUP
@@ -164,6 +214,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.toolbar_layout.addWidget(btn_settings)
 
     def setup_footer(self):
+        # --- LEFT: Context Info ---
         self.lbl_context = QtWidgets.QLabel("Context: NONE")
         self.footer_layout.addWidget(self.lbl_context)
         
@@ -176,6 +227,28 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.footer_layout.addWidget(self.lbl_last_op)
         
         self.footer_layout.addStretch()
+        
+        # --- RIGHT: Layout Controls ---
+        lbl_layout = QtWidgets.QLabel("Layout:")
+        self.footer_layout.addWidget(lbl_layout)
+
+        self.combo_layouts = QtWidgets.QComboBox()
+        self.combo_layouts.setMinimumWidth(100)
+        self._update_layout_combo(select_name="Default")
+        self.combo_layouts.currentTextChanged.connect(self._on_layout_combo_changed)
+        self.footer_layout.addWidget(self.combo_layouts)
+
+        btn_save = QtWidgets.QPushButton("+")
+        btn_save.setFixedSize(24, 24)
+        btn_save.setToolTip("Save Current Layout")
+        btn_save.clicked.connect(self.save_current_layout)
+        self.footer_layout.addWidget(btn_save)
+
+        btn_reset = QtWidgets.QPushButton("Reset")
+        btn_reset.setToolTip("Reset to Default Layout")
+        btn_reset.clicked.connect(self.reset_layout)
+        self.footer_layout.addWidget(btn_reset)
+
         self.on_context_area_changed() 
 
     # --- FOOTER UPDATES ---
@@ -207,7 +280,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.setStyleSheet(qss)
 
         # Update all Areas (they will update their current panels)
-        for area in [self.area_outliner, self.area_viewport, self.area_inspector]:
+        # Dynamic traversal instead of hardcoded areas
+        for area in self._get_all_areas():
             if hasattr(area, 'update_theme_styles'):
                 area.update_theme_styles()
 

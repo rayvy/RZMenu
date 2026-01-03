@@ -106,17 +106,9 @@ class RZAppearancePanel(QtWidgets.QWidget):
         layout.addWidget(grp_selector)
         
         # --- DYNAMIC EDITOR ---
-        self.scroll_area = QtWidgets.QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
-        
-        self.editor_content = QtWidgets.QWidget()
-        self.editor_layout = QtWidgets.QVBoxLayout(self.editor_content)
-        self.editor_layout.setContentsMargins(5, 5, 5, 5)
-        self.editor_layout.setSpacing(15)
-        
-        self.scroll_area.setWidget(self.editor_content)
-        layout.addWidget(self.scroll_area)
+        self.editor_tabs = QtWidgets.QTabWidget()
+        self.editor_tabs.setObjectName("ThemeEditorTabs")
+        layout.addWidget(self.editor_tabs)
         
         # --- BOTTOM BUTTONS ---
         btn_layout = QtWidgets.QHBoxLayout()
@@ -124,12 +116,18 @@ class RZAppearancePanel(QtWidgets.QWidget):
         self.btn_save.setFixedHeight(30)
         self.btn_save_copy = QtWidgets.QPushButton("Save Copy As...")
         self.btn_save_copy.setFixedHeight(30)
+        self.btn_reset = QtWidgets.QPushButton("Reset Theme")
+        self.btn_reset.setFixedHeight(30)
+        self.btn_reset.setObjectName("BtnWarning")
         
         self.btn_save.clicked.connect(self._on_save_clicked)
         self.btn_save_copy.clicked.connect(self._on_save_copy_clicked)
+        self.btn_reset.clicked.connect(self._on_reset_clicked)
         
         btn_layout.addWidget(self.btn_save)
         btn_layout.addWidget(self.btn_save_copy)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_reset)
         layout.addLayout(btn_layout)
 
         self._build_editor_ui()
@@ -139,145 +137,168 @@ class RZAppearancePanel(QtWidgets.QWidget):
         set_config_value("appearance", "theme", theme_key)
         self._build_editor_ui()
 
-    def _build_editor_ui(self):
-        while self.editor_layout.count():
-            item = self.editor_layout.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
+    def _clear_tabs(self):
+        while self.editor_tabs.count():
+            w = self.editor_tabs.widget(0)
+            self.editor_tabs.removeTab(0)
+            if w: w.deleteLater()
 
+    def _build_editor_ui(self):
+        self._clear_tabs()
         theme = get_current_theme()
-        
-        # --- Window Background Group ---
+
+        self.editor_tabs.addTab(self._build_global_tab(theme), "Global")
+        self.editor_tabs.addTab(self._build_panels_tab(theme), "Panels")
+        self.editor_tabs.addTab(self._build_widgets_tab(theme), "Widgets")
+        self.editor_tabs.addTab(self._build_viewport_tab(theme), "Viewport")
+
+    def _create_scroll_content(self):
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        content = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(content)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        scroll.setWidget(content)
+        return scroll, layout
+
+    def _build_global_tab(self, theme):
+        scroll, layout = self._create_scroll_content()
         grp_bg = RZGroupBox("Window Background")
         form_bg = QtWidgets.QFormLayout(grp_bg)
-        form_bg.setLabelAlignment(QtCore.Qt.AlignLeft)
-        form_bg.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
         
-        # 1. SCOPE
         self.combo_scope = RZComboBox()
         self.combo_scope.addItems(["Unified", "Individual"])
         self.combo_scope.setCurrentText(theme.get("bg_scope", "Unified"))
         self.combo_scope.currentTextChanged.connect(lambda t: self._on_generic_change("bg_scope", t))
         form_bg.addRow(RZLabel("Scope Mode:"), self.combo_scope)
 
-        # 2. TYPE
         self.combo_bg_type = RZComboBox()
         self.combo_bg_type.addItems(["Solid Color", "Image", "Gradient"])
-        
         current_type = theme.get("bg_type", "solid")
-        # Map raw type to UI text
         type_map_inv = {"solid": "Solid Color", "image": "Image", "gradient": "Gradient"}
         self.combo_bg_type.setCurrentText(type_map_inv.get(current_type, "Solid Color"))
         self.combo_bg_type.currentTextChanged.connect(self._on_bg_type_changed)
         form_bg.addRow(RZLabel("Background Type:"), self.combo_bg_type)
         
-        # 3. IMAGE CONTROLS
+        btn_root = RZColorButton(); btn_root.set_color(theme.get("bg_root", "#20232A"))
+        btn_root.colorChanged.connect(lambda c: self._on_color_modified("bg_root", c))
+        form_bg.addRow(RZLabel("Window Background:"), btn_root)
+
         self.file_picker = RZFilePicker()
         self.file_picker.set_path(theme.get("bg_image", ""))
         self.file_picker.pathChanged.connect(self._on_bg_image_changed)
-        
         self.combo_fit = RZComboBox()
         self.combo_fit.addItems(["Cover", "Contain", "Stretch", "Tile"])
         self.combo_fit.setCurrentText(theme.get("bg_fit", "Cover"))
         self.combo_fit.currentTextChanged.connect(lambda t: self._on_generic_change("bg_fit", t))
-        
-        # 4. GRADIENT CONTROLS
-        self.cont_grad = QtWidgets.QWidget()
-        l_grad = QtWidgets.QVBoxLayout(self.cont_grad)
-        l_grad.setContentsMargins(0,0,0,0)
-        
-        # Grad Colors
-        h_grad_col = QtWidgets.QHBoxLayout()
-        self.btn_grad1 = RZColorButton()
-        self.btn_grad1.set_color(theme.get("bg_grad_1", "#333"))
-        self.btn_grad1.colorChanged.connect(lambda c: self._on_color_modified("bg_grad_1", c))
-        
-        self.btn_grad2 = RZColorButton()
-        self.btn_grad2.set_color(theme.get("bg_grad_2", "#000"))
-        self.btn_grad2.colorChanged.connect(lambda c: self._on_color_modified("bg_grad_2", c))
-        
-        h_grad_col.addWidget(RZLabel("Start:"))
-        h_grad_col.addWidget(self.btn_grad1)
-        h_grad_col.addWidget(RZLabel("End:"))
-        h_grad_col.addWidget(self.btn_grad2)
-        l_grad.addLayout(h_grad_col)
-        
-        # Grad Direction
-        h_grad_dir = QtWidgets.QHBoxLayout()
-        self.combo_grad_dir = RZComboBox()
-        self.combo_grad_dir.addItems(["Vertical", "Horizontal", "Diagonal"])
-        self.combo_grad_dir.setCurrentText(theme.get("bg_grad_dir", "Vertical"))
-        self.combo_grad_dir.currentTextChanged.connect(lambda t: self._on_generic_change("bg_grad_dir", t))
-        
-        h_grad_dir.addWidget(RZLabel("Direction:"))
-        h_grad_dir.addWidget(self.combo_grad_dir)
-        l_grad.addLayout(h_grad_dir)
-
-        # 5. OPACITY
-        self.sl_opacity = RZSmartSlider(is_int=False)
-        self.sl_opacity.spin.setRange(0.0, 1.0)
-        self.sl_opacity.spin.setSingleStep(0.05)
-        self.sl_opacity.set_value_from_backend(theme.get("panel_opacity", 1.0))
-        self.sl_opacity.value_changed.connect(lambda v: self._on_generic_change("panel_opacity", v))
-        
-        # ADD TO LAYOUT
-        self.lbl_img = RZLabel("Image:")
+        self.lbl_img = RZLabel("Image Path:")
         self.lbl_fit = RZLabel("Fit Mode:")
-        self.lbl_op = RZLabel("Panel Opacity:")
-        
         form_bg.addRow(self.lbl_img, self.file_picker)
         form_bg.addRow(self.lbl_fit, self.combo_fit)
-        form_bg.addRow(RZLabel("Gradient:"), self.cont_grad)
+
+        self.cont_grad = QtWidgets.QWidget()
+        l_grad = QtWidgets.QVBoxLayout(self.cont_grad); l_grad.setContentsMargins(0,0,0,0)
+        h_grad_col = QtWidgets.QHBoxLayout()
+        self.btn_grad1 = RZColorButton(); self.btn_grad1.set_color(theme.get("bg_grad_1", "#333"))
+        self.btn_grad1.colorChanged.connect(lambda c: self._on_color_modified("bg_grad_1", c))
+        self.btn_grad2 = RZColorButton(); self.btn_grad2.set_color(theme.get("bg_grad_2", "#000"))
+        self.btn_grad2.colorChanged.connect(lambda c: self._on_color_modified("bg_grad_2", c))
+        h_grad_col.addWidget(RZLabel("Start:")); h_grad_col.addWidget(self.btn_grad1)
+        h_grad_col.addWidget(RZLabel("End:")); h_grad_col.addWidget(self.btn_grad2)
+        l_grad.addLayout(h_grad_col)
+        self.combo_grad_dir = RZComboBox(); self.combo_grad_dir.addItems(["Vertical", "Horizontal", "Diagonal"])
+        self.combo_grad_dir.setCurrentText(theme.get("bg_grad_dir", "Vertical"))
+        self.combo_grad_dir.currentTextChanged.connect(lambda t: self._on_generic_change("bg_grad_dir", t))
+        h_grad_dir = QtWidgets.QHBoxLayout(); h_grad_dir.addWidget(RZLabel("Direction:")); h_grad_dir.addWidget(self.combo_grad_dir)
+        l_grad.addLayout(h_grad_dir)
+        form_bg.addRow(RZLabel("Gradient Colors:"), self.cont_grad)
+
+        self.sl_opacity = RZSmartSlider(is_int=False); self.sl_opacity.spin.setRange(0.0, 1.0)
+        self.sl_opacity.set_value_from_backend(theme.get("panel_opacity", 1.0))
+        self.sl_opacity.value_changed.connect(lambda v: self._on_generic_change("panel_opacity", v))
+        self.lbl_op = RZLabel("Glass Opacity:")
         form_bg.addRow(self.lbl_op, self.sl_opacity)
 
-        self.editor_layout.addWidget(grp_bg)
-        
-        # UI STATE UPDATE
+        btn_overlay = RZColorButton(); btn_overlay.set_color(theme.get("overlay_color", "#000"))
+        btn_overlay.colorChanged.connect(lambda c: self._on_color_modified("overlay_color", c))
+        form_bg.addRow(RZLabel("Glass Tint:"), btn_overlay)
+
+        layout.addWidget(grp_bg)
+        layout.addStretch()
         self._update_visibility(current_type)
+        return scroll
 
-        # --- CATEGORIES ---
-        categories = {
-            "Backgrounds": [], "Text & Typography": [], "Borders": [],
-            "Accents": [], "Viewport": [], "Context": [], "Special": [], "Misc": []
-        }
-        
-        sorted_keys = sorted(theme.keys())
-        exclude_keys = [
-            "name", "id", "author", "_root_path",
-            "bg_image", "bg_type", "bg_fit", "bg_scope", 
-            "bg_grad_1", "bg_grad_2", "bg_grad_dir",
-            "panel_opacity", "overlay_color", "overlay_opacity"
+    def _build_panels_tab(self, theme):
+        scroll, layout = self._create_scroll_content()
+        grp_struct = RZGroupBox("Structural Colors")
+        form_struct = QtWidgets.QFormLayout(grp_struct)
+        struct_keys = [
+            ("Panel Base", "bg_panel"),
+            ("Toolbar (Header)", "bg_header_main"),
+            ("Footer", "bg_footer_main"),
+            ("Area Header", "bg_area_header"),
         ]
+        for label, key in struct_keys:
+            btn = RZColorButton(); btn.set_color(theme.get(key, "#333"))
+            btn.colorChanged.connect(lambda c, k=key: self._on_color_modified(k, c))
+            form_struct.addRow(RZLabel(label), btn)
+        layout.addWidget(grp_struct)
 
-        for key in sorted_keys:
-            if key in exclude_keys: continue
-            
-            if key.startswith("bg_"): categories["Backgrounds"].append(key)
-            elif key.startswith("text_"): categories["Text & Typography"].append(key)
-            elif key.startswith("border_"): categories["Borders"].append(key)
-            elif "accent" in key: categories["Accents"].append(key)
-            elif key.startswith("vp_"): categories["Viewport"].append(key)
-            elif key.startswith("ctx_"): categories["Context"].append(key)
-            elif key in ["selection", "warning", "error", "success"]: categories["Special"].append(key)
-            else: categories["Misc"].append(key)
-            
-        for cat_name, keys in categories.items():
-            if not keys: continue
-            grp = RZGroupBox(cat_name)
-            form = QtWidgets.QFormLayout(grp)
-            form.setLabelAlignment(QtCore.Qt.AlignLeft)
-            form.setFieldGrowthPolicy(QtWidgets.QFormLayout.ExpandingFieldsGrow)
-            
+        grp_ctx = RZGroupBox("Context Colors")
+        form_ctx = QtWidgets.QFormLayout(grp_ctx)
+        for key in sorted(theme.keys()):
+            if key.startswith("ctx_"):
+                btn = RZColorButton(); btn.set_color(theme[key])
+                btn.colorChanged.connect(lambda c, k=key: self._on_color_modified(k, c))
+                form_ctx.addRow(RZLabel(key.replace("ctx_", "").title()), btn)
+        layout.addWidget(grp_ctx)
+        layout.addStretch()
+        return scroll
+
+    def _build_widgets_tab(self, theme):
+        scroll, layout = self._create_scroll_content()
+        groups = {
+            "Widget Backgrounds": ["bg_header", "bg_input", "handle_splitter"],
+            "Borders": ["border_main", "border_input", "border_contrast"],
+            "Accents": ["accent", "accent_hover", "accent_text"],
+            "Text": ["text_main", "text_dark", "text_disabled", "text_bright"],
+            "States": ["selection", "warning", "error", "success"]
+        }
+        for name, keys in groups.items():
+            grp = RZGroupBox(name); form = QtWidgets.QFormLayout(grp)
             for key in keys:
+                if key in theme:
+                    btn = RZColorButton(); btn.set_color(theme[key])
+                    btn.colorChanged.connect(lambda c, k=key: self._on_color_modified(k, c))
+                    form.addRow(RZLabel(key.replace("_", " ").title()), btn)
+            layout.addWidget(grp)
+        layout.addStretch()
+        return scroll
+
+    def _build_viewport_tab(self, theme):
+        scroll, layout = self._create_scroll_content()
+        grp = RZGroupBox("Visuals")
+        form = QtWidgets.QFormLayout(grp)
+        for key in sorted(theme.keys()):
+            if key.startswith("vp_"):
                 val = theme[key]
                 if isinstance(val, str) and (val.startswith("#") or val.startswith("rgba")):
-                    btn = RZColorButton()
-                    btn.set_color(val)
-                    btn.setFixedHeight(25)
-                    btn.colorChanged.connect(lambda col_list, k=key: self._on_color_modified(k, col_list))
-                    form.addRow(RZLabel(key.replace("_", " ").title()), btn)
-            
-            self.editor_layout.addWidget(grp)
-        self.editor_layout.addStretch()
+                    btn = RZColorButton(); btn.set_color(val)
+                    btn.colorChanged.connect(lambda c, k=key: self._on_color_modified(k, c))
+                    form.addRow(RZLabel(key.replace("vp_", "").replace("_", " ").title()), btn)
+        layout.addWidget(grp)
+        layout.addStretch()
+        return scroll
+
+    def _on_reset_clicked(self):
+        theme_id = self.combo_themes.currentText()
+        if QtWidgets.QMessageBox.question(self, "Reset Theme", f"Are you sure you want to reset '{theme_id}' to defaults?") == QtWidgets.QMessageBox.Yes:
+            if get_theme_manager().reset_theme(theme_id):
+                self._trigger_global_refresh()
+                self._build_editor_ui()
+                QtWidgets.QMessageBox.information(self, "Reset Complete", f"Theme '{theme_id}' has been reset.")
 
     def _update_visibility(self, bg_type):
         is_image = (bg_type == "image")

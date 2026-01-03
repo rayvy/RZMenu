@@ -1,0 +1,38 @@
+{
+    "123": {
+        "type": "SPLITTER",
+        "orientation": 1,
+        "sizes": [
+            197,
+            590,
+            295
+        ],
+        "children": [
+            {
+                "type": "AREA",
+                "panel_id": "OUTLINER"
+            },
+            {
+                "type": "AREA",
+                "panel_id": "VIEWPORT"
+            },
+            {
+                "type": "AREA",
+                "panel_id": "INSPECTOR"
+            }
+        ]
+    },
+    "test": {
+        "type": "SPLITTER",
+        "orientation": 1,
+        "sizes": [
+            2550
+        ],
+        "children": [
+            {
+                "type": "AREA",
+                "panel_id": "VIEWPORT"
+            }
+        ]
+    }
+}
