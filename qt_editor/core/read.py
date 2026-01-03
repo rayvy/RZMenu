@@ -114,3 +114,20 @@ def get_viewport_signature(): return 0
 def get_scene_info(): return {"count": 0, "name": ""}
 def get_active_object_safe(): return None
 def get_selected_objects_safe(): return []
+
+def get_available_images() -> list[dict]:
+    """Iterate bpy.context.scene.rzm.images and return list of dicts."""
+    results = []
+    if not bpy.context or not bpy.context.scene:
+        return results
+    
+    rzm = getattr(bpy.context.scene, "rzm", None)
+    if not rzm:
+        return results
+        
+    for img in rzm.images:
+        results.append({
+            'id': img.id,
+            'name': img.display_name
+        })
+    return results

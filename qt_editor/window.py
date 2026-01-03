@@ -14,7 +14,7 @@ from . import core, actions
 from .systems import input_manager
 from .systems.layout_manager import LayoutManager
 from .widgets import preferences
-from .widgets import outliner, inspector, viewport
+from .widgets import outliner, inspector, viewport, asset_browser
 from .widgets.panel_factory import PanelFactory
 from .widgets.area import RZAreaWidget
 from .context import RZContextManager
@@ -89,6 +89,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         PanelFactory.register(outliner.RZMOutlinerPanel)
         PanelFactory.register(inspector.RZMInspectorPanel)
         PanelFactory.register(viewport.RZViewportPanel)
+        PanelFactory.register(asset_browser.RZAssetBrowserPanel)
 
     def _trigger_initial_refresh(self):
         """Trigger initial data load by emitting structure_changed signal."""
