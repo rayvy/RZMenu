@@ -27,6 +27,14 @@ def get_selection_details(selected_ids, active_id):
         target = selection[0]
 
     if target:
+        # Check if parent is a grid container
+        is_grid_child = False
+        pid = getattr(target, "parent_id", -1)
+        if pid != -1:
+            parent = next((e for e in elements if e.id == pid), None)
+            if parent and getattr(parent, "elem_class", "") == "GRID_CONTAINER":
+                is_grid_child = True
+
         # Helper to get "mixed" status: returns value if uniform, else None
         def get_uniform(prop_name, sub_idx=None):
             if not selection: return None
@@ -62,6 +70,7 @@ def get_selection_details(selected_ids, active_id):
             "alignment": get_uniform("alignment"),
             "text_align": get_uniform("text_align"),
             "is_multi": len(selected_ids) > 1,
+            "is_grid_child": is_grid_child,
             "grid_cell_size": get_uniform("grid_cell_size"),
             "grid_rows": get_uniform("grid_rows"),
             "grid_cols": get_uniform("grid_cols"),

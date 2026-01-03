@@ -200,9 +200,17 @@ class RZMInspectorPanel(RZPanelWidget):
             
             is_locked_pos = props.get('is_locked_pos', False)
             is_locked_size = props.get('is_locked_size', False)
+            is_grid_child = props.get('is_grid_child', False)
             
-            self.sl_x.setEnabled(is_locked_pos is not True)
-            self.sl_y.setEnabled(is_locked_pos is not True)
+            can_edit_pos = (is_locked_pos is not True) and (not is_grid_child)
+            
+            self.sl_x.setEnabled(can_edit_pos)
+            self.sl_y.setEnabled(can_edit_pos)
+            
+            pos_tooltip = "Controlled by Parent Grid" if is_grid_child else ""
+            self.sl_x.setToolTip(pos_tooltip)
+            self.sl_y.setToolTip(pos_tooltip)
+
             self.sl_w.setEnabled(is_locked_size is not True)
             self.sl_h.setEnabled(is_locked_size is not True)
             
