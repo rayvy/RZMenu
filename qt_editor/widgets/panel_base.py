@@ -7,7 +7,7 @@ Panels are AUTONOMOUS - they subscribe to core.SIGNALS upon activation
 and unsubscribe upon deactivation. This prevents RuntimeError when panels
 are destroyed during area type switching.
 """
-from PySide6 import QtCore
+from PySide6 import QtCore, QtWidgets
 from .lib.widgets import RZPanelWidget
 
 
@@ -38,6 +38,12 @@ class RZEditorPanel(RZPanelWidget):
         super().__init__(parent=parent)
         self._is_panel_active = False
         self._signals_connected = False
+        
+        # Ensure panel expands to fill available space
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding
+        )
     
     def on_activate(self):
         """

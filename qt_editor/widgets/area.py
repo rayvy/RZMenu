@@ -170,6 +170,12 @@ class RZAreaWidget(RZPanelWidget):
         # Minimum size to prevent layout collapse
         self.setMinimumSize(QtCore.QSize(100, 100))
         
+        # Ensure area expands to fill available space in splitter
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding
+        )
+        
         self._current_panel: RZEditorPanel = None
         
         # Main layout

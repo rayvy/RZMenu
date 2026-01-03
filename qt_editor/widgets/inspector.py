@@ -36,10 +36,24 @@ class RZMInspectorPanel(RZEditorPanel):
         self.tabs = QtWidgets.QTabWidget()
         layout.addWidget(self.tabs)
         
-        # --- TAB 1: Properties ---
-        self.tab_props = QtWidgets.QWidget()
-        self.layout_props = QtWidgets.QVBoxLayout(self.tab_props)
-        self.tabs.addTab(self.tab_props, "Properties")
+        # --- TAB 1: Properties (with ScrollArea) ---
+        # Create scroll area to handle small panel sizes
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setObjectName("InspectorScrollArea")
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        
+        # Content widget inside scroll area
+        self.scroll_content = QtWidgets.QWidget()
+        self.scroll_content.setObjectName("InspectorScrollContent")
+        self.layout_props = QtWidgets.QVBoxLayout(self.scroll_content)
+        self.layout_props.setContentsMargins(0, 0, 0, 0)
+        self.layout_props.setSpacing(5)
+        
+        self.scroll_area.setWidget(self.scroll_content)
+        self.tabs.addTab(self.scroll_area, "Properties")
         
         self._init_properties_ui()
         self.layout_props.addStretch()
@@ -235,7 +249,7 @@ class RZMInspectorPanel(RZEditorPanel):
         
         if props and props.get('exists'):
             self.has_data = True
-            self.tab_props.setEnabled(True)
+            self.scroll_content.setEnabled(True)
             self.tab_raw.setEnabled(True)
             
             is_locked_pos = props.get('is_locked_pos', False)
@@ -318,7 +332,7 @@ class RZMInspectorPanel(RZEditorPanel):
 
         else:
             self.has_data = False
-            self.tab_props.setEnabled(False)
+            self.scroll_content.setEnabled(False)
             self.tab_raw.setEnabled(False)
             self.lbl_id.setText("No Selection")
             self.name_edit.clear()
