@@ -5,6 +5,54 @@ from ..core import read
 from ..utils.image_cache import ImageCache
 from ..core.signals import SIGNALS
 
+class RZAssetListWidget(QtWidgets.QListWidget):
+    """
+    Subclass for handled Asset List Drag & Drop.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setViewMode(QtWidgets.QListWidget.IconMode)
+        self.setIconSize(QtCore.QSize(64, 64))
+        self.setGridSize(QtCore.QSize(80, 100))
+        self.setResizeMode(QtWidgets.QListWidget.Adjust)
+        self.setSpacing(5)
+        self.setMovement(QtWidgets.QListView.Static)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+
+    def mimeData(self, items):
+        """Format mime data for internal dragging."""
+        if not items:
+            return None
+        
+        item = items[0]
+        image_id = item.data(QtCore.Qt.UserRole)
+        
+        mime_data = QtCore.QMimeData()
+        mime_data.setData("application/x-rzmenu-image-id", QtCore.QByteArray(str(image_id).encode('utf-8')))
+        return mime_data
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            for url in urls:
+                path = url.toLocalFile()
+                print(f"Importing: {path}")
+                # Trigger import logic via core
+                from .. import core
+                if hasattr(core, 'import_image_from_path'):
+                    core.import_image_from_path(path)
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
+
 class RZAssetBrowserPanel(RZEditorPanel):
     PANEL_ID = "ASSETS"
     PANEL_NAME = "Assets"
@@ -18,41 +66,8 @@ class RZAssetBrowserPanel(RZEditorPanel):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.list_widget = QtWidgets.QListWidget()
-        self.list_widget.setViewMode(QtWidgets.QListWidget.IconMode)
-        self.list_widget.setIconSize(QtCore.QSize(64, 64))
-        self.list_widget.setGridSize(QtCore.QSize(80, 100))
-        self.list_widget.setResizeMode(QtWidgets.QListWidget.Adjust)
-        self.list_widget.setSpacing(5)
-        self.list_widget.setMovement(QtWidgets.QListView.Static)
-        self.list_widget.setDragEnabled(True)
-        
-        # Override startDrag logic via events or subclassing? 
-        # For simplicity, we can use the default but ensure MIME data is set.
-        self.list_widget.startDrag = self._start_drag_override
-        
+        self.list_widget = RZAssetListWidget()
         layout.addWidget(self.list_widget)
-
-    def _start_drag_override(self, supported_actions):
-        item = self.list_widget.currentItem()
-        if not item:
-            return
-
-        image_id = item.data(QtCore.Qt.UserRole)
-        
-        drag = QtGui.QDrag(self.list_widget)
-        mime_data = QtCore.QMimeData()
-        # Data: The Integer ID of the image converted to bytes/string.
-        mime_data.setData("application/x-rzmenu-image-id", QtCore.QByteArray(str(image_id).encode()))
-        
-        drag.setMimeData(mime_data)
-        
-        # Use item icon as drag pixmap
-        icon = item.icon()
-        if not icon.isNull():
-            drag.setPixmap(icon.pixmap(64, 64))
-            
-        drag.exec_(supported_actions)
 
     def _connect_signals(self):
         SIGNALS.structure_changed.connect(self.refresh_data)
@@ -80,11 +95,5 @@ class RZAssetBrowserPanel(RZEditorPanel):
             pixmap = cache.get_pixmap(img_id)
             if pixmap:
                 item.setIcon(QtGui.QIcon(pixmap))
-            else:
-                # Use a default placeholder if not in cache
-                # Since we are in the UI thread, we might not want to wait for Blender
-                # But typically ImageCache would have been filled by the bridge.
-                # For now, just a placeholder icon or empty.
-                pass
-
+            
             self.list_widget.addItem(item)

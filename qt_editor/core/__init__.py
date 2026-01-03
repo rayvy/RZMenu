@@ -31,7 +31,8 @@ from .structure import (
     reorder_elements,
     reparent_element,
     duplicate_elements,
-    commit_history
+    commit_history,
+    import_image_from_path
 )
 
 from .props import (

@@ -129,3 +129,19 @@ def duplicate_elements(target_ids):
 
 def commit_history(msg):
     blender_bridge.safe_undo_push(msg)
+
+def import_image_from_path(filepath):
+    """Import image into Blender scene.rzm.images."""
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        # Assuming RZMenu has an operator to add images
+        if hasattr(bpy.ops.rzm, "add_image"):
+            bpy.ops.rzm.add_image(filepath=filepath)
+        else:
+            print(f"Core: rzm.add_image operator not found. Path: {filepath}")
+            
+        signals.SIGNALS.structure_changed.emit()
+    except Exception as e:
+        print(f"Core: Failed to import image: {e}")
+    finally:
+        signals.IS_UPDATING_FROM_QT = False

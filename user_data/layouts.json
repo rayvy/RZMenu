@@ -34,5 +34,42 @@
                 "panel_id": "VIEWPORT"
             }
         ]
+    },
+    "1": {
+        "type": "SPLITTER",
+        "orientation": 1,
+        "sizes": [
+            462,
+            1387,
+            693
+        ],
+        "children": [
+            {
+                "type": "SPLITTER",
+                "orientation": 2,
+                "sizes": [
+                    469,
+                    468
+                ],
+                "children": [
+                    {
+                        "type": "AREA",
+                        "panel_id": "OUTLINER"
+                    },
+                    {
+                        "type": "AREA",
+                        "panel_id": "ASSETS"
+                    }
+                ]
+            },
+            {
+                "type": "AREA",
+                "panel_id": "VIEWPORT"
+            },
+            {
+                "type": "AREA",
+                "panel_id": "INSPECTOR"
+            }
+        ]
     }
 }

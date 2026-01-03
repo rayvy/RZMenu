@@ -5,6 +5,7 @@ Autonomous panel that subscribes to core.SIGNALS for data updates.
 """
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
+from .lib.inputs import RZImageComboBox
 from .lib.theme import get_current_theme
 from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton
 from .panel_base import RZEditorPanel
@@ -203,9 +204,14 @@ class RZMInspectorPanel(RZEditorPanel):
         grp_style = RZGroupBox("Style")
         layout_style = QtWidgets.QVBoxLayout(grp_style)
         self.btn_color = RZColorButton()
-        self.btn_color.colorChanged.connect(lambda c: self._emit_change('color', c))
         layout_style.addWidget(RZLabel("Color:"))
         layout_style.addWidget(self.btn_color)
+        
+        layout_style.addWidget(RZLabel("Image:"))
+        self.cb_image = RZImageComboBox()
+        self.cb_image.value_changed.connect(lambda v: self._emit_change('image_id', v))
+        layout_style.addWidget(self.cb_image)
+        
         self.layout_props.addWidget(grp_style)
         
         # === GROUP: EDITOR ===
@@ -316,6 +322,13 @@ class RZMInspectorPanel(RZEditorPanel):
             
             # Color is complex, for now we just show active or default
             self.btn_color.set_color(props.get('color', [1.0, 1.0, 1.0, 1.0]))
+            
+            # Image ID
+            # 1. Populate combo with latest available images
+            all_images = core.read.get_available_images()
+            self.cb_image.update_items(all_images)
+            # 2. Select current image
+            self.cb_image.set_value(props.get('image_id', -1))
             
             # Checkboxes
             self.chk_hide.setChecked(props.get('is_hidden') is True)
