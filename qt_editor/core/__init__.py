@@ -36,6 +36,7 @@ from .structure import (
 
 from .props import (
     update_property_multi,
+    perform_math_operation,
     toggle_editor_flag,
     unhide_all_elements
 )

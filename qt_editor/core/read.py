@@ -19,32 +19,53 @@ def get_all_elements_list():
 def get_selection_details(selected_ids, active_id):
     if not bpy.context or not bpy.context.scene: return None
     elements = bpy.context.scene.rzm.elements
-    target = next((e for e in elements if e.id == active_id), None)
+    selection = [e for e in elements if e.id in selected_ids]
     
-    if not target and selected_ids:
-        first_id = list(selected_ids)[0]
-        target = next((e for e in elements if e.id == first_id), None)
+    # Reference element for active values
+    target = next((e for e in elements if e.id == active_id), None)
+    if not target and selection:
+        target = selection[0]
 
     if target:
-        color_vals = [1.0, 1.0, 1.0, 1.0]
-        if hasattr(target, "color"):
-            color_vals = list(target.color)
-            if len(color_vals) == 3: color_vals.append(1.0)
+        # Helper to get "mixed" status: returns value if uniform, else None
+        def get_uniform(prop_name, sub_idx=None):
+            if not selection: return None
+            vals = []
+            for e in selection:
+                if not hasattr(e, prop_name): continue
+                raw = getattr(e, prop_name)
+                val = raw[sub_idx] if sub_idx is not None else raw
+                # Handle special types like color
+                if prop_name == "color": val = tuple(val)
+                vals.append(val)
+            
+            if not vals: return None
+            return vals[0] if all(v == vals[0] for v in vals) else None
+
+        color_uniform = get_uniform("color")
+        color_vals = list(color_uniform) if color_uniform else [1.0, 1.0, 1.0, 1.0]
+        if len(color_vals) == 3: color_vals.append(1.0)
 
         data = {
             "exists": True, "id": target.id, "active_id": active_id,
-            "selected_ids": list(selected_ids), "name": target.element_name,
-            "class_type": target.elem_class, "pos_x": target.position[0],
-            "pos_y": target.position[1], "width": target.size[0],
-            "height": target.size[1], "image_id": getattr(target, "image_id", -1),
-            "color": color_vals, "is_hidden": getattr(target, "qt_hide", False),
-            "is_locked": getattr(target, "qt_locked", False),
+            "selected_ids": list(selected_ids), "name": target.element_name if len(selection) <= 1 else "Multiple Elements",
+            "class_type": get_uniform("elem_class"), 
+            "pos_x": get_uniform("position", 0),
+            "pos_y": get_uniform("position", 1), 
+            "width": get_uniform("size", 0),
+            "height": get_uniform("size", 1), 
+            "image_id": get_uniform("image_id"),
+            "color": color_vals, 
+            "is_hidden": get_uniform("qt_hide"),
+            "is_locked": get_uniform("qt_locked"),
+            "alignment": get_uniform("alignment"),
+            "text_align": get_uniform("text_align"),
             "is_multi": len(selected_ids) > 1,
-            "grid_cell_size": getattr(target, "grid_cell_size", 20),
-            "grid_rows": getattr(target, "grid_rows", 2),
-            "grid_cols": getattr(target, "grid_cols", 2),
-            "grid_gap": getattr(target, "grid_gap", 5),
-            "grid_padding": getattr(target, "grid_padding", 5)
+            "grid_cell_size": get_uniform("grid_cell_size"),
+            "grid_rows": get_uniform("grid_rows"),
+            "grid_cols": get_uniform("grid_cols"),
+            "grid_gap": get_uniform("grid_gap"),
+            "grid_padding": get_uniform("grid_padding")
         }
         return data
     return None

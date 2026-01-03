@@ -71,39 +71,47 @@ class RZMInspectorPanel(RZPanelWidget):
         form_ident.addRow("Class:", self.cb_class)
         self.layout_props.addWidget(grp_ident)
         
-        # === GROUP: ALIGNMENT ===
-        self.grp_align = RZGroupBox("Alignment")
-        layout_align = QtWidgets.QHBoxLayout(self.grp_align)
-        layout_align.setSpacing(2)
+        # === GROUP: ANCHOR & ALIGNMENT ===
+        self.grp_anchor = RZGroupBox("Anchor & Alignment")
+        layout_anchor = QtWidgets.QFormLayout(self.grp_anchor)
         
-        btns = [
-            ("⇤", "LEFT", "Align Left"), ("⇥", "RIGHT", "Align Right"),
-            ("⤒", "TOP", "Align Top"), ("⤓", "BOTTOM", "Align Bottom"),
-            ("⌖X", "CENTER_X", "Align Center X"), ("⌖Y", "CENTER_Y", "Align Center Y")
-        ]
+        self.cb_anchor = RZComboBox()
+        self.cb_anchor.addItems([
+            "BOTTOM_LEFT", "BOTTOM_CENTER", "BOTTOM_RIGHT", 
+            "CENTER_LEFT", "CENTER", "CENTER_RIGHT", 
+            "TOP_LEFT", "TOP_CENTER", "TOP_RIGHT"
+        ])
+        self.cb_anchor.currentTextChanged.connect(lambda t: self.emit_change('alignment', t))
+        layout_anchor.addRow("Anchor:", self.cb_anchor)
         
-        for txt, mode, tooltip in btns:
-            b = RZPushButton(txt)
-            b.setFixedWidth(30)
-            b.setToolTip(tooltip)
-            b.clicked.connect(lambda checked=False, m=mode: self._on_align_click(m))
-            layout_align.addWidget(b)
-        self.layout_props.addWidget(self.grp_align)
+        self.cb_text_align = RZComboBox()
+        self.cb_text_align.addItems(["LEFT", "CENTER", "RIGHT"])
+        self.cb_text_align.currentTextChanged.connect(lambda t: self.emit_change('text_align', t))
+        self.row_text_align = layout_anchor.addRow("Text Align:", self.cb_text_align)
+        
+        self.layout_props.addWidget(self.grp_anchor)
 
         # === GROUP: TRANSFORM ===
         self.grp_trans = RZGroupBox("Transform")
         layout_trans = QtWidgets.QVBoxLayout(self.grp_trans)
         self.sl_x = RZSmartSlider(label_text="X", is_int=True)
         self.sl_x.value_changed.connect(lambda v: self.emit_change('pos_x', int(v)))
+        self.sl_x.math_requested.connect(lambda op: self.emit_math('pos_x', op))
         layout_trans.addWidget(self.sl_x)
+        
         self.sl_y = RZSmartSlider(label_text="Y", is_int=True)
         self.sl_y.value_changed.connect(lambda v: self.emit_change('pos_y', int(v)))
+        self.sl_y.math_requested.connect(lambda op: self.emit_math('pos_y', op))
         layout_trans.addWidget(self.sl_y)
+        
         self.sl_w = RZSmartSlider(label_text="W", is_int=True)
         self.sl_w.value_changed.connect(lambda v: self.emit_change('width', int(v)))
+        self.sl_w.math_requested.connect(lambda op: self.emit_math('width', op))
         layout_trans.addWidget(self.sl_w)
+        
         self.sl_h = RZSmartSlider(label_text="H", is_int=True)
         self.sl_h.value_changed.connect(lambda v: self.emit_change('height', int(v)))
+        self.sl_h.math_requested.connect(lambda op: self.emit_math('height', op))
         layout_trans.addWidget(self.sl_h)
         self.layout_props.addWidget(self.grp_trans)
 
@@ -114,25 +122,33 @@ class RZMInspectorPanel(RZPanelWidget):
         h_cell.addWidget(RZLabel("Cell Size:"))
         self.sl_cell = RZSmartSlider(label_text="", is_int=True)
         self.sl_cell.value_changed.connect(lambda v: self.emit_change('grid_cell_size', int(v)))
+        self.sl_cell.math_requested.connect(lambda op: self.emit_math('grid_cell_size', op))
         h_cell.addWidget(self.sl_cell)
         layout_grid.addLayout(h_cell)
+        
         h_rc = QtWidgets.QHBoxLayout()
         self.sl_rows = RZSmartSlider(label_text="R", is_int=True)
         self.sl_rows.value_changed.connect(lambda v: self.emit_change('grid_rows', int(v)))
+        self.sl_rows.math_requested.connect(lambda op: self.emit_math('grid_rows', op))
         self.sl_cols = RZSmartSlider(label_text="C", is_int=True)
         self.sl_cols.value_changed.connect(lambda v: self.emit_change('grid_cols', int(v)))
+        self.sl_cols.math_requested.connect(lambda op: self.emit_math('grid_cols', op))
         h_rc.addWidget(self.sl_rows)
         h_rc.addWidget(self.sl_cols)
         layout_grid.addLayout(h_rc)
+        
         h_pg = QtWidgets.QHBoxLayout()
         self.sl_pad = RZSmartSlider(label_text="P", is_int=True)
         self.sl_pad.value_changed.connect(lambda v: self.emit_change('grid_padding', int(v)))
+        self.sl_pad.math_requested.connect(lambda op: self.emit_math('grid_padding', op))
         self.sl_gap = RZSmartSlider(label_text="G", is_int=True)
         self.sl_gap.value_changed.connect(lambda v: self.emit_change('grid_gap', int(v)))
+        self.sl_gap.math_requested.connect(lambda op: self.emit_math('grid_gap', op))
         h_pg.addWidget(self.sl_pad)
         h_pg.addWidget(self.sl_gap)
         layout_grid.addLayout(h_pg)
         self.layout_props.addWidget(self.grp_grid)
+
         
         # === GROUP: STYLE ===
         grp_style = RZGroupBox("Style")
@@ -154,14 +170,18 @@ class RZMInspectorPanel(RZPanelWidget):
         layout_edit.addWidget(self.chk_lock)
         self.layout_props.addWidget(grp_edit)
 
-    def _on_align_click(self, mode):
-        man = self._get_action_manager()
-        if man:
-            man.run("rzm.align", mode=mode)
-
     def emit_change(self, key, val, sub=None):
         if self.has_data and not self._block_signals:
+            # Filter out UI placeholders
+            if val == "Mixed": return
             self.property_changed.emit(key, val, sub)
+
+    def emit_math(self, key, op_str):
+        """Triggers a relative math operation via core."""
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if not ctx.selected_ids: return
+        import core
+        core.perform_math_operation(list(ctx.selected_ids), key, op_str)
 
     def update_ui(self, props):
         self._block_signals = True
@@ -172,33 +192,61 @@ class RZMInspectorPanel(RZPanelWidget):
             self.tab_raw.setEnabled(True)
             
             is_locked = props.get('is_locked', False)
-            self.grp_trans.setEnabled(not is_locked)
+            # If is_locked is None (mixed), we treat as locked for safety or just keep enabled
+            self.grp_trans.setEnabled(is_locked is not True)
             
-            self.lbl_id.setText(f"ID: {props.get('id')}")
+            self.lbl_id.setText(f"ID: {props.get('id')}" if not props.get('is_multi') else "Multiple Selection")
             self.name_edit.setText(props.get('name', ''))
-            class_type = props.get('class_type', 'CONTAINER')
-            self.cb_class.setCurrentText(class_type)
             
-            self.grp_align.setVisible(props.get('is_multi', False))
+            class_type = props.get('class_type') # Might be None if mixed
+            if class_type:
+                self.cb_class.setCurrentText(class_type)
+            else:
+                if self.cb_class.findText("Mixed") == -1: self.cb_class.addItem("Mixed")
+                self.cb_class.setCurrentText("Mixed")
+            
+            # Update Anchor/Alignment
+            alignment = props.get('alignment')
+            if alignment:
+                self.cb_anchor.setCurrentText(alignment)
+            else:
+                if self.cb_anchor.findText("Mixed") == -1: self.cb_anchor.addItem("Mixed")
+                self.cb_anchor.setCurrentText("Mixed")
+            
+            # Show text align only for text-capable elements
+            has_text = class_type in ["TEXT", "BUTTON"] or class_type is None
+            self.cb_text_align.setVisible(has_text)
+            label = self.grp_anchor.layout().labelForField(self.cb_text_align)
+            if label: label.setVisible(has_text)
+            
+            if has_text:
+                t_align = props.get('text_align')
+                if t_align:
+                    self.cb_text_align.setCurrentText(t_align)
+                else:
+                    if self.cb_text_align.findText("Mixed") == -1: self.cb_text_align.addItem("Mixed")
+                    self.cb_text_align.setCurrentText("Mixed")
 
             is_grid = (class_type == "GRID_CONTAINER")
             self.grp_grid.setVisible(is_grid)
             if is_grid:
-                self.sl_cell.set_value_from_backend(props.get('grid_cell_size', 20))
-                self.sl_rows.set_value_from_backend(props.get('grid_rows', 2))
-                self.sl_cols.set_value_from_backend(props.get('grid_cols', 2))
-                self.sl_pad.set_value_from_backend(props.get('grid_padding', 5))
-                self.sl_gap.set_value_from_backend(props.get('grid_gap', 5))
+                self.sl_cell.set_value_from_backend(props.get('grid_cell_size'))
+                self.sl_rows.set_value_from_backend(props.get('grid_rows'))
+                self.sl_cols.set_value_from_backend(props.get('grid_cols'))
+                self.sl_pad.set_value_from_backend(props.get('grid_padding'))
+                self.sl_gap.set_value_from_backend(props.get('grid_gap'))
 
-            self.sl_x.set_value_from_backend(props.get('pos_x', 0))
-            self.sl_y.set_value_from_backend(props.get('pos_y', 0))
-            self.sl_w.set_value_from_backend(props.get('width', 100))
-            self.sl_h.set_value_from_backend(props.get('height', 100))
+            self.sl_x.set_value_from_backend(props.get('pos_x'))
+            self.sl_y.set_value_from_backend(props.get('pos_y'))
+            self.sl_w.set_value_from_backend(props.get('width'))
+            self.sl_h.set_value_from_backend(props.get('height'))
             
+            # Color is complex, for now we just show active or default
             self.btn_color.set_color(props.get('color', [1.0, 1.0, 1.0, 1.0]))
             
-            self.chk_hide.setChecked(props.get('is_hidden', False))
-            self.chk_lock.setChecked(is_locked)
+            # Checkboxes: Mixed state handled as 'False' for now (Qt doesn't easily show mixed in QCheckBox without TriState)
+            self.chk_hide.setChecked(props.get('is_hidden') is True)
+            self.chk_lock.setChecked(is_locked is True)
             
             self.table_raw.setRowCount(0)
             sorted_keys = sorted(props.keys())
