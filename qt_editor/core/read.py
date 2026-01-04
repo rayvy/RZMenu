@@ -31,11 +31,11 @@ def get_variable_suggestions():
         # Sanitize name for usage in variables (alphanumeric + underscore)
         safe_name = re.sub(r'[^a-zA-Z0-9_]', '', elem.element_name)
         if safe_name:
-            suggestions.append(f"${safe_name}")
-            
-            # Optional: Add common properties for help
-            # suggestions.append(f"${safe_name}.x")
-            # suggestions.append(f"${safe_name}.width")
+            # Flattened variations
+            suggestions.append(f"${safe_name}PositionX")
+            suggestions.append(f"${safe_name}PositionY")
+            suggestions.append(f"${safe_name}SizeX")
+            suggestions.append(f"${safe_name}SizeY")
             
     # 2. Global Toggles/Values (Future proofing based on p_ui.py)
     # for toggle in bpy.context.scene.rzm.toggles:

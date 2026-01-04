@@ -29,8 +29,8 @@ class FormulaEvaluator:
         resolved_state = {}
 
         for el in elements_data:
-            # Clean name for variable usage
-            safe_name = re.sub(r'[^a-zA-Z0-9_]', '', el['name'])
+            # Clean name for variable usage and normalize to lowercase
+            safe_name = re.sub(r'[^a-zA-Z0-9_]', '', el['name']).lower()
             name_map[safe_name] = el['id']
             id_map[el['id']] = el
 
@@ -44,8 +44,6 @@ class FormulaEvaluator:
             }
 
         # 2. Iterate to resolve formulas
-        # We run multiple passes to handle dependencies (A depends on B).
-        # Max passes = 5 to prevent infinite loops / lag.
         MAX_PASSES = 5
 
         for _ in range(MAX_PASSES):
@@ -58,7 +56,7 @@ class FormulaEvaluator:
                 # Context for eval() - rebuilt every item to get latest values
                 eval_context = FormulaEvaluator._build_eval_context(resolved_state, name_map)
 
-                # --- Width/Height First (Position might depend on Size) ---
+                # --- Width/Height First ---
                 if el['size_is_formula']:
                     new_w = FormulaEvaluator._eval_safe(el['formula_w'], eval_context, state['w'])
                     new_h = FormulaEvaluator._eval_safe(el['formula_h'], eval_context, state['h'])
@@ -85,48 +83,36 @@ class FormulaEvaluator:
 
     @staticmethod
     def _build_eval_context(resolved_state, name_map):
-        """Creates the dictionary of variables available inside formula."""
+        """Creates the dictionary of flat variables available inside formula."""
         ctx = FormulaEvaluator.SAFE_MATH.copy()
-
-        # Add elements as objects: $Name.x, $Name.w
-        class MockObj:
-            def __init__(self, d):
-                self.x = d['x']
-                self.y = d['y']
-                self.w = d['w']
-                self.h = d['h']
-                self.width = d['w']
-                self.height = d['h']
-                # Aliases often used
-                self.left = d['x']
-                self.right = d['x'] + d['w']
-                self.top = d['y'] + d['h']
-                self.bottom = d['y']
 
         for name, eid in name_map.items():
             if eid in resolved_state:
-                # Add variable with $ prefix logic (handled by regex before eval,
-                # but here we populate the lookup for the replaced name)
-                # Actually, standard python eval doesn't like '$'.
-                # parser will strip '$'. So we register "Name"
-                ctx[name] = MockObj(resolved_state[eid])
+                s = resolved_state[eid]
+                # Inject keys normalized to lowercase
+                ctx[f"{name}positionx"] = s['x']
+                ctx[f"{name}positiony"] = s['y']
+                ctx[f"{name}sizex"] = s['w']
+                ctx[f"{name}sizey"] = s['h']
 
         return ctx
 
     @staticmethod
     def _eval_safe(expression, context, default_val):
         """
-        Parses string, replaces $Var with Var, evaluates.
+        Parses string, replaces $Var with Var, evaluates case-insensitively.
         """
         if not expression or not isinstance(expression, str):
             return default_val
 
         try:
-            # 1. Replace $Var with Var
-            # Regex: match $ followed by alphanum
-            sanitized = re.sub(r'\$([a-zA-Z0-9_]+)', r'\1', expression)
+            # 1. Normalize to lowercase for case-insensitivity
+            expr = expression.lower()
 
-            # 2. Eval
+            # 2. Replace $Var with Var
+            sanitized = re.sub(r'\$([a-zA-Z0-9_]+)', r'\1', expr)
+
+            # 3. Eval
             res = eval(sanitized, {"__builtins__": {}}, context)
             return float(res)
         except Exception:
