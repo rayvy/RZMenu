@@ -2,12 +2,13 @@
 """
 Inspector Panel - Property editor for selected elements.
 Autonomous panel that subscribes to core.SIGNALS for data updates.
+Updated to support Formulas, Conditional Visibility, and Class Specifics.
 """
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
-from .lib.inputs import RZImageComboBox
+from .lib.inputs import RZImageComboBox, RZFormulaInput
 from .lib.theme import get_current_theme
-from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton
+from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox
 from .panel_base import RZEditorPanel
 from .. import core
 from ..core.signals import SIGNALS
@@ -17,12 +18,8 @@ from ..context import RZContextManager
 class RZMInspectorPanel(RZEditorPanel):
     """
     Property inspector panel for editing selected element attributes.
-    
-    AUTONOMOUS: Subscribes to SIGNALS.selection_changed, SIGNALS.data_changed,
-    SIGNALS.transform_changed to update itself without window.py intervention.
     """
     
-    # Panel Registry Metadata
     PANEL_ID = "INSPECTOR"
     PANEL_NAME = "Inspector"
     PANEL_ICON = "settings"
@@ -37,8 +34,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.tabs = QtWidgets.QTabWidget()
         layout.addWidget(self.tabs)
         
-        # --- TAB 1: Properties (with ScrollArea) ---
-        # Create scroll area to handle small panel sizes
+        # --- TAB 1: Properties ---
         self.scroll_area = QtWidgets.QScrollArea()
         self.scroll_area.setObjectName("InspectorScrollArea")
         self.scroll_area.setWidgetResizable(True)
@@ -46,7 +42,6 @@ class RZMInspectorPanel(RZEditorPanel):
         self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
         
-        # Content widget inside scroll area
         self.scroll_content = QtWidgets.QWidget()
         self.scroll_content.setObjectName("InspectorScrollContent")
         self.layout_props = QtWidgets.QVBoxLayout(self.scroll_content)
@@ -75,30 +70,19 @@ class RZMInspectorPanel(RZEditorPanel):
         self._block_signals = False
 
     def _connect_signals(self):
-        """Connect to core signals for autonomous updates."""
         SIGNALS.selection_changed.connect(self.refresh_data)
         SIGNALS.data_changed.connect(self.refresh_data)
         SIGNALS.transform_changed.connect(self.refresh_data)
     
     def _disconnect_signals(self):
-        """Disconnect from core signals to prevent calls to deleted objects."""
         try:
             SIGNALS.selection_changed.disconnect(self.refresh_data)
-        except (RuntimeError, TypeError):
-            pass
-        try:
             SIGNALS.data_changed.disconnect(self.refresh_data)
-        except (RuntimeError, TypeError):
-            pass
-        try:
             SIGNALS.transform_changed.disconnect(self.refresh_data)
-        except (RuntimeError, TypeError):
-            pass
+        except: pass
     
     def refresh_data(self):
-        """Fetch and display current selection details from core."""
-        if not self._is_panel_active:
-            return
+        if not self._is_panel_active: return
         ctx = RZContextManager.get_instance().get_snapshot()
         details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
         self.update_ui(details)
@@ -114,13 +98,44 @@ class RZMInspectorPanel(RZEditorPanel):
         self.name_edit = RZLineEdit()
         self.name_edit.editingFinished.connect(lambda: self._emit_change('element_name', self.name_edit.text()))
         form_ident.addRow("Name:", self.name_edit)
+
+        self.edit_tag = RZLineEdit()
+        self.edit_tag.editingFinished.connect(lambda: self._emit_change('tag', self.edit_tag.text()))
+        form_ident.addRow("Tag:", self.edit_tag)
         
         self.cb_class = RZComboBox()
         self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
         self.cb_class.currentTextChanged.connect(lambda t: self._emit_change('class_type', t))
         form_ident.addRow("Class:", self.cb_class)
+
+        self.spin_priority = RZSpinBox()
+        self.spin_priority.setRange(-100, 100)
+        self.spin_priority.valueChanged.connect(lambda v: self._emit_change('priority', int(v)))
+        form_ident.addRow("Priority:", self.spin_priority)
+
+        self.chk_main_window = RZCheckBox("Is Main Window")
+        self.chk_main_window.toggled.connect(lambda v: self._emit_change('is_main_window', v))
+        form_ident.addRow("", self.chk_main_window)
+        
         self.layout_props.addWidget(grp_ident)
         
+        # === GROUP: VISIBILITY ===
+        self.grp_vis = RZGroupBox("Visibility")
+        form_vis = QtWidgets.QFormLayout(self.grp_vis)
+        
+        self.cb_vis_mode = RZComboBox()
+        self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL"])
+        self.cb_vis_mode.currentTextChanged.connect(lambda t: self._emit_change('visibility_mode', t))
+        form_vis.addRow("Mode:", self.cb_vis_mode)
+
+        # Using RZFormulaInput for Condition
+        self.edit_vis_cond = RZFormulaInput()
+        self.edit_vis_cond.setPlaceholderText("$var > 0")
+        self.edit_vis_cond.editingFinished.connect(lambda: self._emit_change('visibility_condition', self.edit_vis_cond.text()))
+        self.row_vis_cond = form_vis.addRow("Condition:", self.edit_vis_cond)
+        
+        self.layout_props.addWidget(self.grp_vis)
+
         # === GROUP: ANCHOR & ALIGNMENT ===
         self.grp_anchor = RZGroupBox("Anchor & Alignment")
         layout_anchor = QtWidgets.QFormLayout(self.grp_anchor)
@@ -141,91 +156,198 @@ class RZMInspectorPanel(RZEditorPanel):
         
         self.layout_props.addWidget(self.grp_anchor)
 
-        # === GROUP: TRANSFORM ===
+        # === GROUP: TRANSFORM (Dual Mode) ===
         self.grp_trans = RZGroupBox("Transform")
         layout_trans = QtWidgets.QVBoxLayout(self.grp_trans)
+        
+        # --- Position Sub-Group ---
+        h_pos_head = QtWidgets.QHBoxLayout()
+        h_pos_head.addWidget(RZLabel("Position"))
+        h_pos_head.addStretch()
+        self.chk_pos_formula = RZCheckBox("Formula")
+        self.chk_pos_formula.toggled.connect(lambda v: self._emit_change('position_is_formula', v))
+        h_pos_head.addWidget(self.chk_pos_formula)
+        layout_trans.addLayout(h_pos_head)
+
+        self.stack_pos = QtWidgets.QStackedLayout()
+        
+        # Mode 0: Sliders
+        self.w_pos_sliders = QtWidgets.QWidget()
+        l_pos_sl = QtWidgets.QVBoxLayout(self.w_pos_sliders)
+        l_pos_sl.setContentsMargins(0,0,0,0)
         self.sl_x = RZSmartSlider(label_text="X", is_int=True)
         self.sl_x.value_changed.connect(lambda v: self._emit_change('pos_x', int(v)))
         self.sl_x.math_requested.connect(lambda op: self._emit_math('pos_x', op))
-        layout_trans.addWidget(self.sl_x)
-        
+        l_pos_sl.addWidget(self.sl_x)
         self.sl_y = RZSmartSlider(label_text="Y", is_int=True)
         self.sl_y.value_changed.connect(lambda v: self._emit_change('pos_y', int(v)))
         self.sl_y.math_requested.connect(lambda op: self._emit_math('pos_y', op))
-        layout_trans.addWidget(self.sl_y)
-        
+        l_pos_sl.addWidget(self.sl_y)
+        self.stack_pos.addWidget(self.w_pos_sliders)
+
+        # Mode 1: Formulas (RZFormulaInput)
+        self.w_pos_formulas = QtWidgets.QWidget()
+        l_pos_f = QtWidgets.QFormLayout(self.w_pos_formulas)
+        l_pos_f.setContentsMargins(0,0,0,0)
+        self.edit_pos_fx = RZFormulaInput()
+        self.edit_pos_fx.editingFinished.connect(lambda: self._emit_change('position_formula_x', self.edit_pos_fx.text()))
+        l_pos_f.addRow("X:", self.edit_pos_fx)
+        self.edit_pos_fy = RZFormulaInput()
+        self.edit_pos_fy.editingFinished.connect(lambda: self._emit_change('position_formula_y', self.edit_pos_fy.text()))
+        l_pos_f.addRow("Y:", self.edit_pos_fy)
+        self.stack_pos.addWidget(self.w_pos_formulas)
+
+        layout_trans.addLayout(self.stack_pos)
+
+        # --- Size Sub-Group ---
+        h_size_head = QtWidgets.QHBoxLayout()
+        h_size_head.addWidget(RZLabel("Size"))
+        h_size_head.addStretch()
+        self.chk_size_formula = RZCheckBox("Formula")
+        self.chk_size_formula.toggled.connect(lambda v: self._emit_change('size_is_formula', v))
+        h_size_head.addWidget(self.chk_size_formula)
+        layout_trans.addLayout(h_size_head)
+
+        self.stack_size = QtWidgets.QStackedLayout()
+
+        # Mode 0: Sliders
+        self.w_size_sliders = QtWidgets.QWidget()
+        l_size_sl = QtWidgets.QVBoxLayout(self.w_size_sliders)
+        l_size_sl.setContentsMargins(0,0,0,0)
         self.sl_w = RZSmartSlider(label_text="W", is_int=True)
         self.sl_w.value_changed.connect(lambda v: self._emit_change('width', int(v)))
         self.sl_w.math_requested.connect(lambda op: self._emit_math('width', op))
-        layout_trans.addWidget(self.sl_w)
-        
+        l_size_sl.addWidget(self.sl_w)
         self.sl_h = RZSmartSlider(label_text="H", is_int=True)
         self.sl_h.value_changed.connect(lambda v: self._emit_change('height', int(v)))
         self.sl_h.math_requested.connect(lambda op: self._emit_math('height', op))
-        layout_trans.addWidget(self.sl_h)
+        l_size_sl.addWidget(self.sl_h)
+        self.stack_size.addWidget(self.w_size_sliders)
+
+        # Mode 1: Formulas (RZFormulaInput)
+        self.w_size_formulas = QtWidgets.QWidget()
+        l_size_f = QtWidgets.QFormLayout(self.w_size_formulas)
+        l_size_f.setContentsMargins(0,0,0,0)
+        self.edit_size_fx = RZFormulaInput()
+        self.edit_size_fx.editingFinished.connect(lambda: self._emit_change('size_formula_x', self.edit_size_fx.text()))
+        l_size_f.addRow("W:", self.edit_size_fx)
+        self.edit_size_fy = RZFormulaInput()
+        self.edit_size_fy.editingFinished.connect(lambda: self._emit_change('size_formula_y', self.edit_size_fy.text()))
+        l_size_f.addRow("H:", self.edit_size_fy)
+        self.stack_size.addWidget(self.w_size_formulas)
+
+        layout_trans.addLayout(self.stack_size)
         self.layout_props.addWidget(self.grp_trans)
 
         # === GROUP: GRID ===
         self.grp_grid = RZGroupBox("Grid Settings")
         layout_grid = QtWidgets.QVBoxLayout(self.grp_grid)
+        
+        # Cells
         h_cell = QtWidgets.QHBoxLayout()
         h_cell.addWidget(RZLabel("Cell Size:"))
         self.sl_cell = RZSmartSlider(label_text="", is_int=True)
         self.sl_cell.value_changed.connect(lambda v: self._emit_change('grid_cell_size', int(v)))
-        self.sl_cell.math_requested.connect(lambda op: self._emit_math('grid_cell_size', op))
         h_cell.addWidget(self.sl_cell)
         layout_grid.addLayout(h_cell)
         
-        h_rc = QtWidgets.QHBoxLayout()
-        self.sl_rows = RZSmartSlider(label_text="R", is_int=True)
-        self.sl_rows.value_changed.connect(lambda v: self._emit_change('grid_rows', int(v)))
-        self.sl_rows.math_requested.connect(lambda op: self._emit_math('grid_rows', op))
-        self.sl_cols = RZSmartSlider(label_text="C", is_int=True)
-        self.sl_cols.value_changed.connect(lambda v: self._emit_change('grid_cols', int(v)))
-        self.sl_cols.math_requested.connect(lambda op: self._emit_math('grid_cols', op))
-        h_rc.addWidget(self.sl_rows)
-        h_rc.addWidget(self.sl_cols)
-        layout_grid.addLayout(h_rc)
+        # Min/Max
+        h_grid_mm = QtWidgets.QHBoxLayout()
+        self.sl_min_c = RZSmartSlider(label_text="MinX", is_int=True)
+        self.sl_min_c.value_changed.connect(lambda v: self._emit_change('grid_min_cells', int(v), 0))
+        self.sl_max_c = RZSmartSlider(label_text="MaxX", is_int=True)
+        self.sl_max_c.value_changed.connect(lambda v: self._emit_change('grid_max_cells', int(v), 0))
+        h_grid_mm.addWidget(self.sl_min_c)
+        h_grid_mm.addWidget(self.sl_max_c)
+        layout_grid.addLayout(h_grid_mm)
         
-        h_pg = QtWidgets.QHBoxLayout()
-        self.sl_pad = RZSmartSlider(label_text="P", is_int=True)
-        self.sl_pad.value_changed.connect(lambda v: self._emit_change('grid_padding', int(v)))
-        self.sl_pad.math_requested.connect(lambda op: self._emit_math('grid_padding', op))
-        self.sl_gap = RZSmartSlider(label_text="G", is_int=True)
-        self.sl_gap.value_changed.connect(lambda v: self._emit_change('grid_gap', int(v)))
-        self.sl_gap.math_requested.connect(lambda op: self._emit_math('grid_gap', op))
-        h_pg.addWidget(self.sl_pad)
-        h_pg.addWidget(self.sl_gap)
-        layout_grid.addLayout(h_pg)
+        h_grid_mm_y = QtWidgets.QHBoxLayout()
+        self.sl_min_r = RZSmartSlider(label_text="MinY", is_int=True)
+        self.sl_min_r.value_changed.connect(lambda v: self._emit_change('grid_min_cells', int(v), 1))
+        self.sl_max_r = RZSmartSlider(label_text="MaxY", is_int=True)
+        self.sl_max_r.value_changed.connect(lambda v: self._emit_change('grid_max_cells', int(v), 1))
+        h_grid_mm_y.addWidget(self.sl_min_r)
+        h_grid_mm_y.addWidget(self.sl_max_r)
+        layout_grid.addLayout(h_grid_mm_y)
+
+        # Wrap Mode
+        self.cb_grid_wrap = RZComboBox()
+        self.cb_grid_wrap.addItems(["SCROLL", "PAGINATE"])
+        self.cb_grid_wrap.currentTextChanged.connect(lambda t: self._emit_change('grid_wrap_mode', t))
+        layout_grid.addWidget(self.cb_grid_wrap)
+
         self.layout_props.addWidget(self.grp_grid)
 
-        
-        # === GROUP: STYLE ===
-        grp_style = RZGroupBox("Style")
+        # === GROUP: STYLE & CONTENT ===
+        grp_style = RZGroupBox("Style & Content")
         layout_style = QtWidgets.QVBoxLayout(grp_style)
-        self.btn_color = RZColorButton()
-        layout_style.addWidget(RZLabel("Color:"))
-        layout_style.addWidget(self.btn_color)
         
+        # Color
+        h_col = QtWidgets.QHBoxLayout()
+        h_col.addWidget(RZLabel("Color:"))
+        self.btn_color = RZColorButton()
+        self.btn_color.colorChanged.connect(lambda c: self._emit_change('color', c))
+        h_col.addWidget(self.btn_color)
+        layout_style.addLayout(h_col)
+        
+        # Image Mode
+        self.cb_img_mode = RZComboBox()
+        self.cb_img_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
+        self.cb_img_mode.currentTextChanged.connect(lambda t: self._emit_change('image_mode', t))
+        layout_style.addWidget(RZLabel("Image Mode:"))
+        layout_style.addWidget(self.cb_img_mode)
+
+        # Image ID
         layout_style.addWidget(RZLabel("Image:"))
         self.cb_image = RZImageComboBox()
         self.cb_image.value_changed.connect(lambda v: self._emit_change('image_id', v))
         layout_style.addWidget(self.cb_image)
         
+        # Tile Settings
+        f_tile = QtWidgets.QFormLayout()
+        self.tile_uv_x = RZSpinBox()
+        self.tile_uv_x.valueChanged.connect(lambda v: self._emit_change('tile_uv', int(v), 0))
+        f_tile.addRow("Tile X:", self.tile_uv_x)
+        self.tile_uv_y = RZSpinBox()
+        self.tile_uv_y.valueChanged.connect(lambda v: self._emit_change('tile_uv', int(v), 1))
+        f_tile.addRow("Tile Y:", self.tile_uv_y)
+        layout_style.addLayout(f_tile)
+        
+        # Texts
+        f_txt = QtWidgets.QFormLayout()
+        self.edit_txt_id = RZLineEdit()
+        self.edit_txt_id.editingFinished.connect(lambda: self._emit_change('text_id', self.edit_txt_id.text()))
+        f_txt.addRow("Text ID:", self.edit_txt_id)
+        self.edit_hov_txt = RZLineEdit()
+        self.edit_hov_txt.editingFinished.connect(lambda: self._emit_change('hover_text_id', self.edit_hov_txt.text()))
+        f_txt.addRow("Hover ID:", self.edit_hov_txt)
+        layout_style.addLayout(f_txt)
+
         self.layout_props.addWidget(grp_style)
         
+        # === GROUP: BUTTON SPECIFICS ===
+        self.grp_btn = RZGroupBox("Button Options")
+        layout_btn = QtWidgets.QVBoxLayout(self.grp_btn)
+        self.chk_no_nums = RZCheckBox("Disable Button Nums")
+        self.chk_no_nums.toggled.connect(lambda v: self._emit_change('disable_button_nums', v))
+        layout_btn.addWidget(self.chk_no_nums)
+        self.chk_no_popup = RZCheckBox("Disable Button Popup")
+        self.chk_no_popup.toggled.connect(lambda v: self._emit_change('disable_button_popup', v))
+        layout_btn.addWidget(self.chk_no_popup)
+        self.layout_props.addWidget(self.grp_btn)
+
         # === GROUP: EDITOR ===
         grp_edit = RZGroupBox("Editor Flags")
         layout_edit = QtWidgets.QVBoxLayout(grp_edit)
-        self.chk_hide = QtWidgets.QCheckBox("Is Hidden")
-        self.chk_hide.toggled.connect(lambda v: self._emit_change('is_hidden', v))
+        self.chk_hide = RZCheckBox("Is Hidden")
+        self.chk_hide.toggled.connect(lambda v: self._emit_change('qt_hide', v))
         layout_edit.addWidget(self.chk_hide)
         
         h_locks = QtWidgets.QHBoxLayout()
-        self.chk_lock_pos = QtWidgets.QCheckBox("Lock Pos")
-        self.chk_lock_pos.toggled.connect(lambda v: self._emit_change('is_locked_pos', v))
-        self.chk_lock_size = QtWidgets.QCheckBox("Lock Size")
-        self.chk_lock_size.toggled.connect(lambda v: self._emit_change('is_locked_size', v))
+        self.chk_lock_pos = RZCheckBox("Lock Pos")
+        self.chk_lock_pos.toggled.connect(lambda v: self._emit_change('qt_lock_pos', v))
+        self.chk_lock_size = RZCheckBox("Lock Size")
+        self.chk_lock_size.toggled.connect(lambda v: self._emit_change('qt_lock_size', v))
         h_locks.addWidget(self.chk_lock_pos)
         h_locks.addWidget(self.chk_lock_size)
         layout_edit.addLayout(h_locks)
@@ -235,22 +357,17 @@ class RZMInspectorPanel(RZEditorPanel):
     def _emit_change(self, key, val, sub=None):
         """Handle property changes - directly update core."""
         if self.has_data and not self._block_signals:
-            # Filter out UI placeholders
-            if val == "Mixed": 
-                return
-            # Directly update core instead of emitting signal
+            if val == "Mixed": return
             ctx = RZContextManager.get_instance().get_snapshot()
             if ctx.selected_ids:
-                # Type safety for Blender integers
-                if key in ['pos_x', 'pos_y', 'width', 'height']:
+                if key in ['pos_x', 'pos_y', 'width', 'height', 'grid_cell_size', 'priority', 
+                           'grid_min_cells', 'grid_max_cells', 'tile_uv', 'tile_size']:
                     val = int(float(val))
                 core.update_property_multi(ctx.selected_ids, key, val, sub)
 
     def _emit_math(self, key, op_str):
-        """Triggers a relative math operation via core."""
         ctx = RZContextManager.get_instance().get_snapshot()
-        if not ctx.selected_ids: 
-            return
+        if not ctx.selected_ids: return
         core.perform_math_operation(list(ctx.selected_ids), key, op_str)
 
     def update_ui(self, props):
@@ -261,83 +378,110 @@ class RZMInspectorPanel(RZEditorPanel):
             self.scroll_content.setEnabled(True)
             self.tab_raw.setEnabled(True)
             
+            # --- Identity ---
+            self.lbl_id.setText(f"ID: {props.get('id')}" if not props.get('is_multi') else "Multiple Selection")
+            self.name_edit.setText(props.get('name', ''))
+            self.edit_tag.setText(props.get('tag', ''))
+            self.spin_priority.setValue(props.get('priority', 0))
+            self.chk_main_window.setChecked(props.get('is_main_window', False))
+
+            class_type = props.get('class_type')
+            if class_type: self.cb_class.setCurrentText(class_type)
+            else: self.cb_class.setCurrentText("Mixed")
+
+            # --- Visibility ---
+            vis_mode = props.get('visibility_mode', 'ALWAYS')
+            self.cb_vis_mode.setCurrentText(vis_mode)
+            is_cond = (vis_mode == 'CONDITIONAL')
+            self.edit_vis_cond.setVisible(is_cond)
+            # Find label in form layout to hide it too
+            label_w = self.grp_vis.layout().labelForField(self.edit_vis_cond)
+            if label_w: label_w.setVisible(is_cond)
+            self.edit_vis_cond.setText(props.get('visibility_condition', ''))
+
+            # --- Anchor ---
+            self.cb_anchor.setCurrentText(props.get('alignment') or "Mixed")
+            
+            has_text = class_type in ["TEXT", "BUTTON"] or class_type is None
+            self.cb_text_align.setVisible(has_text)
+            l_t = self.grp_anchor.layout().labelForField(self.cb_text_align)
+            if l_t: l_t.setVisible(has_text)
+            self.cb_text_align.setCurrentText(props.get('text_align') or "Mixed")
+
+            # --- Transform (Formula Switching) ---
+            pos_is_form = props.get('position_is_formula', False)
+            self.chk_pos_formula.setChecked(pos_is_form)
+            self.stack_pos.setCurrentIndex(1 if pos_is_form else 0)
+            
+            if pos_is_form:
+                self.edit_pos_fx.setText(props.get('position_formula_x', ''))
+                self.edit_pos_fy.setText(props.get('position_formula_y', ''))
+            else:
+                self.sl_x.set_value_from_backend(props.get('pos_x'))
+                self.sl_y.set_value_from_backend(props.get('pos_y'))
+
+            size_is_form = props.get('size_is_formula', False)
+            self.chk_size_formula.setChecked(size_is_form)
+            self.stack_size.setCurrentIndex(1 if size_is_form else 0)
+            
+            if size_is_form:
+                self.edit_size_fx.setText(props.get('size_formula_x', ''))
+                self.edit_size_fy.setText(props.get('size_formula_y', ''))
+            else:
+                self.sl_w.set_value_from_backend(props.get('width'))
+                self.sl_h.set_value_from_backend(props.get('height'))
+            
+            # Locking Logic
             is_locked_pos = props.get('is_locked_pos', False)
             is_locked_size = props.get('is_locked_size', False)
             is_grid_child = props.get('is_grid_child', False)
             
             can_edit_pos = (is_locked_pos is not True) and (not is_grid_child)
-            
             self.sl_x.setEnabled(can_edit_pos)
             self.sl_y.setEnabled(can_edit_pos)
+            self.edit_pos_fx.setEnabled(can_edit_pos)
+            self.edit_pos_fy.setEnabled(can_edit_pos)
             
-            pos_tooltip = "Controlled by Parent Grid" if is_grid_child else ""
-            self.sl_x.setToolTip(pos_tooltip)
-            self.sl_y.setToolTip(pos_tooltip)
-
             self.sl_w.setEnabled(is_locked_size is not True)
             self.sl_h.setEnabled(is_locked_size is not True)
-            
-            self.lbl_id.setText(f"ID: {props.get('id')}" if not props.get('is_multi') else "Multiple Selection")
-            self.name_edit.setText(props.get('name', ''))
-            
-            class_type = props.get('class_type') # Might be None if mixed
-            if class_type:
-                self.cb_class.setCurrentText(class_type)
-            else:
-                if self.cb_class.findText("Mixed") == -1: self.cb_class.addItem("Mixed")
-                self.cb_class.setCurrentText("Mixed")
-            
-            # Update Anchor/Alignment
-            alignment = props.get('alignment')
-            if alignment:
-                self.cb_anchor.setCurrentText(alignment)
-            else:
-                if self.cb_anchor.findText("Mixed") == -1: self.cb_anchor.addItem("Mixed")
-                self.cb_anchor.setCurrentText("Mixed")
-            
-            # Show text align only for text-capable elements
-            has_text = class_type in ["TEXT", "BUTTON"] or class_type is None
-            self.cb_text_align.setVisible(has_text)
-            label = self.grp_anchor.layout().labelForField(self.cb_text_align)
-            if label: label.setVisible(has_text)
-            
-            if has_text:
-                t_align = props.get('text_align')
-                if t_align:
-                    self.cb_text_align.setCurrentText(t_align)
-                else:
-                    if self.cb_text_align.findText("Mixed") == -1: self.cb_text_align.addItem("Mixed")
-                    self.cb_text_align.setCurrentText("Mixed")
 
+            # --- Grid Container ---
             is_grid = (class_type == "GRID_CONTAINER")
             self.grp_grid.setVisible(is_grid)
             if is_grid:
                 self.sl_cell.set_value_from_backend(props.get('grid_cell_size'))
-                self.sl_rows.set_value_from_backend(props.get('grid_rows'))
-                self.sl_cols.set_value_from_backend(props.get('grid_cols'))
-                self.sl_pad.set_value_from_backend(props.get('grid_padding'))
-                self.sl_gap.set_value_from_backend(props.get('grid_gap'))
+                self.sl_min_c.set_value_from_backend(props.get('grid_min_cells_x'))
+                self.sl_min_r.set_value_from_backend(props.get('grid_min_cells_y'))
+                self.sl_max_c.set_value_from_backend(props.get('grid_max_cells_x'))
+                self.sl_max_r.set_value_from_backend(props.get('grid_max_cells_y'))
+                self.cb_grid_wrap.setCurrentText(props.get('grid_wrap_mode', 'SCROLL'))
 
-            self.sl_x.set_value_from_backend(props.get('pos_x'))
-            self.sl_y.set_value_from_backend(props.get('pos_y'))
-            self.sl_w.set_value_from_backend(props.get('width'))
-            self.sl_h.set_value_from_backend(props.get('height'))
+            # --- Style ---
+            self.btn_color.set_color(props.get('color'))
+            self.cb_img_mode.setCurrentText(props.get('image_mode', 'SINGLE'))
             
-            # Color is complex, for now we just show active or default
-            self.btn_color.set_color(props.get('color', [1.0, 1.0, 1.0, 1.0]))
-            
-            # Image ID
-            # 1. Populate combo with latest available images (including source_type info)
             all_images = core.read.get_available_images()
             self.cb_image.update_items(all_images)
-            # 2. Select current image
             self.cb_image.set_value(props.get('image_id', -1))
             
-            # Checkboxes
+            self.tile_uv_x.setValue(props.get('tile_uv_x', 0))
+            self.tile_uv_y.setValue(props.get('tile_uv_y', 0))
+            self.edit_txt_id.setText(props.get('text_id', ''))
+            self.edit_hov_txt.setText(props.get('hover_text_id', ''))
+
+            # --- Button Specifics ---
+            is_btn = (class_type == "BUTTON")
+            self.grp_btn.setVisible(is_btn)
+            if is_btn:
+                self.chk_no_nums.setChecked(props.get('disable_button_nums', False))
+                self.chk_no_popup.setChecked(props.get('disable_button_popup', False))
+
+            # --- Flags ---
             self.chk_hide.setChecked(props.get('is_hidden') is True)
             self.chk_lock_pos.setChecked(is_locked_pos is True)
             self.chk_lock_size.setChecked(is_locked_size is True)
             
+            # --- Raw Data Table ---
             self.table_raw.setRowCount(0)
             sorted_keys = sorted(props.keys())
             self.table_raw.setRowCount(len(sorted_keys))
@@ -352,36 +496,23 @@ class RZMInspectorPanel(RZEditorPanel):
             self.tab_raw.setEnabled(False)
             self.lbl_id.setText("No Selection")
             self.name_edit.clear()
-            self.table_raw.setRowCount(0)
 
         self._block_signals = False
 
     def update_theme_styles(self):
-        """Force manual theme update for widgets that cache colors."""
         from .lib.base import RZSmartSlider
-
-        # 1. Generic update: Find ALL children that have an 'apply_theme' method
-        # This covers RZGroupBox, RZLabel, RZComboBox, RZPushButton, RZLineEdit, etc.
         for widget in self.findChildren(QtWidgets.QWidget):
             if hasattr(widget, 'apply_theme') and callable(widget.apply_theme):
                 widget.apply_theme()
-
-        # 2. Update Sliders specifically (they are complex widgets)
         for sl in self.findChildren(RZSmartSlider):
             sl.apply_theme()
-
-        # 3. Update Color Button
         if hasattr(self, 'btn_color'):
             self.btn_color.update_style()
 
     def enterEvent(self, event):
-        RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(), (0.0, 0.0), area="INSPECTOR"
-        )
+        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0.0, 0.0), area="INSPECTOR")
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        RZContextManager.get_instance().update_input(
-            QtGui.QCursor.pos(), (0.0, 0.0), area="NONE"
-        )
+        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0.0, 0.0), area="NONE")
         super().leaveEvent(event)
