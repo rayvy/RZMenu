@@ -13,6 +13,7 @@ from ..context import RZContextManager
 from ..context.states import RZInteractionState
 from .lib.theme import get_current_theme
 from .panel_base import RZEditorPanel
+from ..core.logic import FormulaEvaluator
 
 HANDLE_SIZE = 8
 
@@ -95,6 +96,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.handles = {} 
         self.alignment = "BOTTOM_LEFT"
         self._is_layout_controlled = False
+        self.pos_is_formula = False
+        self.size_is_formula = False
         
         # Grid properties
         self.grid_padding = 0
@@ -163,7 +166,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         for handle in self.handles.values(): handle.setVisible(visible)
 
     def handle_resize(self, h_type, delta):
-        if self.is_locked_size: return
+        if self.is_locked_size or self.size_is_formula: return
         
         scene = self.scene()
         modifiers = QtWidgets.QApplication.keyboardModifiers()
@@ -216,8 +219,9 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.update_visual_rect(nw, nh)
         scene.element_resized_signal.emit(self.uid, int(nx), int(-ny), int(nw), int(nh))
 
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None, grid_props=None):
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
+        self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
         self.alignment = alignment
@@ -308,6 +312,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             lock_txt = "🔒" if self.is_locked_pos and self.is_locked_size else "🔒P" if self.is_locked_pos else "🔒S"
             painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
             painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, lock_txt)
+
+        # Formula Indicator (Tiny 'f' icon or mark)
+        if self.pos_is_formula or self.size_is_formula:
+            f_rect = QtCore.QRect(rect.x() + rect.width() - 14, rect.y() + rect.height() - 14, 10, 10)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QColor(0, 255, 100, 150))
+            painter.drawEllipse(f_rect)
 
 class RZViewportScene(QtWidgets.QGraphicsScene):
     item_moved_signal = QtCore.Signal(float, float) 
@@ -400,8 +411,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 event.ignore(); return
             self._handle_item_click(item, event, modifier_str)
             
-            # Only start dragging if the clicked item is not position-locked and not layout-controlled
-            if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False):
+            # Only start dragging if the clicked item is not position-locked, not layout-controlled, and not driven by a formula
+            if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False) and not item.pos_is_formula:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
                 self._drag_origin = event.scenePos()
@@ -438,8 +449,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             is_ctrl = modifiers & QtCore.Qt.ControlModifier
 
             selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
-            # Filter items that are position-locked or layout-controlled
-            movable_items = [item for item in selected_items if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False)]
+            # Filter items that are position-locked, layout-controlled, or formula-driven
+            movable_items = [item for item in selected_items if not item.is_locked_pos 
+                             and not getattr(item, "_is_layout_controlled", False)
+                             and not item.pos_is_formula]
             if not movable_items:
                 return
 
@@ -511,6 +524,9 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         for data in elements_data:
             if data.get('image_id', -1) != -1: cache.pre_cache_image(data['image_id'])
 
+        # Resolve formulas before updating items
+        resolved_layout = FormulaEvaluator.resolve_layout(elements_data)
+
         for uid in (current_ids - incoming_ids):
             if uid in self._items_map and shiboken6.isValid(self._items_map[uid]):
                 self.removeItem(self._items_map[uid])
@@ -518,17 +534,24 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         
         for data in elements_data:
             uid = data['id']
-            qx, qy = core.to_qt_coords(data['pos_x'], data['pos_y'])
+            # Get Resolved Geometry if available, otherwise use static
+            layout = resolved_layout.get(uid, {})
+            rx = layout.get('x', data['pos_x'])
+            ry = layout.get('y', data['pos_y'])
+            rw = layout.get('w', data['width'])
+            rh = layout.get('h', data['height'])
+
+            qx, qy = core.to_qt_coords(rx, ry)
             item = self._items_map.get(uid)
             if not item or not shiboken6.isValid(item):
-                item = RZElementItem(uid, data['width'], data['height'], data['name'], data.get('class_type', 'CONTAINER'))
+                item = RZElementItem(uid, rw, rh, data['name'], data.get('class_type', 'CONTAINER'))
                 self.addItem(item)
                 self._items_map[uid] = item
             else:
                 item.name = data['name']
                 item.elem_type = data.get('class_type', 'CONTAINER')
 
-            item.update_size(data['width'], data['height'])
+            item.update_size(rw, rh)
             item.setPos(qx, qy)
             
             grid_props = {
@@ -541,7 +564,9 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             item.set_data_state(data.get('is_locked_pos', False), data.get('is_locked_size', False), 
                                 data.get('image_id', -1), data.get('is_selectable', True), 
                                 data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), 
-                                data.get('color', None), grid_props=grid_props)
+                                data.get('color', None), grid_props=grid_props,
+                                pos_is_formula=data.get('pos_is_formula', False),
+                                size_is_formula=data.get('size_is_formula', False))
             item.setVisible(not data.get('is_hidden', False))
             item.set_visual_state(uid in selected_ids, uid == active_id)
             item._is_layout_controlled = False # Reset for layout pass

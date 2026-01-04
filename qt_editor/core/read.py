@@ -161,25 +161,54 @@ def get_selection_details(selected_ids, active_id):
 def get_viewport_data():
     results = []
     if not bpy.context or not bpy.context.scene: return results
+
     for elem in bpy.context.scene.rzm.elements:
         color_list = None
         if hasattr(elem, "color"):
             color_list = list(elem.color)
             if len(color_list) == 3: color_list.append(1.0)
-        
-        results.append({
-            "id": elem.id, "name": elem.element_name, "class_type": elem.elem_class,
-            "pos_x": elem.position[0], "pos_y": elem.position[1],
-            "width": elem.size[0], "height": elem.size[1],
-            "image_id": getattr(elem, "image_id", -1), "parent_id": getattr(elem, "parent_id", -1),
+
+        # Prepare basic data
+        item = {
+            "id": elem.id,
+            "name": elem.element_name,
+            "class_type": elem.elem_class,
+            "parent_id": getattr(elem, "parent_id", -1),
+
+            # Static geometry (defaults)
+            "pos_x": elem.position[0],
+            "pos_y": elem.position[1],
+            "width": elem.size[0],
+            "height": elem.size[1],
+
+            # Formula flags
+            "pos_is_formula": getattr(elem, "position_is_formula", False),
+            "size_is_formula": getattr(elem, "size_is_formula", False),
+
+            # Formula strings (Important: sanitize/default to empty string)
+            "formula_x": getattr(elem, "position_formula_x", ""),
+            "formula_y": getattr(elem, "position_formula_y", ""),
+            "formula_w": getattr(elem, "size_formula_x", ""),
+            "formula_h": getattr(elem, "size_formula_y", ""),
+
+            # Visuals
+            "image_id": getattr(elem, "image_id", -1),
             "text_content": getattr(elem, "text_string", elem.element_name),
-            "color": color_list, "is_hidden": getattr(elem, "qt_hide", False),
+            "color": color_list,
+            "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),
             "is_locked_pos": getattr(elem, "qt_lock_pos", False),
             "is_locked_size": getattr(elem, "qt_lock_size", False),
             "alignment": getattr(elem, "alignment", "BOTTOM_LEFT"),
+
+            # Grid props
             "grid_cell_size": getattr(elem, "grid_cell_size", 50),
-        })
+            "grid_cols": getattr(elem, "grid_min_cells", [1,1])[0], # Using min_x as cols proxy
+            "grid_padding": getattr(elem, "grid_padding", 0), # Assumed existing property
+            "grid_gap": getattr(elem, "grid_gap", 0)          # Assumed existing property
+        }
+        results.append(item)
+
     return results
 
 # Stubs for legacy calls
