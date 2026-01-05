@@ -27,6 +27,7 @@ THEME_DARK = {
     "text_dark": "#9DA5B4",
     "text_disabled": "#6A717C",
     "text_bright": "#FFFFFF",
+    "text_variable": "#E06C75",
     
     # Borders
     "border_main": "#3A404A",
@@ -92,6 +93,7 @@ THEME_LIGHT = {
     "text_dark": "#546E7A",     
     "text_disabled": "#B0BEC5",
     "text_bright": "#2C3E50",
+    "text_variable": "#D1414F",
 
     # Borders
     "border_main": "#CFD8DC",
@@ -155,6 +157,7 @@ THEME_BLUE = {
     "text_dark": "#A8B3C1",
     "text_disabled": "#647085",
     "text_bright": "#FFFFFF",
+    "text_variable": "#E06C75",
 
     # Borders
     "border_main": "#4A5561",

@@ -80,13 +80,40 @@ class RZImageComboBox(QtWidgets.QComboBox):
         except (ValueError, TypeError):
             pass
 
-class RZFormulaInput(QtWidgets.QLineEdit):
+class RZFormulaHighlighter(QtGui.QSyntaxHighlighter):
+    """Highlights variables starting with $ in soft red."""
+    def __init__(self, document):
+        super().__init__(document)
+        self.update_theme()
+        
+    def update_theme(self):
+        theme = get_current_theme()
+        self.format_var = QtGui.QTextCharFormat()
+        color = QtGui.QColor(theme.get('text_variable', '#E06C75')) 
+        self.format_var.setForeground(color)
+        self.format_var.setFontWeight(QtGui.QFont.Bold)
+
+    def highlightBlock(self, text):
+        expression = r'\$[a-zA-Z0-9_]+'
+        for match in re.finditer(expression, text):
+            start, end = match.span()
+            self.setFormat(start, end - start, self.format_var)
+
+class RZFormulaInput(QtWidgets.QPlainTextEdit):
     """
-    Advanced line edit for formulas with Autocomplete/Intellisense support.
-    Detects '$' token and shows a popup with element names.
+    Advanced text edit for formulas with Autocomplete and Syntax Highlighting.
+    Inherits from QPlainTextEdit to support QSyntaxHighlighter, but behaves like a LineEdit.
     """
+    editingFinished = QtCore.Signal() # Compatibility with QLineEdit
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        
+        # Single line behavior
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setTabChangesFocus(True)
         
         # Popup setup
         self.popup = QtWidgets.QListWidget()
@@ -98,12 +125,30 @@ class RZFormulaInput(QtWidgets.QLineEdit):
         
         self.popup.itemClicked.connect(self._complete_selection)
         
+        # Highlighter setup
+        self.highlighter = RZFormulaHighlighter(self.document())
+        
         self.apply_theme()
+
+    def text(self): return self.toPlainText()
+    def setText(self, t): 
+        self.setPlainText(str(t))
+        # Match QLineEdit behavior of moving cursor to end on setText
+        cursor = self.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        self.setTextCursor(cursor)
+
+    def cursorPosition(self): return self.textCursor().position()
+    def setCursorPosition(self, pos):
+        cursor = self.textCursor()
+        cursor.setPosition(pos)
+        self.setTextCursor(cursor)
 
     def apply_theme(self):
         theme = get_current_theme()
+        # Note: We must use QPlainTextEdit selector instead of QLineEdit
         self.setStyleSheet(f"""
-            QLineEdit {{
+            QPlainTextEdit {{
                 background-color: {theme.get('bg_input', '#252930')};
                 border: 1px solid {theme.get('border_input', '#4A505A')};
                 border-radius: 3px;
@@ -111,8 +156,12 @@ class RZFormulaInput(QtWidgets.QLineEdit):
                 color: {theme.get('text_main', '#E0E2E4')};
                 font-family: Consolas, Monospace;
             }}
-            QLineEdit:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
+            QPlainTextEdit:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
         """)
+        if hasattr(self, 'highlighter'):
+            self.highlighter.update_theme()
+            self.highlighter.rehighlight()
+            
         self._apply_popup_theme()
 
     def _apply_popup_theme(self):
@@ -131,6 +180,13 @@ class RZFormulaInput(QtWidgets.QLineEdit):
         """)
 
     def keyPressEvent(self, event):
+        # Prevent newlines
+        if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            if not self.popup.isVisible():
+                self.editingFinished.emit()
+                event.accept()
+                return
+
         # Navigation inside popup
         if self.popup.isVisible():
             if event.key() == QtCore.Qt.Key_Down:
@@ -143,43 +199,39 @@ class RZFormulaInput(QtWidgets.QLineEdit):
                 if idx > 0:
                     self.popup.setCurrentRow(idx - 1)
                 return
-            elif event.key() == QtCore.Qt.Key_Enter or event.key() == QtCore.Qt.Key_Return or event.key() == QtCore.Qt.Key_Tab:
+            elif event.key() in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Tab):
                 self._complete_selection(self.popup.currentItem())
+                event.accept()
                 return
             elif event.key() == QtCore.Qt.Key_Escape:
                 self.popup.hide()
                 return
 
         super().keyPressEvent(event)
-        
-        # Logic to trigger popup text analysis
         self._check_autocomplete()
 
     def focusOutEvent(self, event):
-        # Delay hiding to allow itemClicked signal to process
         QtCore.QTimer.singleShot(100, self.popup.hide)
+        self.editingFinished.emit()
         super().focusOutEvent(event)
 
     def _check_autocomplete(self):
         text = self.text()
         cursor_pos = self.cursorPosition()
-        
-        # Regex to find word under cursor starting with $
-        # Look backwards from cursor to find nearest '$'
         left_text = text[:cursor_pos]
+        
+        # Regex: Find word starting with $ under cursor
         match = re.search(r'\$([a-zA-Z0-9_]*)$', left_text)
         
         if match:
-            token = match.group(0) # e.g., "$But"
+            token = match.group(0) # e.g. "$But"
             self._show_suggestions(token)
         else:
             self.popup.hide()
 
     def _show_suggestions(self, token):
-        # Fetch data
         all_vars = core_read.get_variable_suggestions()
-        
-        # Filter
+        # Case insensitive filtering
         filtered = [v for v in all_vars if v.lower().startswith(token.lower())]
         
         if not filtered:
@@ -195,8 +247,8 @@ class RZFormulaInput(QtWidgets.QLineEdit):
         global_pos = self.mapToGlobal(rect.bottomLeft())
         self.popup.move(global_pos.x(), global_pos.y() + 5)
         
-        # Resize
-        self.popup.setFixedSize(200, min(150, len(filtered) * 25 + 5))
+        # Limit height
+        self.popup.setFixedSize(250, min(150, len(filtered) * 25 + 5))
         self.popup.show()
 
     def _complete_selection(self, item):
@@ -207,11 +259,9 @@ class RZFormulaInput(QtWidgets.QLineEdit):
         cursor_pos = self.cursorPosition()
         left_text = text[:cursor_pos]
         
-        # Find token again to replace it
         match = re.search(r'\$([a-zA-Z0-9_]*)$', left_text)
         if match:
             start, end = match.span()
-            # Replace token with selection
             prefix = left_text[:start]
             suffix = text[cursor_pos:]
             
@@ -220,3 +270,9 @@ class RZFormulaInput(QtWidgets.QLineEdit):
             self.setCursorPosition(len(prefix) + len(completion))
             
         self.popup.hide()
+
+    def eventFilter(self, obj, event):
+        if obj == self.popup and event.type() == QtCore.QEvent.MouseButtonPress:
+            self._complete_selection(self.popup.currentItem())
+            return True
+        return super().eventFilter(obj, event)

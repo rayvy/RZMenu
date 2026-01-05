@@ -532,16 +532,14 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 self.removeItem(self._items_map[uid])
             if uid in self._items_map: del self._items_map[uid]
         
+        # Pass 1: Creation and basic state
         for data in elements_data:
             uid = data['id']
-            # Get Resolved Geometry if available, otherwise use static
+            # Get Resolved Geometry (Global)
             layout = resolved_layout.get(uid, {})
-            rx = layout.get('x', data['pos_x'])
-            ry = layout.get('y', data['pos_y'])
             rw = layout.get('w', data['width'])
             rh = layout.get('h', data['height'])
 
-            qx, qy = core.to_qt_coords(rx, ry)
             item = self._items_map.get(uid)
             if not item or not shiboken6.isValid(item):
                 item = RZElementItem(uid, rw, rh, data['name'], data.get('class_type', 'CONTAINER'))
@@ -552,7 +550,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 item.elem_type = data.get('class_type', 'CONTAINER')
 
             item.update_size(rw, rh)
-            item.setPos(qx, qy)
             
             grid_props = {
                 'padding': data.get('grid_padding', 0),
@@ -571,6 +568,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             item.set_visual_state(uid in selected_ids, uid == active_id)
             item._is_layout_controlled = False # Reset for layout pass
 
+        # Pass 2: Hierarchy Establishment
         for data in elements_data:
             uid, pid = data['id'], data.get('parent_id', -1)
             if uid in self._items_map and pid != -1 and pid in self._items_map:
@@ -578,6 +576,30 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 if item.parentItem() != parent_item: item.setParentItem(parent_item)
             elif uid in self._items_map and self._items_map[uid].parentItem() is not None:
                 self._items_map[uid].setParentItem(None)
+
+        # Pass 3: Positioning (Relative to Parent)
+        for data in elements_data:
+            uid = data['id']
+            item = self._items_map[uid]
+            
+            # Get Resolved Global Geometry
+            layout = resolved_layout.get(uid, {})
+            rx = layout.get('x', data['pos_x'])
+            ry = layout.get('y', data['pos_y'])
+            
+            qx, qy = core.to_qt_coords(rx, ry)
+            
+            # If item has parent, calculate local pos: global_qt - parent_global_qt
+            parent = item.parentItem()
+            if parent and isinstance(parent, RZElementItem):
+                p_layout = resolved_layout.get(parent.uid, {})
+                px = p_layout.get('x', 0)
+                py = p_layout.get('y', 0)
+                pqx, pqy = core.to_qt_coords(px, py)
+                
+                item.setPos(qx - pqx, qy - pqy)
+            else:
+                item.setPos(qx, qy)
         
         # Pass 5: Layout Calculation
         for item in self._items_map.values():
