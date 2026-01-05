@@ -69,6 +69,19 @@ class RZMInspectorPanel(RZEditorPanel):
         self.has_data = False
         self._block_signals = False
 
+    def set_row_visible(self, widget, visible):
+        """Helper to hide/show both the widget and its label in a QFormLayout."""
+        layout = None
+        # Try to find which form layout contains this widget
+        p = widget.parentWidget()
+        if p and p.layout():
+            layout = p.layout()
+        
+        if isinstance(layout, QtWidgets.QFormLayout):
+            label = layout.labelForField(widget)
+            if label: label.setVisible(visible)
+        widget.setVisible(visible)
+
     def _connect_signals(self):
         SIGNALS.selection_changed.connect(self.refresh_data)
         SIGNALS.data_changed.connect(self.refresh_data)
@@ -359,11 +372,17 @@ class RZMInspectorPanel(RZEditorPanel):
         if self.has_data and not self._block_signals:
             if val == "Mixed": return
             ctx = RZContextManager.get_instance().get_snapshot()
-            if ctx.selected_ids:
-                if key in ['pos_x', 'pos_y', 'width', 'height', 'grid_cell_size', 'priority', 
-                           'grid_min_cells', 'grid_max_cells', 'tile_uv', 'tile_size']:
-                    val = int(float(val))
-                core.update_property_multi(ctx.selected_ids, key, val, sub)
+            if not ctx.selected_ids: return
+
+            # Use mapping to determine if we need int casting
+            from ..core.props import PROP_MAP
+            mapping = PROP_MAP.get(key)
+            if mapping and mapping[1] is not None: # It's a sub-index prop often needing int
+                 val = int(float(val))
+            elif key in ['grid_cell_size', 'priority', 'grid_min_cells', 'grid_max_cells']:
+                 val = int(float(val))
+            
+            core.update_property_multi(ctx.selected_ids, key, val, sub)
 
     def _emit_math(self, key, op_str):
         ctx = RZContextManager.get_instance().get_snapshot()
@@ -393,19 +412,14 @@ class RZMInspectorPanel(RZEditorPanel):
             vis_mode = props.get('visibility_mode', 'ALWAYS')
             self.cb_vis_mode.setCurrentText(vis_mode)
             is_cond = (vis_mode == 'CONDITIONAL')
-            self.edit_vis_cond.setVisible(is_cond)
-            # Find label in form layout to hide it too
-            label_w = self.grp_vis.layout().labelForField(self.edit_vis_cond)
-            if label_w: label_w.setVisible(is_cond)
+            self.set_row_visible(self.edit_vis_cond, is_cond)
             self.edit_vis_cond.setText(props.get('visibility_condition', ''))
 
             # --- Anchor ---
             self.cb_anchor.setCurrentText(props.get('alignment') or "Mixed")
             
             has_text = class_type in ["TEXT", "BUTTON"] or class_type is None
-            self.cb_text_align.setVisible(has_text)
-            l_t = self.grp_anchor.layout().labelForField(self.cb_text_align)
-            if l_t: l_t.setVisible(has_text)
+            self.set_row_visible(self.cb_text_align, has_text)
             self.cb_text_align.setCurrentText(props.get('text_align') or "Mixed")
 
             # --- Transform (Formula Switching) ---

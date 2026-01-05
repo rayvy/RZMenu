@@ -517,25 +517,44 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
     def update_scene(self, elements_data, selected_ids, active_id):
         if self._is_user_interaction: return
         
+        # 1. Sync items pool (Create/Delete/Cache)
+        self._sync_items_pool(elements_data)
+        
+        # 2. Resolve layouts and update item states
+        resolved_layout = FormulaEvaluator.resolve_layout(elements_data)
+        self._update_items_state(elements_data, resolved_layout, selected_ids, active_id)
+        
+        # 3. Establish Hierarchy
+        self._rebuild_hierarchy(elements_data)
+        
+        # 4. Final Positioning (Relative to Parent)
+        self._resolve_positioning(elements_data, resolved_layout)
+        
+        # 5. Grid Layouts
+        self._refresh_layout_engines()
+        
+        self.update()
+
+    def _sync_items_pool(self, elements_data):
         incoming_ids = {d['id'] for d in elements_data}
         current_ids = set(self._items_map.keys())
         cache = ImageCache.instance()
 
+        # Cache images
         for data in elements_data:
-            if data.get('image_id', -1) != -1: cache.pre_cache_image(data['image_id'])
+            if data.get('image_id', -1) != -1: 
+                cache.pre_cache_image(data['image_id'])
 
-        # Resolve formulas before updating items
-        resolved_layout = FormulaEvaluator.resolve_layout(elements_data)
-
+        # Cleanup deleted
         for uid in (current_ids - incoming_ids):
             if uid in self._items_map and shiboken6.isValid(self._items_map[uid]):
                 self.removeItem(self._items_map[uid])
-            if uid in self._items_map: del self._items_map[uid]
-        
-        # Pass 1: Creation and basic state
+            if uid in self._items_map: 
+                del self._items_map[uid]
+
+    def _update_items_state(self, elements_data, resolved_layout, selected_ids, active_id):
         for data in elements_data:
             uid = data['id']
-            # Get Resolved Geometry (Global)
             layout = resolved_layout.get(uid, {})
             rw = layout.get('w', data['width'])
             rh = layout.get('h', data['height'])
@@ -558,56 +577,55 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 'cols': data.get('grid_cols', 0)
             }
             
-            item.set_data_state(data.get('is_locked_pos', False), data.get('is_locked_size', False), 
-                                data.get('image_id', -1), data.get('is_selectable', True), 
-                                data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), 
-                                data.get('color', None), grid_props=grid_props,
-                                pos_is_formula=data.get('pos_is_formula', False),
-                                size_is_formula=data.get('size_is_formula', False))
+            item.set_data_state(
+                data.get('is_locked_pos', False), data.get('is_locked_size', False), 
+                data.get('image_id', -1), data.get('is_selectable', True), 
+                data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), 
+                data.get('color', None), grid_props=grid_props,
+                pos_is_formula=data.get('pos_is_formula', False),
+                size_is_formula=data.get('size_is_formula', False)
+            )
             item.setVisible(not data.get('is_hidden', False))
             item.set_visual_state(uid in selected_ids, uid == active_id)
-            item._is_layout_controlled = False # Reset for layout pass
+            item._is_layout_controlled = False 
 
-        # Pass 2: Hierarchy Establishment
+    def _rebuild_hierarchy(self, elements_data):
         for data in elements_data:
             uid, pid = data['id'], data.get('parent_id', -1)
             if uid in self._items_map and pid != -1 and pid in self._items_map:
                 item, parent_item = self._items_map[uid], self._items_map[pid]
-                if item.parentItem() != parent_item: item.setParentItem(parent_item)
+                if item.parentItem() != parent_item: 
+                    item.setParentItem(parent_item)
             elif uid in self._items_map and self._items_map[uid].parentItem() is not None:
                 self._items_map[uid].setParentItem(None)
 
-        # Pass 3: Positioning (Relative to Parent)
+    def _resolve_positioning(self, elements_data, resolved_layout):
         for data in elements_data:
             uid = data['id']
             item = self._items_map[uid]
             
-            # Get Resolved Global Geometry
             layout = resolved_layout.get(uid, {})
             rx = layout.get('x', data['pos_x'])
             ry = layout.get('y', data['pos_y'])
             
             qx, qy = core.to_qt_coords(rx, ry)
             
-            # If item has parent, calculate local pos: global_qt - parent_global_qt
             parent = item.parentItem()
             if parent and isinstance(parent, RZElementItem):
                 p_layout = resolved_layout.get(parent.uid, {})
                 px = p_layout.get('x', 0)
                 py = p_layout.get('y', 0)
                 pqx, pqy = core.to_qt_coords(px, py)
-                
                 item.setPos(qx - pqx, qy - pqy)
             else:
                 item.setPos(qx, qy)
-        
-        # Pass 5: Layout Calculation
+
+    def _refresh_layout_engines(self):
         for item in self._items_map.values():
             if item.elem_type == "GRID_CONTAINER":
                 children = [c for c in item.childItems() if isinstance(c, RZElementItem)]
                 if not children: continue
                 
-                # Sort by Blender order if possible, here we just use what we have
                 container_data = {
                     'width': item.rect().width(),
                     'grid_padding': item.grid_padding,
@@ -626,11 +644,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                     target_tl_x = inner_origin.x() + offsets[i][0]
                     target_tl_y = inner_origin.y() + offsets[i][1]
                     
-                    # Adjust for child's anchor
                     off_x, off_y = child.get_anchor_offset(child.rect().width(), child.rect().height(), child.alignment)
                     child.setPos(target_tl_x - off_x, target_tl_y - off_y)
-                    
                     child._is_layout_controlled = True
+
 
         self.update()
 

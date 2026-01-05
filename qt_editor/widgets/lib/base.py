@@ -137,13 +137,15 @@ class RZSmartSlider(QtWidgets.QWidget):
         if self._is_mixed: return
         self.set_value(self._value - self._step)
 
-    def set_value(self, val):
+    def set_value(self, val, emit_signal=True):
         self._is_mixed = False
         if self.is_int: val = int(val)
         self.spin.blockSignals(True)
         self.spin.setValue(val)
         self.spin.blockSignals(False)
         self._value = val
+        if emit_signal:
+            self.value_changed.emit(float(self._value))
 
     def set_value_from_backend(self, val):
         """Special handler for data sync, supports None for mixed values."""
@@ -154,7 +156,7 @@ class RZSmartSlider(QtWidgets.QWidget):
             self.spin.lineEdit().setStyleSheet("color: #888; font-style: italic;")
         else:
             self._is_mixed = False
-            self.set_value(val)
+            self.set_value(val, emit_signal=False)
             self.spin.lineEdit().setStyleSheet("")
         self.spin.blockSignals(False)
 

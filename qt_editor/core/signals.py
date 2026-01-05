@@ -1,5 +1,6 @@
 # RZMenu/qt_editor/core/signals.py
 from PySide6.QtCore import QObject, Signal
+from contextlib import contextmanager
 
 class RZSignalManager(QObject):
     structure_changed = Signal()  # List changed (Outliner)
@@ -17,3 +18,12 @@ class RZSignalManager(QObject):
 
 SIGNALS = RZSignalManager()
 IS_UPDATING_FROM_QT = False
+
+@contextmanager
+def qt_update_guard():
+    global IS_UPDATING_FROM_QT
+    IS_UPDATING_FROM_QT = True
+    try:
+        yield
+    finally:
+        IS_UPDATING_FROM_QT = False
