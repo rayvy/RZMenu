@@ -2,79 +2,96 @@
 
 ## Обзор проекта
 
-**RZMenu/qt_editor** - это Blender аддон с Qt-интерфейсом для визуального редактирования меню и UI элементов. Проект представляет собой полнофункциональный редактор с разделенными областями (areas), каждая из которых может содержать разные панели (panels).
+**RZMenu/qt_editor** - это Blender аддон с Qt-интерфейсом (PySide6) для визуального создания и редактирования меню. Проект использует гибридную архитектуру: данные хранятся в Blender (RNA), а UI и логика взаимодействия реализованы на Qt.
 
-**Технологии:** Python 3.7+, PySide6 (Qt6), Blender API
+**Ключевая особенность:** Приложение полностью автономно от нативного UI Blender, но синхронизировано с ним через систему событий и сигналов.
 
-## Архитектура
+## Архитектура файлов
 
-### Основные компоненты
+### 1. Точка входа и Лаунчер
+- `__init__.py`: Регистрация оператора запуска `RZM_OT_LaunchQTEditor`.
+- `core/launcher.py`: `IntegrationManager`. Управляет `QApplication`, главным окном и таймерами синхронизации событий Blender (`depsgraph_update`, `undo/redo`).
 
-#### 1. Корневая структура
-- `__init__.py` - Регистрация аддона в Blender
-- `window.py` - Главное окно приложения (RZMEditorWindow)
-- `actions.py` - Система действий/операторов (RZActionManager)
+### 2. Главное окно и Layout
+- `window.py`: `RZMEditorWindow`.
+  - Не содержит панели напрямую. Использует `RZAreaWidget` и `QSplitter`.
+  - Управляет хедером (Toolbar) и футером (Status).
+- `systems/layout_manager.py`: Сериализация/десериализация расположения окон (Splitters/Areas) в JSON.
+- `widgets/area.py`: `RZAreaWidget`. Контейнер, позволяющий динамически менять тип панели (Inspector <-> Outliner) и разделять/закрывать области.
 
-#### 2. Ядро системы (core/)
-```
-core/
-├── signals.py           # Система сигналов для коммуникации
-├── launcher.py          # Управление жизненным циклом Qt-приложения
-├── blender_bridge.py    # Связь с Blender API (МОСТ)
-├── logic.py             # Бизнес-логика элементов меню (FormulaEvaluator)
-├── structure.py         # Операции со структурой элементов
-├── transform.py         # Трансформации элементов
-├── props.py             # Управление свойствами
-├── clipboard.py         # Буфер обмена
-├── maths.py             # Математические утилиты
-└── read.py              # Чтение данных из Blender
-```
+### 3. Ядро (Core) - Фасад `core/__init__.py`
+Весь функционал доступен через фасад `qt_editor.core`.
+- `signals.py`: Синглтон `SIGNALS`. Центральный хаб событий (`structure_changed`, `transform_changed` и т.д.).
+- `blender_bridge.py`: Безопасное выполнение кода в контексте Blender (`exec_in_context`, `get_stable_context`).
+- `read.py`: Чтение данных из Blender RNA в структуры Python (dict/list).
+- `props.py`: **Central Property Mapper (`PROP_MAP`)**. Универсальная функция записи свойств `update_property_multi`.
+- `logic.py`: `FormulaEvaluator`. Итеративный решатель формул (позиции, размеры) и зависимостей переменных (например `$Button1PosX + 10`).
+- `structure.py`: Создание, удаление, дублирование, реордеринг элементов.
+- `transform.py`: Перемещение и ресайз элементов.
 
-#### 3. Система контекста (context/)
-```
-context/
-├── manager.py           # Центральный менеджер состояния (RZContextManager - СИНГЛТОН)
-├── snapshot.py          # Снимки состояния (RZContext - immutable)
-├── states.py            # Состояния взаимодействия (RZInteractionState)
-└── wrappers.py          # Обертки для безопасного доступа (RZElementWrapper)
-```
+### 4. Контекст (Context)
+- `context/manager.py`: `RZContextManager` (Singleton). Хранит текущее выделение, hover, состояние мыши.
+- `context/snapshot.py`: `RZContext`. Immutable снимок состояния, передаваемый в операторы.
+- `context/wrappers.py`: `RZElementWrapper`. Легковесная обертка для удобного доступа к свойствам элементов Blender.
 
-#### 4. Системные компоненты (systems/)
-```
-systems/
-├── operators.py         # Операторы действий (реестр OPERATOR_REGISTRY)
-├── input_manager.py     # Управление вводом
-├── layout_manager.py    # Управление layout'ами
-└── layout.py            # Логика раскладки элементов
-```
+### 5. Виджеты и Панели (`widgets/`)
+Все панели наследуются от `RZEditorPanel` и регистрируются в `PanelFactory`.
+- `panel_base.py`: Базовый класс. Автоматически подписывается/отписывается от сигналов при активации/деактивации.
+- `viewport.py`: `QGraphicsScene` + `QGraphicsView`. Визуальный редактор с поддержкой Drag&Drop, Gizmo и сетки.
+- `inspector.py`: Редактор свойств. Генерирует UI на основе `core.read.get_selection_details`. Использует `PROP_MAP` для записи.
+- `outliner.py`: Дерево элементов (`QTreeWidget`). Поддерживает Drag&Drop реордеринг.
+- `asset_browser.py`: Браузер ассетов/иконок.
+- `preferences.py`: Настройки аддона (темы, кеймапы).
+- `keymap_editor.py`: Редактор горячих клавиш.
 
-#### 5. Виджеты интерфейса (widgets/)
-```
-widgets/
-├── area.py              # Контейнеры областей (RZAreaWidget)
-├── panel_base.py        # Базовый класс панелей (RZEditorPanel)
-├── outliner.py          # Панель иерархии (RZMOutlinerPanel)
-├── inspector.py         # Панель свойств (RZMInspectorPanel)
-├── viewport.py          # Визуальный редактор (RZViewportPanel)
-├── asset_browser.py     # Браузер ассетов (RZAssetBrowserPanel)
-├── preferences.py       # Настройки (RZPreferencesDialog)
-└── panel_factory.py     # Фабрика панелей (PanelFactory)
-```
+### 6. Системы (Systems)
+- `actions.py`: `RZActionManager`. Связывает `QAction` с операторами.
+- `operators.py`: Реестр операторов (`RZOperator`). Реализует паттерн Command.
+- `input_manager.py`: Перехват клавиш (фильтр событий Qt) и вызов операторов по хоткеям.
 
-#### 6. Конфигурация (conf/)
-```
-conf/
-├── manager.py           # Менеджер конфигурации (ConfigManager - СИНГЛТОН)
-└── defaults.py          # Дефолтные настройки (DEFAULT_CONFIG)
-```
+## Поток данных (Data Flow)
 
-#### 7. Утилиты (utils/)
-```
-utils/
-├── logger.py            # Логирование
-├── icons.py             # Управление иконками
-├── image_cache.py       # Кэширование изображений
-```
+1.  **Чтение:** Qt запрашивает данные через `core.read` -> `bpy.context.scene.rzm`.
+2.  **Изменение (Qt):**
+    *   Пользователь крутит слайдер в Inspector.
+    *   Срабатывает сигнал UI.
+    *   Вызывается `core.update_property_multi`.
+    *   `core.props` ищет маппинг в `PROP_MAP`.
+    *   Данные пишутся в Blender RNA внутри `qt_update_guard` (блокировка обратного сигнала).
+    *   `blender_bridge.safe_undo_push` создает шаг Undo в Blender.
+    *   `SIGNALS` эмитируют `data_changed`.
+3.  **Обновление UI:** Панели (Inspector, Viewport), подписанные на `data_changed`, перерисовываются.
+4.  **Изменение (Blender):**
+    *   Пользователь делает Undo в Blender.
+    *   `IntegrationManager` ловит `depsgraph_update`.
+    *   Вызывается `window.sync_from_blender()`.
+    *   Эмитируется `structure_changed` для полного обновления Qt интерфейса.
+
+## Важные концепции
+
+*   **Автономность панелей:** Панели не знают друг о друге. Общение только через `SIGNALS` или изменение данных в ядре.
+*   **Context Driven:** Внешний вид футера и доступные хоткеи зависят от того, над какой областью (`RZContext.hover_area`) находится мышь.
+*   **Property Mapping:** Большинство свойств редактируются через единую точку входа в `props.py`. Не нужно писать отдельную логику для каждого поля.
+
+## Система формул (FormulaEvaluator)
+
+Критическая подсистема для вычисления зависимостей между элементами:
+
+### Ключевые возможности:
+- **Переменные:** `$ElementNameProperty` (регистронезависимо)
+- **Примеры:** `$Button1PositionX + 10`, `$Slider1Height * 0.5`
+- **Итеративное разрешение:** До 5 проходов для разрешения зависимостей
+
+### Архитектура:
+- `_build_flat_context()`: Создает плоский словарь всех переменных
+- `_eval_safe()`: Безопасное вычисление с `eval()` и ограниченным контекстом
+- `resolve_layout()`: Основная функция разрешения всех формул
+
+### Применение:
+Используется для:
+- Позиционирования элементов относительно друг друга
+- Динамического изменения размеров
+- Создания адаптивных интерфейсов
 
 ## Архитектурные паттерны
 

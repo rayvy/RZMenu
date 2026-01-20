@@ -3,11 +3,11 @@
 ## Содержание
 1. [Введение](#введение)
 2. [Архитектурные принципы](#архитектурные-принципы)
-3. [Создание простых операторов](#создание-простых-операторов)
-4. [Создание панелей](#создание-панелей)
-5. [Добавление новых свойств элементов](#добавление-новых-свойств-элементов)
-6. [Создание сложных функций](#создание-сложных-функций)
-7. [Работа с системой моста](#работа-с-системой-моста)
+3. [Добавление нового свойства элемента](#добавление-нового-свойства-элемента) **(КРИТИЧНО ВАЖНЫЙ РАЗДЕЛ)**
+4. [Создание новой панели](#создание-новой-панели)
+5. [Создание оператора](#создание-оператора)
+6. [Работа с формулами](#работа-с-формулами)
+7. [Темизация](#темизация)
 8. [Отладка и тестирование](#отладка-и-тестирование)
 
 ## Введение
@@ -57,57 +57,31 @@ def modify_context():
     manager.set_selection({123}, 123)
 ```
 
-## Создание простых операторов
+## Создание оператора
 
-### Шаг 1: Создание базового оператора
+### Шаг 1: Создание оператора
 
-Создайте новый файл `systems/operators/my_operators.py`:
+Добавьте класс в `systems/operators.py`:
 
 ```python
-from .. import core
-from ..context import RZContextManager, RZContext
-from . import RZOperator
-
-class RZ_OT_MySimpleOperator(RZOperator):
-    id = "rzm.my_simple_op"
-    label = "My Simple Operation"
+class RZ_OT_MyAction(RZOperator):
+    id = "rzm.my_action"
+    label = "Do Something"
+    requires_selection = True  # Если нужно выделение
 
     def execute(self, context: RZContext, **kwargs):
-        # Ваша логика здесь
-        print(f"Выполняю операцию с {len(context.selected_ids)} выделенными элементами")
+        # Ваша логика. Используйте core функции!
+        print(f"Action on {context.selected_ids}")
         return {'FINISHED'}
 ```
 
 ### Шаг 2: Регистрация оператора
 
-Добавьте в `systems/operators.py`:
+Добавьте класс в список `_CLASSES` в конце файла.
 
-```python
-# Импорт вашего оператора
-from .my_operators import RZ_OT_MySimpleOperator
+### Шаг 3: Горячие клавиши (опционально)
 
-# Добавьте в OPERATOR_REGISTRY
-OPERATOR_REGISTRY.update({
-    "rzm.my_simple_op": RZ_OT_MySimpleOperator,
-    # ... другие операторы
-})
-```
-
-### Шаг 3: Добавление горячих клавиш
-
-Добавьте в `conf/defaults.py`:
-
-```python
-DEFAULT_CONFIG = {
-    "keymaps": {
-        "GLOBAL": {
-            # ... существующие привязки
-            "Ctrl+Shift+M": "rzm.my_simple_op",
-        }
-    },
-    # ... остальная конфигурация
-}
-```
+Добавьте в `conf/defaults.py` дефолтный хоткей.
 
 ### Шаг 4: Добавление кнопки в UI
 
@@ -119,16 +93,15 @@ def setup_toolbar(self):
     add_btn("My Op", "rzm.my_simple_op")
 ```
 
-## Создание панелей
+## Создание новой панели
 
 ### Шаг 1: Создание базовой панели
 
-Создайте новый файл `widgets/my_panel.py`:
+Создайте файл в `widgets/`, например `widgets/my_panel.py`.
 
 ```python
 from PySide6 import QtWidgets
 from .panel_base import RZEditorPanel
-from .. import core
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
 
@@ -138,7 +111,7 @@ class RZMyPanel(RZEditorPanel):
     """
 
     PANEL_ID = "MY_PANEL"
-    PANEL_NAME = "My Panel"
+    PANEL_NAME = "My Awesome Panel"
     PANEL_ICON = "star"  # Иконка из системы иконок
 
     def __init__(self, parent=None):
@@ -148,10 +121,10 @@ class RZMyPanel(RZEditorPanel):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        self.label = QtWidgets.QLabel("Привет, мир!")
+        self.label = QtWidgets.QLabel("Hello World!")
         layout.addWidget(self.label)
 
-        self.button = QtWidgets.QPushButton("Нажми меня")
+        self.button = QtWidgets.QPushButton("Click me")
         self.button.clicked.connect(self.on_button_click)
         layout.addWidget(self.button)
 
@@ -163,12 +136,12 @@ class RZMyPanel(RZEditorPanel):
         SIGNALS.structure_changed.connect(self.refresh_data)
 
     def _disconnect_signals(self):
-        """Отписываемся от сигналов."""
+        """Безопасная отписка от сигналов."""
         try:
             SIGNALS.selection_changed.disconnect(self.refresh_data)
             SIGNALS.structure_changed.disconnect(self.refresh_data)
         except:
-            pass  # Безопасность на случай если сигналы уже отключены
+            pass
 
     def refresh_data(self):
         """Обновляем данные панели."""
@@ -178,13 +151,12 @@ class RZMyPanel(RZEditorPanel):
         ctx = RZContextManager.get_instance().get_snapshot()
 
         if ctx.selected_ids:
-            self.label.setText(f"Выделено элементов: {len(ctx.selected_ids)}")
+            self.label.setText(f"Selected items: {len(ctx.selected_ids)}")
         else:
-            self.label.setText("Ничего не выделено")
+            self.label.setText("No selection")
 
     def on_button_click(self):
         """Обработчик нажатия кнопки."""
-        # Получаем доступ к action manager для выполнения операций
         action_manager = self.get_action_manager()
         if action_manager:
             action_manager.run("rzm.select_all")
@@ -192,32 +164,24 @@ class RZMyPanel(RZEditorPanel):
     def on_activate(self):
         """Вызывается при активации панели."""
         super().on_activate()
-        # Дополнительная инициализация если нужна
-        print(f"Панель {self.PANEL_ID} активирована")
+        print(f"Panel {self.PANEL_ID} activated")
 
     def on_deactivate(self):
         """Вызывается при деактивации панели."""
         super().on_deactivate()
-        # Очистка ресурсов если нужна
-        print(f"Панель {self.PANEL_ID} деактивирована")
+        print(f"Panel {self.PANEL_ID} deactivated")
 ```
 
 ### Шаг 2: Регистрация панели
 
-Добавьте в `window.py`, в метод `_register_panels()`:
+Добавьте в `window.py` -> `_register_panels()`:
 
 ```python
-def _register_panels(self):
-    """Register all panel classes with the PanelFactory."""
-    PanelFactory.register(outliner.RZMOutlinerPanel)
-    PanelFactory.register(inspector.RZMInspectorPanel)
-    PanelFactory.register(viewport.RZViewportPanel)
-    PanelFactory.register(asset_browser.RZAssetBrowserPanel)
-
-    # Регистрируем вашу новую панель
-    from .widgets import my_panel
-    PanelFactory.register(my_panel.RZMyPanel)
+from .widgets import my_panel
+PanelFactory.register(my_panel.RZMyPanel)
 ```
+
+Теперь панель доступна в выпадающем списке любого Area.
 
 ### Шаг 3: Добавление иконки (опционально)
 
@@ -229,74 +193,171 @@ ICON_MAP.update({
 })
 ```
 
-## Добавление новых свойств элементов
+## Добавление нового свойства элемента
 
-### Шаг 1: Добавление в Blender RNA
+**⚠️ ВНИМАНИЕ: Это самый частый кейс разработки. Пропуск любого шага приведет к неработоспособности!**
 
-Это требует изменений в основном аддоне RZMenu (не в qt_editor). Добавьте в RNA структуру:
-
+### Шаг 1: Blender RNA (Внешний код)
+В файле определения свойств `RZElement` (вне папки `qt_editor`, в основном аддоне) добавьте свойство:
 ```python
 # В основном аддоне RZMenu
 class RZElement(PropertyGroup):
     # ... существующие свойства
 
-    my_custom_prop: FloatProperty(
-        name="My Custom Property",
+    opacity: FloatProperty(
+        name="Opacity",
         default=1.0,
         min=0.0,
-        max=10.0
+        max=1.0
     )
 ```
 
-### Шаг 2: Обновление обертки контекста
-
-Добавьте в `context/wrappers.py`:
-
-```python
-class RZElementWrapper:
-    # ... существующие свойства
-
-    @property
-    def my_custom_prop(self) -> float:
-        el = self._get_bl_element()
-        return getattr(el, "my_custom_prop", 1.0) if el else 1.0
-```
-
-### Шаг 3: Обновление панели инспектора
-
-Добавьте в `widgets/inspector.py`:
+### Шаг 2: Property Mapping (КРИТИЧНО ВАЖНЫЙ ШАГ!)
+В файле `qt_editor/core/props.py` найдите словарь `PROP_MAP`. Добавьте маппинг для вашего свойства.
+Это связывает имя, используемое в Qt, с реальным именем в Blender API.
 
 ```python
-def _init_properties_ui(self):
-    # ... существующие группы
+# qt_editor/core/props.py
+PROP_MAP = {
+    # ... существующие маппинги
+    "opacity": ("opacity", None, 'D'), # 'D' означает сигнал data_changed
+}
+```
+*Типы сигналов:*
+- `'D'` (Data) - для обычных свойств, эмитирует `data_changed`
+- `'T'` (Transform) - для позиций/размеров, эмитирует `transform_changed`
+- `'S'` (Structure) - для структурных изменений, эмитирует `structure_changed`
 
-    # === GROUP: MY CUSTOM PROPERTIES ===
-    grp_custom = RZGroupBox("Custom Properties")
-    form_custom = QtWidgets.QFormLayout(grp_custom)
+**❌ БЕЗ ЭТОГО ШАГА:** UI инспектора сможет читать данные, но запись (`_emit_change`) молча не сработает!
 
-    self.spin_my_prop = RZSpinBox()
-    self.spin_my_prop.setRange(0.0, 10.0)
-    self.spin_my_prop.setSingleStep(0.1)
-    self.spin_my_prop.valueChanged.connect(lambda v: self._emit_change('my_custom_prop', float(v)))
-    form_custom.addRow("My Prop:", self.spin_my_prop)
+### Шаг 3: Чтение данных
+В `qt_editor/core/read.py` в функцию `get_selection_details` добавьте чтение свойства:
 
-    self.layout_props.addWidget(grp_custom)
+```python
+# qt_editor/core/read.py
+def get_selection_details(selected_ids, active_id):
+    # ... существующий код
+
+    if active_element:
+        # ... существующие поля
+        details.update({
+            "opacity": get_uniform("opacity", default=1.0),
+        })
+
+    return details
 ```
 
-Добавьте в метод `update_ui()`:
+### Шаг 4: UI Инспектора
+В `qt_editor/widgets/inspector.py`:
 
+1. Добавьте виджет в `_init_properties_ui`:
+```python
+# === GROUP: APPEARANCE ===
+grp_appearance = RZGroupBox("Appearance")
+form_appearance = QtWidgets.QFormLayout(grp_appearance)
+
+self.sl_opacity = RZSmartSlider(is_int=False, min_val=0.0, max_val=1.0)
+self.sl_opacity.value_changed.connect(lambda v: self._emit_change('opacity', v))
+form_appearance.addRow("Opacity:", self.sl_opacity)
+
+self.layout_props.addWidget(grp_appearance)
+```
+
+2. Обновите виджет в `update_ui`:
 ```python
 def update_ui(self, details):
     # ... существующий код
 
-    # Обновляем кастомное свойство
-    if details:
-        self.spin_my_prop.blockSignals(True)
-        self.spin_my_prop.setValue(details.get('my_custom_prop', 1.0))
-        self.spin_my_prop.blockSignals(False)
-    else:
-        self.spin_my_prop.setValue(1.0)
+    # Обновляем opacity
+    self.sl_opacity.set_value_from_backend(props.get('opacity', 1.0))
 ```
+
+### Шаг 5: Обновление обертки контекста (опционально)
+Если нужно свойство в `RZElementWrapper` для операторов:
+
+```python
+# context/wrappers.py
+@property
+def opacity(self) -> float:
+    el = self._get_bl_element()
+    return getattr(el, "opacity", 1.0) if el else 1.0
+```
+
+### Проверка работоспособности
+После всех шагов:
+1. Запустите редактор
+2. Выделите элемент
+3. Проверьте, что слайдер Opacity появился в Inspector
+4. Измените значение - оно должно сохраняться
+5. Сделайте Undo в Blender - значение должно вернуться
+
+---
+
+## Работа с формулами
+
+Система поддерживает вычисление координат и размеров через формулы (`core/logic.py` - `FormulaEvaluator`).
+
+### Как работают формулы
+- Переменные доступны через `$NameProperty` (регистронезависимо)
+- Примеры: `$Button1PositionX + 10`, `$Slider1Height * 0.5`
+- Вычисление происходит итеративно (до 5 проходов) для разрешения зависимостей
+
+### Добавление свойства с поддержкой формул
+
+Если свойство может быть формулой (например, позиция X), добавьте поддержку в `FormulaEvaluator`:
+
+```python
+# core/logic.py - внутри FormulaEvaluator._eval_safe
+def _eval_safe(self, formula_str, eval_context, fallback):
+    # ... существующий код
+
+    # Добавьте поддержку новых переменных в eval_context
+    # (автоматически делается в _build_flat_context)
+```
+
+### UI для формул в Inspector
+
+Для свойств с формулами используйте `RZFormulaInput`:
+
+```python
+# widgets/inspector.py
+self.edit_pos_x = RZFormulaInput()
+self.edit_pos_x.setPlaceholderText("$Button1PositionX + 20")
+self.edit_pos_x.editingFinished.connect(lambda: self._emit_change('formula_x', self.edit_pos_x.text()))
+form_layout.addRow("X:", self.edit_pos_x)
+
+# Логика показа формулы
+self.chk_pos_x_formula = RZCheckBox("Use Formula")
+self.chk_pos_x_formula.toggled.connect(lambda: self._toggle_formula_ui('pos_x'))
+```
+
+### Логика переключения режимов
+
+```python
+def _toggle_formula_ui(self, prop_name):
+    """Показывать обычный спинбокс или поле формулы."""
+    use_formula = getattr(self, f'chk_{prop_name}_formula').isChecked()
+
+    # Скрыть/показать соответствующие виджеты
+    getattr(self, f'spin_{prop_name}').setVisible(not use_formula)
+    getattr(self, f'edit_{prop_name}').setVisible(use_formula)
+
+    # Переключить флаг в данных
+    self._emit_change(f'{prop_name}_is_formula', use_formula)
+```
+
+---
+
+## Темизация
+
+Все цвета берутся из `widgets/lib/theme.py`.
+**Никогда** не хардкодьте цвета (например, `color: #333`).
+Используйте:
+```python
+t = get_current_theme()
+color = t.get('text_main', '#FFF')
+```
+Это обеспечит поддержку пользовательских тем.
 
 ### Шаг 4: Обновление метода получения деталей
 
