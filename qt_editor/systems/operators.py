@@ -218,7 +218,7 @@ class RZ_OT_ToggleDebug(RZOperator):
     label = "Toggle Debug Info"
     
     def execute(self, context, **kwargs):
-        win = getattr(context, 'window', None) or kwargs.get('window')
+        win = kwargs.get('window')
         if win:
             win.toggle_debug_panel()
         return

@@ -114,28 +114,8 @@ class RZEditorPanel(RZPanelWidget):
         Find the RZActionManager by traversing up to the main window.
         Returns None if not found.
         """
-        widget = self
-        while widget:
-            parent = widget.parent()
-            if parent is None:
-                # We've reached a top-level widget
-                if hasattr(widget, 'action_manager'):
-                    return widget.action_manager
-                break
-            # Check if parent has action_manager
-            if hasattr(parent, 'action_manager'):
-                return parent.action_manager
-            widget = parent
-        
-        # Fallback: try window() method
-        try:
-            win = self.window()
-            if win and hasattr(win, 'action_manager'):
-                return win.action_manager
-        except:
-            pass
-        
-        return None
+        from .utils import find_action_manager
+        return find_action_manager(self)
     
     @property
     def is_panel_active(self) -> bool:

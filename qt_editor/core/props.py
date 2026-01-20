@@ -60,19 +60,25 @@ PROP_MAP = {
     "disable_button_popup": ("disable_button_popup", None, 'D'),
 }
 
+from ..utils import logger
+
 def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mode=False):
     if not target_ids: return
     
+    # Resolve Mapping
+    mapping = PROP_MAP.get(prop_name)
+    if mapping is None:
+        logger.warn(f"Property '{prop_name}' not found in PROP_MAP, skipping update")
+        return
+
     with signals.qt_update_guard():
         elements = bpy.context.scene.rzm.elements
         targets = [e for e in elements if e.id in target_ids]
         if not targets: return
 
-        # Resolve Mapping
-        mapping = PROP_MAP.get(prop_name)
-        bl_prop = mapping[0] if mapping else prop_name
-        bl_idx = mapping[1] if mapping and mapping[1] is not None else sub_index
-        sig_type = mapping[2] if mapping else 'D'
+        bl_prop = mapping[0]
+        bl_idx = mapping[1] if mapping[1] is not None else sub_index
+        sig_type = mapping[2] 
 
         changed = False
         for elem in targets:

@@ -154,10 +154,6 @@ class RZInputController(QtCore.QObject):
             
         # Create Snapshot from Manager
         ctx = RZContextManager.get_instance().get_snapshot()
-        # "Грязный" хак для UI операторов (Zoom, etc), им нужно окно Qt
-        # В идеале это должно передаваться чище, но пока так работает
-        if hasattr(ctx, 'window'): # Если snapshot не поддерживает атрибут, не падаем
-             pass 
              
         op_inst = op_class()
         

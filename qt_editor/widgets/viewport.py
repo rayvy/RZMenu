@@ -217,7 +217,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         # In Blender, resizing doesn't move the 'position' (which is the anchor point).
         # Our UI reflects this: we just update size.
         self.update_visual_rect(nw, nh)
-        scene.element_resized_signal.emit(self.uid, int(nx), int(-ny), int(nw), int(nh))
+        bx, by = core.to_qt_coords(nx, ny)
+        scene.element_resized_signal.emit(self.uid, bx, by, int(nw), int(nh))
 
     def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
@@ -488,7 +489,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 self._accum_y -= blender_dy
                 
                 # Signal to core (inverted Y for Blender)
-                self.item_moved_signal.emit(float(blender_dx), float(-blender_dy))
+                bdx, bdy = core.to_blender_delta(blender_dx, blender_dy)
+                self.item_moved_signal.emit(float(bdx), float(bdy))
 
             # Visual movement (smooth in Qt)
             for item in movable_items:
@@ -724,10 +726,7 @@ class RZViewportView(QtWidgets.QGraphicsView):
         menu.exec(QtGui.QCursor.pos())
 
     def _create_at_pos(self, class_type, scene_pos):
-        # Convert scene Y to Blender Y (inverted)
-        bx = scene_pos.x()
-        by = -scene_pos.y()
-        from .. import core
+        bx, by = core.to_qt_coords(scene_pos.x(), scene_pos.y())
         core.create_element(class_type, bx, by)
 
     def dragEnterEvent(self, event):
@@ -752,10 +751,8 @@ class RZViewportView(QtWidgets.QGraphicsView):
                 scene_pos = self.mapToScene(event.position().toPoint())
                 
                 # Convert to Blender coords (Y is flipped in our UI)
-                bx = scene_pos.x()
-                by = -scene_pos.y()
+                bx, by = core.to_qt_coords(scene_pos.x(), scene_pos.y())
                 
-                from .. import core
                 core.create_element_with_image(image_id, bx, by)
                 
                 event.acceptProposedAction()
@@ -844,31 +841,8 @@ class RZViewportView(QtWidgets.QGraphicsView):
 
     def _find_action_manager(self):
         """Find action_manager by traversing up to the main window."""
-        # First try explicit parent_window
-        if self.parent_window and hasattr(self.parent_window, "action_manager"):
-            return self.parent_window.action_manager
-        
-        # Traverse up widget hierarchy
-        widget = self
-        while widget:
-            parent = widget.parent()
-            if parent is None:
-                if hasattr(widget, 'action_manager'):
-                    return widget.action_manager
-                break
-            if hasattr(parent, 'action_manager'):
-                return parent.action_manager
-            widget = parent
-        
-        # Fallback: try window()
-        try:
-            win = self.window()
-            if win and hasattr(win, 'action_manager'):
-                return win.action_manager
-        except:
-            pass
-        
-        return None
+        from .utils import find_action_manager
+        return find_action_manager(self)
 
     def contextMenuEvent(self, event):
         am = self._find_action_manager()
@@ -904,7 +878,8 @@ class RZViewportView(QtWidgets.QGraphicsView):
         global_pos = QtGui.QCursor.pos()
         view_pos = self.mapFromGlobal(global_pos)
         scene_pos = self.mapToScene(view_pos)
-        RZContextManager.get_instance().update_input(global_pos, (scene_pos.x(), -scene_pos.y()), area="VIEWPORT")
+        bx, by = core.to_qt_coords(scene_pos.x(), scene_pos.y())
+        RZContextManager.get_instance().update_input(global_pos, (bx, by), area="VIEWPORT")
         super().enterEvent(event)
 
     def leaveEvent(self, event):
