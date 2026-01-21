@@ -41,9 +41,12 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         }
         self.setCursor(cursors.get(handle_type, QtCore.Qt.ArrowCursor))
         self.setAcceptHoverEvents(True)
+        
+        # State for cumulative drag
+        self._start_mouse_pos = None
 
     def hoverEnterEvent(self, event):
-        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
+        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
             return
         self.setBrush(self.hover_brush)
         super().hoverEnterEvent(event)
@@ -53,32 +56,41 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         super().hoverLeaveEvent(event)
 
     def shape(self):
-        """Improve hit-testing by providing a larger interaction area."""
         path = QtGui.QPainterPath()
-        # Add 4px margin for easier grabbing
         path.addRect(self.rect().adjusted(-4, -4, 4, 4))
         return path
 
     def paint(self, painter, option, widget):
-        """Visual polish: rounded handles with antialiasing."""
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.setBrush(self.brush())
         painter.setPen(self.pen())
         painter.drawRoundedRect(self.rect(), 2, 2)
 
     def mousePressEvent(self, event):
-        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
+        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
             event.ignore()
             return
+        
+        # Record start position for cumulative math
+        self._start_mouse_pos = event.scenePos()
+        self.scene().interaction_start_signal.emit()
         event.accept()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() & QtCore.Qt.LeftButton:
-            delta = event.scenePos() - event.lastScenePos()
-            self.parentItem().handle_resize(self.handle_type, delta)
+        if self._start_mouse_pos is not None:
+            # Calculate Total Delta from start
+            total_delta = event.scenePos() - self._start_mouse_pos
+            self.parentItem().handle_resize(self.handle_type, total_delta)
             event.accept()
         else:
             super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._start_mouse_pos = None
+        self.parentItem().finalize_resize() # Clear initial state
+        self.scene().interaction_end_signal.emit()
+        super().mouseReleaseEvent(event)
+
 
 class RZElementItem(QtWidgets.QGraphicsRectItem):
     def __init__(self, uid, w, h, name, elem_type="CONTAINER"):
@@ -105,8 +117,9 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.grid_cell_size = 50
         self.grid_cols = 0
         
-        # Interaction state
-        self._initial_rect = None
+        # Interaction state (Cumulative)
+        self._initial_rect = None     # (x, y, w, h) visual rect
+        self._initial_pos = None      # (x, y) scene pos
         self._aspect_ratio = 1.0
 
         self.setFlags(
@@ -115,12 +128,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         )
 
     def get_inner_origin(self):
-        """Returns the top-left coordinate of the content area relative to (0,0) origin."""
         r = self.rect()
         return r.topLeft()
 
     def get_anchor_offset(self, w, h, alignment):
-        """Calculates the visual offset based on the anchor point."""
         offsets = {
             "TOP_LEFT": (0, 0),
             "TOP_CENTER": (-w / 2, 0),
@@ -135,7 +146,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         return offsets.get(alignment, (0, 0))
 
     def update_visual_rect(self, w, h):
-        """Updates the internal rect based on anchor."""
         dx, dy = self.get_anchor_offset(w, h, self.alignment)
         self.setRect(dx, dy, w, h)
         self.update_handles_pos()
@@ -165,7 +175,16 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         if not self.handles and visible: self.create_handles()
         for handle in self.handles.values(): handle.setVisible(visible)
 
-    def handle_resize(self, h_type, delta):
+    def finalize_resize(self):
+        """Called when mouse is released to clear init state."""
+        self._initial_rect = None
+        self._initial_pos = None
+
+    def handle_resize(self, h_type, total_delta):
+        """
+        Handles resize using cumulative delta to prevent snap-deadlock.
+        total_delta: distance from the mouse press start position.
+        """
         if self.is_locked_size or self.size_is_formula: return
         
         scene = self.scene()
@@ -173,53 +192,110 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         is_ctrl = modifiers & QtCore.Qt.ControlModifier
         is_shift = modifiers & QtCore.Qt.ShiftModifier
         
+        # 1. Initialize Snapshot on first move
         if self._initial_rect is None:
             self._initial_rect = self.rect()
+            self._initial_pos = self.pos() # Scene position (Anchor)
             self._aspect_ratio = self._initial_rect.width() / max(self._initial_rect.height(), 1)
 
-        r = self.rect()
-        pos = self.pos()
-        nx, ny = pos.x(), pos.y()
-        nw, nh = r.width(), r.height()
-        dx, dy = delta.x(), delta.y()
+        # 2. Helper to get raw dimensions
+        # Current Anchor in Scene coords
+        init_ax, init_ay = self._initial_pos.x(), self._initial_pos.y()
         
-        MIN_SIZE = 5
-        grid_size = scene.grid_size if (scene.snap_enabled or is_ctrl) else 1
+        # Visual Rect (relative to anchor, e.g., -50, -50 if Center)
+        vr = self._initial_rect
         
-        # Resizing logic is now more complex because of anchor.
-        # For simplicity, we calculate new width/height first.
+        # Calculate Absolute edges in Scene Space
+        abs_left = init_ax + vr.left()
+        abs_right = init_ax + vr.right()
+        abs_top = init_ay + vr.top()
+        abs_bottom = init_ay + vr.bottom()
+        
+        # Apply Delta to the moving edges
+        dx, dy = total_delta.x(), total_delta.y()
+        
         if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
-            nw -= dx
+            abs_left += dx
         elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
-            nw += dx
+            abs_right += dx
 
         if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
-            nh -= dy
+            abs_top += dy
         elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
-            nh += dy
+            abs_bottom += dy
 
-        # Apply constraints
-        if is_shift:
-            if h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
-                nh = nw / self._aspect_ratio
-            elif h_type in (RZHandleItem.LEFT, RZHandleItem.RIGHT):
-                nh = nw / self._aspect_ratio
-            elif h_type in (RZHandleItem.TOP, RZHandleItem.BOTTOM):
-                nw = nh * self._aspect_ratio
+        # 3. Apply Snap to the Moving Edges (Absolute Grid Snap)
+        grid_size = scene.grid_size if (scene.snap_enabled or is_ctrl) else 1
+        
+        def snap(val): return round(val / grid_size) * grid_size
 
         if scene.snap_enabled or is_ctrl:
-            # Absolute Snap for Size (Stepped)
-            nw = round(nw / grid_size) * grid_size
-            nh = round(nh / grid_size) * grid_size
+            if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
+                abs_left = snap(abs_left)
+            elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
+                abs_right = snap(abs_right)
+            
+            if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
+                abs_top = snap(abs_top)
+            elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
+                abs_bottom = snap(abs_bottom)
 
-        nw = max(MIN_SIZE, nw)
-        nh = max(MIN_SIZE, nh)
+        # 4. Recalculate Size (ensure min size)
+        MIN_SIZE = 5
+        
+        # Handle Aspect Ratio Constraint (Shift) - Simplified for Center/Corner
+        # Doing aspect ratio properly with absolute snapping is tricky, skipping for now to prioritize snap stability
+        
+        new_w = abs_right - abs_left
+        new_h = abs_bottom - abs_top
+        
+        # Ensure positive size (flip if inverted)
+        # Note: If user drags left handle past right handle, we usually clamp.
+        if new_w < MIN_SIZE: 
+            # Clamp the moving edge back
+            if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
+                abs_left = abs_right - MIN_SIZE
+            else:
+                abs_right = abs_left + MIN_SIZE
+            new_w = MIN_SIZE
+            
+        if new_h < MIN_SIZE:
+            if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
+                abs_top = abs_bottom - MIN_SIZE
+            else:
+                abs_bottom = abs_top + MIN_SIZE
+            new_h = MIN_SIZE
 
-        # In Blender, resizing doesn't move the 'position' (which is the anchor point).
-        # Our UI reflects this: we just update size.
-        self.update_visual_rect(nw, nh)
-        bx, by = core.to_qt_coords(nx, ny)
-        scene.element_resized_signal.emit(self.uid, bx, by, int(nw), int(nh))
+        # 5. Recalculate Scene Position (Anchor) based on Alignment
+        # We know the new absolute bounding box (abs_left, abs_top, new_w, new_h)
+        # We need to find where the Anchor Point is within this box based on self.alignment
+        
+        offsets = {
+            "TOP_LEFT": (0, 0),
+            "TOP_CENTER": (0.5, 0),
+            "TOP_RIGHT": (1.0, 0),
+            "CENTER_LEFT": (0, 0.5),
+            "CENTER": (0.5, 0.5),
+            "CENTER_RIGHT": (1.0, 0.5),
+            "BOTTOM_LEFT": (0, 1.0),
+            "BOTTOM_CENTER": (0.5, 1.0),
+            "BOTTOM_RIGHT": (1.0, 1.0),
+        }
+        rel_x, rel_y = offsets.get(self.alignment, (0, 1.0)) # Default Bottom Left
+        
+        new_anchor_x = abs_left + (new_w * rel_x)
+        new_anchor_y = abs_top + (new_h * rel_y)
+        
+        # 6. Update Visuals
+        # Move the item to the new anchor position
+        self.setPos(new_anchor_x, new_anchor_y)
+        
+        # Update the visual rect (which draws relative to 0,0 based on anchor)
+        self.update_visual_rect(new_w, new_h)
+        
+        # 7. Emit Signal to Core (Convert back to Blender Coords)
+        bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
+        scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
     def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
@@ -244,8 +320,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         z_val = 1
         if is_active: z_val = 20
         elif is_selected: z_val = 10
-        self.setZValue(z_val)
-        self.setZValue(z_val)
         self.setZValue(z_val)
         # Handles visible if selected and not size-locked
         self.set_handles_visible(is_selected and not self.is_locked_size)
@@ -317,7 +391,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
             painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, lock_txt)
 
-        # Formula Indicator (Tiny 'f' icon or mark)
+        # Formula Indicator
         if self.pos_is_formula or self.size_is_formula:
             f_rect = QtCore.QRect(rect.x() + rect.width() - 14, rect.y() + rect.height() - 14, 10, 10)
             painter.setPen(QtCore.Qt.NoPen)
