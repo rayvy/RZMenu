@@ -3,6 +3,7 @@
 Viewport Panel - Visual canvas for element manipulation.
 Autonomous panel that subscribes to core.SIGNALS for data updates.
 """
+import os
 from PySide6 import QtWidgets, QtCore, QtGui
 import shiboken6
 from .. import core
@@ -99,12 +100,16 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
 
 
 class RZElementItem(QtWidgets.QGraphicsRectItem):
+    # Статическая переменная для хранения семейства шрифта
+    _custom_font_family = None
+
     def __init__(self, uid, w, h, name, elem_type="CONTAINER"):
         super().__init__(0, 0, w, h)
         self.uid = uid
         self.elem_type = elem_type
         self.name = name
         self.text_content = name
+        self.text_id = ""  # Поле для хранения text_id
         self.is_active = False
         self.is_locked_pos = False
         self.is_locked_size = False
@@ -127,6 +132,30 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self._aspect_ratio = 1.0
 
         self.setFlags(QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | QtWidgets.QGraphicsItem.ItemIsSelectable)
+        
+        # Инициализация шрифта
+        self._ensure_font_loaded()
+
+    @classmethod
+    def _ensure_font_loaded(cls):
+        """Загрузка кастомного шрифта bahnscrift.ttf"""
+        if cls._custom_font_family is not None:
+            return
+
+        # Ищем шрифт в папке qt_editor (на уровень выше от текущего файла widgets/viewport.py)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        editor_dir = os.path.dirname(current_dir)
+        font_path = os.path.join(editor_dir, "bahnschrift.ttf")
+
+        if os.path.exists(font_path):
+            font_id = QtGui.QFontDatabase.addApplicationFont(font_path)
+            if font_id != -1:
+                families = QtGui.QFontDatabase.applicationFontFamilies(font_id)
+                if families:
+                    cls._custom_font_family = families[0]
+                    # print(f"[VIEWPORT] Font loaded: {cls._custom_font_family}")
+        else:
+            print(f"[VIEWPORT] Font not found at: {font_path}")
 
     def get_inner_origin(self): return self.rect().topLeft()
 
@@ -275,11 +304,14 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False):
+    # Обновили сигнатуру: добавлен аргумент text_id
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
+        self.text_id = text_id if text_id is not None else "TEST" # Сохраняем text_id
+        print(f"[DATA] Element {self.name} (ID: {self.uid}): received text_id='{text_id}', set self.text_id='{self.text_id}'")
         self.alignment = alignment
         self.custom_color = color
         
@@ -311,30 +343,70 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         t = get_current_theme()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
+        # --- ОТРИСОВКА ТЕКСТА (WYSIWYG MVP) ---
         if self.elem_type == 'TEXT':
-            painter.setPen(QtGui.QColor(t.get('text_bright', '#FFF')))
-            painter.drawText(rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, self.text_content)
+            # 1. Шрифт
+            if self._custom_font_family:
+                font = QtGui.QFont(self._custom_font_family)
+            else:
+                font = QtGui.QFont("Arial")
+
+            # Размер шрифта относительно высоты элемента (MVP Scaling)
+            font_pixel_size = max(1, int(rect.height() * 0.8))
+            font.setPixelSize(font_pixel_size)
+            painter.setFont(font)
+
+            # 2. Цвет
+            text_color = QtGui.QColor(t.get('text_bright', '#FFF'))
+            if self.custom_color and len(self.custom_color) >= 3:
+                r, g, b = [int(c*255) for c in self.custom_color[:3]]
+                text_color = QtGui.QColor(r, g, b)
+            painter.setPen(text_color)
+
+            # 3. Текст (рисуем text_id)
+            # Используем text_id. Если его нет — фоллбэк на "TEXT" или пустоту
+            display_text = self.text_id if self.text_id else self.name
+            print(f"[TEXT] Element {self.name} (ID: {self.uid}): text_id='{self.text_id}', display_text='{display_text}'")
+            
+            # Отрисовка без отступов (AlignLeft | AlignVCenter), без клиппинга
+            painter.drawText(rect, 
+                             QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter | QtCore.Qt.TextDontClip, 
+                             display_text)
+
+            # 4. Рамка выделения (поверх текста, пунктир)
             if self.isSelected():
                  painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_selection', '#FFF')), 1, QtCore.Qt.DashLine))
+                 painter.setBrush(QtCore.Qt.NoBrush)
                  painter.drawRect(rect)
+
+            # 5. Индикатор блокировки (опционально)
+            if self.is_locked_pos or self.is_locked_size:
+                painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
+                lock_font = QtGui.QFont("Arial", 8)
+                painter.setFont(lock_font)
+                painter.drawText(rect.adjusted(0,0,-2,2), QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, "🔒")
+
             return
+        # --------------------------------------
 
         has_image = False
         if self.image_id != -1:
             pix = ImageCache.instance().get_pixmap(self.image_id)
-            print(f"[VIEWPORT] Element {self.name} (ID: {self.uid}), image_id: {self.image_id}")
-            print(f"[VIEWPORT] Rect: {rect}, Size: {rect.width()}x{rect.height()}")
+            # print(f"[VIEWPORT] Element {self.name} (ID: {self.uid}), image_id: {self.image_id}")
+            # print(f"[VIEWPORT] Rect: {rect}, Size: {rect.width()}x{rect.height()}")
             if pix:
-                print(f"[VIEWPORT] Pixmap exists: {pix.width()}x{pix.height()}, isNull: {pix.isNull()}")
+                # print(f"[VIEWPORT] Pixmap exists: {pix.width()}x{pix.height()}, isNull: {pix.isNull()}")
                 if not pix.isNull():
-                    print(f"[VIEWPORT] Drawing pixmap...")
+                    # print(f"[VIEWPORT] Drawing pixmap...")
                     painter.drawPixmap(rect.toRect(), pix)
                     has_image = True
-                    print(f"[VIEWPORT] Pixmap drawn successfully")
+                    # print(f"[VIEWPORT] Pixmap drawn successfully")
                 else:
-                    print(f"[VIEWPORT] Pixmap is null, skipping draw")
+                    pass
+                    # print(f"[VIEWPORT] Pixmap is null, skipping draw")
             else:
-                print(f"[VIEWPORT] No pixmap in cache for image_id {self.image_id}")
+                pass
+                # print(f"[VIEWPORT] No pixmap in cache for image_id {self.image_id}")
 
         if self.custom_color and len(self.custom_color) >= 3:
             r, g, b = [int(c*255) for c in self.custom_color[:3]]
@@ -367,7 +439,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
         text_rect = rect.adjusted(5, 5, -5, -5)
         painter.setPen(QtGui.QColor(t.get('text_bright', '#FFF')))
-        painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self.name)
+        
+        # Сбрасываем шрифт на дефолтный для отображения имени элемента (не Text)
+        painter.setFont(QtGui.QFont())
+        # painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, self.name)
         
         if self.is_locked_pos or self.is_locked_size:
             lock_txt = "🔒" if self.is_locked_pos and self.is_locked_size else "🔒P" if self.is_locked_pos else "🔒S"
@@ -654,8 +729,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self._refresh_layout_engines()
         self.update()
 
-    # _sync_items_pool, _update_items_state, _rebuild_hierarchy, _resolve_positioning, _refresh_layout_engines...
-    # (Они остались без изменений, но для полноты файла убедись, что они там есть)
     def _sync_items_pool(self, elements_data):
         incoming_ids = {d['id'] for d in elements_data}
         current_ids = set(self._items_map.keys())
@@ -680,7 +753,22 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 item.name = data['name']; item.elem_type = data.get('class_type', 'CONTAINER')
             item.update_size(rw, rh)
             grid_props = {'padding': data.get('grid_padding', 0), 'gap': data.get('grid_gap', 0), 'cell_size': data.get('grid_cell_size', 50), 'cols': data.get('grid_cols', 0)}
-            item.set_data_state(data.get('is_locked_pos', False), data.get('is_locked_size', False), data.get('image_id', -1), data.get('is_selectable', True), data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), data.get('color', None), grid_props=grid_props, pos_is_formula=data.get('pos_is_formula', False), size_is_formula=data.get('size_is_formula', False))
+            
+            # UPDATED: Passing text_id to set_data_state
+            item.set_data_state(
+                data.get('is_locked_pos', False), 
+                data.get('is_locked_size', False), 
+                data.get('image_id', -1), 
+                data.get('is_selectable', True), 
+                data.get('text_content', ''), 
+                data.get('alignment', 'BOTTOM_LEFT'), 
+                text_id=data.get('text_id', ''),
+                color=data.get('color', None), 
+                grid_props=grid_props, 
+                pos_is_formula=data.get('pos_is_formula', False), 
+                size_is_formula=data.get('size_is_formula', False)
+            )
+            
             item.setVisible(not data.get('is_hidden', False))
             item.set_visual_state(uid in selected_ids, uid == active_id)
             item._is_layout_controlled = False

@@ -194,6 +194,7 @@ def get_viewport_data():
             # Visuals
             "image_id": getattr(elem, "image_id", -1),
             "text_content": getattr(elem, "text_string", elem.element_name),
+            "text_id": getattr(elem, "text_id", ""),  # Add text_id for TEXT elements
             "color": color_list,
             "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),
