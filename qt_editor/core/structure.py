@@ -2,6 +2,7 @@
 import bpy
 from . import signals
 from . import blender_bridge
+from ..conf import get_config
 
 def get_next_available_id(elements):
     if len(elements) == 0: return 1
@@ -14,6 +15,10 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         rzm = bpy.context.scene.rzm
         elements = rzm.elements
         
+        # --- LOAD DEFAULTS FROM CONFIG ---
+        config = get_config()
+        defaults = config.get("element_defaults", {}).get(class_type, {})
+        
         new_id = get_next_available_id(elements)
         new_element = elements.add()
         new_element.id = new_id
@@ -21,12 +26,28 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         new_element.element_name = f"{class_type.capitalize()}_{new_id}"
         new_element.position = (int(pos_x), int(pos_y))
         
-        if class_type == 'BUTTON': new_element.size = (120, 30)
-        elif class_type == 'TEXT': new_element.size = (100, 25)
-        elif class_type == 'SLIDER': new_element.size = (150, 20)
-        elif class_type == 'ANCHOR': new_element.size = (30, 30)
-        else: new_element.size = (150, 100)
+        # Apply Size
+        width = defaults.get("width", 150)
+        height = defaults.get("height", 100)
+        new_element.size = (width, height)
         
+        # Apply Color
+        if "color" in defaults and hasattr(new_element, "color"):
+             new_element.color = defaults["color"][:] # Copy list
+        
+        # Apply Text Align (if applicable)
+        # Note: Need to check if your blender property is exactly 'text_align' or 'align'
+        # Assuming defaults.py keys match blender property names roughly
+        if "text_align" in defaults and hasattr(new_element, "text_align"):
+             new_element.text_align = defaults["text_align"]
+
+        # Apply specific Grid props if Grid
+        if class_type == "GRID_CONTAINER":
+            if "grid_cell_size" in defaults and hasattr(new_element, "grid_cell_size"):
+                new_element.grid_cell_size = defaults["grid_cell_size"]
+            if "grid_cols" in defaults and hasattr(new_element, "grid_cols"):
+                new_element.grid_cols = defaults["grid_cols"]
+
         if parent_id != -1: new_element.parent_id = parent_id
             
         blender_bridge.safe_undo_push(f"RZM: Create {class_type}")

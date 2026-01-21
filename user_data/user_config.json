@@ -124,7 +124,7 @@
                 1.0
             ],
             "text_align": "LEFT",
-            "text_id": "Sample Text"
+            "text_id": "TEXT"
         },
         "SLIDER": {
             "width": 150,
@@ -138,7 +138,7 @@
             "text_align": "CENTER"
         },
         "ANCHOR": {
-            "width": 30,
+            "width": 150,
             "height": 30,
             "color": [
                 0.8,
@@ -150,12 +150,12 @@
         },
         "GRID_CONTAINER": {
             "width": 200,
-            "height": 150,
+            "height": 400,
             "color": [
-                0.25,
-                0.25,
-                0.25,
-                0.7
+                0.250980406999588,
+                0.250980406999588,
+                0.250980406999588,
+                0.501960813999176
             ],
             "text_align": "LEFT",
             "grid_cell_size": 50,
