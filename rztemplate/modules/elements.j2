@@ -54,12 +54,12 @@
     {%- endif -%}
 {%- endmacro %}
 
-{% macro elements_generate(mod_file) %}
-    {% if mod_file.scene_data.rzm and mod_file.scene_data.rzm.elements %}
-        {% for element in mod_file.scene_data.rzm.elements %}
+{% macro elements_generate(mod_file,scene) %}
+    {% if scene.rzm and scene.rzm.elements %}
+        {% for element in scene.rzm.elements %}
             {% set parent_element = namespace(element_name=[],elem_class=[],grid_wrap_mode=[]) %}
             {% if element.parent_id > -1 %}
-                {% for potential_parent in mod_file.scene_data.rzm.elements %}
+                {% for potential_parent in scene.rzm.elements %}
                     {% if potential_parent.id == element.parent_id %}
                         {% set _ = parent_element.element_name.insert(0, potential_parent.element_name) %}
                         {% set _ = parent_element.elem_class.insert(0, potential_parent.elem_class) %}
@@ -70,40 +70,40 @@
             {#MainClass#}
             ;{{CLASS_NAME_MAP[element.elem_class]}}
             {#%if CLASS_NAME_MAP[element.elem_class] == 'BUTTON'%}
-                {{class_button.main(element,parent_element,mod_file)}}
+                {{class_button.main(element,parent_element,mod_file,scene)}}
             {%elif CLASS_NAME_MAP[element.elem_class] == 'SLIDER'%}
-                {{class_slider.main(element,parent_element,mod_file)}}
+                {{class_slider.main(element,parent_element,mod_file,scene)}}
             {%else%}
-                {{class_container.main(element,parent_element,mod_file)}}
+                {{class_container.main(element,parent_element,mod_file,scene)}}
             {%endif%#}
             {#%if CLASS_NAME_MAP[element.elem_class] == 'ANCHOR' %}
-                {{class_anchor.main(element,parent_element,mod_file)}}
+                {{class_anchor.main(element,parent_element,mod_file,scene)}}
             {%elif CLASS_NAME_MAP[element.elem_class] == 'GRID_CONTAINER' %}
-                {{class_grid_container.main(element,parent_element,mod_file)}}
+                {{class_grid_container.main(element,parent_element,mod_file,scene)}}
                 {{class_grid_container.generate_grid_scroller(element)}}
             {%elif CLASS_NAME_MAP[element.elem_class] == 'BUTTON'%}
-                {{class_button.main(element,parent_element,mod_file)}}
+                {{class_button.main(element,parent_element,mod_file,scene)}}
             {%elif CLASS_NAME_MAP[element.elem_class] == 'SLIDER'%}
-                {{class_slider.main(element,parent_element,mod_file)}}
+                {{class_slider.main(element,parent_element,mod_file,scene)}}
             {%if CLASS_NAME_MAP[element.elem_class] == 'TEXT'%}
-                {{class_text.main(element,parent_element,mod_file)}}
+                {{class_text.main(element,parent_element,mod_file,scene)}}
             {%else%}
-                {{class_container.main(element,parent_element,mod_file)}}
+                {{class_container.main(element,parent_element,mod_file,scene)}}
             {%endif%#}
             ;{{element.tag}}
             {% if element.tag == 'ControllerCursor'%}
-            {{class_container.ControllerCursor(element,parent_element,mod_file)}}
+            {{class_container.ControllerCursor(element,parent_element,mod_file,scene)}}
             {% else %}
-            {{class_container.main(element,parent_element,mod_file)}}
+            {{class_container.main(element,parent_element,mod_file,scene)}}
             {% endif %}
         {% endfor %}
-    {{elements_additional_generate(mod_file)}}
+    {{elements_additional_generate(mod_file,scene)}}
     {% endif %}
 {% endmacro %}
 
 
-{%macro elements_additional_generate(mod_file)%}
-{% for element in mod_file.scene_data.rzm.elements %}
+{%macro elements_additional_generate(mod_file,scene)%}
+{% for element in scene.rzm.elements %}
     {%if CLASS_NAME_MAP[element.elem_class] == 'GRID_CONTAINER' %}
     {{generate_grid_scroller(element)}}
     {%elif CLASS_NAME_MAP[element.elem_class] == 'SLIDER' and element.value_link%}

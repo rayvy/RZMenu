@@ -4,11 +4,11 @@
 {% import "rayvich/custom_draw.j2" as custom_draw %}
 {% import "modules/elements.j2" as elements %}
 
-{%macro generate_addons(mod_file)%}
-{% if mod_file.scene_data.rzm.addons %}
+{%macro generate_addons(mod_file,scene)%}
+{% if scene.rzm.addons %}
 ;Addons Activity
 
-{% if mod_file.scene_data.rzm.addons.debugger_info == 1 %}
+{% if scene.rzm.addons.debugger_info == 1 %}
 [CommandListElementDebug]
 ;HoverID Debug
 $drawType = 4
@@ -25,10 +25,10 @@ $TexPosX = $hoveredID
 run = CustomShaderRCI2D
 {% endif %}
 
-{% if mod_file.scene_data.rzm.addons.tw_resources %}
+{% if scene.rzm.addons.tw_resources %}
 ;tw_resources
 
-{% for texres in mod_file.scene_data.rzm.addons.tw_resources %}
+{% for texres in scene.rzm.addons.tw_resources %}
 		[Resource{{texres.tex_name}}]
 		{% if texres.tex_resource_type == 0 %}
 		{% elif texres.tex_resource_type == 1 %}
@@ -36,9 +36,9 @@ run = CustomShaderRCI2D
 		{% endif %}
 {% endfor %}
 
-{% for textype in mod_file.scene_data.rzm.addons.tw_texture_configs %}
+{% for textype in scene.rzm.addons.tw_texture_configs %}
 	{% set current_textype = textype.tw_config_name | default('ErrorVal') %}
-	{% for texres in mod_file.scene_data.rzm.addons.tw_resources %}
+	{% for texres in scene.rzm.addons.tw_resources %}
 		{% if texres.tex_resource_type == 0 %}
 		{% elif texres.tex_resource_type == 1 %}
 		{%else%}
@@ -56,9 +56,9 @@ run = CustomShaderRCI2D
 
 {% endif %}
 
-{% if mod_file.scene_data.rzm.addons.tw_overrides %}
+{% if scene.rzm.addons.tw_overrides %}
 ;tw_overrides
-	{% for override in mod_file.scene_data.rzm.addons.tw_overrides%}
+	{% for override in scene.rzm.addons.tw_overrides%}
 		[TextureOverride{{override.tex_name}}]
 		hash = {{override.tex_hash}}
 		{% if mod_file.game.name == "ZenlessZoneZero"%}
@@ -70,12 +70,12 @@ run = CustomShaderRCI2D
 
 {% endif %}
 
-{% if mod_file.scene_data.rzm.addons.tex_works == 1 %}
-{% if mod_file.scene_data.rzm.addons.tw_texture_configs and mod_file.scene_data.rzm.addons.tw_textures %}
+{% if scene.rzm.addons.tex_works == 1 %}
+{% if scene.rzm.addons.tw_texture_configs and scene.rzm.addons.tw_textures %}
 
 {# --- 1. ГЕНЕРАЦИЯ ПЕРЕМЕННЫХ ДЛЯ MORPH и HSV --- #}
 {# Этот блок создает локальные переменные, если они не были привязаны к глобальным #}
-{% for texture in mod_file.scene_data.rzm.addons.tw_textures %}
+{% for texture in scene.rzm.addons.tw_textures %}
 	{# Создаем переменную для Morph, если она нужна и не привязана #}
 	{% if texture.tw_use_morph and not texture.tw_morph_value_link %}
 [ResourceVar_{{ texture.tw_name }}_Morph]
@@ -102,8 +102,8 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 
 
 [CommandListAddonsTexWorks]
-{% for config in mod_file.scene_data.rzm.addons.tw_texture_configs %}
-	{% for texture in mod_file.scene_data.rzm.addons.tw_textures %}
+{% for config in scene.rzm.addons.tw_texture_configs %}
+	{% for texture in scene.rzm.addons.tw_textures %}
 		run = CustomShaderUpdate{{ texture.tw_name }}{{ config.tw_config_name }}
 		{% if texture.tw_use_morph %}
 		run = CustomShaderMorph{{ texture.tw_name }}{{ config.tw_config_name }}
@@ -123,8 +123,8 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 
 
 {# --- 3. ШЕЙДЕРЫ ДЛЯ КОПИРОВАНИЯ И ОБРАБОТКИ --- #}
-{% for config in mod_file.scene_data.rzm.addons.tw_texture_configs %}
-	{% for texture in mod_file.scene_data.rzm.addons.tw_textures %}
+{% for config in scene.rzm.addons.tw_texture_configs %}
+	{% for texture in scene.rzm.addons.tw_textures %}
 		{% if texture.tw_base_resource_name %}
 		;Custom Resource Name: {{texture.tw_base_resource_name}}
 		{% else %}
@@ -373,7 +373,7 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 
 {# --- 4. ОПРЕДЕЛЕНИЕ АТЛАСОВ --- #}
 {# Теперь все параметры берутся из глобальных настроек #}
-{% for config in mod_file.scene_data.rzm.addons.tw_texture_configs %}
+{% for config in scene.rzm.addons.tw_texture_configs %}
 [ResourceAtlas{{ config.tw_config_name }}]
 type = RWTexture2D
 width = {{ config.tw_atlas_settings.tw_width | default(4096) }}
@@ -387,31 +387,31 @@ mips = 1
 {% endif %}
 {% endif %}
 
-{% if mod_file.scene_data.rzm.addons.tex_morph == 1 %};texMorph
+{% if scene.rzm.addons.tex_morph == 1 %};texMorph
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.tex_ripper == 1 %};texRipper
+{% if scene.rzm.addons.tex_ripper == 1 %};texRipper
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.tex_decal_tattoo == 1 %};texDecalTattoo
+{% if scene.rzm.addons.tex_decal_tattoo == 1 %};texDecalTattoo
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.tex_decal_fluid == 1 %};texDecalfluid
+{% if scene.rzm.addons.tex_decal_fluid == 1 %};texDecalfluid
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.tex_hsv_masked == 1 %};texHSVMasked
+{% if scene.rzm.addons.tex_hsv_masked == 1 %};texHSVMasked
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.vfx == 1 %};vfx
+{% if scene.rzm.addons.vfx == 1 %};vfx
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.shape_morph == 1 %};shapeMorph
+{% if scene.rzm.addons.shape_morph == 1 %};shapeMorph
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.shape_morph_anim == 1 %};shapeMorphAnim
+{% if scene.rzm.addons.shape_morph_anim == 1 %};shapeMorphAnim
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.shape_morph_jiggle == 1 %};shapeMorphJiggle
+{% if scene.rzm.addons.shape_morph_jiggle == 1 %};shapeMorphJiggle
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.dtoggle_compute == 1 %};dToggleCompute
+{% if scene.rzm.addons.dtoggle_compute == 1 %};dToggleCompute
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.rtoggle_compute == 1 %};rToggleCompute
+{% if scene.rzm.addons.rtoggle_compute == 1 %};rToggleCompute
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.Sandevistan_gi == 1 %};Sandevistan_GI
+{% if scene.rzm.addons.Sandevistan_gi == 1 %};Sandevistan_GI
 {% endif %}
-{% if mod_file.scene_data.rzm.addons.sandevistan_zzz == 1 %}
+{% if scene.rzm.addons.sandevistan_zzz == 1 %}
 [Constants]
 global $Sandevistan_Speed = 32
 global $Sandevistan_length = 128

@@ -16,11 +16,11 @@
     {%- endif -%}
 {%- endmacro %}
 
-{%macro generate_variables(mod_file)%}
-;macro generate_variables(mod_file)
-{% if mod_file.scene_data.rzm %}
-    {% if mod_file.scene_data.rzm.rzm_values %}
-        {% for value in mod_file.scene_data.rzm.rzm_values %}
+{%macro generate_variables(mod_file,scene)%}
+;macro generate_variables(mod_file,scene)
+{% if scene.rzm %}
+    {% if scene.rzm.rzm_values %}
+        {% for value in scene.rzm.rzm_values %}
             {% if value.value_name %}
                 {% if value.int_value %}
                 global persist {{format_var(value.value_name)}} = {%if int_value != null%}{{value.int_value}}{%else%}0{%endif%}   
@@ -33,12 +33,12 @@
 {% endif %}
 {%endmacro%}
 
-{% macro generate_toggle(mod_file) %}
-    ;macro generate_toggle(mod_file)
+{% macro generate_toggle(mod_file,scene) %}
+    ;macro generate_toggle(mod_file,scene)
     {# --- ИЗМЕНЕНО ЗДЕСЬ: Путь к коллекции теперь 'toggle_definitions' --- #}
-{% if mod_file.scene_data.rzm %}
-    {% if mod_file.scene_data.rzm.toggle_definitions %}
-        {% for toggle in mod_file.scene_data.rzm.toggle_definitions %}
+{% if scene.rzm %}
+    {% if scene.rzm.toggle_definitions %}
+        {% for toggle in scene.rzm.toggle_definitions %}
             {% if toggle.toggle_name %}
             global persist ${{ toggle.toggle_name }} = 0   
             {%endif%}
@@ -48,7 +48,7 @@
 {% endif %}
 {% endmacro %}
 
-{%macro entryPoint(mod_file)%}
+{%macro entryPoint(mod_file,scene)%}
 [Present]
 $rayvich_back_values_x99 = x99
 $rayvich_back_values_y99 = y99
@@ -108,7 +108,7 @@ $new_frame_iteration = 1
 
 $new_frame_iteration = 0
 
-{% if mod_file.scene_data.rzm.addons.tex_works == 1 %}
+{% if scene.rzm.addons.tex_works == 1 %}
 if $first_run_texworks
     post run = CommandListAddonsTexWorks
     post run = CommandListAddonsFaceTexWorks
@@ -121,12 +121,12 @@ endif
 if $active
     if $first_run
 
-    {% if mod_file.scene_data.rzm %}
-        {% if mod_file.scene_data.rzm.addons.tex_works == 1 %}
+    {% if scene.rzm %}
+        {% if scene.rzm.addons.tex_works == 1 %}
         post run = CommandListAddonsTexWorks
         {% endif %}
     {% endif %}
-    {% if mod_file.scene_data.rzm.shapes %}
+    {% if scene.rzm.shapes %}
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
         {% if component.strides %}
             Resource{{ component.fullname }}Position = copy Resource{{ component.fullname }}Position.Base
@@ -141,7 +141,7 @@ if $active
 
     $first_run = 0
     endif
-    {% if mod_file.scene_data.rzm.shapes %}
+    {% if scene.rzm.shapes %}
     ;run = CustomShaderComputeShapes
     {% endif %}
     run = CommandListEntryPoint
@@ -185,16 +185,16 @@ x85 = $window0AreaX
 w85 = $window0AreaY
 z85 = $window0AreaZ
 w85 = $window0AreaW
-{% if mod_file.scene_data.rzm and mod_file.scene_data.rzm.elements -%}
-{% for element in mod_file.scene_data.rzm.elements if element.parent_id == -1 -%}
+{% if scene.rzm and scene.rzm.elements -%}
+{% for element in scene.rzm.elements if element.parent_id == -1 -%}
 run = CommandListElement{{ element.element_name }}
 {% endfor %}
 {% endif -%}
 run = CommandListInteractionManager
 run = CommandListNavFinalizeSearch
-{% if mod_file.scene_data.rzm %}
-    {% if mod_file.scene_data.rzm.addons %}
-        {% if mod_file.scene_data.rzm.addons.debugger_info == 1 %}
+{% if scene.rzm %}
+    {% if scene.rzm.addons %}
+        {% if scene.rzm.addons.debugger_info == 1 %}
         run = CommandListElementDebug
         {% endif %}
     {% endif %}
@@ -232,7 +232,7 @@ if $inputMode == 0
 endif
 {%endmacro%}
 
-{%macro baseCompute(mod_file)%}
+{%macro baseCompute(mod_file,scene)%}
 [CommandListBaseDataCompute]
 if $inputMode == 0
     if cursor_x > 0 && cursor_y > 0 && cursor_x < 1 && cursor_y < 1
@@ -266,8 +266,8 @@ if $inputMode == 0
     $cursorX = $cursorX * $screenW
     $cursorY = $cursorY * $screenH
 endif
-{% if mod_file.scene_data.rzm %}
-    {% for grid in mod_file.scene_data.rzm.elements %}
+{% if scene.rzm %}
+    {% for grid in scene.rzm.elements %}
         {% if CLASS_NAME_MAP[grid.elem_class] == 'GRID_CONTAINER' %}
             ${{ grid.element_name }}_new_frame = 1
         {% endif %}
@@ -281,7 +281,7 @@ $dt = time - $ts
 $ts = time
 {%endmacro%}
 
-{% macro menuDrawUi(mod_file)%}
+{% macro menuDrawUi(mod_file,scene)%}
 [CustomShaderRCI2D_POPUP]
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
@@ -571,12 +571,12 @@ y101 = $colorG
 z101 = $colorB
 w101 = $colorA
 if $drawType == 1 || $drawType == 2
-{% if mod_file.scene_data.rzm %}
-    {% if mod_file.scene_data.rzm.atlas_size %}
-    x102 = $texPosX / {{mod_file.scene_data.rzm.atlas_size[0] | int}}
-    y102 = $texPosY / {{mod_file.scene_data.rzm.atlas_size[1] | int}}
-    z102 = $texSizeX / {{mod_file.scene_data.rzm.atlas_size[0] | int}}
-    w102 = $texSizeY / {{mod_file.scene_data.rzm.atlas_size[1] | int}}
+{% if scene.rzm %}
+    {% if scene.rzm.atlas_size %}
+    x102 = $texPosX / {{scene.rzm.atlas_size[0] | int}}
+    y102 = $texPosY / {{scene.rzm.atlas_size[1] | int}}
+    z102 = $texSizeX / {{scene.rzm.atlas_size[0] | int}}
+    w102 = $texSizeY / {{scene.rzm.atlas_size[1] | int}}
     {% else %}
     ;ERROR: размеры атласа не были предопределены
     x102 = $texPosX / 0
@@ -679,24 +679,26 @@ key = L
 type = hold
 $debugTexShow = 1
 post $debugTexShow = 0
-[Present]
-if $debugTexShow
-ResourceTex = copy ResourceAtlasDiffuse
-run = CustomShaderDebugShowTexture
-endif
-[ResourceTex]
-[CustomShaderDebugShowTexture]
-ps-t50 = ResourceTex
-vs = /modules/texworks/simple_draw.hlsl
-ps = /modules/texworks/simple_draw.hlsl
-run = BuiltInCommandListUnbindAllRenderTargets
-blend = ADD SRC_ALPHA INV_SRC_ALPHA
-topology = triangle_strip
-o0 = set_viewport bb
-draw = 4, 0
+{% if scene.rzm.addons.tex_works == 1 %}
+    [Present]
+    if $debugTexShow
+    ResourceTex = copy ResourceAtlasDiffuse
+    run = CustomShaderDebugShowTexture
+    endif
+    [ResourceTex]
+    [CustomShaderDebugShowTexture]
+    ps-t50 = ResourceTex
+    vs = /modules/texworks/simple_draw.hlsl
+    ps = /modules/texworks/simple_draw.hlsl
+    run = BuiltInCommandListUnbindAllRenderTargets
+    blend = ADD SRC_ALPHA INV_SRC_ALPHA
+    topology = triangle_strip
+    o0 = set_viewport bb
+    draw = 4, 0
+{% endif %}
 {%endmacro%}
 
-{% macro menu_resource_ui(mod_file)%}
+{% macro menu_resource_ui(mod_file,scene)%}
 ;MenuIcons
 [ResourceIcons]
 filename = .\res\icons.png
@@ -706,37 +708,39 @@ filename = .\res\font_atlas.png
 filename = .\res\mod_name.png
 {% endmacro %}
 
-{% macro shape_generate(mod_file)%}
+{% macro shape_generate(mod_file,scene)%}
 [Constants]
 global $shape_changed = 0
-{% for shape in mod_file.scene_data.rzm.shapes %}
+{% for shape in scene.rzm.shapes %}
 global ${{ shape.shape_name | default(Error) | string}}Past
 {% endfor %}
-[Present]
-{% for shape in mod_file.scene_data.rzm.shapes %}
-post ${{ shape.shape_name | default(Error) | string}}Past = ${{ shape.shape_name | default(Error) | string}}
-{% endfor %}
-{% for shape in mod_file.scene_data.rzm.shapes %}
-    {% if shape.shape_type | default(0) | int == 0 %}
-        if ${{ shape.shape_name | default(Error) | string}}Past != ${{ shape.shape_name | default(Error) | string}}
-            $shape_changed = 1
-        endif
-    {% endif %}
-    {% if shape.shape_type | default(0) | int == 1%}
-        if ${{ shape.shape_name | default(Error) | string}} > 0.005
-            $shape_changed = 1
-        endif
-    {% endif %}
-{% endfor %}
-if $shape_changed
-    run = CustomShaderComputeShapes
-endif
-post $shape_changed = 0
+{% if scene.rzm.shapes %}
+    [Present]
+    {% for shape in scene.rzm.shapes %}
+    post ${{ shape.shape_name | default(Error) | string}}Past = ${{ shape.shape_name | default(Error) | string}}
+    {% endfor %}
+    {% for shape in scene.rzm.shapes %}
+        {% if shape.shape_type | default(0) | int == 0 %}
+            if ${{ shape.shape_name | default(Error) | string}}Past != ${{ shape.shape_name | default(Error) | string}}
+                $shape_changed = 1
+            endif
+        {% endif %}
+        {% if shape.shape_type | default(0) | int == 1%}
+            if ${{ shape.shape_name | default(Error) | string}} > 0.005
+                $shape_changed = 1
+            endif
+        {% endif %}
+    {% endfor %}
 
+    if $shape_changed
+        run = CustomShaderComputeShapes
+    endif
+    post $shape_changed = 0
+{% endif %}
 
-{% if mod_file.scene_data.rzm.shapes %}
+{% if scene.rzm.shapes %}
 [Constants]
-{% for shape in mod_file.scene_data.rzm.shapes %}
+{% for shape in scene.rzm.shapes %}
 {% if shape.shape_type | default(0) | int == 1 %}
 global ${{ shape.shape_name | default(Error) | string}}Freq
 {% endif %}
@@ -744,7 +748,7 @@ global ${{ shape.shape_name | default(Error) | string}}Freq
 [Present]
 local $sppeeedyy = 0.00125
 if $dt+$sppeeedyy < $sppeeedyy
-{% for shape in mod_file.scene_data.rzm.shapes if shape.shape_type | default(0) | int == 1 %}
+{% for shape in scene.rzm.shapes if shape.shape_type | default(0) | int == 1 %}
     {% if shape.anim_condition %}
     if {{ shape.anim_condition }}
         ${{ shape.shape_name | default('Error') | string}}Freq = ${{ shape.shape_name | default('Error') | string}}Freq + ${{ shape.shape_name | default('Error') | string}} * ($sppeeedyy)
@@ -754,7 +758,7 @@ if $dt+$sppeeedyy < $sppeeedyy
     {% endif %}
 {% endfor %}
 else
-{% for shape in mod_file.scene_data.rzm.shapes if shape.shape_type | default(0) | int == 1 %}
+{% for shape in scene.rzm.shapes if shape.shape_type | default(0) | int == 1 %}
     {% if shape.anim_condition %}
     if {{ shape.anim_condition }}
         ${{ shape.shape_name | default('Error') | string}}Freq = ${{ shape.shape_name | default('Error') | string}}Freq + ${{ shape.shape_name | default('Error') | string}} * ($dt+$sppeeedyy)
@@ -777,7 +781,7 @@ endif
     [CustomShaderComputeShapes.{{ component.fullname }}]
     cs = ./modules/position_shape_linear.hlsl
     cs-u5 = copy Resource{{ component.fullname }}Position.Base
-    {% for shape in mod_file.scene_data.rzm.shapes %}
+    {% for shape in scene.rzm.shapes %}
         {% for key in shape.shape_keys %}
             {% if shape.shape_type | default(0) | int == 0 %}
             {% if key.mode == 1 %}
@@ -818,7 +822,7 @@ endif
 
     [CustomShaderComputeShapes.{{ component.fullname }}.Anim]
     cs = ./modules/position_shape_anim.hlsl
-    {% for shape in mod_file.scene_data.rzm.shapes %}
+    {% for shape in scene.rzm.shapes %}
         {% for key in shape.shape_keys %}
             {% if shape.shape_type | default(0) | int == 1 %}
             x88 = ${{ shape.shape_name | default(Error) | string}}Freq
@@ -855,7 +859,7 @@ endif
     {% endif %}
 {% endfor %}
 
-{% for shape in mod_file.scene_data.rzm.shapes %}
+{% for shape in scene.rzm.shapes %}
     {% for key in shape.shape_keys %}
         ;ShapeKey Resource: {{ shape.shape_name }}.{{ key.key_name }}
         {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 and component.strides %}

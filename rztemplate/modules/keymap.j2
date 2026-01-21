@@ -1,49 +1,4 @@
-{%macro main_button(mod_file)%}
-; change key parametr if you want to swap key from / to which you want
-[KeyMenu]
-condition = $active == 1
-key = no_modifiers /
-type = cycle
-$menu = 0,1
-
-[KeyInputManager]
-key = VK_LBUTTON
-key = VK_RBUTTON
-type = hold
-$isMouseButtonDown = 1
-post $isMouseButtonDown = 0
-
-[Constants]
-global $key_test
-[KeyH]
-key = H
-type = cycle
-$key_test = 0,1,2,3,4,5,6
-
-; [KeyHold]
-; condition = $menu == 1 && $hovering == 0
-; key = VK_LBUTTON
-; key = VK_RBUTTON
-; type = hold
-; $hold = 1
-
-; [KeyHoldShape]
-; condition = $menu == 1 && $hovering > 1
-; key = VK_LBUTTON
-; key = VK_RBUTTON
-; type = hold
-; run = CommandListHoldShape
-
-; [CommandListHoldShape]
-; $holdShape = $hovering
-; post $holdShape = 0
-
-; [KeyClickedSlot]
-; condition = $hovering == 1 && $menu == 1
-; key = VK_LBUTTON
-; key = VK_RBUTTON
-; run = CommandListClickedSlot
-
+{%macro main_button(mod_file,scene)%}
 ; --- Переменные для системы навигации ---
 [Constants]
 global $NavIsSearching = 0
@@ -80,7 +35,7 @@ key = VK_RSHIFT
 type = cycle
 $inputMode = 0, 1
 
-; --- Секции [Key...] остаются как у вас, они идеальны ---
+; --- KEY SECTION ---
 [KeyUp]
 key = VK_UP
 type = hold
@@ -393,4 +348,49 @@ if $NavIsSearching == 1
 		$NavSearchState = 2
 	endif
 endif
+
+[KeyInputManager]
+key = VK_LBUTTON
+key = VK_RBUTTON
+type = hold
+$isMouseButtonDown = 1
+post $isMouseButtonDown = 0
+
+[Constants]
+global $key_test
+[KeyH]
+key = H
+type = cycle
+$key_test = 0,1,2,3,4,5,6
+
+; [KeyHold]
+; condition = $menu == 1 && $hovering == 0
+; key = VK_LBUTTON
+; key = VK_RBUTTON
+; type = hold
+; $hold = 1
+
+; [KeyHoldShape]
+; condition = $menu == 1 && $hovering > 1
+; key = VK_LBUTTON
+; key = VK_RBUTTON
+; type = hold
+; run = CommandListHoldShape
+
+; [CommandListHoldShape]
+; $holdShape = $hovering
+; post $holdShape = 0
+
+; [KeyClickedSlot]
+; condition = $hovering == 1 && $menu == 1
+; key = VK_LBUTTON
+; key = VK_RBUTTON
+; run = CommandListClickedSlot
+
+; change key parametr if you want to swap key from / to which you want
+[KeyMenu]
+condition = $active == 1
+key = no_modifiers /
+type = cycle
+$menu = 0,1
 {%endmacro%}

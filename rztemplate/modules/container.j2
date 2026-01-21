@@ -72,7 +72,7 @@
     {%- endif -%}
 {%- endmacro %}
 
-{%macro base(element,parent_element,mod_file)%}
+{%macro base(element,parent_element,mod_file,scene)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
 $id = {{ element.id }}
 local $LocalVisibility
@@ -118,19 +118,19 @@ Local $current_sizeY
 {%endmacro%}
 
 {#MAINSTUFF#}
-{%macro main(element,parent_element,mod_file)%}
+{%macro main(element,parent_element,mod_file,scene)%}
     {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
     {% set parent_class_name = CLASS_NAME_MAP.get(parent_element.elem_class[0]) if parent_element else none %}
     [CommandListElement{{ element.element_name }}]
-    {{base(element,parent_element,mod_file)}}
+    {{base(element,parent_element,mod_file,scene)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
     {% else %}
-        {{generate_position_and_size(element,parent_element,mod_file)}}
+        {{generate_position_and_size(element,parent_element,mod_file,scene)}}
     {% endif %}
     {%if element.color%}{{generate_color(element)}}{%endif%}
     {%if element.fn%}{{generate_fxAndFn(element)}}{%endif%}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
-        {{ handle_element_in_grid(element, parent_element, mod_file) }}
+        {{ handle_element_in_grid(element, parent_element, mod_file,scene) }}
     {% endif %}
     {%if element.properties %}
     {%for props in element.properties%}
@@ -140,7 +140,7 @@ Local $current_sizeY
     {%endif%}
     if $LocalVisibility
     {%if class_name == 'SLIDER'%}
-    {{ handle_slider_logic(element, parent_element, mod_file) }}
+    {{ handle_slider_logic(element, parent_element, mod_file,scene) }}
     {% if element.text_id %}
     {{ generate_text(element) }}
     run = CustomShaderRCI2D_SLIDER.TEXT
@@ -156,22 +156,22 @@ Local $current_sizeY
     {%endif%}
     {{generate_interactions(element, parent_element)}}
     {% if class_name == 'GRID_CONTAINER' %}
-        {{ handle_grid_container_logic(element, mod_file) }}
+        {{ handle_grid_container_logic(element, mod_file,scene) }}
     {% elif class_name == 'BUTTON' %}
-        {{ handle_button_logic(element, parent_element, mod_file) }}
+        {{ handle_button_logic(element, parent_element, mod_file,scene) }}
     {% endif %}
     {{generate_hovertext(element)}}
-    {{generate_child(element,mod_file)}}
+    {{generate_child(element,mod_file,scene)}}
     endif
     endif
 {%endmacro%}
 {#MAINSTUFF#}
 
 {# OTHER STUFF#}
-{%macro generate_position_and_size(element,parent_element,mod_file)%}
+{%macro generate_position_and_size(element,parent_element,mod_file,scene)%}
     {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
     {% set parent_class_name = CLASS_NAME_MAP.get(parent_element.elem_class[0]) if parent_element else none %}
-    {% set grid_child = (mod_file.scene_data.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
+    {% set grid_child = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
     ;isResizable ;{{has_attribute(element, 'isResizable')}}
     ;isMovable ;{{has_attribute(element, 'isMovable')}}
     ;POSITION
@@ -346,12 +346,12 @@ Local $current_sizeY
     {%endif%}
 {%endmacro%}
 
-{%macro generate_child(element,mod_file)%}
+{%macro generate_child(element,mod_file,scene)%}
     $P_PX = $PositionX
     $P_PY = $PositionY
     $P_SX = $SizeX
     $P_SY = $SizeY
-    {% for child in mod_file.scene_data.rzm.elements %}
+    {% for child in scene.rzm.elements %}
         {% if child.parent_id == element.id %}
             $PositionX = $P_PX
             $PositionY = $P_PY
@@ -362,7 +362,7 @@ Local $current_sizeY
     {% endfor %}
 {%endmacro%}
 
-{% macro handle_grid_container_logic(element, mod_file) %}
+{% macro handle_grid_container_logic(element, mod_file,scene) %}
     {# Логика ограничения размера для Grid'а #}
     {% if element.grid_wrap_mode == 0 %}
     if ${{element.element_name}}SizeX < ({{ element.grid_cell_size }} * 4)
@@ -404,7 +404,7 @@ Local $current_sizeY
     {% endif %}
 {% endmacro %}
 
-{% macro handle_button_logic(element, parent_element, mod_file) %}
+{% macro handle_button_logic(element, parent_element, mod_file,scene) %}
     {# --- Визуальная подсветка --- #}
     if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
         y110 = 1
@@ -427,7 +427,7 @@ Local $current_sizeY
     ;{{target_var}}
     ;{{target_var_is_toggle}}
     {% if first_link.value_name and target_var_is_toggle == 1 %}
-            {% for toggle in mod_file.scene_data.rzm.toggle_definitions %}
+            {% for toggle in scene.rzm.toggle_definitions %}
                 {% if toggle.toggle_name == target_var %}
                     if ${{ target_var }} < {{ toggle.toggle_length - 1 }}
                         ${{ target_var }} = ${{ target_var }} + 1
@@ -476,7 +476,7 @@ Local $current_sizeY
     {% endif %}
 {% endmacro %}
 
-{% macro handle_element_in_grid(element, parent_element, mod_file) %}
+{% macro handle_element_in_grid(element, parent_element, mod_file,scene) %}
 $request_weight = {{ 4 if CLASS_NAME_MAP[element.elem_class] == 'SLIDER' else 1 }}
 $current_positionX = $current_positionX + ($target_positionX - $current_positionX) * ($dt*8)
 $current_positionY = $current_positionY + ($target_positionY - $current_positionY) * ($dt*8)
@@ -515,7 +515,7 @@ else
 endif
 {% endmacro %}
 
-{% macro handle_slider_logic(element, parent_element, mod_file) %}
+{% macro handle_slider_logic(element, parent_element, mod_file,scene) %}
 ;slider
 {% if element.value_link %}
     {% set first_link = element.value_link[0] %}
@@ -533,7 +533,7 @@ endif
 {% endif %}
 {% endmacro %}
 
-{%macro ControllerCursor(element,parent_element,mod_file)%}
+{%macro ControllerCursor(element,parent_element,mod_file,scene)%}
     [CommandListElement{{ element.element_name }}]
     $id = {{ element.id }}
     local $LocalVisibility

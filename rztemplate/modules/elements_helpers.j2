@@ -53,7 +53,7 @@
     {%- endif -%}
 {%- endmacro %}
 
-{% macro resources_generate(mod_file) %}
+{% macro resources_generate(mod_file,scene) %}
 {% set text_offset_tracker = [0] %}
 {% set processed_ids = namespace(
     text_elements=[],
@@ -61,8 +61,8 @@
     images=[]
 ) %}
 
-{% if mod_file.scene_data.rzm and mod_file.scene_data.rzm.elements %}
-    {% for element in mod_file.scene_data.rzm.elements %}
+{% if scene.rzm and scene.rzm.elements %}
+    {% for element in scene.rzm.elements %}
         {% if element.text_id and element.id not in processed_ids.text_elements %}
             {% set text_content = element.text_id %}
             {% set text_length = text_content | length %}
@@ -102,7 +102,7 @@
 
     {% endfor %}
     [CommandListGetImageCords-1]
-    {% for image in mod_file.scene_data.rzm.images %}
+    {% for image in scene.rzm.images %}
         {% if image.id not in processed_ids.images %}
             [CommandListGetImageCords{{ image.id }}]
             $drawType = 1
@@ -116,8 +116,8 @@
 {% endif %}
 {% endmacro %}
 
-{% macro popup_helpers_generate(mod_file) %}
-    {% for element in mod_file.scene_data.rzm.elements %}
+{% macro popup_helpers_generate(mod_file,scene) %}
+    {% for element in scene.rzm.elements %}
         {% if has_attribute(element, 'hadPopup') and (element.value_link is defined and (element.value_link|length) > 0) %}
 
             {# ------------------ MASTER/SLAVE система ------------------ #}
@@ -129,7 +129,7 @@
             {# --- 1) определяем количество элементов строго по MASTER --- #}
             {% if master_name.startswith('@') %}
                 {% set target_toggle_name = master_name[1:] %}
-                {% for toggle_def in mod_file.scene_data.rzm.toggle_definitions or [] %}
+                {% for toggle_def in scene.rzm.toggle_definitions or [] %}
                     {% if toggle_def.toggle_name == target_toggle_name %}
                         {% set _ = popup_elements_count.elements.pop(0) %}
                         {% set _ = popup_elements_count.elements.insert(0, toggle_def.toggle_length|int) %}
@@ -255,8 +255,8 @@ $sizeY = $LocalSizeY
 {% endmacro %}
 
 {#Эталонный пример#}
-{% macro popup_helpers_generate_test(mod_file) %}
-    {% for element in mod_file.scene_data.rzm.elements %}
+{% macro popup_helpers_generate_test(mod_file,scene) %}
+    {% for element in scene.rzm.elements %}
         {# Список-счётчик с защитой от пустоты #}
         {% set popup_elements_count = namespace(elements=[0]) %}
 
@@ -275,7 +275,7 @@ $sizeY = $LocalSizeY
                 {{ linkval.value_max | default(1.0) | float }}
 
                 {% set target_toggle_name = linkval.value_name %}
-                {% for toggle_def in mod_file.scene_data.rzm.toggle_definitions %}
+                {% for toggle_def in scene.rzm.toggle_definitions %}
                     {% if toggle_def.toggle_name == target_toggle_name %}
                         ; Example logic
                     {% endif %}
@@ -286,8 +286,8 @@ $sizeY = $LocalSizeY
     {% endfor %}
 {% endmacro %}
 
-{% macro grid_helpers_generate(mod_file) %}
-    {% for grid in mod_file.scene_data.rzm.elements %}
+{% macro grid_helpers_generate(mod_file,scene) %}
+    {% for grid in scene.rzm.elements %}
         {% if CLASS_NAME_MAP[grid.elem_class] == 'GRID_CONTAINER' %}
             {% if grid.grid_wrap_mode == 0 %}
                 {{ generate_grid_logic_mode_0(grid) }}
@@ -549,7 +549,7 @@ $colorA = 0.7
 run = CustomShaderRCI2D
 {% endmacro %}
 
-{%macro interactive_elements_in_adaptive_grid(element,parent_element,mod_file)%}
+{%macro interactive_elements_in_adaptive_grid(element,parent_element,mod_file,scene)%}
 $request_weight = {{ 4 if CLASS_NAME_MAP[element.elem_class] == 'SLIDER' else 1 }}
             {% if parent_element.grid_wrap_mode[0] == 0 %}
                 run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedSizeAndScroll

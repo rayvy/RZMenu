@@ -1,4 +1,4 @@
-{% macro overridesbuffers(mod_file) %}
+{% macro overridesbuffers(mod_file,scene) %}
     {#--- ОБРАБОТКА КОМПОНЕНТОВ С BLEND И POSITION БУФЕРАМИ ---#}
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 %}
         
@@ -65,16 +65,18 @@
     {% endfor %}
 {%endmacro%}
 
-{% macro handle_textures(part,mod_file) %}
+{% macro handle_textures(part,mod_file,scene) %}
     {% for texture in part.textures %}
 	{% set banlist = ["EvernightFaceA","EvernightHairA"] %}
-		[TextureOverride{{part.fullname}}{{ texture.name }}]
-		hash = {{ texture.hash }}
-        {% if mod_file.scene_data.rzm %}
-            {% if mod_file.scene_data.rzm.addons.atlas_merger == 1 and not part.fullname in banlist %}
-            this = ResourceAtlas{{ texture.name }}
-            {% else %}
-            this = Resource{{part.fullname}}{{ texture.name }}
+        {% if scene.rzm and scene.rzm.export_texture_slots == 1 %}
+            [TextureOverride{{part.fullname}}{{ texture.name }}]
+            hash = {{ texture.hash }}
+            {% if scene.rzm %}
+                {% if scene.rzm.addons.atlas_merger == 1 and not part.fullname in banlist %}
+                this = ResourceAtlas{{ texture.name }}
+                {% else %}
+                this = Resource{{part.fullname}}{{ texture.name }}
+                {% endif %}
             {% endif %}
         {% endif %}
 
@@ -85,16 +87,16 @@
 
 
 {% macro assign_textures(mod_file, part) %}
-    {% if mod_file.game.name == "ZenlessZoneZero" and mod_file.scene_data.rzm.export_texture_slots %}
+    {% if mod_file.game.name == "ZenlessZoneZero" and scene.rzm.export_texture_slots %}
         {% for texture in part.textures %}
             Resource\ZZMI\{{ texture.name }} = ref Resource{{ part.fullname }}{{ texture.name }}
         {% endfor %}
         run = CommandList\ZZMI\SetTextures
-    {% elif mod_file.game.name == "GenshinImpact" and mod_file.scene_data.rzm.export_texture_slots %}
+    {% elif mod_file.game.name == "GenshinImpact" and (scene.rzm is undefined or scene.rzm.export_texture_slots == 1) %}
         {% for texture in part.textures %}
             ps-t{{ loop.index0 }} = Resource{{ part.fullname }}{{ texture.name }}
         {% endfor %}
-        {% if mod_file.scene_data.rzm.export_orfix_slots %}
+        {% if scene.rzm is undefined or scene.rzm.export_orfix_slots %}
             {% if part.textures|first and (part.textures|first).name|lower == "normalmap" %}
                 run = CommandList\global\ORFix\ORFix
             {% endif %}
@@ -120,7 +122,7 @@
 {% endmacro %}
 
 {#--- ГЛАВНЫЙ МАКРОС ДЛЯ ПЕРЕОПРЕДЕЛЕНИЯ ИНДЕКСНЫХ БУФЕРОВ (теперь с под-макросами!) ---#}
-{% macro overridesibs(mod_file) %}
+{% macro overridesibs(mod_file,scene) %}
     {% for component in mod_file.components if component.draw_vb != "" %}
         [TextureOverride{{component.fullname}}IB]
         hash = {{ component.ib }}
@@ -133,8 +135,8 @@
             match_first_index = {{ part.first_index }}
             ib = Resource{{ part.fullname }}IB
             {% if mod_file.game.name == "ZenlessZoneZero" %}run = CommandListSkinTexture{%endif%}
-        {% if mod_file.scene_data.rzm %}
-            {% if mod_file.scene_data.rzm.export_texture_slots %}
+        {% if scene.rzm %}
+            {% if scene.rzm.export_texture_slots %}
 				;Handle Tex
 				{{ assign_textures(mod_file, part) }}
             {% endif %}
@@ -183,10 +185,10 @@
     {% endfor % #}
 {%endmacro%}
 
-{% macro resourcebuffers(mod_file) %}
+{% macro resourcebuffers(mod_file,scene) %}
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
         {% if component.strides %}
-            {% if mod_file.scene_data.rzm.shapes %}
+            {% if scene.rzm.shapes %}
             [Resource{{ component.fullname }}Position]
             {% else %}
             [Resource{{ component.fullname }}Position]
@@ -208,7 +210,7 @@
             {# HSR дополнительно требует StructuredBuffer #}
             {% if mod_file.game.name == "HonkaiStarRail" %}
             [Resource{{ component.fullname }}PositionCS]
-            {% if mod_file.scene_data.rzm.shapes %}
+            {% if scene.rzm.shapes %}
             {% else %}
             [Resource{{ component.fullname }}PositionCS]
             type = StructuredBuffer
@@ -249,11 +251,11 @@
     {% endfor %}
 {%endmacro%}
 
-{% macro resourcetextures(mod_file) %}
+{% macro resourcetextures(mod_file,scene) %}
     {# Этот макрос полностью идентичен для всех игр #}
     {% for component in mod_file.components %}
         {% for part in component.parts %}
-            {{ handle_textures(part,mod_file) }}
+            {{ handle_textures(part,mod_file,scene) }}
         {% endfor %}
     {% endfor %}
 {%endmacro%}

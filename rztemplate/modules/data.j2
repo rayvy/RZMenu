@@ -38,7 +38,7 @@
 {% endmacro %}
 
 
-{%macro config(mod_file)%}
+{%macro config(mod_file,scene)%}
 [Constants]
 global $active = 0
 global $mspeed = 0.075
@@ -82,10 +82,10 @@ global $popupInitiatorID = -1
 global $popupSelectionID = -1
 
 global persist $sizeMultiplier = 1
-{% if mod_file.scene_data.rzm %}
-    {% if mod_file.scene_data.rzm.config %}
-    global $canvas_size_x = {{ mod_file.scene_data.rzm.config.canvas_size[0] }}
-    global $canvas_size_y = {{ mod_file.scene_data.rzm.config.canvas_size[1] }}
+{% if scene.rzm %}
+    {% if scene.rzm.config %}
+    global $canvas_size_x = {{ scene.rzm.config.canvas_size[0] }}
+    global $canvas_size_y = {{ scene.rzm.config.canvas_size[1] }}
     {% else %}
     global $canvas_size_x = 1920
     global $canvas_size_y = 1080
@@ -295,23 +295,23 @@ global $rayvich_back_values_y110
 global $rayvich_back_values_z110
 global $rayvich_back_values_w110
 ;Vars
-{{anchors_generate(mod_file)}}
-{{core.generate_variables(mod_file)}}
-{{core.generate_toggle(mod_file)}}
-{{shape_generate(mod_file)}}
-{% if mod_file.scene_data.rzm %}
-    {% for grid in mod_file.scene_data.rzm.elements %}
+{{anchors_generate(mod_file,scene)}}
+{{core.generate_variables(mod_file,scene)}}
+{{core.generate_toggle(mod_file,scene)}}
+{{shape_generate(mod_file,scene)}}
+{% if scene.rzm %}
+    {% for grid in scene.rzm.elements %}
         {% if CLASS_NAME_MAP[grid.elem_class] == 'GRID_CONTAINER' %}
             global ${{ grid.element_name }}_new_frame = 1
         {% endif %}
     {% endfor %}
 {% endif %}
-{{customDrawVars(mod_file)}}
+{{customDrawVars(mod_file,scene)}}
 {%endmacro%}
 
-{% macro anchors_generate(mod_file) %}
-{% if mod_file.scene_data.rzm and mod_file.scene_data.rzm.elements %}
-    {% for element in mod_file.scene_data.rzm.elements %}
+{% macro anchors_generate(mod_file,scene) %}
+{% if scene.rzm and scene.rzm.elements %}
+    {% for element in scene.rzm.elements %}
         {% if has_attribute(element, 'isMovable') %}
         global persist ${{element.element_name}}PositionX = {{ (element.position | default([0,0]))[0] }}
         global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
@@ -333,7 +333,7 @@ global $rayvich_back_values_w110
 {% endif %}
 {% endmacro %}
 
-{% macro customDrawVars(mod_file) %}
+{% macro customDrawVars(mod_file,scene) %}
     {% for component in mod_file.components if component.draw_vb != "" %}
         {% for part in component.parts if part.vertex_count > 0 %}
             {% for entry in part.objects if entry.vertex_count > 0 %}
@@ -348,8 +348,8 @@ global $rayvich_back_values_w110
     {% endfor %}
 {%endmacro%}
 
-{% macro shape_generate(mod_file) %}
-    {% for shape in mod_file.scene_data.rzm.shapes %}
+{% macro shape_generate(mod_file,scene) %}
+    {% for shape in scene.rzm.shapes %}
         global persist ${{ shape.shape_name | default(Error) | string}} = 0
     {% endfor %}
 {% endmacro%}
