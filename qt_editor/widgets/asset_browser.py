@@ -95,12 +95,7 @@ class RZAssetBrowserPanel(RZEditorPanel):
         """Initial refresh entry point."""
         # Auto-load check: if no images, try to load base icons once
         images = read.get_available_images()
-        print(f"[AssetBrowser] refresh_data: Found {len(images)} images")
-        for img in images:
-            print(f"[AssetBrowser] Image: {img['name']} (ID: {img['id']}, Type: {img.get('source_type', 'Unknown')})")
-
         if not images:
-            print("AssetBrowser: No images found, auto-reloading base icons...")
             blender_bridge.reload_base_icons()
             return # reload_base_icons will emit structure_changed, triggering this again
 
@@ -141,16 +136,11 @@ class RZAssetBrowserPanel(RZEditorPanel):
             img_id = img_data['id']
             name = img_data['name']
 
-            print(f"[AssetBrowser] Processing image: {name} (ID: {img_id})")
-
             item = QtWidgets.QListWidgetItem(name)
             item.setData(QtCore.Qt.UserRole, img_id)
 
             pixmap = cache.get_pixmap(img_id)
             if pixmap:
-                print(f"[AssetBrowser] Setting icon for {name}: pixmap {pixmap.width()}x{pixmap.height()}, isNull: {pixmap.isNull()}")
                 item.setIcon(QtGui.QIcon(pixmap))
-            else:
-                print(f"[AssetBrowser] No pixmap for {name} (ID: {img_id})")
 
             self.list_widget.addItem(item)

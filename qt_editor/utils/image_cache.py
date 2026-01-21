@@ -55,10 +55,7 @@ class ImageCache:
         width = bl_image.size[0]
         height = bl_image.size[1]
 
-        print(f"[ImageCache] Processing image ID {image_id}: {width}x{height}, aspect ratio: {width/height if height > 0 else 'invalid'}")
-
         if width <= 0 or height <= 0:
-            print(f"[ImageCache] Invalid dimensions for image ID {image_id}: {width}x{height}")
             return
 
         try:
@@ -89,8 +86,6 @@ class ImageCache:
             h, w, ch = final_buffer.shape
             bytes_per_line = ch * w
 
-            print(f"[ImageCache] Creating QImage: {w}x{h}, channels: {ch}, bytes_per_line: {bytes_per_line}")
-
             q_image = QtGui.QImage(
                 final_buffer.data,
                 w,
@@ -99,14 +94,8 @@ class ImageCache:
                 QtGui.QImage.Format_RGBA8888
             ).copy() # Делаем глубокую копию, чтобы отвязаться от numpy
 
-            print(f"[ImageCache] QImage created: isNull={q_image.isNull()}, size={q_image.size()}")
-
             # 5. Сохраняем в кэш
-            pixmap = QtGui.QPixmap.fromImage(q_image)
-            print(f"[ImageCache] QPixmap created: isNull={pixmap.isNull()}, size={pixmap.size()}")
-
-            self._cache[image_id] = pixmap
-            print(f"[ImageCache] Successfully cached image ID {image_id} ({w}x{h})")
+            self._cache[image_id] = QtGui.QPixmap.fromImage(q_image)
 
         except Exception as e:
             print(f"RZMenu Image Cache Critical Error on ID {image_id}: {e}")
@@ -116,9 +105,4 @@ class ImageCache:
 
     def get_pixmap(self, image_id):
         """Возвращает картинку из кэша. Не лезет в Blender."""
-        pixmap = self._cache.get(image_id, None)
-        if pixmap is not None:
-            print(f"[ImageCache] get_pixmap({image_id}): {'Valid pixmap' if not pixmap.isNull() else 'Null pixmap'} {pixmap.width()}x{pixmap.height()}")
-        else:
-            print(f"[ImageCache] get_pixmap({image_id}): No pixmap in cache")
-        return pixmap
+        return self._cache.get(image_id, None)
