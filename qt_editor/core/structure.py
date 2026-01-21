@@ -158,7 +158,7 @@ def create_element_with_image(image_id, x, y):
         new_id = get_next_available_id(elements)
         new_element = elements.add()
         new_element.id = new_id
-        new_element.elem_class = 'BUTTON'
+        new_element.elem_class = 'CONTAINER'
         
         # Try to find image to get name and size
         img_meta = next((img for img in images if img.id == image_id), None)
