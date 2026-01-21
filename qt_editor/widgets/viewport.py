@@ -322,9 +322,19 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         has_image = False
         if self.image_id != -1:
             pix = ImageCache.instance().get_pixmap(self.image_id)
-            if pix and not pix.isNull():
-                painter.drawPixmap(rect.toRect(), pix)
-                has_image = True
+            print(f"[VIEWPORT] Element {self.name} (ID: {self.uid}), image_id: {self.image_id}")
+            print(f"[VIEWPORT] Rect: {rect}, Size: {rect.width()}x{rect.height()}")
+            if pix:
+                print(f"[VIEWPORT] Pixmap exists: {pix.width()}x{pix.height()}, isNull: {pix.isNull()}")
+                if not pix.isNull():
+                    print(f"[VIEWPORT] Drawing pixmap...")
+                    painter.drawPixmap(rect.toRect(), pix)
+                    has_image = True
+                    print(f"[VIEWPORT] Pixmap drawn successfully")
+                else:
+                    print(f"[VIEWPORT] Pixmap is null, skipping draw")
+            else:
+                print(f"[VIEWPORT] No pixmap in cache for image_id {self.image_id}")
 
         if self.custom_color and len(self.custom_color) >= 3:
             r, g, b = [int(c*255) for c in self.custom_color[:3]]
