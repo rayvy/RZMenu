@@ -5,7 +5,7 @@ import json
 import copy
 from ..utils import logger
 from .defaults import DEFAULT_CONFIG
-from ..core.signals import SIGNALS # NEW IMPORT
+from ..core.signals import SIGNALS
 
 CONFIG_FILENAME = "user_config.json"
 
@@ -23,10 +23,6 @@ class ConfigManager:
             cls._config_cache = cls._load_config()
         return cls._config_cache
 
-    # ... (get_user_dir и _load_config оставляем без изменений, они хорошие) ...
-    # Единственное, в _load_config внутри блока try/except можно оставить всё как есть,
-    # так как _deep_update корректно сольет новые дефолты appearance с пустотой юзера.
-    
     @classmethod
     def get_user_dir(cls):
         """Возвращает путь к папке настроек внутри аддона"""
@@ -44,8 +40,6 @@ class ConfigManager:
 
     @classmethod
     def _load_config(cls):
-        # ... (Код загрузки оставляем старый, он рабочий) ...
-        # (Вставь сюда код из предыдущего твоего файла manager.py, он корректен)
         final_config = copy.deepcopy(DEFAULT_CONFIG)
         user_dir = cls.get_user_dir()
         if not user_dir: return final_config
@@ -58,20 +52,16 @@ class ConfigManager:
                     user_data = json.load(f)
                     logger.info(f"Loaded user config from {config_path}")
                     
-                    # --- FIX KEYMAP DUPLICATES START ---
-                    # Если юзер переназначил оператор, удаляем старый бинд из дефолта
+                    # --- FIX KEYMAP DUPLICATES ---
                     user_keymaps = user_data.get("keymaps", {})
                     default_keymaps = final_config.get("keymaps", {})
 
                     for context, u_bindings in user_keymaps.items():
                         if context in default_keymaps:
-                            # Проходимся по всем новым биндам юзера
                             for _, u_op_data in u_bindings.items():
-                                # Получаем ID оператора (строка или dict)
                                 u_op_id = u_op_data if isinstance(u_op_data, str) else u_op_data.get("op")
                                 if not u_op_id: continue
 
-                                # Ищем этот ID в дефолтном конфиге и удаляем старые кнопки
                                 keys_to_remove = []
                                 for d_key, d_op_data in default_keymaps[context].items():
                                     d_op_id = d_op_data if isinstance(d_op_data, str) else d_op_data.get("op")
@@ -80,9 +70,8 @@ class ConfigManager:
                                 
                                 for k in keys_to_remove:
                                     del default_keymaps[context][k]
-                    # --- FIX KEYMAP DUPLICATES END ---
-
-                    # 3. Слияние (Merge)
+                    
+                    # Merge
                     cls._deep_update(final_config, user_data)
             except Exception as e:
                 logger.error(f"Failed to load user config (using defaults): {e}")
@@ -101,37 +90,32 @@ class ConfigManager:
 
     @classmethod
     def set_value(cls, section, key, value):
-        """
-        NEW: Устанавливает значение в конфиг и сохраняет его.
-        Пример: set_value("appearance", "theme", "light")
-        """
         cfg = cls.get()
         if section not in cfg:
             cfg[section] = {}
         
         if cfg[section].get(key) == value:
-            return # No change
+            return 
 
         cfg[section][key] = value
-        cls.save_config() # Auto-save on change
-        
-        # Уведомляем систему
+        cls.save_config()
         SIGNALS.config_changed.emit(section)
 
     @classmethod
     def save_config(cls):
-        """Сохраняет текущий конфиг (keymaps + appearance) в JSON"""
+        """Сохраняет текущий конфиг в JSON"""
         if cls._config_cache is None:
             return
 
         user_dir = cls.get_user_dir()
         if not user_dir: return
 
-        # Сохраняем только то, что должно быть персистентным
+        # Сохраняем appearance, keymaps, system И element_defaults
         data_to_save = {
             "keymaps": cls._config_cache.get("keymaps", {}),
             "appearance": cls._config_cache.get("appearance", DEFAULT_CONFIG["appearance"]),
-            "system": cls._config_cache.get("system", {})
+            "system": cls._config_cache.get("system", {}),
+            "element_defaults": cls._config_cache.get("element_defaults", DEFAULT_CONFIG["element_defaults"])
         }
 
         config_path = os.path.join(user_dir, CONFIG_FILENAME)
@@ -144,4 +128,4 @@ class ConfigManager:
 
 get_config = ConfigManager.get
 save_config = ConfigManager.save_config
-set_config_value = ConfigManager.set_value # Export helper
+set_config_value = ConfigManager.set_value

@@ -89,5 +89,79 @@
         "version": "2.1.0",
         "ui_scale": 1.0,
         "last_layout": "1"
+    },
+    "element_defaults": {
+        "CONTAINER": {
+            "width": 150,
+            "height": 100,
+            "color": [
+                0.3,
+                0.3,
+                0.3,
+                0.8
+            ],
+            "text_align": "LEFT"
+        },
+        "BUTTON": {
+            "width": 64,
+            "height": 64,
+            "color": [
+                0.4,
+                0.4,
+                0.4,
+                0.9
+            ],
+            "text_align": "CENTER",
+            "text_id": "Button"
+        },
+        "TEXT": {
+            "width": 100,
+            "height": 25,
+            "color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            ],
+            "text_align": "LEFT",
+            "text_id": "Sample Text"
+        },
+        "SLIDER": {
+            "width": 150,
+            "height": 20,
+            "color": [
+                0.2,
+                0.2,
+                0.2,
+                0.9
+            ],
+            "text_align": "CENTER"
+        },
+        "ANCHOR": {
+            "width": 30,
+            "height": 30,
+            "color": [
+                0.8,
+                0.8,
+                0.8,
+                1.0
+            ],
+            "text_align": "CENTER"
+        },
+        "GRID_CONTAINER": {
+            "width": 200,
+            "height": 150,
+            "color": [
+                0.25,
+                0.25,
+                0.25,
+                0.7
+            ],
+            "text_align": "LEFT",
+            "grid_cell_size": 50,
+            "grid_cols": 3,
+            "grid_padding": 5,
+            "grid_gap": 5
+        }
     }
 }

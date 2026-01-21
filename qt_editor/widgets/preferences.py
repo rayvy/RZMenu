@@ -3,11 +3,12 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.theme import get_current_theme, get_theme_manager, generate_stylesheet
 from .lib.widgets import RZPanelWidget, RZLabel, RZComboBox, RZGroupBox, RZColorButton
 from .lib.base import RZSmartSlider 
-from .keymap_editor import RZKeymapPanel
 from ..conf.manager import get_config, set_config_value
 from ..core.signals import SIGNALS
 
-# ... (RZFilePicker and RZSidebarItem remain the same) ...
+from .keymap_editor import RZKeymapPanel
+from .elem_config import RZElementDefaultsPanel
+
 class RZFilePicker(QtWidgets.QWidget):
     pathChanged = QtCore.Signal(str)
     def __init__(self, parent=None):
@@ -406,6 +407,8 @@ class RZPreferencesDialog(QtWidgets.QDialog):
         self.panel_keymap = RZKeymapPanel(self)
         self._add_tab("Keybinding", self.panel_keymap)
         self._add_tab("System", QtWidgets.QLabel("System settings placeholder..."))
+        self.panel_elem_defaults = RZElementDefaultsPanel(self)
+        self._add_tab("Elements", self.panel_elem_defaults)
         if self.sidebar_layout.count() > 0:
             self.sidebar_layout.itemAt(0).widget().setChecked(True)
             self.content_stack.setCurrentIndex(0)
