@@ -47,24 +47,8 @@ class RZDraggableTree(RZDraggableTreeWidget):
             # For column 0, call parent handler
             super()._on_item_clicked(item, column)
 
-    def dropEvent(self, event):
-        source_items = self.selectedItems()
-        if not source_items: return
-
-        # Стандартная обработка перемещения Qt
-        super().dropEvent(event)
-
-        # Вычисляем, куда упало
-        first_item = source_items[0]
-        moved_id = first_item.data(0, QtCore.Qt.UserRole)
-        
-        parent_item = first_item.parent()
-        new_parent_id = None
-        
-        if parent_item:
-            new_parent_id = parent_item.data(0, QtCore.Qt.UserRole)
-        
-        self.internal_reorder_signal.emit(moved_id, new_parent_id)
+    # REMOVED broken dropEvent override. 
+    # Base class RZDraggableTreeWidget provides correct dropEvent implementation.
 
 
 class RZMOutlinerPanel(RZEditorPanel):
@@ -140,10 +124,13 @@ class RZMOutlinerPanel(RZEditorPanel):
         self.set_selection_silent(ctx.selected_ids, ctx.active_id)
 
     def _on_items_reordered(self, target_id, new_parent_id):
-        """Handle drag-drop reordering and broadcast to all panels."""
-        core.reorder_elements(target_id, new_parent_id)
-        # Emit signal so ALL panels update (including other outliners/viewports)
-        SIGNALS.structure_changed.emit()
+        """Handle drag-drop reparenting and broadcast to all panels."""
+        # Logic: If new_parent_id is None, it means the item was dropped to root (-1)
+        pid = new_parent_id if new_parent_id is not None else -1
+        core.reparent_element(target_id, pid)
+        # Force signal explicitly because core.reparent_element emits it, 
+        # but just to be sure we are aligned with the flow.
+        # Actually core.reparent_element already emits structure_changed.
     
     def _on_toggle_hide(self, uid):
         """Handle visibility toggle via action manager."""
