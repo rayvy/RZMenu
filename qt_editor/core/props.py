@@ -28,6 +28,7 @@ PROP_MAP = {
     "is_locked_pos": ("qt_lock_pos", None, 'S'), # Alias
     "qt_lock_size": ("qt_lock_size", None, 'S'),
     "is_locked_size": ("qt_lock_size", None, 'S'), # Alias
+    
     "qt_selectable": ("qt_selectable", None, 'D'),
     "is_selectable": ("qt_selectable", None, 'D'), # Alias
 

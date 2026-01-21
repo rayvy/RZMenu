@@ -43,7 +43,7 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
 
     def hoverEnterEvent(self, event):
-        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
+        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
             return
         self.setBrush(self.hover_brush)
         super().hoverEnterEvent(event)
@@ -67,7 +67,7 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         painter.drawRoundedRect(self.rect(), 2, 2)
 
     def mousePressEvent(self, event):
-        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
+        if self.parentItem() and getattr(self.parentItem(), 'is_locked', False):
             event.ignore()
             return
         event.accept()
@@ -208,8 +208,9 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                 nw = nh * self._aspect_ratio
 
         if scene.snap_enabled or is_ctrl:
-            nw = max(grid_size, round(nw / grid_size) * grid_size)
-            nh = max(grid_size, round(nh / grid_size) * grid_size)
+            # Absolute Snap for Size (Stepped)
+            nw = round(nw / grid_size) * grid_size
+            nh = round(nh / grid_size) * grid_size
 
         nw = max(MIN_SIZE, nw)
         nh = max(MIN_SIZE, nh)
@@ -243,6 +244,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         z_val = 1
         if is_active: z_val = 20
         elif is_selected: z_val = 10
+        self.setZValue(z_val)
+        self.setZValue(z_val)
         self.setZValue(z_val)
         # Handles visible if selected and not size-locked
         self.set_handles_visible(is_selected and not self.is_locked_size)
@@ -330,9 +333,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
     def __init__(self):
         super().__init__()
-        self._is_user_interaction, self._is_dragging_items = False, False
-        self._drag_start_pos, self.is_alt_mode = None, False
-        self._drag_origin = None # Fixed origin for smart axis lock
+        self._is_user_interaction = False
+        self._is_dragging_items = False
+        self._drag_start_pos = None
+        self.is_alt_mode = False
         self._items_map = {} 
         self.setSceneRect(-10000, -10000, 20000, 20000)
         
@@ -340,12 +344,17 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self.grid_size = 20
         self.snap_enabled = False
         
-        # Accumulators for sub-pixel precision in Blender deltas
+        # Accumulators
         self._accum_x = 0.0
         self._accum_y = 0.0
-        self._axis_lock = None # 'X' or 'Y'
+        
+        # --- CYCLIC SELECTION STATE ---
+        self._cycle_stack = []      # Список ID элементов под курсором для перебора
+        self._cycle_index = 0       # Текущий индекс в стеке
+        self._last_click_pos = None # Позиция последнего клика для проверки сдвига
 
     def _apply_snap(self, value, step):
+        if step <= 0: return value
         return round(value / step) * step
 
     def drawBackground(self, painter, rect):
@@ -359,11 +368,9 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         left, right = int(rect.left()), int(rect.right())
         top, bottom = int(rect.top()), int(rect.bottom())
 
-        # Determine grid steps
         step = self.grid_size
         major_step = step * 5
         
-        # Draw Secondary Grid
         painter.setPen(QtGui.QPen(grid_color, 0.5))
         first_x = left - (left % step)
         first_y = top - (top % step)
@@ -373,7 +380,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         for y in range(first_y, bottom + step, step):
             if y % major_step != 0: painter.drawLine(left, y, right, y)
 
-        # Draw Major Grid
         major_color = grid_color.lighter(150)
         major_color.setAlpha(min(grid_color.alpha() * 2, 255))
         painter.setPen(QtGui.QPen(major_color, 1.0))
@@ -385,7 +391,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         for y in range(first_major_y, bottom + major_step, major_step):
             painter.drawLine(left, y, right, y)
         
-        # Draw Axis
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 80), 1.5))
         if left <= 0 <= right: painter.drawLine(0, top, 0, bottom)
         if top <= 0 <= bottom: painter.drawLine(left, 0, right, 0)
@@ -399,111 +404,179 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             super().mousePressEvent(event)
             return
 
+        # 1. Handle Gizmo Interaction
         item = self.itemAt(event.scenePos(), QtGui.QTransform())
         if isinstance(item, RZHandleItem):
             self.interaction_start_signal.emit()
             super().mousePressEvent(event)
             return
 
+        # 2. Element Selection Logic
         modifier_str = 'CTRL' if event.modifiers() & QtCore.Qt.ControlModifier else 'SHIFT' if event.modifiers() & QtCore.Qt.ShiftModifier else None
         
-        if isinstance(item, RZElementItem):
-            if not item.is_selectable:
-                event.ignore(); return
-            self._handle_item_click(item, event, modifier_str)
+        # Check if we clicked in the same spot (allow 5px jitter)
+        is_same_spot = False
+        if self._last_click_pos:
+            dist = (event.scenePos() - self._last_click_pos).manhattanLength()
+            if dist < 5.0:
+                is_same_spot = True
+        
+        # Get raw items under cursor
+        raw_items = self.items(event.scenePos())
+        # Strict filter: Must be RZElementItem AND selectable
+        valid_items = [i for i in raw_items if isinstance(i, RZElementItem) and i.is_selectable]
+        
+        if valid_items:
+            event.accept() # Stop propagation to prevent rubberband
             
-            # Only start dragging if the clicked item is not position-locked, not layout-controlled, and not driven by a formula
-            if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False) and not item.pos_is_formula:
+            target_uid = -1
+            
+            # --- ROBUST CYCLIC LOGIC ---
+            if is_same_spot and self._cycle_stack:
+                # REPEAT CLICK: Use the FROZEN stack from previous click.
+                # This ignores Z-index changes caused by selection highlighting.
+                self._cycle_index = (self._cycle_index + 1) % len(self._cycle_stack)
+                target_uid = self._cycle_stack[self._cycle_index]
+            else:
+                # NEW CLICK: Build a new stack
+                self._cycle_stack = [i.uid for i in valid_items]
+                self._cycle_index = 0
+                target_uid = self._cycle_stack[0]
+                self._last_click_pos = event.scenePos()
+
+            # Emit Selection
+            self.selection_changed_signal.emit(target_uid, modifier_str)
+            
+            # --- INIT DRAG ---
+            # Find the item object corresponding to target_uid to check locks
+            target_item = self._items_map.get(target_uid)
+            
+            if target_item and not target_item.is_locked_pos and not getattr(target_item, "_is_layout_controlled", False) and not target_item.pos_is_formula:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
-                self._drag_origin = event.scenePos()
                 self._accum_x = 0.0
                 self._accum_y = 0.0
-                self._axis_lock = None
+                
+                # Store INITIAL positions for Absolute Snapping
+                # We need to snapshot where EVERY selected item is right now
+                selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
+                # If target wasn't selected yet (Qt delay), include it manually
+                if target_item not in selected_items:
+                    selected_items.append(target_item)
+                    
+                self._initial_item_positions = {it: it.pos() for it in selected_items}
+                
                 self.interaction_start_signal.emit()
-            event.accept() 
         else:
+            # Clicked on empty space or unselectable items
+            if modifier_str is None:
+                self.selection_changed_signal.emit(-1, None)
+            
+            # Reset Cycle State
+            self._cycle_stack = []
+            self._last_click_pos = None
+            
             super().mousePressEvent(event)
-
-    def _handle_item_click(self, clicked_item, event, modifier_str):
-        items_under = [i for i in self.items(event.scenePos()) if isinstance(i, RZElementItem) and i.is_selectable]
-        if not items_under: return
-        
-        target_uid = clicked_item.uid
-        if modifier_str is None and len(items_under) > 1:
-            try:
-                current_index = [i.isSelected() for i in items_under].index(True)
-                target_uid = items_under[(current_index + 1) % len(items_under)].uid
-            except ValueError:
-                target_uid = items_under[0].uid
-        self.selection_changed_signal.emit(target_uid, modifier_str)
 
     def mouseMoveEvent(self, event):
         if self.is_alt_mode:
              super().mouseMoveEvent(event); return
 
-        if self._is_dragging_items and self._drag_start_pos:
+        if self._is_dragging_items and self._drag_start_pos and hasattr(self, '_initial_item_positions'):
             current_pos = event.scenePos()
             
             modifiers = QtWidgets.QApplication.keyboardModifiers()
-            is_shift = modifiers & QtCore.Qt.ShiftModifier
-            is_ctrl = modifiers & QtCore.Qt.ControlModifier
+            is_ctrl = modifiers & QtCore.Qt.ControlModifier # Snap
+            is_shift = modifiers & QtCore.Qt.ShiftModifier  # Axis Lock
 
-            selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
-            # Filter items that are position-locked, layout-controlled, or formula-driven
-            movable_items = [item for item in selected_items if not item.is_locked_pos 
-                             and not getattr(item, "_is_layout_controlled", False)
-                             and not item.pos_is_formula]
-            if not movable_items:
-                return
-
-            # Dynamic Smart Axis Lock (Shift)
-            if is_shift and self._drag_origin:
-                total_move = current_pos - self._drag_origin
-                if abs(total_move.x()) > abs(total_move.y()):
-                    current_pos.setY(self._drag_origin.y())
-                else:
-                    current_pos.setX(self._drag_origin.x())
-
-            qt_delta = current_pos - self._drag_start_pos
-            dx, dy = qt_delta.x(), qt_delta.y()
-
-            # Snapping
-            if self.snap_enabled or is_ctrl:
-                dx = self._apply_snap(dx, self.grid_size)
-                dy = self._apply_snap(dy, self.grid_size)
-
-            if dx == 0 and dy == 0: return
-
-            # Use accumulators to handle floating point deltas from Qt
-            self._accum_x += dx
-            self._accum_y += dy
+            # Identify movable items (filter locked ones from the cached snapshot)
+            movable_items = []
+            for item in self._initial_item_positions:
+                if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False) and not item.pos_is_formula:
+                    movable_items.append(item)
             
-            # Only signal core if we have at least 1px of movement in Blender space (int)
+            if not movable_items: return
+
+            # Calculate raw offset from START of drag
+            total_dx = current_pos.x() - self._drag_start_pos.x()
+            total_dy = current_pos.y() - self._drag_start_pos.y()
+
+            # --- 1. AXIS LOCK ---
+            if is_shift:
+                if abs(total_dx) > abs(total_dy): total_dy = 0
+                else: total_dx = 0
+
+            # --- 2. ABSOLUTE SNAPPING ---
+            # We snap the LEADER (first item) to the grid, 
+            # and move everyone else by the same delta.
+            leader = movable_items[0]
+            start_pos = self._initial_item_positions[leader]
+            
+            # Where would the leader be without snap?
+            target_x = start_pos.x() + total_dx
+            target_y = start_pos.y() + total_dy
+            
+            if self.snap_enabled or is_ctrl:
+                # Snap the absolute target coordinate
+                final_x = self._apply_snap(target_x, self.grid_size)
+                final_y = self._apply_snap(target_y, self.grid_size)
+            else:
+                final_x = target_x
+                final_y = target_y
+            
+            # Calculate the effective delta needed to reach this position from CURRENT visual pos
+            # Actually, simpler: Calculate absolute new pos for everyone based on Leader's delta
+            
+            # Leader's total required shift from start
+            leader_shift_x = final_x - start_pos.x()
+            leader_shift_y = final_y - start_pos.y()
+            
+            # --- 3. BLENDER SYNC (ACCUMULATOR) ---
+            # We need to send incremental deltas to Blender core
+            # Calculate shift from LAST PROCESSED frame
+            if not hasattr(self, '_last_processed_shift'):
+                self._last_processed_shift = QtCore.QPointF(0, 0)
+            
+            step_dx = leader_shift_x - self._last_processed_shift.x()
+            step_dy = leader_shift_y - self._last_processed_shift.y()
+            
+            if step_dx == 0 and step_dy == 0: return
+
+            self._accum_x += step_dx
+            self._accum_y += step_dy
+            
             blender_dx = int(self._accum_x)
             blender_dy = int(self._accum_y)
             
             if blender_dx != 0 or blender_dy != 0:
-                # Subtract the integer part we are sending to core from the accumulators
                 self._accum_x -= blender_dx
                 self._accum_y -= blender_dy
                 
-                # Signal to core (inverted Y for Blender)
+                # Signal Core
                 bdx, bdy = core.to_blender_delta(blender_dx, blender_dy)
                 self.item_moved_signal.emit(float(bdx), float(bdy))
+                
+                # Update processed tracker by the amount we actually sent
+                self._last_processed_shift += QtCore.QPointF(blender_dx, blender_dy)
 
-            # Visual movement (smooth in Qt)
+            # --- 4. VISUAL UPDATE ---
+            # Move all items relative to their INITIAL start position
+            # This prevents floating point drift over time
             for item in movable_items:
-                item.moveBy(dx, dy)
-            
-            self._drag_start_pos += QtCore.QPointF(dx, dy)
+                item_start = self._initial_item_positions[item]
+                new_pos_x = item_start.x() + leader_shift_x
+                new_pos_y = item_start.y() + leader_shift_y
+                item.setPos(new_pos_x, new_pos_y)
+
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self._is_dragging_items:
-            self._is_dragging_items, self._drag_start_pos = False, None
-            self._axis_lock = None
+            self._is_dragging_items = False
+            self._drag_start_pos = None
+            if hasattr(self, '_initial_item_positions'): del self._initial_item_positions
+            if hasattr(self, '_last_processed_shift'): del self._last_processed_shift
             self.interaction_end_signal.emit()
             for item in self.items():
                 if isinstance(item, RZElementItem): item._initial_rect = None
@@ -519,20 +592,22 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
     def update_scene(self, elements_data, selected_ids, active_id):
         if self._is_user_interaction: return
         
-        # 1. Sync items pool (Create/Delete/Cache)
+        # 1. Sync items pool
         self._sync_items_pool(elements_data)
         
-        # 2. Resolve layouts and update item states
+        # 2. Resolve layouts
         resolved_layout = FormulaEvaluator.resolve_layout(elements_data)
+        
+        # 3. Update items
         self._update_items_state(elements_data, resolved_layout, selected_ids, active_id)
         
-        # 3. Establish Hierarchy
+        # 4. Hierarchy
         self._rebuild_hierarchy(elements_data)
         
-        # 4. Final Positioning (Relative to Parent)
+        # 5. Positioning
         self._resolve_positioning(elements_data, resolved_layout)
         
-        # 5. Grid Layouts
+        # 6. Grid Layouts
         self._refresh_layout_engines()
         
         self.update()
@@ -542,12 +617,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         current_ids = set(self._items_map.keys())
         cache = ImageCache.instance()
 
-        # Cache images
         for data in elements_data:
             if data.get('image_id', -1) != -1: 
                 cache.pre_cache_image(data['image_id'])
 
-        # Cleanup deleted
         for uid in (current_ids - incoming_ids):
             if uid in self._items_map and shiboken6.isValid(self._items_map[uid]):
                 self.removeItem(self._items_map[uid])
@@ -649,8 +722,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                     off_x, off_y = child.get_anchor_offset(child.rect().width(), child.rect().height(), child.alignment)
                     child.setPos(target_tl_x - off_x, target_tl_y - off_y)
                     child._is_layout_controlled = True
-
-
+        
         self.update()
 
 class RZViewportView(QtWidgets.QGraphicsView):

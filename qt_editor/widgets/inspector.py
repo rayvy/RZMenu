@@ -357,12 +357,10 @@ class RZMInspectorPanel(RZEditorPanel):
         layout_edit.addWidget(self.chk_hide)
         
         h_locks = QtWidgets.QHBoxLayout()
-        self.chk_lock_pos = RZCheckBox("Lock Pos")
-        self.chk_lock_pos.toggled.connect(lambda v: self._emit_change('qt_lock_pos', v))
-        self.chk_lock_size = RZCheckBox("Lock Size")
-        self.chk_lock_size.toggled.connect(lambda v: self._emit_change('qt_lock_size', v))
-        h_locks.addWidget(self.chk_lock_pos)
-        h_locks.addWidget(self.chk_lock_size)
+        self.chk_locked = RZCheckBox("Lock Transform")
+        self.chk_locked.toggled.connect(lambda v: self._emit_change('qt_locked_ui', v))
+        h_locks.addWidget(self.chk_locked)
+        h_locks.addStretch()
         layout_edit.addLayout(h_locks)
         
         self.layout_props.addWidget(grp_edit)
@@ -373,6 +371,12 @@ class RZMInspectorPanel(RZEditorPanel):
             if val == "Mixed": return
             ctx = RZContextManager.get_instance().get_snapshot()
             if not ctx.selected_ids: return
+
+            # SPECIAL: Unified Lock UI -> Dual Properties
+            if key == 'qt_locked_ui':
+                core.update_property_multi(ctx.selected_ids, 'qt_lock_pos', val)
+                core.update_property_multi(ctx.selected_ids, 'qt_lock_size', val)
+                return
 
             # Use mapping to determine if we need int casting
             from ..core.props import PROP_MAP
@@ -451,13 +455,15 @@ class RZMInspectorPanel(RZEditorPanel):
             is_grid_child = props.get('is_grid_child', False)
             
             can_edit_pos = (is_locked_pos is not True) and (not is_grid_child)
+            can_edit_size = (is_locked_size is not True)
+            
             self.sl_x.setEnabled(can_edit_pos)
             self.sl_y.setEnabled(can_edit_pos)
             self.edit_pos_fx.setEnabled(can_edit_pos)
             self.edit_pos_fy.setEnabled(can_edit_pos)
             
-            self.sl_w.setEnabled(is_locked_size is not True)
-            self.sl_h.setEnabled(is_locked_size is not True)
+            self.sl_w.setEnabled(can_edit_size)
+            self.sl_h.setEnabled(can_edit_size)
 
             # --- Grid Container ---
             is_grid = (class_type == "GRID_CONTAINER")
@@ -492,8 +498,7 @@ class RZMInspectorPanel(RZEditorPanel):
 
             # --- Flags ---
             self.chk_hide.setChecked(props.get('is_hidden') is True)
-            self.chk_lock_pos.setChecked(is_locked_pos is True)
-            self.chk_lock_size.setChecked(is_locked_size is True)
+            self.chk_locked.setChecked(is_locked_pos is True or is_locked_size is True)
             
             # --- Raw Data Table ---
             self.table_raw.setRowCount(0)
