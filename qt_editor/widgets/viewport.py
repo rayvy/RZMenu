@@ -8,6 +8,7 @@ import shiboken6
 from .. import core
 from ..core.signals import SIGNALS
 from ..systems.layout import GridSolver
+from ..systems.smart_snap import SmartSnapSystem
 from ..utils.image_cache import ImageCache
 from ..context import RZContextManager
 from ..context.states import RZInteractionState
@@ -18,7 +19,6 @@ from ..core.logic import FormulaEvaluator
 HANDLE_SIZE = 8
 
 class RZHandleItem(QtWidgets.QGraphicsRectItem):
-    # Handle types
     TOP_LEFT, TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT = range(8)
 
     def __init__(self, handle_type, parent):
@@ -41,8 +41,6 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         }
         self.setCursor(cursors.get(handle_type, QtCore.Qt.ArrowCursor))
         self.setAcceptHoverEvents(True)
-        
-        # State for cumulative drag
         self._start_mouse_pos = None
 
     def hoverEnterEvent(self, event):
@@ -68,17 +66,20 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
 
     def mousePressEvent(self, event):
         if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
-            event.ignore()
-            return
+            event.ignore(); return
         
-        # Record start position for cumulative math
         self._start_mouse_pos = event.scenePos()
-        self.scene().interaction_start_signal.emit()
+        
+        # Prepare Smart Snap targets (exclude self)
+        scene = self.scene()
+        if scene:
+            scene.prepare_smart_snap(exclude_items=[self.parentItem()])
+            scene.interaction_start_signal.emit()
+        
         event.accept()
 
     def mouseMoveEvent(self, event):
         if self._start_mouse_pos is not None:
-            # Calculate Total Delta from start
             total_delta = event.scenePos() - self._start_mouse_pos
             self.parentItem().handle_resize(self.handle_type, total_delta)
             event.accept()
@@ -87,8 +88,13 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
 
     def mouseReleaseEvent(self, event):
         self._start_mouse_pos = None
-        self.parentItem().finalize_resize() # Clear initial state
-        self.scene().interaction_end_signal.emit()
+        self.parentItem().finalize_resize()
+        
+        scene = self.scene()
+        if scene:
+            scene.clear_smart_snap()
+            scene.interaction_end_signal.emit()
+            
         super().mouseReleaseEvent(event)
 
 
@@ -111,37 +117,24 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.pos_is_formula = False
         self.size_is_formula = False
         
-        # Grid properties
         self.grid_padding = 0
         self.grid_gap = 0
         self.grid_cell_size = 50
         self.grid_cols = 0
         
-        # Interaction state (Cumulative)
-        self._initial_rect = None     # (x, y, w, h) visual rect
-        self._initial_pos = None      # (x, y) scene pos
+        self._initial_rect = None
+        self._initial_pos = None
         self._aspect_ratio = 1.0
 
-        self.setFlags(
-            QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | 
-            QtWidgets.QGraphicsItem.ItemIsSelectable
-        )
+        self.setFlags(QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | QtWidgets.QGraphicsItem.ItemIsSelectable)
 
-    def get_inner_origin(self):
-        r = self.rect()
-        return r.topLeft()
+    def get_inner_origin(self): return self.rect().topLeft()
 
     def get_anchor_offset(self, w, h, alignment):
         offsets = {
-            "TOP_LEFT": (0, 0),
-            "TOP_CENTER": (-w / 2, 0),
-            "TOP_RIGHT": (-w, 0),
-            "CENTER_LEFT": (0, -h / 2),
-            "CENTER": (-w / 2, -h / 2),
-            "CENTER_RIGHT": (-w, -h / 2),
-            "BOTTOM_LEFT": (0, -h),
-            "BOTTOM_CENTER": (-w / 2, -h),
-            "BOTTOM_RIGHT": (-w, -h),
+            "TOP_LEFT": (0, 0), "TOP_CENTER": (-w/2, 0), "TOP_RIGHT": (-w, 0),
+            "CENTER_LEFT": (0, -h/2), "CENTER": (-w/2, -h/2), "CENTER_RIGHT": (-w, -h/2),
+            "BOTTOM_LEFT": (0, -h), "BOTTOM_CENTER": (-w/2, -h), "BOTTOM_RIGHT": (-w, -h),
         }
         return offsets.get(alignment, (0, 0))
 
@@ -161,30 +154,23 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         r = self.rect()
         x, y, w, h = r.x(), r.y(), r.width(), r.height()
         hs, hh = HANDLE_SIZE, HANDLE_SIZE / 2
-        
         positions = [
-            (x - hh, y - hh), (x + w / 2 - hh, y - hh), (x + w - hh, y - hh),
-            (x + w - hh, y + h / 2 - hh), (x + w - hh, y + h - hh), (x + w / 2 - hh, y + h - hh),
-            (x - hh, y + h - hh), (x - hh, y + h / 2 - hh)
+            (x - hh, y - hh), (x + w/2 - hh, y - hh), (x + w - hh, y - hh),
+            (x + w - hh, y + h/2 - hh), (x + w - hh, y + h - hh), (x + w/2 - hh, y + h - hh),
+            (x - hh, y + h - hh), (x - hh, y + h/2 - hh)
         ]
         for h_type, pos in enumerate(positions):
-            if h_type in self.handles:
-                self.handles[h_type].setPos(*pos)
+            if h_type in self.handles: self.handles[h_type].setPos(*pos)
 
     def set_handles_visible(self, visible):
         if not self.handles and visible: self.create_handles()
         for handle in self.handles.values(): handle.setVisible(visible)
 
     def finalize_resize(self):
-        """Called when mouse is released to clear init state."""
         self._initial_rect = None
         self._initial_pos = None
 
     def handle_resize(self, h_type, total_delta):
-        """
-        Handles resize using cumulative delta to prevent snap-deadlock.
-        total_delta: distance from the mouse press start position.
-        """
         if self.is_locked_size or self.size_is_formula: return
         
         scene = self.scene()
@@ -192,28 +178,21 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         is_ctrl = modifiers & QtCore.Qt.ControlModifier
         is_shift = modifiers & QtCore.Qt.ShiftModifier
         
-        # 1. Initialize Snapshot on first move
         if self._initial_rect is None:
             self._initial_rect = self.rect()
-            self._initial_pos = self.pos() # Scene position (Anchor)
+            self._initial_pos = self.pos()
             self._aspect_ratio = self._initial_rect.width() / max(self._initial_rect.height(), 1)
 
-        # 2. Helper to get raw dimensions
-        # Current Anchor in Scene coords
         init_ax, init_ay = self._initial_pos.x(), self._initial_pos.y()
-        
-        # Visual Rect (relative to anchor, e.g., -50, -50 if Center)
         vr = self._initial_rect
-        
-        # Calculate Absolute edges in Scene Space
         abs_left = init_ax + vr.left()
         abs_right = init_ax + vr.right()
         abs_top = init_ay + vr.top()
         abs_bottom = init_ay + vr.bottom()
         
-        # Apply Delta to the moving edges
         dx, dy = total_delta.x(), total_delta.y()
         
+        # Apply delta
         if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
             abs_left += dx
         elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
@@ -224,35 +203,48 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
             abs_bottom += dy
 
-        # 3. Apply Snap to the Moving Edges (Absolute Grid Snap)
-        grid_size = scene.grid_size if (scene.snap_enabled or is_ctrl) else 1
+        # --- SMART SNAP & GRID SNAP LOGIC ---
+        # We need to decide whether to snap specific edges
+        snap_sys = scene.snap_sys
+        targets = scene.get_smart_snap_targets()
+        guides = []
         
-        def snap(val): return round(val / grid_size) * grid_size
+        # Helper to process an edge
+        def process_edge(value, orientation, do_snap_grid):
+            # 1. Try Smart Snap
+            smart_val, guide = snap_sys.calculate_edge_snap(value, orientation, targets)
+            if smart_val is not None:
+                guides.append(guide)
+                return smart_val
+            # 2. Try Grid Snap
+            if do_snap_grid:
+                grid = scene.grid_size
+                return round(value / grid) * grid
+            return value
 
-        if scene.snap_enabled or is_ctrl:
-            if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
-                abs_left = snap(abs_left)
-            elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
-                abs_right = snap(abs_right)
+        do_snap = (scene.snap_enabled or is_ctrl)
+        
+        # Update X Edges
+        if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
+            abs_left = process_edge(abs_left, 0, do_snap)
+        elif h_type in (RZHandleItem.RIGHT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_RIGHT):
+            abs_right = process_edge(abs_right, 0, do_snap)
             
-            if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
-                abs_top = snap(abs_top)
-            elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
-                abs_bottom = snap(abs_bottom)
+        # Update Y Edges
+        if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
+            abs_top = process_edge(abs_top, 1, do_snap)
+        elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
+            abs_bottom = process_edge(abs_bottom, 1, do_snap)
 
-        # 4. Recalculate Size (ensure min size)
+        # Update visual guides
+        scene.set_smart_guides(guides)
+
+        # --- Apply Min Size ---
         MIN_SIZE = 5
-        
-        # Handle Aspect Ratio Constraint (Shift) - Simplified for Center/Corner
-        # Doing aspect ratio properly with absolute snapping is tricky, skipping for now to prioritize snap stability
-        
         new_w = abs_right - abs_left
         new_h = abs_bottom - abs_top
         
-        # Ensure positive size (flip if inverted)
-        # Note: If user drags left handle past right handle, we usually clamp.
         if new_w < MIN_SIZE: 
-            # Clamp the moving edge back
             if h_type in (RZHandleItem.LEFT, RZHandleItem.TOP_LEFT, RZHandleItem.BOTTOM_LEFT):
                 abs_left = abs_right - MIN_SIZE
             else:
@@ -266,34 +258,20 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                 abs_bottom = abs_top + MIN_SIZE
             new_h = MIN_SIZE
 
-        # 5. Recalculate Scene Position (Anchor) based on Alignment
-        # We know the new absolute bounding box (abs_left, abs_top, new_w, new_h)
-        # We need to find where the Anchor Point is within this box based on self.alignment
-        
+        # --- Finalize Geometry ---
         offsets = {
-            "TOP_LEFT": (0, 0),
-            "TOP_CENTER": (0.5, 0),
-            "TOP_RIGHT": (1.0, 0),
-            "CENTER_LEFT": (0, 0.5),
-            "CENTER": (0.5, 0.5),
-            "CENTER_RIGHT": (1.0, 0.5),
-            "BOTTOM_LEFT": (0, 1.0),
-            "BOTTOM_CENTER": (0.5, 1.0),
-            "BOTTOM_RIGHT": (1.0, 1.0),
+            "TOP_LEFT": (0, 0), "TOP_CENTER": (0.5, 0), "TOP_RIGHT": (1.0, 0),
+            "CENTER_LEFT": (0, 0.5), "CENTER": (0.5, 0.5), "CENTER_RIGHT": (1.0, 0.5),
+            "BOTTOM_LEFT": (0, 1.0), "BOTTOM_CENTER": (0.5, 1.0), "BOTTOM_RIGHT": (1.0, 1.0),
         }
-        rel_x, rel_y = offsets.get(self.alignment, (0, 1.0)) # Default Bottom Left
+        rel_x, rel_y = offsets.get(self.alignment, (0, 1.0))
         
         new_anchor_x = abs_left + (new_w * rel_x)
         new_anchor_y = abs_top + (new_h * rel_y)
         
-        # 6. Update Visuals
-        # Move the item to the new anchor position
         self.setPos(new_anchor_x, new_anchor_y)
-        
-        # Update the visual rect (which draws relative to 0,0 based on anchor)
         self.update_visual_rect(new_w, new_h)
         
-        # 7. Emit Signal to Core (Convert back to Blender Coords)
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
@@ -321,7 +299,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         if is_active: z_val = 20
         elif is_selected: z_val = 10
         self.setZValue(z_val)
-        # Handles visible if selected and not size-locked
         self.set_handles_visible(is_selected and not self.is_locked_size)
         self.update() 
     
@@ -332,8 +309,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def paint(self, painter, option, widget):
         rect = self.rect()
         t = get_current_theme()
-        
-        # Visual visual for anchor/origin
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
         if self.elem_type == 'TEXT':
@@ -377,10 +352,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         painter.setPen(pen)
         painter.drawRect(rect)
 
-        # Draw Marker at Origin (Local 0,0)
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 180), 1.0))
-        painter.drawLine(-4, 0, 4, 0)
-        painter.drawLine(0, -4, 0, 4)
+        painter.drawLine(-4, 0, 4, 0); painter.drawLine(0, -4, 0, 4)
 
         text_rect = rect.adjusted(5, 5, -5, -5)
         painter.setPen(QtGui.QColor(t.get('text_bright', '#FFF')))
@@ -391,12 +364,9 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
             painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, lock_txt)
 
-        # Formula Indicator
         if self.pos_is_formula or self.size_is_formula:
             f_rect = QtCore.QRect(rect.x() + rect.width() - 14, rect.y() + rect.height() - 14, 10, 10)
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(QtGui.QColor(0, 255, 100, 150))
-            painter.drawEllipse(f_rect)
+            painter.setPen(QtCore.Qt.NoPen); painter.setBrush(QtGui.QColor(0, 255, 100, 150)); painter.drawEllipse(f_rect)
 
 class RZViewportScene(QtWidgets.QGraphicsScene):
     item_moved_signal = QtCore.Signal(float, float) 
@@ -407,48 +377,64 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
     def __init__(self):
         super().__init__()
+        self.snap_sys = SmartSnapSystem() # The Brain
+        self._cached_targets = []
+        self._guide_lines = []
+        
         self._is_user_interaction = False
         self._is_dragging_items = False
         self._drag_start_pos = None
         self.is_alt_mode = False
         self._items_map = {} 
         self.setSceneRect(-10000, -10000, 20000, 20000)
-        
-        # Grid settings
         self.grid_size = 20
         self.snap_enabled = False
-        
-        # Accumulators
         self._accum_x = 0.0
         self._accum_y = 0.0
-        
-        # --- CYCLIC SELECTION STATE ---
-        self._cycle_stack = []      # Список ID элементов под курсором для перебора
-        self._cycle_index = 0       # Текущий индекс в стеке
-        self._last_click_pos = None # Позиция последнего клика для проверки сдвига
+        self._cycle_stack = []
+        self._last_click_pos = None
+        self._active_id = -1
+
+    def prepare_smart_snap(self, exclude_items):
+        """Called on interaction start to cache possible targets."""
+        self._cached_targets = self.snap_sys.get_targets(self, exclude_items)
+        self._guide_lines = []
+
+    def get_smart_snap_targets(self): return self._cached_targets
+    
+    def set_smart_guides(self, guides):
+        self._guide_lines = guides
+        self.update() # Trigger redraw for foreground
+
+    def clear_smart_snap(self):
+        self._cached_targets = []
+        self._guide_lines = []
+        self.update()
+
+    def drawForeground(self, painter, rect):
+        if self._guide_lines:
+            pen = QtGui.QPen(QtGui.QColor("#FF00FF"), 1, QtCore.Qt.DashLine)
+            painter.setPen(pen)
+            for line in self._guide_lines:
+                # Draw long lines for visibility
+                painter.drawLine(line)
 
     def _apply_snap(self, value, step):
         if step <= 0: return value
         return round(value / step) * step
 
     def drawBackground(self, painter, rect):
-        """Infinite Grid Drawing."""
         t = get_current_theme()
         bg_color = QtGui.QColor(t.get('vp_bg', '#1E1E1E'))
         painter.fillRect(rect, bg_color)
-
         grid_color = QtGui.QColor(t.get('vp_grid_color', 'rgba(255, 255, 255, 30)'))
-        
         left, right = int(rect.left()), int(rect.right())
         top, bottom = int(rect.top()), int(rect.bottom())
-
         step = self.grid_size
         major_step = step * 5
         
         painter.setPen(QtGui.QPen(grid_color, 0.5))
-        first_x = left - (left % step)
-        first_y = top - (top % step)
-
+        first_x = left - (left % step); first_y = top - (top % step)
         for x in range(first_x, right + step, step):
             if x % major_step != 0: painter.drawLine(x, top, x, bottom)
         for y in range(first_y, bottom + step, step):
@@ -457,191 +443,173 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         major_color = grid_color.lighter(150)
         major_color.setAlpha(min(grid_color.alpha() * 2, 255))
         painter.setPen(QtGui.QPen(major_color, 1.0))
-        
-        first_major_x = left - (left % major_step)
-        first_major_y = top - (top % major_step)
-        for x in range(first_major_x, right + major_step, major_step):
-            painter.drawLine(x, top, x, bottom)
-        for y in range(first_major_y, bottom + major_step, major_step):
-            painter.drawLine(left, y, right, y)
+        first_major_x = left - (left % major_step); first_major_y = top - (top % major_step)
+        for x in range(first_major_x, right + major_step, major_step): painter.drawLine(x, top, x, bottom)
+        for y in range(first_major_y, bottom + major_step, major_step): painter.drawLine(left, y, right, y)
         
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 80), 1.5))
         if left <= 0 <= right: painter.drawLine(0, top, 0, bottom)
         if top <= 0 <= bottom: painter.drawLine(left, 0, right, 0)
 
-    def _init_background(self):
-        self.update()
+    def _init_background(self): self.update()
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MiddleButton: return 
         if self.is_alt_mode:
-            super().mousePressEvent(event)
-            return
+            super().mousePressEvent(event); return
 
-        # 1. Handle Gizmo Interaction
         item = self.itemAt(event.scenePos(), QtGui.QTransform())
         if isinstance(item, RZHandleItem):
             self.interaction_start_signal.emit()
-            super().mousePressEvent(event)
-            return
+            super().mousePressEvent(event); return
 
-        # 2. Element Selection Logic
         modifier_str = 'CTRL' if event.modifiers() & QtCore.Qt.ControlModifier else 'SHIFT' if event.modifiers() & QtCore.Qt.ShiftModifier else None
         
-        # Check if we clicked in the same spot (allow 5px jitter)
         is_same_spot = False
         if self._last_click_pos:
             dist = (event.scenePos() - self._last_click_pos).manhattanLength()
-            if dist < 5.0:
-                is_same_spot = True
+            if dist < 5.0: is_same_spot = True
         
-        # Get raw items under cursor
         raw_items = self.items(event.scenePos())
-        # Strict filter: Must be RZElementItem AND selectable
         valid_items = [i for i in raw_items if isinstance(i, RZElementItem) and i.is_selectable]
         
         if valid_items:
-            event.accept() # Stop propagation to prevent rubberband
-            
+            event.accept()
             target_uid = -1
-            
-            # --- ROBUST CYCLIC LOGIC ---
             if is_same_spot and self._cycle_stack:
-                # REPEAT CLICK: Use the FROZEN stack from previous click.
-                # This ignores Z-index changes caused by selection highlighting.
-                self._cycle_index = (self._cycle_index + 1) % len(self._cycle_stack)
-                target_uid = self._cycle_stack[self._cycle_index]
+                current_idx = -1
+                for idx, uid in enumerate(self._cycle_stack):
+                    if uid == self._active_id: current_idx = idx; break
+                
+                next_idx = (current_idx + 1) % len(self._cycle_stack)
+                target_uid = self._cycle_stack[next_idx]
             else:
-                # NEW CLICK: Build a new stack
                 self._cycle_stack = [i.uid for i in valid_items]
-                self._cycle_index = 0
                 target_uid = self._cycle_stack[0]
                 self._last_click_pos = event.scenePos()
 
-            # Emit Selection
             self.selection_changed_signal.emit(target_uid, modifier_str)
             
-            # --- INIT DRAG ---
-            # Find the item object corresponding to target_uid to check locks
             target_item = self._items_map.get(target_uid)
-            
             if target_item and not target_item.is_locked_pos and not getattr(target_item, "_is_layout_controlled", False) and not target_item.pos_is_formula:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
-                self._accum_x = 0.0
-                self._accum_y = 0.0
+                self._accum_x = 0.0; self._accum_y = 0.0
                 
-                # Store INITIAL positions for Absolute Snapping
-                # We need to snapshot where EVERY selected item is right now
                 selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
-                # If target wasn't selected yet (Qt delay), include it manually
-                if target_item not in selected_items:
-                    selected_items.append(target_item)
-                    
+                if target_item not in selected_items: selected_items.append(target_item)
+                
                 self._initial_item_positions = {it: it.pos() for it in selected_items}
+                
+                # CACHE TARGETS FOR MOVE
+                self.prepare_smart_snap(exclude_items=selected_items)
                 
                 self.interaction_start_signal.emit()
         else:
-            # Clicked on empty space or unselectable items
-            if modifier_str is None:
-                self.selection_changed_signal.emit(-1, None)
-            
-            # Reset Cycle State
+            if modifier_str is None: self.selection_changed_signal.emit(-1, None)
             self._cycle_stack = []
             self._last_click_pos = None
-            
             super().mousePressEvent(event)
 
+    def clear_smart_snap_guides_only(self):
+        self._guide_lines = []
+        self.update()
+
     def mouseMoveEvent(self, event):
-        if self.is_alt_mode:
-             super().mouseMoveEvent(event); return
+        if self.is_alt_mode: super().mouseMoveEvent(event); return
 
         if self._is_dragging_items and self._drag_start_pos and hasattr(self, '_initial_item_positions'):
             current_pos = event.scenePos()
             
             modifiers = QtWidgets.QApplication.keyboardModifiers()
-            is_ctrl = modifiers & QtCore.Qt.ControlModifier # Snap
-            is_shift = modifiers & QtCore.Qt.ShiftModifier  # Axis Lock
+            is_ctrl = modifiers & QtCore.Qt.ControlModifier
+            is_alt = modifiers & QtCore.Qt.AltModifier
+            is_shift = modifiers & QtCore.Qt.ShiftModifier
 
-            # Identify movable items (filter locked ones from the cached snapshot)
             movable_items = []
             for item in self._initial_item_positions:
                 if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False) and not item.pos_is_formula:
                     movable_items.append(item)
-            
             if not movable_items: return
 
-            # Calculate raw offset from START of drag
+            # Рассчитываем смещение мыши
             total_dx = current_pos.x() - self._drag_start_pos.x()
             total_dy = current_pos.y() - self._drag_start_pos.y()
 
-            # --- 1. AXIS LOCK ---
             if is_shift:
                 if abs(total_dx) > abs(total_dy): total_dy = 0
                 else: total_dx = 0
 
-            # --- 2. ABSOLUTE SNAPPING ---
-            # We snap the LEADER (first item) to the grid, 
-            # and move everyone else by the same delta.
+            # Лидер группы для расчета снаппинга
             leader = movable_items[0]
             start_pos = self._initial_item_positions[leader]
             
-            # Where would the leader be without snap?
-            target_x = start_pos.x() + total_dx
-            target_y = start_pos.y() + total_dy
+            # Целевая позиция лидера БЕЗ снаппинга
+            raw_target_x = start_pos.x() + total_dx
+            raw_target_y = start_pos.y() + total_dy
             
-            if self.snap_enabled or is_ctrl:
-                # Snap the absolute target coordinate
-                final_x = self._apply_snap(target_x, self.grid_size)
-                final_y = self._apply_snap(target_y, self.grid_size)
+            # --- ОПРЕДЕЛЕНИЕ РЕЖИМА СНАППИНГА ---
+            modes = {
+                'grid': False,
+                'adhesion': False,
+                'alignment': False
+            }
+            
+            if is_ctrl:
+                if is_alt:
+                    # Ctrl + Alt = Только Alignment (Оси)
+                    modes['alignment'] = True
+                else:
+                    # Ctrl = Grid + Adhesion (Прилипание)
+                    modes['grid'] = True
+                    modes['adhesion'] = True
+
+            # Формируем гипотетический Rect в новой позиции
+            # Используем normalized(), чтобы избежать проблем с отрицательными размерами
+            lr = leader.rect().normalized()
+            hypothetical_rect = QtCore.QRectF(raw_target_x + lr.x(), raw_target_y + lr.y(), lr.width(), lr.height())
+            
+            # --- ВЫЗОВ SOLVER ---
+            self.clear_smart_snap_guides_only()
+            
+            # Если хотя бы один режим включен, считаем
+            if any(modes.values()):
+                final_x, final_y, guides = self.snap_sys.solve_snap(
+                    hypothetical_rect, 
+                    self._cached_targets, 
+                    self.grid_size, 
+                    modes
+                )
+                self.set_smart_guides(guides)
             else:
-                final_x = target_x
-                final_y = target_y
-            
-            # Calculate the effective delta needed to reach this position from CURRENT visual pos
-            # Actually, simpler: Calculate absolute new pos for everyone based on Leader's delta
-            
-            # Leader's total required shift from start
+                final_x, final_y = raw_target_x, raw_target_y
+
+            # --- ПРИМЕНЕНИЕ ---
+            # Рассчитываем итоговую дельту для всей группы
             leader_shift_x = final_x - start_pos.x()
             leader_shift_y = final_y - start_pos.y()
             
-            # --- 3. BLENDER SYNC (ACCUMULATOR) ---
-            # We need to send incremental deltas to Blender core
-            # Calculate shift from LAST PROCESSED frame
-            if not hasattr(self, '_last_processed_shift'):
-                self._last_processed_shift = QtCore.QPointF(0, 0)
+            # Blender Sync (накопитель)
+            if not hasattr(self, '_last_processed_shift'): self._last_processed_shift = QtCore.QPointF(0, 0)
             
             step_dx = leader_shift_x - self._last_processed_shift.x()
             step_dy = leader_shift_y - self._last_processed_shift.y()
             
             if step_dx == 0 and step_dy == 0: return
 
-            self._accum_x += step_dx
-            self._accum_y += step_dy
-            
-            blender_dx = int(self._accum_x)
-            blender_dy = int(self._accum_y)
+            self._accum_x += step_dx; self._accum_y += step_dy
+            blender_dx = int(self._accum_x); blender_dy = int(self._accum_y)
             
             if blender_dx != 0 or blender_dy != 0:
-                self._accum_x -= blender_dx
-                self._accum_y -= blender_dy
-                
-                # Signal Core
+                self._accum_x -= blender_dx; self._accum_y -= blender_dy
                 bdx, bdy = core.to_blender_delta(blender_dx, blender_dy)
                 self.item_moved_signal.emit(float(bdx), float(bdy))
-                
-                # Update processed tracker by the amount we actually sent
                 self._last_processed_shift += QtCore.QPointF(blender_dx, blender_dy)
 
-            # --- 4. VISUAL UPDATE ---
-            # Move all items relative to their INITIAL start position
-            # This prevents floating point drift over time
+            # Визуальное обновление
             for item in movable_items:
                 item_start = self._initial_item_positions[item]
-                new_pos_x = item_start.x() + leader_shift_x
-                new_pos_y = item_start.y() + leader_shift_y
-                item.setPos(new_pos_x, new_pos_y)
-
+                item.setPos(item_start.x() + leader_shift_x, item_start.y() + leader_shift_y)
         else:
             super().mouseMoveEvent(event)
 
@@ -651,6 +619,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             self._drag_start_pos = None
             if hasattr(self, '_initial_item_positions'): del self._initial_item_positions
             if hasattr(self, '_last_processed_shift'): del self._last_processed_shift
+            self.clear_smart_snap()
             self.interaction_end_signal.emit()
             for item in self.items():
                 if isinstance(item, RZElementItem): item._initial_rect = None
@@ -660,46 +629,32 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
     def update_selection_visuals(self, selected_ids, active_id):
         if self._is_user_interaction: return
+        self._active_id = active_id
         for uid, item in self._items_map.items():
             item.set_visual_state(uid in selected_ids, uid == active_id)
 
     def update_scene(self, elements_data, selected_ids, active_id):
         if self._is_user_interaction: return
-        
-        # 1. Sync items pool
+        self._active_id = active_id
         self._sync_items_pool(elements_data)
-        
-        # 2. Resolve layouts
         resolved_layout = FormulaEvaluator.resolve_layout(elements_data)
-        
-        # 3. Update items
         self._update_items_state(elements_data, resolved_layout, selected_ids, active_id)
-        
-        # 4. Hierarchy
         self._rebuild_hierarchy(elements_data)
-        
-        # 5. Positioning
         self._resolve_positioning(elements_data, resolved_layout)
-        
-        # 6. Grid Layouts
         self._refresh_layout_engines()
-        
         self.update()
 
+    # _sync_items_pool, _update_items_state, _rebuild_hierarchy, _resolve_positioning, _refresh_layout_engines...
+    # (Они остались без изменений, но для полноты файла убедись, что они там есть)
     def _sync_items_pool(self, elements_data):
         incoming_ids = {d['id'] for d in elements_data}
         current_ids = set(self._items_map.keys())
         cache = ImageCache.instance()
-
         for data in elements_data:
-            if data.get('image_id', -1) != -1: 
-                cache.pre_cache_image(data['image_id'])
-
+            if data.get('image_id', -1) != -1: cache.pre_cache_image(data['image_id'])
         for uid in (current_ids - incoming_ids):
-            if uid in self._items_map and shiboken6.isValid(self._items_map[uid]):
-                self.removeItem(self._items_map[uid])
-            if uid in self._items_map: 
-                del self._items_map[uid]
+            if uid in self._items_map and shiboken6.isValid(self._items_map[uid]): self.removeItem(self._items_map[uid])
+            if uid in self._items_map: del self._items_map[uid]
 
     def _update_items_state(self, elements_data, resolved_layout, selected_ids, active_id):
         for data in elements_data:
@@ -707,44 +662,26 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             layout = resolved_layout.get(uid, {})
             rw = layout.get('w', data['width'])
             rh = layout.get('h', data['height'])
-
             item = self._items_map.get(uid)
             if not item or not shiboken6.isValid(item):
                 item = RZElementItem(uid, rw, rh, data['name'], data.get('class_type', 'CONTAINER'))
-                self.addItem(item)
-                self._items_map[uid] = item
+                self.addItem(item); self._items_map[uid] = item
             else:
-                item.name = data['name']
-                item.elem_type = data.get('class_type', 'CONTAINER')
-
+                item.name = data['name']; item.elem_type = data.get('class_type', 'CONTAINER')
             item.update_size(rw, rh)
-            
-            grid_props = {
-                'padding': data.get('grid_padding', 0),
-                'gap': data.get('grid_gap', 0),
-                'cell_size': data.get('grid_cell_size', 50),
-                'cols': data.get('grid_cols', 0)
-            }
-            
-            item.set_data_state(
-                data.get('is_locked_pos', False), data.get('is_locked_size', False), 
-                data.get('image_id', -1), data.get('is_selectable', True), 
-                data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), 
-                data.get('color', None), grid_props=grid_props,
-                pos_is_formula=data.get('pos_is_formula', False),
-                size_is_formula=data.get('size_is_formula', False)
-            )
+            grid_props = {'padding': data.get('grid_padding', 0), 'gap': data.get('grid_gap', 0), 'cell_size': data.get('grid_cell_size', 50), 'cols': data.get('grid_cols', 0)}
+            item.set_data_state(data.get('is_locked_pos', False), data.get('is_locked_size', False), data.get('image_id', -1), data.get('is_selectable', True), data.get('text_content', ''), data.get('alignment', 'BOTTOM_LEFT'), data.get('color', None), grid_props=grid_props, pos_is_formula=data.get('pos_is_formula', False), size_is_formula=data.get('size_is_formula', False))
             item.setVisible(not data.get('is_hidden', False))
             item.set_visual_state(uid in selected_ids, uid == active_id)
-            item._is_layout_controlled = False 
+            item._is_layout_controlled = False
+            if uid == active_id: self._active_id = uid
 
     def _rebuild_hierarchy(self, elements_data):
         for data in elements_data:
             uid, pid = data['id'], data.get('parent_id', -1)
             if uid in self._items_map and pid != -1 and pid in self._items_map:
                 item, parent_item = self._items_map[uid], self._items_map[pid]
-                if item.parentItem() != parent_item: 
-                    item.setParentItem(parent_item)
+                if item.parentItem() != parent_item: item.setParentItem(parent_item)
             elif uid in self._items_map and self._items_map[uid].parentItem() is not None:
                 self._items_map[uid].setParentItem(None)
 
@@ -752,51 +689,32 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         for data in elements_data:
             uid = data['id']
             item = self._items_map[uid]
-            
             layout = resolved_layout.get(uid, {})
-            rx = layout.get('x', data['pos_x'])
-            ry = layout.get('y', data['pos_y'])
-            
+            rx = layout.get('x', data['pos_x']); ry = layout.get('y', data['pos_y'])
             qx, qy = core.to_qt_coords(rx, ry)
-            
             parent = item.parentItem()
             if parent and isinstance(parent, RZElementItem):
                 p_layout = resolved_layout.get(parent.uid, {})
-                px = p_layout.get('x', 0)
-                py = p_layout.get('y', 0)
+                px = p_layout.get('x', 0); py = p_layout.get('y', 0)
                 pqx, pqy = core.to_qt_coords(px, py)
                 item.setPos(qx - pqx, qy - pqy)
-            else:
-                item.setPos(qx, qy)
+            else: item.setPos(qx, qy)
 
     def _refresh_layout_engines(self):
         for item in self._items_map.values():
             if item.elem_type == "GRID_CONTAINER":
                 children = [c for c in item.childItems() if isinstance(c, RZElementItem)]
                 if not children: continue
-                
-                container_data = {
-                    'width': item.rect().width(),
-                    'grid_padding': item.grid_padding,
-                    'grid_gap': item.grid_gap,
-                    'grid_cell_size': item.grid_cell_size,
-                    'grid_cols': item.grid_cols
-                }
-                
+                container_data = {'width': item.rect().width(), 'grid_padding': item.grid_padding, 'grid_gap': item.grid_gap, 'grid_cell_size': item.grid_cell_size, 'grid_cols': item.grid_cols}
                 children_sizes = [(c.rect().width(), c.rect().height()) for c in children]
                 offsets = GridSolver.calculate_layout(container_data, len(children), children_sizes)
-                
                 inner_origin = item.get_inner_origin()
                 for i, child in enumerate(children):
                     if i >= len(offsets): break
-                    
-                    target_tl_x = inner_origin.x() + offsets[i][0]
-                    target_tl_y = inner_origin.y() + offsets[i][1]
-                    
+                    target_tl_x = inner_origin.x() + offsets[i][0]; target_tl_y = inner_origin.y() + offsets[i][1]
                     off_x, off_y = child.get_anchor_offset(child.rect().width(), child.rect().height(), child.alignment)
                     child.setPos(target_tl_x - off_x, target_tl_y - off_y)
                     child._is_layout_controlled = True
-        
         self.update()
 
 class RZViewportView(QtWidgets.QGraphicsView):
