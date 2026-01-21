@@ -162,7 +162,7 @@ def get_viewport_data():
     results = []
     if not bpy.context or not bpy.context.scene: return results
 
-    for elem in bpy.context.scene.rzm.elements:
+    for idx, elem in enumerate(bpy.context.scene.rzm.elements):
         color_list = None
         if hasattr(elem, "color"):
             color_list = list(elem.color)
@@ -171,6 +171,7 @@ def get_viewport_data():
         # Prepare basic data
         item = {
             "id": elem.id,
+            "order": idx,  # Array index for Z-ordering
             "name": elem.element_name,
             "class_type": elem.elem_class,
             "parent_id": getattr(elem, "parent_id", -1),

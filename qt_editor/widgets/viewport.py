@@ -304,14 +304,14 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
-    # Обновили сигнатуру: добавлен аргумент text_id
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False):
+    # Обновили сигнатуру: добавлен аргумент text_id и order
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
         self.text_id = text_id if text_id is not None else "TEST" # Сохраняем text_id
-        print(f"[DATA] Element {self.name} (ID: {self.uid}): received text_id='{text_id}', set self.text_id='{self.text_id}'")
+        self.order = order  # Сохраняем порядок в массиве для Z-index
         self.alignment = alignment
         self.custom_color = color
         
@@ -327,9 +327,15 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def set_visual_state(self, is_selected, is_active):
         if self.isSelected() != is_selected: self.setSelected(is_selected)
         self.is_active = is_active
-        z_val = 1
-        if is_active: z_val = 20
-        elif is_selected: z_val = 10
+
+        # Base Z-value from array order (higher = drawn later = on top)
+        base_z = getattr(self, 'order', 0)
+
+        # State modifiers
+        if is_active: z_val = base_z + 1000  # Active on top
+        elif is_selected: z_val = base_z + 500  # Selected above normal
+        else: z_val = base_z  # Normal elements by order
+
         self.setZValue(z_val)
         self.set_handles_visible(is_selected and not self.is_locked_size)
         self.update() 
@@ -366,7 +372,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             # 3. Текст (рисуем text_id)
             # Используем text_id. Если его нет — фоллбэк на "TEXT" или пустоту
             display_text = self.text_id if self.text_id else self.name
-            print(f"[TEXT] Element {self.name} (ID: {self.uid}): text_id='{self.text_id}', display_text='{display_text}'")
             
             # Отрисовка без отступов (AlignLeft | AlignVCenter), без клиппинга
             painter.drawText(rect, 
@@ -754,19 +759,20 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             item.update_size(rw, rh)
             grid_props = {'padding': data.get('grid_padding', 0), 'gap': data.get('grid_gap', 0), 'cell_size': data.get('grid_cell_size', 50), 'cols': data.get('grid_cols', 0)}
             
-            # UPDATED: Passing text_id to set_data_state
+            # UPDATED: Passing text_id and order to set_data_state
             item.set_data_state(
-                data.get('is_locked_pos', False), 
-                data.get('is_locked_size', False), 
-                data.get('image_id', -1), 
-                data.get('is_selectable', True), 
-                data.get('text_content', ''), 
-                data.get('alignment', 'BOTTOM_LEFT'), 
+                data.get('is_locked_pos', False),
+                data.get('is_locked_size', False),
+                data.get('image_id', -1),
+                data.get('is_selectable', True),
+                data.get('text_content', ''),
+                data.get('alignment', 'BOTTOM_LEFT'),
                 text_id=data.get('text_id', ''),
-                color=data.get('color', None), 
-                grid_props=grid_props, 
-                pos_is_formula=data.get('pos_is_formula', False), 
-                size_is_formula=data.get('size_is_formula', False)
+                color=data.get('color', None),
+                grid_props=grid_props,
+                pos_is_formula=data.get('pos_is_formula', False),
+                size_is_formula=data.get('size_is_formula', False),
+                order=data.get('order', 0)
             )
             
             item.setVisible(not data.get('is_hidden', False))
