@@ -1,0 +1,151 @@
+{% macro snippet()%}
+{#
+[TextureOverrideComponentADiffuse]
+hash = 0e5c3c97
+this = ResourceAtlasDiffuse
+if this === null
+ps-t3 = ref ResourceAtlasDiffuse
+endif
+
+[TextureOverrideComponentBDiffuse]
+hash = a59b14c0
+this = ResourceAtlasDiffuse
+if this === null
+ps-t3 = ref ResourceAtlasDiffuse
+endif
+
+[TextureOverrideComponentALightMap]
+hash = e1434e0d
+this = ResourceAtlasLightMap
+
+[TextureOverrideComponentBLightMap]
+hash = d022d32c
+this = ResourceAtlasLightMap
+
+[ResourceAtlasLightMap]
+filename = tex/AtlasLightMap.dds
+
+[TextureOverrideComponentAMaterialMap]
+hash = b2718585
+this = ResourceAtlasMaterialMap
+
+[TextureOverrideComponentBMaterialMap]
+hash = 8624e4e4
+this = ResourceAtlasMaterialMap
+
+[ResourceAtlasMaterialMap]
+filename = tex/AtlasMaterialMap.dds
+
+[TextureOverrideComponentANormalMap]
+hash = ebac056e
+this = ResourceAtlasNormalMap
+
+[ResourceAtlasNormalMap]
+filename = tex/AtlasNormalMap.dds
+
+#}
+;FACE SEGMENT
+[TextureOverrideFaceAComponentIB]
+hash = ddf4efa6
+run = CommandListSkinTexture
+
+[TextureOverrideFaceADiffuse]
+hash = 8e1d1a6f
+this = ResourceFaceDiffuse
+if this === null
+ps-t3 = ResourceFaceDiffuse
+endif
+
+[ResourceFaceADiffuse]
+filename = tex/FaceA.dds
+[ResourceFaceBDiffuse]
+filename = tex/FaceB.dds
+[ResourceMakeupFaceCDiffuse]
+filename = tex/FaceC.dds
+
+[ResourceMakeupLips]
+filename = /modules/facetexworks/makeup/lips.png
+
+[CustomShaderUpdateFaceDiffuse]
+cs = /modules/facetexworks/cs_update_region.hlsl
+cs-u0 = ref ResourceFaceDiffuse
+if $FaceDecalMakeupFace0Index == 1
+cs-t0 = ResourceFaceBDiffuse
+elif $FaceDecalMakeupFace0Index == 2
+cs-t0 = ResourceMakeupFaceCDiffuse
+else
+cs-t0 = ResourceFaceADiffuse
+endif
+x44 = 0
+y44 = 0
+z44 = 2048
+w44 = 2048
+dispatch = 2048 // 32, 2048//32, 1
+
+[CustomShaderDecalMakeupFaceDiffuse]
+cs = /modules/facetexworks/makeup/decal_draw.hlsl
+cs-u0 = ResourceFaceDiffuse
+cs-t1 = ResourceDecalFaceMakeupDataBuffer
+cs-t60 = ResourceMakeupLips
+x44 = 0
+y44 = 0
+z44 = 2048
+w44 = 2048
+dispatch = 2048 // 32, 2048//32, 1
+
+[ResourceFaceDiffuse]
+type = RWTexture2D
+width = 2048
+height = 2048
+format = DXGI_FORMAT_R8G8B8A8_TYPELESS
+array = 1
+msaa = 1
+mips = 1
+
+;DataFaceCompute
+
+[CommandListAddonsFaceTexWorks]
+run = CustomShaderUpdateFaceDiffuse
+run = CommandListDecalFaceMakeupUpdate
+run = CustomShaderDecalMakeupFaceDiffuse
+
+[Constants]
+global persist $FaceDecalMakeupFace0Index
+global persist $FaceDecalMakeupLips0Index
+global persist $FaceDecalMakeupEyeshadow
+global persist $FaceDecalMakeupCheek
+global $FaceDecalMakeupLips0PastIndex
+global $FaceDecalMakeupFace0PastIndex
+[Present]
+post $FaceDecalMakeupLips0PastIndex = $FaceDecalMakeupLips0Index
+post $FaceDecalMakeupFace0PastIndex = $FaceDecalMakeupFace0Index
+if $FaceDecalMakeupLips0PastIndex != $FaceDecalMakeupLips0Index
+run = CommandListAddonsFaceTexWorks
+endif
+if $FaceDecalMakeupFace0PastIndex != $FaceDecalMakeupFace0Index
+run = CommandListAddonsFaceTexWorks
+endif
+
+[CommandListDecalFaceMakeupUpdate]
+run = CommandListDecalFaceMakeupFaceCompute
+run = CommandListDecalFaceMakeupLipsCompute
+
+[CommandListDecalFaceMakeupFaceCompute]
+; x70 = 0
+; y70 = 1
+; run = CustomShaderDecalFaceMakeupController
+[CommandListDecalFaceMakeupLipsCompute]
+x70 = 0
+y70 = $FaceDecalMakeupLips0Index
+run = CustomShaderDecalFaceMakeupController
+
+[CustomShaderDecalFaceMakeupController]
+cs-u0 = ResourceDecalFaceMakeupDataBuffer
+cs = /modules/facetexworks/makeup/decal_compute.hlsl
+dispatch = 1, 1, 1
+
+[ResourceDecalFaceMakeupDataBuffer]
+type = RWBuffer
+format = R32G32_UINT
+array = 16
+{% endmacro %}

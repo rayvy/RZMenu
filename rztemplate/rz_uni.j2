@@ -1,0 +1,92 @@
+{% import "rz_merged.j2" as game_merged %}
+{% import "snippets.j2" as snippets %}
+{% import "snippets/gi.j2" as snippet_gi %}
+{% import "snippets/zzz.j2" as snippet_zzz %}
+{% import "snippets/hsr.j2" as snippet_hsr %}
+{% import "modules/core.j2" as core %}
+{% import "modules/data.j2" as data %}
+{% import "modules/functions.j2" as fn %}
+{% import "modules/keymap.j2" as keymap %}
+{% import "modules/elements.j2" as elements %}
+{% import "modules/elements_helpers.j2" as elements_helpers %}
+{% import "modules/modules.j2" as modules %}
+;RZMenu2.9.5
+{% if mod_file.game.name %}
+;{{mod_file.game.name}}
+{% endif %}
+
+{% if mod_file.scene_data.rzm %}
+{% if mod_file.scene_data.rzm.conditions %}
+	{% for condition in mod_file.scene_data.rzm.conditions %}
+		{% if condition %}
+			[TextureOverride{{condition.condition_name}}]
+			hash = {{condition.condition_hash}}
+			match_priority = 24
+			${{condition.condition_name}} = 1
+		{% endif %}
+	{%endfor%}
+{% endif %}
+{% endif %}
+
+{#{{mod_file.scene_data.rzm}}#}
+{% block rz_menu_data %}
+{{keymap.main_button(mod_file)}}
+{{data.config(mod_file)}}
+{% endblock %}
+
+{% block overridesbuffers %}
+    {{snippets.overridesbuffers_pre(mod_file)}}
+	{{  game_merged.overridesbuffers(mod_file) }}
+    {{snippets.overridesbuffers_post(mod_file)}}
+{% endblock %}
+
+{% block overridesibs %}
+    {{snippets.overridesibs_pre(mod_file)}}
+	{{  game_merged.overridesibs(mod_file) }}
+    {{snippets.overridesibs_post(mod_file)}}
+{% endblock %}
+
+{% block resourcebuffers %}
+    {{snippets.resourcebuffers_pre(mod_file)}}
+	{{  game_merged.resourcebuffers(mod_file) }}
+    {{snippets.resourcebuffers_post(mod_file)}}
+{% endblock %}
+
+{% block resourcetextures %}
+    {{snippets.resourcetextures_pre(mod_file)}}
+    {{game_merged.resourcetextures(mod_file)}}
+    {{core.menu_resource_ui(mod_file)}}
+    {{snippets.resourcetextures_post(mod_file)}}
+	{% if mod_file.game.name == "GenshinImpact"%}
+	{% elif mod_file.game.name == "ZenlessZoneZero"%}
+	{% elif mod_file.game.name == "HonkaiStarRail"%}
+	{% endif %}
+{% endblock %}
+
+{% block rz_menu_core %}
+{{core.entryPoint(mod_file)}}
+{{core.baseCompute(mod_file)}}
+{{core.menuDrawUi(mod_file)}}
+{{core.shape_generate(mod_file)}}
+{% endblock %}
+
+{{fn.Base()}}
+
+[CommandListClickedSlot]
+
+{% if mod_file.scene_data.rzm %}
+	{{ elements_helpers.popup_helpers_generate(mod_file)}}
+	{{ elements_helpers.resources_generate(mod_file)}}
+	{{ elements_helpers.grid_helpers_generate(mod_file)}}
+
+	{{modules.generate_addons(mod_file)}}
+	{{elements.elements_generate(mod_file)}}
+
+	{% if mod_file.game.name == "GenshinImpact"%}
+	{{snippet_gi.snippet()}}
+	{% elif mod_file.game.name == "ZenlessZoneZero"%}
+	{{snippet_zzz.snippet()}}
+	{% elif mod_file.game.name == "HonkaiStarRail"%}
+	{{snippet_hsr.snippet()}}
+	{% endif %}
+{% endif %}

@@ -1,0 +1,396 @@
+{%macro main_button(mod_file)%}
+; change key parametr if you want to swap key from / to which you want
+[KeyMenu]
+condition = $active == 1
+key = no_modifiers /
+type = cycle
+$menu = 0,1
+
+[KeyInputManager]
+key = VK_LBUTTON
+key = VK_RBUTTON
+type = hold
+$isMouseButtonDown = 1
+post $isMouseButtonDown = 0
+
+[Constants]
+global $key_test
+[KeyH]
+key = H
+type = cycle
+$key_test = 0,1,2,3,4,5,6
+
+; [KeyHold]
+; condition = $menu == 1 && $hovering == 0
+; key = VK_LBUTTON
+; key = VK_RBUTTON
+; type = hold
+; $hold = 1
+
+; [KeyHoldShape]
+; condition = $menu == 1 && $hovering > 1
+; key = VK_LBUTTON
+; key = VK_RBUTTON
+; type = hold
+; run = CommandListHoldShape
+
+; [CommandListHoldShape]
+; $holdShape = $hovering
+; post $holdShape = 0
+
+; [KeyClickedSlot]
+; condition = $hovering == 1 && $menu == 1
+; key = VK_LBUTTON
+; key = VK_RBUTTON
+; run = CommandListClickedSlot
+
+; --- Переменные для системы навигации ---
+[Constants]
+global $NavIsSearching = 0
+global $NavDirectionX = 0
+global $NavDirectionY = 0
+global $NavOriginID = -1
+global $NavOriginPosX = 0
+global $NavOriginPosY = 0
+global $NavBestMatchID = -1
+global $NavBestMatchCenterX
+global $NavBestMatchCenterY
+global $NavSearchState = 0
+global $NavBestMatchDistance = 9999999
+global $nav_key_request_up = 0
+global $nav_key_request_down = 0
+global $nav_key_request_left = 0
+global $nav_key_request_right = 0
+global persist $inputMode = 0
+global $NavOriginCenterX
+global $NavOriginCenterY
+global $isGamepadActionDown = 0
+global $isGamepadEditing = 0
+global $GamepadEditedID = -1
+
+global $Gamepad_Interaction_Increase = 0
+global $Gamepad_Interaction_Decrease = 0
+global $Gamepad_Interaction_Type = 0
+
+global $gamepad_hold_timer_increase = 0.0
+global $gamepad_hold_timer_decrease = 0.0
+
+[KeyInputModeToggle]
+key = VK_RSHIFT
+type = cycle
+$inputMode = 0, 1
+
+; --- Секции [Key...] остаются как у вас, они идеальны ---
+[KeyUp]
+key = VK_UP
+type = hold
+post $nav_key_request_up = 0
+$nav_key_request_up = 1
+
+[KeyDown]
+key = VK_DOWN
+type = hold
+post $nav_key_request_down = 0
+$nav_key_request_down = 1
+
+[KeyLeft]
+key = VK_LEFT
+type = hold
+post $nav_key_request_left = 0
+$nav_key_request_left = 1
+
+[KeyRight]
+key = VK_RIGHT
+type = hold
+post $nav_key_request_right = 0
+$nav_key_request_right = 1
+
+[KeyGamepadUP]
+key = VK_UP
+key = 0xCB
+type = hold
+post $nav_key_request_up = 0
+$nav_key_request_up = 1
+
+[KeyGamepadDOWN]
+key = VK_DOWN
+key = 0xCC
+type = hold
+post $nav_key_request_down = 0
+$nav_key_request_down = 1
+
+[KeyGamepadLEFT]
+key = VK_LEFT
+key = 0xCD
+type = hold
+$nav_key_request_left = 1
+post $nav_key_request_left = 0
+[KeyGamepadRIGHT]
+key = VK_RIGHT
+key = 0xCE
+type = hold
+$nav_key_request_right = 1
+post $nav_key_request_right = 0
+
+[KeyGamepadToggleEdit]
+key = VK_RCONTROL
+key = 0xC3
+condition = $inputMode == 1
+run = CommandListGamepadToggleEdit
+
+[CommandListGamepadToggleEdit]
+if $isGamepadEditing == 0
+	if $hoveredID != -1
+		$isGamepadEditing = 1
+		$GamepadEditedID = $hoveredID
+	endif
+else
+	$isGamepadEditing = 0
+	$GamepadEditedID = -1
+endif
+
+[CommandListGamepadProcessInput]
+$Gamepad_Interaction_Increase = 0
+$Gamepad_Interaction_Decrease = 0
+$Gamepad_Interaction_Type = 0
+
+if $isGamepadEditing == 1
+	local $tap_time_threshold = 0.15
+	local $hold_start_delay = 0.3
+	local $is_increase_key_down = 0
+	local $is_decrease_key_down = 0
+
+	if $nav_key_request_up == 1 || $nav_key_request_right == 1
+		$is_increase_key_down = 1
+	endif
+	if $nav_key_request_down == 1 || $nav_key_request_left == 1
+		$is_decrease_key_down = 1
+	endif
+
+	if $is_increase_key_down == 1
+		$gamepad_hold_timer_increase = $gamepad_hold_timer_increase + $dt
+		if $gamepad_hold_timer_increase > $hold_start_delay
+			$Gamepad_Interaction_Increase = 1
+			$Gamepad_Interaction_Type = 2
+		endif
+	else
+		if $gamepad_hold_timer_increase > 0 && $gamepad_hold_timer_increase <= $tap_time_threshold
+			$Gamepad_Interaction_Increase = 1
+			$Gamepad_Interaction_Type = 1
+		endif
+		$gamepad_hold_timer_increase = 0.0
+	endif
+
+	if $is_decrease_key_down == 1
+		$gamepad_hold_timer_decrease = $gamepad_hold_timer_decrease + $dt
+		if $gamepad_hold_timer_decrease > $hold_start_delay
+			$Gamepad_Interaction_Decrease = 1
+			$Gamepad_Interaction_Type = 2
+		endif
+	else
+		if $gamepad_hold_timer_decrease > 0 && $gamepad_hold_timer_decrease <= $tap_time_threshold
+			$Gamepad_Interaction_Decrease = 1
+			$Gamepad_Interaction_Type = 1
+		endif
+		$gamepad_hold_timer_decrease = 0.0
+	endif
+endif
+
+[Present]
+local $nav_initial_delay = 0.4
+local $nav_repeat_delay = 0.05
+local $nav_is_holding
+local $nav_next_activation_time
+local $keyInputActive = 0
+if $nav_key_request_up == 1 || $nav_key_request_down == 1 || $nav_key_request_left == 1 || $nav_key_request_right == 1
+	$keyInputActive = 1
+endif
+if $inputMode == 1 && $NavSearchState == 0 && $isGamepadEditing == 0
+	if $keyInputActive == 1
+		if $nav_is_holding == 0
+			$nav_is_holding = 1
+			$nav_next_activation_time = time + $nav_initial_delay
+			run = CommandListNavTriggerSearch
+		endif
+		if $nav_is_holding == 1 && time >= $nav_next_activation_time
+			$nav_next_activation_time = time + $nav_repeat_delay
+			run = CommandListNavTriggerSearch
+		endif
+	else
+		$nav_is_holding = 0
+	endif
+endif
+
+[CommandListNavTriggerSearch]
+if $nav_key_request_up == 1
+	$NavDirectionX = 0
+	$NavDirectionY = 1
+else if $nav_key_request_down == 1
+	$NavDirectionX = 0
+	$NavDirectionY = -1
+else if $nav_key_request_left == 1
+	$NavDirectionX = -1
+	$NavDirectionY = 0
+else if $nav_key_request_right == 1
+	$NavDirectionX = 1
+	$NavDirectionY = 0
+endif
+$NavSearchState = 1
+run = CommandListNavInitiateSearch
+
+[CommandListNavInitiateSearch]
+$NavIsSearching = 1
+if $hoveredID == -1
+	$hoveredID = 3
+endif
+$NavOriginID = $hoveredID
+$NavBestMatchID = -1
+$NavBestMatchDistance = 9999999
+
+[CommandListNavProcessElement]
+if $NavIsSearching == 1
+	if $NavSearchState == 1 && $id == $NavOriginID
+
+		if $NavDirectionY > 0
+			$NavOriginPosX = $positionX + ($sizeX / 2)
+			$NavOriginPosY = $positionY + $sizeY
+		else if $NavDirectionY < 0
+			$NavOriginPosX = $positionX + ($sizeX / 2)
+			$NavOriginPosY = $positionY
+		else if $NavDirectionX < 0
+			$NavOriginPosX = $positionX
+			$NavOriginPosY = $positionY + ($sizeY / 2)
+		else if $NavDirectionX > 0
+			$NavOriginPosX = $positionX + $sizeX
+			$NavOriginPosY = $positionY + ($sizeY / 2)
+		endif
+	else if $NavSearchState == 2 && $id != $NavOriginID
+
+		local $targetMinX = $positionX
+		local $targetMaxX = $positionX + $sizeX
+		local $targetMinY = $positionY
+		local $targetMaxY = $positionY + $sizeY
+		local $clampedX = $NavOriginPosX
+		if $clampedX < $targetMinX
+			$clampedX = $targetMinX
+		else if $clampedX > $targetMaxX
+			$clampedX = $targetMaxX
+		endif
+
+		local $clampedY = $NavOriginPosY
+		if $clampedY < $targetMinY
+			$clampedY = $targetMinY
+		else if $clampedY > $targetMaxY
+			$clampedY = $targetMaxY
+		endif
+		local $vecX = $clampedX - $NavOriginPosX
+		local $vecY = $clampedY - $NavOriginPosY
+		local $isViableCandidate = 0
+		local $score = 9999999
+		local $penalty_factor = 3.0
+
+
+		local $centerVecX = ($positionX + $sizeX/2) - $NavOriginPosX
+		local $centerVecY = ($positionY + $sizeY/2) - $NavOriginPosY
+
+		if ($NavDirectionY > 0 && $centerVecY >= 0) || ($NavDirectionY < 0 && $centerVecY <= 0) || ($NavDirectionX > 0 && $centerVecX >= 0) || ($NavDirectionX < 0 && $centerVecX <= 0)
+			$isViableCandidate = 1
+		endif
+
+		if $isViableCandidate == 1
+			$iVal = $vecX
+			run = CommandListCoreMathABS
+			local $absVecX = $oVal
+			$iVal = $vecY
+			run = CommandListCoreMathABS
+			local $absVecY = $oVal
+			
+			if $NavDirectionY > 0
+				$score = $absVecY + $absVecX * $penalty_factor
+			else if $NavDirectionY < 0
+				$score = $absVecY + $absVecX * $penalty_factor
+			else if $NavDirectionX < 0
+				$score = $absVecX + $absVecY * $penalty_factor
+			else if $NavDirectionX > 0
+				$score = $absVecX + $absVecY * $penalty_factor
+			endif
+
+			if $score < $NavBestMatchDistance
+				$NavBestMatchDistance = $score
+				$NavBestMatchID = $id
+				$NavBestMatchCenterX = $positionX + ($sizeX / 2)
+				$NavBestMatchCenterY = $positionY + ($sizeY / 2)
+			endif
+		endif
+	else if $NavSearchState == 3 && $id != $NavOriginID
+		; --- Кадр 3: Поиск кандидата для "телепорта" ---
+		local $score = 9999999
+		local $candidateCenterX = $positionX + ($sizeX / 2)
+		local $candidateCenterY = $positionY + ($sizeY / 2)
+
+		; Если мы двигались по горизонтали (влево/вправо)
+		if $NavDirectionX != 0
+			; "Оценка" - это то, насколько кандидат близок к нам по ВЕРТИКАЛИ
+			$iVal = $candidateCenterY - $NavOriginCenterY
+			run = CommandListCoreMathABS
+			$score = $oVal
+		; Если мы двигались по вертикали (вверх/вниз)
+		else if $NavDirectionY != 0
+			; "Оценка" - это то, насколько кандидат близок к нам по ГОРИЗОНТАЛИ
+			$iVal = $candidateCenterX - $NavOriginCenterX
+			run = CommandListCoreMathABS
+			$score = $oVal
+		endif
+
+		; Ищем элемент с минимальным отклонением по перпендикулярной оси
+		if $score < $NavBestMatchDistance
+			$NavBestMatchDistance = $score
+			$NavBestMatchID = $id
+			$NavBestMatchCenterX = $candidateCenterX
+			$NavBestMatchCenterY = $candidateCenterY
+		endif
+	endif
+endif
+
+
+[CommandListNavFinalizeSearch]
+if $NavIsSearching == 1
+	if $NavSearchState == 3
+		; --- Мы были в Кадре 3 (Поиск для телепортации) ---
+		; Этот поиск был последней попыткой. Завершаем в любом случае.
+		if $NavBestMatchID != -1
+			if $inputMode == 1
+				$cursorX = $NavBestMatchCenterX
+				$cursorY = $NavBestMatchCenterY
+			endif
+		endif
+		; Полный сброс
+		$NavIsSearching = 0
+		$NavSearchState = 0
+
+	else if $NavSearchState == 2
+		; --- Мы были в Кадре 2 (Обычный поиск) ---
+		if $NavBestMatchID != -1
+			; Отлично, мы нашли обычного соседа. Завершаем поиск.
+			if $inputMode == 1
+				$cursorX = $NavBestMatchCenterX
+				$cursorY = $NavBestMatchCenterY
+			endif
+			$NavIsSearching = 0
+			$NavSearchState = 0
+		else
+			; --- СОСЕД НЕ НАЙДЕН! Готовимся к телепортации. ---
+			; Переходим в состояние 3 для следующего кадра.
+			$NavSearchState = 3
+			; Сбрасываем переменные для нового поиска
+			$NavBestMatchID = -1
+			$NavBestMatchDistance = 9999999
+		endif
+
+	else if $NavSearchState == 1
+		; --- Мы были в Кадре 1 (Поиск источника) ---
+		; Просто переключаем состояние на следующий кадр для обычного поиска
+		$NavSearchState = 2
+	endif
+endif
+{%endmacro%}
