@@ -80,8 +80,12 @@
             {% endif %}
         {% endif %}
 
+        {% if scene.rzm.export_texture_slots == 1 or scene.rzm.export_orfix_slots == 1 %}
 		[Resource{{ part.fullname }}{{ texture.name }}]
 		filename = {{ part.fullname }}{{ texture.name }}{{ texture.extension }}
+        {% else %}
+        ;there nothing
+        {% endif %}
 	{% endfor %}
 {% endmacro %}
 
@@ -92,10 +96,12 @@
             Resource\ZZMI\{{ texture.name }} = ref Resource{{ part.fullname }}{{ texture.name }}
         {% endfor %}
         run = CommandList\ZZMI\SetTextures
-    {% elif mod_file.game.name == "GenshinImpact" and (scene.rzm is undefined or scene.rzm.export_texture_slots == 1) %}
-        {% for texture in part.textures %}
-            ps-t{{ loop.index0 }} = Resource{{ part.fullname }}{{ texture.name }}
-        {% endfor %}
+    {% elif mod_file.game.name == "GenshinImpact" %}
+        {% if scene.rzm is defined and scene.rzm.export_texture_slots == 0 %}
+            {% for texture in part.textures %}
+                ps-t{{ loop.index0 }} = Resource{{ part.fullname }}{{ texture.name }}
+            {% endfor %}
+        {% endif %}
         {% if scene.rzm is undefined or scene.rzm.export_orfix_slots %}
             {% if part.textures|first and (part.textures|first).name|lower == "normalmap" %}
                 run = CommandList\global\ORFix\ORFix

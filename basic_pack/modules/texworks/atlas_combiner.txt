@@ -99,7 +99,7 @@ void main(vs2ps input, out float4 result : SV_Target0)
                 case 2: result = SafeSample(tex02, localUV); break;
                 case 3: result = SafeSample(tex03, localUV); break;
             }
-            float hueShiftAmount = 0;
+            float hueShiftAmount = colorshift.x;
             float3 hsv = RGBtoHSV(result.rgb);
             hsv.x = frac(hsv.x + hueShiftAmount); // сдвигаем оттенок
             result.xyz = HSVtoRGB(hsv.rgb);

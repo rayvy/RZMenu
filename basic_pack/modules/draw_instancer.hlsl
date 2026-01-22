@@ -39,15 +39,23 @@ struct vs2ps {
     float4 pos             : SV_Position;
     float4 color           : COLOR0;
     float2 uv              : TEXCOORD0;
-    float2 local_uv        : TEXCOORD1; // <--- ДОБАВИТЬ ЭТУ СТРОКУ
+    float2 local_uv        : TEXCOORD1;
     float  fn_type         : TEXCOORD2;
     float  fx_type         : TEXCOORD3;
     int    draw_mode       : TEXCOORD4;
     float4 object_pos_size : TEXCOORD5;
     float4 clip_rect       : TEXCOORD6;
+    float4 tile_data       : TEXCOORD7; // <--- ДОБАВЬТЕ ЭТУ СТРОКУ
 };
-
+float3 HsvToRgb(float3 c)
+{
+    float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
 #ifdef VERTEX_SHADER
+
+
 
 //--------------------------------------------------------------------------------------
 // Структура и функция чтения метрик
@@ -256,6 +264,7 @@ void main(out vs2ps output, uint vertex_id : SV_VertexID, uint instance_id : SV_
     
     float2 final_pos  = PosSizeDataBuffer[instance_id].xy;
     float2 final_size = PosSizeDataBuffer[instance_id].zw;
+    output.tile_data = TileDataBuffer[instance_id];
 
     if (output.fx_type == FX_HOVER_RESIZE)
     {
@@ -435,6 +444,44 @@ void main(vs2ps input, out float4 result : SV_Target0)
             discard;
         }
     }
+
+    switch(input.draw_mode)
+    {
+        case 728386: // HSV Квадрат
+        {
+            // !! ИЗМЕНЕНИЕ: Читаем Hue из tile_data.x, а не из fn_type
+            float hue = input.tile_data.x; 
+            
+            float saturation = input.local_uv.x;
+            float value = 1.0 - input.local_uv.y;
+            
+            float3 final_rgb = HsvToRgb(float3(hue, saturation, value));
+            
+            result = float4(final_rgb, input.color.a);
+            return;
+        }
+
+        case 728387: // Круг для курсора
+        {
+            float2 centered_uv = input.local_uv * 2.0 - 1.0;
+            if (length(centered_uv) > 1.0) discard;
+            result = input.color;
+            return;
+        }
+
+        case 728388: // НОВЫЙ КЕЙС: Слайдер-градиент Hue
+        {
+            // Hue определяется положением пикселя по горизонтали (local_uv.x)
+            float hue = input.local_uv.x;
+            // Насыщенность и Яркость максимальны для чистого цвета
+            float3 final_rgb = HsvToRgb(float3(hue, 1.0, 1.0));
+
+            result = float4(final_rgb, input.color.a);
+            return;
+        }
+    }
+
+
     if (input.draw_mode >= DRAW_MODE_BLUR_BACKGROUND_START && input.draw_mode <= DRAW_MODE_BLUR_BACKGROUND_END)
     {
         result = GetBackgroundBlurColor(input);
@@ -486,15 +533,30 @@ void main(vs2ps input, out float4 result : SV_Target0)
 
     if (input.fx_type == FX_HOVER_OUTLINE_INWARD)
     {
-        float dist_from_edge = GetDistanceToEdge(input.local_uv);
-        const float outline_thickness = 0.05;
-        float outline_factor = step(dist_from_edge, outline_thickness);
+        // 1. Задаем толщину обводки в экранных единицах (screen units), а не в UV.
+        //    Это делает толщину независимой от формы объекта.
+        const float outline_thickness_in_screen_units = 0.003; 
+
+        // 2. Вычисляем расстояние до ближайшей горизонтальной и вертикальной границы
+        //    в экранных единицах. Для этого умножаем нормализованное расстояние
+        //    (от 0 до 0.5) на реальный размер объекта по соответствующей оси.
+        float dist_from_edge_x_su = min(input.local_uv.x, 1.0 - input.local_uv.x) * input.object_pos_size.z;
+        float dist_from_edge_y_su = min(input.local_uv.y, 1.0 - input.local_uv.y) * input.object_pos_size.w;
         
+        // 3. Находим минимальное из этих двух расстояний. Это реальное расстояние
+        //    до ближайшего края в пикселях/экранных единицах.
+        float min_dist_from_edge_su = min(dist_from_edge_x_su, dist_from_edge_y_su);
+
+        // 4. Сравниваем реальное расстояние с желаемой толщиной.
+        float outline_factor = step(min_dist_from_edge_su, outline_thickness_in_screen_units);
+        
+        // Применяем эффект, если альфа-канал текстуры непрозрачен
         if (GetAlpha(input.draw_mode, input.uv) > 0.5)
         {
             final_color.rgb = lerp(final_color.rgb, float3(1,1,1), outline_factor * 0.7);
         }
     }
+    // --- ИСПРАВЛЕНИЕ ЗАКАНЧИВАЕТСЯ ЗДЕСЬ ---
 
     if (final_color.a > 0.01)
     {

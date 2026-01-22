@@ -30,9 +30,9 @@ run = CustomShaderRCI2D
 
 {% for texres in scene.rzm.addons.tw_resources %}
 		[Resource{{texres.tex_name}}]
+		filename = tex\{{ texres.tex_path.split('\\')[-1] if '.' in texres.tex_path.split('\\')[-1] else texres.tex_path.split('\\')[-1] ~ '.dds' }}
 		{% if texres.tex_resource_type == 0 %}
 		{% elif texres.tex_resource_type == 1 %}
-		filename = {{texres.tex_path}}
 		{% endif %}
 {% endfor %}
 
@@ -64,7 +64,11 @@ run = CustomShaderRCI2D
 		{% if mod_file.game.name == "ZenlessZoneZero"%}
 		ps-t3 = Resource{{override.tex_resource_name}}
 		{% else %}
+		if this != null
 		this = Resource{{override.tex_resource_name}}
+		else
+		ps-t1 = Resource{{override.tex_resource_name}}
+		endif
 		{% endif %}
 	{% endfor %}
 
@@ -384,6 +388,12 @@ msaa = 1
 mips = 1
 {% endfor %}
 
+{% else %}
+[CommandListAddonsTexWorks]
+;ERROR: No TexWorks Textures Defined
+[CommandListAddonsFaceTexWorks]
+;ERROR: No Face TexWorks Textures Defined
+[ResourceAtlasDiffuse]
 {% endif %}
 {% endif %}
 
