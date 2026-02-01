@@ -130,6 +130,10 @@ def get_selection_details(selected_ids, active_id):
             "tile_uv_y": get_uniform("tile_uv", 1),
             "tile_size_x": get_uniform("tile_size", 0),
             "tile_size_y": get_uniform("tile_size", 1),
+            "conditional_images": [
+                {"condition": ci.condition, "image_id": ci.image_id} 
+                for ci in target.conditional_images
+            ] if target else [],
 
             # Grid Container
             "grid_cell_size": get_uniform("grid_cell_size"),

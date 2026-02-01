@@ -14,6 +14,101 @@ from .. import core
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
 
+class RZConditionalImageItem(QtWidgets.QWidget):
+    """A single row in the conditional image list."""
+    def __init__(self, index, data, images, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.parent_list = parent
+        
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        
+        self.edit_cond = RZFormulaInput()
+        self.edit_cond.setPlaceholderText("Condition...")
+        self.edit_cond.setText(data.get('condition', ''))
+        self.edit_cond.editingFinished.connect(self._on_cond_changed)
+        layout.addWidget(self.edit_cond, 2)
+        
+        self.cb_img = RZImageComboBox()
+        self.cb_img.update_items(images)
+        self.cb_img.set_value(data.get('image_id', -1))
+        self.cb_img.value_changed.connect(self._on_img_changed)
+        layout.addWidget(self.cb_img, 3)
+        
+        self.btn_del = RZPushButton("✕")
+        self.btn_del.setFixedWidth(24)
+        self.btn_del.clicked.connect(self._on_delete)
+        layout.addWidget(self.btn_del)
+
+    def _on_cond_changed(self):
+        self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
+
+    def _on_img_changed(self, val):
+        self.parent_list.item_changed(self.index, 'image_id', val)
+
+    def _on_delete(self):
+        self.parent_list.remove_item(self.index)
+
+    def set_cond_visible(self, visible):
+        self.edit_cond.setVisible(visible)
+
+class RZConditionalImageList(QtWidgets.QWidget):
+    """A list-like widget to manage ConditionalImage collection."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout_main = QtWidgets.QVBoxLayout(self)
+        self.layout_main.setContentsMargins(0, 0, 0, 0)
+        self.layout_main.setSpacing(2)
+        
+        self.layout_items = QtWidgets.QVBoxLayout()
+        self.layout_items.setSpacing(2)
+        self.layout_main.addLayout(self.layout_items)
+        
+        self.btn_add = RZPushButton("+ Add Image")
+        self.btn_add.clicked.connect(self.add_item)
+        self.layout_main.addWidget(self.btn_add)
+        
+        self.items_data = []
+        self.image_mode = 'SINGLE'
+        self._block = False
+
+    def update_data(self, data_list, available_images, mode):
+        self._block = True
+        self.items_data = data_list
+        self.image_mode = mode
+        
+        # Clear
+        while self.layout_items.count():
+            w = self.layout_items.takeAt(0).widget()
+            if w: w.deleteLater()
+            
+        for i, data in enumerate(data_list):
+            item_w = RZConditionalImageItem(i, data, available_images, self)
+            item_w.set_cond_visible(mode == 'CONDITIONAL_LIST')
+            self.layout_items.addWidget(item_w)
+        
+        self._block = False
+
+    def add_item(self):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.add_conditional_image(ctx.selected_ids)
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.remove_conditional_image(ctx.selected_ids, index)
+
+    def item_changed(self, index, field, value):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.update_conditional_image(ctx.selected_ids, index, field, value)
+
 
 class RZMInspectorPanel(RZEditorPanel):
     """
@@ -311,10 +406,15 @@ class RZMInspectorPanel(RZEditorPanel):
         layout_style.addWidget(self.cb_img_mode)
 
         # Image ID
-        layout_style.addWidget(RZLabel("Image:"))
+        self.lbl_image = RZLabel("Image:")
+        layout_style.addWidget(self.lbl_image)
         self.cb_image = RZImageComboBox()
         self.cb_image.value_changed.connect(lambda v: self._emit_change('image_id', v))
         layout_style.addWidget(self.cb_image)
+
+        # Image List (Conditional / Index)
+        self.list_images = RZConditionalImageList()
+        layout_style.addWidget(self.list_images)
         
         # Tile Settings
         f_tile = QtWidgets.QFormLayout()
@@ -478,11 +578,22 @@ class RZMInspectorPanel(RZEditorPanel):
 
             # --- Style ---
             self.btn_color.set_color(props.get('color'))
-            self.cb_img_mode.setCurrentText(props.get('image_mode', 'SINGLE'))
+            
+            img_mode = props.get('image_mode', 'SINGLE')
+            self.cb_img_mode.setCurrentText(img_mode)
+            
+            is_single = (img_mode == 'SINGLE')
+            self.lbl_image.setVisible(is_single)
+            self.cb_image.setVisible(is_single)
+            self.list_images.setVisible(not is_single)
             
             all_images = core.read.get_available_images()
-            self.cb_image.update_items(all_images)
-            self.cb_image.set_value(props.get('image_id', -1))
+            
+            if is_single:
+                self.cb_image.update_items(all_images)
+                self.cb_image.set_value(props.get('image_id', -1))
+            else:
+                self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
             
             self.tile_uv_x.setValue(props.get('tile_uv_x', 0))
             self.tile_uv_y.setValue(props.get('tile_uv_y', 0))

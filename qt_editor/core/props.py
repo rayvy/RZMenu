@@ -138,6 +138,54 @@ def toggle_editor_flag(target_ids, flag_name):
             signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.transform_changed.emit()
 
+def add_conditional_image(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.conditional_images.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Conditional Image")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_conditional_image(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.conditional_images):
+                elem.conditional_images.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Conditional Image")
+            signals.SIGNALS.data_changed.emit()
+
+def update_conditional_image(target_ids, index, field, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.conditional_images):
+                item = elem.conditional_images[index]
+                if hasattr(item, field):
+                    curr = getattr(item, field)
+                    if curr != value:
+                        setattr(item, field, value)
+                        changed = True
+        
+        if changed:
+            # We don't always want undo push for every keystroke if it's text
+            # But for simplicity here we do it.
+            blender_bridge.safe_undo_push(f"RZM: Update CI {field}")
+            signals.SIGNALS.data_changed.emit()
+
 def perform_math_operation(target_ids, prop_name, op_str, sub_index=None):
     if not target_ids: return
 
