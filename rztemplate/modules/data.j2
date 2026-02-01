@@ -30,8 +30,28 @@
     {%- endif -%}
 {%- endmacro %}
 
+{# --- FIX: УМНЫЙ МАКРОС С ЗАЩИТОЙ ОТ ПУСТЫХ СПИСКОВ --- #}
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
 {% macro has_attribute(element, attribute_name) %}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
+    {% set class_name = get_cls(element)|trim %}
     {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
         true
     {% endif %}
@@ -301,7 +321,8 @@ global $rayvich_back_values_w110
 {{shape_generate(mod_file,scene)}}
 {% if scene.rzm %}
     {% for grid in scene.rzm.elements %}
-        {% if CLASS_NAME_MAP[grid.elem_class] == 'GRID_CONTAINER' %}
+        {# FIX: Используем get_cls вместо прямого обращения к словарю #}
+        {% if get_cls(grid)|trim == 'GRID_CONTAINER' %}
             global ${{ grid.element_name }}_new_frame = 1
         {% endif %}
     {% endfor %}
@@ -317,7 +338,7 @@ global $rayvich_back_values_w110
         global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
         {% endif %}
         {% if has_attribute(element, 'isResizable') %}
-        {% if CLASS_NAME_MAP[element.elem_class] == 'GRID_CONTAINER'%}
+        {% if get_cls(element)|trim == 'GRID_CONTAINER'%}
         global persist ${{element.element_name}}scroll = 0
         global persist ${{element.element_name}}PositionX = {{ (element.position | default([0,0]))[0] }}
         global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
@@ -325,7 +346,7 @@ global $rayvich_back_values_w110
         global persist ${{element.element_name}}SizeX = {{ (element.size | default([0,0]))[0] }}
         global persist ${{element.element_name}}SizeY = {{ (element.size | default([0,0]))[1] }}
         {% endif %}
-        {% if CLASS_NAME_MAP[element.elem_class] == 'ANCHOR'%}
+        {% if get_cls(element)|trim == 'ANCHOR'%}
         global persist ${{element.element_name}}SizeX = {{ (element.size | default([0,0]))[0] }}
         global persist ${{element.element_name}}SizeY = {{ (element.size | default([0,0]))[1] }}
         {% endif %}

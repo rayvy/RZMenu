@@ -37,13 +37,6 @@
     'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
 } %}
 
-{% macro has_attribute(element, attribute_name) %}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
-    {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
-        true
-    {% endif %}
-{% endmacro %}
-
 {% macro format_var(input_string) -%}
     {%- if input_string -%}
         {%- set chars_to_strip = '$@#%' -%}

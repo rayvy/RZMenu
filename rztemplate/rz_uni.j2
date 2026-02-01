@@ -3,6 +3,7 @@
 {% import "snippets/gi.j2" as snippet_gi %}
 {% import "snippets/zzz.j2" as snippet_zzz %}
 {% import "snippets/hsr.j2" as snippet_hsr %}
+{% import "snippets/face_module.j2" as snippet_face %}
 {% import "modules/core.j2" as core %}
 {% import "modules/data.j2" as data %}
 {% import "modules/functions.j2" as fn %}
@@ -89,3 +90,5 @@
 {{keymap.main_button(mod_file,scene)}}
 {{data.config(mod_file,scene)}}
 {% endblock %}
+
+{{snippet_face.snippet()}}

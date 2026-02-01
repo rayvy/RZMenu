@@ -3,7 +3,7 @@ import bpy
 import os
 from pathlib import Path
 from ..core.utils import get_next_image_id
-from ..core.atlas_algo import calculate_atlas_layout, create_atlas_pixels
+from ..core.atlas_algo import calculate_atlas_layout, create_atlas_pixels, inject_paintnet_metadata
 
 class RZM_OT_LoadBaseIcons(bpy.types.Operator):
     """Scans the 'base_icons' folder and loads standard images."""
@@ -121,17 +121,17 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
         return {'FINISHED'}
 
 class RZM_OT_ExportAtlas(bpy.types.Operator):
-    """Exports the final atlas 'icons.png' to the destination folder."""
+    """Exports the final atlas 'icons.png'"""
     bl_idname = "rzm.export_atlas"
     bl_label = "Export Atlas Image"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
         bpy.ops.rzm.update_atlas_layout()
-        
         rzm = context.scene.rzm
-        export_path = ""
         
+        # Определение пути
+        export_path = ""
         if hasattr(context.scene, 'xxmi') and getattr(context.scene.xxmi, 'destination_path', ''):
             export_path = os.path.join(context.scene.xxmi.destination_path, "res")
         elif bpy.data.filepath:
@@ -140,11 +140,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             export_path = str(Path.home())
             
         if not os.path.exists(export_path):
-            try:
-                os.makedirs(export_path, exist_ok=True)
-            except Exception as e:
-                self.report({'ERROR'}, f"Could not create export directory: {e}")
-                return {'CANCELLED'}
+            os.makedirs(export_path, exist_ok=True)
 
         images_to_render = {
             img.display_name: img.image_pointer
@@ -153,7 +149,6 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         }
         
         if not images_to_render:
-            self.report({'WARNING'}, "No packed images to export.")
             return {'CANCELLED'}
             
         atlas_w, atlas_h = rzm.atlas_size
@@ -162,11 +157,14 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             for img in rzm.images if any(img.uv_size)
         }
 
+        # 1. Генерируем пиксели С УЧЕТОМ ГАММЫ
         atlas_pixels = create_atlas_pixels(images_to_render, atlas_w, atlas_h, uv_data)
 
         if atlas_pixels.size > 0:
-            temp_image = bpy.data.images.new("RZ_Atlas_Export_Temp", width=atlas_w, height=atlas_h, alpha=True)
-            temp_image.pixels = atlas_pixels
+            temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
+            
+            # 2. Быстрая запись
+            temp_image.pixels.foreach_set(atlas_pixels)
             
             final_filepath = os.path.join(export_path, "icons.png")
             temp_image.filepath_raw = final_filepath
@@ -174,9 +172,12 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             temp_image.save()
             
             bpy.data.images.remove(temp_image)
-            self.report({'INFO'}, f"Atlas exported to {final_filepath}")
+            
+            # 4. Вставляем метаданные (sRGB + gAMA)
+            inject_paintnet_metadata(final_filepath)
+            
+            self.report({'INFO'}, f"Atlas exported (Matches Paint.NET): {final_filepath}")
         else:
-            self.report({'ERROR'}, "Failed to generate atlas pixels.")
             return {'CANCELLED'}
 
         return {'FINISHED'}

@@ -268,7 +268,7 @@ if $inputMode == 0
 endif
 {% if scene.rzm %}
     {% for grid in scene.rzm.elements %}
-        {% if CLASS_NAME_MAP[grid.elem_class] == 'GRID_CONTAINER' %}
+        {% if grid.elem_class == 'GRID_CONTAINER' %}
             ${{ grid.element_name }}_new_frame = 1
         {% endif %}
     {% endfor %}
@@ -293,8 +293,8 @@ cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
 w99 = $ScreenH
-x100 = $positionX / $ScreenW
-y100 = $positionY / $ScreenH
+x100 = $PositionX / $ScreenW
+y100 = $PositionY / $ScreenH
 z100 = $sizeX / $ScreenW
 w100 = $sizeY / $ScreenH
 x101 = $colorR
@@ -345,8 +345,8 @@ cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
 w99 = $ScreenH
-x100 = $positionX / $ScreenW
-y100 = $positionY / $ScreenH
+x100 = $PositionX / $ScreenW
+y100 = $PositionY / $ScreenH
 z100 = $sizeX / $ScreenW
 w100 = $sizeY / $ScreenH
 x101 = 0.0
@@ -400,8 +400,8 @@ cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
 w99 = $ScreenH
-x100 = $positionX / $ScreenW
-y100 = $positionY / $ScreenH
+x100 = $PositionX / $ScreenW
+y100 = $PositionY / $ScreenH
 z100 = $sizeX / $ScreenW
 w100 = $sizeY / $ScreenH
 x101 = 0.0
@@ -465,8 +465,8 @@ cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
 w99 = $ScreenH
-x100 = $positionX / $ScreenW
-y100 = $positionY / $ScreenH
+x100 = $PositionX / $ScreenW
+y100 = $PositionY / $ScreenH
 z100 = $sizeX / $ScreenW
 w100 = $sizeY / $ScreenH
 x101 = $colorR
@@ -562,8 +562,8 @@ cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
 w99 = $ScreenH
-x100 = $positionX / $ScreenW
-y100 = $positionY / $ScreenH
+x100 = $PositionX / $ScreenW
+y100 = $PositionY / $ScreenH
 z100 = $sizeX / $ScreenW
 w100 = $sizeY / $ScreenH
 x101 = $colorR

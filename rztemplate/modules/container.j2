@@ -51,15 +51,36 @@
     'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
 } %}
 
+{# --- FIX: УМНЫЙ МАКРОС С ЗАЩИТОЙ ОТ ПУСТЫХ СПИСКОВ --- #}
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {# Проверяем длину, чтобы не получить crash на [] #}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
 {% macro has_attribute(element, attribute_name) %}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
+    {% set class_name = get_cls(element)|trim %}
     {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
         true
     {% endif %}
 {% endmacro %}
 
 {% macro has_any_attribute(element) %}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
+    {% set class_name = get_cls(element)|trim %}
     {% if class_name in CLASS_ATTRIBUTES %}
         true
     {% endif %}
@@ -98,13 +119,12 @@ local $LocalHoldTimer
 if $LocalHoldTimer > 0
     $LocalHoldTimer = $LocalHoldTimer - $dt  
 endif
-$element_align = {{ ALIGNMENT_MAP.get(element.alignment, 0) }}
 local $P_PX
 local $P_PY
 local $P_SX
 local $P_SY
-{% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
-{% set parent_class_name = CLASS_NAME_MAP.get(parent_element.elem_class[0]) if parent_element else none %}
+{% set class_name = get_cls(element)|trim %}
+{% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
 {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
 Local $target_positionX
 Local $target_positionY
@@ -119,8 +139,8 @@ Local $current_sizeY
 
 {#MAINSTUFF#}
 {%macro main(element,parent_element,mod_file,scene)%}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
-    {% set parent_class_name = CLASS_NAME_MAP.get(parent_element.elem_class[0]) if parent_element else none %}
+    {% set class_name = get_cls(element)|trim %}
+    {% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
     [CommandListElement{{ element.element_name }}]
     {{base(element,parent_element,mod_file,scene)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
@@ -128,37 +148,40 @@ Local $current_sizeY
         {{generate_position_and_size(element,parent_element,mod_file,scene)}}
     {% endif %}
     {%if element.color%}{{generate_color(element)}}{%endif%}
-    {%if element.fn%}{{generate_fxAndFn(element)}}{%endif%}
+    {%if element.fn or element.fx%}{{generate_fxAndFn(element)}}{%endif%}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
         {{ handle_element_in_grid(element, parent_element, mod_file,scene) }}
     {% endif %}
     {%if element.properties %}
-    {%for props in element.properties%}
-        ;{{props.key}}
-        {{props.string_value}}
-    {%endfor%}
+        {%for props in element.properties%}
+            ;{{props.key}}
+            {{props.string_value}}
+        {%endfor%}
     {%endif%}
     if $LocalVisibility
-    {%if class_name == 'SLIDER'%}
-    {{ handle_slider_logic(element, parent_element, mod_file,scene) }}
-    {% if element.text_id %}
-    {{ generate_text(element) }}
-    run = CustomShaderRCI2D_SLIDER.TEXT
-    {% else %}
-    run = CustomShaderRCI2D_SLIDER
-    {% endif %}
-    {%elif class_name == 'TEXT'%}
-    {{generate_text(element)}}
-    run = CustomShaderRCI2D_TEXT
-    {%else%}
-    {{generate_image(element,parent_element)}}
-    run = CustomShaderRCI2D
-    {%endif%}
+    $element_align = {{ ALIGNMENT_MAP.get(element.alignment, 0) }}
+    run = CommandListCoreAlignment.Check
     {{generate_interactions(element, parent_element)}}
+    {%if class_name == 'SLIDER'%}
+        {{ handle_slider_logic(element, parent_element, mod_file,scene) }}
+            {% if element.text_id %}
+            {{ generate_text(element) }}
+            run = CustomShaderRCI2D_SLIDER.TEXT
+            {% else %}
+            run = CustomShaderRCI2D_SLIDER
+            {% endif %}
+    {%elif class_name == 'TEXT'%}
+        {{generate_text(element)}}
+        run = CustomShaderRCI2D_TEXT_{{element.text_align | default ('LEFT')}}
+        ;run = CustomShaderRCI2D_TEXT
+    {%else%}
+        {{generate_image(element,parent_element,scene)}}
+        run = CustomShaderRCI2D
+    {%endif%}
     {% if class_name == 'GRID_CONTAINER' %}
-        {{ handle_grid_container_logic(element, mod_file,scene) }}
+            {{ handle_grid_container_logic(element, mod_file,scene) }}
     {% elif class_name == 'BUTTON' %}
-        {{ handle_button_logic(element, parent_element, mod_file,scene) }}
+            {{ handle_button_logic(element, parent_element, mod_file,scene) }}
     {% endif %}
     {{generate_hovertext(element)}}
     {{generate_child(element,mod_file,scene)}}
@@ -169,8 +192,9 @@ Local $current_sizeY
 
 {# OTHER STUFF#}
 {%macro generate_position_and_size(element,parent_element,mod_file,scene)%}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
-    {% set parent_class_name = CLASS_NAME_MAP.get(parent_element.elem_class[0]) if parent_element else none %}
+    {% set class_name = get_cls(element)|trim %}
+    {% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
+    {# Примечание: тут сложный фильтр по детям. Если elem_class у детей тоже строка, selectattr может сбоить. Но пока оставим как есть #}
     {% set grid_child = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
     ;isResizable ;{{has_attribute(element, 'isResizable')}}
     ;isMovable ;{{has_attribute(element, 'isMovable')}}
@@ -195,15 +219,16 @@ Local $current_sizeY
     {%endif%}
     ;SIZE
     {% if class_name == 'ANCHOR' and grid_child %}
-        $sizeX = ${{grid_child.element_name}}SizeX
+        ${{ element.element_name }}SizeX = ${{grid_child.element_name}}SizeX
+        $sizeX = ${{ element.element_name }}SizeX
         $sizeY = {{ element.size[1] | default(0) | int}}
     {% elif element.size_is_formula %}
-        $sizeX = ({{ element.size_formula_x }}) * $sizeMultiplier
-        $sizeY = ({{ element.size_formula_y }}) * $sizeMultiplier
+        $sizeX = ({{ element.size_formula_x | default(0) | int }}) * $sizeMultiplier
+        $sizeY = ({{ element.size_formula_y | default(0) | int }}) * $sizeMultiplier
     {% elif has_attribute(element, 'isResizable')%}
         ;isResizable
-        $sizeX = (${{ element.element_name }}SizeX) * $sizeMultiplier
-        $sizeY = (${{ element.element_name }}SizeY) * $sizeMultiplier
+        $sizeX = (${{ element.element_name | default(poisitionX) | string }}SizeX) * $sizeMultiplier
+        $sizeY = (${{ element.element_name | default(poisitionY) | string }}SizeY) * $sizeMultiplier
     {% elif element.size and element.size|length == 2 %}
         $sizeX = ({{ element.size[0] }}) * $sizeMultiplier
         $sizeY = ({{ element.size[1] }}) * $sizeMultiplier
@@ -214,7 +239,7 @@ Local $current_sizeY
 {%endmacro%}
 
 {%macro generate_interactions(element, parent_element)%}
-    {% set is_child_of_grid = parent_element and CLASS_NAME_MAP.get(parent_element.elem_class[0]) == 'GRID_CONTAINER' %}
+    {% set is_child_of_grid = parent_element and get_cls(parent_element)|trim == 'GRID_CONTAINER' %}
     {% if not is_child_of_grid %}
         {% if has_any_attribute(element) %}
         run = CommandListCoreFNUpdateHoverState
@@ -239,8 +264,10 @@ Local $current_sizeY
         {% endif %}
     {% endif %}
     {% if has_attribute(element, 'isMovable')%}
+        run = CommandListCoreAlignment.ANTICHECK
         ${{element.element_name}}PositionX = $positionX 
-        ${{element.element_name}}PositionY = $positionY 
+        ${{element.element_name}}PositionY = $positionY
+        run = CommandListCoreAlignment.Check
     {% endif %}
     {% if has_attribute(element, 'isResizable')%}
         ${{element.element_name}}SizeX = $SizeX
@@ -263,13 +290,39 @@ Local $current_sizeY
     {% endif %}
 {%endmacro%}
 
-{% macro generate_image(element, parent_element) %}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
-    {% set parent_class_name = CLASS_NAME_MAP.get(parent_element.elem_class[0]) if parent_element else none %}
+{% macro generate_image(element, parent_element,scene) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
+
+    {# --- 1. ДОСТАЕМ СЫРОЕ ЗНАЧЕНИЕ (защита от списков) --- #}
+    {% set raw_mode = element.image_mode[0] if element.image_mode is iterable and element.image_mode is not string else element.image_mode %}
+
+    {# --- 2. КОНВЕРТИРУЕМ СТРОКИ В ЧИСЛА --- #}
+    {# Blender 5.0 шлет строки, переводим их обратно в ID #}
+    {% if raw_mode == 'SINGLE' %}
+        {% set safe_img_mode = 0 %}
+    {% elif raw_mode == 'CONDITIONAL' or raw_mode == 'LIST' %} 
+        {% set safe_img_mode = 1 %}
+    {% elif raw_mode == 'INDEX' %}
+        {% set safe_img_mode = 2 %}
+    {% else %}
+        {# Если пришло число или что-то неизвестное, оставляем как есть #}
+        {% set safe_img_mode = raw_mode %}
+    {% endif %}
+
+    {# --- DEBUG START --- #}
+    {% if scene.rzm.addons.debugger_info == 1 %}
+    ; ================= IMAGE DEBUG =================
+    ; Element: {{ element.element_name }}
+    ; Raw Mode: {{ raw_mode }}
+    ; Converted Mode: {{ safe_img_mode }}
+    ; Image ID: {{ element.image_id }}
+    ; ===============================================
+    {% endif %}
+    {# --- DEBUG END --- #}
 
     {# --- Часть 1: ВСЕГДА отрисовываем базовый image_id, если он указан. --- #}
-    {# Он может служить фоном или иконкой по умолчанию. #}
-    {% if element.image_mode == 0 and element.image_id is defined and element.image_id != -1 %}
+    {% if safe_img_mode == 0 and element.image_id is defined and element.image_id != -1 %}
         {% if parent_class_name == 'GRID_CONTAINER' and class_name == 'BUTTON'%}
         $drawType = 0
         run = CustomShaderRCI2D
@@ -277,11 +330,8 @@ Local $current_sizeY
         run = CommandListGetImageCords{{ element.image_id }}
     {% endif %}
 
-    {# --- Часть 2: Добавляем условную логику поверх, если выбран списочный режим. --- #}
-    {# Это может ПЕРЕОПРЕДЕЛИТЬ базовое изображение, если условие выполнится. #}
-
-    {# Режим: Conditional List (ID: 1) #}
-    {% if element.image_mode == 1 and element.conditional_images %}
+    {# --- Часть 2: Conditional List (ID: 1) --- #}
+    {% if element.image_mode == "CONDITIONAL_LIST" and element.conditional_images %}
         ;TestVarCond
         {% for item in element.conditional_images %}
         {% if loop.index-1 == 0 %} 
@@ -295,9 +345,8 @@ Local $current_sizeY
         run = CommandListGetImageCords{{element.conditional_images[0].image_id}}
         endif
 
-    
-    {# Режим: Index List (ID: 2) #}
-    {% elif element.image_mode == 2 and element.conditional_images and element.value_link %}
+    {# --- Часть 3: Index List (ID: 2) --- #}
+    {% elif element.image_mode == "INDEX_LIST" and element.conditional_images and element.value_link %}
         {% set var_name = format_var(element.value_link[0].value_name) %}
         {% for item in element.conditional_images %}
         {% if loop.index-1 == 0 %}
@@ -314,13 +363,17 @@ Local $current_sizeY
 {% endmacro %}
 
 {%macro generate_fxAndFn(element)%}
+    ;generate_fxAndFn
     {% for fn_item in element.fn %}
-        {% set current_fn = FN_MAP.get(fn_item.function_name, 'UNKNOWN') %}
-        run = CommandListCoreFn{{ current_fn }}
-        {% endfor %}
-        {% for fx_item in element.fx %}
-        {% set current_fx = FX_MAP.get(fx_item.function_name, 'UNKNOWN') %}
-        ;fx = CommandListCoreFx{{ current_fx }}
+    {#{fn_item.function_name}}
+    {% set current_fn = FN_MAP.get(fn_item.function_name, 'UNKNOWN') %}
+    ;run = CommandListCoreFn{{ current_fn }#}
+    run = {{fn_item.function_name}}
+    {% endfor %}
+    {% for fx_item in element.fx %}
+    ;run = {{fx_item.value}}
+    {#% set current_fx = FX_MAP.get(fx_item.function_name, 'UNKNOWN') %}
+    ;fx = CommandListCoreFx{{ current_fx }#}
     {% endfor %}
 {%endmacro%}
 
@@ -364,7 +417,7 @@ Local $current_sizeY
 
 {% macro handle_grid_container_logic(element, mod_file,scene) %}
     {# Логика ограничения размера для Grid'а #}
-    {% if element.grid_wrap_mode == 0 %}
+    {% if element.grid_wrap_mode == "SCROLL" %}
     if ${{element.element_name}}SizeX < ({{ element.grid_cell_size }} * 4)
     ${{element.element_name}}sizeX = ({{ element.grid_cell_size }} * 4)+2
     endif
@@ -379,16 +432,16 @@ Local $current_sizeY
     endif
     {% endif %}
 
-    {# Логика скролла для Grid'а. Обратите внимание, что переменные $LPX, $LPY и т.д. теперь должны быть определены в main #}
-    {% if element.grid_wrap_mode == 0 %}
+    {# Логика скролла для Grid'а #}
+    {% if element.grid_wrap_mode == "SCROLL" %}
     if ${{ element.element_name }}ScrollActive == 1
-        Local $localCordsX
+        Local $loordsX
         if $capturedID == $id
             if $dragState == 0
                 $dragState = 1
-                $localCordsX = $cursorX - $positionX
+                $loordsX = $cursorX - $positionX
             else if $dragState == 1
-                ${{element.element_name}}Scroll = ($cursorX - $localCordsX) / $SizeX
+                ${{element.element_name}}Scroll = ($cursorX - $loordsX) / $SizeX
                 if ${{element.element_name}}Scroll < 0
                 ${{element.element_name}}Scroll = 0
                 else if ${{element.element_name}}Scroll > 1
@@ -437,7 +490,6 @@ Local $current_sizeY
                 {% endif %}
             {% endfor %}
 
-            {# СЛУЧАЙ 2: Инкремент, любая другая ссылка #}
     {% else %}
         {% set max_val = (first_link.value_max | default(1.0) | float) | int if (first_link.value_max | default(1.0) | float) > 1 else 2 %}
         ${{ target_var }} = (${{ target_var }} + 1) % {{ max_val }}
@@ -477,13 +529,13 @@ Local $current_sizeY
 {% endmacro %}
 
 {% macro handle_element_in_grid(element, parent_element, mod_file,scene) %}
-$request_weight = {{ 4 if CLASS_NAME_MAP[element.elem_class] == 'SLIDER' else 1 }}
+$request_weight = {{ 4 if get_cls(element)|trim == 'SLIDER' else 1 }}
 $current_positionX = $current_positionX + ($target_positionX - $current_positionX) * ($dt*8)
 $current_positionY = $current_positionY + ($target_positionY - $current_positionY) * ($dt*8)
 $current_sizeX     = $current_sizeX     + ($target_sizeX     - $current_sizeX) * ($dt*8)
 $current_sizeY     = $current_sizeY     + ($target_sizeY     - $current_sizeY) * ($dt*8)
 
-{% if parent_element.grid_wrap_mode[0] == 0 %}
+{% if parent_element.grid_wrap_mode[0] == "SCROLL" %}
     run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedSizeAndScroll
 {% else %}
     run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedCount

@@ -1,23 +1,108 @@
 {%macro Base()%}
-[CommandListCoreFnAlignCenterXY]
-$positionX = $positionX + ($sizeX/2)
-$positionY = $positionY + ($sizeY/2)
-[CommandListCoreFnAlignCenterX]
-$positionX = $positionX + ($sizeX/2)
-[CommandListCoreFnAlignCenterY]
-$positionY = $positionY + ($sizeY/2)
-[CommandListCoreFnAlignLeft]
-[CommandListCoreFnAlignRight]
-$positionX = $positionX + $sizeX
-[CommandListCoreFnAlignBottom]
-[CommandListCoreFnAlignTop]
-$positionY = $positionY + $sizeY
+[CommandListCoreAlignment.Check]
+if $element_align == 0
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentBottom
+elif $element_align == 1
+	run = CommandListCoreAlignmentCenterX
+	run = CommandListCoreAlignmentBottom
+elif $element_align == 2
+	run = CommandListCoreAlignmentRight
+	run = CommandListCoreAlignmentBottom
+elif $element_align == 3
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentCenterY
+elif $element_align == 4
+	run = CommandListCoreAlignmentCenterX
+	run = CommandListCoreAlignmentCenterY
+elif $element_align == 5
+	run = CommandListCoreAlignmentRight
+	run = CommandListCoreAlignmentCenterY
+elif $element_align == 6
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentTop
+elif $element_align == 7
+	run = CommandListCoreAlignmentCenterX
+	run = CommandListCoreAlignmentTop
+elif $element_align == 8
+	run = CommandListCoreAlignmentRight
+	run = CommandListCoreAlignmentTop
+else
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentBottom
+endif
+
+[CommandListCoreAlignment.ANTICHECK]
+if $element_align == 0
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiBottom
+elif $element_align == 1
+	run = CommandListCoreAlignmentAntiCenterX
+	run = CommandListCoreAlignmentAntiBottom
+elif $element_align == 2
+	run = CommandListCoreAlignmentAntiRight
+	run = CommandListCoreAlignmentAntiBottom
+elif $element_align == 3
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiCenterY
+elif $element_align == 4
+	run = CommandListCoreAlignmentAntiCenterX
+	run = CommandListCoreAlignmentAntiCenterY
+elif $element_align == 5
+	run = CommandListCoreAlignmentAntiRight
+	run = CommandListCoreAlignmentAntiCenterY
+elif $element_align == 6
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiTop
+elif $element_align == 7
+	run = CommandListCoreAlignmentAntiCenterX
+	run = CommandListCoreAlignmentAntiTop
+elif $element_align == 8
+	run = CommandListCoreAlignmentAntiRight
+	run = CommandListCoreAlignmentAntiTop
+else
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiBottom
+endif
+
+[CommandListCoreAlignmentLeft]
+
+[CommandListCoreAlignmentCenterX]
+$PositionX = $PositionX - ($sizeX / 2.0)
+
+[CommandListCoreAlignmentRight]
+$PositionX = $PositionX - $sizeX
+
+[CommandListCoreAlignmentBottom]
+
+[CommandListCoreAlignmentCenterY]
+$PositionY = $PositionY - ($sizeY/2)
+
+[CommandListCoreAlignmentTop]
+$PositionY = $PositionY - $sizeY
+
 [CommandListCoreFnFixAspectRatio]
 if $screenW > $screenH
 	$sizeX = $sizeX * ($screenH / $screenW)
-else 
+else
 	$sizeY = $sizeY * ($screenW / $screenH)
 endif
+
+[CommandListCoreAlignmentAntiLeft]
+
+[CommandListCoreAlignmentAntiCenterX]
+$PositionX = $PositionX + ($sizeX / 2.0)
+
+[CommandListCoreAlignmentAntiRight]
+$PositionX = $PositionX + $sizeX
+
+[CommandListCoreAlignmentAntiBottom]
+
+[CommandListCoreAlignmentAntiCenterY]
+$PositionY = $PositionY + ($sizeY/2)
+
+[CommandListCoreAlignmentAntiTop]
+$PositionY = $PositionY + $sizeY
 
 [CommandListCoreFxBoxRound]
 [CommandListCoreFxBoxCircle]
@@ -89,7 +174,7 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 	$positionY = $LocalPosY + ($LocalSizeY * 0.75)
 	$sizeX = $LocalSizeX * 0.25
 	$sizeY = $LocalSizeY * 0.25
-	run = CommandListCoreFnAlignCenterX
+	run = CommandListCoreAlignmentCenterX
 
 	$colorR = $colorR + ($colorR * 3) + (0.1)
 	$colorG = $colorG + ($colorG * 3) + (0.1)
@@ -217,30 +302,30 @@ endif
 ;$colorB = $b % 1
 
 [CommandListCoreFNComputeMouseInteractions.Move]
-local $localCordsX
-local $localCordsY
+local $loordsX
+local $loordsY
 
 if $capturedID == $id
     if $dragState == 0
 			$dragState = 1
-			$localCordsX = $cursorX - $positionX
-			$localCordsY = $cursorY - $positionY
+			$loordsX = $cursorX - $positionX
+			$loordsY = $cursorY - $positionY
 	else if $dragState == 1
-		$positionX = $cursorX - $localCordsX
-		$positionY = $cursorY - $localCordsY
+		$positionX = $cursorX - $loordsX
+		$positionY = $cursorY - $loordsY
 	endif
 endif
 
 [CommandListCoreFNComputeMouseInteractions.GridScroll]
-local $localCordsX
-local $localCordsY
+local $loordsX
+local $loordsY
 
 if $capturedID == $id
 	if $dragState == 0
 		$dragState = 1
-		$localCordsX = $cursorX - $positionX
+		$loordsX = $cursorX - $positionX
 	else if $dragState == 1
-		$RZM_OUT_VAL = ($cursorX - $localCordsX * 0.1)
+		$RZM_OUT_VAL = ($cursorX - $loordsX * 0.1)
 	endif
 endif
 

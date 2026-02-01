@@ -40,13 +40,6 @@
     'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
 } %}
 
-{% macro has_attribute(element, attribute_name) %}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
-    {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
-        true
-    {% endif %}
-{% endmacro %}
-
 {% macro format_var(input_string) -%}
     {%- if input_string -%}
         {%- set chars_to_strip = '$@#%' -%}
@@ -68,7 +61,7 @@
                 {% endfor %}
             {% endif %}
             {#MainClass#}
-            ;{{CLASS_NAME_MAP[element.elem_class]}}
+            ;{{element.elem_class}}
             {#%if CLASS_NAME_MAP[element.elem_class] == 'BUTTON'%}
                 {{class_button.main(element,parent_element,mod_file,scene)}}
             {%elif CLASS_NAME_MAP[element.elem_class] == 'SLIDER'%}
@@ -103,10 +96,12 @@
 
 
 {%macro elements_additional_generate(mod_file,scene)%}
+;DEBUG HELPER: ADDITIONAL GENERATE
 {% for element in scene.rzm.elements %}
-    {%if CLASS_NAME_MAP[element.elem_class] == 'GRID_CONTAINER' %}
+    ;{{element.elem_class}}
+    {%if element.elem_class == 'GRID_CONTAINER' %}
     {{generate_grid_scroller(element)}}
-    {%elif CLASS_NAME_MAP[element.elem_class] == 'SLIDER' and element.value_link%}
+    {%elif element.elem_class == 'SLIDER' and element.value_link%}
     {{generate_slider_helper(element)}}
     {%endif%}
 {% endfor %}

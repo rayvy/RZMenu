@@ -50,61 +50,29 @@ float3 HSVtoRGB(float3 c)
     return float3(c.z, p, q);
 }
 
+
 [numthreads(32, 32, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
     uint2 localCoord = dispatchThreadID.xy;
-    
-    // Проверка границ региона
     if (localCoord.x >= RegionDimensions.x || localCoord.y >= RegionDimensions.y)
         return;
-
-    // Глобальная координата, куда будем писать
-    uint2 targetPixelCoord = TargetOffset + localCoord;
-
-    // --- ЛОГИКА МАСКИ ---
+    float4 base_color = SourceTexture.Load(int3(localCoord, 0));
+    float3 final_rgb = base_color.rgb;
     float mask_value = 1.0;
-    
     if (EnableMask > 0.5f)
     {
-        // Читаем маску. Используем localCoord, так как маска обычно обрезана под размер региона
         mask_value = MaskTexture.Load(int3(localCoord, 0)).r;
-        
-        // !!! ФИКС БАГА !!!
-        // Если маска черная (прозрачная), мы выходим из функции.
-        // Мы НЕ пишем в Атлас, оставляя то, что там было (предыдущие слои).
-        if (mask_value <= 0.001f)
-            return;
     }
-
-    // --- ЧТЕНИЕ ИСТОЧНИКА ---
-    // ВАЖНО: Читаем исходную текстуру (Source) из тех же координат, куда пишем (targetPixelCoord).
-    // Это нужно, если SourceTexture полноразмерная (лицо целиком).
-    // Если твоя SourceTexture это маленький кусочек, верни localCoord.
-    float4 base_color = SourceTexture.Load(int3(targetPixelCoord, 0));
-    
-    // --- ПРИМЕНЕНИЕ HSV ---
-    float3 final_rgb = base_color.rgb;
-
-    if (mask_value > 0.001f)
+    if (mask_value > 0.01f)
     {
         float3 hsv = RGBtoHSV(base_color.rgb);
         hsv.x = frac(hsv.x + HueShift);
         hsv.y = saturate(hsv.y + SaturationShift);
         hsv.z = saturate(hsv.z + ValueShift);
-        
         float3 modified_rgb = HSVtoRGB(hsv);
-        
-        // --- СМЕШИВАНИЕ (BLENDING) ---
-        // Если маска полупрозрачная (края, антиалиасинг), нам нужно смешать
-        // Новый цвет с тем, что УЖЕ ЕСТЬ на Атласе (предыдущий слой).
-        // Читаем текущий пиксель атласа для фона:
-        float3 background_color = Atlas[targetPixelCoord].rgb;
-        
-        // Смешиваем: (Фон * (1-mask)) + (НовыйЦвет * mask)
-        final_rgb = lerp(background_color, modified_rgb, mask_value);
+        final_rgb = lerp(base_color.rgb, modified_rgb, mask_value);
     }
-    
-    // Запись результата
+    uint2 targetPixelCoord = TargetOffset + localCoord;
     Atlas[targetPixelCoord] = float4(final_rgb, base_color.a);
 }

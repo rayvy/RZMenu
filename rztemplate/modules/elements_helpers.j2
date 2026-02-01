@@ -39,8 +39,28 @@
     'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
 } %}
 
+{# --- FIX: УМНЫЙ МАКРОС С ЗАЩИТОЙ ОТ ПУСТЫХ СПИСКОВ --- #}
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
 {% macro has_attribute(element, attribute_name) %}
-    {% set class_name = CLASS_NAME_MAP.get(element.elem_class) %}
+    {% set class_name = get_cls(element)|trim %}
     {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
         true
     {% endif %}
@@ -173,6 +193,8 @@ $colorA = 0.55
 
 $drawType = 93
 y110 = 3
+$PositionX = $positionX
+$PositionY = $positionY
 run = CustomShaderRCI2D_POPUP
 run = CommandList{{ element.element_name }}PopupInteraction
 
@@ -230,6 +252,8 @@ $SizeY = $SizeY * 0.75
 $positionX = $LocalPosX + ($segmentSize * {{ i }})
 $sizeX = ($segmentSize)
 $texPosX = {{ i }}
+$PositionX = $positionX
+$PositionY = $positionY
 run = CustomShaderRCI2D_POPUP
 {% endfor %}
 
@@ -288,10 +312,12 @@ $sizeY = $LocalSizeY
 
 {% macro grid_helpers_generate(mod_file,scene) %}
     {% for grid in scene.rzm.elements %}
-        {% if CLASS_NAME_MAP[grid.elem_class] == 'GRID_CONTAINER' %}
-            {% if grid.grid_wrap_mode == 0 %}
+        {# FIX: Используем get_cls вместо прямого обращения к словарю #}
+        ;DEBUG HELPER: {{ grid.grid_wrap_mode }}
+        {% if get_cls(grid)|trim == 'GRID_CONTAINER' %}
+            {% if grid.grid_wrap_mode == "SCROLL" %}
                 {{ generate_grid_logic_mode_0(grid) }}
-            {% elif grid.grid_wrap_mode == 1 %}
+            {% elif grid.grid_wrap_mode == "PAGINATE" | default("SCROLL") %}
                 {{ generate_grid_logic_mode_1(grid) }}
             {% endif %}
         {% endif %}
@@ -550,8 +576,8 @@ run = CustomShaderRCI2D
 {% endmacro %}
 
 {%macro interactive_elements_in_adaptive_grid(element,parent_element,mod_file,scene)%}
-$request_weight = {{ 4 if CLASS_NAME_MAP[element.elem_class] == 'SLIDER' else 1 }}
-            {% if parent_element.grid_wrap_mode[0] == 0 %}
+$request_weight = {{ 4 if get_cls(element)|trim == 'SLIDER' else 1 }}
+            {% if parent_element.grid_wrap_mode[0] == "SCROLL" %}
                 run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedSizeAndScroll
             {% else %}
                 run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedCount
@@ -565,8 +591,8 @@ $request_weight = {{ 4 if CLASS_NAME_MAP[element.elem_class] == 'SLIDER' else 1 
             $current_positionY = $current_positionY + ($target_positionY - $current_positionY) * 0.33
             $current_sizeX     = $current_sizeX     + ($target_sizeX     - $current_sizeX) * 0.10
             $current_sizeY     = $current_sizeY     + ($target_sizeY     - $current_sizeY) * 0.10
-            $positionX = $current_positionX
-            $positionY = $current_positionY
+            $PositionX = $current_positionX
+            $PositionY = $current_positionY
             $sizeX = $current_sizeX
             $sizeY = $current_sizeY
             run = CommandListCoreFNUpdateHoverState
