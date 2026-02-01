@@ -224,6 +224,100 @@ class RZValueLinkList(QtWidgets.QWidget):
             core.props.update_value_link(ctx.selected_ids, index, field, value)
 
 
+class RZFXItem(QtWidgets.QWidget):
+    """A single row in the FX list."""
+    FX_CHOICES = [
+        ('CommandListCoreFxBoxRound', "Box Round"),
+        ('CommandListCoreFxBoxCircle', "Box Circle"),
+        ('CommandListCoreFxGradient', "Gradient"),
+        ('CommandListCoreFxShadow', "Shadow"),
+        ('CommandListCoreFxBlur', "Blur"),
+        ('CommandListCoreFxOutline', "Outline"),
+        ('CommandListCoreFxHover', "Hover"),
+        ('CommandListCoreFxHover3D', "Hover 3D"),
+        ('CommandListCoreFxGpuAnimRotate', "GPU Anim Rotate")
+    ]
+    
+    def __init__(self, index, current_val, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.parent_list = parent
+        
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        
+        self.cb_fx = RZComboBox()
+        for internal, display in self.FX_CHOICES:
+            self.cb_fx.addItem(display, internal)
+            
+        # Set current
+        idx = self.cb_fx.findData(current_val)
+        if idx >= 0: self.cb_fx.setCurrentIndex(idx)
+        
+        self.cb_fx.currentIndexChanged.connect(self._on_changed)
+        layout.addWidget(self.cb_fx, 1)
+        
+        self.btn_del = RZPushButton("✕")
+        self.btn_del.setFixedWidth(24)
+        self.btn_del.clicked.connect(self._on_delete)
+        layout.addWidget(self.btn_del)
+
+    def _on_changed(self, idx):
+        internal = self.cb_fx.itemData(idx)
+        self.parent_list.item_changed(self.index, internal)
+
+    def _on_delete(self):
+        self.parent_list.remove_item(self.index)
+
+class RZFXList(QtWidgets.QWidget):
+    """A list-like widget to manage FX collection."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout_main = QtWidgets.QVBoxLayout(self)
+        self.layout_main.setContentsMargins(0, 0, 0, 0)
+        self.layout_main.setSpacing(2)
+        
+        self.layout_items = QtWidgets.QVBoxLayout()
+        self.layout_items.setSpacing(2)
+        self.layout_main.addLayout(self.layout_items)
+        
+        self.btn_add = RZPushButton("+ Add Effect")
+        self.btn_add.clicked.connect(self.add_item)
+        self.layout_main.addWidget(self.btn_add)
+        
+        self._block = False
+
+    def update_data(self, data_list):
+        self._block = True
+        while self.layout_items.count():
+            w = self.layout_items.takeAt(0).widget()
+            if w: w.deleteLater()
+            
+        for i, val in enumerate(data_list):
+            item_w = RZFXItem(i, val, self)
+            self.layout_items.addWidget(item_w)
+        self._block = False
+
+    def add_item(self):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.add_fx(ctx.selected_ids)
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.remove_fx(ctx.selected_ids, index)
+
+    def item_changed(self, index, value):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.update_fx(ctx.selected_ids, index, value)
+
+
 class RZMInspectorPanel(RZEditorPanel):
     """
     Property inspector panel for editing selected element attributes.
@@ -560,6 +654,10 @@ class RZMInspectorPanel(RZEditorPanel):
         self.list_links = RZValueLinkList()
         layout_logic.addWidget(self.list_links)
         
+        layout_logic.addWidget(RZLabel("FX Rules:"))
+        self.list_fx = RZFXList()
+        layout_logic.addWidget(self.list_fx)
+        
         self.layout_props.addWidget(self.grp_logic)
         
         # === GROUP: BUTTON SPECIFICS ===
@@ -721,6 +819,7 @@ class RZMInspectorPanel(RZEditorPanel):
             
             # --- Logic ---
             self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
+            self.list_fx.update_data(props.get('fx', []))
 
             self.tile_uv_x.setValue(props.get('tile_uv_x', 0))
             self.tile_uv_y.setValue(props.get('tile_uv_y', 0))

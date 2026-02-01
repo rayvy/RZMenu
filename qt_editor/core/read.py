@@ -155,6 +155,10 @@ def get_selection_details(selected_ids, active_id):
                 }
                 for vl in target.value_link
             ] if target else [],
+            
+            "fx": [
+                item.value for item in target.fx
+            ] if target else [],
 
             # Button Specifics
             "disable_button_nums": get_uniform("disable_button_nums", default=False),

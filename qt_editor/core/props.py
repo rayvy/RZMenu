@@ -232,6 +232,50 @@ def update_value_link(target_ids, index, field, value):
             blender_bridge.safe_undo_push(f"RZM: Update VL {field}")
             signals.SIGNALS.data_changed.emit()
 
+def add_fx(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.fx.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add FX")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_fx(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.fx):
+                elem.fx.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove FX")
+            signals.SIGNALS.data_changed.emit()
+
+def update_fx(target_ids, index, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.fx):
+                item = elem.fx[index]
+                if item.value != value:
+                    item.value = value
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Update FX")
+            signals.SIGNALS.data_changed.emit()
+
 def perform_math_operation(target_ids, prop_name, op_str, sub_index=None):
     if not target_ids: return
 
