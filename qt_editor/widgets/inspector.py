@@ -8,7 +8,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
 from .lib.inputs import RZImageComboBox, RZFormulaInput
 from .lib.theme import get_current_theme
-from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox
+from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox, RZDoubleSpinBox
 from .panel_base import RZEditorPanel
 from .. import core
 from ..core.signals import SIGNALS
@@ -108,6 +108,120 @@ class RZConditionalImageList(QtWidgets.QWidget):
         ctx = RZContextManager.get_instance().get_snapshot()
         if ctx.selected_ids:
             core.props.update_conditional_image(ctx.selected_ids, index, field, value)
+
+
+class RZValueLinkItem(QtWidgets.QWidget):
+    """A single row in the value link list."""
+    def __init__(self, index, data, is_slider, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.parent_list = parent
+        
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        
+        h1 = QtWidgets.QHBoxLayout()
+        h1.setSpacing(5)
+        
+        self.edit_name = RZFormulaInput()
+        self.edit_name.setPlaceholderText("Link ($Var, @Toggle, #Shape)...")
+        self.edit_name.setText(data.get('value_name', ''))
+        self.edit_name.editingFinished.connect(self._on_name_changed)
+        h1.addWidget(self.edit_name, 1)
+        
+        self.btn_del = RZPushButton("✕")
+        self.btn_del.setFixedWidth(24)
+        self.btn_del.clicked.connect(self._on_delete)
+        h1.addWidget(self.btn_del)
+        layout.addLayout(h1)
+        
+        # Ranges for Sliders
+        self.w_ranges = QtWidgets.QWidget()
+        l_range = QtWidgets.QHBoxLayout(self.w_ranges)
+        l_range.setContentsMargins(10, 0, 0, 0)
+        l_range.setSpacing(5)
+        
+        l_range.addWidget(RZLabel("Min:"))
+        self.spin_min = RZDoubleSpinBox()
+        self.spin_min.setRange(-10000, 10000)
+        self.spin_min.setDecimals(2)
+        self.spin_min.setValue(data.get('value_min', 0.0))
+        self.spin_min.valueChanged.connect(self._on_min_changed)
+        l_range.addWidget(self.spin_min)
+        
+        l_range.addWidget(RZLabel("Max:"))
+        self.spin_max = RZDoubleSpinBox()
+        self.spin_max.setRange(-10000, 10000)
+        self.spin_max.setDecimals(2)
+        self.spin_max.setValue(data.get('value_max', 1.0))
+        self.spin_max.valueChanged.connect(self._on_max_changed)
+        l_range.addWidget(self.spin_max)
+        
+        layout.addWidget(self.w_ranges)
+        self.w_ranges.setVisible(is_slider)
+
+    def _on_name_changed(self):
+        self.parent_list.item_changed(self.index, 'value_name', self.edit_name.text())
+
+    def _on_min_changed(self, val):
+        self.parent_list.item_changed(self.index, 'value_min', float(val))
+
+    def _on_max_changed(self, val):
+        self.parent_list.item_changed(self.index, 'value_max', float(val))
+
+    def _on_delete(self):
+        self.parent_list.remove_item(self.index)
+
+class RZValueLinkList(QtWidgets.QWidget):
+    """A list-like widget to manage ValueLink collection."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout_main = QtWidgets.QVBoxLayout(self)
+        self.layout_main.setContentsMargins(0, 0, 0, 0)
+        self.layout_main.setSpacing(2)
+        
+        self.layout_items = QtWidgets.QVBoxLayout()
+        self.layout_items.setSpacing(5)
+        self.layout_main.addLayout(self.layout_items)
+        
+        self.btn_add = RZPushButton("+ Add Link")
+        self.btn_add.clicked.connect(self.add_item)
+        self.layout_main.addWidget(self.btn_add)
+        
+        self._block = False
+
+    def update_data(self, data_list, is_slider):
+        self._block = True
+        
+        # Simple reconciliation
+        while self.layout_items.count():
+            w = self.layout_items.takeAt(0).widget()
+            if w: w.deleteLater()
+            
+        for i, data in enumerate(data_list):
+            item_w = RZValueLinkItem(i, data, is_slider, self)
+            self.layout_items.addWidget(item_w)
+        
+        self._block = False
+
+    def add_item(self):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.add_value_link(ctx.selected_ids)
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.remove_value_link(ctx.selected_ids, index)
+
+    def item_changed(self, index, field, value):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.update_value_link(ctx.selected_ids, index, field, value)
 
 
 class RZMInspectorPanel(RZEditorPanel):
@@ -438,6 +552,16 @@ class RZMInspectorPanel(RZEditorPanel):
 
         self.layout_props.addWidget(grp_style)
         
+        # === GROUP: LOGIC ===
+        self.grp_logic = RZGroupBox("Logic")
+        layout_logic = QtWidgets.QVBoxLayout(self.grp_logic)
+        
+        layout_logic.addWidget(RZLabel("Value Links:"))
+        self.list_links = RZValueLinkList()
+        layout_logic.addWidget(self.list_links)
+        
+        self.layout_props.addWidget(self.grp_logic)
+        
         # === GROUP: BUTTON SPECIFICS ===
         self.grp_btn = RZGroupBox("Button Options")
         layout_btn = QtWidgets.QVBoxLayout(self.grp_btn)
@@ -595,6 +719,9 @@ class RZMInspectorPanel(RZEditorPanel):
             else:
                 self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
             
+            # --- Logic ---
+            self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
+
             self.tile_uv_x.setValue(props.get('tile_uv_x', 0))
             self.tile_uv_y.setValue(props.get('tile_uv_y', 0))
             self.edit_txt_id.setText(props.get('text_id', ''))

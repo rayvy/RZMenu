@@ -186,6 +186,52 @@ def update_conditional_image(target_ids, index, field, value):
             blender_bridge.safe_undo_push(f"RZM: Update CI {field}")
             signals.SIGNALS.data_changed.emit()
 
+def add_value_link(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.value_link.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Value Link")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_value_link(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.value_link):
+                elem.value_link.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Value Link")
+            signals.SIGNALS.data_changed.emit()
+
+def update_value_link(target_ids, index, field, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.value_link):
+                item = elem.value_link[index]
+                if hasattr(item, field):
+                    curr = getattr(item, field)
+                    if curr != value:
+                        setattr(item, field, value)
+                        changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update VL {field}")
+            signals.SIGNALS.data_changed.emit()
+
 def perform_math_operation(target_ids, prop_name, op_str, sub_index=None):
     if not target_ids: return
 

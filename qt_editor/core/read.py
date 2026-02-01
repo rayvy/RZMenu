@@ -146,6 +146,16 @@ def get_selection_details(selected_ids, active_id):
             "grid_max_cells_y": get_uniform("grid_max_cells", 1),
             "grid_wrap_mode": get_uniform("grid_wrap_mode", default="SCROLL"),
             
+            # Logic & Links
+            "value_links": [
+                {
+                    "value_name": vl.value_name,
+                    "value_min": vl.value_min,
+                    "value_max": vl.value_max
+                }
+                for vl in target.value_link
+            ] if target else [],
+
             # Button Specifics
             "disable_button_nums": get_uniform("disable_button_nums", default=False),
             "disable_button_popup": get_uniform("disable_button_popup", default=False),

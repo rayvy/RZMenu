@@ -368,10 +368,10 @@ Local $current_sizeY
     {#{fn_item.function_name}}
     {% set current_fn = FN_MAP.get(fn_item.function_name, 'UNKNOWN') %}
     ;run = CommandListCoreFn{{ current_fn }#}
-    run = {{fn_item.function_name}}
+    ;run = {{fn_item.function_name}}
     {% endfor %}
     {% for fx_item in element.fx %}
-    ;run = {{fx_item.value}}
+    run = {{fx_item.value}}
     {#% set current_fx = FX_MAP.get(fx_item.function_name, 'UNKNOWN') %}
     ;fx = CommandListCoreFx{{ current_fx }#}
     {% endfor %}
