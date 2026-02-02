@@ -57,8 +57,9 @@ class RZColorButton(QtWidgets.QPushButton):
 
 # --- New RZCheckBox ---
 class RZCheckBox(QtWidgets.QCheckBox):
-    def __init__(self, text="", parent=None):
+    def __init__(self, text="", parent=None, checked=False):
         super().__init__(text, parent)
+        self.setChecked(checked)
         self.apply_theme()
         
     def apply_theme(self):
