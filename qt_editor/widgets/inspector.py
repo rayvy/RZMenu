@@ -13,6 +13,7 @@ from .panel_base import RZEditorPanel
 from .. import core
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
+from ...data.constants import FX_COMMANDS
 
 class RZConditionalImageItem(QtWidgets.QWidget):
     """A single row in the conditional image list."""
@@ -226,18 +227,10 @@ class RZValueLinkList(QtWidgets.QWidget):
 
 class RZFXItem(QtWidgets.QWidget):
     """A single row in the FX list."""
-    FX_CHOICES = [
-        ('CommandListCoreFxBoxRound', "Box Round"),
-        ('CommandListCoreFxBoxCircle', "Box Circle"),
-        ('CommandListCoreFxGradient', "Gradient"),
-        ('CommandListCoreFxShadow', "Shadow"),
-        ('CommandListCoreFxBlur', "Blur"),
-        ('CommandListCoreFxOutline', "Outline"),
-        ('CommandListCoreFxHover', "Hover"),
-        ('CommandListCoreFxHover3D', "Hover 3D"),
-        ('CommandListCoreFxGpuAnimRotate', "GPU Anim Rotate")
-    ]
     
+    # Теперь мы не хардкодим список здесь, 
+    # а используем импортированный FX_COMMANDS
+
     def __init__(self, index, current_val, parent=None):
         super().__init__(parent)
         self.index = index
@@ -248,12 +241,21 @@ class RZFXItem(QtWidgets.QWidget):
         layout.setSpacing(5)
         
         self.cb_fx = RZComboBox()
-        for internal, display in self.FX_CHOICES:
+        
+        # Читаем данные из файла констант
+        # Обратите внимание: распаковываем 3 значения (internal, display, desc)
+        for internal, display, desc in FX_COMMANDS:
             self.cb_fx.addItem(display, internal)
             
-        # Set current
+            # БОНУС: Раз уж у нас есть описание (desc), 
+            # добавим его как всплывающую подсказку для каждого пункта
+            last_idx = self.cb_fx.count() - 1
+            self.cb_fx.setItemData(last_idx, desc, QtCore.Qt.ToolTipRole)
+            
+        # Установка текущего значения
         idx = self.cb_fx.findData(current_val)
-        if idx >= 0: self.cb_fx.setCurrentIndex(idx)
+        if idx >= 0: 
+            self.cb_fx.setCurrentIndex(idx)
         
         self.cb_fx.currentIndexChanged.connect(self._on_changed)
         layout.addWidget(self.cb_fx, 1)
