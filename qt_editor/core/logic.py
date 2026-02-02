@@ -1,5 +1,6 @@
 # RZMenu/qt_editor/core/logic.py
 import re
+import bpy
 import math
 
 class FormulaEvaluator:
@@ -106,11 +107,36 @@ class FormulaEvaluator:
             name = data['name_safe']
             if not name: continue
             
-            # Inject keys normalized to lowercase
+        # Inject keys normalized to lowercase
             ctx[f"{name}positionx"] = data['x']
             ctx[f"{name}positiony"] = data['y']
             ctx[f"{name}sizex"] = data['w']
             ctx[f"{name}sizey"] = data['h']
+
+        # Add Global RZM Values, Toggles, and Shapes
+        if bpy.context and bpy.context.scene:
+            rzm = bpy.context.scene.rzm
+            
+            # Values ($)
+            for val in rzm.rzm_values:
+                # Value names like "$MyVar" -> "myvar"
+                clean_name = val.value_name.lower().replace('$','')
+                if val.value_type == 'INT':
+                    ctx[clean_name] = val.int_value
+                else:
+                    ctx[clean_name] = val.float_value
+            
+            # Toggles (@) - Map to 1.0 (True) or 0.0 (False) if we had state. 
+            # For now mapping to 0.0 as default existence for layout resolution.
+            # Real runtime value comes from game engine, but here we just need valid parsing.
+            for toggle in rzm.toggle_definitions:
+                clean_name = toggle.toggle_name.lower().replace('@', '')
+                ctx[clean_name] = 0.0
+                
+            # Shapes (#)
+            for shape in rzm.shapes:
+                clean_name = shape.shape_name.lower().replace('#', '')
+                ctx[clean_name] = 0.0
 
         return ctx
 
@@ -126,8 +152,8 @@ class FormulaEvaluator:
             # 1. Normalize expression to lowercase
             expr_lower = expression.lower()
 
-            # 2. Remove '$' sign
-            clean_expr = expr_lower.replace('$', '')
+            # 2. Remove '$', '@', '#' signs
+            clean_expr = expr_lower.replace('$', '').replace('@', '').replace('#', '')
 
             # 3. Eval
             res = eval(clean_expr, {"__builtins__": {}}, context)

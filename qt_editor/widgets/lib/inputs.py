@@ -94,7 +94,8 @@ class RZFormulaHighlighter(QtGui.QSyntaxHighlighter):
         self.format_var.setFontWeight(QtGui.QFont.Bold)
 
     def highlightBlock(self, text):
-        expression = r'\$[a-zA-Z0-9_]+'
+        # Match variables starting with $, @, or #
+        expression = r'[\$@#][a-zA-Z0-9_]+'
         for match in re.finditer(expression, text):
             start, end = match.span()
             self.setFormat(start, end - start, self.format_var)
@@ -220,8 +221,8 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         cursor_pos = self.cursorPosition()
         left_text = text[:cursor_pos]
         
-        # Regex: Find word starting with $ under cursor
-        match = re.search(r'\$([a-zA-Z0-9_]*)$', left_text)
+        # Regex: Find word starting with $, @, or # under cursor
+        match = re.search(r'[\$@#]([a-zA-Z0-9_]*)$', left_text)
         
         if match:
             token = match.group(0) # e.g. "$But"
@@ -259,7 +260,7 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         cursor_pos = self.cursorPosition()
         left_text = text[:cursor_pos]
         
-        match = re.search(r'\$([a-zA-Z0-9_]*)$', left_text)
+        match = re.search(r'[\$@#]([a-zA-Z0-9_]*)$', left_text)
         if match:
             start, end = match.span()
             prefix = left_text[:start]

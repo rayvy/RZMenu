@@ -12,11 +12,12 @@ from ..conf.manager import ConfigManager
 DEFAULT_LAYOUT = {
     "type": "SPLITTER",
     "orientation": 1, # Qt.Horizontal
-    "sizes": [200, 600, 300],
+    "sizes": [200, 500, 250, 250],
     "children": [
         {"type": "AREA", "panel_id": "OUTLINER"},
         {"type": "AREA", "panel_id": "VIEWPORT"},
-        {"type": "AREA", "panel_id": "INSPECTOR"}
+        {"type": "AREA", "panel_id": "INSPECTOR"},
+        {"type": "AREA", "panel_id": "VARIABLES"}
     ]
 }
 

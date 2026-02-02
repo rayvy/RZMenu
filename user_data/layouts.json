@@ -71,5 +71,42 @@
                 "panel_id": "INSPECTOR"
             }
         ]
+    },
+    "SAFE": {
+        "type": "SPLITTER",
+        "orientation": 1,
+        "sizes": [
+            424,
+            1261,
+            857
+        ],
+        "children": [
+            {
+                "type": "AREA",
+                "panel_id": "OUTLINER"
+            },
+            {
+                "type": "AREA",
+                "panel_id": "VIEWPORT"
+            },
+            {
+                "type": "SPLITTER",
+                "orientation": 1,
+                "sizes": [
+                    427,
+                    426
+                ],
+                "children": [
+                    {
+                        "type": "AREA",
+                        "panel_id": "INSPECTOR"
+                    },
+                    {
+                        "type": "AREA",
+                        "panel_id": "VARIABLES"
+                    }
+                ]
+            }
+        ]
     }
 }

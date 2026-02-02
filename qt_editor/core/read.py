@@ -21,13 +21,15 @@ def get_all_elements_list():
 def get_variable_suggestions():
     """
     Returns a list of suggestion strings for formula autocomplete.
-    Includes element names prefixed with $.
+    Includes element names ($), rzm_values ($), toggles (@), and shapes (#).
     """
     suggestions = []
     if not bpy.context or not bpy.context.scene: return suggestions
     
-    # 1. Elements
-    for elem in bpy.context.scene.rzm.elements:
+    rzm = bpy.context.scene.rzm
+
+    # 1. Elements (Standard Position/Size variables)
+    for elem in rzm.elements:
         # Sanitize name for usage in variables (alphanumeric + underscore)
         safe_name = re.sub(r'[^a-zA-Z0-9_]', '', elem.element_name)
         if safe_name:
@@ -36,10 +38,22 @@ def get_variable_suggestions():
             suggestions.append(f"${safe_name}PositionY")
             suggestions.append(f"${safe_name}SizeX")
             suggestions.append(f"${safe_name}SizeY")
-            
-    # 2. Global Toggles/Values (Future proofing based on p_ui.py)
-    # for toggle in bpy.context.scene.rzm.toggles:
-    #     suggestions.append(f"@{toggle.name}")
+
+    # 2. RZM Values ($)
+    for val in rzm.rzm_values:
+        if val.value_name:
+            suggestions.append(f"{val.value_name}") # Assumes name already has $ if user follows convention, or we enforce it?
+            # User example showed value_name = "$NewValue_0". So it has $.
+
+    # 3. Toggles (@)
+    for toggle in rzm.toggle_definitions:
+        if toggle.toggle_name:
+            suggestions.append(f"@{toggle.toggle_name}")
+
+    # 4. Shapes (#)
+    for shape in rzm.shapes:
+        if shape.shape_name:
+            suggestions.append(f"{shape.shape_name}") # Shape names usually have # prefix based on description
 
     return sorted(suggestions)
 
