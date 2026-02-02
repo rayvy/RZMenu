@@ -30,3 +30,12 @@ class RZMVariablesPanel(RZEditorPanel):
         
     def update_theme_styles(self):
         self.manager.apply_theme()
+
+    def enterEvent(self, event):
+        from ..context import RZContextManager
+        RZContextManager.get_instance().update_input(
+             self.cursor().pos(), 
+             (0,0), 
+             "VARIABLES"
+        )
+        super().enterEvent(event)
