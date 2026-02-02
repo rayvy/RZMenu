@@ -228,6 +228,12 @@ class RZAreaWidget(RZPanelWidget):
             self._current_panel.deleteLater()
             self._current_panel = None
         
+        # Check registration first
+        if not PanelFactory.is_registered(panel_id):
+            print(f"[RZAreaWidget] Panel '{panel_id}' not registered")
+            self._create_placeholder(panel_id, "Not Registered")
+            return
+
         # Create new panel
         try:
             self._current_panel = PanelFactory.create_panel(panel_id, parent=self.content_container)
@@ -235,14 +241,19 @@ class RZAreaWidget(RZPanelWidget):
                 self.content_layout.addWidget(self._current_panel)
                 self._current_panel.on_activate()
                 self.panel_changed.emit(panel_id, self._current_panel)
-        except KeyError as e:
-            # Panel type not registered
-            print(f"[RZAreaWidget] Failed to create panel: {e}")
-            self._create_placeholder(panel_id)
+        except Exception as e:
+            # Catch setup crashes (like theme KeyError)
+            print(f"[RZAreaWidget] CRASH in panel '{panel_id}': {e}")
+            import traceback
+            traceback.print_exc()
+            self._create_placeholder(panel_id, f"Setup Error: {e}")
     
-    def _create_placeholder(self, panel_id: str):
+    def _create_placeholder(self, panel_id: str, reason: str = ""):
         """Create a placeholder widget when panel creation fails."""
-        placeholder = QtWidgets.QLabel(f"Panel '{panel_id}' not available")
+        from .panel_factory import PanelFactory
+        available = list(PanelFactory._registry.keys())
+        msg = f"Panel '{panel_id}' unavailable\n{reason}\nAvailable: {available}"
+        placeholder = QtWidgets.QLabel(msg)
         placeholder.setAlignment(QtCore.Qt.AlignCenter)
         placeholder.setStyleSheet("color: #888; font-style: italic;")
         self.content_layout.addWidget(placeholder)

@@ -41,9 +41,10 @@ def get_variable_suggestions():
 
     # 2. RZM Values ($)
     for val in rzm.rzm_values:
-        if val.value_name:
-            suggestions.append(f"{val.value_name}") # Assumes name already has $ if user follows convention, or we enforce it?
-            # User example showed value_name = "$NewValue_0". So it has $.
+            name = val.value_name
+            if not name.startswith("$"):
+                name = f"${name}"
+            suggestions.append(name)
 
     # 3. Toggles (@)
     for toggle in rzm.toggle_definitions:

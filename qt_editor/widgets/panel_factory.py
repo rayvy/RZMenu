@@ -33,15 +33,12 @@ class PanelFactory:
     def register(cls, panel_cls: Type[RZEditorPanel]) -> None:
         """
         Register a panel class with the factory.
-        
-        Args:
-            panel_cls: A class that inherits from RZEditorPanel
-            
-        Raises:
-            ValueError: If panel_cls doesn't have required PANEL_ID
-            TypeError: If panel_cls doesn't inherit from RZEditorPanel
         """
         if not issubclass(panel_cls, RZEditorPanel):
+            print(f"[PanelFactory] Error: {panel_cls.__name__} does not inherit from RZEditorPanel")
+            # In some cases in Blender, classes might look identical but be different types
+            # let's check for structural inheritance as fallback if needed? 
+            # No, let's keep it strict but informative.
             raise TypeError(
                 f"Panel class {panel_cls.__name__} must inherit from RZEditorPanel"
             )
@@ -52,28 +49,16 @@ class PanelFactory:
                 f"Panel class {panel_cls.__name__} must define a valid PANEL_ID"
             )
         
-        if panel_id in cls._registry:
-            # Allow re-registration (useful for hot-reload scenarios)
-            pass
-        
         cls._registry[panel_id] = panel_cls
+        print(f"[PanelFactory] Registered: {panel_id} ({panel_cls.__name__})")
     
     @classmethod
     def create_panel(cls, panel_id: str, parent=None) -> Optional[RZEditorPanel]:
         """
         Create a new instance of a registered panel.
-        
-        Args:
-            panel_id: The PANEL_ID of the panel to create
-            parent: Optional parent widget
-            
-        Returns:
-            A new instance of the requested panel, or None if not found
-            
-        Raises:
-            KeyError: If no panel with the given ID is registered
         """
         if panel_id not in cls._registry:
+            print(f"[PanelFactory] Error: ID '{panel_id}' not found in {list(cls._registry.keys())}")
             raise KeyError(
                 f"No panel registered with ID '{panel_id}'. "
                 f"Available panels: {list(cls._registry.keys())}"
