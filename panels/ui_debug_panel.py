@@ -302,7 +302,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         addons = rzm.addons
         col = box.column()
         row = col.row(align=True)
-        row.prop(addons, "debugger_info"); row.prop(addons, "tex_works"); row.prop(addons, "vfx")
+        row.prop(addons, "debugger_info"); row.prop(addons, "tex_works"); row.prop(addons, "vfx"); row.prop(addons, "facetexworkspreseted")
         row = col.row(align=True)
         row.prop(addons, "shape_morph"); row.prop(addons, "shape_morph_anim")
         row = col.row(align=True)

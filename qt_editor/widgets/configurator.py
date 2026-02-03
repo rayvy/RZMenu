@@ -84,6 +84,10 @@ class GeneralTab(BaseConfigTab):
         self.chk_debug = RZCheckBox("Enable Debugger Info")
         self.chk_debug.toggled.connect(lambda v: self.on_addon_toggled("debugger_info", v))
         l_addons.addWidget(self.chk_debug)
+
+        self.chk_facetexworkspreseted = RZCheckBox("Enable Face Makeup ")
+        self.chk_facetexworkspreseted.toggled.connect(lambda v: self.on_addon_toggled("facetexworkspreseted", v))
+        l_addons.addWidget(self.chk_facetexworkspreseted)
         
         self.chk_vfx = RZCheckBox("Enable VFX")
         self.chk_vfx.toggled.connect(lambda v: self.on_addon_toggled("vfx", v))

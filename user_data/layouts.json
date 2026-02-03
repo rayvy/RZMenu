@@ -102,8 +102,22 @@
                         "panel_id": "INSPECTOR"
                     },
                     {
-                        "type": "AREA",
-                        "panel_id": "VARIABLES"
+                        "type": "SPLITTER",
+                        "orientation": 2,
+                        "sizes": [
+                            466,
+                            465
+                        ],
+                        "children": [
+                            {
+                                "type": "AREA",
+                                "panel_id": "VARIABLES"
+                            },
+                            {
+                                "type": "AREA",
+                                "panel_id": "CONFIGURATOR"
+                            }
+                        ]
                     }
                 ]
             }

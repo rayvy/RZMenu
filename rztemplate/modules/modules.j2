@@ -522,4 +522,617 @@ array = 1327104
 {% endif %}
 
 {% endif %}
+
+{% if scene.rzm.addons.facetexworkspreseted == 1 %};FaceTexWorksPreseted
+; =======================================================================================
+;                                     FACE TEX WORKS
+; =======================================================================================
+
+; SYSTEM: TEXTURE OVERRIDES & SAFETY
+[TextureOverrideFaceDiffuse]
+hash = 20a1ba58
+this = ResourceFaceDiffuse
+run = CommandListSafeTex.Diffuse
+[TextureOverrideFaceDiffuse2]
+hash = df5fe214
+this = ResourceFaceDiffuse
+run = CommandListSafeTex.Diffuse
+
+[TextureOverrideFaceMaterial]
+hash = e3a1caa2
+this = ResourceFaceMaterial
+run = CommandListSafeTex.Material
+[TextureOverrideFaceMaterial2]
+hash = b4f554ef
+this = ResourceFaceMaterial
+run = CommandListSafeTex.Material
+
+[CommandListSafeTex.Diffuse]
+local $isInit = 0
+if this === null && $isInit == 0
+    this = copy ResourceFaceDiffuse
+    $isInit = 1
+endif
+
+[CommandListSafeTex.Material]
+local $isInit = 0
+if this === null && $isInit == 0
+    this = copy ResourceFaceMaterial
+    $isInit = 1
+endif
+
+; GLOBAL CONSTANTS & VARIABLES
+[Constants]
+global $TexWorksFaceSize = 1024
+global $TexWorksFaceSizeMaterial = 256
+global $TexWorksFaceCenterX = 512
+global $TexWorksFaceFirstInit = 1
+
+global persist $FaceDecal_Skin_Index = -1
+global persist $FaceDecal_Scars_Index = -1
+global persist $FaceDecal_Tattoo_FaceIndex = -1
+
+global $FaceDecal_Skin_PastIndex
+global $FaceDecal_Scars_PastIndex
+global $FaceDecal_Tattoo_FacePastIndex
+
+global persist $HSV_H_EYEBROWS = 0
+global persist $HSV_S_EYEBROWS = 0
+global persist $HSV_V_EYEBROWS = 0
+
+global persist $HSV_H_EYELASHES = 0
+global persist $HSV_S_EYELASHES = 0
+global persist $HSV_V_EYELASHES = 0
+
+global $HSV_H_EYEBROWS_Past
+global $HSV_S_EYEBROWS_Past
+global $HSV_V_EYEBROWS_Past
+global $HSV_H_EYELASHES_Past
+global $HSV_S_EYELASHES_Past
+global $HSV_V_EYELASHES_Past
+
+global persist $FaceDecal_Makeup_Mouth_0Index = -1
+global persist $FaceDecal_Makeup_Cheeks_0Index = -1
+global persist $FaceDecal_Makeup_Eyeshadow_0Index = -1
+global persist $FaceDecal_Makeup_Face_0Index = -1
+
+global $FaceDecal_Makeup_Mouth_0PastIndex
+global $FaceDecal_Makeup_Cheeks_0PastIndex
+global $FaceDecal_Makeup_Eyeshadow_0PastIndex
+global $FaceDecal_Makeup_Face_0PastIndex
+
+global persist $FaceDecal_Blood_Mouth_0Index = -1
+global persist $FaceDecal_Blood_Cheeks_0Index = -1
+global persist $FaceDecal_Blood_Face_0Index = -1
+
+global persist $FaceDecal_Cum_Mouth_0Index = -1
+global persist $FaceDecal_Cum_Cheeks_0Index = -1
+global persist $FaceDecal_Cum_Eyeshadow_0Index = -1
+global persist $FaceDecal_Cum_Face_0Index = -1
+
+global persist $FaceDecal_Misc_Index = -1
+
+global $FaceDecal_Blood_Mouth_0PastIndex
+global $FaceDecal_Blood_Cheeks_0PastIndex
+global $FaceDecal_Blood_Face_0PastIndex
+
+global $FaceDecal_Cum_Mouth_0PastIndex
+global $FaceDecal_Cum_Cheeks_0PastIndex
+global $FaceDecal_Cum_Eyeshadow_0PastIndex
+global $FaceDecal_Cum_Face_0PastIndex
+
+global $FaceDecal_Misc_PastIndex
+
+; --- Render Targets ---
+[ResourceFaceDiffuse]
+type = RWTexture2D
+width = 1024
+height = 1024
+format = DXGI_FORMAT_R8G8B8A8_TYPELESS
+array = 1
+msaa = 1
+mips = 1
+
+[ResourceFaceMaterial]
+type = RWTexture2D
+width = 256
+height = 256
+format = DXGI_FORMAT_R8G8B8A8_TYPELESS
+array = 1
+msaa = 1
+mips = 1
+
+; --- Base Textures ---
+[ResourceFaceBaseDiffuse]
+filename = tex/FaceD.dds
+[ResourceFaceBaseMaterial]
+filename = tex/FaceM.dds
+
+; =======================================================================================
+; LOGIC LOOP (PRESENT)
+; =======================================================================================
+[Present]
+if $TexWorksFaceFirstInit == 1
+    run = CommandListAddonsFaceTexWorks
+    $TexWorksFaceFirstInit = 0
+endif
+
+run = CommandListAddonsFaceTexWorks.UPDATE.Conditions
+
+[CommandListAddonsFaceTexWorks.Update]
+run = CommandListAddonsFaceTexWorks
+
+$FaceDecal_Skin_PastIndex = $FaceDecal_Skin_Index
+$FaceDecal_Scars_PastIndex = $FaceDecal_Scars_Index
+$FaceDecal_Tattoo_FacePastIndex = $FaceDecal_Tattoo_FaceIndex
+
+$HSV_H_EYEBROWS_Past = $HSV_H_EYEBROWS
+$HSV_S_EYEBROWS_Past = $HSV_S_EYEBROWS
+$HSV_V_EYEBROWS_Past = $HSV_V_EYEBROWS
+$HSV_H_EYELASHES_Past = $HSV_H_EYELASHES
+$HSV_S_EYELASHES_Past = $HSV_S_EYELASHES
+$HSV_V_EYELASHES_Past = $HSV_V_EYELASHES
+
+$FaceDecal_Makeup_Mouth_0PastIndex = $FaceDecal_Makeup_Mouth_0Index
+$FaceDecal_Makeup_Cheeks_0PastIndex = $FaceDecal_Makeup_Cheeks_0Index
+$FaceDecal_Makeup_Eyeshadow_0PastIndex = $FaceDecal_Makeup_Eyeshadow_0Index
+$FaceDecal_Makeup_Face_0PastIndex = $FaceDecal_Makeup_Face_0Index
+
+$FaceDecal_Blood_Mouth_0PastIndex = $FaceDecal_Blood_Mouth_0Index
+$FaceDecal_Blood_Cheeks_0PastIndex = $FaceDecal_Blood_Cheeks_0Index
+$FaceDecal_Blood_Face_0PastIndex = $FaceDecal_Blood_Face_0Index
+
+$FaceDecal_Cum_Mouth_0PastIndex = $FaceDecal_Cum_Mouth_0Index
+$FaceDecal_Cum_Cheeks_0PastIndex = $FaceDecal_Cum_Cheeks_0Index
+$FaceDecal_Cum_Eyeshadow_0PastIndex = $FaceDecal_Cum_Eyeshadow_0Index
+$FaceDecal_Cum_Face_0PastIndex = $FaceDecal_Cum_Face_0Index
+
+$FaceDecal_Misc_PastIndex = $FaceDecal_Misc_Index
+
+; MAIN PIPELINE (ORDER MATTERS!)
+[CommandListAddonsFaceTexWorks]
+run = CustomShaderUpdateFaceDiffuse
+run = CustomShaderUpdateFaceMaterial
+
+run = CustomShaderDecalMakeup.Mouth
+run = CustomShaderDecalMakeup.Cheeks
+run = CustomShaderDecalMakeup.EyeShadow
+
+run = CustomShaderDeum.Mouth
+run = CustomShaderDeum.Cheeks
+
+; CORE SHADERS & MASKS
+
+[CustomShaderUpdateFaceDiffuse]
+cs = /modules/facetexworks/cs_update_region.hlsl
+cs-u0 = ref ResourceFaceDiffuse
+cs-t0 = ResourceFaceBaseDiffuse
+x44 = 0
+y44 = 0
+z44 = $TexWorksFaceSize
+w44 = $TexWorksFaceSize
+dispatch = $TexWorksFaceSize // 32, $TexWorksFaceSize//32, 1
+
+run = CustomShaderUpdateFaceDiffuse.Eyelashes.HSV
+run = CustomShaderUpdateFaceDiffuse.EyeBrows.HSV
+
+[CustomShaderUpdateFaceMaterial]
+cs = /modules/facetexworks/cs_update_region.hlsl
+cs-u0 = ref ResourceFaceMaterial
+cs-t0 = ResourceFaceBaseMaterial
+x44 = 0
+y44 = 0
+z44 = $TexWorksFaceSize
+w44 = $TexWorksFaceSize
+
+x43 = 0
+y43 = 0
+z43 = 0
+w43 = 0
+dispatch = $TexWorksFaceSize // 32, $TexWorksFaceSize//32, 1
+
+; --- HSV SHADERS ---
+
+; SECTION: EyeLashes (Mask Region Only)
+[Constants]
+global $TWFEyeLashesConfigPosX = 194
+global $TWFEyeLashesConfigPosY = 0
+global $TWFEyeLashesConfigSizeW = 830
+global $TWFEyeLashesConfigSizeH = 644
+
+[Resource_Makeup_EyeLashes.MASK]
+filename = /modules/facetexworks/EyeLashes.Mask.png
+
+[CustomShaderUpdateFaceDiffuse.Eyelashes.HSV]
+cs = /modules/facetexworks/cs_update_region.hlsl
+cs-u0 = ref ResourceFaceDiffuse
+cs-t1 = Resource_Makeup_EyeLashes.MASK
+x44 = $TWFEyeLashesConfigPosX
+y44 = $TWFEyeLashesConfigPosY
+z44 = $TWFEyeLashesConfigSizeW
+w44 = $TWFEyeLashesConfigSizeH
+; HSV Params
+x43 = $HSV_H_EYELASHES
+y43 = $HSV_S_EYELASHES
+z43 = $HSV_V_EYELASHES
+w43 = 1
+dispatch = ($TWFEyeLashesConfigSizeW + 31) // 32, ($TWFEyeLashesConfigSizeH + 31) //32, 1
+
+; --- MASKS FOR HSV ---
+; SECTION: EYEBROWS (Mask Region Only)
+[Constants]
+global $TWFEyeBrowsConfigPosX = 265
+global $TWFEyeBrowsConfigPosY = 24
+global $TWFEyeBrowsConfigSizeW = 600
+global $TWFEyeBrowsConfigSizeH = 160
+
+[Resource_Makeup_EyeBrows.MASK]
+filename = /modules/facetexworks/EyeBrows.Mask.png
+
+[CustomShaderUpdateFaceDiffuse.EyeBrows.HSV]
+cs = /modules/facetexworks/cs_update_region.hlsl
+cs-u0 = ref ResourceFaceDiffuse
+cs-t1 = Resource_Makeup_EyeBrows.MASK
+x44 = $TWFEyeBrowsConfigPosX
+y44 = $TWFEyeBrowsConfigPosY
+z44 = $TWFEyeBrowsConfigSizeW
+w44 = $TWFEyeBrowsConfigSizeH
+; HSV Params
+x43 = $HSV_H_EYEBROWS
+y43 = $HSV_S_EYEBROWS
+z43 = $HSV_V_EYEBROWS
+w43 = 1
+dispatch = ($TWFEyeBrowsConfigSizeW + 31) // 32, ($TWFEyeBrowsConfigSizeH + 31) //32, 1
+
+
+; =======================================================================================
+; INPUTS (KEYS)
+; =======================================================================================
+[KeyTest5]
+key = 5
+type = cycle
+$FaceDecal_Makeup_Mouth_0Index = -1,0,1,2,3,4
+[KeyTest6]
+key = 6
+type = cycle
+$FaceDecal_Makeup_EyeShadow_0Index = -1,0,1,2,3
+[KeyTest7]
+key = 7
+type = cycle
+$FaceDecal_Makeup_Cheeks_0Index = -1,0,1,3,4
+[KeyTest9]
+key = 9
+type = cycle
+[KeyTest10]
+key = 0
+type = cycle
+[KeyTestK]
+key = k
+type = cycle
+$FaceDecal_Cum_Cheeks_0Index = -1,0
+$FaceDecal_Cum_Mouth_0Index = -1,0
+
+[KeyTestR]
+key = r
+$TexWorksFaceFirstInit = 1
+
+
+; =======================================================================================
+; USER CONFIGURATION & SHADERS
+; =======================================================================================
+
+; ---------------------------------------------------------------------------------------
+; SECTION: Mouth (Pos: 412, 285)
+; ---------------------------------------------------------------------------------------
+[Constants]
+global $TWFMouthConfigPosX = 412
+global $TWFMouthConfigPosY = 285
+global $TWFMouthConfigSizeW = 200
+global $TWFMouthConfigSizeH = 128
+
+[Resource_Makeup_Mouth.0]
+filename = /modules/facetexworks/makeup/Mouth/0.png
+[Resource_Makeup_Mouth.1]
+filename = /modules/facetexworks/makeup/Mouth/1.png
+[Resource_Makeup_Mouth.2]
+filename = /modules/facetexworks/makeup/Mouth/2.png
+[Resource_Makeup_Mouth.3]
+filename = /modules/facetexworks/makeup/Mouth/3.png
+[Resource_Makeup_Mouth.4]
+filename = /modules/facetexworks/makeup/Mouth/4.png
+[Resource_Cum_Mouth.0]
+filename = /modules/facetexworks/Cum/Mouth/0.png
+
+[Resource.TexWorks.Face.Mouth.Config]
+type = Buffer
+format = R32_FLOAT
+array = 4
+data = 0.0 0.0 0.0 0.0
+
+[CustomShaderDecalMakeup.Mouth]
+cs = /modules/facetexworks/decal_draw.hlsl
+cs-u0 = ResourceFaceDiffuse
+cs-u1 = ResourceFaceMaterial
+cs-t0 = null
+
+if $FaceDecal_Makeup_Mouth_0Index == 0
+    cs-t0 = Resource_Makeup_Mouth.0
+elif $FaceDecal_Makeup_Mouth_0Index == 1
+    cs-t0 = Resource_Makeup_Mouth.1
+elif $FaceDecal_Makeup_Mouth_0Index == 2
+    cs-t0 = Resource_Makeup_Mouth.2
+elif $FaceDecal_Makeup_Mouth_0Index == 3
+    cs-t0 = Resource_Makeup_Mouth.3
+elif $FaceDecal_Makeup_Mouth_0Index == 4
+    cs-t0 = Resource_Makeup_Mouth.4
+endif
+cs-t1 = Resource.TexWorks.Face.Mouth.Config
+x44 = $TWFMouthConfigPosX
+y44 = $TWFMouthConfigPosY
+z44 = $TWFMouthConfigSizeW
+w44 = $TWFMouthConfigSizeH
+run = CommandListAddons.FaceTexWorks.Material.Null
+if $FaceDecal_Makeup_Mouth_0Index >= 0
+    dispatch = ($TWFMouthConfigSizeW + 31) // 32, ($TWFMouthConfigSizeH + 31) //32, 1
+endif
+
+[CustomShaderDeum.Mouth]
+cs = /modules/facetexworks/decal_draw_composite.hlsl
+cs-u0 = ResourceFaceDiffuse
+cs-u1 = ResourceFaceMaterial
+cs-t0 = null
+if $FaceDecal_Cum_Mouth_0Index == 0
+    cs-t0 = Resource_Cum_Mouth.0
+endif
+cs-t1 = Resource.TexWorks.Face.Mouth.Config
+x44 = $TWFMouthConfigPosX
+y44 = $TWFMouthConfigPosY
+z44 = $TWFMouthConfigSizeW
+w44 = $TWFMouthConfigSizeH
+run = CommandListAddons.FaceTexWorks.Material.Cum
+if $FaceDecal_Cum_Mouth_0Index >= 0
+    dispatch = ($TWFMouthConfigSizeW + 31) // 32, ($TWFMouthConfigSizeH + 31) //32, 1
+endif
+
+; ---------------------------------------------------------------------------------------
+; SECTION: CHEEKS (Pos: 577, 241)
+; ---------------------------------------------------------------------------------------
+[Constants]
+global $TWFCheeksConfigPosX = 577
+global $TWFCheeksConfigPosY = 241
+global $TWFCheeksConfigSizeW = 267
+global $TWFCheeksConfigSizeH = 248
+
+[Resource_Makeup_Cheeks.0]
+filename = /modules/facetexworks/makeup/Cheeks/0.png
+[Resource_Makeup_Cheeks.1]
+filename = /modules/facetexworks/makeup/Cheeks/1.png
+[Resource_Makeup_Cheeks.2]
+filename = /modules/facetexworks/makeup/Cheeks/2.png
+[Resource_Makeup_Cheeks.3]
+filename = /modules/facetexworks/makeup/Cheeks/3.png
+[Resource_Makeup_Cheeks.4]
+filename = /modules/facetexworks/makeup/Cheeks/4.png
+[Resource_Cum_Cheeks.0]
+filename = /modules/facetexworks/Cum/Cheeks/0.png
+
+[Resource.TexWorks.Face.Cheeks.Config]
+type = Buffer
+format = R32_FLOAT
+array = 4
+data = 0.0 0.0 0.0 1.0
+[Resource.TexWorks.Face.Cheeks.Config.MIRROR]
+type = Buffer
+format = R32_FLOAT
+array = 4
+data = 0.0 0.0 1.0 1.0
+
+[CustomShaderDecalMakeup.Cheeks]
+cs = /modules/facetexworks/decal_draw.hlsl
+cs-u0 = ResourceFaceDiffuse
+cs-u1 = ResourceFaceMaterial
+cs-t0 = null
+if $FaceDecal_Makeup_Cheeks_0Index == 0
+    cs-t0 = Resource_Makeup_Cheeks.0
+elif $FaceDecal_Makeup_Cheeks_0Index == 1
+    cs-t0 = Resource_Makeup_Cheeks.1
+elif $FaceDecal_Makeup_Cheeks_0Index == 2
+    cs-t0 = Resource_Makeup_Cheeks.2
+elif $FaceDecal_Makeup_Cheeks_0Index == 3
+    cs-t0 = Resource_Makeup_Cheeks.3
+elif $FaceDecal_Makeup_Cheeks_0Index == 4
+    cs-t0 = Resource_Makeup_Cheeks.4
+endif
+if $FaceDecal_Makeup_Cheeks_0Index >= 0
+    run = CommandListAddons.FaceTexWorks.Material.Null
+    ; Pass 1
+    cs-t1 = Resource.TexWorks.Face.Cheeks.Config
+    x44 = $TWFCheeksConfigPosX
+    y44 = $TWFCheeksConfigPosY
+    z44 = $TWFCheeksConfigSizeW
+    w44 = $TWFCheeksConfigSizeH
+    dispatch = ($TWFCheeksConfigSizeW + 31) // 32, ($TWFCheeksConfigSizeH + 31) //32, 1
+    ; Pass 2
+    cs-t1 = Resource.TexWorks.Face.Cheeks.Config.MIRROR
+    x44 = (2 * $TexWorksFaceCenterX) - $TWFCheeksConfigPosX - $TWFCheeksConfigSizeW
+    y44 = $TWFCheeksConfigPosY
+    z44 = $TWFCheeksConfigSizeW
+    w44 = $TWFCheeksConfigSizeH
+    dispatch = ($TWFCheeksConfigSizeW + 31) // 32, ($TWFCheeksConfigSizeH + 31) //32, 1
+endif
+
+[CustomShaderDeum.Cheeks]
+cs = /modules/facetexworks/decal_draw_composite.hlsl
+cs-u0 = ResourceFaceDiffuse
+cs-u1 = ResourceFaceMaterial
+cs-t0 = null
+if $FaceDecal_Cum_Cheeks_0Index == 0
+    cs-t0 = Resource_Cum_Cheeks.0
+endif
+if $FaceDecal_Cum_Cheeks_0Index >= 0
+    run = CommandListAddons.FaceTexWorks.Material.Cum
+    x46 = $TexWorksFaceSize
+    y46 = $TexWorksFaceSizeMaterial
+    ; Pass 1
+    cs-t1 = Resource.TexWorks.Face.Cheeks.Config
+    x44 = $TWFCheeksConfigPosX
+    y44 = $TWFCheeksConfigPosY
+    z44 = $TWFCheeksConfigSizeW
+    w44 = $TWFCheeksConfigSizeH
+    dispatch = ($TWFCheeksConfigSizeW + 31) // 32, ($TWFCheeksConfigSizeH + 31) //32, 1
+    ; Pass 2
+    cs-t1 = Resource.TexWorks.Face.Cheeks.Config.MIRROR
+    x44 = (2 * $TexWorksFaceCenterX) - $TWFCheeksConfigPosX - $TWFCheeksConfigSizeW
+    y44 = $TWFCheeksConfigPosY
+    z44 = $TWFCheeksConfigSizeW
+    w44 = $TWFCheeksConfigSizeH
+    dispatch = ($TWFCheeksConfigSizeW + 31) // 32, ($TWFCheeksConfigSizeH + 31) //32, 1
+endif
+
+; ---------------------------------------------------------------------------------------
+; SECTION: EyeShadow (Pos: 575, 486)
+; ---------------------------------------------------------------------------------------
+[Constants]
+global $TWFEyeShadowConfigPosX = 575
+global $TWFEyeShadowConfigPosY = 486
+global $TWFEyeShadowConfigSizeW = 234
+global $TWFEyeShadowConfigSizeH = 197
+
+[Resource_Makeup_EyeShadow.0]
+filename = /modules/facetexworks/makeup/EyeShadow/0.png
+[Resource_Makeup_EyeShadow.1]
+filename = /modules/facetexworks/makeup/EyeShadow/1.png
+[Resource_Makeup_EyeShadow.2]
+filename = /modules/facetexworks/makeup/EyeShadow/2.png
+[Resource_Makeup_EyeShadow.3]
+filename = /modules/facetexworks/makeup/EyeShadow/3.png
+[Resource_Cum_EyeShadow.0]
+filename = /modules/facetexworks/Cum/EyeShadow/0.png
+
+[Resource.TexWorks.Face.EyeShadow.Config]
+type = Buffer
+format = R32_FLOAT
+array = 4
+data = 0.0 0.0 0.0 0.0
+[Resource.TexWorks.Face.EyeShadow.Config.MIRROR]
+type = Buffer
+format = R32_FLOAT
+array = 4
+data = 0.0 0.0 1.0 0.0
+
+[CustomShaderDecalMakeup.EyeShadow]
+cs = /modules/facetexworks/decal_draw.hlsl
+cs-u0 = ResourceFaceDiffuse
+cs-u1 = ResourceFaceMaterial
+cs-t0 = null
+if $FaceDecal_Makeup_EyeShadow_0Index == 0
+    cs-t0 = Resource_Makeup_EyeShadow.0
+elif $FaceDecal_Makeup_EyeShadow_0Index == 1
+    cs-t0 = Resource_Makeup_EyeShadow.1
+elif $FaceDecal_Makeup_EyeShadow_0Index == 2
+    cs-t0 = Resource_Makeup_EyeShadow.2
+elif $FaceDecal_Makeup_EyeShadow_0Index == 3
+    cs-t0 = Resource_Makeup_EyeShadow.3
+endif
+
+if $FaceDecal_Makeup_EyeShadow_0Index >= 0
+    run = CommandListAddons.FaceTexWorks.Material.Null
+    ; Pass 1
+    cs-t1 = Resource.TexWorks.Face.EyeShadow.Config
+    x44 = $TWFEyeShadowConfigPosX
+    y44 = $TWFEyeShadowConfigPosY
+    z44 = $TWFEyeShadowConfigSizeW
+    w44 = $TWFEyeShadowConfigSizeH
+    dispatch = ($TWFEyeShadowConfigSizeW + 31) // 32, ($TWFEyeShadowConfigSizeH + 31) //32, 1
+    ; Pass 2
+    cs-t1 = Resource.TexWorks.Face.EyeShadow.Config.MIRROR
+    x44 = (2 * $TexWorksFaceCenterX) - $TWFEyeShadowConfigPosX - $TWFEyeShadowConfigSizeW
+    y44 = $TWFEyeShadowConfigPosY
+    z44 = $TWFEyeShadowConfigSizeW
+    w44 = $TWFEyeShadowConfigSizeH
+    dispatch = ($TWFEyeShadowConfigSizeW + 31) // 32, ($TWFEyeShadowConfigSizeH + 31) //32, 1
+endif
+
+; =======================================================================================
+; PRESETS & HELPERS
+; =======================================================================================
+[CommandListAddons.FaceTexWorks.Material.Cum]
+x45 = 0.25
+y45 = 0.5
+z45 = 0.0
+w45 = 5.0
+x46 = $TexWorksFaceSize
+y46 = $TexWorksFaceSizeMaterial
+
+[CommandListAddons.FaceTexWorks.Material.Null]
+x45 = 0.0
+y45 = 0.0
+z45 = 0.0
+w45 = 0.0
+
+[CommandListAddonsFaceTexWorks.UPDATE.Conditions]
+local $needsUpdate = 0
+
+if $FaceDecal_Skin_PastIndex != $FaceDecal_Skin_Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Scars_PastIndex != $FaceDecal_Scars_Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Tattoo_FacePastIndex != $FaceDecal_Tattoo_FaceIndex 
+    $needsUpdate = 1 
+endif
+
+if $HSV_H_EYEBROWS_Past != $HSV_H_EYEBROWS || $HSV_S_EYEBROWS_Past != $HSV_S_EYEBROWS || $HSV_V_EYEBROWS_Past != $HSV_V_EYEBROWS
+    $needsUpdate = 1
+endif
+if $HSV_H_EYELASHES_Past != $HSV_H_EYELASHES || $HSV_S_EYELASHES_Past != $HSV_S_EYELASHES || $HSV_V_EYELASHES_Past != $HSV_V_EYELASHES
+    $needsUpdate = 1
+endif
+
+if $FaceDecal_Makeup_Mouth_0PastIndex != $FaceDecal_Makeup_Mouth_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Makeup_Cheeks_0PastIndex != $FaceDecal_Makeup_Cheeks_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Makeup_Eyeshadow_0PastIndex != $FaceDecal_Makeup_Eyeshadow_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Makeup_Face_0PastIndex != $FaceDecal_Makeup_Face_0Index 
+    $needsUpdate = 1 
+endif
+
+if $FaceDecal_Blood_Mouth_0PastIndex != $FaceDecal_Blood_Mouth_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Blood_Cheeks_0PastIndex != $FaceDecal_Blood_Cheeks_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Blood_Face_0PastIndex != $FaceDecal_Blood_Face_0Index 
+    $needsUpdate = 1 
+endif
+
+if $FaceDecal_Cum_Mouth_0PastIndex != $FaceDecal_Cum_Mouth_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Cum_Cheeks_0PastIndex != $FaceDecal_Cum_Cheeks_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Cum_Eyeshadow_0PastIndex != $FaceDecal_Cum_Eyeshadow_0Index 
+    $needsUpdate = 1 
+endif
+if $FaceDecal_Cum_Face_0PastIndex != $FaceDecal_Cum_Face_0Index 
+    $needsUpdate = 1 
+endif
+
+if $FaceDecal_Misc_PastIndex != $FaceDecal_Misc_Index 
+    $needsUpdate = 1 
+endif
+
+
+if $needsUpdate == 1
+    run = CommandListAddonsFaceTexWorks.Update
+endif
+{% endif %}
 {%endmacro%}
