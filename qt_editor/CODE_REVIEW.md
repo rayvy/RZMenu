@@ -1,111 +1,61 @@
 # Code Review & Technical Debt Report
 
-В ходе анализа кода `qt_editor` были выявлены следующие места, требующие внимания, рефакторинга или являющиеся "dirty hacks" (вынужденными мерами).
+This document tracks technical debt, architectural issues, and "dirty hacks" identified in the codebase.
 
-## 1. Action Manager: Инъекция Window
-**Файл:** `actions.py`
-**Метод:** `RZActionManager.run`
-**Проблема:**
-```python
-ctx.window = self.window # <--- "Грязный" хак, но необходимый для UI-операторов
-```
-**Описание:** Объект `RZContext` (снэпшот) должен быть чистым представлением данных. Инъекция ссылки на `QMainWindow` нарушает изоляцию слоев. Это сделано для того, чтобы операторы типа `RZ_OT_ViewReset` могли получить доступ к `view_viewport`.
-**Рекомендация:** Передавать `window` исключительно через `kwargs` оператора, либо реализовать систему событий, где оператор эмитит запрос на изменение UI, а окно его ловит.
+## 🔴 Critical Issues
 
-## 2. Локальный импорт во избежание циклов
-**Файл:** `context/manager.py`
-**Метод:** `get_debug_string`
-**Проблема:**
-```python
-# Импорт внутри метода, чтобы избежать circular imports
-from .wrappers import RZElementWrapper # (подразумеваемый)
-```
-**Описание:** Модуль `context` имеет тесные связи. `Manager` создает `Snapshot`, который использует `Wrappers`, который может хотеть обратиться к `Manager`.
-**Рекомендация:** Строгая типизация через `TYPE_CHECKING` и вынос логики форматирования дебаг-строки в отдельный utility-модуль.
+### 1. Destructive UI Updates (Focus Loss)
+**File:** `widgets/configurator.py`, `widgets/variables_panel.py`
+**Problem:** `update_ui` methods call `_clear_layout` and rebuild the entire interface on every `data_changed` signal.
+**Impact:**
+- **Focus Loss:** Typing in a text field triggers an update, which destroys the text field, causing the user to lose focus and input state.
+- **Performance:** Recreating widgets (allocating memory, signals) is expensive for 60fps interaction.
+- **State Loss:** Scroll positions, collapsed headers, and selection states may reset unexpectedly.
+**Recommendation:** Implement "Stateful UI Updates".
+- Iterate over existing widgets and properties.
+- Only update values (`setText`, `setValue`) if they differ.
+- Only add/remove widgets if the underlying list size changes.
+- Use `QDataWidgetMapper` or keyed widget caching.
 
-## 3. Поиск ActionManager через обход родителей
-**Файл:** `widgets/viewport.py` (и `panel_base.py`)
-**Метод:** `_find_action_manager` / `get_action_manager`
-**Проблема:**
-```python
-while widget:
-    parent = widget.parent()
-    # ... поиск action_manager атрибута
-```
-**Описание:** Виджеты пытаются найти менеджер действий, поднимаясь по иерархии QT виджетов. Это хрупкое решение. Если виджет будет перенесен в другое окно или обернут нестандартным образом, поиск может не сработать.
-**Рекомендация:** Передавать ссылку на `ActionManager` при инициализации `RZEditorWindow` через DI (Dependency Injection) или использовать глобальный доступ (хотя это тоже анти-паттерн, но более надежный в данном контексте).
+### 2. ActionManager Injection
+**File:** `systems/actions.py` (and usage in Window)
+**Problem:** `RZActionManager` often requires direct access to `window` or specific contexts, leading to circular dependencies or "injection" hacks like `ctx.window = self.window`.
+**Recommendation:** Decouple Actions from the UI implementation. Use signals or a command pattern where the context is passed purely as data, not UI objects.
 
-## 4. "Polish" хак для обновления стилей
-**Файл:** `widgets/outliner.py`
-**Метод:** `update_theme_styles`
-**Проблема:**
-```python
-self.tree.style().unpolish(self.tree)
-self.tree.style().polish(self.tree)
-```
-**Описание:** Qt не всегда корректно перерисовывает сложные виджеты (особенно заголовки таблиц) при динамической смене QSS. Этот принудительный вызов `polish` является стандартным work-around, но выглядит как хак.
-**Статус:** Acceptable (допустимо для Qt разработки).
+### 3. PROP_MAP Validation
+**File:** `core/props.py`
+**Problem:** `PROP_MAP` is the single source of truth. If a property is missing here, the UI will silently fail to write data.
+**Recommendation:** Add a startup check that validates `PROP_MAP` keys against the actual Blender RNA properties of `RZElement`, logging warnings for mismatches.
 
-## 5. Viewport: Прямой доступ к Scene RZM
-**Файл:** `widgets/viewport.py`
-**Метод:** `_create_at_pos`
-**Проблема:** Прямая конвертация координат и вызов `core.create_element`.
-```python
-bx = scene_pos.x()
-by = -scene_pos.y() # Hardcoded Y-flip assumption
-```
-**Описание:** Логика инверсии оси Y размазана между `maths.py`, `viewport.py` и `image_cache.py`.
-**Рекомендация:** Строго использовать `core.maths.to_qt_coords` и обратную функцию везде.
+## 🟠 Medium Priority
 
-## 6. Отсутствие валидации PROP_MAP
-**Файл:** `core/props.py`
-**Проблема:** Словарь `PROP_MAP` является единственным источником истины для записи свойств. Если разработчик добавит свойство в Blender RNA, но забудет добавить его сюда, UI инспектора может работать (читать данные), но запись (`_emit_change`) молча не сработает или упадет, так как `update_property_multi` полагается на этот маппинг.
-**Рекомендация:** Добавить логирование Warning, если запрашиваемое свойство отсутствует в `PROP_MAP`.
+### 4. Global Signal Scope ("Shotgun Updates")
+**File:** `core/signals.py`
+**Problem:** `SIGNALS.data_changed` is global. Changing a single boolean in the Configurator triggers a refresh of the Outliner, Viewport, and Inspector.
+**Recommendation:** Implement granular signals (e.g., `item_changed(uid)`, `config_changed(section)`).
 
-## 7. Автоматическая регистрация операторов
-**Файл:** `systems/operators.py`
-**Проблема:** Список `_CLASSES` в конце файла требует ручного добавления новых операторов.
-**Рекомендация:** Автоматическое обнаружение всех классов, наследующих `RZOperator`, через `inspect` модуль.
+### 5. Parent Traversal for Context
+**File:** `widgets/panel_base.py`, `widgets/viewport.py`
+**Problem:** Widgets often hunt for `RZContextManager` or `ActionManager` by traversing `parent()` calls or importing singletons.
+**Recommendation:** Use strict Dependency Injection or a Service Locator pattern initialized at the root `RZMEditorWindow`.
 
-## 8. Контекстная зависимость сигналов
-**Файл:** `core/signals.py`
-**Проблема:** Система сигналов глобальна, но некоторые сигналы (`context_updated`) зависят от текущего контекста (hover_area).
-**Рекомендация:** Рассмотреть локализацию некоторых сигналов в конкретных менеджеров (например, `RZContextManager`).
+### 6. Automatic Operator Registration
+**File:** `systems/operators.py`
+**Problem:** Manual list usage for registration (`_CLASSES`). Easy to forget new operators.
+**Recommendation:** Use `inspect` to auto-discover `RZOperator` subclasses in the module.
 
-## 9. Сложность формул в Inspector
-**Файл:** `widgets/inspector.py`
-**Проблема:** Логика показа/скрытия виджетов формул (`set_row_visible`) дублируется для каждого типа свойства.
-**Рекомендация:** Создать универсальный механизм для свойств с формулами (например, базовый класс `FormulaPropertyWidget`).
+## 🟢 Implementation Details / Minor
 
-## 10. Отсутствие типизации
-**Файл:** Весь проект
-**Проблема:** Отсутствие type hints затрудняет рефакторинг и IDE поддержку.
-**Рекомендация:** Постепенное добавление типизации, начиная с критически важных функций (`PROP_MAP`, `RZContext`, сигналы).
+### 7. "Polish" Hack for Styles
+**File:** `widgets/outliner.py`
+**Problem:** calling `unpolish`/`polish` to force style updates.
+**Status:** Acceptable. This is a standard workaround in Qt for dynamic property styling.
 
-## Резюме
+### 8. Type Hinting
+**File:** Project-wide
+**Problem:** Missing type hints in many core functions.
+**Recommendation:** Add `typing` annotations to `core/logic.py` and `context` modules first.
 
-### Критичные проблемы (требуют фикса):
-1. **PROP_MAP валидация** - без этого разработчики будут терять время на отладку
-2. **ActionManager инъекция** - нарушает архитектурные принципы
+## ✅ Fixed / Improved
 
-### Средний приоритет (рекомендуется исправить):
-1. **Автоматическая регистрация операторов**
-2. **Обход родителей для ActionManager**
-3. **Viewport координаты**
-
-### Низкий приоритет (технический долг):
-1. **Типизация**
-2. **Formula widgets унификация**
-3. **Локальные импорты**
-
-### Общие рекомендации:
-1. Добавить unit тесты для критических функций (`props.update_property_multi`, `logic.resolve_layout`)
-2. Внедрить pre-commit hooks для проверки PROP_MAP синхронизации
-3. Рассмотреть добавление архитектурного фитнес-функции для измерения связности модулей</content>
-</xai:function_call">---
-
-<xai:function_call name="search_replace">
-<parameter name="file_path">DEVELOPMENT_GUIDE.md
-
-
-
+- **Viewport Coordinates:** `viewport.py` now consistently uses `core.to_qt_coords` and `to_blender_delta`. The coordinate logic seems centralized.

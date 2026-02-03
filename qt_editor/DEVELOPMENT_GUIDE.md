@@ -780,6 +780,44 @@ def on_deactivate(self):
     self._disconnect_signals()
 ```
 
+### 5. Non-Destructive UI Updates (CRITICAL)
+
+**Проблема:**
+Многие панели грешат полной перерисовкой (`clear_layout()` -> `add_widget()`) при получении сигнала `data_changed`.
+Это приводит к:
+1. **Потере фокуса** (если пользователь печатает в поле, оно удаляется и создается заново).
+2. **Сбросу скролла** и состояния (свернутые группы разворачиваются).
+3. **Падению производительности**.
+
+**Решение:**
+Используйте паттерн "Stateful Update":
+1. Не удаляйте виджеты, если их количество не изменилось.
+2. Сравнивайте текущее значение в виджете с новыми данными.
+3. Вызывайте `setText`/`setValue` **только** если они отличаются.
+
+```python
+# ❌ ПЛОХО: Destructive Update
+def update_ui(self):
+    clear_layout(self.layout) # УДАЛЯЕТ ВСЕ ВИДЖЕТЫ!
+    for item in items:
+        w = create_widget(item) # СОЗДАЕТ НОВЫЕ ПОД КАЖДЫЙ ЧИХ
+        self.layout.addWidget(w)
+
+# ✅ ХОРОШО: Stateful Update
+def update_ui(self):
+    # 1. Синхронизируем количество виджетов (Object Pool)
+    while len(self.widgets) < len(items):
+        self._add_row_widget()
+    while len(self.widgets) > len(items):
+        self._remove_last_widget()
+    
+    # 2. Обновляем данные в существующих виджетах
+    for i, item in enumerate(items):
+        widget = self.widgets[i]
+        # Внутри widget.update_cata() проверяем if input.text() != item.name: input.setText(...)
+        widget.update_data(item) 
+```
+
 ## Заключение
 
 При разработке для RZMenu/qt_editor всегда следуйте принципам:
