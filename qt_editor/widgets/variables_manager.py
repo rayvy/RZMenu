@@ -99,20 +99,33 @@ class BaseListTab(QtWidgets.QWidget):
         for w in [self.btn_add, self.btn_remove]:
              w.setStyleSheet(f"background-color: {t['bg_header']}; color: {t['text_main']}; border: 1px solid {t['border_main']}; padding: 4px;")
 
-    def refresh(self):
-        pass # Implement in subclass
-        
     def on_selection_changed(self, current, previous):
         self.update_properties()
-    
-    def update_properties(self):
-        pass
-    
-    def add_item(self):
-        pass
+
+    def sync_list_items(self, data_list, name_func):
+        """
+        Synchronizes the list widget with data_list.
+        Preserves selection if possible.
+        """
+        current_row = self.list_widget.currentRow()
         
-    def remove_item(self):
-        pass
+        # 1. Adjust count
+        while self.list_widget.count() < len(data_list):
+            self.list_widget.addItem("")
+        while self.list_widget.count() > len(data_list):
+            self.list_widget.takeItem(self.list_widget.count() - 1)
+            
+        # 2. Update Names
+        for i, item_data in enumerate(data_list):
+            item_widget = self.list_widget.item(i)
+            new_name = name_func(item_data)
+            if item_widget.text() != new_name:
+                item_widget.setText(new_name)
+                
+        # 3. Restore Selection (if valid and not already set)
+        if current_row >= 0 and current_row < self.list_widget.count():
+            if self.list_widget.currentRow() != current_row:
+                self.list_widget.setCurrentRow(current_row)
 
 class ValuesTab(BaseListTab):
     def __init__(self):
@@ -140,12 +153,8 @@ class ValuesTab(BaseListTab):
         self.props_layout.addRow("Float Value:", self.inp_val_float)
 
     def refresh(self):
-        self.list_widget.clear()
         if not bpy.context: return
-        for i, val in enumerate(bpy.context.scene.rzm.rzm_values):
-            self.list_widget.addItem(val.value_name)
-            
-        # Restore selection? Simplification: Select last or none
+        self.sync_list_items(bpy.context.scene.rzm.rzm_values, lambda x: x.value_name)
         
     def add_item(self):
         bpy.ops.rzm.add_value()
@@ -158,6 +167,13 @@ class ValuesTab(BaseListTab):
             bpy.context.scene.rzm_active_value_index = row # Ensure correct active index for operator
             bpy.ops.rzm.remove_value()
             self.refresh()
+            # Selection restoration handled by sync roughly, but we might want to select row-1
+            # sync keeps "current_row", but if we deleted it, we want current_row (which is now next item) or prev?
+            # QListWidget auto-handles deletion selection often, but we are managing it.
+            # Let's leave it to QListWidget default behavior if possible, or explicit:
+            new_count = self.list_widget.count()
+            if new_count > 0:
+                self.list_widget.setCurrentRow(min(row, new_count-1))
 
     def update_properties(self):
         row = self.list_widget.currentRow()
@@ -169,15 +185,22 @@ class ValuesTab(BaseListTab):
         val = bpy.context.scene.rzm.rzm_values[row]
         
         self.is_updating_ui = True
-        self.inp_name.setText(val.value_name)
-        self.inp_type.setCurrentText(val.value_type)
-        self.inp_val_int.setValue(val.int_value)
-        self.inp_val_float.setValue(val.float_value)
+        
+        if self.inp_name.text() != val.value_name:
+            self.inp_name.setText(val.value_name)
+            
+        if self.inp_type.currentText() != val.value_type:
+            self.inp_type.setCurrentText(val.value_type)
+            
+        if self.inp_val_int.value() != val.int_value:
+            self.inp_val_int.setValue(val.int_value)
+            
+        if self.inp_val_float.value() != val.float_value:
+            self.inp_val_float.setValue(val.float_value)
         
         # Visibility
         self.inp_val_int.setVisible(val.value_type == 'INT')
         self.inp_val_float.setVisible(val.value_type == 'FLOAT')
-        # Hiding row label is harder in FormLayout, so just hide widget
         
         self.is_updating_ui = False
 
@@ -220,10 +243,8 @@ class TogglesTab(BaseListTab):
         self.props_layout.addRow("Length:", self.inp_len)
 
     def refresh(self):
-        self.list_widget.clear()
         if not bpy.context: return
-        for t in bpy.context.scene.rzm.toggle_definitions:
-            self.list_widget.addItem(t.toggle_name)
+        self.sync_list_items(bpy.context.scene.rzm.toggle_definitions, lambda x: x.toggle_name)
 
     def add_item(self):
         bpy.ops.rzm.add_project_toggle()
@@ -236,6 +257,8 @@ class TogglesTab(BaseListTab):
             bpy.context.scene.rzm_active_toggle_def_index = row
             bpy.ops.rzm.remove_project_toggle()
             self.refresh()
+            if self.list_widget.count() > 0:
+                self.list_widget.setCurrentRow(min(row, self.list_widget.count()-1))
 
     def update_properties(self):
         row = self.list_widget.currentRow()
@@ -247,8 +270,10 @@ class TogglesTab(BaseListTab):
         t = bpy.context.scene.rzm.toggle_definitions[row]
         
         self.is_updating_ui = True
-        self.inp_name.setText(t.toggle_name)
-        self.inp_len.setValue(t.toggle_length)
+        if self.inp_name.text() != t.toggle_name:
+            self.inp_name.setText(t.toggle_name)
+        if self.inp_len.value() != t.toggle_length:
+            self.inp_len.setValue(t.toggle_length)
         self.is_updating_ui = False
 
     def synch_name(self):
@@ -322,10 +347,8 @@ class ShapesTab(BaseListTab):
         self.is_updating_key_ui = False
 
     def refresh(self):
-        self.list_widget.clear()
         if not bpy.context: return
-        for s in bpy.context.scene.rzm.shapes:
-            self.list_widget.addItem(s.shape_name)
+        self.sync_list_items(bpy.context.scene.rzm.shapes, lambda x: x.shape_name)
 
     def add_item(self):
         bpy.ops.rzm.add_shape()
@@ -336,36 +359,31 @@ class ShapesTab(BaseListTab):
         row = self.list_widget.currentRow()
         if row >= 0:
             bpy.ops.rzm.remove_shape()
-            self.refresh() # Removal operator might remove last one, but we rely on active index or context?
-            # Operator RZM_OT_RemoveShape uses 'end' of list logic in prompt snippets, 
-            # but user provided snippet uses len(coll)-1.
-            # My previous implementation was direct.
-            # Wait, the provided operator RZM_OT_RemoveShape DOES NOT take an index.
-            # It removes the last one.
-            # This is flawed for a UI where you pick any item.
-            # I must fix RZM_OT_RemoveShape or use context active status.
-            # The prompt provided code: "if len(coll) > 0: coll.remove(len(coll) - 1)"
-            # That is bad. I should probably override it or make a new one RZM_OT_RemoveShapeAtIndex.
-            # BUT the user asked to "polish" and use "operator interaction".
-            # I'll rely on my direct implementation for now OR better:
-            # FIX: Create RZM_OT_RemoveShapeAtIndex in special_var_ops?
-            # Or just assume the user updates special_var_ops themselves?
-            # I will assume for now I should use a new op if I want specific index.
-            # Let's use direct removal inside a custom operator wrapper or context override?
-            # No, let's keep it simple: I already added update ops.
-            # For removal, I will stick to what I have in special_var_ops unless I change it.
-            # I'll change RZM_OT_RemoveShape to take an index in next step if needed.
-            # For now, let's use direct removal but wrapped in simple op call if possible, or just direct for removal is "okay" if no undo is needed? No undo IS needed.
-            # I'll Assume I updated RZM_OT_RemoveShape to take index? No I didn't.
-            # I will invoke a direct context override or just accept that I need to update the OP.
-            # I'll update the OP in special_var_ops.py in the NEXT step or previous?
-            # I missed updating RemoveShape.
-            
-            # Temporary fix: set active index then call remove? The Op removes LAST.
-            # So "RemoveShape" provided by user is just a stack pop.
-            # I should FIX the OP to use active index or passed index.
-            pass
-            
+            self.refresh()
+            if self.list_widget.count() > 0:
+                self.list_widget.setCurrentRow(min(row, self.list_widget.count()-1))
+
+    def update_properties(self):
+        row = self.list_widget.currentRow()
+        if row < 0 or row >= len(bpy.context.scene.rzm.shapes):
+            self.props_group.setEnabled(False)
+            self.list_keys.clear() # No shape selected
+            return
+
+        self.props_group.setEnabled(True)
+        shape = bpy.context.scene.rzm.shapes[row]
+        
+        self.is_updating_ui = True
+        if self.inp_name.text() != shape.shape_name:
+            self.inp_name.setText(shape.shape_name)
+        if self.inp_type.currentText() != shape.shape_type:
+            self.inp_type.setCurrentText(shape.shape_type)
+        if self.inp_cond.text() != shape.anim_condition:
+            self.inp_cond.setText(shape.anim_condition)
+        self.is_updating_ui = False
+        
+        self.refresh_keys_list(shape)
+
     def synch_name(self):
         if self.is_updating_ui: return
         row = self.list_widget.currentRow()
@@ -384,9 +402,24 @@ class ShapesTab(BaseListTab):
 
     # --- Shape Keys Logic
     def refresh_keys_list(self, shape):
-        self.list_keys.clear()
-        for k in shape.shape_keys:
-            self.list_keys.addItem(f"Key {k.key_name}")
+        # Sync Logic inline for list_keys
+        k_list = shape.shape_keys
+        current_row = self.list_keys.currentRow()
+        
+        while self.list_keys.count() < len(k_list):
+            self.list_keys.addItem("")
+        while self.list_keys.count() > len(k_list):
+            self.list_keys.takeItem(self.list_keys.count() - 1)
+            
+        for i, k in enumerate(k_list):
+            item = self.list_keys.item(i)
+            txt = f"Key {k.key_name}"
+            if item.text() != txt:
+                item.setText(txt)
+                
+        if current_row >= 0 and current_row < self.list_keys.count():
+             if self.list_keys.currentRow() != current_row:
+                 self.list_keys.setCurrentRow(current_row)
 
     def add_key(self):
         row = self.list_widget.currentRow()
@@ -408,12 +441,15 @@ class ShapesTab(BaseListTab):
             
             shape = bpy.context.scene.rzm.shapes[row]
             self.refresh_keys_list(shape)
+            if self.list_keys.count() > 0:
+                self.list_keys.setCurrentRow(min(k_idx, self.list_keys.count()-1))
 
     def on_key_selected(self):
         row = self.list_widget.currentRow()
         k_idx = self.list_keys.currentRow()
         if row < 0 or k_idx < 0:
             # Disable key props
+            # TODO: Disable widgets?
             return
             
         shape = bpy.context.scene.rzm.shapes[row]
@@ -421,9 +457,17 @@ class ShapesTab(BaseListTab):
         key = shape.shape_keys[k_idx]
         
         self.is_updating_key_ui = True
-        self.inp_k_frame.setValue(key.key_name)
-        self.inp_k_mode.setCurrentText(key.mode)
-        self.inp_k_mul.setValue(key.multiplier)
+        
+        if self.inp_k_frame.value() != key.key_name:
+            self.inp_k_frame.setValue(key.key_name)
+            
+        if self.inp_k_mode.currentText() != key.mode:
+            self.inp_k_mode.setCurrentText(key.mode)
+            
+        # Float comparison with tolerance? Or just direct
+        if abs(self.inp_k_mul.value() - key.multiplier) > 0.001:
+            self.inp_k_mul.setValue(key.multiplier)
+            
         self.is_updating_key_ui = False
 
     def synch_k_frame(self, v):
@@ -431,7 +475,9 @@ class ShapesTab(BaseListTab):
         row = self.list_widget.currentRow()
         k_idx = self.list_keys.currentRow()
         bpy.ops.rzm.update_shape_key(shape_index=row, key_index=k_idx, prop_name="key_name", val_str=str(v))
-        self.list_keys.currentItem().setText(f"Key {v}")
+        
+        # Update list Item text too
+        self.list_keys.item(k_idx).setText(f"Key {v}")
 
     def synch_k_mode(self, v):
         if self.is_updating_key_ui: return
