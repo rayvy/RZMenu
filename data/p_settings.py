@@ -51,6 +51,7 @@ class RZMExportSettings(bpy.types.PropertyGroup):
 
 class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debugger_info: BoolProperty(name="DebuggerInfo", default=False)
+    facetexworkspreseted: BoolProperty(name="FaceTexWorksPreseted", default=False)
     tex_works: BoolProperty(name="TexWorks", default=False)
     tw_resources: CollectionProperty(type=TexResource)
     tw_overrides: CollectionProperty(type=TexOverride)
@@ -62,3 +63,4 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     dtoggle_compute: BoolProperty(name="DToggleCompute", default=False)
     rtoggle_compute: BoolProperty(name="RToggleCompute", default=False)
     frame_trace: BoolProperty(name="FrameTrace", default=False)
+    

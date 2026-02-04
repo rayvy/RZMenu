@@ -21,6 +21,7 @@ class IntegrationManager:
         if not app:
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
             app = QtWidgets.QApplication(sys.argv)
+            app.setStyle("Fusion")
         return app
 
     @staticmethod

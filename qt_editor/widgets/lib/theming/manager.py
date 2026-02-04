@@ -102,6 +102,23 @@ class ThemeManager:
         theme_dict = self.get_theme(name)
         return generate_qss(theme_dict)
 
+    def reset_theme(self, theme_id):
+        """Delete user overrides for a specific theme."""
+        themes_dir = self._get_themes_dir()
+        target_dir = os.path.join(themes_dir, theme_id.lower().replace(" ", "_"))
+        
+        if os.path.exists(target_dir):
+            try:
+                shutil.rmtree(target_dir)
+                # Reload from definitions or other user themes
+                if theme_id in self._themes:
+                    del self._themes[theme_id]
+                self.load_user_themes()
+                return True
+            except Exception as e:
+                print(f"RZMenu: Failed to reset theme '{theme_id}': {e}")
+        return False
+
     def save_theme(self, theme_id, flat_data):
         themes_dir = self._get_themes_dir()
         

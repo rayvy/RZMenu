@@ -48,6 +48,30 @@ class RZM_OT_RemoveProjectToggle(bpy.types.Operator):
                 context.scene.rzm_active_toggle_def_index = index - 1
             
         return {'FINISHED'}
+
+class RZM_OT_UpdateProjectToggle(bpy.types.Operator):
+    bl_idname = "rzm.update_project_toggle"
+    bl_label = "Update Project Toggle"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: bpy.props.IntProperty()
+    prop_name: bpy.props.StringProperty()
+    val_str: bpy.props.StringProperty()
+
+    def execute(self, context):
+        toggles = context.scene.rzm.toggle_definitions
+        if self.index < 0 or self.index >= len(toggles): return {'CANCELLED'}
+
+        t = toggles[self.index]
+        if hasattr(t, self.prop_name):
+            try:
+                target_type = type(getattr(t, self.prop_name))
+                if target_type is int:
+                    setattr(t, self.prop_name, int(self.val_str))
+                else:
+                    setattr(t, self.prop_name, self.val_str)
+            except: pass
+        return {'FINISHED'}
     
 class RZM_OT_AssignObjectToggle(bpy.types.Operator):
     bl_idname = "rzm.assign_object_toggle"
@@ -183,6 +207,7 @@ class RZM_OT_SelectObjectsWithToggle(bpy.types.Operator):
 classes_to_register = [
     RZM_OT_AddProjectToggle,
     RZM_OT_RemoveProjectToggle,
+    RZM_OT_UpdateProjectToggle,
     RZM_OT_AssignObjectToggle,
     RZM_OT_RemoveObjectToggle,
     RZM_OT_ToggleObjectBit,

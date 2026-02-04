@@ -1,5 +1,5 @@
 RWTexture2D<float4> Atlas : register(u0);
-Buffer<float2> DecalDataBuffer : register(t1);
+Buffer<int2> DecalDataBuffer : register(t1);
 Texture2D<float4> MultiMaskTexture : register(t2);
 Texture2D<float4> atlas_slot_60 : register(t60);
 Texture2D<float4> atlas_slot_61 : register(t61);

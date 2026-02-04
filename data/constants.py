@@ -1,24 +1,20 @@
 # RZMenu/data/constants.py
 
 FX_COMMANDS = [
-    ('CommandListCoreFxBoxRound', "Box Round", "Скруглённые углы"), 
-    ('CommandListCoreFxBoxCircle', "Box Circle", "Форма круга/эллипса"), 
-    ('CommandListCoreFxGradient', "Gradient", "Градиентная заливка"), 
-    ('CommandListCoreFxShadow', "Shadow", "Тень под элементом"), 
-    ('CommandListCoreFxBlur', "Blur", "Размытие (блюр)"), 
-    ('CommandListCoreFxOutline', "Outline", "Обводка"), 
-    ('CommandListCoreFxHover', "Hover", "Эффект при наведении (2D)"), 
-    ('CommandListCoreFxHover3D', "Hover 3D", "Эффект при наведении (3D)"), 
-    ('CommandListCoreFxGpuAnimRotate', "GPU Anim Rotate", "Анимация вращения на GPU")
+    ('CommandListShaderPreset0', "ShaderPreset-HOVER UPSCALE", "ShaderPres"),
+    ('CommandListShaderPreset1', "ShaderPreset-HOVER UPSCALE 3D", "ShaderPres"),
+    ('CommandListShaderPreset2', "ShaderPreset-METALLIC HOVER OUTLINE SHINE", "ShaderPres"),
+    ('CommandListShaderPreset3', "ShaderPreset-WHITE OUTLINE", "ShaderPres"),
+    ('CommandListShaderPreset4', "ShaderPreset-SHADOW SHADER", "ShaderPres"),
+    ('CommandListShaderPreset5', "ShaderPreset-CHROMMATIC ABBERATION", "ShaderPres"),
+    ('CommandListShaderPreset6', "ShaderPreset-NOTHING", "ShaderPres"),
+    ('CommandListShaderPreset7', "ShaderPreset-WHITE OUTLINE2", "ShaderPres"),
+    ('CommandListShaderPreset8', "ShaderPreset-Metallic SHINE", "ShaderPres"),
+    ('CommandListShaderPreset9', "ShaderPreset-Metallic Sticker ROTATED", "ShaderPres"),
+    ('CommandListShaderPreset10', "ShaderPreset-Rotate", "ShaderPres"),
+    
 ]
 
 FN_COMMANDS = [
-    ('CommandListCoreFnCenterXY', "Center XY", "Центрировать по X и Y"), 
-    ('CommandListCoreFnCenterX', "Center X", "Центрировать по X"), 
-    ('CommandListCoreFnCenterY', "Center Y", "Центрировать по Y"), 
-    ('CommandListCoreFnLeft', "Align Left", "Выровнять по левому краю"), 
-    ('CommandListCoreFnRight', "Align Right", "Выровнять по правому краю"), 
-    ('CommandListCoreFnBottom', "Align Bottom", "Выровнять по нижнему краю"), 
-    ('CommandListCoreFnTop', "Align Top", "Выровнять по верхнему краю"), 
     ('CommandListCoreFnFixRatio', "Fix Ratio", "Сохранять пропорции")
 ]

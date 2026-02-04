@@ -2,6 +2,7 @@
 import bpy
 from . import signals
 from . import blender_bridge
+from ..conf import get_config
 
 def get_next_available_id(elements):
     if len(elements) == 0: return 1
@@ -14,6 +15,10 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         rzm = bpy.context.scene.rzm
         elements = rzm.elements
         
+        # --- LOAD DEFAULTS FROM CONFIG ---
+        config = get_config()
+        defaults = config.get("element_defaults", {}).get(class_type, {})
+        
         new_id = get_next_available_id(elements)
         new_element = elements.add()
         new_element.id = new_id
@@ -21,12 +26,28 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         new_element.element_name = f"{class_type.capitalize()}_{new_id}"
         new_element.position = (int(pos_x), int(pos_y))
         
-        if class_type == 'BUTTON': new_element.size = (120, 30)
-        elif class_type == 'TEXT': new_element.size = (100, 25)
-        elif class_type == 'SLIDER': new_element.size = (150, 20)
-        elif class_type == 'ANCHOR': new_element.size = (30, 30)
-        else: new_element.size = (150, 100)
+        # Apply Size
+        width = defaults.get("width", 150)
+        height = defaults.get("height", 100)
+        new_element.size = (width, height)
         
+        # Apply Color
+        if "color" in defaults and hasattr(new_element, "color"):
+             new_element.color = defaults["color"][:] # Copy list
+        
+        # Apply Text Align (if applicable)
+        # Note: Need to check if your blender property is exactly 'text_align' or 'align'
+        # Assuming defaults.py keys match blender property names roughly
+        if "text_align" in defaults and hasattr(new_element, "text_align"):
+             new_element.text_align = defaults["text_align"]
+
+        # Apply specific Grid props if Grid
+        if class_type == "GRID_CONTAINER":
+            if "grid_cell_size" in defaults and hasattr(new_element, "grid_cell_size"):
+                new_element.grid_cell_size = defaults["grid_cell_size"]
+            if "grid_cols" in defaults and hasattr(new_element, "grid_cols"):
+                new_element.grid_cols = defaults["grid_cols"]
+
         if parent_id != -1: new_element.parent_id = parent_id
             
         blender_bridge.safe_undo_push(f"RZM: Create {class_type}")
@@ -129,3 +150,64 @@ def duplicate_elements(target_ids):
 
 def commit_history(msg):
     blender_bridge.safe_undo_push(msg)
+
+def import_image_from_path(filepath):
+    """Import image into Blender scene.rzm.images."""
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        # Assuming RZMenu has an operator to add images
+        if hasattr(bpy.ops.rzm, "add_image"):
+            bpy.ops.rzm.add_image(filepath=filepath)
+        else:
+            print(f"Core: rzm.add_image operator not found. Path: {filepath}")
+            
+        signals.SIGNALS.structure_changed.emit()
+    except Exception as e:
+        print(f"Core: Failed to import image: {e}")
+    finally:
+        signals.IS_UPDATING_FROM_QT = False
+
+def create_element_with_image(image_id, x, y):
+    """Create a new element with an image at a specific position."""
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        if not bpy.context or not bpy.context.scene: return
+        rzm = bpy.context.scene.rzm
+        elements = rzm.elements
+        images = rzm.images
+        
+        new_id = get_next_available_id(elements)
+        new_element = elements.add()
+        new_element.id = new_id
+        new_element.elem_class = 'CONTAINER'
+        
+        # Try to find image to get name and size
+        img_meta = next((img for img in images if img.id == image_id), None)
+        if img_meta:
+            new_element.element_name = f"Img_{img_meta.display_name}_{new_id}"
+            
+            # Default size
+            w, h = 100, 100
+            
+            # If image pointer exists, try to get real size
+            if hasattr(img_meta, 'image_pointer') and img_meta.image_pointer:
+                real_w, real_h = img_meta.image_pointer.size
+                if real_w > 0 and real_h > 0:
+                    # Scale to fit max 100x100 but keep aspect ratio
+                    scale = min(100 / real_w, 100 / real_h)
+                    w, h = int(real_w * scale), int(real_h * scale)
+            
+            new_element.size = (w, h)
+        else:
+            new_element.element_name = f"Button_Img_{new_id}"
+            new_element.size = (100, 100)
+            
+        new_element.image_id = image_id
+        new_element.position = (int(x), int(y))
+        
+        blender_bridge.safe_undo_push(f"RZM: Create Image Element")
+        signals.SIGNALS.structure_changed.emit()
+        signals.SIGNALS.transform_changed.emit()
+        return new_id
+    finally:
+        signals.IS_UPDATING_FROM_QT = False

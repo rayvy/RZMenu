@@ -142,6 +142,21 @@ def generate_qss(t: dict) -> str:
         {window_bg_rules}
     }}
 
+    #RZContextWidget_HEADER {{
+        background-color: {t.get('bg_header_main', t.get('bg_header', '#1A1D23'))};
+        border-bottom: 1px solid {border_main};
+    }}
+
+    #RZContextWidget_FOOTER {{
+        background-color: {t.get('bg_footer_main', t.get('bg_header', '#1A1D23'))};
+        border-top: 1px solid {border_main};
+    }}
+
+    #RZAreaHeader {{
+        background-color: {t.get('bg_area_header', t.get('bg_header', '#333842'))};
+        border-bottom: 1px solid {border_main};
+    }}
+
     /* --- PANELS --- */
     /* Using specific IDs to prevent leakage */
     #RZMInspectorPanel, #RZMOutlinerPanel, #RZViewportPanel {{
@@ -230,6 +245,8 @@ def generate_qss(t: dict) -> str:
     }}
     
     #BtnSpecial {{ border: none; color: {t.get('text_dark', '#999')}; }}
+    #BtnWarning {{ background-color: {t.get('error', '#FF5555')}; color: {t.get('text_bright', '#FFF')}; }}
+    #BtnWarning:hover {{ background-color: {t.get('error', '#FF5555')}; opacity: 0.8; }}
     
     /* Sliders Custom */
     RZSmartSlider QPushButton {{ background: {t.get('bg_header', '#333')}; border: none; padding: 0px; }}
@@ -253,7 +270,18 @@ def generate_qss(t: dict) -> str:
     }}
     
     /* Splitter */
-    QSplitter::handle {{ background-color: transparent; }}
+    QSplitter::handle {{
+        background-color: {t.get('handle_splitter', '#1E2227')};
+    }}
+    QSplitter::handle:horizontal {{
+        width: 4px;
+    }}
+    QSplitter::handle:vertical {{
+        height: 4px;
+    }}
+    QSplitter::handle:hover {{
+        background-color: {t.get('accent', '#5298D4')};
+    }}
     
     QScrollBar:vertical {{
         border: none; background: {t.get('bg_root', '#222')}; width: 10px; margin: 0px;

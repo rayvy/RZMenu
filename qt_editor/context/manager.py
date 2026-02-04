@@ -1,9 +1,10 @@
 # RZMenu/qt_editor/context/manager.py
-from typing import Set, Tuple
+from typing import Set, Tuple, TYPE_CHECKING
 from PySide6.QtCore import QPoint
 
-from ..core import SIGNALS # Убедись что signals импортирован корректно (через core или ..signals)
-from .snapshot import RZContext
+from ..core import SIGNALS 
+if TYPE_CHECKING:
+    from .snapshot import RZContext
 from .states import RZInteractionState
 
 class RZContextManager:
@@ -67,7 +68,8 @@ class RZContextManager:
         if tag in self._state_tags: self._state_tags.remove(tag)
     def clear_tags(self): self._state_tags.clear()
 
-    def get_snapshot(self) -> RZContext:
+    def get_snapshot(self) -> 'RZContext':
+        from .snapshot import RZContext
         return RZContext(self)
     
     def get_debug_string(self) -> str:

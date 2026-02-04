@@ -1,78 +1,131 @@
-# RZMenu/qt_editor/props.py
 import bpy
 from . import signals
 from . import blender_bridge
 
-def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mode=False):
-    signals.IS_UPDATING_FROM_QT = True
-    try:
-        if not target_ids: return
-        changed = False
-        elements = bpy.context.scene.rzm.elements
-        
-        map_props = {
-            "pos_x": ("position", 0), "pos_y": ("position", 1),
-            "width": ("size", 0), "height": ("size", 1),
-            "is_hidden": ("qt_hide", None), "is_locked": ("qt_locked", None),
-            "is_selectable": ("qt_selectable", None), "color": ("color", None),
-            "grid_rows": ("grid_rows", None), "grid_cols": ("grid_cols", None),
-            "grid_gap": ("grid_gap", None), "grid_padding": ("grid_padding", None),
-            "grid_cell_size": ("grid_cell_size", None),
-        }
+# Centralized property mapping to reduce duplication (DRY)
+# Format: "qt_prop_name": ("blender_prop_meta", sub_index, signal_type)
+# signals: 'T' for transform, 'S' for structure, 'D' for data (always sent)
+PROP_MAP = {
+    # Geometry
+    "pos_x": ("position", 0, 'T'),
+    "pos_y": ("position", 1, 'T'),
+    "width": ("size", 0, 'T'),
+    "height": ("size", 1, 'T'),
+    "alignment": ("alignment", None, 'D'),
+    
+    # Formulas
+    "position_is_formula": ("position_is_formula", None, 'T'),
+    "size_is_formula": ("size_is_formula", None, 'T'),
+    "position_formula_x": ("position_formula_x", None, 'T'),
+    "position_formula_y": ("position_formula_y", None, 'T'),
+    "size_formula_x": ("size_formula_x", None, 'T'),
+    "size_formula_y": ("size_formula_y", None, 'T'),
 
-        bl_prop = prop_name
-        bl_idx = sub_index
-        if prop_name in map_props:
-            bl_prop, fixed_idx = map_props[prop_name]
-            if fixed_idx is not None: bl_idx = fixed_idx
-        
-        for elem in elements:
-            if elem.id in target_ids:
-                if hasattr(elem, bl_prop):
-                    current_val = getattr(elem, bl_prop)
-                    if bl_prop == "color":
-                        try:
-                            setattr(elem, bl_prop, value[:len(current_val)])
-                            changed = True
-                        except: pass
-                    elif bl_idx is not None:
-                        if current_val[bl_idx] != value:
-                            current_val[bl_idx] = value
-                            changed = True
-                    else:
-                        if current_val != value:
-                            setattr(elem, bl_prop, value)
-                            changed = True
-                else:
-                    try: elem[bl_prop] = value; changed = True
-                    except: pass
+    # Flags
+    "qt_hide": ("qt_hide", None, 'S'),
+    "is_hidden": ("qt_hide", None, 'S'), # Alias
+    "qt_lock_pos": ("qt_lock_pos", None, 'S'),
+    "is_locked_pos": ("qt_lock_pos", None, 'S'), # Alias
+    "qt_lock_size": ("qt_lock_size", None, 'S'),
+    "is_locked_size": ("qt_lock_size", None, 'S'), # Alias
+    
+    "qt_selectable": ("qt_selectable", None, 'D'),
+    "is_selectable": ("qt_selectable", None, 'D'), # Alias
+
+    # Grid
+    "grid_rows": ("grid_rows", None, 'D'),
+    "grid_cols": ("grid_cols", None, 'D'),
+    "grid_gap": ("grid_gap", None, 'D'),
+    "grid_padding": ("grid_padding", None, 'D'),
+    "grid_cell_size": ("grid_cell_size", None, 'D'),
+    "grid_min_cells": ("grid_min_cells", None, 'D'),
+    "grid_max_cells": ("grid_max_cells", None, 'D'),
+    "grid_wrap_mode": ("grid_wrap_mode", None, 'D'),
+    
+    # Appearance & Content
+    "element_name": ("element_name", None, 'S'),
+    "color": ("color", None, 'D'),
+    "tag": ("tag", None, 'D'),
+    "priority": ("priority", None, 'D'),
+    "is_main_window": ("is_main_window", None, 'D'),
+    "visibility_mode": ("visibility_mode", None, 'D'),
+    "visibility_condition": ("visibility_condition", None, 'D'),
+    "text_id": ("text_id", None, 'D'),
+    "hover_text_id": ("hover_text_id", None, 'D'),
+    "text_align": ("text_align", None, 'D'),
+    "image_id": ("image_id", None, 'D'),
+    "image_mode": ("image_mode", None, 'D'),
+    "tile_uv": ("tile_uv", None, 'D'),
+    "tile_size": ("tile_size", None, 'D'),
+    "disable_button_nums": ("disable_button_nums", None, 'D'),
+    "disable_button_popup": ("disable_button_popup", None, 'D'),
+}
+
+from ..utils import logger
+
+def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mode=False):
+    if not target_ids: return
+    
+    # Resolve Mapping
+    mapping = PROP_MAP.get(prop_name)
+    if mapping is None:
+        logger.warn(f"Property '{prop_name}' not found in PROP_MAP, skipping update")
+        return
+
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        targets = [e for e in elements if e.id in target_ids]
+        if not targets: return
+
+        bl_prop = mapping[0]
+        bl_idx = mapping[1] if mapping[1] is not None else sub_index
+        sig_type = mapping[2] 
+
+        changed = False
+        for elem in targets:
+            if not hasattr(elem, bl_prop):
+                continue
+            
+            raw_val = getattr(elem, bl_prop)
+            
+            # Type-specific handling
+            if bl_prop == "color":
+                try: 
+                    setattr(elem, bl_prop, value[:len(raw_val)])
+                    changed = True
+                except: pass
+            elif bl_idx is not None:
+                if raw_val[bl_idx] != value:
+                    raw_val[bl_idx] = value
+                    setattr(elem, bl_prop, raw_val)
+                    changed = True
+            else:
+                if raw_val != value:
+                    setattr(elem, bl_prop, value)
+                    changed = True
 
         if changed:
-            if not fast_mode: blender_bridge.safe_undo_push(f"RZM: Change {prop_name}")
+            if not fast_mode: 
+                blender_bridge.safe_undo_push(f"RZM: Change {prop_name}")
             
-            if prop_name in ["pos_x", "pos_y", "width", "height"]:
+            # Emit Signals based on type
+            signals.SIGNALS.data_changed.emit()
+            if sig_type == 'T':
                 signals.SIGNALS.transform_changed.emit()
-                signals.SIGNALS.data_changed.emit()
-            elif prop_name in ["element_name", "is_hidden", "qt_hide", "is_locked"]:
+            elif sig_type == 'S':
                 signals.SIGNALS.structure_changed.emit()
-                signals.SIGNALS.data_changed.emit()
-            else:
-                signals.SIGNALS.data_changed.emit()
-                signals.SIGNALS.transform_changed.emit()
-    finally:
-        signals.IS_UPDATING_FROM_QT = False
+                signals.SIGNALS.transform_changed.emit() # Often needed too
 
 def toggle_editor_flag(target_ids, flag_name):
-    map_flags = {
-        "is_hidden": "qt_hide", "is_locked": "qt_locked", "is_selectable": "qt_selectable"
-    }
-    bl_prop = map_flags.get(flag_name)
-    if not bl_prop: return
-
-    signals.IS_UPDATING_FROM_QT = True
-    try:
-        changed = False
+    """Simplified toggle using centralized mapping."""
+    if not target_ids: return
+    mapping = PROP_MAP.get(flag_name)
+    if not mapping: return
+    
+    bl_prop = mapping[0]
+    with signals.qt_update_guard():
         elements = bpy.context.scene.rzm.elements
+        changed = False
         for elem in elements:
             if elem.id in target_ids:
                 curr = getattr(elem, bl_prop, False)
@@ -81,15 +134,189 @@ def toggle_editor_flag(target_ids, flag_name):
         
         if changed:
             blender_bridge.safe_undo_push(f"RZM: Toggle {flag_name}")
-            signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.data_changed.emit()
+            signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.transform_changed.emit()
-    finally:
-        signals.IS_UPDATING_FROM_QT = False
+
+def add_conditional_image(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.conditional_images.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Conditional Image")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_conditional_image(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.conditional_images):
+                elem.conditional_images.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Conditional Image")
+            signals.SIGNALS.data_changed.emit()
+
+def update_conditional_image(target_ids, index, field, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.conditional_images):
+                item = elem.conditional_images[index]
+                if hasattr(item, field):
+                    curr = getattr(item, field)
+                    if curr != value:
+                        setattr(item, field, value)
+                        changed = True
+        
+        if changed:
+            # We don't always want undo push for every keystroke if it's text
+            # But for simplicity here we do it.
+            blender_bridge.safe_undo_push(f"RZM: Update CI {field}")
+            signals.SIGNALS.data_changed.emit()
+
+def add_value_link(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.value_link.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Value Link")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_value_link(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.value_link):
+                elem.value_link.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Value Link")
+            signals.SIGNALS.data_changed.emit()
+
+def update_value_link(target_ids, index, field, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.value_link):
+                item = elem.value_link[index]
+                if hasattr(item, field):
+                    curr = getattr(item, field)
+                    if curr != value:
+                        setattr(item, field, value)
+                        changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update VL {field}")
+            signals.SIGNALS.data_changed.emit()
+
+def add_fx(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.fx.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add FX")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_fx(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.fx):
+                elem.fx.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove FX")
+            signals.SIGNALS.data_changed.emit()
+
+def update_fx(target_ids, index, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.fx):
+                item = elem.fx[index]
+                if item.value != value:
+                    item.value = value
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Update FX")
+            signals.SIGNALS.data_changed.emit()
+
+def perform_math_operation(target_ids, prop_name, op_str, sub_index=None):
+    if not target_ids: return
+
+    mapping = PROP_MAP.get(prop_name)
+    bl_prop = mapping[0] if mapping else prop_name
+    bl_idx = mapping[1] if mapping and mapping[1] is not None else sub_index
+    
+    op = op_str[:2]
+    try: val = float(op_str[2:])
+    except ValueError: return
+
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, bl_prop):
+                current_obj = getattr(elem, bl_prop)
+                try:
+                    curr_val = current_obj[bl_idx] if bl_idx is not None else float(current_obj)
+                except: continue
+
+                if op == "+=": new_val = curr_val + val
+                elif op == "-=": new_val = curr_val - val
+                elif op == "*=": new_val = curr_val * val
+                elif op == "/=": new_val = curr_val / val if val != 0 else curr_val
+                else: continue
+
+                if bl_idx is not None:
+                    current_obj[bl_idx] = int(new_val) if isinstance(curr_val, int) else new_val
+                    setattr(elem, bl_prop, current_obj)
+                else:
+                    setattr(elem, bl_prop, int(new_val) if isinstance(current_obj, int) else new_val)
+                changed = True
+
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Math {op_str} on {prop_name}")
+            signals.SIGNALS.transform_changed.emit()
+            signals.SIGNALS.data_changed.emit()
 
 def unhide_all_elements():
-    signals.IS_UPDATING_FROM_QT = True
-    try:
+    with signals.qt_update_guard():
         if not bpy.context or not bpy.context.scene: return
         elements = bpy.context.scene.rzm.elements
         changed = False
@@ -102,5 +329,3 @@ def unhide_all_elements():
             blender_bridge.safe_undo_push("RZM: Unhide All")
             signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.transform_changed.emit()
-    finally:
-        signals.IS_UPDATING_FROM_QT = False

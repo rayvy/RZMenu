@@ -74,9 +74,14 @@ class RZElementWrapper:
         return getattr(el, "qt_hide", False) if el else False
 
     @property
-    def is_locked(self) -> bool:
+    def is_locked_pos(self) -> bool:
         el = self._get_bl_element()
-        return getattr(el, "qt_locked", False) if el else False
+        return getattr(el, "qt_lock_pos", False) if el else False
+
+    @property
+    def is_locked_size(self) -> bool:
+        el = self._get_bl_element()
+        return getattr(el, "qt_lock_size", False) if el else False
 
     @property
     def is_selectable(self) -> bool:

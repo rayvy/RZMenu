@@ -25,7 +25,7 @@ class ImageCache:
         Принудительно загружает картинку в кэш.
         Вызывать из основного потока (rebuild_scene).
         """
-        if not image_id or image_id == -1:
+        if image_id == -1:  # Only skip invalid IDs, not 0
             return
 
         if image_id in self._cache:
@@ -54,7 +54,7 @@ class ImageCache:
 
         width = bl_image.size[0]
         height = bl_image.size[1]
-        
+
         if width <= 0 or height <= 0:
             return
 
@@ -82,21 +82,20 @@ class ImageCache:
             # 4. Создание QImage
             # np.require гарантирует C-contiguous массив, чтобы Qt не ругался
             final_buffer = np.require(pixels_flipped, requirements=['C'])
-            
+
             h, w, ch = final_buffer.shape
             bytes_per_line = ch * w
-            
+
             q_image = QtGui.QImage(
-                final_buffer.data, 
-                w, 
-                h, 
-                bytes_per_line, 
+                final_buffer.data,
+                w,
+                h,
+                bytes_per_line,
                 QtGui.QImage.Format_RGBA8888
             ).copy() # Делаем глубокую копию, чтобы отвязаться от numpy
 
             # 5. Сохраняем в кэш
             self._cache[image_id] = QtGui.QPixmap.fromImage(q_image)
-            # print(f"ImageCache: Cached ID {image_id} ({w}x{h})")
 
         except Exception as e:
             print(f"RZMenu Image Cache Critical Error on ID {image_id}: {e}")

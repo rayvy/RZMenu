@@ -389,9 +389,7 @@ float4 GetFinalBlendedColor(float4 tex_color, vs2ps input) {
         case DRAW_MODE_TEXTURE_MULTIPLY:
             return tex_color * input.color;
         case DRAW_MODE_TEXTURE_OVERLAY: {
-            if (input.color.a < 0.001) return tex_color;
-            float4 overlay_result = ApplyOverlay(tex_color, input.color);
-            return float4(lerp(tex_color.rgb, overlay_result.rgb, input.color.a), tex_color.a);
+            return tex_color; // Просто возвращаем цвет из текстуры
         }
         case DRAW_MODE_NUMBER:
         case DRAW_MODE_TEXT:
@@ -488,15 +486,30 @@ void main(vs2ps input, out float4 result : SV_Target0)
 
     if (input.fx_type == FX_HOVER_OUTLINE_INWARD)
     {
-        float dist_from_edge = GetDistanceToEdge(input.local_uv);
-        const float outline_thickness = 0.05;
-        float outline_factor = step(dist_from_edge, outline_thickness);
+        // 1. Задаем толщину обводки в экранных единицах (screen units), а не в UV.
+        //    Это делает толщину независимой от формы объекта.
+        const float outline_thickness_in_screen_units = 0.003; 
+
+        // 2. Вычисляем расстояние до ближайшей горизонтальной и вертикальной границы
+        //    в экранных единицах. Для этого умножаем нормализованное расстояние
+        //    (от 0 до 0.5) на реальный размер объекта по соответствующей оси.
+        float dist_from_edge_x_su = min(input.local_uv.x, 1.0 - input.local_uv.x) * input.object_pos_size.z;
+        float dist_from_edge_y_su = min(input.local_uv.y, 1.0 - input.local_uv.y) * input.object_pos_size.w;
         
+        // 3. Находим минимальное из этих двух расстояний. Это реальное расстояние
+        //    до ближайшего края в пикселях/экранных единицах.
+        float min_dist_from_edge_su = min(dist_from_edge_x_su, dist_from_edge_y_su);
+
+        // 4. Сравниваем реальное расстояние с желаемой толщиной.
+        float outline_factor = step(min_dist_from_edge_su, outline_thickness_in_screen_units);
+        
+        // Применяем эффект, если альфа-канал текстуры непрозрачен
         if (GetAlpha(input.draw_mode, input.uv) > 0.5)
         {
             final_color.rgb = lerp(final_color.rgb, float3(1,1,1), outline_factor * 0.7);
         }
     }
+    // --- ИСПРАВЛЕНИЕ ЗАКАНЧИВАЕТСЯ ЗДЕСЬ ---
 
     if (final_color.a > 0.01)
     {

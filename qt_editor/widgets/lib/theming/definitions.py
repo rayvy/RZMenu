@@ -7,6 +7,10 @@ THEME_DARK = {
     "bg_root": "#20232A",
     "bg_panel": "#2C313A",
     "bg_header": "#3A404A",
+    "bg_header_main": "#1A1D23",
+    "bg_footer_main": "#1A1D23",
+    "bg_area_header": "#333842",
+    "handle_splitter": "#1E2227",
     "bg_input": "#252930",
     "bg_scope": "Unified",
     
@@ -23,6 +27,7 @@ THEME_DARK = {
     "text_dark": "#9DA5B4",
     "text_disabled": "#6A717C",
     "text_bright": "#FFFFFF",
+    "text_variable": "#E06C75",
     
     # Borders
     "border_main": "#3A404A",
@@ -47,6 +52,7 @@ THEME_DARK = {
     "vp_locked": "#FF3232",
     "vp_handle": "#FFFFFF",
     "vp_handle_border": "#000000",
+    "vp_grid_color": "rgba(255, 255, 255, 30)",
     "vp_type_container": "rgba(60, 60, 60, 200)",
     "vp_type_grid_container": "rgba(50, 50, 55, 200)",
     "vp_type_button": "rgba(70, 90, 110, 255)",
@@ -73,6 +79,10 @@ THEME_LIGHT = {
     "bg_root": "#F0F4F8",
     "bg_panel": "#FFFFFF",
     "bg_header": "#E1E8EE",
+    "bg_header_main": "#D4DBE2",
+    "bg_footer_main": "#D4DBE2",
+    "bg_area_header": "#ECF0F4",
+    "handle_splitter": "#CED6DD",
     "bg_input": "#F7F9FB",
     "bg_scope": "Unified",
     "bg_fit": "Cover",
@@ -83,6 +93,7 @@ THEME_LIGHT = {
     "text_dark": "#546E7A",     
     "text_disabled": "#B0BEC5",
     "text_bright": "#2C3E50",
+    "text_variable": "#D1414F",
 
     # Borders
     "border_main": "#CFD8DC",
@@ -107,6 +118,7 @@ THEME_LIGHT = {
     "vp_locked": "#D32F2F",
     "vp_handle": "#FFFFFF",
     "vp_handle_border": "#0288D1",
+    "vp_grid_color": "rgba(0, 0, 0, 40)",
 
     "vp_type_container": "rgba(255, 255, 255, 200)",
     "vp_type_grid_container": "rgba(245, 245, 250, 200)",
@@ -131,6 +143,10 @@ THEME_BLUE = {
     "bg_root": "#1A1F2E",
     "bg_panel": "#2A3441",
     "bg_header": "#3A4551",
+    "bg_header_main": "#151B26",
+    "bg_footer_main": "#151B26",
+    "bg_area_header": "#2F3B4D",
+    "handle_splitter": "#1A222E",
     "bg_input": "#1E2530",
     "bg_scope": "Unified",
     "bg_fit": "Cover",
@@ -141,6 +157,7 @@ THEME_BLUE = {
     "text_dark": "#A8B3C1",
     "text_disabled": "#647085",
     "text_bright": "#FFFFFF",
+    "text_variable": "#E06C75",
 
     # Borders
     "border_main": "#4A5561",
@@ -165,6 +182,7 @@ THEME_BLUE = {
     "vp_locked": "#E57373",
     "vp_handle": "#FFFFFF",
     "vp_handle_border": "#000000",
+    "vp_grid_color": "rgba(255, 255, 255, 30)",
     "vp_type_container": "rgba(40, 50, 70, 200)",
     "vp_type_grid_container": "rgba(30, 40, 55, 200)",
     "vp_type_button": "rgba(50, 70, 90, 255)",

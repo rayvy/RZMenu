@@ -1,6 +1,9 @@
 # RZMenu/core/atlas_algo.py (ex rzm_atlas.py)
 import bpy
 import numpy as np
+import struct
+import zlib
+from pathlib import Path
 
 class PackerNode:
     # ... (класс PackerNode остается без изменений) ...
@@ -65,11 +68,82 @@ def calculate_atlas_layout(image_sizes_dict: dict):
     
     return (atlas_w, atlas_h), uv_data
 
+def apply_gamma_correction(atlas_pixels, width, height):
+    """
+    Применяет гамма-коррекцию 1/2.2 к RGB каналам, не трогая Alpha.
+    Это делает "белесые" линейные пиксели сочными (sRGB).
+    """
+    print("DEBUG: Applying mathematical Gamma 2.2 correction...")
+    
+    # Решейп в 3D массив (H, W, 4)
+    buffer = atlas_pixels.reshape((height, width, 4))
+    
+    # Разделяем каналы
+    rgb = buffer[:, :, :3]
+    alpha = buffer[:, :, 3:]
+    
+    # Защита от NaN и вылетов
+    rgb = np.clip(rgb, 0.0, 1.0)
+    
+    # === ГЛАВНАЯ МАГИЯ ===
+    # Paint.NET использует простую гамму 2.2 (gAMA 45455)
+    # Формула: Color_New = Color_Old ^ (1 / 2.2)
+    # rgb_corrected = np.power(rgb, 1.0 / 2.2)
+    
+    # Собираем обратно
+    # buffer[:, :, :3] = rgb_corrected
+    
+    return buffer.flatten()
+
+# --- ЧАСТЬ 2: РАБОТА С ФАЙЛОМ (ИНЪЕКЦИЯ ЧАНКОВ) ---
+def inject_paintnet_metadata(filepath):
+    """
+    Вставляет чанки sRGB и gAMA, чтобы файл был бинарно идентичен Paint.NET
+    """
+    try:
+        with open(filepath, 'rb') as f:
+            data = f.read()
+
+        if data[:8] != b'\x89PNG\r\n\x1a\n':
+            return
+
+        # Ищем позицию для вставки (после IHDR)
+        # IHDR всегда 13 байт данных + 12 байт обвязки = 25 байт.
+        # Заголовок файла 8 байт. Итого IHDR кончается на 33 байте.
+        insert_pos = 33 
+        
+        # --- Подготовка чанка sRGB ---
+        # Intent 0 (Perceptual)
+        srgb_payload = b'\x00'
+        srgb_chunk = create_png_chunk(b'sRGB', srgb_payload)
+        
+        # --- Подготовка чанка gAMA ---
+        # Value 0.45455 * 100000 = 45455
+        gama_payload = struct.pack('>I', 45455)
+        gama_chunk = create_png_chunk(b'gAMA', gama_payload)
+        
+        # Вставляем данные, если их еще нет
+        if b'sRGB' not in data:
+            data = data[:insert_pos] + srgb_chunk + gama_chunk + data[insert_pos:]
+            
+            with open(filepath, 'wb') as f:
+                f.write(data)
+            print("SUCCESS: Injected sRGB + gAMA chunks.")
+        else:
+            print("INFO: Metadata already present.")
+            
+    except Exception as e:
+        print(f"Injection Failed: {e}")
+
+def create_png_chunk(type_bytes, data_bytes):
+    length = len(data_bytes)
+    # CRC считается от Type + Data
+    crc = zlib.crc32(type_bytes + data_bytes) & 0xffffffff
+    return struct.pack('>I', length) + type_bytes + data_bytes + struct.pack('>I', crc)
+
+
+# --- ЧАСТЬ 3: ГЕНЕРАЦИЯ ---
 def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: dict):
-    """
-    МЕДЛЕННАЯ ЧАСТЬ: Создает массив пикселей на основе готового layout.
-    Возвращает плоский массив пикселей (numpy.ndarray).
-    """
     if not image_dict or atlas_w == 0 or atlas_h == 0:
         return np.array([])
         
@@ -82,8 +156,14 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
         x, y = uv_data[name]['uv_coords']
         w, h = uv_data[name]['uv_size']
         
-        img_pixels = np.array(img.pixels[:]).reshape((h, w, 4))
-        atlas_pixels[y:y+h, x:x+w] = img_pixels
-
-    print("DEBUG EXPORT: Pixel copy complete.")
-    return atlas_pixels.flatten()
+        if len(img.pixels) > 0:
+            try:
+                img_pixels = np.array(img.pixels[:]).reshape((h, w, 4))
+                atlas_pixels[y:y+h, x:x+w] = img_pixels
+            except:
+                pass
+    
+    # ПРИМЕНЯЕМ ГАММУ СРАЗУ ПОСЛЕ СБОРКИ
+    atlas_pixels_flat = apply_gamma_correction(atlas_pixels, atlas_w, atlas_h)
+    
+    return atlas_pixels_flat

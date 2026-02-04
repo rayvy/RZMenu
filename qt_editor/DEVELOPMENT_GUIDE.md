@@ -1,0 +1,835 @@
+# Руководство по разработке RZMenu/qt_editor
+
+## Содержание
+1. [Введение](#введение)
+2. [Архитектурные принципы](#архитектурные-принципы)
+3. [Добавление нового свойства элемента](#добавление-нового-свойства-элемента) **(КРИТИЧНО ВАЖНЫЙ РАЗДЕЛ)**
+4. [Создание новой панели](#создание-новой-панели)
+5. [Создание оператора](#создание-оператора)
+6. [Работа с формулами](#работа-с-формулами)
+7. [Темизация](#темизация)
+8. [Отладка и тестирование](#отладка-и-тестирование)
+
+## Введение
+
+RZMenu/qt_editor - это модульная архитектура для создания редакторов в Blender. Перед началом разработки важно понять ключевые принципы:
+
+- **Автономность компонентов** - каждый компонент работает независимо
+- **Система сигналов** - коммуникация через сигналы, не прямые ссылки
+- **Безопасность контекста** - все операции через `blender_bridge`
+- **Иммутабельность состояния** - контекст неизменяемый
+
+## Архитектурные принципы
+
+### 1. Принцип автономности
+```python
+# ❌ ПЛОХО: Прямая ссылка на другие компоненты
+class MyPanel:
+    def __init__(self, other_panel):
+        self.other_panel = other_panel
+
+# ✅ ХОРОШО: Автономность через сигналы
+class MyPanel(RZEditorPanel):
+    def _connect_signals(self):
+        SIGNALS.selection_changed.connect(self.refresh_data)
+```
+
+### 2. Принцип безопасности контекста
+```python
+# ❌ ПЛОХО: Прямой доступ к bpy
+def my_function():
+    bpy.context.scene.rzm.elements.add()
+
+# ✅ ХОРОШО: Через систему моста
+def my_function():
+    core.create_element("BUTTON", 0, 0)
+```
+
+### 3. Принцип неизменяемости
+```python
+# ❌ ПЛОХО: Изменение контекста напрямую
+def modify_context(ctx):
+    ctx.selected_ids.add(123)
+
+# ✅ ХОРОШО: Через менеджер контекста
+def modify_context():
+    manager = RZContextManager.get_instance()
+    manager.set_selection({123}, 123)
+```
+
+## Создание оператора
+
+### Шаг 1: Создание оператора
+
+Добавьте класс в `systems/operators.py`:
+
+```python
+class RZ_OT_MyAction(RZOperator):
+    id = "rzm.my_action"
+    label = "Do Something"
+    requires_selection = True  # Если нужно выделение
+
+    def execute(self, context: RZContext, **kwargs):
+        # Ваша логика. Используйте core функции!
+        print(f"Action on {context.selected_ids}")
+        return {'FINISHED'}
+```
+
+### Шаг 2: Регистрация оператора
+
+Добавьте класс в список `_CLASSES` в конце файла.
+
+### Шаг 3: Горячие клавиши (опционально)
+
+Добавьте в `conf/defaults.py` дефолтный хоткей.
+
+### Шаг 4: Добавление кнопки в UI
+
+Добавьте в `window.py`, в метод `setup_toolbar()`:
+
+```python
+def setup_toolbar(self):
+    # ... существующие кнопки
+    add_btn("My Op", "rzm.my_simple_op")
+```
+
+## Создание новой панели
+
+### Шаг 1: Создание базовой панели
+
+Создайте файл в `widgets/`, например `widgets/my_panel.py`.
+
+```python
+from PySide6 import QtWidgets
+from .panel_base import RZEditorPanel
+from ..core.signals import SIGNALS
+from ..context import RZContextManager
+
+class RZMyPanel(RZEditorPanel):
+    """
+    Моя новая панель для специальных функций.
+    """
+
+    PANEL_ID = "MY_PANEL"
+    PANEL_NAME = "My Awesome Panel"
+    PANEL_ICON = "star"  # Иконка из системы иконок
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+        # Создаем UI
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        self.label = QtWidgets.QLabel("Hello World!")
+        layout.addWidget(self.label)
+
+        self.button = QtWidgets.QPushButton("Click me")
+        self.button.clicked.connect(self.on_button_click)
+        layout.addWidget(self.button)
+
+        layout.addStretch()
+
+    def _connect_signals(self):
+        """Подписываемся на сигналы."""
+        SIGNALS.selection_changed.connect(self.refresh_data)
+        SIGNALS.structure_changed.connect(self.refresh_data)
+
+    def _disconnect_signals(self):
+        """Безопасная отписка от сигналов."""
+        try:
+            SIGNALS.selection_changed.disconnect(self.refresh_data)
+            SIGNALS.structure_changed.disconnect(self.refresh_data)
+        except:
+            pass
+
+    def refresh_data(self):
+        """Обновляем данные панели."""
+        if not self._is_panel_active:
+            return
+
+        ctx = RZContextManager.get_instance().get_snapshot()
+
+        if ctx.selected_ids:
+            self.label.setText(f"Selected items: {len(ctx.selected_ids)}")
+        else:
+            self.label.setText("No selection")
+
+    def on_button_click(self):
+        """Обработчик нажатия кнопки."""
+        action_manager = self.get_action_manager()
+        if action_manager:
+            action_manager.run("rzm.select_all")
+
+    def on_activate(self):
+        """Вызывается при активации панели."""
+        super().on_activate()
+        print(f"Panel {self.PANEL_ID} activated")
+
+    def on_deactivate(self):
+        """Вызывается при деактивации панели."""
+        super().on_deactivate()
+        print(f"Panel {self.PANEL_ID} deactivated")
+```
+
+### Шаг 2: Регистрация панели
+
+Добавьте в `window.py` -> `_register_panels()`:
+
+```python
+from .widgets import my_panel
+PanelFactory.register(my_panel.RZMyPanel)
+```
+
+Теперь панель доступна в выпадающем списке любого Area.
+
+### Шаг 3: Добавление иконки (опционально)
+
+Если вам нужна специальная иконка, добавьте в `utils/icons.py`:
+
+```python
+ICON_MAP.update({
+    "star": "★",  # Или путь к файлу иконки
+})
+```
+
+## Добавление нового свойства элемента
+
+**⚠️ ВНИМАНИЕ: Это самый частый кейс разработки. Пропуск любого шага приведет к неработоспособности!**
+
+### Шаг 1: Blender RNA (Внешний код)
+В файле определения свойств `RZElement` (вне папки `qt_editor`, в основном аддоне) добавьте свойство:
+```python
+# В основном аддоне RZMenu
+class RZElement(PropertyGroup):
+    # ... существующие свойства
+
+    opacity: FloatProperty(
+        name="Opacity",
+        default=1.0,
+        min=0.0,
+        max=1.0
+    )
+```
+
+### Шаг 2: Property Mapping (КРИТИЧНО ВАЖНЫЙ ШАГ!)
+В файле `qt_editor/core/props.py` найдите словарь `PROP_MAP`. Добавьте маппинг для вашего свойства.
+Это связывает имя, используемое в Qt, с реальным именем в Blender API.
+
+```python
+# qt_editor/core/props.py
+PROP_MAP = {
+    # ... существующие маппинги
+    "opacity": ("opacity", None, 'D'), # 'D' означает сигнал data_changed
+}
+```
+*Типы сигналов:*
+- `'D'` (Data) - для обычных свойств, эмитирует `data_changed`
+- `'T'` (Transform) - для позиций/размеров, эмитирует `transform_changed`
+- `'S'` (Structure) - для структурных изменений, эмитирует `structure_changed`
+
+**❌ БЕЗ ЭТОГО ШАГА:** UI инспектора сможет читать данные, но запись (`_emit_change`) молча не сработает!
+
+### Шаг 3: Чтение данных
+В `qt_editor/core/read.py` в функцию `get_selection_details` добавьте чтение свойства:
+
+```python
+# qt_editor/core/read.py
+def get_selection_details(selected_ids, active_id):
+    # ... существующий код
+
+    if active_element:
+        # ... существующие поля
+        details.update({
+            "opacity": get_uniform("opacity", default=1.0),
+        })
+
+    return details
+```
+
+### Шаг 4: UI Инспектора
+В `qt_editor/widgets/inspector.py`:
+
+1. Добавьте виджет в `_init_properties_ui`:
+```python
+# === GROUP: APPEARANCE ===
+grp_appearance = RZGroupBox("Appearance")
+form_appearance = QtWidgets.QFormLayout(grp_appearance)
+
+self.sl_opacity = RZSmartSlider(is_int=False, min_val=0.0, max_val=1.0)
+self.sl_opacity.value_changed.connect(lambda v: self._emit_change('opacity', v))
+form_appearance.addRow("Opacity:", self.sl_opacity)
+
+self.layout_props.addWidget(grp_appearance)
+```
+
+2. Обновите виджет в `update_ui`:
+```python
+def update_ui(self, details):
+    # ... существующий код
+
+    # Обновляем opacity
+    self.sl_opacity.set_value_from_backend(props.get('opacity', 1.0))
+```
+
+### Шаг 5: Обновление обертки контекста (опционально)
+Если нужно свойство в `RZElementWrapper` для операторов:
+
+```python
+# context/wrappers.py
+@property
+def opacity(self) -> float:
+    el = self._get_bl_element()
+    return getattr(el, "opacity", 1.0) if el else 1.0
+```
+
+### Проверка работоспособности
+После всех шагов:
+1. Запустите редактор
+2. Выделите элемент
+3. Проверьте, что слайдер Opacity появился в Inspector
+4. Измените значение - оно должно сохраняться
+5. Сделайте Undo в Blender - значение должно вернуться
+
+---
+
+## Работа с формулами
+
+Система поддерживает вычисление координат и размеров через формулы (`core/logic.py` - `FormulaEvaluator`).
+
+### Как работают формулы
+- Переменные доступны через `$NameProperty` (регистронезависимо)
+- Примеры: `$Button1PositionX + 10`, `$Slider1Height * 0.5`
+- Вычисление происходит итеративно (до 5 проходов) для разрешения зависимостей
+
+### Добавление свойства с поддержкой формул
+
+Если свойство может быть формулой (например, позиция X), добавьте поддержку в `FormulaEvaluator`:
+
+```python
+# core/logic.py - внутри FormulaEvaluator._eval_safe
+def _eval_safe(self, formula_str, eval_context, fallback):
+    # ... существующий код
+
+    # Добавьте поддержку новых переменных в eval_context
+    # (автоматически делается в _build_flat_context)
+```
+
+### UI для формул в Inspector
+
+Для свойств с формулами используйте `RZFormulaInput`:
+
+```python
+# widgets/inspector.py
+self.edit_pos_x = RZFormulaInput()
+self.edit_pos_x.setPlaceholderText("$Button1PositionX + 20")
+self.edit_pos_x.editingFinished.connect(lambda: self._emit_change('formula_x', self.edit_pos_x.text()))
+form_layout.addRow("X:", self.edit_pos_x)
+
+# Логика показа формулы
+self.chk_pos_x_formula = RZCheckBox("Use Formula")
+self.chk_pos_x_formula.toggled.connect(lambda: self._toggle_formula_ui('pos_x'))
+```
+
+### Логика переключения режимов
+
+```python
+def _toggle_formula_ui(self, prop_name):
+    """Показывать обычный спинбокс или поле формулы."""
+    use_formula = getattr(self, f'chk_{prop_name}_formula').isChecked()
+
+    # Скрыть/показать соответствующие виджеты
+    getattr(self, f'spin_{prop_name}').setVisible(not use_formula)
+    getattr(self, f'edit_{prop_name}').setVisible(use_formula)
+
+    # Переключить флаг в данных
+    self._emit_change(f'{prop_name}_is_formula', use_formula)
+```
+
+---
+
+## Темизация
+
+Все цвета берутся из `widgets/lib/theme.py`.
+**Никогда** не хардкодьте цвета (например, `color: #333`).
+Используйте:
+```python
+t = get_current_theme()
+color = t.get('text_main', '#FFF')
+```
+Это обеспечит поддержку пользовательских тем.
+
+### Шаг 4: Обновление метода получения деталей
+
+Добавьте в `core/read.py`:
+
+```python
+def get_selection_details(selected_ids, active_id):
+    # ... существующий код
+
+    if active_element:
+        details.update({
+            # ... существующие детали
+            'my_custom_prop': getattr(active_element, 'my_custom_prop', 1.0),
+        })
+
+    return details
+```
+
+## Создание сложных функций
+
+### Пример 1: Оператор с UI диалогом
+
+```python
+class RZ_OT_CreateElementDialog(RZOperator):
+    id = "rzm.create_element_dialog"
+    label = "Create Element with Dialog"
+
+    def execute(self, context: RZContext, **kwargs):
+        # Импортируем здесь чтобы избежать circular imports
+        from PySide6 import QtWidgets
+
+        # Получаем доступ к окну через kwargs
+        window = kwargs.get('window')
+        if not window:
+            return {'CANCELLED'}
+
+        # Создаем диалог
+        dialog = QtWidgets.QDialog(window)
+        dialog.setWindowTitle("Create New Element")
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        # Тип элемента
+        layout.addWidget(QtWidgets.QLabel("Element Type:"))
+        cb_type = QtWidgets.QComboBox()
+        cb_type.addItems(["BUTTON", "TEXT", "SLIDER", "CONTAINER"])
+        layout.addWidget(cb_type)
+
+        # Позиция X
+        layout.addWidget(QtWidgets.QLabel("X Position:"))
+        spin_x = QtWidgets.QSpinBox()
+        spin_x.setRange(-10000, 10000)
+        layout.addWidget(spin_x)
+
+        # Позиция Y
+        layout.addWidget(QtWidgets.QLabel("Y Position:"))
+        spin_y = QtWidgets.QSpinBox()
+        spin_y.setRange(-10000, 10000)
+        layout.addWidget(spin_y)
+
+        # Кнопки
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        # Показываем диалог
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            element_type = cb_type.currentText()
+            x = spin_x.value()
+            y = spin_y.value()
+
+            # Создаем элемент
+            new_id = core.create_element(element_type, x, y)
+
+            if new_id:
+                # Выделяем созданный элемент
+                RZContextManager.get_instance().set_selection({new_id}, new_id)
+
+                return {'FINISHED'}
+
+        return {'CANCELLED'}
+```
+
+### Пример 2: Панель с кастомным рендерером
+
+```python
+class RZCustomRendererPanel(RZEditorPanel):
+    PANEL_ID = "CUSTOM_RENDERER"
+    PANEL_NAME = "Custom Renderer"
+    PANEL_ICON = "palette"
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Создаем виджет для рендеринга
+        self.renderer = QtWidgets.QWidget()
+        self.renderer.setMinimumSize(200, 200)
+        layout.addWidget(self.renderer)
+
+        # Кнопки управления
+        btn_layout = QtWidgets.QHBoxLayout()
+
+        self.btn_render = QtWidgets.QPushButton("Render")
+        self.btn_render.clicked.connect(self.render_scene)
+        btn_layout.addWidget(self.btn_render)
+
+        self.btn_clear = QtWidgets.QPushButton("Clear")
+        self.btn_clear.clicked.connect(self.clear_render)
+        btn_layout.addWidget(self.btn_clear)
+
+        layout.addLayout(btn_layout)
+
+    def _connect_signals(self):
+        SIGNALS.structure_changed.connect(self.on_structure_changed)
+        SIGNALS.transform_changed.connect(self.on_transform_changed)
+
+    def _disconnect_signals(self):
+        try:
+            SIGNALS.structure_changed.disconnect(self.on_structure_changed)
+            SIGNALS.transform_changed.disconnect(self.on_transform_changed)
+        except:
+            pass
+
+    def render_scene(self):
+        """Рендерим текущую сцену."""
+        # Получаем данные элементов
+        all_data = core.get_all_elements_list()
+
+        # Выполняем кастомный рендеринг
+        # (здесь ваша логика рендеринга)
+
+        # Обновляем отображение
+        self.renderer.update()
+
+    def clear_render(self):
+        """Очищаем рендеринг."""
+        # Логика очистки
+        self.renderer.update()
+
+    def on_structure_changed(self):
+        """Обработчик изменения структуры."""
+        # Автоматически обновляем рендеринг при изменениях
+        if self.chk_auto_render.isChecked():
+            self.render_scene()
+
+    def on_transform_changed(self):
+        """Обработчик изменения трансформаций."""
+        # Аналогично структуре
+        if self.chk_auto_render.isChecked():
+            self.render_scene()
+
+    def refresh_data(self):
+        """Обновляем данные панели."""
+        if not self._is_panel_active:
+            return
+
+        # Обновляем информацию о сцене
+        scene_info = core.get_scene_info()
+        # Обновляем UI на основе scene_info
+```
+
+### Пример 3: Система плагинов
+
+Создайте структуру для загрузки плагинов:
+
+```python
+# plugins/__init__.py
+class PluginManager:
+    def __init__(self):
+        self.plugins = {}
+
+    def load_plugin(self, plugin_path):
+        """Загружаем плагин из файла."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("plugin", plugin_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        # Регистрируем компоненты плагина
+        if hasattr(module, 'register_plugin'):
+            module.register_plugin(self)
+
+    def register_operator(self, op_class):
+        """Регистрируем оператор плагина."""
+        from ..systems.operators import OPERATOR_REGISTRY
+        OPERATOR_REGISTRY[op_class.id] = op_class
+
+    def register_panel(self, panel_class):
+        """Регистрируем панель плагина."""
+        from ..widgets.panel_factory import PanelFactory
+        PanelFactory.register(panel_class)
+```
+
+Пример плагина:
+
+```python
+# my_plugin.py
+from PySide6 import QtWidgets
+from qt_editor.widgets.panel_base import RZEditorPanel
+from qt_editor.systems.operators import RZOperator
+from qt_editor import core
+from qt_editor.context import RZContext
+
+class MyPluginPanel(RZEditorPanel):
+    PANEL_ID = "MY_PLUGIN_PANEL"
+    PANEL_NAME = "My Plugin"
+    PANEL_ICON = "plugin"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(QtWidgets.QLabel("Plugin Panel!"))
+
+class MyPluginOperator(RZOperator):
+    id = "rzm.plugin_op"
+    label = "Plugin Operation"
+
+    def execute(self, context: RZContext, **kwargs):
+        print("Plugin operation executed!")
+        return {'FINISHED'}
+
+def register_plugin(plugin_manager):
+    """Регистрируем компоненты плагина."""
+    plugin_manager.register_panel(MyPluginPanel)
+    plugin_manager.register_operator(MyPluginOperator)
+```
+
+## Работа с системой моста
+
+### Основные правила
+
+1. **Всегда используйте bridge для операций с Blender**
+2. **Никогда не обращайтесь напрямую к bpy из UI кода**
+3. **Используйте контекстную защиту**
+
+### Примеры правильного использования:
+
+```python
+# ✅ Правильно: через core функции
+def safe_blender_operation():
+    # core функции автоматически используют bridge
+    new_id = core.create_element("BUTTON", 100, 100)
+
+# ✅ Правильно: явное использование bridge
+def explicit_bridge_usage():
+    from ..core import blender_bridge
+
+    def blender_code():
+        # Ваш код с bpy
+        bpy.ops.my_operator()
+
+    blender_bridge.exec_in_context(blender_code)
+
+# ❌ Неправильно: прямой доступ к bpy
+def unsafe_operation():
+    # Это может сломаться в runtime
+    bpy.context.scene.rzm.elements.add()
+```
+
+### Создание новых bridge функций
+
+Добавьте в `core/blender_bridge.py`:
+
+```python
+def my_custom_bridge_function(param1, param2):
+    """Моя кастомная функция моста."""
+
+    def blender_operation():
+        # Код выполняемый в контексте Blender
+        scene = bpy.context.scene
+        # ... ваша логика
+        return result
+
+    return exec_in_context(blender_operation)
+```
+
+## Отладка и тестирование
+
+### Debug overlay
+
+Включите debug overlay в `window.py`:
+
+```python
+def toggle_debug_panel(self):
+    """Переключение debug панели."""
+    is_visible = not self.debug_label.isVisible()
+    self.debug_label.setVisible(is_visible)
+    if is_visible:
+        self.debug_timer.start(50)  # Обновление каждые 50мс
+    else:
+        self.debug_timer.stop()
+```
+
+### Логирование
+
+Используйте систему логирования:
+
+```python
+from ..utils import logger
+
+def my_function():
+    logger.info("Начинаем операцию")
+    try:
+        # ваш код
+        logger.debug(f"Обработано {count} элементов")
+    except Exception as e:
+        logger.error(f"Ошибка в my_function: {e}")
+        raise
+```
+
+### Тестирование сигналов
+
+```python
+def test_signals():
+    """Тестируем систему сигналов."""
+    from ..core.signals import SIGNALS
+
+    # Создаем mock обработчик
+    call_count = [0]
+    def mock_handler():
+        call_count[0] += 1
+
+    # Подписываемся
+    SIGNALS.structure_changed.connect(mock_handler)
+
+    # Генерируем сигнал
+    SIGNALS.structure_changed.emit()
+
+    # Проверяем
+    assert call_count[0] == 1, "Сигнал не сработал"
+
+    # Отписываемся
+    SIGNALS.structure_changed.disconnect(mock_handler)
+```
+
+### Тестирование операторов
+
+```python
+def test_operator():
+    """Тестируем оператор."""
+    from ..systems.operators import RZ_OT_SelectAll
+    from ..context import RZContextManager
+
+    # Создаем оператор
+    op = RZ_OT_SelectAll()
+
+    # Создаем контекст
+    ctx = RZContextManager.get_instance().get_snapshot()
+
+    # Проверяем poll (может ли выполниться)
+    assert op.poll(ctx), "Оператор должен быть доступен"
+
+    # Выполняем
+    result = op.execute(ctx)
+    assert result == {'FINISHED'}, "Оператор должен завершиться успешно"
+```
+
+## Лучшие практики
+
+### 1. Обработка ошибок
+```python
+def safe_operation():
+    try:
+        # ваш код
+        return {'FINISHED'}
+    except Exception as e:
+        logger.error(f"Operation failed: {e}")
+        return {'CANCELLED'}
+```
+
+### 2. Безопасность сигналов
+```python
+def _disconnect_signals(self):
+    """Безопасная отписка от сигналов."""
+    try:
+        SIGNALS.some_signal.disconnect(self.handler)
+    except (RuntimeError, TypeError):
+        # Сигнал уже отключен или объект удален
+        pass
+```
+
+### 3. Оптимизация производительности
+```python
+def refresh_data(self):
+    """Оптимизированная перерисовка."""
+    if not self._is_panel_active:
+        return  # Не обновляемся если панель не активна
+
+    # Используем таймер для throttling частых обновлений
+    if hasattr(self, '_refresh_timer'):
+        self._refresh_timer.stop()
+
+    self._refresh_timer = QtCore.QTimer()
+    self._refresh_timer.setSingleShot(True)
+    self._refresh_timer.timeout.connect(self._do_refresh)
+    self._refresh_timer.start(16)  # ~60 FPS
+```
+
+### 4. Управление памятью
+```python
+def on_deactivate(self):
+    """Правильная очистка ресурсов."""
+    super().on_deactivate()
+
+    # Останавливаем таймеры
+    if hasattr(self, '_refresh_timer'):
+        self._refresh_timer.stop()
+
+    # Очищаем кэши
+    if hasattr(self, '_image_cache'):
+        self._image_cache.clear()
+
+    # Отписываемся от всех сигналов
+    self._disconnect_signals()
+```
+
+### 5. Non-Destructive UI Updates (CRITICAL)
+
+**Проблема:**
+Многие панели грешат полной перерисовкой (`clear_layout()` -> `add_widget()`) при получении сигнала `data_changed`.
+Это приводит к:
+1. **Потере фокуса** (если пользователь печатает в поле, оно удаляется и создается заново).
+2. **Сбросу скролла** и состояния (свернутые группы разворачиваются).
+3. **Падению производительности**.
+
+**Решение:**
+Используйте паттерн "Stateful Update":
+1. Не удаляйте виджеты, если их количество не изменилось.
+2. Сравнивайте текущее значение в виджете с новыми данными.
+3. Вызывайте `setText`/`setValue` **только** если они отличаются.
+
+```python
+# ❌ ПЛОХО: Destructive Update
+def update_ui(self):
+    clear_layout(self.layout) # УДАЛЯЕТ ВСЕ ВИДЖЕТЫ!
+    for item in items:
+        w = create_widget(item) # СОЗДАЕТ НОВЫЕ ПОД КАЖДЫЙ ЧИХ
+        self.layout.addWidget(w)
+
+# ✅ ХОРОШО: Stateful Update
+def update_ui(self):
+    # 1. Синхронизируем количество виджетов (Object Pool)
+    while len(self.widgets) < len(items):
+        self._add_row_widget()
+    while len(self.widgets) > len(items):
+        self._remove_last_widget()
+    
+    # 2. Обновляем данные в существующих виджетах
+    for i, item in enumerate(items):
+        widget = self.widgets[i]
+        # Внутри widget.update_cata() проверяем if input.text() != item.name: input.setText(...)
+        widget.update_data(item) 
+```
+
+## Заключение
+
+При разработке для RZMenu/qt_editor всегда следуйте принципам:
+
+1. **Автономность** - компоненты работают независимо
+2. **Безопасность** - все через систему моста
+3. **Сигналы** - коммуникация через сигналы
+4. **Обработка ошибок** - graceful degradation
+5. **Тестирование** - проверяйте все новые функции
+
+Используйте существующие паттерны и компоненты как основу для новых функций. Это обеспечит совместимость и надежность вашей разработки.</content>
+</xai:function_call=""></xai:function_call">  
+
+<xai:function_call name="run_terminal_cmd">
+<parameter name="command">echo "Файлы созданы: info.md и DEVELOPMENT_GUIDE.md"

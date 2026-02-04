@@ -31,11 +31,14 @@ from .structure import (
     reorder_elements,
     reparent_element,
     duplicate_elements,
-    commit_history
+    commit_history,
+    import_image_from_path,
+    create_element_with_image
 )
 
 from .props import (
     update_property_multi,
+    perform_math_operation,
     toggle_editor_flag,
     unhide_all_elements
 )
