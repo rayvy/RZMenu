@@ -8,6 +8,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 import shiboken6
 from .. import core
 from ..core.signals import SIGNALS
+from ..core import blender_bridge
 from ..systems.layout import GridSolver
 from ..systems.smart_snap import SmartSnapSystem
 from ..utils.image_cache import ImageCache

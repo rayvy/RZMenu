@@ -82,7 +82,9 @@ class RZImageComboBox(QtWidgets.QComboBox):
             if mime.hasFormat("application/x-rzmenu-image-id"):
                 data = mime.data("application/x-rzmenu-image-id")
                 image_id = int(data.data().decode('utf-8'))
-                self.set_value(image_id)
+                # Emit signal directly to update property. 
+                # UI will refresh via structure_changed signal and pick up the new value.
+                self.value_changed.emit(image_id)
                 event.acceptProposedAction()
                 
             # 2. External File Drop
@@ -94,7 +96,7 @@ class RZImageComboBox(QtWidgets.QComboBox):
                         # Only handle the first image for a single combo box
                         img_id, _ = blender_bridge.import_image(path)
                         if img_id is not None:
-                            self.set_value(img_id)
+                            self.value_changed.emit(img_id)
                         event.acceptProposedAction()
                         break
             else:
