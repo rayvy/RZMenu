@@ -82,8 +82,22 @@
         ],
         "children": [
             {
-                "type": "AREA",
-                "panel_id": "OUTLINER"
+                "type": "SPLITTER",
+                "orientation": 2,
+                "sizes": [
+                    466,
+                    465
+                ],
+                "children": [
+                    {
+                        "type": "AREA",
+                        "panel_id": "OUTLINER"
+                    },
+                    {
+                        "type": "AREA",
+                        "panel_id": "ASSETS"
+                    }
+                ]
             },
             {
                 "type": "AREA",

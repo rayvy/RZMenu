@@ -152,20 +152,51 @@ def commit_history(msg):
     blender_bridge.safe_undo_push(msg)
 
 def import_image_from_path(filepath):
-    """Import image into Blender scene.rzm.images."""
+    """
+    Import image from filepath into RZMenu.
+    Returns (image_id, image_name) if successful, else (None, None).
+    """
     signals.IS_UPDATING_FROM_QT = True
+    import os
+    if not os.path.exists(filepath):
+        print(f"Core: File not found: {filepath}")
+        return None, None
+
     try:
-        # Assuming RZMenu has an operator to add images
+        from . import read
+        # Snapshot existing IDs to find the new one
+        pre_images = {img['id'] for img in read.get_available_images()}
+        
+        # Execute operator
         if hasattr(bpy.ops.rzm, "add_image"):
-            bpy.ops.rzm.add_image(filepath=filepath)
+            with bpy.context.temp_override(window=bpy.context.window_manager.windows[0]):
+                res = bpy.ops.rzm.add_image(filepath=filepath)
         else:
             print(f"Core: rzm.add_image operator not found. Path: {filepath}")
+            return None, None
             
-        signals.SIGNALS.structure_changed.emit()
+        if 'FINISHED' not in res:
+             print("Core: Failed to add image operator.")
+             return None, None
+
+        # Find new ID
+        post_images = read.get_available_images()
+        new_img = None
+        for img in post_images:
+            if img['id'] not in pre_images:
+                new_img = img
+                break
+        
+        if new_img:
+            signals.SIGNALS.structure_changed.emit()
+            return new_img['id'], new_img['name']
+            
     except Exception as e:
         print(f"Core: Failed to import image: {e}")
     finally:
         signals.IS_UPDATING_FROM_QT = False
+    
+    return None, None
 
 def create_element_with_image(image_id, x, y):
     """Create a new element with an image at a specific position."""
@@ -176,31 +207,41 @@ def create_element_with_image(image_id, x, y):
         elements = rzm.elements
         images = rzm.images
         
+        # --- LOAD DEFAULTS ---
+        config = get_config()
+        defaults = config.get("element_defaults", {}).get("CONTAINER", {})
+
         new_id = get_next_available_id(elements)
         new_element = elements.add()
         new_element.id = new_id
         new_element.elem_class = 'CONTAINER'
         
+        # Apply Config Defaults First
+        if "color" in defaults and hasattr(new_element, "color"):
+             new_element.color = defaults["color"][:]
+        if "text_align" in defaults and hasattr(new_element, "text_align"):
+             new_element.text_align = defaults["text_align"]
+
         # Try to find image to get name and size
         img_meta = next((img for img in images if img.id == image_id), None)
+        target_w, target_h = defaults.get("width", 100), defaults.get("height", 100) # Default from config or 100
+        
         if img_meta:
             new_element.element_name = f"Img_{img_meta.display_name}_{new_id}"
             
-            # Default size
-            w, h = 100, 100
-            
-            # If image pointer exists, try to get real size
+            # If image pointer exists, try to get real size and Aspect Ratio
             if hasattr(img_meta, 'image_pointer') and img_meta.image_pointer:
                 real_w, real_h = img_meta.image_pointer.size
                 if real_w > 0 and real_h > 0:
-                    # Scale to fit max 100x100 but keep aspect ratio
-                    scale = min(100 / real_w, 100 / real_h)
-                    w, h = int(real_w * scale), int(real_h * scale)
+                    # Scale to fit max size but keep aspect ratio
+                    # We use the default width/height as the "box" to fit into
+                    scale = min(target_w / real_w, target_h / real_h)
+                    target_w, target_h = int(real_w * scale), int(real_h * scale)
             
-            new_element.size = (w, h)
+            new_element.size = (target_w, target_h)
         else:
             new_element.element_name = f"Button_Img_{new_id}"
-            new_element.size = (100, 100)
+            new_element.size = (target_w, target_h)
             
         new_element.image_id = image_id
         new_element.position = (int(x), int(y))

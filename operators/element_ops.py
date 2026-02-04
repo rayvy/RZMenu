@@ -7,6 +7,9 @@ class RZM_OT_AddElement(bpy.types.Operator):
     bl_label = "Add UI Element"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # Optional argument to override scene property
+    type: bpy.props.StringProperty(default="")
+
     def execute(self, context):
         rzm = context.scene.rzm
         elements = rzm.elements
@@ -15,7 +18,13 @@ class RZM_OT_AddElement(bpy.types.Operator):
         new_element = elements.add()
         new_id = get_next_available_id(elements)
         new_element.id = new_id
-        new_element.elem_class = rzm.element_to_add_class
+        
+        # Use argument if provided, else fall back to scene property
+        if self.type:
+            new_element.elem_class = self.type
+        else:
+            new_element.elem_class = rzm.element_to_add_class
+            
         new_element.element_name = f"{new_element.elem_class.capitalize()}{new_id}"
         
         if 0 <= active_idx < len(elements):

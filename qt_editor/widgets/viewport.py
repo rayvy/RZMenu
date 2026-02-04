@@ -937,7 +937,7 @@ class RZViewportView(QtWidgets.QGraphicsView):
             if mime.hasFormat("application/x-rzmenu-image-id"):
                 data = mime.data("application/x-rzmenu-image-id")
                 image_id = int(data.data().decode('utf-8'))
-                blender_bridge.create_image_element(image_id, bx, by)
+                core.create_element_with_image(image_id, bx, by)
                 event.acceptProposedAction()
 
             # 2. External File Drop
@@ -947,9 +947,9 @@ class RZViewportView(QtWidgets.QGraphicsView):
                 for url in urls:
                     path = url.toLocalFile()
                     if path:
-                        img_id, _ = blender_bridge.import_image(path)
+                        img_id, _ = core.import_image_from_path(path)
                         if img_id is not None:
-                            blender_bridge.create_image_element(img_id, bx + offset, by - offset)
+                            core.create_element_with_image(img_id, bx + offset, by - offset)
                             offset += 20
                 event.acceptProposedAction()
             else:
