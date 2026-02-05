@@ -1,5 +1,6 @@
 # RZMenu/qt_editor/blender_bridge.py
 import shutil
+from pathlib import Path
 import os
 import bpy
 from ...core.serialization import RZTemplateEngine
@@ -41,62 +42,103 @@ def safe_undo_push(message):
     exec_in_context(bpy.ops.ed.undo_push, message=message)
     refresh_viewports()
 
+def get_template_search_paths():
+    """Возвращает список путей для поиска шаблонов."""
+    paths = []
+    
+    # 1. Встроенные шаблоны (Base Templates)
+    # Правильный расчет пути:
+    # __file__ = .../RZMenu/qt_editor/core/blender_bridge.py
+    # dirname  = .../RZMenu/qt_editor/core
+    # dirname  = .../RZMenu/qt_editor
+    # dirname  = .../RZMenu
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    addon_root = os.path.dirname(os.path.dirname(current_dir)) # Поднимаемся на 2 уровня вверх от core
+    
+    base_dir = os.path.join(addon_root, "base_templates")
+    if os.path.exists(base_dir):
+        paths.append(base_dir)
+        
+    # 2. Локальные шаблоны (rzm_assets рядом с .blend)
+    if bpy.data.is_saved:
+        project_dir = os.path.dirname(bpy.data.filepath)
+        local_assets = os.path.join(project_dir, "rzm_assets")
+        if os.path.exists(local_assets):
+            paths.append(local_assets)
+            
+    return paths
+
 def get_base_templates_dir():
     """Возвращает путь к папке base_templates внутри аддона."""
-    # RZMenu/qt_editor/core/blender_bridge.py -> 3 уровня вверх -> RZMenu/base_templates
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))), "base_templates")
+    # Используем Path для точности.
+    # Файл: .../RZMenu/qt_editor/core/blender_bridge.py
     
-    if not os.path.exists(base_dir):
+    bridge_file = Path(__file__).resolve()
+    
+    # .parent (core) -> .parent (qt_editor) -> .parent (RZMenu)
+    addon_root = bridge_file.parent.parent.parent
+    
+    # Формируем путь к папке с шаблонами
+    base_dir = addon_root / "base_templates"
+    
+    # Конвертируем в строку для совместимости с os.path и shutil
+    base_dir_str = str(base_dir)
+    
+    if not os.path.exists(base_dir_str):
         try:
-            os.makedirs(base_dir)
+            os.makedirs(base_dir_str)
+            print(f"[RZM] Created base_templates directory at: {base_dir_str}")
         except Exception as e:
-            print(f"[RZM] Error creating templates dir: {e}")
-    return base_dir
+            print(f"[RZM] Error creating base_templates dir: {e}")
+            
+    return base_dir_str
 
 def import_asset_from_dialog():
-    """
-    Открывает диалог.
-    - Картинки: Импортирует в .blend (как раньше).
-    - Шаблоны (.rzmt): КОПИРУЕТ в папку base_templates (чтобы появились в браузере).
-    """
+    """Открывает диалог для импорта Картинок или Шаблонов."""
     from PySide6 import QtWidgets
     from .signals import SIGNALS
     
+    # 1. Выбор файлов
     files, _ = QtWidgets.QFileDialog.getOpenFileNames(
-        None, "Select Assets to Add to Library", "", 
-        "Supported Assets (*.png *.jpg *.jpeg *.tga *.bmp *.rzmt);;Images (*.png *.jpg *.jpeg *.tga *.bmp);;Templates (*.rzmt)"
+        None, "Select Assets", "", 
+        "All Assets (*.png *.jpg *.jpeg *.tga *.bmp *.rzmt);;Images (*.png *.jpg *.jpeg *.tga *.bmp);;Templates (*.rzmt)"
     )
     
     if not files: return
 
-    base_templates_dir = get_base_templates_dir()
-    updated = False
+    # 2. Получаем папку назначения
+    target_dir = get_base_templates_dir()
+    print(f"[Bridge] Target directory for templates: {target_dir}") # <-- DEBUG PRINT
+    
+    has_changes = False
 
     for path in files:
         ext = os.path.splitext(path)[1].lower()
+        filename = os.path.basename(path)
         
-        # ЛОГИКА ДЛЯ ШАБЛОНОВ: КОПИРОВАНИЕ В БИБЛИОТЕКУ
+        # A. SHABLON -> COPY
         if ext == '.rzmt':
-            filename = os.path.basename(path)
-            target_path = os.path.join(base_templates_dir, filename)
+            dest_path = os.path.join(target_dir, filename)
             try:
-                # Если файл уже там, shutil.copy2 перезапишет его
-                shutil.copy2(path, target_path)
-                print(f"[Bridge] Template added to library: {filename}")
-                updated = True
+                shutil.copy2(path, dest_path)
+                print(f"[Bridge] Copied template to: {dest_path}")
+                has_changes = True
             except Exception as e:
-                print(f"[Bridge] Failed to copy template: {e}")
+                print(f"[Bridge] Error copying template: {e}")
 
-        # ЛОГИКА ДЛЯ КАРТИНОК: ИМПОРТ В BLEND
+        # B. IMAGE -> IMPORT
         elif ext in ['.png', '.jpg', '.jpeg', '.tga', '.bmp']:
             if hasattr(bpy.ops.rzm, "add_image"):
-                bpy.ops.rzm.add_image(filepath=path)
-                updated = True
+                try:
+                    bpy.ops.rzm.add_image(filepath=path)
+                    has_changes = True
+                except Exception as e:
+                    print(f"[Bridge] Blender Operator Error: {e}")
             else:
-                print(f"[Bridge] rzm.add_image operator not found")
-    
-    if updated:
+                print("[Bridge] rzm.add_image operator missing!")
+
+    if has_changes:
         SIGNALS.structure_changed.emit()
 
 def reload_base_icons():
