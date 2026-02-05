@@ -900,14 +900,20 @@ class RZViewportView(QtWidgets.QGraphicsView):
 
     def dragEnterEvent(self, event):
         mime = event.mimeData()
-        if mime.hasUrls() or mime.hasFormat("application/x-rzmenu-image-id"):
+        # Проверяем ВСЕ поддерживаемые типы
+        if (mime.hasUrls() or 
+            mime.hasFormat("application/x-rzmenu-image-id") or 
+            mime.hasFormat("application/x-rzmenu-template")): # <--- ВАЖНО
             event.acceptProposedAction()
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event):
         mime = event.mimeData()
-        if mime.hasUrls() or mime.hasFormat("application/x-rzmenu-image-id"):
+        # ОЧЕНЬ ВАЖНО: dragMoveEvent тоже должен подтверждать прием!
+        if (mime.hasUrls() or 
+            mime.hasFormat("application/x-rzmenu-image-id") or 
+            mime.hasFormat("application/x-rzmenu-template")): # <--- ВАЖНО
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
@@ -916,46 +922,60 @@ class RZViewportView(QtWidgets.QGraphicsView):
         try:
             mime = event.mimeData()
             scene_pos = self.mapToScene(event.pos())
-            
-            # Map scene coords (qt) to blender coords
-            # Assuming 1:1 for now as per previous logic (just casting to int) 
-            # or we use the inverse of to_qt_coords if implicit scaling exists.
-            # RZViewportView._create_at_pos uses core.to_qt_coords(scene_pos.x(), scene_pos.y()) 
-            # to GET qt coords? No. It says:
-            # bx, by = core.to_qt_coords(scene_pos.x(), scene_pos.y())
-            # core.create_element(class_type, bx, by)
-            # This implies create_element expects values returned by to_qt_coords?
-            # If so, create_element expects QT coords?
-            # Let's look at blender_bridge.create_image_element again.
-            # I wrote it to take x,y and set pos_x, pos_y props.
-            # If pos_x/y in blender are pixels, then yes.
-            
             bx = int(scene_pos.x())
             by = int(scene_pos.y())
 
-            # 1. Internal Asset Drop
+            # 1. Внутренний Шаблон (Из Asset Browser)
+            if mime.hasFormat("application/x-rzmenu-template"):
+                data = mime.data("application/x-rzmenu-template")
+                filepath = data.data().decode('utf-8')
+                
+                print(f"[Viewport] Importing Template from Browser: {filepath}")
+                # Импортируем в сцену в точку курсора
+                blender_bridge.import_template_direct(filepath, offset=(bx, by))
+                
+                event.acceptProposedAction()
+                return
+
+            # 2. Внутренняя Картинка (Из Asset Browser)
             if mime.hasFormat("application/x-rzmenu-image-id"):
                 data = mime.data("application/x-rzmenu-image-id")
                 image_id = int(data.data().decode('utf-8'))
                 core.create_element_with_image(image_id, bx, by)
                 event.acceptProposedAction()
+                return
 
-            # 2. External File Drop
-            elif mime.hasUrls():
+            # 3. Внешний файл (Из Windows Explorer)
+            if mime.hasUrls():
                 urls = mime.urls()
-                offset = 0
+                offset_counter = 0
                 for url in urls:
                     path = url.toLocalFile()
-                    if path:
+                    if not path: continue
+                    ext = os.path.splitext(path)[1].lower()
+
+                    # Если кинули .rzmt СНАРУЖИ -> просто импортируем (как ты просил в п.3)
+                    if ext == '.rzmt':
+                        print(f"[Viewport] External Template Drop: {path}")
+                        blender_bridge.import_template_direct(path, offset=(bx + offset_counter, by - offset_counter))
+                        offset_counter += 20
+                    
+                    # Если кинули картинку -> импорт и создание
+                    elif ext in ['.png', '.jpg', '.jpeg', '.tga', '.bmp']:
                         img_id, _ = core.import_image_from_path(path)
                         if img_id is not None:
-                            core.create_element_with_image(img_id, bx + offset, by - offset)
-                            offset += 20
+                            core.create_element_with_image(img_id, bx + offset_counter, by - offset_counter)
+                            offset_counter += 20
+                            
                 event.acceptProposedAction()
-            else:
-                super().dropEvent(event)
+                return
+
+            super().dropEvent(event)
+
         except Exception as e:
             print(f"[Viewport] Drop Error: {e}")
+            import traceback
+            traceback.print_exc()
 
 
     def setup_overlay_ui(self):
@@ -1054,6 +1074,18 @@ class RZViewportView(QtWidgets.QGraphicsView):
         hit_element = hasattr(self.rz_scene.itemAt(self.mapToScene(event.pos()), QtGui.QTransform()), 'uid')
 
         if hit_element:
+            # Если элемент выбран, добавляем опцию экспорта
+            menu.addSection("Assets")
+            
+            save_action = menu.addAction("Save as Asset (.rzmt)")
+            # Используем замыкание, чтобы не потерять selected_ids
+            # Получаем текущие выделенные ID через Context Manager
+            ctx = RZContextManager.get_instance().get_snapshot()
+            selected_ids = ctx.selected_ids
+            
+            save_action.triggered.connect(lambda: self.on_save_asset(selected_ids))
+            
+            menu.addSeparator()
             menu.addSection("Element"); add_op("rzm.toggle_hide"); add_op("rzm.toggle_lock"); add_op("rzm.toggle_selectable")
             menu.addSeparator(); add_op("rzm.delete")
         else:
@@ -1137,6 +1169,35 @@ class RZViewportView(QtWidgets.QGraphicsView):
             self.scene().clearSelection()
             RZContextManager.get_instance().set_state(RZInteractionState.IDLE)
         super().mouseReleaseEvent(event)
+
+    def on_save_asset(self, selected_ids):
+        if not selected_ids: return
+        
+        # 1. Спрашиваем имя файла
+        from PySide6.QtWidgets import QFileDialog
+        
+        # Дефолтная папка (та же, что в браузере)
+        # Можно вынести этот путь в конфиг (conf/defaults.py)
+        import os
+        import bpy
+        if bpy.data.is_saved:
+            folder = os.path.join(os.path.dirname(bpy.data.filepath), "rzm_assets")
+        else:
+            folder = os.path.join(os.path.expanduser("~"), "rzm_assets_global")
+        if not os.path.exists(folder): os.makedirs(folder)
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Save Asset", folder, "RZM Templates (*.rzmt)"
+        )
+        
+        if filepath:
+            # 2. Экспорт через Bridge
+            if blender_bridge.export_template_direct(list(selected_ids), filepath):
+                # 3. Обновляем Asset Browser (через Сигналы)
+                # Нужно добавить сигнал asset_library_changed или просто дернуть structure_changed
+                from ..core.signals import SIGNALS
+                SIGNALS.structure_changed.emit() # Это заставит Browser обновиться
+                print(f"Asset saved: {filepath}")
 
 
 class RZViewportPanel(RZEditorPanel):
