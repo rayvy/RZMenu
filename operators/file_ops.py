@@ -31,27 +31,34 @@ class RZM_OT_SaveTemplate(bpy.types.Operator):
                 
                 # 2. Save Images
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    for img in context.scene.rzm.images:
-                        # Only save Custom or Captured images that have actual data
-                        if img.source_type in {'CUSTOM', 'CAPTURED'} and img.image_pointer:
-                            bl_image = img.image_pointer
-                            
-                            if not bl_image.has_data:
-                                continue
+                    # --- [FIX START] Отключаем гамма-коррекцию (Filmic/AgX) ---
+                    view_settings = context.scene.view_settings
+                    old_transform = view_settings.view_transform
+                    view_settings.view_transform = 'Standard'
+                    
+                    try:
+                        for img in context.scene.rzm.images:
+                            if img.source_type in {'CUSTOM', 'CAPTURED'} and img.image_pointer:
+                                bl_image = img.image_pointer
                                 
-                            # Ensure format
-                            bl_image.file_format = bl_image.file_format or 'PNG'
-                            ext = bl_image.file_format.lower().replace('jpeg', 'jpg')
-                            if not ext: ext = 'png'
-                            
-                            filename = f"{img.display_name}.{ext}"
-                            save_path = os.path.join(tmpdir, filename)
-                            
-                            try:
-                                bl_image.save_render(save_path)
-                                zf.write(save_path, arcname=f'images/{filename}')
-                            except Exception as e:
-                                print(f"Warning: Failed to save image {img.display_name}: {e}")
+                                if not bl_image.has_data:
+                                    continue
+                                    
+                                bl_image.file_format = bl_image.file_format or 'PNG'
+                                ext = bl_image.file_format.lower().replace('jpeg', 'jpg')
+                                if not ext: ext = 'png'
+                                
+                                filename = f"{img.display_name}.{ext}"
+                                save_path = os.path.join(tmpdir, filename)
+                                
+                                try:
+                                    bl_image.save_render(save_path)
+                                    zf.write(save_path, arcname=f'images/{filename}')
+                                except Exception as e:
+                                    print(f"Warning: Failed to save image {img.display_name}: {e}")
+                    finally:
+                        # --- [FIX RESTORE] Возвращаем настройки цвета обратно ---
+                        view_settings.view_transform = old_transform
 
             self.report({'INFO'}, f"RZM Scene saved to {self.filepath}")
         except Exception as e:
