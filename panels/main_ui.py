@@ -83,6 +83,23 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         row.operator("rzm.save_template", text="Save .rzm", icon='FILE_TICK')
         row.operator("rzm.load_template", text="Load .rzm", icon='FILE_FOLDER')
         
+        # --- БЛОК: Файлы (Полный бэкап) ---
+        box = layout.box()
+        box.label(text="Full Scene Backup (.rzm)", icon='FILE_BLEND')
+        row = box.row(align=True)
+        row.operator("rzm.save_template", text="Save Scene")
+        row.operator("rzm.load_template", text="Load Scene")
+        row.operator("rzm.reset_scene", text="", icon='TRASH')
+
+        # --- НОВЫЙ БЛОК: Шаблоны ---
+        box = layout.box()
+        box.label(text="Partial Templates (.rzmt)", icon='LIBRARY_DATA_DIRECT')
+        row = box.row(align=True)
+        # Экспортирует выбранный элемент
+        row.operator("rzm.export_partial_template", text="Export Selected", icon='EXPORT')
+        # Импортирует
+        row.operator("rzm.import_partial_template", text="Import Template", icon='IMPORT')
+
         # History кнопки удалены (используй Ctrl+Z)
         history_row = file_box.row(align=True)
         history_row.operator("rzm.reset_scene", text="Reset Scene", icon='TRASH')

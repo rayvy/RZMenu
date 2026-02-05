@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 # FIX IMPORTS: Linking to the new core modules
-from ..core.serialization import rzm_to_dict, dict_to_rzm
+from ..core.serialization import RZTemplateEngine, rzm_to_dict, dict_to_rzm
 
 # --- Сохранение / Загрузка / Сброс ---
 
@@ -212,9 +212,93 @@ class RZM_OT_ResetScene(bpy.types.Operator):
         
         self.report({'INFO'}, "RZM scene has been reset.")
         return {'FINISHED'}
+    
+class RZM_OT_ExportPartialTemplate(bpy.types.Operator):
+    """Экспортирует ВЫБРАННЫЙ элемент (и его детей) в .rzmt шаблон."""
+    bl_idname = "rzm.export_partial_template"
+    bl_label = "Export Template (.rzmt)"
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.rzmt", options={'HIDDEN'})
+    
+    def invoke(self, context, event):
+        # Предлагаем имя файла по имени активного элемента
+        rzm = context.scene.rzm
+        idx = context.scene.rzm_active_element_index
+        
+        if 0 <= idx < len(rzm.elements):
+            active_el = rzm.elements[idx]
+            self.filepath = f"{active_el.element_name or 'template'}.rzmt"
+        else:
+            self.filepath = "template.rzmt"
+            
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        idx = context.scene.rzm_active_element_index
+        
+        # Определяем, что экспортировать.
+        # Берем активный элемент как корень.
+        if 0 <= idx < len(rzm.elements):
+            root_id = rzm.elements[idx].id
+            root_ids = [root_id] # Передаем списком
+            
+            # Инициализируем движок
+            engine = RZTemplateEngine(context)
+            
+            # Запуск (имя файла, имя шаблона берем из файла)
+            if engine.export_template(root_ids, self.filepath, meta_name=os.path.basename(self.filepath)):
+                self.report({'INFO'}, f"Template exported: {self.filepath}")
+                return {'FINISHED'}
+            else:
+                self.report({'ERROR'}, "Export failed (Check console)")
+                return {'CANCELLED'}
+        else:
+            self.report({'WARNING'}, "No active RZM element selected to export.")
+            return {'CANCELLED'}
+
+
+class RZM_OT_ImportPartialTemplate(bpy.types.Operator):
+    """Импортирует .rzmt шаблон, добавляя его в текущую сцену."""
+    bl_idname = "rzm.import_partial_template"
+    bl_label = "Import Template (.rzmt)"
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.rzmt", options={'HIDDEN'})
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        engine = RZTemplateEngine(context)
+        
+        # Куда вставлять? 
+        # Если выбран элемент -> делаем его родителем для импортированного
+        # Если ничего не выбрано -> кидаем в корень (-1)
+        rzm = context.scene.rzm
+        idx = context.scene.rzm_active_element_index
+        parent_id = -1
+        
+        # Можно раскомментировать, если хочешь чтобы импорт падал ВНУТРЬ выбранного элемента
+        # if 0 <= idx < len(rzm.elements):
+        #     parent_id = rzm.elements[idx].id
+            
+        # Оффсет: просто немного сдвинем, чтобы не накладывалось 1 в 1, или можно 0,0
+        # В идеале можно передавать координаты курсора, но пока хардкод для теста
+        offset = (20, 20) 
+
+        if engine.import_template(self.filepath, position_offset=offset, parent_id=parent_id):
+            self.report({'INFO'}, "Template imported successfully.")
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, "Import failed.")
+            return {'CANCELLED'}
 
 classes_to_register = [
     RZM_OT_SaveTemplate,
     RZM_OT_LoadTemplate,
     RZM_OT_ResetScene,
+    RZM_OT_ExportPartialTemplate,
+    RZM_OT_ImportPartialTemplate
 ]
