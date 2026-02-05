@@ -77,6 +77,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
+        file_box = layout.box()
+        row = file_box.row(align=True)
+        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
         # --- БЛОК: Управление файлами ---
         file_box = layout.box()
         row = file_box.row(align=True)

@@ -13,6 +13,7 @@ import os
 import sys
 import site
 import bpy
+import importlib
 from bpy.app.handlers import persistent
 
 # --- НАСТРОЙКА СРЕДЫ ---
@@ -26,21 +27,38 @@ try:
 except Exception:
     pass
 
+# --- ПРОВЕРКА ЗАВИСИМОСТЕЙ ---
+try:
+    import PySide6
+    libs_ok = True
+except ImportError:
+    libs_ok = False
+
 # --- ИМПОРТ МОДУЛЕЙ ---
+# Импортируем безопасные модули (которые не требуют PySide6)
 from .data import properties
 from . import operators
 from . import panels
 from . import core 
 
-# !!! ДОБАВЛЕНО: Импорт модуля редактора
-from . import qt_editor 
-
+# Формируем список модулей для загрузки
 modules = [
-    properties, # Свойства (PropertyGroups)
-    operators,  # Стандартные операторы Блендера
-    panels,     # Нативный UI
-    qt_editor,  # !!! ДОБАВЛЕНО: Qt Редактор (содержит свой оператор запуска)
+    properties,
+    core,       # Тут лежит deps_manager, он нужен всегда
+    operators,
+    panels,     # Тут должен быть интерфейс кнопки "Установить"
 ]
+
+# --- ОПАСНЫЙ ИМПОРТ ---
+# Пытаемся импортировать qt_editor только если библиотеки на месте
+if libs_ok:
+    try:
+        from . import qt_editor
+        modules.append(qt_editor)
+    except ImportError as e:
+        print(f"RZMenu Warning: Could not import qt_editor despite PySide6 presence: {e}")
+else:
+    print("RZMenu: PySide6 not found. Running in installation mode.")
 
 # --- АВТОЗАПУСК ПРОВЕРКИ ---
 @persistent
@@ -54,14 +72,22 @@ def auto_check_dependencies(dummy):
     bpy.app.timers.register(_run_check, first_interval=1.0)
 
 def register():
+    # Регистрируем модули по списку
     for mod in modules:
         if hasattr(mod, "register"):
-            mod.register()
+            try:
+                mod.register()
+            except RuntimeError as e:
+                print(f"RZMenu Error registering {mod}: {e}")
 
+    # Хендлер добавляем всегда
     if auto_check_dependencies not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(auto_check_dependencies)
     
-    print("RZMenu Constructor: Registered successfully.")
+    if not libs_ok:
+        print("RZMenu Constructor: Started in DEPENDENCY MISSING mode.")
+    else:
+        print("RZMenu Constructor: Registered successfully.")
 
 def unregister():
     if auto_check_dependencies in bpy.app.handlers.load_post:
