@@ -57,21 +57,23 @@ run = CustomShaderRCI2D
 {% endif %}
 
 {% if scene.rzm.addons.tw_overrides %}
-;tw_overrides
-	{% for override in scene.rzm.addons.tw_overrides%}
+	{% for override in scene.rzm.addons.tw_overrides %}
 		[TextureOverride{{override.tex_name}}]
 		hash = {{override.tex_hash}}
-		{% if mod_file.game.name == "ZenlessZoneZero"%}
-		ps-t3 = Resource{{override.tex_resource_name}}
-		{% else %}
-		if this != null
 		this = Resource{{override.tex_resource_name}}
-		else
-		ps-t1 = Resource{{override.tex_resource_name}}
-		endif
-		{% endif %}
+		run = CommandListSafeTexWorks.{{override.tex_resource_name}}.CHECK
 	{% endfor %}
 
+	{% set unique_resources = scene.rzm.addons.tw_overrides | map(attribute='tex_resource_name') | unique %}
+
+	{% for res_name in unique_resources %}
+		[CommandListSafeTexWorks.{{res_name}}.CHECK]
+		local $isInit = 0
+		if this === null && $isInit == 0
+			this = copy Resource{{res_name}}
+			$isInit = 1
+		endif
+	{% endfor %}
 {% endif %}
 
 {% if scene.rzm.addons.tex_works == 1 %}
@@ -532,29 +534,29 @@ array = 1327104
 [TextureOverrideFaceDiffuse]
 hash = 20a1ba58
 this = ResourceFaceDiffuse
-run = CommandListSafeTex.Diffuse
+run = CommandListSafeTexWorks.FACE.Diffuse
 [TextureOverrideFaceDiffuse2]
 hash = df5fe214
 this = ResourceFaceDiffuse
-run = CommandListSafeTex.Diffuse
+run = CommandListSafeTexWorks.FACE.Diffuse
 
 [TextureOverrideFaceMaterial]
 hash = e3a1caa2
 this = ResourceFaceMaterial
-run = CommandListSafeTex.Material
+run = CommandListSafeTexWorks.FACE.Material
 [TextureOverrideFaceMaterial2]
 hash = b4f554ef
 this = ResourceFaceMaterial
-run = CommandListSafeTex.Material
+run = CommandListSafeTexWorks.FACE.Material
 
-[CommandListSafeTex.Diffuse]
+[CommandListSafeTexWorks.FACE.Diffuse]
 local $isInit = 0
 if this === null && $isInit == 0
     this = copy ResourceFaceDiffuse
     $isInit = 1
 endif
 
-[CommandListSafeTex.Material]
+[CommandListSafeTexWorks.FACE.Material]
 local $isInit = 0
 if this === null && $isInit == 0
     this = copy ResourceFaceMaterial
