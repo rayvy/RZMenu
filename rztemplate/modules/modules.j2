@@ -607,10 +607,10 @@ global persist $FaceDecal_Blood_Mouth_0Index = -1
 global persist $FaceDecal_Blood_Cheeks_0Index = -1
 global persist $FaceDecal_Blood_Face_0Index = -1
 
-global persist $FaceDecal_Cum_Mouth_0Index = -1
-global persist $FaceDecal_Cum_Cheeks_0Index = -1
-global persist $FaceDecal_Cum_Eyeshadow_0Index = -1
-global persist $FaceDecal_Cum_Face_0Index = -1
+global persist $FaceDecal_Fluid_Mouth_0Index = -1
+global persist $FaceDecal_Fluid_Cheeks_0Index = -1
+global persist $FaceDecal_Fluid_Eyeshadow_0Index = -1
+global persist $FaceDecal_Fluid_Face_0Index = -1
 
 global persist $FaceDecal_Misc_Index = -1
 
@@ -618,10 +618,10 @@ global $FaceDecal_Blood_Mouth_0PastIndex
 global $FaceDecal_Blood_Cheeks_0PastIndex
 global $FaceDecal_Blood_Face_0PastIndex
 
-global $FaceDecal_Cum_Mouth_0PastIndex
-global $FaceDecal_Cum_Cheeks_0PastIndex
-global $FaceDecal_Cum_Eyeshadow_0PastIndex
-global $FaceDecal_Cum_Face_0PastIndex
+global $FaceDecal_Fluid_Mouth_0PastIndex
+global $FaceDecal_Fluid_Cheeks_0PastIndex
+global $FaceDecal_Fluid_Eyeshadow_0PastIndex
+global $FaceDecal_Fluid_Face_0PastIndex
 
 global $FaceDecal_Misc_PastIndex
 
@@ -684,10 +684,10 @@ $FaceDecal_Blood_Mouth_0PastIndex = $FaceDecal_Blood_Mouth_0Index
 $FaceDecal_Blood_Cheeks_0PastIndex = $FaceDecal_Blood_Cheeks_0Index
 $FaceDecal_Blood_Face_0PastIndex = $FaceDecal_Blood_Face_0Index
 
-$FaceDecal_Cum_Mouth_0PastIndex = $FaceDecal_Cum_Mouth_0Index
-$FaceDecal_Cum_Cheeks_0PastIndex = $FaceDecal_Cum_Cheeks_0Index
-$FaceDecal_Cum_Eyeshadow_0PastIndex = $FaceDecal_Cum_Eyeshadow_0Index
-$FaceDecal_Cum_Face_0PastIndex = $FaceDecal_Cum_Face_0Index
+$FaceDecal_Fluid_Mouth_0PastIndex = $FaceDecal_Fluid_Mouth_0Index
+$FaceDecal_Fluid_Cheeks_0PastIndex = $FaceDecal_Fluid_Cheeks_0Index
+$FaceDecal_Fluid_Eyeshadow_0PastIndex = $FaceDecal_Fluid_Eyeshadow_0Index
+$FaceDecal_Fluid_Face_0PastIndex = $FaceDecal_Fluid_Face_0Index
 
 $FaceDecal_Misc_PastIndex = $FaceDecal_Misc_Index
 
@@ -811,8 +811,8 @@ type = cycle
 [KeyTestK]
 key = k
 type = cycle
-$FaceDecal_Cum_Cheeks_0Index = -1,0
-$FaceDecal_Cum_Mouth_0Index = -1,0
+$FaceDecal_Fluid_Cheeks_0Index = -1,0
+$FaceDecal_Fluid_Mouth_0Index = -1,0
 
 [KeyTestR]
 key = r
@@ -842,8 +842,8 @@ filename = /modules/facetexworks/makeup/Mouth/2.png
 filename = /modules/facetexworks/makeup/Mouth/3.png
 [Resource_Makeup_Mouth.4]
 filename = /modules/facetexworks/makeup/Mouth/4.png
-[Resource_Cum_Mouth.0]
-filename = /modules/facetexworks/Cum/Mouth/0.png
+[Resource_Fluid_Mouth.0]
+filename = /modules/facetexworks/Fluid/Mouth/0.png
 
 [Resource.TexWorks.Face.Mouth.Config]
 type = Buffer
@@ -883,16 +883,16 @@ cs = /modules/facetexworks/decal_draw_composite.hlsl
 cs-u0 = ResourceFaceDiffuse
 cs-u1 = ResourceFaceMaterial
 cs-t0 = null
-if $FaceDecal_Cum_Mouth_0Index == 0
-    cs-t0 = Resource_Cum_Mouth.0
+if $FaceDecal_Fluid_Mouth_0Index == 0
+    cs-t0 = Resource_Fluid_Mouth.0
 endif
 cs-t1 = Resource.TexWorks.Face.Mouth.Config
 x44 = $TWFMouthConfigPosX
 y44 = $TWFMouthConfigPosY
 z44 = $TWFMouthConfigSizeW
 w44 = $TWFMouthConfigSizeH
-run = CommandListAddons.FaceTexWorks.Material.Cum
-if $FaceDecal_Cum_Mouth_0Index >= 0
+run = CommandListAddons.FaceTexWorks.Material.Fluid
+if $FaceDecal_Fluid_Mouth_0Index >= 0
     dispatch = ($TWFMouthConfigSizeW + 31) // 32, ($TWFMouthConfigSizeH + 31) //32, 1
 endif
 
@@ -915,8 +915,8 @@ filename = /modules/facetexworks/makeup/Cheeks/2.png
 filename = /modules/facetexworks/makeup/Cheeks/3.png
 [Resource_Makeup_Cheeks.4]
 filename = /modules/facetexworks/makeup/Cheeks/4.png
-[Resource_Cum_Cheeks.0]
-filename = /modules/facetexworks/Cum/Cheeks/0.png
+[Resource_Fluid_Cheeks.0]
+filename = /modules/facetexworks/Fluid/Cheeks/0.png
 
 [Resource.TexWorks.Face.Cheeks.Config]
 type = Buffer
@@ -968,11 +968,11 @@ cs = /modules/facetexworks/decal_draw_composite.hlsl
 cs-u0 = ResourceFaceDiffuse
 cs-u1 = ResourceFaceMaterial
 cs-t0 = null
-if $FaceDecal_Cum_Cheeks_0Index == 0
-    cs-t0 = Resource_Cum_Cheeks.0
+if $FaceDecal_Fluid_Cheeks_0Index == 0
+    cs-t0 = Resource_Fluid_Cheeks.0
 endif
-if $FaceDecal_Cum_Cheeks_0Index >= 0
-    run = CommandListAddons.FaceTexWorks.Material.Cum
+if $FaceDecal_Fluid_Cheeks_0Index >= 0
+    run = CommandListAddons.FaceTexWorks.Material.Fluid
     x46 = $TexWorksFaceSize
     y46 = $TexWorksFaceSizeMaterial
     ; Pass 1
@@ -1008,8 +1008,8 @@ filename = /modules/facetexworks/makeup/EyeShadow/1.png
 filename = /modules/facetexworks/makeup/EyeShadow/2.png
 [Resource_Makeup_EyeShadow.3]
 filename = /modules/facetexworks/makeup/EyeShadow/3.png
-[Resource_Cum_EyeShadow.0]
-filename = /modules/facetexworks/Cum/EyeShadow/0.png
+[Resource_Fluid_EyeShadow.0]
+filename = /modules/facetexworks/Fluid/EyeShadow/0.png
 
 [Resource.TexWorks.Face.EyeShadow.Config]
 type = Buffer
@@ -1058,7 +1058,7 @@ endif
 ; =======================================================================================
 ; PRESETS & HELPERS
 ; =======================================================================================
-[CommandListAddons.FaceTexWorks.Material.Cum]
+[CommandListAddons.FaceTexWorks.Material.Fluid]
 x45 = 0.25
 y45 = 0.5
 z45 = 0.0
@@ -1115,16 +1115,16 @@ if $FaceDecal_Blood_Face_0PastIndex != $FaceDecal_Blood_Face_0Index
     $needsUpdate = 1 
 endif
 
-if $FaceDecal_Cum_Mouth_0PastIndex != $FaceDecal_Cum_Mouth_0Index 
+if $FaceDecal_Fluid_Mouth_0PastIndex != $FaceDecal_Fluid_Mouth_0Index 
     $needsUpdate = 1 
 endif
-if $FaceDecal_Cum_Cheeks_0PastIndex != $FaceDecal_Cum_Cheeks_0Index 
+if $FaceDecal_Fluid_Cheeks_0PastIndex != $FaceDecal_Fluid_Cheeks_0Index 
     $needsUpdate = 1 
 endif
-if $FaceDecal_Cum_Eyeshadow_0PastIndex != $FaceDecal_Cum_Eyeshadow_0Index 
+if $FaceDecal_Fluid_Eyeshadow_0PastIndex != $FaceDecal_Fluid_Eyeshadow_0Index 
     $needsUpdate = 1 
 endif
-if $FaceDecal_Cum_Face_0PastIndex != $FaceDecal_Cum_Face_0Index 
+if $FaceDecal_Fluid_Face_0PastIndex != $FaceDecal_Fluid_Face_0Index 
     $needsUpdate = 1 
 endif
 

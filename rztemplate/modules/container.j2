@@ -479,6 +479,11 @@ Local $current_sizeY
     if $id == $clickTriggerID
     ;{{target_var}}
     ;{{target_var_is_toggle}}
+    ;FOR
+    {% for vals in element.value_link %}
+    ;{{vals.value_min}}
+    ;{{vals.value_max}}
+    {% endfor %}
     {% if first_link.value_name and target_var_is_toggle == 1 %}
             {% for toggle in scene.rzm.toggle_definitions %}
                 {% if toggle.toggle_name == target_var %}

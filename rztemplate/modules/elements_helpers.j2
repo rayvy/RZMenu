@@ -140,14 +140,19 @@
     {% for element in scene.rzm.elements %}
         {% if has_attribute(element, 'hadPopup') and (element.value_link is defined and (element.value_link|length) > 0) %}
 
-            {# ------------------ MASTER/SLAVE система ------------------ #}
+            {# ------------------ MASTER/SLAVE Init ------------------ #}
             {% set popup_elements_count = namespace(elements=[2]) %}
             {% set master_link = element.value_link[0] %}
             {% set master_name = master_link.value_name | default('') %}
             {% set target_variable_str = format_var(master_name) %}
 
-            {# --- 1) определяем количество элементов строго по MASTER --- #}
+            {# Получаем Min и Max из UI. Приводим к int, так как popup работает с целыми шагами #}
+            {% set val_min = master_link.value_min | default(0.0) | int %}
+            {% set val_max = master_link.value_max | default(1.0) | int %}
+
+            {# --- 1) Определение количества элементов --- #}
             {% if master_name.startswith('@') %}
+                {# ЛОГИКА ДЛЯ TOGGLE (@) #}
                 {% set target_toggle_name = master_name[1:] %}
                 {% for toggle_def in scene.rzm.toggle_definitions or [] %}
                     {% if toggle_def.toggle_name == target_toggle_name %}
@@ -156,17 +161,16 @@
                     {% endif %}
                 {% endfor %}
             {% else %}
-                {% set _ = popup_elements_count.elements.pop(0) %}
-                {% set _ = popup_elements_count.elements.insert(0, 2) %}
-            {% endif %}
+                {# ЛОГИКА ДЛЯ ПЕРЕМЕННЫХ ($) ИЛИ ШЕЙПОВ (#) #}
+                {# Считаем диапазон. Например: Min=1, Max=3. Итого: 1,2,3 -> (3 - 1) + 1 = 3 элемента. #}
+                {# Если Max=1, Min=0 -> 2 элемента. #}
+                {% set calc_count = val_max - val_min + 1 %}
+                
+                {# Защита от дурака: минимум 2 элемента #}
+                {% if calc_count < 2 %}{% set calc_count = 2 %}{% endif %}
 
-            {# --- 2) приоритет override через value_link_max --- #}
-            {% if element.value_link.value_max is defined and element.value_link.value_max %}
-                {% set vlm = element.value_link.value_max|default(1.0)|int %}
-                {% if vlm <= 10 and popup_elements_count.elements[0] < vlm %}
-                    {% set _ = popup_elements_count.elements.pop(0) %}
-                    {% set _ = popup_elements_count.elements.insert(0, vlm) %}
-                {% endif %}
+                {% set _ = popup_elements_count.elements.pop(0) %}
+                {% set _ = popup_elements_count.elements.insert(0, calc_count) %}
             {% endif %}
 
 [CommandListElement{{ element.element_name }}Popup]
@@ -178,6 +182,7 @@ if $popupShown > 1
 endif
 $id = 12
 $drawType = 0
+; Центрируем Popup относительно кнопки
 $positionX = ($positionX + ($SizeX/2)) - ($popupIconSize * {{ popup_elements_count.elements[0] }})/2
 $positionY = $positionY + ($SizeY * 1.1 * ($popupShown))
 $sizeX = $popupIconSize * {{ popup_elements_count.elements[0] }}
@@ -205,6 +210,8 @@ local $LocalSizeX
 local $LocalSizeY
 local $popupElements = {{ popup_elements_count.elements[0] }}
 local $segmentSize
+; Min Value для смещения (если диапазон начинается не с 0)
+local $valMin = {{ val_min }}
 
 $LocalPosX = $PositionX
 $LocalPosY = $PositionY
@@ -213,10 +220,12 @@ $LocalSizeY = $SizeY
 $drawType = 4
 $segmentSize = $LocalSizeX / $popupElements
 
+; --- Обработка клика мыши ---
 if $cursorX > $LocalPosX && $cursorX < ($LocalPosX + $LocalSizeX) && $cursorY > $LocalPosY && $cursorY < ($LocalPosY + $LocalSizeY)
     {% for i in range(popup_elements_count.elements[0]) %}
     if $cursorX >= ($LocalPosX + $segmentSize * {{ i }}) && $cursorX < ($LocalPosX + $segmentSize * ({{ i }} + 1))
-        {{ target_variable_str }} = {{ i }}
+        ; Присваиваем индекс + минимальное смещение
+        {{ target_variable_str }} = {{ val_min + i }}
     endif
     {% endfor %}
 endif
@@ -224,21 +233,13 @@ endif
 {# --- Геймпад логика --- #}
 if $isGamepadEditing == 1 && $GamepadEditedID == {{ element.id }}
     if $Gamepad_Interaction_Type == 1
+        ; Используем формулу со смещением, чтобы не вылететь за границы Min/Max
         if $Gamepad_Interaction_Increase == 1
-            {{ target_variable_str }} = ({{ target_variable_str }} + 1) % $popupElements
+            {{ target_variable_str }} = $valMin + (({{ target_variable_str }} - $valMin + 1) % $popupElements)
         else if $Gamepad_Interaction_Decrease == 1
-            {{ target_variable_str }} = ({{ target_variable_str }} - 1 + $popupElements) % $popupElements
+            {{ target_variable_str }} = $valMin + (({{ target_variable_str }} - $valMin - 1 + $popupElements) % $popupElements)
         endif
     endif
-endif
-
-; --- Блок определения сегмента --- 
-if $cursorX > $LocalPosX && $cursorX < ($LocalPosX + $LocalSizeX) && $cursorY > $LocalPosY && $cursorY < ($LocalPosY + $LocalSizeY)
-    {% for i in range(popup_elements_count.elements[0]) %}
-    if $cursorX >= ($LocalPosX + $segmentSize * {{ i }}) && $cursorX < ($LocalPosX + $segmentSize * ({{ i }} + 1))
-        {{ target_variable_str }} = {{ i }}
-    endif
-    {% endfor %}
 endif
 
 y110 = 4
@@ -248,16 +249,19 @@ $colorB = 5.0
 $colorA = 1.0
 $positionY = $PositionY + ($SizeY * 0.15)
 $SizeY = $SizeY * 0.75
+
+; --- Отрисовка иконок ---
 {% for i in range(popup_elements_count.elements[0]) %}
 $positionX = $LocalPosX + ($segmentSize * {{ i }})
 $sizeX = ($segmentSize)
+; Индекс текстуры обычно равен индексу шага (0, 1, 2...), даже если значение переменной другое
 $texPosX = {{ i }}
 $PositionX = $positionX
 $PositionY = $positionY
 run = CustomShaderRCI2D_POPUP
 {% endfor %}
 
-; --- SLAVE-копирование (все остальные ссылаются на MASTER) ---
+; --- SLAVE-копирование ---
 {% if (element.value_link|length) > 1 %}
     {% for slave in element.value_link[1:] %}
         {% set slave_name = slave.value_name | default('') %}
@@ -267,46 +271,13 @@ run = CustomShaderRCI2D_POPUP
     {% endfor %}
 {% endif %}
 
-; --- Восстанавливаем координаты ---
+; --- Восстановление координат ---
 $positionX = $LocalPosX
 $positionY = $LocalPosY
 $sizeX = $LocalSizeX
 $sizeY = $LocalSizeY
-; --- Конец блока Popup для элемента: {{ element.element_name }} ---
 
         {% endif %}
-    {% endfor %}
-{% endmacro %}
-
-{#Эталонный пример#}
-{% macro popup_helpers_generate_test(mod_file,scene) %}
-    {% for element in scene.rzm.elements %}
-        {# Список-счётчик с защитой от пустоты #}
-        {% set popup_elements_count = namespace(elements=[0]) %}
-
-        {% if element.value_link %}
-            {% for linkval in element.value_link or [] %}
-                {# Безопасное извлечение старого значения #}
-                {% if popup_elements_count.elements | length == 0 %}
-                    {% set _ = popup_elements_count.elements.append(0) %}
-                {% endif %}
-                {% set last_value = popup_elements_count.elements[0] %}
-                {% set _ = popup_elements_count.elements.pop(0) %}
-                {% set _ = popup_elements_count.elements.insert(0, last_value + 1) %}
-
-                {{ linkval.value_name | default('ErrorName') | string }}
-                {{ linkval.value_min | default(0.0) | float }}
-                {{ linkval.value_max | default(1.0) | float }}
-
-                {% set target_toggle_name = linkval.value_name %}
-                {% for toggle_def in scene.rzm.toggle_definitions %}
-                    {% if toggle_def.toggle_name == target_toggle_name %}
-                        ; Example logic
-                    {% endif %}
-                {% endfor %}
-            {% endfor %}
-        {% endif %}
-
     {% endfor %}
 {% endmacro %}
 

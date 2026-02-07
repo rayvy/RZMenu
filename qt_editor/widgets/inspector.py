@@ -160,7 +160,7 @@ class RZValueLinkItem(QtWidgets.QWidget):
         l_range.addWidget(self.spin_max)
         
         layout.addWidget(self.w_ranges)
-        self.w_ranges.setVisible(is_slider)
+        # self.w_ranges.setVisible(is_slider)
 
     def _on_name_changed(self):
         self.parent_list.item_changed(self.index, 'value_name', self.edit_name.text())
