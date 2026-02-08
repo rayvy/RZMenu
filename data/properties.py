@@ -21,11 +21,12 @@ from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement
 )
 from .p_settings import (
-    RZMenuConfig, DependencyStatus, RZMExportSettings, RZMenuAddonSettings
+    RZMenuConfig, DependencyStatus, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings
 )
 
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
 class RZMenuProperties(bpy.types.PropertyGroup):
+    game: PointerProperty(type=RZMGameSettings)
     version: StringProperty(name="Version", default="3.0.1")
     config: PointerProperty(type=RZMenuConfig)
     export_settings: PointerProperty(type=RZMExportSettings)
@@ -48,7 +49,7 @@ classes_to_register = [
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
     ValueLinkProperty, RZMenuElement, TexResource, TexOverride, DecalConfig,
     AlternativeTexture, TexWorksAtlasConfig, TexWorksTextureConfig, TexWorksTexture, 
-    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMenuProperties
+    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMGameSettings, RZMenuProperties
 ]
 
 def register():

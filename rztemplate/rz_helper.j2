@@ -1,0 +1,26 @@
+{# Макрос для получения реального Blender объекта из того, что дал экспортер #}
+{% macro get_blender_obj(input_obj) %}
+    {% if scene.rzm.game.name == "ArknightsEndfield" %}
+        {{ return(input_obj.original_obj) }}
+    {% else %}
+        {{ return(input_obj.obj) }}
+    {% endif %}
+{% endmacro %}
+
+{# Универсальный обработчик тогглов #}
+{% macro handle_rzm_toggles(input_obj) %}
+    {% set b_obj = input_obj.original_obj if scene.rzm.game.name == "ArknightsEndfield" else input_obj.obj %}
+    {% for key, value in b_obj.items() %}
+        {% if key.startswith('rzm.Toggle.') %}
+            {% set toggle_name = key|replace('rzm.Toggle.', '') %}
+            {% set toggle_values = [] %}
+            {% for v in value %}{% if v == 1 %}{% set _ = toggle_values.append(loop.index - 1) %}{% endif %}{% endfor %}
+            if ${{ toggle_name }} == {{ toggle_values|join(' || $' + toggle_name + ' == ') }}
+        {% endif %}
+    {% endfor %}
+{% endmacro %}
+
+{% macro handle_rzm_toggles_end(input_obj) %}
+    {% set b_obj = input_obj.original_obj if scene.rzm.game.name == "ArknightsEndfield" else input_obj.obj %}
+    {% for key, value in b_obj.items() %}{% if key.startswith('rzm.Toggle.') %}endif{% endif %}{% endfor %}
+{% endmacro %}

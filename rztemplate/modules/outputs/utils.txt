@@ -1,0 +1,111 @@
+{% set CLASS_NAME_MAP = {
+    0: 'CONTAINER',
+    1: 'GRID_CONTAINER',
+    2: 'ANCHOR',
+    3: 'BUTTON',
+    4: 'SLIDER',
+    5: 'TEXT',
+} %}
+
+{% set CLASS_ATTRIBUTES = {
+    'ANCHOR': ['isMovable'],
+    'GRID_CONTAINER': ['isResizable'],
+    'BUTTON': ['isClickable', 'isHoldable', 'hadPopup'],
+    'SLIDER': ['isClickable', 'isHoldable']
+} %}
+
+{% set FN_MAP = {
+    0: 'AlignCenterXY',
+    1: 'AlignCenterX',
+    2: 'AlignCenterY',
+    3: 'AlignLeft',
+    4: 'AlignRight',
+    5: 'AlignBottom',
+    6: 'AlignTop',
+    7: 'FixAspectRatio',
+} %}
+
+{% set ALIGNMENT_MAP = {
+    'BOTTOM_LEFT': 0,
+    'BOTTOM_CENTER': 1,
+    'BOTTOM_RIGHT': 2,
+    'CENTER_LEFT': 3,
+    'CENTER': 4,
+    'CENTER_RIGHT': 5,
+    'TOP_LEFT': 6,
+    'TOP_CENTER': 7,
+    'TOP_RIGHT': 8
+} %}
+
+{% set FX_MAP = {
+    'CommandListCoreFxBoxRound': 'BoxRound',
+    'CommandListCoreFxBoxCircle': 'BoxCircle',
+    'CommandListCoreFxGradient': 'Gradient',
+    'CommandListCoreFxShadow': 'Shadow',
+    'CommandListCoreFxBlur': 'Blur',
+    'CommandListCoreFxOutline': 'Outline',
+    'CommandListCoreFxHover': 'Hover',
+    'CommandListCoreFxHover3D': 'Hover3D',
+    'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
+} %}
+
+
+{% macro has_attribute(element, attribute_name) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
+        true
+    {% endif %}
+{% endmacro %}
+
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {# Проверяем длину, чтобы не получить crash на [] #}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro has_any_attribute(element) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% if class_name in CLASS_ATTRIBUTES %}
+        true
+    {% endif %}
+{% endmacro %}
+
+{% macro format_var(input_string) -%}
+    {%- if input_string -%}
+        {%- set chars_to_strip = '$@#%' -%}
+        {{- '' ~ input_string.lstrip(chars_to_strip) -}}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro clean_ws(max_empty=1) -%}
+    {%- set raw_content = caller() -%}
+    {%- set lines = raw_content.split('\n') -%}
+    {%- set ns = {'count': 0} -%}
+    
+    {%- for line in lines -%}
+        {%- if line.strip()|length == 0 -%}
+            {%- if ns.update({'count': ns.count + 1}) -%}{%- endif -%}
+            
+            {%- if ns.count <= max_empty -%}
+                {{ '\n' }}
+            {%- endif -%}
+        {%- else -%}
+            {%- if ns.update({'count': 0}) -%}{%- endif -%}
+            {{ line ~ '\n' }}
+        {%- endif -%}
+    {%- endfor -%}
+{%- endmacro %}

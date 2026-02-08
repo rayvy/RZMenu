@@ -76,6 +76,14 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+        rzm = scene.rzm
+
+        game_box = layout.box()
+        row = game_box.row()
+        row.label(text="Target Game:", icon='COLOR_RED') 
+        # Отрисовка выпадающего списка (EnumProperty)
+        # text="" скрывает дублирующее название слева, оставляя только сам список
+        row.prop(rzm.game, "selection", text="")
 
         file_box = layout.box()
         row = file_box.row(align=True)

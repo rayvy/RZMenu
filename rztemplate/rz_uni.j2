@@ -1,51 +1,34 @@
-{% import "rz_merged.j2" as game_merged %}
-{% import "snippets.j2" as snippets %}
-{% import "snippets/gi.j2" as snippet_gi %}
-{% import "snippets/zzz.j2" as snippet_zzz %}
-{% import "snippets/hsr.j2" as snippet_hsr %}
-{% import "snippets/face_module.j2" as snippet_face %}
-{% import "modules/core.j2" as core %}
-{% import "modules/data.j2" as data %}
-{% import "modules/functions.j2" as fn %}
-{% import "modules/keymap.j2" as keymap %}
-{% import "modules/elements.j2" as elements %}
-{% import "modules/elements_helpers.j2" as elements_helpers %}
-{% import "modules/modules.j2" as modules %}
-;RZMenu2.9.5
-{% if mod_file.game.name %}
-;{{mod_file.game.name}}
+{% import "rz_MERGED_HOYO.j2" as hoyo  with context %}
+{% import "rz_MERGED_NOHOYO.j2" as efmi  with context %}
+{% import "modules/core.j2" as core  with context %}
+{% import "modules/data.j2" as data  with context %}
+{% import "modules/functions.j2" as fn with context %}
+{% import "modules/keymap.j2" as keymap  with context %}
+{% import "modules/elements.j2" as elements with context %}
+{% import "modules/elements_helpers.j2" as elements_helpers with context %}
+{% import "modules/modules.j2" as modules with context %}
+{% import "modules/utils.j2" as utils with context %}
+
+{% call utils.clean_ws(max_empty=1) %}
+
+;RZMenu 3.0 (Universal Engine)
+;Target Game: {{ scene.rzm.game.name }}
+
+{% if scene.rzm.game.name == "ArknightsEndfield" %}
+	[Present]
+	$active = 1
+    {{ efmi.main_logic(extracted_object, merged_object, mod_info, buffers, textures, cfg) }}
+{% else %}
+    {% block hoyo_main %}
+        {{ hoyo.overridesbuffers(mod_file, scene) }}
+        {{ hoyo.overridesibs(mod_file, scene) }}
+        {{ hoyo.resourcebuffers(mod_file, scene) }}
+        {{ hoyo.resourcetextures(mod_file, scene) }}
+    {% endblock %}
 {% endif %}
 
-{% block overridesbuffers %}
-    {{snippets.overridesbuffers_pre(mod_file,scene)}}
-	{{  game_merged.overridesbuffers(mod_file,scene) }}
-    {{snippets.overridesbuffers_post(mod_file,scene)}}
-{% endblock %}
-
-{% block overridesibs %}
-    {{snippets.overridesibs_pre(mod_file,scene)}}
-	{{  game_merged.overridesibs(mod_file,scene) }}
-    {{snippets.overridesibs_post(mod_file,scene)}}
-{% endblock %}
-
-{% block resourcebuffers %}
-    {{snippets.resourcebuffers_pre(mod_file,scene)}}
-	{{  game_merged.resourcebuffers(mod_file,scene) }}
-    {{snippets.resourcebuffers_post(mod_file,scene)}}
-{% endblock %}
-
-{% block resourcetextures %}
-    {{snippets.resourcetextures_pre(mod_file,scene)}}
-    {{game_merged.resourcetextures(mod_file,scene)}}
-    {{core.menu_resource_ui(mod_file,scene)}}
-    {{snippets.resourcetextures_post(mod_file,scene)}}
-	{% if mod_file.game.name == "GenshinImpact"%}
-	{% elif mod_file.game.name == "ZenlessZoneZero"%}
-	{% elif mod_file.game.name == "HonkaiStarRail"%}
-	{% endif %}
-{% endblock %}
-
 {% block rz_menu_core %}
+{{core.menu_resource_ui(mod_file,scene)}}
 {{core.entryPoint(mod_file,scene)}}
 {{core.baseCompute(mod_file,scene)}}
 {{core.menuDrawUi(mod_file,scene)}}
@@ -60,17 +43,8 @@
 	{{ elements_helpers.popup_helpers_generate(mod_file,scene)}}
 	{{ elements_helpers.resources_generate(mod_file,scene)}}
 	{{ elements_helpers.grid_helpers_generate(mod_file,scene)}}
-
 	{{modules.generate_addons(mod_file,scene)}}
 	{{elements.elements_generate(mod_file,scene)}}
-
-	{% if mod_file.game.name == "GenshinImpact"%}
-	{{snippet_gi.snippet()}}
-	{% elif mod_file.game.name == "ZenlessZoneZero"%}
-	{{snippet_zzz.snippet()}}
-	{% elif mod_file.game.name == "HonkaiStarRail"%}
-	{{snippet_hsr.snippet()}}
-	{% endif %}
 {% endif %}
 
 {% if scene.rzm %}
@@ -90,3 +64,5 @@
 {{keymap.main_button(mod_file,scene)}}
 {{data.config(mod_file,scene)}}
 {% endblock %}
+
+{% endcall %}

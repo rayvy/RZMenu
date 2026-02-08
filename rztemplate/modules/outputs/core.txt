@@ -1,5 +1,20 @@
 {% import "modules/functions.j2" as fn with context %}
-{% import "modules/utils.j2" as utils with context %}
+{% set CLASS_NAME_MAP = {
+    0: 'CONTAINER',
+    1: 'GRID_CONTAINER',
+    2: 'ANCHOR',
+    3: 'BUTTON',
+    4: 'SLIDER',
+    5: 'TEXT',
+} %}
+{% macro format_var(input_string) -%}
+    {%- if input_string -%}
+        {#- Список "неправильных" символов, которые нужно удалить с начала строки -#}
+        {%- set chars_to_strip = '$@#%' -%}
+        {#- Убираем все неправильные символы с начала и добавляем один $ впереди -#}
+        {{- '$' ~ input_string.lstrip(chars_to_strip) -}}
+    {%- endif -%}
+{%- endmacro %}
 
 {%macro generate_variables(mod_file,scene)%}
 ;macro generate_variables(mod_file,scene)
@@ -8,9 +23,9 @@
         {% for value in scene.rzm.rzm_values %}
             {% if value.value_name %}
                 {% if value.int_value %}
-                global persist {{utils.format_var(value.value_name)}} = {%if int_value != null%}{{value.int_value}}{%else%}0{%endif%}   
+                global persist {{format_var(value.value_name)}} = {%if int_value != null%}{{value.int_value}}{%else%}0{%endif%}   
                 {% else %}
-                global persist {{utils.format_var(value.value_name)}} = {%if float_value != null%}{{value.float_value}}{%else%}0.0{%endif%}    
+                global persist {{format_var(value.value_name)}} = {%if float_value != null%}{{value.float_value}}{%else%}0.0{%endif%}    
                 {%endif%}
             {% endif %}
         {% endfor %}

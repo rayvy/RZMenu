@@ -1,5 +1,77 @@
 {% set DEBUG = true %}
-{% import "modules/utils.j2" as utils with context %}
+
+{% set CLASS_NAME_MAP = {
+    0: 'CONTAINER',
+    1: 'GRID_CONTAINER',
+    2: 'ANCHOR',
+    3: 'BUTTON',
+    4: 'SLIDER',
+    5: 'TEXT',
+} %}
+
+{% set CLASS_ATTRIBUTES = {
+    'ANCHOR': ['isMovable'],
+    'GRID_CONTAINER': ['isResizable'],
+    'BUTTON': ['isClickable', 'isHoldable', 'hadPopup'],
+    'SLIDER': ['isClickable', 'isHoldable']
+} %}
+
+{% set FN_MAP = {
+    0: 'AlignCenterXY',
+    1: 'AlignCenterX',
+    2: 'AlignCenterY',
+    3: 'AlignLeft',
+    4: 'AlignRight',
+    5: 'AlignBottom',
+    6: 'AlignTop',
+    7: 'FixAspectRatio',
+} %}
+
+{% set FX_MAP = {
+    'CommandListCoreFxBoxRound': 'BoxRound',
+    'CommandListCoreFxBoxCircle': 'BoxCircle',
+    'CommandListCoreFxGradient': 'Gradient',
+    'CommandListCoreFxShadow': 'Shadow',
+    'CommandListCoreFxBlur': 'Blur',
+    'CommandListCoreFxOutline': 'Outline',
+    'CommandListCoreFxHover': 'Hover',
+    'CommandListCoreFxHover3D': 'Hover3D',
+    'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
+} %}
+
+{# --- FIX: УМНЫЙ МАКРОС С ЗАЩИТОЙ ОТ ПУСТЫХ СПИСКОВ --- #}
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro has_attribute(element, attribute_name) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
+        true
+    {% endif %}
+{% endmacro %}
+
+{% macro format_var(input_string) -%}
+    {%- if input_string -%}
+        {%- set chars_to_strip = '$@#%' -%}
+        {{- '$' ~ input_string.lstrip(chars_to_strip) -}}
+    {%- endif -%}
+{%- endmacro %}
 
 {% macro resources_generate(mod_file,scene) %}
 {% set text_offset_tracker = [0] %}
@@ -66,13 +138,13 @@
 
 {% macro popup_helpers_generate(mod_file,scene) %}
     {% for element in scene.rzm.elements %}
-        {% if utils.has_attribute(element, 'hadPopup') and (element.value_link is defined and (element.value_link|length) > 0) %}
+        {% if has_attribute(element, 'hadPopup') and (element.value_link is defined and (element.value_link|length) > 0) %}
 
             {# ------------------ MASTER/SLAVE Init ------------------ #}
             {% set popup_elements_count = namespace(elements=[2]) %}
             {% set master_link = element.value_link[0] %}
             {% set master_name = master_link.value_name | default('') %}
-            {% set target_variable_str = utils.format_var(master_name) %}
+            {% set target_variable_str = format_var(master_name) %}
 
             {# Получаем Min и Max из UI. Приводим к int, так как popup работает с целыми шагами #}
             {% set val_min = master_link.value_min | default(0.0) | int %}
@@ -194,7 +266,7 @@ run = CustomShaderRCI2D_POPUP
     {% for slave in element.value_link[1:] %}
         {% set slave_name = slave.value_name | default('') %}
         {% if slave_name %}
-{{ utils.format_var(slave_name) }} = {{ target_variable_str }}
+{{ format_var(slave_name) }} = {{ target_variable_str }}
         {% endif %}
     {% endfor %}
 {% endif %}
@@ -211,9 +283,9 @@ $sizeY = $LocalSizeY
 
 {% macro grid_helpers_generate(mod_file,scene) %}
     {% for grid in scene.rzm.elements %}
-        {# FIX: Используем utils.get_cls вместо прямого обращения к словарю #}
+        {# FIX: Используем get_cls вместо прямого обращения к словарю #}
         ;DEBUG HELPER: {{ grid.grid_wrap_mode }}
-        {% if utils.get_cls(grid)|trim == 'GRID_CONTAINER' %}
+        {% if get_cls(grid)|trim == 'GRID_CONTAINER' %}
             {% if grid.grid_wrap_mode == "SCROLL" %}
                 {{ generate_grid_logic_mode_0(grid) }}
             {% elif grid.grid_wrap_mode == "PAGINATE" | default("SCROLL") %}
@@ -475,7 +547,7 @@ run = CustomShaderRCI2D
 {% endmacro %}
 
 {%macro interactive_elements_in_adaptive_grid(element,parent_element,mod_file,scene)%}
-$request_weight = {{ 4 if utils.get_cls(element)|trim == 'SLIDER' else 1 }}
+$request_weight = {{ 4 if get_cls(element)|trim == 'SLIDER' else 1 }}
             {% if parent_element.grid_wrap_mode[0] == "SCROLL" %}
                 run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedSizeAndScroll
             {% else %}

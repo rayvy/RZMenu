@@ -1,5 +1,97 @@
 {% import "modules/base.j2" as base with context %}
-{% import "modules/utils.j2" as utils with context %}
+
+{% set CLASS_NAME_MAP = {
+    0: 'CONTAINER',
+    1: 'GRID_CONTAINER',
+    2: 'ANCHOR',
+    3: 'BUTTON',
+    4: 'SLIDER',
+    5: 'TEXT',
+} %}
+
+{% set CLASS_ATTRIBUTES = {
+    'ANCHOR': ['isMovable'],
+    'GRID_CONTAINER': ['isResizable'],
+    'BUTTON': ['isClickable', 'isHoldable', 'hadPopup'],
+    'SLIDER': ['isClickable', 'isHoldable']
+} %}
+
+{% set FN_MAP = {
+    0: 'AlignCenterXY',
+    1: 'AlignCenterX',
+    2: 'AlignCenterY',
+    3: 'AlignLeft',
+    4: 'AlignRight',
+    5: 'AlignBottom',
+    6: 'AlignTop',
+    7: 'FixAspectRatio',
+} %}
+
+{% set ALIGNMENT_MAP = {
+    'BOTTOM_LEFT': 0,
+    'BOTTOM_CENTER': 1,
+    'BOTTOM_RIGHT': 2,
+    'CENTER_LEFT': 3,
+    'CENTER': 4,
+    'CENTER_RIGHT': 5,
+    'TOP_LEFT': 6,
+    'TOP_CENTER': 7,
+    'TOP_RIGHT': 8
+} %}
+
+{% set FX_MAP = {
+    'CommandListCoreFxBoxRound': 'BoxRound',
+    'CommandListCoreFxBoxCircle': 'BoxCircle',
+    'CommandListCoreFxGradient': 'Gradient',
+    'CommandListCoreFxShadow': 'Shadow',
+    'CommandListCoreFxBlur': 'Blur',
+    'CommandListCoreFxOutline': 'Outline',
+    'CommandListCoreFxHover': 'Hover',
+    'CommandListCoreFxHover3D': 'Hover3D',
+    'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
+} %}
+
+{# --- FIX: УМНЫЙ МАКРОС С ЗАЩИТОЙ ОТ ПУСТЫХ СПИСКОВ --- #}
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {# Проверяем длину, чтобы не получить crash на [] #}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro has_attribute(element, attribute_name) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
+        true
+    {% endif %}
+{% endmacro %}
+
+{% macro has_any_attribute(element) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% if class_name in CLASS_ATTRIBUTES %}
+        true
+    {% endif %}
+{% endmacro %}
+
+{% macro format_var(input_string) -%}
+    {%- if input_string -%}
+        {%- set chars_to_strip = '$@#%' -%}
+        {{- '' ~ input_string.lstrip(chars_to_strip) -}}
+    {%- endif -%}
+{%- endmacro %}
 
 {%macro base(element,parent_element,mod_file,scene)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
@@ -31,8 +123,8 @@ local $P_PX
 local $P_PY
 local $P_SX
 local $P_SY
-{% set class_name = utils.get_cls(element)|trim %}
-{% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
+{% set class_name = get_cls(element)|trim %}
+{% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
 {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
 Local $target_positionX
 Local $target_positionY
@@ -47,8 +139,8 @@ Local $current_sizeY
 
 {#MAINSTUFF#}
 {%macro main(element,parent_element,mod_file,scene)%}
-    {% set class_name = utils.get_cls(element)|trim %}
-    {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
+    {% set class_name = get_cls(element)|trim %}
+    {% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
     [CommandListElement{{ element.element_name }}]
     {{base(element,parent_element,mod_file,scene)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
@@ -67,7 +159,7 @@ Local $current_sizeY
         {%endfor%}
     {%endif%}
     if $LocalVisibility
-    $element_align = {{ utils.ALIGNMENT_MAP.get(element.alignment, 0) }}
+    $element_align = {{ ALIGNMENT_MAP.get(element.alignment, 0) }}
     run = CommandListCoreAlignment.Check
     {{generate_interactions(element, parent_element)}}
     {%if class_name == 'SLIDER'%}
@@ -100,33 +192,8 @@ Local $current_sizeY
 
 {# OTHER STUFF#}
 {%macro generate_position_and_size(element,parent_element,mod_file,scene)%}
-    {% if scene.rzm.addons.debugger_info == 1 %}
-    ; >>>>>>>>>>>>>>>>>>>>> DEBUG START: {{ element.element_name }} <<<<<<<<<<<<<<<<<<<<<
-    ; [1] RAW DATA INSPECTION
-    ; Raw elem_class val: '{{ element.elem_class }}'
-    ; Type Checks:        IsString={{ element.elem_class is string }} | IsNumber={{ element.elem_class is number }} | IsIterable={{ element.elem_class is iterable }} | IsNone={{ element.elem_class is none }}
-    {% if element.elem_class is iterable and element.elem_class is not string %}
-    ; List Inspection:    Length={{ element.elem_class|length }} | Item[0]='{{ element.elem_class[0] }}' | Item[0]TypeString={{ element.elem_class[0] is string }}
-    {% endif %}
-    
-    ; [2] CLASS RESOLUTION
-    ; utils.get_cls raw:  '{{ utils.get_cls(element) }}'
-    ; utils.get_cls trim: '{{ utils.get_cls(element)|trim }}'
-    
-    ; [3] DICTIONARY LOOKUP
-    ; Target Class Key:   'GRID_CONTAINER'
-    ; Dict has Key?:      {{ 'GRID_CONTAINER' in utils.CLASS_ATTRIBUTES }}
-    ; Dict Value for Key: {{ utils.CLASS_ATTRIBUTES.get('GRID_CONTAINER', 'KEY_NOT_FOUND') }}
-    ; Dict Value for Cls: {{ utils.CLASS_ATTRIBUTES.get(utils.get_cls(element)|trim, 'CLASS_NOT_FOUND_IN_DICT') }}
-    
-    ; [4] FUNCTION RESULT
-    ; has 'isMovable'?:   {{ utils.has_attribute(element, 'isMovable') }}
-    ; has 'isResizable'?: {{ utils.has_attribute(element, 'isResizable') }}
-    ; <<<<<<<<<<<<<<<<<<<<< DEBUG END <<<<<<<<<<<<<<<<<<<<<
-    {% endif %}
-
-    {% set class_name = utils.get_cls(element)|trim %}
-    {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
+    {% set class_name = get_cls(element)|trim %}
+    {% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
     {# Примечание: тут сложный фильтр по детям. Если elem_class у детей тоже строка, selectattr может сбоить. Но пока оставим как есть #}
     {% set grid_child = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
     ;POSITION
@@ -136,7 +203,7 @@ Local $current_sizeY
     {% elif element.parent_id > -1%}
         $positionX = $positionX + {{ element.position[0] if element.position else 0}}
         $positionY = $positionY + {{ element.position[1] if element.position else 0}}
-    {% elif utils.has_attribute(element, 'isMovable')%}
+    {% elif has_attribute(element, 'isMovable')%}
         ;isMovable
         $positionX = ${{element.element_name}}PositionX
         $positionY = ${{element.element_name}}PositionY
@@ -156,7 +223,7 @@ Local $current_sizeY
     {% elif element.size_is_formula %}
         $sizeX = ({{ element.size_formula_x | default(0) | int }}) * $sizeMultiplier
         $sizeY = ({{ element.size_formula_y | default(0) | int }}) * $sizeMultiplier
-    {% elif utils.has_attribute(element, 'isResizable')%}
+    {% elif has_attribute(element, 'isResizable')%}
         ;isResizable
         $sizeX = (${{ element.element_name | default(poisitionX) | string }}SizeX) * $sizeMultiplier
         $sizeY = (${{ element.element_name | default(poisitionY) | string }}SizeY) * $sizeMultiplier
@@ -170,37 +237,37 @@ Local $current_sizeY
 {%endmacro%}
 
 {%macro generate_interactions(element, parent_element)%}
-    {% set is_child_of_grid = parent_element and utils.get_cls(parent_element)|trim == 'GRID_CONTAINER' %}
+    {% set is_child_of_grid = parent_element and get_cls(parent_element)|trim == 'GRID_CONTAINER' %}
     {% if not is_child_of_grid %}
-        {% if utils.has_any_attribute(element) %}
+        {% if has_any_attribute(element) %}
         run = CommandListCoreFNUpdateHoverState
         {% endif %}
-        {% if utils.has_attribute(element, 'isClickable') or utils.has_attribute(element, 'isHoldable')%}
+        {% if has_attribute(element, 'isClickable') or has_attribute(element, 'isHoldable')%}
         run = CommandListNavProcessElement
         {%endif%}
-        {% if utils.has_attribute(element, 'isMovable') %}
+        {% if has_attribute(element, 'isMovable') %}
             run = CommandListCoreFNComputeMouseInteractions.Move
         {% endif %}
-        {% if utils.has_attribute(element, 'isResizable') %}
+        {% if has_attribute(element, 'isResizable') %}
             run = CommandListCoreFNComputeMouseInteractions.Resize
         {% endif %}
-        {% if utils.has_attribute(element, 'isClickable') %}
+        {% if has_attribute(element, 'isClickable') %}
             run = CommandListCoreFNHandleClick
         {% endif %}
-        {% if utils.has_attribute(element, 'isHoldable') %}
+        {% if has_attribute(element, 'isHoldable') %}
             run = CommandListCoreFNHandleHold
             if w33 > 0.2
             $LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
             endif
         {% endif %}
     {% endif %}
-    {% if utils.has_attribute(element, 'isMovable')%}
+    {% if has_attribute(element, 'isMovable')%}
         run = CommandListCoreAlignment.ANTICHECK
         ${{element.element_name}}PositionX = $positionX 
         ${{element.element_name}}PositionY = $positionY
         run = CommandListCoreAlignment.Check
     {% endif %}
-    {% if utils.has_attribute(element, 'isResizable')%}
+    {% if has_attribute(element, 'isResizable')%}
         ${{element.element_name}}SizeX = $SizeX
         ${{element.element_name}}SizeY = $SizeY
     {% endif %}
@@ -222,8 +289,8 @@ Local $current_sizeY
 {%endmacro%}
 
 {% macro generate_image(element, parent_element,scene) %}
-    {% set class_name = utils.get_cls(element)|trim %}
-    {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
+    {% set class_name = get_cls(element)|trim %}
+    {% set parent_class_name = get_cls(parent_element)|trim if parent_element else none %}
 
     {# --- 1. ДОСТАЕМ СЫРОЕ ЗНАЧЕНИЕ (защита от списков) --- #}
     {% set raw_mode = element.image_mode[0] if element.image_mode is iterable and element.image_mode is not string else element.image_mode %}
@@ -278,7 +345,7 @@ Local $current_sizeY
 
     {# --- Часть 3: Index List (ID: 2) --- #}
     {% elif element.image_mode == "INDEX_LIST" and element.conditional_images and element.value_link %}
-        {% set var_name = utils.format_var(element.value_link[0].value_name) %}
+        {% set var_name = format_var(element.value_link[0].value_name) %}
         {% for item in element.conditional_images %}
         {% if loop.index-1 == 0 %}
         if ${{ var_name }} == {{ loop.index0 }}
@@ -297,6 +364,7 @@ Local $current_sizeY
     ;generate_fxAndFn
     {% for fn_item in element.fn %}
     {#{fn_item.function_name}}
+    {% set current_fn = FN_MAP.get(fn_item.function_name, 'UNKNOWN') %}
     ;run = CommandListCoreFn{{ current_fn }#}
     ;run = {{fn_item.function_name}}
     {% endfor %}
@@ -396,7 +464,7 @@ Local $current_sizeY
     {# --- Логика для value_link (если он есть) --- #}
     {% if element.value_link %}
         {% set first_link = element.value_link[0] %}
-        {% set target_var = utils.format_var(first_link.value_name) %}
+        {% set target_var = format_var(first_link.value_name) %}
         {% set target_var_is_toggle = 0 %}
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
         {# Отображение цифрового значения на кнопке #}
@@ -432,7 +500,7 @@ Local $current_sizeY
     endif
     
         {# Логика вызова попапа #}
-        {% if utils.has_attribute(element, 'hadPopup') and not element.disable_button_popup %}
+        {% if has_attribute(element, 'hadPopup') and not element.disable_button_popup %}
     if w33 > 0.4 || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
         run = CommandListElement{{ element.element_name }}Popup
     endif
@@ -454,17 +522,17 @@ Local $current_sizeY
     {# --- MASTER/SLAVE синхронизация value_link --- #}
     {% if element.value_link and element.value_link|length > 1 %}
         {% set master_link = element.value_link[0] %}
-        {% set master_var = utils.format_var(master_link.value_name) %}
+        {% set master_var = format_var(master_link.value_name) %}
         {% for slave in element.value_link[1:] %}
             {% if slave.value_name %}
-                ${{ utils.format_var(slave.value_name) }} = ${{ master_var }}
+                ${{ format_var(slave.value_name) }} = ${{ master_var }}
             {% endif %}
         {% endfor %}
     {% endif %}
 {% endmacro %}
 
 {% macro handle_element_in_grid(element, parent_element, mod_file,scene) %}
-$request_weight = {{ 4 if utils.get_cls(element)|trim == 'SLIDER' else 1 }}
+$request_weight = {{ 4 if get_cls(element)|trim == 'SLIDER' else 1 }}
 $current_positionX = $current_positionX + ($target_positionX - $current_positionX) * ($dt*8)
 $current_positionY = $current_positionY + ($target_positionY - $current_positionY) * ($dt*8)
 $current_sizeX     = $current_sizeX     + ($target_sizeX     - $current_sizeX) * ($dt*8)
@@ -485,10 +553,10 @@ $positionY = $current_positionY
 $sizeX = $current_sizeX
 $sizeY = $current_sizeY
 run = CommandListCoreFNUpdateHoverState
-{% if utils.has_attribute(element, 'isClickable') %}
+{% if has_attribute(element, 'isClickable') %}
     run = CommandListCoreFNHandleClick
 {% endif %}
-{% if utils.has_attribute(element, 'isHoldable') %}
+{% if has_attribute(element, 'isHoldable') %}
     run = CommandListCoreFNHandleHold
 {% endif %}
 
@@ -511,7 +579,7 @@ endif
     {# Вычисляем нормализованное значение [0-1] для отображения на слайдере #}
     local $range_span_display = {{ (first_link.value_max | default(1.0) | float) }} - {{ (first_link.value_min| default(0.0) | float) }}
     if $range_span_display > 0.0001
-        x24 = (${{utils.format_var(first_link.value_name)}} - {{ (first_link.value_min| default(0.0) | float) }}) / $range_span_display
+        x24 = (${{format_var(first_link.value_name)}} - {{ (first_link.value_min| default(0.0) | float) }}) / $range_span_display
     else
         x24 = 0.0
     endif

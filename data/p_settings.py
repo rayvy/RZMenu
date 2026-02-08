@@ -5,6 +5,37 @@ from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, 
 # Импорт зависимостей для CollectionProperty
 from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
 
+def update_rzm_game_name(self, context):
+    """Обновляет строковое имя при выборе из списка"""
+    self.name = self.selection
+
+class RZMGameSettings(bpy.types.PropertyGroup):
+    selection: EnumProperty(
+        name="Target Game",
+        description="Select the game for mod export",
+        items=[
+            # Хойоверс (XXMI/3DMigoto)
+            ('GenshinImpact', "Genshin Impact", "GenshinImpact"),
+            ('ZenlessZoneZero', "Zenless Zone Zero", "ZenlessZoneZero"),
+            ('HonkaiStarRail', "Honkai: Star Rail", "HonkaiStarRail"),
+            
+            # Курогеймс (WWMI)
+            ('WutheringWaves', "Wuthering Waves", "WutheringWaves"),
+            
+            # Гриффоны (EFMI)
+            ('ArknightsEndfield', "Arknights: Endfield", "ArknightsEndfield"),
+        ],
+        default='GenshinImpact',
+        update=update_rzm_game_name
+    )
+
+    # Это поле будет использоваться в Jinja шаблонах: scene.rzm.game.name
+    name: StringProperty(
+        name="Internal Game Name",
+        default="GenshinImpact",
+        description="Internal string used by Jinja2 templates"
+    )
+
 class RZMenuConfig(bpy.types.PropertyGroup): canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
 
 class DependencyStatus(bpy.types.PropertyGroup):

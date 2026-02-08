@@ -1,6 +1,58 @@
 {% import "modules/elements.j2" as elements with context %}
 {% import "modules/core.j2" as core with context %}
-{% import "modules/utils.j2" as utils with context %}
+
+{% set CLASS_NAME_MAP = {
+    0: 'CONTAINER',
+    1: 'GRID_CONTAINER',
+    2: 'ANCHOR',
+    3: 'BUTTON',
+    4: 'SLIDER',
+    5: 'TEXT',
+} %}
+
+{% set CLASS_ATTRIBUTES = {
+    'ANCHOR': ['isMovable'],
+    'GRID_CONTAINER': ['isResizable'],
+    'BUTTON': ['isClickable', 'isHoldable'],
+    'SLIDER': ['isClickable', 'isHoldable']
+} %}
+
+{% macro format_var(input_string) -%}
+    {%- if input_string -%}
+        {#- Список "неправильных" символов, которые нужно удалить с начала строки -#}
+        {%- set chars_to_strip = '$@#%' -%}
+        {#- Убираем все неправильные символы с начала и добавляем один $ впереди -#}
+        {{- '$' ~ input_string.lstrip(chars_to_strip) -}}
+    {%- endif -%}
+{%- endmacro %}
+
+{# --- FIX: УМНЫЙ МАКРОС С ЗАЩИТОЙ ОТ ПУСТЫХ СПИСКОВ --- #}
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro has_attribute(element, attribute_name) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
+        true
+    {% endif %}
+{% endmacro %}
+
 
 {%macro config(mod_file,scene)%}
 [Constants]
@@ -265,7 +317,8 @@ global $rayvich_back_values_w110
 {{shape_generate(mod_file,scene)}}
 {% if scene.rzm %}
     {% for grid in scene.rzm.elements %}
-        {% if utils.get_cls(grid)|trim == 'GRID_CONTAINER' %}
+        {# FIX: Используем get_cls вместо прямого обращения к словарю #}
+        {% if get_cls(grid)|trim == 'GRID_CONTAINER' %}
             global ${{ grid.element_name }}_new_frame = 1
         {% endif %}
     {% endfor %}
@@ -276,13 +329,13 @@ global $rayvich_back_values_w110
 {% macro anchors_generate(mod_file,scene) %}
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
-        {% if utils.get_cls(element)|trim == 'GRID_CONTAINER'%}
-        global persist ${{element.element_name}}scroll = 0
-        {% endif%}
         global persist ${{element.element_name}}PositionX = {{ (element.position | default([0,0]))[0] }}
         global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
         global persist ${{element.element_name}}SizeX = {{ (element.size | default([0,0]))[0] }}
         global persist ${{element.element_name}}SizeY = {{ (element.size | default([0,0]))[1] }}
+        {% if get_cls(element)|trim == 'GRID_CONTAINER'%}
+        global persist ${{element.element_name}}scroll = 0
+        {% endif%}
     {% endfor %}
 {% endif %}
 {% endmacro %}
