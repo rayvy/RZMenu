@@ -227,8 +227,7 @@ def get_viewport_data():
 
             # Visuals
             "image_id": getattr(elem, "image_id", -1),
-            "text_content": getattr(elem, "text_string", elem.element_name),
-            "text_id": getattr(elem, "text_id", ""),  # Add text_id for TEXT elements
+            "text_id": getattr(elem, "text_id", ""),
             "color": color_list,
             "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),
@@ -238,9 +237,7 @@ def get_viewport_data():
 
             # Grid props
             "grid_cell_size": getattr(elem, "grid_cell_size", 50),
-            "grid_cols": getattr(elem, "grid_min_cells", [1,1])[0], # Using min_x as cols proxy
-            "grid_padding": getattr(elem, "grid_padding", 0), # Assumed existing property
-            "grid_gap": getattr(elem, "grid_gap", 0)          # Assumed existing property
+            "grid_cols": getattr(elem, "grid_min_cells", [1,1])[0]
         }
         results.append(item)
 

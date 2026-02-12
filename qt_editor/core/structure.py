@@ -5,8 +5,11 @@ from . import blender_bridge
 from ..conf import get_config
 
 def get_next_available_id(elements):
-    if len(elements) == 0: return 1
-    return max(el.id for el in elements) + 1
+    ids = {el.id for el in elements}
+    new_id = 1
+    while new_id in ids:
+        new_id += 1
+    return new_id
 
 def create_element(class_type, pos_x, pos_y, parent_id=-1):
     signals.IS_UPDATING_FROM_QT = True
@@ -132,13 +135,70 @@ def duplicate_elements(target_ids):
             new_elem.id = new_id
             new_elem.element_name = src.element_name + "_copy"
             new_elem.elem_class = src.elem_class
+            
+            # Position/Size
             new_elem.position = (src.position[0] + 20, src.position[1] - 20) 
             new_elem.size = src.size[:]
             new_elem.parent_id = src.parent_id 
             
-            if hasattr(src, "qt_hide"): new_elem.qt_hide = src.qt_hide
-            if hasattr(src, "qt_locked"): new_elem.qt_locked = src.qt_locked
+            # Formula Logic
+            new_elem.position_is_formula = src.position_is_formula
+            new_elem.size_is_formula = src.size_is_formula
+            new_elem.position_formula_x = src.position_formula_x
+            new_elem.position_formula_y = src.position_formula_y
+            new_elem.size_formula_x = src.size_formula_x
+            new_elem.size_formula_y = src.size_formula_y
+            
+            # Visuals & Identity
+            new_elem.alignment = src.alignment
+            new_elem.text_align = src.text_align
+            new_elem.text_id = src.text_id
+            new_elem.hover_text_id = src.hover_text_id
+            new_elem.tag = src.tag
+            new_elem.priority = src.priority
+            new_elem.is_main_window = src.is_main_window
+            
+            # Appearance
             if hasattr(src, "color"): new_elem.color = src.color[:]
+            new_elem.image_id = src.image_id
+            new_elem.image_mode = src.image_mode
+            new_elem.tile_uv = src.tile_uv[:]
+            new_elem.tile_size = src.tile_size[:]
+            
+            # Visibility & State
+            new_elem.visibility_mode = src.visibility_mode
+            new_elem.visibility_condition = src.visibility_condition
+            new_elem.qt_hide = getattr(src, "qt_hide", False)
+            new_elem.qt_lock_pos = getattr(src, "qt_lock_pos", False)
+            new_elem.qt_lock_size = getattr(src, "qt_lock_size", False)
+            new_elem.qt_selectable = getattr(src, "qt_selectable", True)
+            
+            # Grid Specifics
+            new_elem.grid_cell_size = src.grid_cell_size
+            new_elem.grid_min_cells = src.grid_min_cells[:]
+            new_elem.grid_max_cells = src.grid_max_cells[:]
+            new_elem.grid_wrap_mode = src.grid_wrap_mode
+            
+            # Button Specifics
+            new_elem.disable_button_nums = src.disable_button_nums
+            new_elem.disable_button_popup = src.disable_button_popup
+            
+            # Copy Collections
+            for ci in src.conditional_images:
+                new_ci = new_elem.conditional_images.add()
+                new_ci.condition = ci.condition
+                new_ci.image_id = ci.image_id
+                
+            for vl in src.value_link:
+                new_vl = new_elem.value_link.add()
+                new_vl.value_name = vl.value_name
+                new_vl.value_min = vl.value_min
+                new_vl.value_max = vl.value_max
+                
+            for fx_item in src.fx:
+                new_fx = new_elem.fx.add()
+                new_fx.value = fx_item.value
+
             new_ids.append(new_id)
 
         blender_bridge.safe_undo_push("RZM: Duplicate")

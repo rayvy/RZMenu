@@ -7,7 +7,7 @@ class GridSolver:
         Calculates local coordinates for children within a container.
         
         Args:
-            container_data (dict): Contains 'width', 'grid_padding', 'grid_gap', 'grid_cell_size', 'grid_cols'.
+            container_data (dict): Contains 'width', 'grid_cell_size', 'grid_cols'.
             children_count (int): Number of children to arrange.
             children_sizes (list): List of (width, height) tuples for each child.
             
