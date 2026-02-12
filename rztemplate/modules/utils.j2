@@ -96,6 +96,16 @@
     {%- endif -%}
 {%- endmacro -%}
 
+{%- macro clean_resource(input_string) -%}
+{%- if input_string -%}
+{%- if input_string[:8]|lower == 'resource' -%}
+{{- input_string[8:] -}}
+{%- else -%}
+{{- input_string -}}
+{%- endif -%}
+{%- endif -%}
+{%- endmacro -%}
+
 {%- macro clean_ws(max_empty=1) -%}
     {%- set raw_content = caller() -%}
     {%- set lines = raw_content.split('\n') -%}

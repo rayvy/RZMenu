@@ -1,7 +1,7 @@
 {% import "rz_helper.j2" as helper with context %}
 
 {% macro main_logic(extracted_object, merged_object, mod_info, buffers, textures, cfg) %}
-; EFMI ALPHA-1 INI
+; EFMI ALPHA-3 INI
 
 {%- macro note(text) %}{% if comment_code %}; {{ text }}{% else %};DEL{% endif %}{% endmacro %}
 
@@ -38,6 +38,8 @@ global $mod_id = -1000
 global $mod_enabled = 0
 {{note("Indicates if our object was detected in previous frame")}}
 global $object_detected = 0
+{{note("Indicates if our object has LoDs applied")}}
+global $lod_detected = 0
 {%- if cfg.use_ini_toggles %}
 ; Swap vars aka toggles defaults
 {%- for var in cfg.ini_toggles.vars %}
@@ -179,62 +181,102 @@ CheckTextureOverride = ps-t20
 
 {%- for componnet_id, component in enumerate(extracted_object.components) %}
 
+{{note("Do custom draw calls for Component %d" | format(loop.index0))}}
+[CommandList_Draw_Component{{ componnet_id }}]
+{{note("Trigger by-hash resource overrides")}}
+run = CommandListTriggerResourceOverrides
+{{note("Do by-slot resource overrides")}}
+{%- if ('Component' ~ componnet_id ~ '_IB') in buffers %}
+ib = ref Resource_Component{{ componnet_id }}_IB
+{%- endif %}
+{%- if ('Component' ~ componnet_id ~ '_VB0') in buffers %}
+vb0 = ref Resource_Component{{ componnet_id }}_VB0
+{%- endif %}
+{%- if ('Component' ~ componnet_id ~ '_VB1') in buffers %}
+vb1 = ref Resource_Component{{ componnet_id }}_VB1
+{%- endif %}
+{{note("Conditional VB2 (blends buffer) swap for LoDs handling")}}
+{%- if component.lods | length == 0 or component.lods[0].vg_map | length == 0 %}
+    {%- if ('Component' ~ componnet_id ~ '_VB2') in buffers %}
+    vb2 = ref Resource_Component{{ componnet_id }}_VB2
+    {%- endif %}
+{%- else %}
+if $lod_detected == 0
+    {{note("Use VB2 with weights for full model")}}
+    {%- if ('Component' ~ componnet_id ~ '_VB2') in buffers %}
+    vb2 = ref Resource_Component{{ componnet_id }}_VB2
+    {%- endif %}
+else
+    {{note("Use VB2 with weights for LoD model")}}
+    {%- if ('Component' ~ componnet_id ~ '_VB2_LOD') in buffers %}
+    vb2 = ref Resource_Component{{ componnet_id }}_VB2_LOD
+    {%- endif %}
+endif
+{%- endif %}
+{%- for obj in merged_object.components[componnet_id].objects %}
+; Draw {{ obj.name }}
+{%- if cfg.use_ini_toggles %}
+if {{ formatter.format_ini_drawvar(obj.name) }}
+    {{ helper.smart_draw(obj, draw_mode='instanced') }}
+endif
+{%- else %}
+{{ helper.smart_draw(obj, draw_mode='instanced') }}
+{%- endif %}
+{%- endfor %}
+
+{%- endfor %}
+
+; Darw Full Models -------------------------
+
+{%- for componnet_id, component in enumerate(extracted_object.components) %}
+
 {{note("Override draw calls for Component %d" | format(loop.index0))}}
 [TextureOverride_Component{{ componnet_id }}]
 hash = {{ component.vb0_hash }}
 {{note("Signal our mod that object is found on screen and we can start overriding it")}}
 $object_detected = 1
+$active = 1
+{{note("Signal our mod that object LoD is NOT found on screen (only components with LoDs should do it)")}}
+{%- if component.lods | length > 0 and component.lods[0].vb0_hash != component.vb0_hash %}
+$lod_detected = 0
+{%- endif %}
 if $mod_enabled && DRAW_TYPE == 4
-{%- if merged_object.components[componnet_id].objects | length > 0 %}
     {{note("Skip original draw call")}}
     handling = skip
-    {{note("Trigger by-hash resource overrides")}}
-    run = CommandListTriggerResourceOverrides
-    {{note("Do by-slot resource overrides")}}
-    ib = ref Resource_Component{{ componnet_id }}_IB
-    vb0 = ref Resource_Component{{ componnet_id }}_VB0
-    vb1 = ref Resource_Component{{ componnet_id }}_VB1
-    vb2 = ref Resource_Component{{ componnet_id }}_VB2
-    {%- for obj in merged_object.components[componnet_id].objects %}
-    ; Draw {{ obj.name }}
-    {{ helper.handle_rzm_toggles(obj) }}
-    drawindexedinstanced = {{ obj.index_count }}, INSTANCE_COUNT, {{ obj.index_offset }}, 0, FIRST_INSTANCE
-    {{ helper.handle_rzm_toggles_end(obj) }}
-    {%- endfor %}
-{%- else %}
-    handling = skip
-    ; run = CommandListTriggerResourceOverrides
+    {%- if merged_object.components[componnet_id].objects | length > 0 %}
+    {{note("Do custom draw calls")}}
+    run = CommandList_Draw_Component{{ componnet_id }}
+    {%- else %}
     ; Draw skipped: No matching custom components found
-{%- endif %}
+    ; run = CommandList_Draw_Component{{ componnet_id }}
+    {%- endif %}
 endif
 
-{%- for lod_id, lod in enumerate(component.lods) %}
+{%- endfor %}
 
+; Darw LoDs Models -------------------------
+
+{%- for componnet_id, component in enumerate(extracted_object.components) %}
+
+{%- for lod_id, lod in enumerate(component.lods) if lod.vb0_hash != component.vb0_hash %}
+
+{{note("Override draw calls for LoD of Component %d" | format(loop.index0))}}
 [TextureOverride_Component{{ componnet_id }}_LOD{{ lod_id }}]
 hash = {{ lod.vb0_hash }}
+{{note("Signal our mod that object is found on screen and we can start overriding it")}}
 $object_detected = 1
+{{note("Signal our mod that object LoD is found on screen and we can start overriding it")}}
+$lod_detected = 1
 if $mod_enabled && DRAW_TYPE == 4
-{%- if merged_object.components[componnet_id].objects | length > 0 %}
-    {{note("Skip original draw call")}}
+{{note("Skip original draw call")}}
     handling = skip
-    {{note("Trigger by-hash resource overrides")}}
-    run = CommandListTriggerResourceOverrides
-    {{note("Do by-slot resource overrides")}}
-    ib = ref Resource_Component{{ componnet_id }}_IB
-    vb0 = ref Resource_Component{{ componnet_id }}_VB0
-    vb1 = ref Resource_Component{{ componnet_id }}_VB1
-    vb2 = ref Resource_Component{{ componnet_id }}_VB2_LOD
-    {%- for obj in merged_object.components[componnet_id].objects %}
-    ; Draw {{ obj.name }}
-    {{ helper.handle_rzm_toggles(obj) }}
-    drawindexedinstanced = {{ obj.index_count }}, INSTANCE_COUNT, {{ obj.index_offset }}, 0, FIRST_INSTANCE
-    {{ helper.handle_rzm_toggles_end(obj) }}
-    {%- endfor %}
-{%- else %}
-    handling = skip
-    ; run = CommandListTriggerResourceOverrides
+    {%- if merged_object.components[componnet_id].objects | length > 0 %}
+    {{note("Do custom draw calls")}}
+    run = CommandList_Draw_Component{{ componnet_id }}
+    {%- else %}
     ; Draw skipped: No matching custom components found
-{%- endif %}
+    ; run = CommandList_Draw_Component{{ componnet_id }}
+    {%- endif %}
 endif
 
 {%- endfor %}
@@ -242,7 +284,7 @@ endif
 {%- endfor %}
 
 ; Shading: Textures -------------------------
-
+{% if scene.rzm.export_texture_slots%}
 {%- for texture in textures %}
 
 [Resource_Texture{{ loop.index0 }}]
@@ -255,17 +297,29 @@ if $object_detected
     this = Resource_Texture{{ loop.index0 }}
 endif
 {%- endfor %}
-
+{% endif %}
 ; Resources: Buffers -------------------------
 
 {%- for buffer_name, buffer in buffers.items() %}
 
 [Resource_{{ buffer_name }}]
 type = Buffer
+{%- if buffer_name.endswith('IB') %}
 format = {{ buffer.layout.semantics[0].get_format() }}
+{%- endif %}
 stride = {{ buffer.layout.stride }}
 filename = Meshes/{{ buffer_name }}.buf
 
 {%- endfor %}
+
+; Autogenerated -------------------------
+
+; EFMI Tools GitHub: https://github.com/SpectrumQT/EFMI-Tools
+; EFMI Package GitHub: https://github.com/SpectrumQT/EFMI-Package
+; XXMI Launcher GitHub: https://github.com/SpectrumQT/XXMI-Launcher
+; EFMI Mods Website: https://gamebanana.com/games/21842
+; EFMI GameBanana: https://gamebanana.com/tools/21846
+; EFMI Tools GameBanana: https://gamebanana.com/tools/21847
+; AGMF Modding Community Discord: https://discord.com/invite/agmf
 
 {% endmacro %}

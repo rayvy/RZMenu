@@ -540,13 +540,15 @@ endif
     $sizeX = (32) * $sizeMultiplier
     $sizeY = (32) * $sizeMultiplier
     if $LocalVisibility
-        run = CommandListGetImageCords9975
-        if $DrawType != 1
-        $drawType = 0
-        $colorR = 1.0
-        $colorG = 0.0
-        $colorB = 0.0
-        $colorA = 1.0
+        run = CommandListGetImageCords{{element.image_id}}
+        if $TexPosX + $TexPosY + $TexSizeX + $TexSizeY <= 0
+            if $DrawType != 1
+            $drawType = 0
+            $colorR = 1.0
+            $colorG = 0.0
+            $colorB = 0.0
+            $colorA = 1.0
+            endif
         endif
         x110 = 1
         y110 = 6

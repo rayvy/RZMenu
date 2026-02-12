@@ -1,4 +1,5 @@
 {% import "modules/elements.j2" as elements with context %}
+{% import "modules/utils.j2" as utils with context %}
 
 {%macro generate_addons(mod_file,scene)%}
 {% if scene.rzm.addons %}
@@ -25,20 +26,20 @@ run = CustomShaderRCI2D
 ;tw_resources
 
 {% for texres in scene.rzm.addons.tw_resources %}
-		[Resource{{texres.tex_name}}]
-		filename = tex\{{ texres.tex_path.split('\\')[-1] if '.' in texres.tex_path.split('\\')[-1] else texres.tex_path.split('\\')[-1] ~ '.dds' }}
+		[Resource{{-utils.clean_resource(texres.tex_name)}}]
+		filename = Textures\{{ texres.tex_path.split('\\')[-1] if '.' in texres.tex_path.split('\\')[-1] else texres.tex_path.split('\\')[-1] ~ '.dds' }}
 		{% if texres.tex_resource_type == 0 %}
 		{% elif texres.tex_resource_type == 1 %}
 		{% endif %}
 {% endfor %}
 
-{% for textype in scene.rzm.addons.tw_texture_configs %}
+{#% for textype in scene.rzm.addons.tw_texture_configs %}
 	{% set current_textype = textype.tw_config_name | default('ErrorVal') %}
 	{% for texres in scene.rzm.addons.tw_resources %}
 		{% if texres.tex_resource_type == 0 %}
 		{% elif texres.tex_resource_type == 1 %}
 		{%else%}
-		[Resource{{texres.tex_name}}{{current_textype}}]
+		[Resource{{-utils.clean_resource(texres.tex_name)}}{{current_textype}}]
 		;type = RWTexture2D
 		;width = {{textype.tw_atlas_settings.tw_width | default('4096') | int }}
 		;height = {{textype.tw_atlas_settings.tw_height | default('4096') | int}}
@@ -48,7 +49,7 @@ run = CustomShaderRCI2D
 		;mips = 1
 		{% endif %}
 	{% endfor %}
-{% endfor %}
+{% endfor %#}
 
 {% endif %}
 
@@ -56,17 +57,17 @@ run = CustomShaderRCI2D
 	{% for override in scene.rzm.addons.tw_overrides %}
 		[TextureOverride{{override.tex_name}}]
 		hash = {{override.tex_hash}}
-		this = Resource{{override.tex_resource_name}}
-		run = CommandListSafeTexWorks.{{override.tex_resource_name}}.CHECK
+		this = Resource{{-utils.clean_resource(override.tex_resource_name)}}
+		run = CommandListSafeTexWorks.{{-utils.clean_resource(override.tex_resource_name)}}.CHECK
 	{% endfor %}
 
 	{% set unique_resources = scene.rzm.addons.tw_overrides | map(attribute='tex_resource_name') | unique %}
 
 	{% for res_name in unique_resources %}
-		[CommandListSafeTexWorks.{{res_name}}.CHECK]
+		[CommandListSafeTexWorks.{{-utils.clean_resource(res_name)}}.CHECK]
 		local $isInit = 0
 		if this === null && $isInit == 0
-			this = copy Resource{{res_name}}
+			this = copy Resource{{-utils.clean_resource(res_name)}}
 			$isInit = 1
 		endif
 	{% endfor %}
@@ -131,7 +132,7 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		;Custom Resource Name: {{texture.tw_base_resource_name}}
 		{% else %}
 		[Resource{{texture.tw_name }}{{config.tw_config_name}}]
-		filename = tex/{{texture.tw_name}}{{config.tw_config_name}}.dds
+		filename = Textures/{{texture.tw_name}}{{config.tw_config_name}}.dds
 		{% endif %}
 		{# 3.1. Базовое копирование из исходной текстуры в атлас #}
 		[CustomShaderUpdate{{ texture.tw_name }}{{ config.tw_config_name }}]
@@ -389,10 +390,9 @@ mips = 1
 {% else %}
 [CommandListAddonsTexWorks]
 ;ERROR: No TexWorks Textures Defined
-[CommandListAddonsFaceTexWorks]
-;ERROR: No Face TexWorks Textures Defined
 [ResourceAtlasDiffuse]
 {% endif %}
+
 {% endif %}
 
 {% if scene.rzm.addons.tex_morph == 1 %};texMorph
@@ -642,9 +642,9 @@ mips = 1
 
 ; --- Base Textures ---
 [ResourceFaceBaseDiffuse]
-filename = tex/FaceD.dds
+filename = Textures/FaceD.dds
 [ResourceFaceBaseMaterial]
-filename = tex/FaceM.dds
+filename = Textures/FaceM.dds
 
 ; =======================================================================================
 ; LOGIC LOOP (PRESENT)

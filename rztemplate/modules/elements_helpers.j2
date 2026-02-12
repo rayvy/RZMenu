@@ -153,7 +153,7 @@ if $cursorX > $LocalPosX && $cursorX < ($LocalPosX + $LocalSizeX) && $cursorY > 
     {% for i in range(popup_elements_count.elements[0]) %}
     if $cursorX >= ($LocalPosX + $segmentSize * {{ i }}) && $cursorX < ($LocalPosX + $segmentSize * ({{ i }} + 1))
         ; Присваиваем индекс + минимальное смещение
-        {{ target_variable_str }} = {{ val_min + i }}
+        ${{ target_variable_str }} = {{ val_min + i }}
     endif
     {% endfor %}
 endif
@@ -163,9 +163,9 @@ if $isGamepadEditing == 1 && $GamepadEditedID == {{ element.id }}
     if $Gamepad_Interaction_Type == 1
         ; Используем формулу со смещением, чтобы не вылететь за границы Min/Max
         if $Gamepad_Interaction_Increase == 1
-            {{ target_variable_str }} = $valMin + (({{ target_variable_str }} - $valMin + 1) % $popupElements)
+            ${{ target_variable_str }} = $valMin + ((${{ target_variable_str }} - $valMin + 1) % $popupElements)
         else if $Gamepad_Interaction_Decrease == 1
-            {{ target_variable_str }} = $valMin + (({{ target_variable_str }} - $valMin - 1 + $popupElements) % $popupElements)
+            ${{ target_variable_str }} = $valMin + ((${{ target_variable_str }} - $valMin - 1 + $popupElements) % $popupElements)
         endif
     endif
 endif

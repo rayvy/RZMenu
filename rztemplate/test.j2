@@ -1,5 +1,4 @@
 {% import "rz_MERGED_HOYO.j2" as hoyo  with context %}
-{% import "rz_MERGED_NOHOYO.j2" as efmi  with context %}
 {% import "modules/core.j2" as core  with context %}
 {% import "modules/data.j2" as data  with context %}
 {% import "modules/functions.j2" as fn with context %}
@@ -15,7 +14,8 @@
 ;Target Game: {{ scene.rzm.game.name }}
 
 {% if scene.rzm.game.name == "ArknightsEndfield" %}
-    {{ efmi.main_logic(extracted_object, merged_object, mod_info, buffers, textures, cfg) }}
+	[Present]
+	$active = 1
 {% else %}
     {% block hoyo_main %}
         {{ hoyo.overridesbuffers(mod_file, scene) }}

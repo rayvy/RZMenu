@@ -131,7 +131,7 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		;Custom Resource Name: {{texture.tw_base_resource_name}}
 		{% else %}
 		[Resource{{texture.tw_name }}{{config.tw_config_name}}]
-		filename = tex/{{texture.tw_name}}{{config.tw_config_name}}.dds
+		filename = Textures/{{texture.tw_name}}{{config.tw_config_name}}.dds
 		{% endif %}
 		{# 3.1. Базовое копирование из исходной текстуры в атлас #}
 		[CustomShaderUpdate{{ texture.tw_name }}{{ config.tw_config_name }}]
@@ -642,9 +642,9 @@ mips = 1
 
 ; --- Base Textures ---
 [ResourceFaceBaseDiffuse]
-filename = tex/FaceD.dds
+filename = Textures/FaceD.dds
 [ResourceFaceBaseMaterial]
-filename = tex/FaceM.dds
+filename = Textures/FaceM.dds
 
 ; =======================================================================================
 ; LOGIC LOOP (PRESENT)

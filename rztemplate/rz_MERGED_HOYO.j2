@@ -1,3 +1,5 @@
+{% import "rz_helper.j2" as helper with context %}
+
 {% macro overridesbuffers(mod_file,scene) %}
     {#--- ОБРАБОТКА КОМПОНЕНТОВ С BLEND И POSITION БУФЕРАМИ ---#}
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 %}
@@ -110,23 +112,6 @@
     {% endif %}
 {% endmacro %}
 
-
-{% macro handle_drawindexed(entry) %}
-    {% if loop.previtem and loop.previtem.collection_name != entry.collection_name %}
-    ;{{ entry.collection_name }}
-    {% endif %}
-        {% if entry.obj.SkipDraw %}
-            ;skippingDraw of {{ entry.name }} ({{ entry.vertex_count }})
-        {% else %}
-            drawindexed = {{ entry.index_count}}, {{ entry.index_offset }}, 0
-        {% endif %}
-        {% for key, value in entry.obj.items() %}
-            {% if key.startswith('CustomDraw') %}
-                run = CustomShader{{ key|replace('CustomDraw', '') }}
-            {% endif %}
-        {% endfor %}
-{% endmacro %}
-
 {#--- ГЛАВНЫЙ МАКРОС ДЛЯ ПЕРЕОПРЕДЕЛЕНИЯ ИНДЕКСНЫХ БУФЕРОВ (теперь с под-макросами!) ---#}
 {% macro overridesibs(mod_file,scene) %}
     {% for component in mod_file.components if component.draw_vb != "" %}
@@ -149,31 +134,10 @@
         {% endif %}
 
             {% for entry in part.objects if entry.vertex_count > 0 %}
-                {% for key, value in entry.obj.items() %}
-                    {% if key.startswith('rzm.Toggle.') %}
-                        {% set toggle_values = [] %}
-                            {% for toggle_value in value %}
-                                {% if toggle_value == 1 %}
-                                    {% set _ = toggle_values.append(loop.index - 1) %}
-                                {% endif %}
-                            {% endfor %}
-                            if ${{ key|replace('rzm.Toggle.', '') }} == {{ toggle_values|join(' || $' + key|replace('rzm.Toggle.', '') + ' == ') }}
-                    {% else %}
-                    {% endif %}
-                {% endfor %}
-                {{handle_drawindexed(entry)}}
-                {% for key, value in entry.obj.items() %}
-                    {% if key.startswith('rzm.Toggle.') %}
-                        {% set toggle_values = [] %}
-                            {% for toggle_value in value %}
-                                {% if toggle_value == 1 %}
-                                    {% set _ = toggle_values.append(loop.index - 1) %}
-                                {% endif %}
-                            {% endfor %}
-                            endif
-                    {% else %}
-                    {% endif %}
-                {% endfor %}
+                {% if loop.previtem and loop.previtem.collection_name != entry.collection_name %}
+                ;{{ entry.collection_name }}
+                {% endif %}
+                {{ helper.smart_draw(entry, draw_mode='simple') }}
             {% endfor %}
 
             {% if not bufPosCopy%}
