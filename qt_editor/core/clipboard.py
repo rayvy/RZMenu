@@ -42,6 +42,14 @@ def copy_elements(target_ids):
                 "tile_uv": list(elem.tile_uv),
                 "tile_size": list(elem.tile_size),
                 
+                "color_is_formula": elem.color_is_formula,
+                "color_formula_r": elem.color_formula_r,
+                "color_formula_g": elem.color_formula_g,
+                "color_formula_b": elem.color_formula_b,
+                "color_formula_a": elem.color_formula_a,
+                "value_link_is_formula": elem.value_link_is_formula,
+                "value_link_formula": elem.value_link_formula,
+                
                 "visibility_mode": elem.visibility_mode,
                 "visibility_condition": elem.visibility_condition,
                 "hide": getattr(elem, "qt_hide", False),
@@ -120,6 +128,14 @@ def paste_elements(target_x=None, target_y=None):
             new_elem.image_mode = item.get("image_mode", "SINGLE")
             new_elem.tile_uv = item.get("tile_uv", [0,0])
             new_elem.tile_size = item.get("tile_size", [1,1])
+            
+            new_elem.color_is_formula = item.get("color_is_formula", False)
+            new_elem.color_formula_r = item.get("color_formula_r", "1")
+            new_elem.color_formula_g = item.get("color_formula_g", "1")
+            new_elem.color_formula_b = item.get("color_formula_b", "1")
+            new_elem.color_formula_a = item.get("color_formula_a", "1")
+            new_elem.value_link_is_formula = item.get("value_link_is_formula", False)
+            new_elem.value_link_formula = item.get("value_link_formula", "")
             
             new_elem.visibility_mode = item.get("visibility_mode", "ALWAYS")
             new_elem.visibility_condition = item.get("visibility_condition", "")

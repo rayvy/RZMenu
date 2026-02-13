@@ -603,10 +603,47 @@ class RZMInspectorPanel(RZEditorPanel):
         # Color
         h_col = QtWidgets.QHBoxLayout()
         h_col.addWidget(RZLabel("Color:"))
+        h_col.addStretch()
+        self.chk_color_formula = RZCheckBox("Formula")
+        self.chk_color_formula.toggled.connect(lambda v: self._emit_change('color_is_formula', v))
+        h_col.addWidget(self.chk_color_formula)
+        layout_style.addLayout(h_col)
+
+        self.stack_color = QtWidgets.QStackedLayout()
+        
+        # Mode 0: Color Button
         self.btn_color = RZColorButton()
         self.btn_color.colorChanged.connect(lambda c: self._emit_change('color', c))
-        h_col.addWidget(self.btn_color)
-        layout_style.addLayout(h_col)
+        self.stack_color.addWidget(self.btn_color)
+
+        # Mode 1: Four Formula Inputs
+        self.w_color_formulas = QtWidgets.QWidget()
+        l_col_f = QtWidgets.QHBoxLayout(self.w_color_formulas)
+        l_col_f.setContentsMargins(0, 0, 0, 0)
+        l_col_f.setSpacing(2)
+        
+        self.edit_col_r = RZFormulaInput()
+        self.edit_col_r.setPlaceholderText("R")
+        self.edit_col_r.editingFinished.connect(lambda: self._emit_change('color_formula_r', self.edit_col_r.text()))
+        l_col_f.addWidget(self.edit_col_r)
+        
+        self.edit_col_g = RZFormulaInput()
+        self.edit_col_g.setPlaceholderText("G")
+        self.edit_col_g.editingFinished.connect(lambda: self._emit_change('color_formula_g', self.edit_col_g.text()))
+        l_col_f.addWidget(self.edit_col_g)
+        
+        self.edit_col_b = RZFormulaInput()
+        self.edit_col_b.setPlaceholderText("B")
+        self.edit_col_b.editingFinished.connect(lambda: self._emit_change('color_formula_b', self.edit_col_b.text()))
+        l_col_f.addWidget(self.edit_col_b)
+        
+        self.edit_col_a = RZFormulaInput()
+        self.edit_col_a.setPlaceholderText("A")
+        self.edit_col_a.editingFinished.connect(lambda: self._emit_change('color_formula_a', self.edit_col_a.text()))
+        l_col_f.addWidget(self.edit_col_a)
+        
+        self.stack_color.addWidget(self.w_color_formulas)
+        layout_style.addLayout(self.stack_color)
         
         # Image Mode
         self.cb_img_mode = RZComboBox()
@@ -653,8 +690,26 @@ class RZMInspectorPanel(RZEditorPanel):
         layout_logic = QtWidgets.QVBoxLayout(self.grp_logic)
         
         layout_logic.addWidget(RZLabel("Value Links:"))
+        h_vl_formula = QtWidgets.QHBoxLayout()
+        self.chk_vl_formula = RZCheckBox("Formula Mode")
+        self.chk_vl_formula.toggled.connect(lambda v: self._emit_change('value_link_is_formula', v))
+        h_vl_formula.addWidget(self.chk_vl_formula)
+        h_vl_formula.addStretch()
+        layout_logic.addLayout(h_vl_formula)
+
+        self.stack_vl = QtWidgets.QStackedLayout()
+        
+        # Mode 0: List of Links
         self.list_links = RZValueLinkList()
-        layout_logic.addWidget(self.list_links)
+        self.stack_vl.addWidget(self.list_links)
+
+        # Mode 1: Raw Formula
+        self.edit_vl_formula = RZFormulaInput()
+        self.edit_vl_formula.setPlaceholderText("Link Formula (e.g. run = CommandList...)")
+        self.edit_vl_formula.editingFinished.connect(lambda: self._emit_change('value_link_formula', self.edit_vl_formula.text()))
+        self.stack_vl.addWidget(self.edit_vl_formula)
+        
+        layout_logic.addLayout(self.stack_vl)
         
         layout_logic.addWidget(RZLabel("FX Rules:"))
         self.list_fx = RZFXList()
@@ -801,7 +856,17 @@ class RZMInspectorPanel(RZEditorPanel):
                 self.cb_grid_wrap.setCurrentText(props.get('grid_wrap_mode', 'SCROLL'))
 
             # --- Style ---
-            self.btn_color.set_color(props.get('color'))
+            col_is_form = props.get('color_is_formula', False)
+            self.chk_color_formula.setChecked(col_is_form)
+            self.stack_color.setCurrentIndex(1 if col_is_form else 0)
+            
+            if col_is_form:
+                self.edit_col_r.setText(props.get('color_formula_r', ''))
+                self.edit_col_g.setText(props.get('color_formula_g', ''))
+                self.edit_col_b.setText(props.get('color_formula_b', ''))
+                self.edit_col_a.setText(props.get('color_formula_a', ''))
+            else:
+                self.btn_color.set_color(props.get('color'))
             
             img_mode = props.get('image_mode', 'SINGLE')
             self.cb_img_mode.setCurrentText(img_mode)
@@ -820,7 +885,15 @@ class RZMInspectorPanel(RZEditorPanel):
                 self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
             
             # --- Logic ---
-            self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
+            vl_is_form = props.get('value_link_is_formula', False)
+            self.chk_vl_formula.setChecked(vl_is_form)
+            self.stack_vl.setCurrentIndex(1 if vl_is_form else 0)
+            
+            if vl_is_form:
+                self.edit_vl_formula.setText(props.get('value_link_formula', ''))
+            else:
+                self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
+                
             self.list_fx.update_data(props.get('fx', []))
 
             self.tile_uv_x.setValue(props.get('tile_uv_x', 0))

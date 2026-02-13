@@ -135,6 +135,11 @@ def get_selection_details(selected_ids, active_id):
             
             # Style & Content
             "color": color_vals,
+            "color_is_formula": get_uniform("color_is_formula", default=False),
+            "color_formula_r": get_uniform("color_formula_r", default="1"),
+            "color_formula_g": get_uniform("color_formula_g", default="1"),
+            "color_formula_b": get_uniform("color_formula_b", default="1"),
+            "color_formula_a": get_uniform("color_formula_a", default="1"),
             "text_id": get_uniform("text_id", default=""),
             "hover_text_id": get_uniform("hover_text_id", default=""),
             
@@ -162,6 +167,8 @@ def get_selection_details(selected_ids, active_id):
             "grid_wrap_mode": get_uniform("grid_wrap_mode", default="SCROLL"),
             
             # Logic & Links
+            "value_link_is_formula": get_uniform("value_link_is_formula", default=False),
+            "value_link_formula": get_uniform("value_link_formula", default=""),
             "value_links": [
                 {
                     "value_name": vl.value_name,
@@ -234,6 +241,15 @@ def get_viewport_data():
             "is_locked_pos": getattr(elem, "qt_lock_pos", False),
             "is_locked_size": getattr(elem, "qt_lock_size", False),
             "alignment": getattr(elem, "alignment", "BOTTOM_LEFT"),
+
+            # Formula Logic (Color / Logic)
+            "color_is_formula": getattr(elem, "color_is_formula", False),
+            "color_formula_r": getattr(elem, "color_formula_r", "1"),
+            "color_formula_g": getattr(elem, "color_formula_g", "1"),
+            "color_formula_b": getattr(elem, "color_formula_b", "1"),
+            "color_formula_a": getattr(elem, "color_formula_a", "1"),
+            "value_link_is_formula": getattr(elem, "value_link_is_formula", False),
+            "value_link_formula": getattr(elem, "value_link_formula", ""),
 
             # Grid props
             "grid_cell_size": getattr(elem, "grid_cell_size", 50),

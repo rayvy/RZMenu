@@ -210,6 +210,14 @@ Local $current_sizeY
 {%endmacro%}
 
 {%macro generate_color(element)%}
+    {% if element.color_is_formula %}
+    {# Режим формулы: полная свобода #}
+    $colorR = {{ element.color_formula_r }}
+    $colorG = {{ element.color_formula_g }}
+    $colorB = {{ element.color_formula_b }}
+    $colorA = {{ element.color_formula_a }}
+    {% else %}
+    {# Старый режим: статические значения #}
     {% if element.color and element.color|length == 4 %}
     $colorR = {{ element.color[0] | float}}
     $colorG = {{ element.color[1] | float}}
@@ -220,6 +228,7 @@ Local $current_sizeY
     $colorG = 0.0
     $colorB = 0.0
     $colorA = 0.5
+    {% endif %}
     {% endif %}
 {%endmacro%}
 
@@ -393,7 +402,7 @@ Local $current_sizeY
     {% endif %}
 {% endmacro %}
 
-{% macro handle_button_logic(element, parent_element, mod_file,scene) %}
+{% macro handle_button_logic(element, parent_element, mod_file, scene) %}
     {# --- Визуальная подсветка --- #}
     if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
         y110 = 1
@@ -405,6 +414,7 @@ Local $current_sizeY
         {% set target_var = utils.format_var(first_link.value_name) %}
         {% set target_var_is_toggle = 0 %}
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
+
         {# Отображение цифрового значения на кнопке #}
         {% if not element.disable_button_nums %}
         x24 = ${{ target_var }}
@@ -413,28 +423,32 @@ Local $current_sizeY
     
         {# --- Логика клика --- #}
     if $id == $clickTriggerID
-    ;{{target_var}}
-    ;IS TOGGLE: {{target_var_is_toggle}}
-    ;FOR
-    {% for vals in element.value_link %}
-    ;{{vals.value_min}}
-    ;{{vals.value_max}}
-    {% endfor %}
-    {% if first_link.value_name and target_var_is_toggle == 1 %}
-            {% for toggle in scene.rzm.toggle_definitions %}
-                {% if toggle.toggle_name == target_var %}
-                    if ${{ target_var }} < {{ toggle.toggle_length - 1 }}
-                        ${{ target_var }} = ${{ target_var }} + 1
-                    else
-                        ${{ target_var }} = 0
-                    endif
-                {% endif %}
-            {% endfor %}
+        
+        {# === НОВАЯ ЛОГИКА: ФОРМУЛА ИЛИ СТАНДАРТ === #}
+        {% if element.value_link_is_formula %}
+            {# Если включен режим формулы — вставляем сырой код #}
+            {{ element.value_link_formula }}
+        {% else %}
+            {# Иначе — выполняем стандартную логику переключения переменных #}
+            
+            {% if first_link.value_name and target_var_is_toggle == 1 %}
+                {% for toggle in scene.rzm.toggle_definitions %}
+                    {% if toggle.toggle_name == target_var %}
+                        if ${{ target_var }} < {{ toggle.toggle_length - 1 }}
+                            ${{ target_var }} = ${{ target_var }} + 1
+                        else
+                            ${{ target_var }} = 0
+                        endif
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                {% set max_val = (first_link.value_max | default(1.0) | float) | int if (first_link.value_max | default(1.0) | float) > 1 else 2 %}
+                ${{ target_var }} = (${{ target_var }} + 1) % {{ max_val }}
+            {% endif %}
+            
+        {% endif %}
+        {# ========================================== #}
 
-    {% else %}
-        {% set max_val = (first_link.value_max | default(1.0) | float) | int if (first_link.value_max | default(1.0) | float) > 1 else 2 %}
-        ${{ target_var }} = (${{ target_var }} + 1) % {{ max_val }}
-    {% endif %}
     endif
     
         {# Логика вызова попапа #}
@@ -450,10 +464,16 @@ Local $current_sizeY
         endif
     endif
         {% endif %}
+
     {% else %}
-        {# Логика для простой кнопки без value_link #}
+        {# --- Логика для простой кнопки БЕЗ value_link --- #}
     if $id == $clickTriggerID
-        ; Click registered for simple action button: {{ element.element_name }}
+        {# === ЗДЕСЬ ТОЖЕ ДОБАВЛЯЕМ ПОДДЕРЖКУ ФОРМУЛЫ === #}
+        {% if element.value_link_is_formula %}
+            {{ element.value_link_formula }}
+        {% else %}
+            ; Click registered for simple action button: {{ element.element_name }}
+        {% endif %}
     endif
     {% endif %}
 

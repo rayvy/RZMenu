@@ -59,6 +59,17 @@ PROP_MAP = {
     "tile_size": ("tile_size", None, 'D'),
     "disable_button_nums": ("disable_button_nums", None, 'D'),
     "disable_button_popup": ("disable_button_popup", None, 'D'),
+
+    # Color Formula
+    "color_is_formula": ("color_is_formula", None, 'D'),
+    "color_formula_r": ("color_formula_r", None, 'D'),
+    "color_formula_g": ("color_formula_g", None, 'D'),
+    "color_formula_b": ("color_formula_b", None, 'D'),
+    "color_formula_a": ("color_formula_a", None, 'D'),
+
+    # Value Link Formula
+    "value_link_is_formula": ("value_link_is_formula", None, 'D'),
+    "value_link_formula": ("value_link_formula", None, 'D'),
 }
 
 from ..utils import logger
