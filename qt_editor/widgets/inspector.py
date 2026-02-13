@@ -6,7 +6,7 @@ Updated to support Formulas, Conditional Visibility, and Class Specifics.
 """
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
-from .lib.inputs import RZImageComboBox, RZFormulaInput
+from .lib.inputs import RZImageComboBox, RZFormulaInput, RZCodeTextEdit
 from .lib.theme import get_current_theme
 from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox, RZDoubleSpinBox
 from .panel_base import RZEditorPanel
@@ -704,7 +704,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.stack_vl.addWidget(self.list_links)
 
         # Mode 1: Raw Formula
-        self.edit_vl_formula = RZFormulaInput()
+        self.edit_vl_formula = RZCodeTextEdit()
         self.edit_vl_formula.setPlaceholderText("Link Formula (e.g. run = CommandList...)")
         self.edit_vl_formula.editingFinished.connect(lambda: self._emit_change('value_link_formula', self.edit_vl_formula.text()))
         self.stack_vl.addWidget(self.edit_vl_formula)

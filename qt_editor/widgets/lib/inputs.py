@@ -301,3 +301,49 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
             self._complete_selection(self.popup.currentItem())
             return True
         return super().eventFilter(obj, event)
+
+class RZCodeTextEdit(RZFormulaInput):
+    """
+    Multi-line text edit for code/formulas.
+    Inherits from RZFormulaInput but allows Enter for newlines.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap) # Keep no wrap for code
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setMinimumHeight(80) 
+
+    def keyPressEvent(self, event):
+        # Allow Enter to insert newline, but keep other behavior (popup nav, etc)
+        # Note: RZFormulaInput.keyPressEvent consumes Enter if popup is hidden.
+        # We need to bypass that specific check.
+
+        if self.popup.isVisible():
+            # Standard popup navigation
+            if event.key() == QtCore.Qt.Key_Down:
+                idx = self.popup.currentRow()
+                if idx < self.popup.count() - 1:
+                    self.popup.setCurrentRow(idx + 1)
+                return
+            elif event.key() == QtCore.Qt.Key_Up:
+                idx = self.popup.currentRow()
+                if idx > 0:
+                    self.popup.setCurrentRow(idx - 1)
+                return
+            elif event.key() in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Tab):
+                self._complete_selection(self.popup.currentItem())
+                event.accept()
+                return
+            elif event.key() == QtCore.Qt.Key_Escape:
+                self.popup.hide()
+                return
+
+        # If popup is NOT visible, we want standard QPlainTextEdit behavior for Enter
+        # But we still want autocomplete triggereing for other keys.
+        # So we call QPlainTextEdit.keyPressEvent directly, skipping RZFormulaInput's override?
+        # No, RZFormulaInput's override does _check_autocomplete at the end.
+        
+        # Let's just reimplement the necessary part without the "Consume Enter" block.
+        QtWidgets.QPlainTextEdit.keyPressEvent(self, event)
+        self._check_autocomplete()

@@ -422,12 +422,12 @@ Local $current_sizeY
         {% endif %}
     
         {# --- Логика клика --- #}
-    if $id == $clickTriggerID
+        if $id == $clickTriggerID
         
         {# === НОВАЯ ЛОГИКА: ФОРМУЛА ИЛИ СТАНДАРТ === #}
         {% if element.value_link_is_formula %}
             {# Если включен режим формулы — вставляем сырой код #}
-            {{ element.value_link_formula }}
+            {{ element.value_link_formula}}
         {% else %}
             {# Иначе — выполняем стандартную логику переключения переменных #}
             
