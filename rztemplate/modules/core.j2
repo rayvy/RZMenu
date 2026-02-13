@@ -8,9 +8,9 @@
         {% for value in scene.rzm.rzm_values %}
             {% if value.value_name %}
                 {% if value.int_value %}
-                global persist {{utils.format_var(value.value_name)}} = {%if int_value != null%}{{value.int_value}}{%else%}0{%endif%}   
+                global persist ${{utils.format_var(value.value_name)}} = {%if int_value != null%}{{value.int_value}}{%else%}0{%endif%}   
                 {% else %}
-                global persist {{utils.format_var(value.value_name)}} = {%if float_value != null%}{{value.float_value}}{%else%}0.0{%endif%}    
+                global persist ${{utils.format_var(value.value_name)}} = {%if float_value != null%}{{value.float_value}}{%else%}0.0{%endif%}    
                 {%endif%}
             {% endif %}
         {% endfor %}
@@ -286,7 +286,7 @@ x101 = $colorR
 y101 = $colorG
 z101 = $colorB
 w101 = $colorA
-if $drawType == 1 || $drawType == 2
+if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
 	x102 = $texPosX / 256
 	y102 = $texPosY / 128
 	z102 = $texSizeX / 256
@@ -338,7 +338,7 @@ x101 = 0.0
 y101 = 0.0
 z101 = 0.0
 w101 = 0.75
-if $drawType == 1 || $drawType == 2
+if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
 	x102 = $texPosX / 256
 	y102 = $texPosY / 128
 	z102 = $texSizeX / 256
@@ -393,7 +393,7 @@ x101 = 0.0
 y101 = 0.0
 z101 = 0.0
 w101 = 0.75
-if $drawType == 1 || $drawType == 2
+if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
 	x102 = $texPosX / 256
 	y102 = $texPosY / 128
 	z102 = $texSizeX / 256
@@ -555,7 +555,7 @@ x101 = $colorR
 y101 = $colorG
 z101 = $colorB
 w101 = $colorA
-if $drawType == 1 || $drawType == 2
+if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
 {% if scene.rzm %}
     {% if scene.rzm.atlas_size %}
     x102 = $texPosX / {{scene.rzm.atlas_size[0] | int}}

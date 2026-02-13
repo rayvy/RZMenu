@@ -11,10 +11,10 @@ global persist $menu = 0
 global persist $menu_move = 1
 global $menu_d
 global $mms
-global persist $page = 0
-global $page_anim = 0
-global persist $pagex = 0
-global persist $pagey = 0
+;global persist $page = 0
+;global $page_anim = 0
+;global persist $pagex = 0
+;global persist $pagey = 0
 global $hold
 global $holdShape
 global $drag
@@ -27,7 +27,7 @@ global $clickedID = -1
 global $selectedID = -1
 global $targetSelectedID = -1
 global $slot_count = 4
-global $page_count = 3
+;global $page_count = 3
 global $navDirection = -1
 global $first_run = 1
 global $first_run_texworks = 1
@@ -271,6 +271,7 @@ global $rayvich_back_values_w110
     {% endfor %}
 {% endif %}
 {{customDrawVars(mod_file,scene)}}
+{{special_generate(mod_file,scene)}}
 {%endmacro%}
 
 {% macro anchors_generate(mod_file,scene) %}
@@ -283,6 +284,18 @@ global $rayvich_back_values_w110
         global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
         global persist ${{element.element_name}}SizeX = {{ (element.size | default([0,0]))[0] }}
         global persist ${{element.element_name}}SizeY = {{ (element.size | default([0,0]))[1] }}
+    {% endfor %}
+{% endif %}
+{% endmacro %}
+
+{% macro special_generate(mod_file,scene) %}
+{% if scene.rzm and scene.rzm.elements %}
+    {% for element in scene.rzm.elements %}
+        {% if element.tag == 'HSVColorPicker' %}
+        global persist ${{element.element_name}}_HSV_H = 0.0
+        global persist ${{element.element_name}}_HSV_S = 1.0
+        global persist ${{element.element_name}}_HSV_V = 1.0
+        {% endif %}
     {% endfor %}
 {% endif %}
 {% endmacro %}

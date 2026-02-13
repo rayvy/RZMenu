@@ -5,6 +5,12 @@ import struct
 import zlib
 from pathlib import Path
 
+# --- НАСТРОЙКИ ПРОФИЛЯ (ХАРДКОД) ---
+# Выбери здесь режим: 'SRGB' или 'LINEAR'
+# 'SRGB'   -> Добавляет чанк sRGB и gAMA (стандарт для Paint.NET/Web, цвета "как есть")
+# 'LINEAR' -> Добавляет только gAMA 1.0 (говорит софту, что это линейное пространство)
+ATLAS_ICC_PROFILE = 'LINEAR'
+
 class PackerNode:
     # ... (класс PackerNode остается без изменений) ...
     def __init__(self, x=0, y=0, w=0, h=0): self.x, self.y, self.w, self.h, self.down, self.right, self.used = x, y, w, h, None, None, False
@@ -141,8 +147,68 @@ def create_png_chunk(type_bytes, data_bytes):
     crc = zlib.crc32(type_bytes + data_bytes) & 0xffffffff
     return struct.pack('>I', length) + type_bytes + data_bytes + struct.pack('>I', crc)
 
+def inject_metadata_profile(filepath):
+    """
+    Вставляет метаданные (sRGB или gAMA) в зависимости от выбранного профиля.
+    НЕ МЕНЯЕТ ПИКСЕЛИ. Работает с бинарным файлом.
+    """
+    profile = ATLAS_ICC_PROFILE.upper()
+    print(f"DEBUG INJECTION: Injecting metadata for profile: {profile}")
 
-# --- ЧАСТЬ 3: ГЕНЕРАЦИЯ ---
+    try:
+        with open(filepath, 'rb') as f:
+            data = f.read()
+
+        if data[:8] != b'\x89PNG\r\n\x1a\n':
+            print("ERROR: Not a valid PNG file.")
+            return
+
+        # Ищем позицию для вставки (сразу после IHDR)
+        # IHDR (13 байт) + CRC (4) + Len (4) + Type (4) = 25 байт.
+        # Заголовок файла = 8 байт.
+        # 8 + 25 = 33. Вставляем на 33-й байт.
+        insert_pos = 33 
+        
+        chunks_to_add = b''
+
+        if profile == 'SRGB':
+            # === ВАРИАНТ 1: SRGB (Как в Paint.NET) ===
+            # Вставляем sRGB чанк
+            if b'sRGB' not in data:
+                # Intent 0 (Perceptual)
+                srgb_payload = b'\x00'
+                chunks_to_add += create_png_chunk(b'sRGB', srgb_payload)
+            
+            # Вставляем gAMA чанк (1 / 2.2 = 0.45455)
+            if b'gAMA' not in data:
+                gama_payload = struct.pack('>I', 45455)
+                chunks_to_add += create_png_chunk(b'gAMA', gama_payload)
+
+        elif profile == 'LINEAR':
+            # === ВАРИАНТ 2: LINEAR ===
+            # sRGB чанк НЕ вставляем (так как это Linear)
+            
+            # Вставляем gAMA чанк (1.0 = 100000)
+            if b'gAMA' not in data:
+                gama_payload = struct.pack('>I', 100000)
+                chunks_to_add += create_png_chunk(b'gAMA', gama_payload)
+        
+        else:
+            print(f"WARNING: Unknown profile mode '{profile}', skipping injection.")
+            return
+
+        # Если есть что добавить - добавляем
+        if chunks_to_add:
+            new_data = data[:insert_pos] + chunks_to_add + data[insert_pos:]
+            with open(filepath, 'wb') as f:
+                f.write(new_data)
+            print(f"SUCCESS: Injected {profile} chunks.")
+        else:
+            print("INFO: Relevant metadata already present.")
+            
+    except Exception as e:
+        print(f"Injection Failed: {e}")
+
 def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: dict):
     if not image_dict or atlas_w == 0 or atlas_h == 0:
         return np.array([])
@@ -163,7 +229,7 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
             except:
                 pass
     
-    # ПРИМЕНЯЕМ ГАММУ СРАЗУ ПОСЛЕ СБОРКИ
+    # ПРИМЕНЯЕМ ГАММУ СРАЗУ ПОСЛЕ СБОРКИ (ОРИГИНАЛЬНЫЙ ВЫЗОВ)
     atlas_pixels_flat = apply_gamma_correction(atlas_pixels, atlas_w, atlas_h)
     
     return atlas_pixels_flat

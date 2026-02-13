@@ -10,7 +10,7 @@ $scissorX = 0
 $scissorY = 0
 $scissorZ = 0
 $scissorW = 0
-{% if element.visibility_mode == 1 %}
+{% if element.visibility_mode == 'CONDITIONAL' %}
 if {{element.visibility_condition}}
     $LocalVisibility = 1
 endif
@@ -56,7 +56,7 @@ Local $current_sizeY
         {{generate_position_and_size(element,parent_element,mod_file,scene)}}
     {% endif %}
     {%if element.color%}{{generate_color(element)}}{%endif%}
-    {%if element.fn or element.fx%}{{generate_fxAndFn(element)}}{%endif%}
+    {%if element.fn%}{{generate_fn(element)}}{%endif%}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
         {{ handle_element_in_grid(element, parent_element, mod_file,scene) }}
     {% endif %}
@@ -80,10 +80,12 @@ Local $current_sizeY
             {% endif %}
     {%elif class_name == 'TEXT'%}
         {{generate_text(element)}}
+        {%if element.fx%}{{generate_fx(element)}}{%endif%}
         run = CustomShaderRCI2D_TEXT_{{element.text_align | default ('LEFT')}}
         ;run = CustomShaderRCI2D_TEXT
     {%else%}
         {{generate_image(element,parent_element,scene)}}
+        {%if element.fx%}{{generate_fx(element)}}{%endif%}
         run = CustomShaderRCI2D
     {%endif%}
     {% if class_name == 'GRID_CONTAINER' %}
@@ -154,8 +156,8 @@ Local $current_sizeY
         $sizeX = ${{ element.element_name }}SizeX
         $sizeY = {{ element.size[1] | default(0) | int}}
     {% elif element.size_is_formula %}
-        $sizeX = ({{ element.size_formula_x | default(0) | int }}) * $sizeMultiplier
-        $sizeY = ({{ element.size_formula_y | default(0) | int }}) * $sizeMultiplier
+        $sizeX = ({{ element.size_formula_x | default('(123) * $sizeMultiplier')}}) * $sizeMultiplier
+        $sizeY = ({{ element.size_formula_y | default('(123) * $sizeMultiplier')}}) * $sizeMultiplier
     {% elif utils.has_attribute(element, 'isResizable')%}
         ;isResizable
         $sizeX = (${{ element.element_name | default(poisitionX) | string }}SizeX) * $sizeMultiplier
@@ -293,13 +295,17 @@ Local $current_sizeY
     {% endif %}
 {% endmacro %}
 
-{%macro generate_fxAndFn(element)%}
-    ;generate_fxAndFn
+{%macro generate_fn(element)%}
+    ;generate_fn
     {% for fn_item in element.fn %}
     {#{fn_item.function_name}}
     ;run = CommandListCoreFn{{ current_fn }#}
     ;run = {{fn_item.function_name}}
     {% endfor %}
+{%endmacro%}
+
+{%macro generate_fx(element)%}
+    ;generate_fx
     {% for fx_item in element.fx %}
     run = {{fx_item.value}}
     {#% set current_fx = FX_MAP.get(fx_item.function_name, 'UNKNOWN') %}
@@ -559,3 +565,215 @@ endif
         run = CustomShaderRCI2D
     endif
 {%endmacro%}
+{% macro HSVColorPicker(element, parent_element, mod_file, scene) %}
+    {% set prefix = element.element_name %}
+    {# Ссылки на переменные #}
+    {% set var_H = "$" + prefix + "_HSV_H" %}
+    {% set var_S = "$" + prefix + "_HSV_S" %}
+    {% set var_V = "$" + prefix + "_HSV_V" %}
+    
+    ; --- ГЛАВНЫЙ ЭЛЕМЕНТ (Квадрат Saturation/Value) ---
+    [CommandListElement{{ prefix }}]
+    $id = {{ element.id }}
+    local $LocalVisibility
+    $LocalVisibility = 1
+    
+    ; Переменные для хранения "родительских" координат квадрата
+    local $P_PX
+    local $P_PY
+    local $P_SX
+    local $P_SY
+
+    if $LocalVisibility
+        ; 1. Генерируем позицию и размер стандартным методом движка
+        ; Это позволит работать якорям, align и прочему из редактора
+        {{generate_position_and_size(element,parent_element,mod_file,scene)}}
+
+        ; 2. СРАЗУ сохраняем эти данные.
+        $P_PX = $PositionX
+        $P_PY = $PositionY
+        $P_SX = $SizeX
+        $P_SY = $SizeY
+        $PositionY = $PositionY + ($SizeY * 0.10)
+        $SizeY = $SizeY * 0.9
+
+        ; --- Взаимодействие (Квадрат) ---
+        ; Тут $position/$size все еще от квадрата, логика сработает верно
+        run = CommandListCoreFNUpdateHoverState
+        run = CommandListNavProcessElement
+        run = CommandListCoreFNHandleClick
+        run = CommandListCoreFNHandleHold
+        run = CommandListElement{{ prefix }}_Helper
+
+        ; --- Отрисовка HSV квадрата ---
+        $drawType = 728386
+        $texPosX = {{ var_H }}
+        $colorA = 1.0
+        run = CustomShaderRCI2D
+
+        ; --- Отрисовка курсора внутри квадрата ---
+        ; Вычисляем позицию точки
+        local $cursorPosX = $P_PX + ($P_SX * {{ var_S }})
+        local $cursorPosY = $P_PY + ($P_SY * (1.0 - {{ var_V }}))
+        
+        ; Тень курсора (меняем глобальные pos/size, чтобы нарисовать точку)
+        $drawType = 728387
+        $positionX = $cursorPosX - 6
+        $positionY = $cursorPosY - 6
+        $sizeX = 12
+        $sizeY = 12
+        $colorR = 0.0
+        $colorG = 0.0
+        $colorB = 0.0
+        $colorA = 0.7
+        run = CustomShaderRCI2D
+        
+        ; Сам курсор
+        $positionX = $cursorPosX - 5
+        $positionY = $cursorPosY - 5
+        $sizeX = 10
+        $sizeY = 10
+        $colorR = 1.0
+        $colorG = 1.0
+        $colorB = 1.0
+        $colorA = 1.0
+        run = CustomShaderRCI2D
+
+        ; 3. ВАЖНО: Восстанавливаем координаты КВАДРАТА
+        ; Если этого не сделать, Слайдер унаследует размер 10х10 и позицию точки курсора.
+        $PositionX = $P_PX
+        $PositionY = $P_PY
+        $SizeX = $P_SX
+        $SizeY = $P_SY
+
+        ; --- Вызов слайдера Hue ---
+        ; Теперь он запустится, имея во входных данных координаты Квадрата
+        run = CommandListElement{{ prefix }}_HueSlider
+    endif
+
+    ; --- ХЕЛПЕР ГЛАВНОГО ЭЛЕМЕНТА ---
+    [CommandListElement{{ prefix }}_Helper]
+    if $capturedID == {{ element.id }}
+        local $s_val = ($cursorX - $positionX) / $sizeX
+        local $v_val = 1.0 - (($cursorY - $positionY) / $sizeY)
+        
+        if $s_val < 0.0
+            $s_val = 0.0
+        endif
+        if $s_val > 1.0
+            $s_val = 1.0
+        endif
+        if $v_val < 0.0
+            $v_val = 0.0
+        endif
+        if $v_val > 1.0
+            $v_val = 1.0
+        endif
+        
+        {{ var_S }} = $s_val
+        {{ var_V }} = $v_val
+    endif
+    ; (Логику геймпада я опустил для краткости, она остается прежней)
+    if $isGamepadEditing == 1 && $GamepadEditedID == {{ element.id }}
+        local $hold_speed = 0.35
+        if $nav_key_request_right == 1
+            {{ var_S }} = {{ var_S }} + ($hold_speed * $dt * 2)
+        endif
+        if $nav_key_request_left == 1
+            {{ var_S }} = {{ var_S }} - ($hold_speed * $dt * 2)
+        endif
+        if $nav_key_request_down == 1
+            {{ var_V }} = {{ var_V }} + ($hold_speed * $dt * 2)
+        endif
+        if $nav_key_request_up == 1
+            {{ var_V }} = {{ var_V }} - ($hold_speed * $dt * 2)
+        endif
+        if {{ var_S }} > 1.0
+            {{ var_S }} = 1.0
+        endif
+        if {{ var_S }} < 0.0
+            {{ var_S }} = 0.0
+        endif
+        if {{ var_V }} > 1.0
+            {{ var_V }} = 1.0
+        endif
+        if {{ var_V }} < 0.0
+            {{ var_V }} = 0.0
+        endif
+    endif
+
+    ; --- ЭЛЕМЕНТ: СЛАЙДЕР HUE ---
+    [CommandListElement{{ prefix }}_HueSlider]
+    $id = {{ element.id + 10000 }}
+    local $LocalVisibility
+    $LocalVisibility = 1
+
+    if $LocalVisibility
+        ; Мы унаследовали $positionX/Y/SizeX/Y от родителя (Квадрата)
+        ; Теперь корректируем их под себя.
+        
+        ; Сдвигаем Y: Позиция Y квадрата + Высота квадрата + Отступ (20)
+        $positionY = $positionY
+
+        ; Высота слайдера фиксированная (20), ширина такая же как у квадрата (унаследована)
+        $sizeY = $SizeY * 0.10
+
+        ; --- Взаимодействие ---
+        ; Теперь $position/$size соответствуют полоске слайдера
+        run = CommandListCoreFNUpdateHoverState
+        run = CommandListNavProcessElement
+        run = CommandListCoreFNHandleClick
+        run = CommandListCoreFNHandleHold
+        run = CommandListElement{{ prefix }}_HueSlider_Helper
+
+        ; --- Отрисовка градиента ---
+        $drawType = 728388
+        $colorA = 1.0
+        run = CustomShaderRCI2D
+
+        ; --- Курсор слайдера ---
+        local $cursorPosX = $positionX + ($sizeX * {{ var_H }})
+        
+        $drawType = 0
+        $positionX = $cursorPosX - 2
+        ; Центруем курсор по вертикали относительно полоски
+        $positionY = $positionY - 2
+        $sizeX = 4
+        $sizeY = $sizeY + 4
+        
+        $colorR = 1.0
+        $colorG = 1.0
+        $colorB = 1.0
+        $colorA = 1.0
+        run = CustomShaderRCI2D
+    endif
+
+    ; --- ХЕЛПЕР СЛАЙДЕРА HUE ---
+    [CommandListElement{{ prefix }}_HueSlider_Helper]
+    if $capturedID == {{ element.id + 10000 }}
+        local $h_val = ($cursorX - $positionX) / $sizeX
+        if $h_val < 0.0
+            $h_val = 0.0
+        endif
+        if $h_val > 1.0
+            $h_val = 1.0
+        endif
+        {{ var_H }} = $h_val
+    endif
+    
+    if $isGamepadEditing == 1 && $GamepadEditedID == {{ element.id + 10000 }}
+        local $hold_speed = 0.35
+        if $nav_key_request_right == 1
+            {{ var_H }} = {{ var_H }} + ($hold_speed * $dt)
+        endif
+        if $nav_key_request_left == 1
+            {{ var_H }} = {{ var_H }} - ($hold_speed * $dt)
+        endif
+        if {{ var_H }} > 1.0
+            {{ var_H }} = 1.0
+        endif
+        if {{ var_H }} < 0.0
+            {{ var_H }} = 0.0
+        endif
+    endif
+{% endmacro %}

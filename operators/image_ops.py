@@ -3,7 +3,7 @@ import bpy
 import os
 from pathlib import Path
 from ..core.utils import get_next_image_id
-from ..core.atlas_algo import calculate_atlas_layout, create_atlas_pixels, inject_paintnet_metadata
+from ..core.atlas_algo import calculate_atlas_layout, create_atlas_pixels, inject_paintnet_metadata, inject_metadata_profile
 
 class RZM_OT_LoadBaseIcons(bpy.types.Operator):
     """Scans the 'base_icons' folder and loads standard images."""
@@ -129,18 +129,50 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
     def execute(self, context):
         bpy.ops.rzm.update_atlas_layout()
         rzm = context.scene.rzm
+        export_settings = rzm.export_settings  # Восстанавливаем доступ к настройкам
         
-        # Определение пути
-        export_path = ""
-        if hasattr(context.scene, 'xxmi') and getattr(context.scene.xxmi, 'destination_path', ''):
-            export_path = os.path.join(context.scene.xxmi.destination_path, "res")
-        elif bpy.data.filepath:
-            export_path = os.path.dirname(bpy.data.filepath)
+        # --- ЛОГИКА ОПРЕДЕЛЕНИЯ КОРНЕВОЙ ПАПКИ ---
+        root_path = ""
+        
+        # 1. Если стоит галочка "Использовать XXMI путь"
+        if export_settings.use_xxmi_path:
+            if hasattr(context.scene, 'xxmi') and getattr(context.scene.xxmi, 'destination_path', ''):
+                root_path = context.scene.xxmi.destination_path
+                # print(f"DEBUG: Using XXMI Path: {root_path}")
+            else:
+                self.report({'WARNING'}, "XXMI path selected but not found. Falling back...")
+        
+        # 2. Если галочка снята — используем Custom Path
         else:
-            export_path = str(Path.home())
-            
+            if export_settings.custom_path:
+                root_path = export_settings.custom_path
+                # print(f"DEBUG: Using Custom Path: {root_path}")
+        
+        # 3. Если путь всё ещё пуст (или не найден) — берем путь текущего .blend файла
+        if not root_path:
+            if bpy.data.filepath:
+                root_path = os.path.dirname(bpy.data.filepath)
+            else:
+                root_path = str(Path.home()) # Если файл даже не сохранен
+
+        # --- НОРМАЛИЗАЦИЯ И ФИНАЛИЗАЦИЯ ---
+        
+        # os.path.abspath делает магию:
+        # 1. Превращает "G:/Mods/FM/" (со слэшем) в "G:\Mods\FM" (без слэша)
+        # 2. Исправляет прямые/обратные слэши под Windows
+        # Теперь это точно ПАПКА, и dirname не нужен
+        root_path = os.path.abspath(root_path)
+        
+        # Добавляем заветную папку /res
+        export_path = os.path.join(root_path, "res")
+
+        # Отладка для спокойствия души
+        print(f"DEBUG PATH: Resolved Root='{root_path}' -> Final Export='{export_path}'")
+
         if not os.path.exists(export_path):
             os.makedirs(export_path, exist_ok=True)
+
+        # ... ДАЛЕЕ ТВОЙ КОД РЕНДЕРА (без изменений) ...
 
         images_to_render = {
             img.display_name: img.image_pointer
@@ -163,7 +195,6 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         if atlas_pixels.size > 0:
             temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
             
-            # 2. Быстрая запись
             temp_image.pixels.foreach_set(atlas_pixels)
             
             final_filepath = os.path.join(export_path, "icons.png")
@@ -173,10 +204,10 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             
             bpy.data.images.remove(temp_image)
             
-            # 4. Вставляем метаданные (sRGB + gAMA)
-            inject_paintnet_metadata(final_filepath)
+            #inject_paintnet_metadata(final_filepath)
+            inject_metadata_profile(final_filepath)
             
-            self.report({'INFO'}, f"Atlas exported (Matches Paint.NET): {final_filepath}")
+            self.report({'INFO'}, f"Atlas exported: {final_filepath}")
         else:
             return {'CANCELLED'}
 

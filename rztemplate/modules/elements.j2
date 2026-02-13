@@ -86,6 +86,8 @@
             ;{{element.tag}}
             {% if element.tag == 'ControllerCursor'%}
             {{class_container.ControllerCursor(element,parent_element,mod_file,scene)}}
+            {% elif element.tag == 'HSVColorPicker' %}
+            {{class_container.HSVColorPicker(element,parent_element,mod_file,scene)}}
             {% else %}
             {{class_container.main(element,parent_element,mod_file,scene)}}
             {% endif %}
