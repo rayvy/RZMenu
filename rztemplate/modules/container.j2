@@ -407,14 +407,14 @@ Local $current_sizeY
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
         {# Отображение цифрового значения на кнопке #}
         {% if not element.disable_button_nums %}
-    x24 = ${{ target_var }}
-    run = CommandListCoreFXRenderButtonNumbers
+        x24 = ${{ target_var }}
+        run = CommandListCoreFXRenderButtonNumbers
         {% endif %}
     
         {# --- Логика клика --- #}
     if $id == $clickTriggerID
     ;{{target_var}}
-    ;{{target_var_is_toggle}}
+    ;IS TOGGLE: {{target_var_is_toggle}}
     ;FOR
     {% for vals in element.value_link %}
     ;{{vals.value_min}}
