@@ -184,6 +184,12 @@ Local $current_sizeY
             $sizeY = (100) * $sizeMultiplier
         {% endif %}
     {% endif %}
+
+    {% if element.transform_is_formula %}
+    {{element.transform_formula}}
+    {% else %}
+    ;No Transform Formula
+    {% endif %}
 {%endmacro%}
 {%macro generate_interactions(element, parent_element)%}
     {% set is_child_of_grid = parent_element and utils.get_cls(parent_element)|trim == 'GRID_CONTAINER' %}

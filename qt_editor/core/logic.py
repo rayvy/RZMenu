@@ -55,12 +55,30 @@ class FormulaEvaluator:
                 state = resolved_state[rid]
                 parent_id = el['parent_id']
 
+                # Prepare Local Variable Context for this element
+                # If has parent -> use parent global values. If no parent -> use static local values.
+                local_vars = {}
+                if parent_id != -1 and parent_id in resolved_state:
+                    p_state = resolved_state[parent_id]
+                    local_vars['positionx'] = p_state['x']
+                    local_vars['positiony'] = p_state['y']
+                    local_vars['sizex'] = p_state['w']
+                    local_vars['sizey'] = p_state['h']
+                else:
+                    # Fallback to own static data
+                    local_vars['positionx'] = el['pos_x']
+                    local_vars['positiony'] = el['pos_y']
+                    local_vars['sizex'] = el['width']
+                    local_vars['sizey'] = el['height']
+                
+                # Merge local vars into local_context for this element's evaluation
+                local_eval_context = {**eval_context, **local_vars}
+
                 # --- A. Size Calculation ---
                 new_w, new_h = state['w'], state['h']
                 if el['size_is_formula']:
-                    # Size formulas are independent of position hierarchy
-                    new_w = FormulaEvaluator._eval_safe(el['formula_w'], eval_context, el['width'])
-                    new_h = FormulaEvaluator._eval_safe(el['formula_h'], eval_context, el['height'])
+                    new_w = FormulaEvaluator._eval_safe(el['formula_w'], local_eval_context, el['width'])
+                    new_h = FormulaEvaluator._eval_safe(el['formula_h'], local_eval_context, el['height'])
 
                 if int(new_w) != int(state['w']) or int(new_h) != int(state['h']):
                     state['w'] = int(new_w)
@@ -68,13 +86,12 @@ class FormulaEvaluator:
                     changes_made = True
 
                 # --- B. Position Calculation (Hierarchy vs Absolute) ---
-                # Blender local position is the source
                 local_x, local_y = el['pos_x'], el['pos_y']
 
                 if el['pos_is_formula']:
                     # Formula is treated as ABSOLUTE (defines global position)
-                    calc_x = FormulaEvaluator._eval_safe(el['formula_x'], eval_context, local_x)
-                    calc_y = FormulaEvaluator._eval_safe(el['formula_y'], eval_context, local_y)
+                    calc_x = FormulaEvaluator._eval_safe(el['formula_x'], local_eval_context, local_x)
+                    calc_y = FormulaEvaluator._eval_safe(el['formula_y'], local_eval_context, local_y)
                     
                     final_x, final_y = calc_x, calc_y
                 else:

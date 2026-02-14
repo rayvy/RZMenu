@@ -128,6 +128,8 @@ def get_selection_details(selected_ids, active_id):
             "position_formula_y": get_uniform("position_formula_y", default=""),
             "size_formula_x": get_uniform("size_formula_x", default=""),
             "size_formula_y": get_uniform("size_formula_y", default=""),
+            "transform_is_formula": get_uniform("transform_is_formula", default=False),
+            "transform_formula": get_uniform("transform_formula", default=""),
 
             # Anchor & Align
             "alignment": get_uniform("alignment"),
@@ -323,30 +325,8 @@ def get_viewport_data():
             v_item['is_locked_size'] = False # Hide lock icon (visual only)
             v_item['is_hidden'] = False 
             
-            # --- FORMULA REWRITE FOR PRESETS ---
-            # User requirement: $SizeX/Y & $PositionX/Y in preset formulas should refer to HOST (Parent).
-            import re
-            def rewrite_preset_formula(formula):
-                if not formula: return ""
-                # Replace $SizeX -> $ParentSizeX, etc.
-                # Use word boundaries or careful matching
-                f = formula
-                f = f.replace("$SizeX", "$ParentSizeX")
-                f = f.replace("$SizeY", "$ParentSizeY")
-                f = f.replace("$PositionX", "$ParentPositionX")
-                f = f.replace("$PositionY", "$ParentPositionY")
-                return f
-            
-            if v_item['pos_is_formula']:
-                 v_item['formula_x'] = rewrite_preset_formula(v_item['formula_x'])
-                 v_item['formula_y'] = rewrite_preset_formula(v_item['formula_y'])
-                 
-            if v_item['size_is_formula']:
-                 v_item['formula_w'] = rewrite_preset_formula(v_item['formula_w'])
-                 v_item['formula_h'] = rewrite_preset_formula(v_item['formula_h'])
-                 
-            # Also rewrite others if they exist? E.g. color formula?
-            # User mentioned "formula position or formula size". Let's stick to those for now.
+            # Formulas for Presets are now handled by FormulaEvaluator logic (context-aware).
+            # We don't need manual string replacement here.
             
             # Positioning Logic:
             # If NOT using a formula, we snap to Host 1:1.
