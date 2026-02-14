@@ -62,6 +62,10 @@ class RZInputController(QtCore.QObject):
         key = event.key()
         modifiers = event.modifiers()
         
+        # Rayvich: Possible bugs - Fixed layout independence by checking key codes for A-Z
+        # If the key is A-Z (English layout), use the standard English character.
+        # Otherwise, fallback to toString() which may be localized.
+        
         # Игнорируем нажатия только модификаторов (просто Ctrl, просто Shift)
         if key in (QtCore.Qt.Key_Control, QtCore.Qt.Key_Shift, QtCore.Qt.Key_Alt, QtCore.Qt.Key_Meta):
             return None
@@ -71,11 +75,15 @@ class RZInputController(QtCore.QObject):
         if modifiers & QtCore.Qt.ShiftModifier:   sequence_str.append("Shift")
         if modifiers & QtCore.Qt.AltModifier:     sequence_str.append("Alt")
         
-        # Получаем имя клавиши
-        # ВАЖНО: Qt иногда возвращает имена по-разному (Del vs Delete), обрабатываем это в lookup
-        key_name = QtGui.QKeySequence(key).toString()
-        sequence_str.append(key_name)
+        # Mapping for common keys that might be localized
+        # A-Z keys are typically between Key_A (0x41) and Key_Z (0x5a)
+        if QtCore.Qt.Key_A <= key <= QtCore.Qt.Key_Z:
+            key_name = chr(key).upper()
+        else:
+            # Handle special cases manually if needed (Home, Del, etc)
+            key_name = QtGui.QKeySequence(key).toString()
         
+        sequence_str.append(key_name)
         return "+".join(sequence_str)
 
     def _get_hover_context(self):

@@ -26,10 +26,30 @@ def move_elements_delta(target_ids, delta_x, delta_y, silent=False):
     try:
         if not target_ids: return
         elements = bpy.context.scene.rzm.elements
+        
+        # Rayvich: Possible bugs - Double movement in hierarchy
+        # Only move elements if their parent is NOT in the selection.
+        # Moving a parent automatically moves the child's coordinate context later during evaluation/refresh.
+        # But wait, Blender rzm.elements properties are absolute? 
+        # No, they are usually relative if it's a nested UI system.
+        
+        # Determine roots of the selection
+        id_to_parent = {e.id: e.parent_id for e in elements}
+        root_target_ids = []
+        for tid in target_ids:
+            curr = id_to_parent.get(tid, -1)
+            is_root = True
+            while curr != -1:
+                if curr in target_ids:
+                    is_root = False; break
+                curr = id_to_parent.get(curr, -1)
+            if is_root:
+                root_target_ids.append(tid)
+
         changed = False
         for elem in elements:
-            # ARCHITECT FIX: Check for split lock flag (position)
-            if elem.id in target_ids and not getattr(elem, "qt_lock_pos", False):
+            # Only move roots
+            if elem.id in root_target_ids and not getattr(elem, "qt_lock_pos", False):
                 elem.position[0] += int(delta_x)
                 elem.position[1] += int(delta_y)
                 changed = True

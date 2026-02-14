@@ -33,7 +33,8 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         
         self.setBrush(self.normal_brush)
         self.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_handle_border', '#000000')), 1))
-        self.setZValue(100) 
+        # Rayvich: Possible bugs - Fixed priority by setting extremely high Z
+        self.setZValue(10000) 
         
         cursors = {
             self.TOP_LEFT: QtCore.Qt.SizeFDiagCursor, self.BOTTOM_RIGHT: QtCore.Qt.SizeFDiagCursor,
@@ -574,14 +575,15 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         if self.is_alt_mode:
             super().mousePressEvent(event); return
 
-        # PRIORITY FIX: Search all items at position to find handles first
-        # itemAt only returns the top-most item, which might be a child blocking the parent's handle.
+        # PRIORITY: Search for a handle at the click position.
+        # Handles now have Z=10000, but we manually check to be sure.
         clicked_items = self.items(event.scenePos())
         handle_item = next((i for i in clicked_items if isinstance(i, RZHandleItem)), None)
         
         if handle_item:
-            # Manually pass event to handle
-            handle_item.mousePressEvent(event)
+            # Let the scene handle it normally - because it's on top (Z=10000), 
+            # super().mousePressEvent should correctly pick it and start the grabber.
+            super().mousePressEvent(event)
             if event.isAccepted():
                 self.interaction_start_signal.emit()
                 return
@@ -593,8 +595,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             dist = (event.scenePos() - self._last_click_pos).manhattanLength()
             if dist < 5.0: is_same_spot = True
         
-        raw_items = self.items(event.scenePos())
-        valid_items = [i for i in raw_items if isinstance(i, RZElementItem) and i.is_selectable]
+        # Rayvich: Possible bugs - Ensure we skip disabled/unselectable items completely
+        valid_items = [i for i in clicked_items if isinstance(i, RZElementItem) and i.is_selectable and i.isEnabled()]
         
         if valid_items:
             event.accept()
@@ -619,10 +621,26 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 self._drag_start_pos = event.scenePos()
                 self._accum_x = 0.0; self._accum_y = 0.0
                 
+                # Rayvich: Possible bugs - Multi-drag persistence
                 selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
                 if target_item not in selected_items: selected_items.append(target_item)
                 
-                self._initial_item_positions = {it: it.pos() for it in selected_items}
+                # PARENTING FIX: Filter selected_items to only move root elements of the selection.
+                # Moving a parent already moves the child.
+                movable_roots = []
+                for it in selected_items:
+                    # If any ancestor of 'it' is also in selected_items, then 'it' is NOT a root for this move.
+                    has_parent_in_selection = False
+                    curr = it.parentItem()
+                    while curr:
+                        if curr in selected_items:
+                            has_parent_in_selection = True; break
+                        curr = curr.parentItem()
+                    if not has_parent_in_selection:
+                        movable_roots.append(it)
+                
+                self._initial_item_positions = {it: it.pos() for it in movable_roots}
+                self._all_movable_in_selection = selected_items # For visual feedback consistency if needed
                 
                 # CACHE TARGETS FOR MOVE
                 self.prepare_smart_snap(exclude_items=selected_items)
@@ -651,6 +669,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
             movable_items = []
             for item in self._initial_item_positions:
+                # Root protection check already done in mousePressEvent, but we verify active state here
                 if not item.is_locked_pos and not getattr(item, "_is_layout_controlled", False) and not item.pos_is_formula:
                     movable_items.append(item)
             if not movable_items: return
@@ -830,11 +849,15 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             layout = resolved_layout.get(uid, {})
             rx = layout.get('x', data['pos_x']); ry = layout.get('y', data['pos_y'])
             qx, qy = core.to_qt_coords(rx, ry)
+            # Rayvich: Possible bugs - If parent's global pos in resolved_layout is missing, 
+            # we fallback to 0 which causes "teleportation". 
+            # Ensure resolved_layout is always complete.
             parent = item.parentItem()
             if parent and isinstance(parent, RZElementItem):
                 p_layout = resolved_layout.get(parent.uid, {})
                 px = p_layout.get('x', 0); py = p_layout.get('y', 0)
                 pqx, pqy = core.to_qt_coords(px, py)
+                # Precision check: floats are used now, but sub-pixel mismatch might still occur
                 item.setPos(qx - pqx, qy - pqy)
             else: item.setPos(qx, qy)
 
@@ -886,9 +909,11 @@ class RZViewportView(QtWidgets.QGraphicsView):
     def keyPressEvent(self, event):
         modifiers = event.modifiers()
         key = event.key()
+        # Rayvich: Possible bugs - Shortcut layout/keyboard language independence
+        text = event.text().upper()
         
         # Shift + A: Add Menu
-        if key == QtCore.Qt.Key_A and (modifiers & QtCore.Qt.ShiftModifier):
+        if (key == QtCore.Qt.Key_A or text == "A" or text == "Ф") and (modifiers & QtCore.Qt.ShiftModifier):
             # Map global cursor to scene
             scene_pos = self.mapToScene(self.mapFromGlobal(QtGui.QCursor.pos()))
             self.open_add_menu(scene_pos)
@@ -896,13 +921,50 @@ class RZViewportView(QtWidgets.QGraphicsView):
             return
 
         # Ctrl + A: Select All
-        elif key == QtCore.Qt.Key_A and (modifiers & QtCore.Qt.ControlModifier):
+        elif (key == QtCore.Qt.Key_A or text == "A" or text == "Ф") and (modifiers & QtCore.Qt.ControlModifier):
             items = [i for i in self.scene().items() if isinstance(i, RZElementItem) and i.is_selectable]
             ids = [i.uid for i in items]
             if ids:
                 self.rz_scene.selection_changed_signal.emit(ids, None)
             event.accept()
             return
+
+        # H: Hide / Unhide
+        elif (key == QtCore.Qt.Key_H or text == "H" or text == "Р"): # Russian H
+            am = self._find_action_manager()
+            if am:
+                op_id = "rzm.unhide_all" if modifiers & QtCore.Qt.AltModifier else "rzm.toggle_hide"
+                if op_id in am.q_actions: am.q_actions[op_id].trigger()
+            event.accept(); return
+            
+        # L: Lock
+        elif (key == QtCore.Qt.Key_L or text == "L" or text == "Д"): # Russian L
+            am = self._find_action_manager()
+            if am:
+                op_id = "rzm.toggle_lock"
+                if op_id in am.q_actions: am.q_actions[op_id].trigger()
+            event.accept(); return
+
+        # Delete / Backspace
+        elif key in (QtCore.Qt.Key_Delete, QtCore.Qt.Key_Backspace):
+            am = self._find_action_manager()
+            if am and "rzm.delete" in am.q_actions: am.q_actions["rzm.delete"].trigger()
+            event.accept(); return
+            
+        # Standard Copy/Paste/Duplicate (Ctrl+C, Ctrl+V, Ctrl+D)
+        elif modifiers & QtCore.Qt.ControlModifier:
+            am = self._find_action_manager()
+            if not am: return super().keyPressEvent(event)
+            
+            op_map = {
+                "C": "rzm.copy", "С": "rzm.copy", # RU С
+                "V": "rzm.paste", "М": "rzm.paste", # RU М
+                "D": "rzm.duplicate", "В": "rzm.duplicate" # RU В (D is on same key as RU В)
+            }
+            if text in op_map and op_map[text] in am.q_actions:
+                am.q_actions[op_map[text]].trigger()
+                event.accept(); return
+
             
         super().keyPressEvent(event)
 

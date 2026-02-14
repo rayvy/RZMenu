@@ -80,9 +80,9 @@ class FormulaEvaluator:
                     new_w = FormulaEvaluator._eval_safe(el['formula_w'], local_eval_context, el['width'])
                     new_h = FormulaEvaluator._eval_safe(el['formula_h'], local_eval_context, el['height'])
 
-                if int(new_w) != int(state['w']) or int(new_h) != int(state['h']):
-                    state['w'] = int(new_w)
-                    state['h'] = int(new_h)
+                if new_w != state['w'] or new_h != state['h']:
+                    state['w'] = new_w
+                    state['h'] = new_h
                     changes_made = True
 
                 # --- B. Position Calculation (Hierarchy vs Absolute) ---
@@ -102,9 +102,9 @@ class FormulaEvaluator:
                         final_x += parent_state['x']
                         final_y += parent_state['y']
 
-                if int(final_x) != int(state['x']) or int(final_y) != int(state['y']):
-                    state['x'] = int(final_x)
-                    state['y'] = int(final_y)
+                if final_x != state['x'] or final_y != state['y']:
+                    state['x'] = final_x
+                    state['y'] = final_y
                     changes_made = True
 
             if not changes_made:
