@@ -238,6 +238,8 @@ def get_viewport_data():
             "formula_y": getattr(elem, "position_formula_y", ""),
             "formula_w": getattr(elem, "size_formula_x", ""),
             "formula_h": getattr(elem, "size_formula_y", ""),
+            "transform_is_formula": getattr(elem, "transform_is_formula", False),
+            "transform_formula": getattr(elem, "transform_formula", ""),
 
             # Visuals
             "image_id": getattr(elem, "image_id", -1),
@@ -317,8 +319,37 @@ def get_viewport_data():
             
             # Overwrite State
             v_item['is_selectable'] = False # Non-interactive
-            v_item['is_locked_pos'] = True
-            v_item['is_locked_size'] = True
+            v_item['is_locked_pos'] = False # Hide lock icon (visual only)
+            v_item['is_locked_size'] = False # Hide lock icon (visual only)
+            v_item['is_hidden'] = False 
+            
+            # --- FORMULA REWRITE FOR PRESETS ---
+            # User requirement: $SizeX/Y & $PositionX/Y in preset formulas should refer to HOST (Parent).
+            import re
+            def rewrite_preset_formula(formula):
+                if not formula: return ""
+                # Replace $SizeX -> $ParentSizeX, etc.
+                # Use word boundaries or careful matching
+                f = formula
+                f = f.replace("$SizeX", "$ParentSizeX")
+                f = f.replace("$SizeY", "$ParentSizeY")
+                f = f.replace("$PositionX", "$ParentPositionX")
+                f = f.replace("$PositionY", "$ParentPositionY")
+                return f
+            
+            if v_item['pos_is_formula']:
+                 v_item['formula_x'] = rewrite_preset_formula(v_item['formula_x'])
+                 v_item['formula_y'] = rewrite_preset_formula(v_item['formula_y'])
+                 
+            if v_item['size_is_formula']:
+                 v_item['formula_w'] = rewrite_preset_formula(v_item['formula_w'])
+                 v_item['formula_h'] = rewrite_preset_formula(v_item['formula_h'])
+                 
+            # Also rewrite others if they exist? E.g. color formula?
+            # User mentioned "formula position or formula size". Let's stick to those for now.
+            
+            # Positioning Logic:
+            # If NOT using a formula, we snap to Host 1:1.
             
             # Positioning Logic:
             # Presets usually just stick to the parent at (0,0) relative?

@@ -20,6 +20,8 @@ PROP_MAP = {
     "position_formula_y": ("position_formula_y", None, 'T'),
     "size_formula_x": ("size_formula_x", None, 'T'),
     "size_formula_y": ("size_formula_y", None, 'T'),
+    "transform_is_formula": ("transform_is_formula", None, 'T'),
+    "transform_formula": ("transform_formula", None, 'T'),
 
     # Presets
     "is_preset": ("is_preset", None, 'T'),

@@ -654,6 +654,21 @@ class RZMInspectorPanel(RZEditorPanel):
         self.stack_size.addWidget(self.w_size_formulas)
 
         layout_trans.addLayout(self.stack_size)
+
+        # --- Transform Formula ---
+        h_tf_head = QtWidgets.QHBoxLayout()
+        h_tf_head.addWidget(RZLabel("Transform Formula"))
+        h_tf_head.addStretch()
+        self.chk_trans_formula = RZCheckBox("Enable")
+        self.chk_trans_formula.toggled.connect(lambda v: self._emit_change('transform_is_formula', v))
+        h_tf_head.addWidget(self.chk_trans_formula)
+        layout_trans.addLayout(h_tf_head)
+
+        self.edit_trans_fx = RZCodeTextEdit()
+        self.edit_trans_fx.setPlaceholderText("Raw code transformation...")
+        self.edit_trans_fx.setMinimumHeight(60)
+        self.edit_trans_fx.editingFinished.connect(lambda: self._emit_change('transform_formula', self.edit_trans_fx.toPlainText()))
+        layout_trans.addWidget(self.edit_trans_fx)
         self.layout_props.addWidget(self.grp_trans)
 
         # === GROUP: GRID ===
@@ -949,6 +964,21 @@ class RZMInspectorPanel(RZEditorPanel):
             
             self.sl_w.setEnabled(can_edit_size)
             self.sl_h.setEnabled(can_edit_size)
+
+            # --- Transform Formula ---
+            trans_is_form = props.get('transform_is_formula', False)
+            self.chk_trans_formula.setChecked(trans_is_form)
+            # Use toPlainText if needed or setText via helper
+            self.edit_trans_fx.setText(props.get('transform_formula', ''))
+            self.edit_trans_fx.setEnabled(trans_is_form)
+
+            self.sl_h.setEnabled(can_edit_size)
+
+            # --- Transform Formula ---
+            trans_is_form = props.get('transform_is_formula', False)
+            self.chk_trans_formula.setChecked(trans_is_form)
+            self.edit_trans_fx.setText(props.get('transform_formula', ''))
+            self.edit_trans_fx.setEnabled(trans_is_form)
 
             # --- Grid Container ---
             is_grid = (class_type == "GRID_CONTAINER")
