@@ -306,7 +306,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
     # Обновили сигнатуру: добавлен аргумент text_id и order
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0):
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE'):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.image_id, self.is_selectable = img_id, is_selectable
@@ -315,6 +315,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.order = order  # Сохраняем порядок в массиве для Z-index
         self.alignment = alignment
         self.custom_color = color
+        self.image_blending_mode = image_blending_mode
         
         if grid_props:
             self.grid_padding = grid_props.get('padding', 0)
@@ -322,6 +323,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             self.grid_cell_size = grid_props.get('cell_size', 50)
             self.grid_cols = grid_props.get('cols', 0)
 
+        # PHANTOM BEHAVIOR: 
+        # setEnabled(False) makes item "invisible" to mouse events in the scene.
+        self.setEnabled(is_selectable)
+        
+        # We manually manage opacity to show it's unselectable
         self.setOpacity(0.5 if not is_selectable else 1.0)
         self.update()
 
@@ -549,10 +555,17 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         if self.is_alt_mode:
             super().mousePressEvent(event); return
 
-        item = self.itemAt(event.scenePos(), QtGui.QTransform())
-        if isinstance(item, RZHandleItem):
-            self.interaction_start_signal.emit()
-            super().mousePressEvent(event); return
+        # PRIORITY FIX: Search all items at position to find handles first
+        # itemAt only returns the top-most item, which might be a child blocking the parent's handle.
+        clicked_items = self.items(event.scenePos())
+        handle_item = next((i for i in clicked_items if isinstance(i, RZHandleItem)), None)
+        
+        if handle_item:
+            # Manually pass event to handle
+            handle_item.mousePressEvent(event)
+            if event.isAccepted():
+                self.interaction_start_signal.emit()
+                return
 
         modifier_str = 'CTRL' if event.modifiers() & QtCore.Qt.ControlModifier else 'SHIFT' if event.modifiers() & QtCore.Qt.ShiftModifier else None
         
@@ -773,7 +786,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 grid_props=grid_props,
                 pos_is_formula=data.get('pos_is_formula', False),
                 size_is_formula=data.get('size_is_formula', False),
-                order=data.get('order', 0)
+                order=data.get('order', 0),
+                image_blending_mode=data.get('image_blending_mode', 'NONE')
             )
             
             item.setVisible(not data.get('is_hidden', False))

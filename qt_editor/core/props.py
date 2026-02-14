@@ -60,6 +60,7 @@ PROP_MAP = {
     "text_align": ("text_align", None, 'D'),
     "image_id": ("image_id", None, 'D'),
     "image_mode": ("image_mode", None, 'D'),
+    "image_blending_mode": ("image_blending_mode", None, 'D'),
     "tile_uv": ("tile_uv", None, 'D'),
     "tile_size": ("tile_size", None, 'D'),
     "disable_button_nums": ("disable_button_nums", None, 'D'),

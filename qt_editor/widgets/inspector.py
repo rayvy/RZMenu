@@ -767,6 +767,13 @@ class RZMInspectorPanel(RZEditorPanel):
         layout_style.addWidget(RZLabel("Image Mode:"))
         layout_style.addWidget(self.cb_img_mode)
 
+        # Image Blend Mode
+        self.cb_blend_mode = RZComboBox()
+        self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR_HUE"])
+        self.cb_blend_mode.currentTextChanged.connect(lambda t: self._emit_change('image_blending_mode', t))
+        layout_style.addWidget(RZLabel("Blend Mode:"))
+        layout_style.addWidget(self.cb_blend_mode)
+
         # Image ID
         self.lbl_image = RZLabel("Image:")
         layout_style.addWidget(self.lbl_image)
@@ -1007,6 +1014,8 @@ class RZMInspectorPanel(RZEditorPanel):
             
             img_mode = props.get('image_mode', 'SINGLE')
             self.cb_img_mode.setCurrentText(img_mode)
+            
+            self.cb_blend_mode.setCurrentText(props.get('image_blending_mode', 'NONE'))
             
             is_single = (img_mode == 'SINGLE')
             self.lbl_image.setVisible(is_single)

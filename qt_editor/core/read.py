@@ -148,6 +148,7 @@ def get_selection_details(selected_ids, active_id):
             # Images
             "image_mode": get_uniform("image_mode", default="SINGLE"),
             "image_id": get_uniform("image_id", default=-1),
+            "image_blending_mode": get_uniform("image_blending_mode", default='NONE'),
             "tile_uv_x": get_uniform("tile_uv", 0),
             "tile_uv_y": get_uniform("tile_uv", 1),
             "tile_size_x": get_uniform("tile_size", 0),
@@ -245,6 +246,7 @@ def get_viewport_data():
 
             # Visuals
             "image_id": getattr(elem, "image_id", -1),
+            "image_blending_mode": getattr(elem, "image_blending_mode", 'NONE'),
             "text_id": getattr(elem, "text_id", ""),
             "color": color_list,
             "is_hidden": getattr(elem, "qt_hide", False),
