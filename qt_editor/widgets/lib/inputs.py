@@ -104,6 +104,9 @@ class RZImageComboBox(QtWidgets.QComboBox):
         except (ValueError, TypeError):
             pass
 
+    def wheelEvent(self, event):
+        event.ignore()
+
 class RZFormulaHighlighter(QtGui.QSyntaxHighlighter):
     """Highlights variables starting with $ in soft red."""
     def __init__(self, document):

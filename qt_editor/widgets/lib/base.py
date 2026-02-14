@@ -171,11 +171,17 @@ class _RZSmartSpinBox(QtWidgets.QSpinBox):
             return QtGui.QValidator.Acceptable, text, pos
         return super().validate(text, pos)
 
+    def wheelEvent(self, event):
+        event.ignore()
+
 class _RZSmartDoubleSpinBox(QtWidgets.QDoubleSpinBox):
     def validate(self, text, pos):
         if text == "--" or any(text.startswith(op) for op in ["+=", "-=", "*=", "/="]):
             return QtGui.QValidator.Acceptable, text, pos
         return super().validate(text, pos)
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 class _RZDragLabel(QtWidgets.QLabel):

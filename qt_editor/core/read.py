@@ -144,6 +144,11 @@ def get_selection_details(selected_ids, active_id):
             "color_formula_a": get_uniform("color_formula_a", default="1"),
             "text_id": get_uniform("text_id", default=""),
             "hover_text_id": get_uniform("hover_text_id", default=""),
+            "text_mode": get_uniform("text_mode", default="SINGLE"),
+            "conditional_texts": [
+                {"condition": ct.condition, "text_id": ct.text_id} 
+                for ct in target.conditional_texts
+            ] if target else [],
             
             # Images
             "image_mode": get_uniform("image_mode", default="SINGLE"),

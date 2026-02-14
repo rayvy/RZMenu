@@ -74,6 +74,8 @@ def copy_elements(target_ids):
                 "disable_button_popup": elem.disable_button_popup,
                 
                 "conditional_images": [{"condition": ci.condition, "image_id": ci.image_id} for ci in elem.conditional_images],
+                "text_mode": elem.text_mode,
+                "conditional_texts": [{"condition": ct.condition, "text_id": ct.text_id} for ct in elem.conditional_texts],
                 "value_links": [{"name": vl.value_name, "min": vl.value_min, "max": vl.value_max} for vl in elem.value_link],
                 "fx": [fx.value for fx in elem.fx]
             }
@@ -166,6 +168,7 @@ def paste_elements(target_x=None, target_y=None):
             
             new_elem.disable_button_nums = item.get("disable_button_nums", False)
             new_elem.disable_button_popup = item.get("disable_button_popup", False)
+            new_elem.text_mode = item.get("text_mode", "SINGLE")
 
             # Collections
             if "preset_ids" in item:
@@ -186,6 +189,11 @@ def paste_elements(target_x=None, target_y=None):
             for fx_val in item.get("fx", []):
                 new_fx = new_elem.fx.add()
                 new_fx.value = fx_val
+
+            for ct in item.get("conditional_texts", []):
+                new_ct = new_elem.conditional_texts.add()
+                new_ct.condition = ct["condition"]
+                new_ct.text_id = ct["text_id"]
             
             new_ids.append(new_id)
             

@@ -222,6 +222,12 @@ def duplicate_elements(target_ids):
                 new_fx = new_elem.fx.add()
                 new_fx.value = fx_item.value
 
+            new_elem.text_mode = src.text_mode
+            for ct in src.conditional_texts:
+                new_ct = new_elem.conditional_texts.add()
+                new_ct.condition = ct.condition
+                new_ct.text_id = ct.text_id
+
             new_ids.append(new_id)
 
         blender_bridge.safe_undo_push("RZM: Duplicate")

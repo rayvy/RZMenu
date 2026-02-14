@@ -12,22 +12,86 @@
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
         {% if element.text_id and element.id not in processed_ids.text_elements %}
-            {% set text_content = element.text_id %}
-            {% set text_length = text_content | length %}
+    
+    {# --- Инициализация переменных --- #}
+    {% set fallback_text = element.text_id | default("NO_TEXT") %}
+    {% set resources_to_generate = [] %}
+    
+    [CommandListGetTextElement{{ element.id }}]
+
+    {# --- Логика для CONDITIONAL_LIST --- #}
+    {% if element.text_mode == 'CONDITIONAL_LIST' and element.conditional_texts %}
+        
+        {% for item in element.conditional_texts %}
+            {# Считаем смещения для текущего условия #}
+            {% set txt_content = item.text_id %}
+            {% set txt_len = txt_content | length %}
             {% set current_offset = text_offset_tracker[0] %}
-
-            [CommandListGetTextElement{{ element.id }}]
-            $texPosX = {{ current_offset }}
-            $texPosY = {{ text_length }}
-            cs-t24 = ResourceTextElement{{ element.id }}
-            [ResourceTextElement{{ element.id }}]
-            type = Buffer
-            data = "{{ text_content }}"
-
+            
+            {# Обновляем глобальный трекер (сдвигаем каретку буфера) #}
             {% set _ = text_offset_tracker.pop(0) %}
-            {% set _ = text_offset_tracker.append(current_offset + text_length) %}
-            {% set _ = processed_ids.text_elements.append(element.id) %}
-        {% endif %}
+            {% set _ = text_offset_tracker.append(current_offset + txt_len) %}
+            
+            {# Сохраняем данные #}
+            {% set _ = resources_to_generate.append({
+                'sub_id': loop.index, 
+                'content': txt_content
+            }) %}
+
+            {# Генерируем if/elif #}
+            {% if loop.first %}
+if {{ item.condition }}
+            {% else %}
+elif {{ item.condition }}
+            {% endif %}
+    $texPosX = {{ current_offset }}
+    $texPosY = {{ txt_len }}
+    cs-t24 = ResourceTextElement{{ element.id }}.{{ loop.index }}
+        {% endfor %}
+
+        {# --- Блок ELSE (Страховка) --- #}
+else
+        {% set txt_len = fallback_text | length %}
+        {% set current_offset = text_offset_tracker[0] %}
+        
+        {% set _ = text_offset_tracker.pop(0) %}
+        {% set _ = text_offset_tracker.append(current_offset + txt_len) %}
+        {% set _ = resources_to_generate.append({
+            'sub_id': 0, 
+            'content': fallback_text
+        }) %}
+        
+    $texPosX = {{ current_offset }}
+    $texPosY = {{ txt_len }}
+    cs-t24 = ResourceTextElement{{ element.id }}.0
+endif
+
+    {# --- Логика для SINGLE (Обычный режим) --- #}
+    {% else %}
+        {% set txt_len = fallback_text | length %}
+        {% set current_offset = text_offset_tracker[0] %}
+        
+        {% set _ = text_offset_tracker.pop(0) %}
+        {% set _ = text_offset_tracker.append(current_offset + txt_len) %}
+        {% set _ = resources_to_generate.append({
+            'sub_id': 0, 
+            'content': fallback_text
+        }) %}
+
+    $texPosX = {{ current_offset }}
+    $texPosY = {{ txt_len }}
+    cs-t24 = ResourceTextElement{{ element.id }}.0
+    {% endif %}
+
+    {# --- Генерация блоков ресурсов --- #}
+    {% for res in resources_to_generate %}
+    [ResourceTextElement{{ element.id }}.{{ res.sub_id }}]
+    type = Buffer
+    data = "{{ res.content }}"
+    {% endfor %}
+
+    {% set _ = processed_ids.text_elements.append(element.id) %}
+{% endif %}
 
         {% if element.hover_text_id and element.id not in processed_ids.hover_text_elements %}
             {% set text_content = element.hover_text_id %}

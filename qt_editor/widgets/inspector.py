@@ -8,7 +8,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
 from .lib.inputs import RZImageComboBox, RZFormulaInput, RZCodeTextEdit
 from .lib.theme import get_current_theme
-from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox, RZDoubleSpinBox
+from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox, RZDoubleSpinBox, RZAdvancedColorPanel
 from .panel_base import RZEditorPanel
 from .. import core
 from ..core.signals import SIGNALS
@@ -109,6 +109,102 @@ class RZConditionalImageList(QtWidgets.QWidget):
         ctx = RZContextManager.get_instance().get_snapshot()
         if ctx.selected_ids:
             core.props.update_conditional_image(ctx.selected_ids, index, field, value)
+
+
+class RZConditionalTextItem(QtWidgets.QWidget):
+    """A single row in the conditional text list."""
+    def __init__(self, index, data, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.parent_list = parent
+        
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        
+        self.edit_cond = RZFormulaInput()
+        self.edit_cond.setPlaceholderText("Condition...")
+        self.edit_cond.setText(data.get('condition', ''))
+        self.edit_cond.editingFinished.connect(self._on_cond_changed)
+        layout.addWidget(self.edit_cond, 2)
+        
+        self.edit_txt = RZLineEdit()
+        self.edit_txt.setPlaceholderText("Text...")
+        self.edit_txt.setText(data.get('text_id', ''))
+        self.edit_txt.editingFinished.connect(self._on_txt_changed)
+        layout.addWidget(self.edit_txt, 3)
+        
+        self.btn_del = RZPushButton("✕")
+        self.btn_del.setFixedWidth(24)
+        self.btn_del.clicked.connect(self._on_delete)
+        layout.addWidget(self.btn_del)
+
+    def _on_cond_changed(self):
+        self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
+
+    def _on_txt_changed(self):
+        self.parent_list.item_changed(self.index, 'text_id', self.edit_txt.text())
+
+    def _on_delete(self):
+        self.parent_list.remove_item(self.index)
+
+    def set_cond_visible(self, visible):
+        self.edit_cond.setVisible(visible)
+
+class RZConditionalTextList(QtWidgets.QWidget):
+    """A list-like widget to manage ConditionalText collection."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout_main = QtWidgets.QVBoxLayout(self)
+        self.layout_main.setContentsMargins(0, 0, 0, 0)
+        self.layout_main.setSpacing(2)
+        
+        self.layout_items = QtWidgets.QVBoxLayout()
+        self.layout_items.setSpacing(2)
+        self.layout_main.addLayout(self.layout_items)
+        
+        self.btn_add = RZPushButton("+ Add Text")
+        self.btn_add.clicked.connect(self.add_item)
+        self.layout_main.addWidget(self.btn_add)
+        
+        self.items_data = []
+        self.text_mode = 'SINGLE'
+        self._block = False
+
+    def update_data(self, data_list, mode):
+        self._block = True
+        self.items_data = data_list
+        self.text_mode = mode
+        
+        # Clear
+        while self.layout_items.count():
+            w = self.layout_items.takeAt(0).widget()
+            if w: w.deleteLater()
+            
+        for i, data in enumerate(data_list):
+            item_w = RZConditionalTextItem(i, data, self)
+            item_w.set_cond_visible(mode == 'CONDITIONAL_LIST')
+            self.layout_items.addWidget(item_w)
+        
+        self._block = False
+
+    def add_item(self):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.add_conditional_text(ctx.selected_ids)
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.remove_conditional_text(ctx.selected_ids, index)
+
+    def item_changed(self, index, field, value):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.update_conditional_text(ctx.selected_ids, index, field, value)
 
 
 class RZValueLinkItem(QtWidgets.QWidget):
@@ -726,8 +822,8 @@ class RZMInspectorPanel(RZEditorPanel):
 
         self.stack_color = QtWidgets.QStackedLayout()
         
-        # Mode 0: Color Button
-        self.btn_color = RZColorButton()
+        # Mode 0: Advanced Color Panel
+        self.btn_color = RZAdvancedColorPanel()
         self.btn_color.colorChanged.connect(lambda c: self._emit_change('color', c))
         self.stack_color.addWidget(self.btn_color)
 
@@ -795,15 +891,33 @@ class RZMInspectorPanel(RZEditorPanel):
         f_tile.addRow("Tile Y:", self.tile_uv_y)
         layout_style.addLayout(f_tile)
         
-        # Texts
-        f_txt = QtWidgets.QFormLayout()
+        # === Text Settings ===
+        # Text Mode First
+        self.cb_text_mode = RZComboBox()
+        self.cb_text_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
+        self.cb_text_mode.currentTextChanged.connect(lambda t: self._emit_change('text_mode', t))
+        layout_style.addWidget(RZLabel("Text Mode:"))
+        layout_style.addWidget(self.cb_text_mode)
+
+        # Conditional Texts
+        self.list_texts = RZConditionalTextList()
+        layout_style.addWidget(self.list_texts)
+
+        # Legacy Texts (Container for easy hiding)
+        self.w_legacy_text = QtWidgets.QWidget()
+        f_txt = QtWidgets.QFormLayout(self.w_legacy_text)
+        f_txt.setContentsMargins(0, 0, 0, 0)
+        f_txt.setSpacing(5)
+        
         self.edit_txt_id = RZLineEdit()
         self.edit_txt_id.editingFinished.connect(lambda: self._emit_change('text_id', self.edit_txt_id.text()))
         f_txt.addRow("Text ID:", self.edit_txt_id)
+        
         self.edit_hov_txt = RZLineEdit()
         self.edit_hov_txt.editingFinished.connect(lambda: self._emit_change('hover_text_id', self.edit_hov_txt.text()))
         f_txt.addRow("Hover ID:", self.edit_hov_txt)
-        layout_style.addLayout(f_txt)
+        
+        layout_style.addWidget(self.w_legacy_text)
 
         self.layout_props.addWidget(grp_style)
         
@@ -1046,6 +1160,17 @@ class RZMInspectorPanel(RZEditorPanel):
             self.tile_uv_y.setValue(props.get('tile_uv_y', 0))
             self.edit_txt_id.setText(props.get('text_id', ''))
             self.edit_hov_txt.setText(props.get('hover_text_id', ''))
+
+            # --- Text Mode ---
+            txt_mode = props.get('text_mode', 'SINGLE')
+            self.cb_text_mode.setCurrentText(txt_mode)
+            
+            is_txt_single = (txt_mode == 'SINGLE')
+            self.w_legacy_text.setVisible(is_txt_single)
+            self.list_texts.setVisible(not is_txt_single)
+            
+            if not is_txt_single:
+                self.list_texts.update_data(props.get('conditional_texts', []), txt_mode)
 
             # --- Button Specifics ---
             is_btn = (class_type == "BUTTON")

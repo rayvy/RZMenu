@@ -72,7 +72,7 @@ Local $current_sizeY
     {{generate_interactions(element, parent_element)}}
     {%if class_name == 'SLIDER'%}
         {{ handle_slider_logic(element, parent_element, mod_file,scene) }}
-            {% if element.text_id %}
+            {% if element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
             {{ generate_text(element) }}
             run = CustomShaderRCI2D_SLIDER.TEXT
             {% else %}
@@ -342,10 +342,11 @@ Local $current_sizeY
     {% endfor %}
 {%endmacro%}
 
-{%macro generate_text(element)%}
-    {% if element.text_id %}
-        run  = CommandListGetTextElement{{ element.id }}
+{% macro generate_text(element) %}
+    {% if element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
+        run = CommandListGetTextElement{{ element.id }}
     {% endif %}
+    
     {% if element.text_align == 1 %}
         $texSizeX = 1
     {% elif element.text_align == 2 %}
@@ -353,7 +354,7 @@ Local $current_sizeY
     {% else %}
         $texSizeX = 0
     {% endif %}
-{%endmacro%}
+{% endmacro %}
 
 {%macro generate_hovertext(element)%}
     {% if element.hover_text_id %}

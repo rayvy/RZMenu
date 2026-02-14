@@ -65,6 +65,7 @@ PROP_MAP = {
     "tile_size": ("tile_size", None, 'D'),
     "disable_button_nums": ("disable_button_nums", None, 'D'),
     "disable_button_popup": ("disable_button_popup", None, 'D'),
+    "text_mode": ("text_mode", None, 'D'),
 
     # Color Formula
     "color_is_formula": ("color_is_formula", None, 'D'),
@@ -202,6 +203,52 @@ def update_conditional_image(target_ids, index, field, value):
             # We don't always want undo push for every keystroke if it's text
             # But for simplicity here we do it.
             blender_bridge.safe_undo_push(f"RZM: Update CI {field}")
+            signals.SIGNALS.data_changed.emit()
+
+def add_conditional_text(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.conditional_texts.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Conditional Text")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_conditional_text(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.conditional_texts):
+                elem.conditional_texts.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Conditional Text")
+            signals.SIGNALS.data_changed.emit()
+
+def update_conditional_text(target_ids, index, field, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.conditional_texts):
+                item = elem.conditional_texts[index]
+                if hasattr(item, field):
+                    curr = getattr(item, field)
+                    if curr != value:
+                        setattr(item, field, value)
+                        changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update CT {field}")
             signals.SIGNALS.data_changed.emit()
 
 def add_value_link(target_ids):

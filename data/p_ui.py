@@ -17,6 +17,10 @@ class CustomProperty(bpy.types.PropertyGroup):
 class RZPresetReference(bpy.types.PropertyGroup):
     preset_id: IntProperty(name="Preset ID")
 
+class ConditionalText(bpy.types.PropertyGroup):
+    text_id: StringProperty(name="Text", default="New Text")
+    condition: StringProperty(name="Condition", description="Condition to show this text (e.g. $var > 0)")
+
 class RZMenuElement(bpy.types.PropertyGroup):
     element_name: StringProperty(name="Name"); id: IntProperty(name="Unique ID"); parent_id: IntProperty(name="Parent ID", default=-1)
     is_preset: BoolProperty(name="Is Preset", default=False)
@@ -38,7 +42,9 @@ class RZMenuElement(bpy.types.PropertyGroup):
     image_blending_mode: EnumProperty(name="Blending Mode",description="Determines how color parameters affect the image",items=[('NONE', "None", "Color parameters have no effect on the image"),('OVERLAY', "Overlay", "Standard Overlay blending (Photoshop style)"),('COLOR', "Color_HUE", "Forces target Hue while preserving Saturation and Value (similar to Blender Color mode)")],default='NONE')
     image_id: IntProperty(name="Image ID",description="ID изображения (-1 = нет)",default=-1)
     conditional_images: CollectionProperty(type=ConditionalImage)
+    text_mode: EnumProperty(name="Text Mode",items=[('SINGLE', "Single", "Обычный одиночный текст"),('CONDITIONAL_LIST', "Conditional List", "Список текстов, меняющихся по условию"),('INDEX_LIST', "Index List", "Список, выбираемый по индексу (пока резерв)")],default='SINGLE')
     text_id: StringProperty(name="Text ID"); hover_text_id: StringProperty(name="Hover Text ID")
+    conditional_texts: CollectionProperty(type=ConditionalText)
     tile_uv: IntVectorProperty(name="Tile UV", size=2); tile_size: IntVectorProperty(name="Tile Size", size=2)
     color_is_formula: BoolProperty(name="Color Formula Mode", default=False)
     color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(0.0, 0.0, 0.0, 0.0))
