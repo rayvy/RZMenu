@@ -194,6 +194,16 @@ def get_selection_details(selected_ids, active_id):
             # Computed Helpers
             "is_multi": len(selected_ids) > 1,
             "is_grid_child": is_grid_child,
+            # Computed Helpers
+            "is_multi": len(selected_ids) > 1,
+            "is_grid_child": is_grid_child,
+            
+            # Presets
+            "is_preset": get_uniform("is_preset", default=False),
+            "qt_preset_hide": get_uniform("qt_preset_hide", default=False),
+            "presets": [
+                p.preset_id for p in target.presets
+            ] if target and hasattr(target, "presets") else [],
         }
         return data
     return None
@@ -251,11 +261,117 @@ def get_viewport_data():
             "value_link_is_formula": getattr(elem, "value_link_is_formula", False),
             "value_link_formula": getattr(elem, "value_link_formula", ""),
 
+            "qt_preset_hide": getattr(elem, "qt_preset_hide", False),
+            
             # Grid props
             "grid_cell_size": getattr(elem, "grid_cell_size", 50),
             "grid_cols": getattr(elem, "grid_min_cells", [1,1])[0]
         }
         results.append(item)
+
+    # --- PRESET LOGIC: VIRTUAL ELEMENT INJECTION ---
+    # 1. Create a map of ID -> Element Data for fast lookup of preset sources
+    # We can use the results list we just built, but we need to index it.
+    elem_map = {item['id']: item for item in results}
+    
+    virtual_elements = []
+    
+    for host_item in results:
+        # Check if host uses presets
+        # We need to access the Blender object to iterate the collection properly because
+        # our simple dict 'host_item' doesn't contain the full collection of presets yet.
+        # We need to re-access the blender element.
+        # It's inefficient to assume index matches, so let's use ID or re-find.
+        # Optimization: We are iterating 'results' which came from 'rzm.elements' in order.
+        # So 'bpy.context.scene.rzm.elements[idx]' matches results[idx] if no deletions happened during this loop (safe).
+        # Wait, 'results' has 'order' == loop index.
+        
+        host_elem = bpy.context.scene.rzm.elements[host_item['order']] 
+        
+        if getattr(host_elem, "is_preset", False):
+            # Presets themselves cannot have presets (to avoid infinite recursion for now)
+            continue
+            
+        if getattr(host_elem, "qt_preset_hide", False):
+            continue
+            
+        if not hasattr(host_elem, "presets"): continue # Safety if property not added yet
+        
+        # Iterate presets assigned to this element
+        for p_ref in host_elem.presets:
+            preset_id = p_ref.preset_id
+            preset_source = elem_map.get(preset_id)
+            
+            if not preset_source: continue # Preset source deleted or missing
+            
+            # Create Virtual Element
+            # ID Scheme: HostID * 100000 + PresetID (Simple collision avoidance)
+            # Limit: ID < 2GB. standard IDs are small (1, 2, 3). 
+            # If Host is 100, Preset is 5, ID = 10000005. Safe.
+            virtual_id = host_item['id'] * 100000 + preset_id
+            
+            # Clone source data
+            v_item = preset_source.copy()
+            
+            # Overwrite Identity
+            v_item['id'] = virtual_id
+            v_item['parent_id'] = host_item['id'] # Parent to host so they move together visually
+            v_item['name'] = f"{host_item['name']}::{preset_source['name']}"
+            
+            # Overwrite State
+            v_item['is_selectable'] = False # Non-interactive
+            v_item['is_locked_pos'] = True
+            v_item['is_locked_size'] = True
+            
+            # Positioning Logic:
+            # Presets usually just stick to the parent at (0,0) relative?
+            # Or do they have their own offset from the preset definition?
+            # User said: "наследует 1 в 1 позицию и размер если только не прописано formula position"
+            # Since standard parenting in our system adds positions (Child World = Parent World + Child Local),
+            # If we want 1:1 overlap, Child Local must be (0,0).
+            # The preset source has a position (e.g. 100, 100).
+            # If we just copy that, the virtual element will be offset by 100, 100 from the host.
+            # User requirement: "ignore position and size unless formula".
+            # So default visual pos/size should match Host?
+            # "визуальный дубликат который наследует свойства элемента позиции и размера" -> It looks like the host.
+            # BUT "рамка_0 сможет реагировать" implies it might be slightly larger or different?
+            # If Preset Source is a "Border" meant to be 10px bigger, it likely has size/pos set in its own definition?
+            # NO: "Единственное что от него не будет копироваться от пресета это position и size"
+            # So: Virtual Pos/Size = Host Pos/Size.
+            # IN OUR SYSTEM:
+            # If parent_id is set, the Viewport/Qt system calculates absolute pos.
+            # To match Host exactly in World Space:
+            # If Virtual is child of Host: Local Pos must be (0,0). Size must be Host Size.
+            
+            # Force Local Pos to 0,0
+            v_item['pos_x'] = 0
+            v_item['pos_y'] = 0
+            
+            # Force Size to Host Size (unless formula?)
+            # "если только не прописано formula position" -> user implies preset logic overrides.
+            # If Preset Source has a formula, we use it?
+            # "Formula" in our system is usually evaluated globally or relative to parent.
+            # If we keep the formula strings from the preset source, and set 'parent_id' to host,
+            # the formula evaluator will see "$ParentSizeX" and work correctly!
+            # So:
+            # 1. If Source has Formula -> Keep Formula.
+            # 2. If Source has Static -> Override with 0 (Position) and Host Size (Size).
+            
+            if not v_item['pos_is_formula']:
+                v_item['pos_x'] = 0
+                v_item['pos_y'] = 0
+                
+            if not v_item['size_is_formula']:
+                 # Inherit Host Size
+                 v_item['width'] = host_item['width']
+                 v_item['height'] = host_item['height']
+            
+            # Ensure it is not hidden by standard logic (though host might hide it via qt_preset_hide)
+            v_item['is_hidden'] = False 
+            
+            virtual_elements.append(v_item)
+            
+    results.extend(virtual_elements)
 
     return results
 

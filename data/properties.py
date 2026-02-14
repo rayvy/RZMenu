@@ -18,7 +18,7 @@ from .p_texworks import (
     TexWorksTexture
 )
 from .p_ui import (
-    FXProperty, FNProperty, CustomProperty, RZMenuElement
+    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference
 )
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings
@@ -47,7 +47,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
 classes_to_register = [
     RZMCaptureSettings, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
-    ValueLinkProperty, RZMenuElement, TexResource, TexOverride, DecalConfig,
+    ValueLinkProperty, RZPresetReference, RZMenuElement, TexResource, TexOverride, DecalConfig,
     AlternativeTexture, TexWorksAtlasConfig, TexWorksTextureConfig, TexWorksTexture, 
     RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMGameSettings, RZMenuProperties
 ]

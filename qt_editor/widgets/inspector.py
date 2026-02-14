@@ -320,6 +320,120 @@ class RZFXList(QtWidgets.QWidget):
             core.props.update_fx(ctx.selected_ids, index, value)
 
 
+class RZPresetItem(QtWidgets.QWidget):
+    """A single row in the Preset list."""
+    def __init__(self, index, preset_id, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.parent_list = parent
+        self.preset_id = preset_id
+        
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        
+        self.lbl_id = RZLabel(f"ID: {preset_id}")
+        layout.addWidget(self.lbl_id, 1)
+        
+        # We could potentially add a name lookup here if available in quick snapshot
+        # But for now, just ID is fine.
+        
+        self.btn_del = RZPushButton("✕")
+        self.btn_del.setFixedWidth(24)
+        self.btn_del.clicked.connect(self._on_delete)
+        layout.addWidget(self.btn_del)
+
+    def _on_delete(self):
+        self.parent_list.remove_item(self.index)
+
+class RZPresetList(QtWidgets.QWidget):
+    """A list-like widget to manage Preset IDs."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout_main = QtWidgets.QVBoxLayout(self)
+        self.layout_main.setContentsMargins(0, 0, 0, 0)
+        self.layout_main.setSpacing(2)
+        
+        self.layout_items = QtWidgets.QVBoxLayout()
+        self.layout_items.setSpacing(2)
+        self.layout_main.addLayout(self.layout_items)
+        
+        h_add = QtWidgets.QHBoxLayout()
+        self.spin_id = RZSpinBox()
+        self.spin_id.setRange(1, 1000000)
+        self.spin_id.setPrefix("ID: ")
+        h_add.addWidget(self.spin_id)
+        
+        self.btn_add = RZPushButton("+ Add Preset")
+        self.btn_add.clicked.connect(self.add_item)
+        h_add.addWidget(self.btn_add)
+        self.layout_main.addLayout(h_add)
+        
+        self._block = False
+
+    def update_data(self, preset_list):
+        # preset_list is expected to be list of IDs or dicts?
+        # In read.py we might need to parse the CollectionProperty of presets.
+        # Let's assume passed data is list of integer IDs
+        self._block = True
+        
+        while self.layout_items.count():
+            w = self.layout_items.takeAt(0).widget()
+            if w: w.deleteLater()
+            
+        for i, pid in enumerate(preset_list):
+            item_w = RZPresetItem(i, pid, self)
+            self.layout_items.addWidget(item_w)
+        
+        self._block = False
+
+    def add_item(self):
+        if self._block: return
+        pid = self.spin_id.value()
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            # We need a dedicated prop function for this
+            # Since core.props methods usually generic, we might need a custom one or 
+            # use a generic 'add_collection_item' if available.
+            # Let's assume we add a specific one in props.py or call wrapper here.
+            # WRAPPER:
+            import bpy
+            if not bpy.context or not bpy.context.scene: return
+            
+            # This is "EXECUTION" logic which should be in core, but for speed logic here:
+            # But wait, we can't access Blender Context safely from Qt thread regarding Undo?
+            # RZMenu commands usually go through core/props.py which wraps in Undo.
+            # I should add 'add_preset(ids, preset_id)' to props.py? 
+            # Or just use the generic logic if possible.
+            # For now, let's implement the logic here via call_op_batch-like approach or direct update
+            # ACTUALLY: Best to trust core/props.py to have 'add_preset_ref'.
+            # I will assume I need to implement it there or use a generic one.
+            # Let's use a dynamic one defined here for now using blender_bridge
+            
+            def op_add_preset(elem, _pid):
+                if not hasattr(elem, "presets"): return
+                # Check exists
+                for p in elem.presets:
+                    if p.preset_id == _pid: return
+                new_p = elem.presets.add()
+                new_p.preset_id = _pid
+
+            core.blender_bridge.execute_on_elements(list(ctx.selected_ids), op_add_preset, pid, undo_name="Add Preset")
+            SIGNALS.data_changed.emit()
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            def op_rem_preset(elem, _idx):
+                if not hasattr(elem, "presets"): return
+                if _idx < len(elem.presets):
+                    elem.presets.remove(_idx)
+            
+            core.blender_bridge.execute_on_elements(list(ctx.selected_ids), op_rem_preset, index, undo_name="Remove Preset")
+            SIGNALS.data_changed.emit()
+
+
 class RZMInspectorPanel(RZEditorPanel):
     """
     Property inspector panel for editing selected element attributes.
@@ -437,6 +551,24 @@ class RZMInspectorPanel(RZEditorPanel):
         
         self.layout_props.addWidget(grp_ident)
         
+        # === GROUP: PRESETS ===
+        self.grp_presets = RZGroupBox("Presets System")
+        layout_presets = QtWidgets.QVBoxLayout(self.grp_presets)
+        
+        self.chk_is_preset = RZCheckBox("Is Preset Element")
+        self.chk_is_preset.toggled.connect(lambda v: self._emit_change('is_preset', v))
+        layout_presets.addWidget(self.chk_is_preset)
+        
+        self.chk_preset_hide = RZCheckBox("Hide Presets (Overlay)")
+        self.chk_preset_hide.toggled.connect(lambda v: self._emit_change('qt_preset_hide', v))
+        layout_presets.addWidget(self.chk_preset_hide)
+        
+        layout_presets.addWidget(RZLabel("Applied Presets:"))
+        self.list_presets = RZPresetList()
+        layout_presets.addWidget(self.list_presets)
+        
+        self.layout_props.addWidget(self.grp_presets)
+
         # === GROUP: VISIBILITY ===
         self.grp_vis = RZGroupBox("Visibility")
         form_vis = QtWidgets.QFormLayout(self.grp_vis)
@@ -790,6 +922,13 @@ class RZMInspectorPanel(RZEditorPanel):
             class_type = props.get('class_type')
             if class_type: self.cb_class.setCurrentText(class_type)
             else: self.cb_class.setCurrentText("Mixed")
+
+            # --- Presets ---
+            self.chk_is_preset.setChecked(props.get('is_preset', False))
+            self.chk_preset_hide.setChecked(props.get('qt_preset_hide', False))
+            # Extract preset list from props. Note: read.py needs to populate this!
+            # Using 'presets' key.
+            self.list_presets.update_data(props.get('presets', [])) # Expecting list of IDs
 
             # --- Visibility ---
             vis_mode = props.get('visibility_mode', 'ALWAYS')

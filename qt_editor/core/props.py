@@ -21,6 +21,9 @@ PROP_MAP = {
     "size_formula_x": ("size_formula_x", None, 'T'),
     "size_formula_y": ("size_formula_y", None, 'T'),
 
+    # Presets
+    "is_preset": ("is_preset", None, 'T'),
+    "qt_preset_hide": ("qt_preset_hide", None, 'T'),
     # Flags
     "qt_hide": ("qt_hide", None, 'S'),
     "is_hidden": ("qt_hide", None, 'S'), # Alias

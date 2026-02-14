@@ -14,8 +14,12 @@ class CustomProperty(bpy.types.PropertyGroup):
     key: StringProperty(name="Key"); value_type: EnumProperty(name="Type", items=[('STRING', "String", ""), ('INT', "Integer", ""), ('FLOAT', "Float", "")], default='STRING')
     string_value: StringProperty(name="String Value"); int_value: IntProperty(name="Int Value"); float_value: FloatProperty(name="Float Value")
 
+class RZPresetReference(bpy.types.PropertyGroup):
+    preset_id: IntProperty(name="Preset ID")
+
 class RZMenuElement(bpy.types.PropertyGroup):
     element_name: StringProperty(name="Name"); id: IntProperty(name="Unique ID"); parent_id: IntProperty(name="Parent ID", default=-1)
+    is_preset: BoolProperty(name="Is Preset", default=False)
     priority: IntProperty(name="Priority", default=0); tag: StringProperty(name="Tag")
     elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", "")], default='CONTAINER')
     visibility_mode: EnumProperty(name="Visibility", items=[('ALWAYS', "Always Visible", ""), ('CONDITIONAL', "Conditional", "")], default='ALWAYS')
@@ -48,7 +52,9 @@ class RZMenuElement(bpy.types.PropertyGroup):
     grid_wrap_mode: EnumProperty(name="Wrap Mode", items=[('SCROLL', "Scroll", ""), ('PAGINATE', "Paginate", "")], default='SCROLL')
     toggles: CollectionProperty(type=AssignedToggle)
     fx: CollectionProperty(type=FXProperty); fn: CollectionProperty(type=FNProperty); properties: CollectionProperty(type=CustomProperty)
+    preset_ids: CollectionProperty(type=RZPresetReference)
     qt_hide: BoolProperty(name="Hide in QT Editor", default=False)
+    qt_preset_hide: BoolProperty(name="Hide Presets in Editor", default=False)
     qt_lock_pos: BoolProperty(name="Lock Position QT Editor", default=False)
     qt_lock_size: BoolProperty(name="Lock Size in QT Editor", default=False)
     qt_selectable: BoolProperty(name="Selectable in QT Editor", default=True)
