@@ -1,686 +1,468 @@
-Texture1D<float4> IniParams : register(t120);
-#define SCREEN_RES IniParams[99].zw
-#define CURSOR_POS IniParams[99].xy
-#define time IniParams[98].w
+/* 
+================================================================================
+SHADER: UI COMPOSITOR v3.2 (SHINE RESTORED)
+================================================================================
+*/
 
-Buffer<float4> PosSizeDataBuffer    : register(t100);
-Buffer<float4> ColorDataBuffer      : register(t101);
-Buffer<float4> TileDataBuffer       : register(t102); 
-Buffer<uint>   TextPoolBuffer       : register(t103);
-Buffer<float4> ClippingDataBuffer   : register(t109);
-Buffer<float4> DrawParamsBuffer     : register(t110);
-Texture2D<float4> tex_atlas_icons   : register(t80);
-Texture2D<float4> tex_atlas_font    : register(t82);
-Texture2D<float4> tex_backbuffer    : register(t89);
-SamplerState s0_s : register(s0);
+// --- RESOURCES ---
+Texture1D<float4> GlobalParams : register(t120);
+Buffer<float4>    PosSizeBuffer : register(t100);
+Buffer<float4>    ColorBuffer : register(t101);
+Buffer<float4>    TileDataBuffer : register(t102); 
+Buffer<uint>      TextPoolBuffer : register(t103);
+Buffer<float4>    ClippingBuffer : register(t109);
+Buffer<float4>    DrawParamsBuffer : register(t110);
 
-#define DRAW_MODE_SOLID                 0
-#define DRAW_MODE_TEXTURE_OVERLAY       1
-#define DRAW_MODE_TEXTURE_MULTIPLY      2
-#define DRAW_MODE_TEXT                  3
-#define DRAW_MODE_NUMBER                4
-#define DRAW_MODE_BLUR_BACKGROUND_START 90
-#define DRAW_MODE_BLUR_BACKGROUND_END   99
+Texture2D<float4> AtlasIcons : register(t80);
+Texture2D<float4> AtlasFont : register(t82);
+Texture2D<float4> TexBackbuffer : register(t89);
+SamplerState      LinearSampler : register(s0);
 
-#define FN_ROTATE         1
-#define FN_HOVER_TURN     2
-#define FN_DISINTEGRATE   3
+// --- GLOBAL VARS ---
+static float2 ScreenRes = GlobalParams[99].zw;
+static float2 CursorPos = GlobalParams[99].xy;
+static float  GlobalTime = GlobalParams[98].w;
 
-// --- ЭФФЕКТЫ ---
-#define FX_HOVER_OUTLINE_INWARD 1
-#define FX_DROP_SHADOW    2  // Вместо нерабочего OUTLINE
-#define FX_HOVER_SHEEN    3
-#define FX_HOVER_RESIZE   4
-#define FX_GRAYSCALE      5  // Новый: Ч/Б режим (для disabled состояний)
-#define FX_CHROMATIC      6  // Новый: Хроматическая аберрация (глитч-эффект)
-#define FX_HOVER_SHINE    8
-#define FX_BLUR           9
+// --- CONSTANTS ---
+static const int MODE_SOLID = 0;
+static const int MODE_TEX_OVERLAY = 1;
+static const int MODE_TEX_MULTIPLY = 2;
+static const int MODE_TEXT = 3;
+static const int MODE_NUMBER = 4;
 
-#define MAX_CHARS_PER_INSTANCE 32
-#define MAX_CHARS_PER_NUMBER   32 
-#define CELL_GRID_HEIGHT 6 
+// --- NEW MODES ---
+static const int MODE_COLOR_REPLACE = 21; 
+static const int MODE_MASKED_BLUR = 9000; 
+static const int MODE_BLUR_BG_START = 90;
 
-struct vs2ps {
-    float4 pos             : SV_Position;
-    float4 color           : COLOR0;
-    float2 uv              : TEXCOORD0;
-    float2 local_uv        : TEXCOORD1;
-    float  fn_type         : TEXCOORD2;
-    float  fx_type         : TEXCOORD3;
-    int    draw_mode       : TEXCOORD4;
-    float4 object_pos_size : TEXCOORD5;
-    float4 clip_rect       : TEXCOORD6;
-    float4 tile_data       : TEXCOORD7;
-};
+static const int MODE_HSV = 728386;
+static const int MODE_CURSOR = 728387;
+static const int MODE_GRADIENT = 728388;
 
-float3 HsvToRgb(float3 c)
-{
+static const int ANIM_ROTATE = 1;
+static const int ANIM_HOVER_TURN = 2;
+static const int ANIM_DISINTEGRATE = 3; 
+
+// --- FX CONSTANTS ---
+static const int FX_OUTLINE = 1;
+static const int FX_DROP_SHADOW = 2;
+static const int FX_HOVER_SHEEN = 3; // Auto animation (Time)
+static const int FX_HOVER_RESIZE = 4;
+static const int FX_GRAYSCALE = 5;
+static const int FX_HOVER_SHINE = 8; // RESTORED: Mouse interaction
+
+static const uint MAX_CHARS = 32;
+static const uint FONT_GRID_SIZE = 16;
+static const float EXPAND_PX = 30.0; 
+
+// --- UTILS ---
+
+float3 HsvToRgb(float3 c) {
     float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
     float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
     return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
-float Random(float2 uv) {
-    return frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453123);
+// --- STRUCTURES ---
+
+struct VertexOutput {
+    float4 position : SV_Position;
+    float4 color : COLOR0;
+    float4 atlasRect : TEXCOORD0;  
+    float2 contentUV : TEXCOORD1;  
+    float4 objectRect : TEXCOORD3; 
+    float4 clipRect : TEXCOORD4;
+    int    drawMode : TEXCOORD5;
+    float  animType : TEXCOORD6;
+    float  fxType : TEXCOORD7;
+    float4 extraData : TEXCOORD8; 
+};
+
+struct CharMetrics {
+    float advance; float glyphW; float glyphH; float offX; float offY;
+};
+
+CharMetrics FetchCharMetrics(uint c) {
+    CharMetrics m = (CharMetrics)0;
+    if (c < 32 || c >= 127) c = 32;
+    uint w, h; AtlasFont.GetDimensions(w, h);
+    float cs = (float)(w / FONT_GRID_SIZE);
+    uint idx = c - 32;
+    uint metaH = h / (uint)cs - 6; 
+    uint metaY = (h / (uint)cs - metaH) * (uint)cs;
+    float4 d1 = AtlasFont.Load(int3(idx % w, metaY + (idx/w)*2, 0));
+    float4 d2 = AtlasFont.Load(int3(idx % w, metaY + (idx/w)*2 + 1, 0));
+    m.advance = d1.r*2*cs; m.glyphW = d1.g*2*cs; m.offX = (d1.b*2-1)*cs; m.offY = (d1.a*2-1)*cs; m.glyphH = d2.r*2*cs;
+    return m;
 }
 
-float Noise(float2 uv) {
-    float2 i = floor(uv);
-    float2 f = frac(uv);
+void ParseNumber(float val, int prec, inout uint buf[MAX_CHARS], inout uint cnt) {
+    float p10 = pow(10.0, (float)prec);
+    val = round(val * p10) / p10;
+    if (val < 0.0) { if (cnt < MAX_CHARS) buf[cnt++] = '-'; val = -val; }
+    val += 1e-7; uint ip = (uint)val;
+    if (ip == 0) { if (cnt < MAX_CHARS) buf[cnt++] = '0'; }
+    else {
+        uint tmp = ip; uint d[10]; uint dc = 0;
+        while(tmp > 0 && dc < 10) { d[dc++] = tmp % 10; tmp /= 10; }
+        for(uint i=0; i<dc; ++i) if(cnt < MAX_CHARS) buf[cnt++] = '0' + d[dc-1-i];
+    }
+    if (prec > 0) {
+        if (cnt < MAX_CHARS) buf[cnt++] = '.';
+        float fp = val - (float)ip;
+        for(int i=0; i<prec; ++i) { fp*=10; uint digit=(uint)fp; if(digit>9) digit=9; if(cnt<MAX_CHARS) buf[cnt++]='0'+digit; fp-=(float)digit; }
+    }
+}
+
+// --- VERTEX SHADER ---
+
+float4 ComputeLayout(int mode, uint vID, float4 tile, inout float2 pos, inout float2 size) {
+    if (mode == MODE_TEXT || mode == MODE_NUMBER) {
+        uint chars[MAX_CHARS]; uint count = 0;
+        if (mode == MODE_TEXT) {
+            uint off = (uint)tile.x; count = min((uint)tile.y, MAX_CHARS);
+            for(uint i=0; i<count; ++i) chars[i] = TextPoolBuffer[off+i];
+        } else ParseNumber(tile.x, clamp((int)tile.y,0,9), chars, count);
+
+        uint w, h; AtlasFont.GetDimensions(w, h);
+        float cs = (float)(w/16);
+        float scale = (size.y * ScreenRes.y) / cs;
+        
+        float totalW = 0, firstOff = 0;
+        if (count > 0) {
+            firstOff = FetchCharMetrics(chars[0]).offX;
+            for(uint k=0; k<count-1; ++k) totalW += FetchCharMetrics(chars[k]).advance;
+            CharMetrics last = FetchCharMetrics(chars[count-1]);
+            totalW += last.offX + last.glyphW - firstOff;
+        }
+        
+        float shift = 0;
+        int align = (int)tile.z;
+        if (align == 1) shift = (firstOff*2.0 + totalW)*0.5;
+        if (align == 2) shift = firstOff + totalW;
+        
+        float2 basePos = pos;
+        basePos.x -= (shift / ScreenRes.x) * scale;
+        
+        uint idx = vID / 6;
+        uint code = (idx < count) ? chars[idx] : ' ';
+        
+        float curX = 0;
+        for(uint i=0; i<idx; ++i) curX += FetchCharMetrics(chars[i]).advance;
+        CharMetrics m = FetchCharMetrics(code);
+        CharMetrics ref = FetchCharMetrics('A');
+        
+        float baseAdj = (ref.offY + ref.glyphH + (128.0/7.5) - (m.offY + m.glyphH));
+        pos.y = basePos.y + (baseAdj / ScreenRes.y) * scale;
+        pos.x = basePos.x + ((curX + m.offX) / ScreenRes.x) * scale;
+        
+        size.x = (m.glyphW / ScreenRes.x) * scale;
+        size.y = (m.glyphH / ScreenRes.y) * scale;
+        
+        float2 uvCell = 1.0 / float2(16.0, (float)(h / cs));
+        float2 uvStart = float2((code-32)%16, (code-32)/16) * uvCell;
+        return float4(
+            uvStart + float2(m.offX, m.offY)/cs*uvCell, 
+            float2(m.glyphW, m.glyphH)/cs*uvCell 
+        );
+    } 
+    else if (mode >= MODE_TEX_OVERLAY) { 
+        uint w, h; AtlasIcons.GetDimensions(w, h);
+        float2 dim = float2(max(1, w), max(1, h));
+        return float4(tile.xy / dim, tile.zw / dim);
+    }
+    return float4(0,0,1,1);
+}
+
+float2 ApplyAnimation(float type, float2 pos, float2 size, float2 uv) {
+    float2 center = pos + size * 0.5;
+    float2 local = uv - 0.5;
     
-    // Четыре угла
-    float a = Random(i);
-    float b = Random(i + float2(1.0, 0.0));
-    float c = Random(i + float2(0.0, 1.0));
-    float d = Random(i + float2(1.0, 1.0));
-
-    // Сглаживание (Smoothstep)
-    float2 u = f * f * (3.0 - 2.0 * f);
-
-    // Смешивание
-    return lerp(a, b, u.x) +
-            (c - a)* u.y * (1.0 - u.x) +
-            (d - b) * u.x * u.y;
+    if (type == ANIM_HOVER_TURN) {
+        float2 dir = CursorPos - center;
+        dir.y *= ScreenRes.y/ScreenRes.x;
+        float dist = length(dir);
+        float2 tilt = (dist > 0.001 ? normalize(dir) : float2(0,0)) * pow(saturate(1.0 - dist/0.1), 2) * 0.1;
+        local -= tilt * dot(local, tilt); 
+        return center + local * size;
+    }
+    if (type == ANIM_ROTATE) {
+        float a = 6.28 * GlobalTime;
+        float s = sin(a), c = cos(a);
+        return center + mul(float2x2(c, -s, s, c), local) * size;
+    }
+    return pos + uv * size;
 }
 
 #ifdef VERTEX_SHADER
+void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput output) {
+    output = (VertexOutput)0;
+    float4 params = DrawParamsBuffer[iID];
+    output.drawMode = (int)params.w;
+    output.animType = params.x;
+    output.fxType = params.y;
+    output.color = ColorBuffer[iID];
+    output.clipRect = ClippingBuffer[iID];
+    output.extraData.x = TileDataBuffer[iID].x;
 
+    float2 pos = PosSizeBuffer[iID].xy;
+    float2 size = PosSizeBuffer[iID].zw;
 
+    if (output.drawMode != MODE_TEXT && output.drawMode != MODE_NUMBER && vID >= 6) { output.position = 0; return; }
+    if ((output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER) && (vID/6) >= MAX_CHARS) { output.position = 0; return; }
 
-//--------------------------------------------------------------------------------------
-// Структура и функция чтения метрик
-//--------------------------------------------------------------------------------------
-struct CharMetrics {
-    float advance;      
-    float glyphWidth;   
-    float glyphHeight;
-    float offsetX;      
-    float offsetY;      
-};
+    if (output.fxType == FX_HOVER_RESIZE) {
+        float2 c = pos + size * 0.5;
+        float2 d = CursorPos - c; d.x *= ScreenRes.x/ScreenRes.y;
+        float prox = 1.0 - pow(1.0 - saturate(1.0 - length(d)/0.008), 2);
+        float s = 1.0 + (0.125 * prox);
+        pos = c - size*s*0.5; size *= s;
+    }
+    output.objectRect = float4(pos, size);
 
-CharMetrics get_char_metrics(uint c) {
-    CharMetrics metrics = (CharMetrics)0;
+    float2 quadUv;
+    uint lID = vID % 6;
+    if (lID == 0 || lID == 3) quadUv = float2(0,0);
+    else if (lID == 1 || lID == 5) quadUv = float2(1,1);
+    else if (lID == 2) quadUv = float2(0,1);
+    else quadUv = float2(1,0);
+
+    output.atlasRect = ComputeLayout(output.drawMode, vID, TileDataBuffer[iID], pos, size);
+
+    bool allowExpand = (output.drawMode < MODE_BLUR_BG_START && output.drawMode != MODE_MASKED_BLUR);
+    float2 expandVec = allowExpand ? (EXPAND_PX / ScreenRes) : float2(0,0);
     
-    if (c < 32 || c >= 127) c = 32;
+    float2 expandedPos = pos - expandVec;
+    float2 expandedSize = size + expandVec * 2.0;
 
-    uint atlas_width, atlas_height;
-    tex_atlas_font.GetDimensions(atlas_width, atlas_height);
-    if (atlas_width == 0) return metrics;
+    output.contentUV = (quadUv * expandedSize - expandVec) / size;
 
-    const uint BASE_CELL_SIZE = 16;
-    uint scale = atlas_width / (BASE_CELL_SIZE * 16);
-    if (scale < 1) scale = 1;
-    float cell_size_px = (float)(BASE_CELL_SIZE * scale);
-
-    // Координаты пикселя с метаданными
-    uint char_index = c - 32;
-    uint metadata_grid_height = atlas_height / cell_size_px - CELL_GRID_HEIGHT; 
-    uint metadata_start_y = (atlas_height / cell_size_px - metadata_grid_height) * cell_size_px;
-    
-    uint meta_x = char_index % atlas_width;
-    uint meta_y = metadata_start_y + (char_index / atlas_width) * 2;
-
-    float4 encoded_metrics1 = tex_atlas_font.Load(int3(meta_x, meta_y, 0));
-    float4 encoded_metrics2 = tex_atlas_font.Load(int3(meta_x, meta_y + 1, 0));
-    
-    metrics.advance     = (encoded_metrics1.r * 2.0) * cell_size_px;
-    metrics.glyphWidth  = (encoded_metrics1.g * 2.0) * cell_size_px;
-    metrics.offsetX     = ((encoded_metrics1.b * 2.0) - 1.0) * cell_size_px;
-    metrics.offsetY     = ((encoded_metrics1.a * 2.0) - 1.0) * cell_size_px;
-    metrics.glyphHeight = (encoded_metrics2.r * 2.0) * cell_size_px; 
-
-    return metrics;
-}
-float2 GetTextureUV(int draw_mode, float2 local_quad_uv, float4 tile_data, uint vertex_id, inout float2 final_pos, inout float2 final_size)
-{
-    if (draw_mode >= DRAW_MODE_BLUR_BACKGROUND_START && draw_mode <= DRAW_MODE_BLUR_BACKGROUND_END) {
-        return float2(final_pos.x + local_quad_uv.x * final_size.x, 1.0 - (final_pos.y + local_quad_uv.y * final_size.y));
+    if (output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER) {
+        output.contentUV.y = 1.0 - output.contentUV.y;
     }
-    
-    switch(draw_mode) {
-        case DRAW_MODE_TEXTURE_OVERLAY:
-        case DRAW_MODE_TEXTURE_MULTIPLY: {
-            uint texWidth, texHeight; tex_atlas_icons.GetDimensions(texWidth, texHeight);
-            float2 atlas_size = float2(max(1, texWidth), max(1, texHeight));
-            return (tile_data.xy + local_quad_uv * tile_data.zw) / atlas_size;
-        }
-        case DRAW_MODE_TEXT:
-        case DRAW_MODE_NUMBER: {
-            uint char_codes[MAX_CHARS_PER_INSTANCE];
-            uint num_chars = 0;
-            if (draw_mode == DRAW_MODE_TEXT) {
-                uint string_start_offset = (uint)tile_data.x;
-                num_chars = min((uint)tile_data.y, MAX_CHARS_PER_INSTANCE);
-                for (uint i = 0; i < num_chars; ++i) char_codes[i] = TextPoolBuffer[string_start_offset + i];
-            } else {
-                float raw_val=tile_data.x;int precision=clamp((int)tile_data.y,0,9);float p10=1.0;for(int p=0;p<precision;p++)p10*=10.0;float val=round(raw_val*p10)/p10;if(val<0.0){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='-';val=-val;}val+=1e-7;uint ip=(uint)val;if(ip==0){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='0';}else{uint tip=ip;uint id[10];uint nid=0;while(tip>0&&nid<10){id[nid++]=tip%10;tip/=10;}for(uint i=0;i<nid;++i){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='0'+id[nid-1-i];}}if(precision>0){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='.';float fp=val-(float)ip;for(int i=0;i<precision;++i){fp*=10.0f;uint d=(uint)fp;if(d>9)d=9;if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='0'+d;fp-=(float)d;}}
-            }
-            float2 base_pos = final_pos;
-            
-            uint atlas_width, atlas_height; 
-            tex_atlas_font.GetDimensions(atlas_width, atlas_height);
-            float cell_size_px = (float)(atlas_width / 16);
-            float desired_line_height = final_size.y * SCREEN_RES.y;
-            float final_scale = desired_line_height / cell_size_px;
 
-            CharMetrics reference_metrics = get_char_metrics('A');
-            float reference_drop = reference_metrics.offsetY + reference_metrics.glyphHeight;
-
-            int alignment = (int)tile_data.z;
-            if (alignment > 0)
-            {
-                if (num_chars > 0)
-                {
-                    // --- ШАГ 1: Находим левую границу видимого текста ---
-                    // Это просто смещение самого первого символа.
-                    CharMetrics first_char_metrics = get_char_metrics(char_codes[0]);
-                    float min_x_px = first_char_metrics.offsetX;
-
-                    // --- ШАГ 2: Находим правую границу видимого текста ---
-                    // Этот блок кода УЖЕ РАБОТАЕТ у вас корректно, так как правое выравнивание работает.
-                    float advance_to_last_char_px = 0;
-                    for (uint i = 0; i < num_chars - 1; ++i)
-                    {
-                        advance_to_last_char_px += get_char_metrics(char_codes[i]).advance;
-                    }
-                    CharMetrics last_char_metrics = get_char_metrics(char_codes[num_chars - 1]);
-                    float max_x_px = advance_to_last_char_px + last_char_metrics.offsetX + last_char_metrics.glyphWidth;
-
-                    // --- ШАГ 3: Вычисляем необходимое смещение для выравнивания ---
-                    float shift_px = 0;
-                    if (alignment == 1) // --- ЦЕНТРИРОВАНИЕ (НОВАЯ ЛОГИКА) ---
-                    {
-                        // Чтобы отцентрировать, мы должны сдвинуть текст влево на величину,
-                        // равную координате его истинного геометрического центра.
-                        // Центр = (левая_граница + правая_граница) / 2
-                        shift_px = (min_x_px + max_x_px) / 2.0f;
-                    }
-                    else if (alignment == 2) // --- ПО ПРАВОМУ КРАЮ (ВАША РАБОЧАЯ ЛОГИКА) ---
-                    {
-                        // Чтобы выровнять по правому краю, мы сдвигаем на всю длину до правой границы.
-                        shift_px = max_x_px;
-                    }
-
-                    // --- ШАГ 4: Применяем смещение к позиции ---
-                    base_pos.x -= (shift_px / SCREEN_RES.x) * final_scale;
-                }
-            }
-
-            uint char_index = vertex_id / 6;
-            uint current_char_code = (char_index < num_chars) ? char_codes[char_index] : ' ';
-
-            float cursor_offset_x = 0;
-            for (uint i = 0; i < char_index; ++i) cursor_offset_x += get_char_metrics(char_codes[i]).advance;
-            
-            CharMetrics metrics = get_char_metrics(current_char_code);
-            
-            // <--- ИЗМЕНЕНО: Финальная формула с коррекцией по эталону 'A'
-            float current_drop = metrics.offsetY + metrics.glyphHeight;
-            final_pos.y = base_pos.y + (((reference_drop+(128/7.5)) - current_drop) / SCREEN_RES.y) * final_scale;
-
-            final_pos.x = base_pos.x + ((cursor_offset_x + metrics.offsetX) / SCREEN_RES.x) * final_scale;
-            final_size.x = (metrics.glyphWidth / SCREEN_RES.x) * final_scale;
-            final_size.y = (metrics.glyphHeight / SCREEN_RES.y) * final_scale;
-
-            // UV-вычисления остаются без изменений
-            uint grid_x = (current_char_code - 32) % 16;
-            uint grid_y = (current_char_code - 32) / 16;
-            
-            float2 uv_cell_size = 1.0 / float2(16.0, (float)(atlas_height / cell_size_px));
-            float2 uv_start_pos = float2(grid_x, grid_y) * uv_cell_size;
-            float2 uv_offset = float2(metrics.offsetX, metrics.offsetY) / cell_size_px * uv_cell_size;
-            float2 uv_size = float2(metrics.glyphWidth, metrics.glyphHeight) / cell_size_px * uv_cell_size;
-
-            return uv_start_pos + uv_offset + local_quad_uv * uv_size;
-        }
-    }
-    return local_quad_uv;
-}
-
-
-// ... Остальная часть вертексного шейдера (CalculateVertexPosition, main) БЕЗ ИЗМЕНЕНИЙ ...
-float2 CalculateVertexPosition(float fn_type, float2 final_pos, float2 final_size, float2 local_quad_uv)
-{
-    // --- FIX for warning X4000: Initialize a return value and use a single return point.
-    float2 calculated_pos = final_pos + local_quad_uv * final_size;
-
-    if (fn_type == FN_HOVER_TURN) {
-        float2 local_model_pos = local_quad_uv - 0.5;
-        float2 object_center = final_pos + final_size * 0.5;
-        float2 direction = CURSOR_POS - object_center;
-        direction.y *= SCREEN_RES.y / SCREEN_RES.x;
-        const float MAX_DIST = 0.1; 
-        float intensity = saturate(1.0 - length(direction) / MAX_DIST);
-        intensity = pow(intensity, 2);
-        if (length(direction) > 0.001) {
-            direction = normalize(direction);
-        }
-        const float perspective_strength = 0.1;
-        float perspective_offset = dot(local_model_pos, direction);
-        local_model_pos -= direction * perspective_offset * intensity * perspective_strength;
-        calculated_pos = (local_model_pos * final_size) + object_center;
-    }
-    else if (fn_type == FN_ROTATE) {
-        float2 local_model_pos = local_quad_uv - 0.5;
-        float angle = 2.0 * 3.14159265 * time;
-        float s = sin(angle);
-        float c = cos(angle);
-        float2x2 rot_matrix = float2x2(c, -s, s, c);
-        float2 rotated_local_pos = mul(rot_matrix, local_model_pos);
-        float2 scaled_pos = rotated_local_pos * final_size;
-        float2 center = final_pos + final_size * 0.5;
-        calculated_pos = scaled_pos + center;
-    }
-    
-    return calculated_pos;
-}
-
-void main(out vs2ps output, uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
-{
-    output = (vs2ps)0;
-    output.draw_mode = (int)DrawParamsBuffer[instance_id].w;
-    if (output.draw_mode != DRAW_MODE_TEXT && output.draw_mode != DRAW_MODE_NUMBER && vertex_id >= 6) { output.pos = float4(2,2,0,1); return; }
-    if (output.draw_mode == DRAW_MODE_TEXT) { uint num_chars = (uint)TileDataBuffer[instance_id].y; if ((vertex_id / 6) >= min(num_chars, (uint)MAX_CHARS_PER_INSTANCE)) { output.pos = float4(2,2,0,1); return; } }
-    if (output.draw_mode == DRAW_MODE_NUMBER) { if ((vertex_id / 6) >= (uint)MAX_CHARS_PER_NUMBER) { output.pos = float4(2,2,0,1); return; } }
-    output.clip_rect = ClippingDataBuffer[instance_id];
-    output.color   = ColorDataBuffer[instance_id];
-    output.fn_type = DrawParamsBuffer[instance_id].x;
-    output.fx_type = DrawParamsBuffer[instance_id].y;
-    float2 final_pos  = PosSizeDataBuffer[instance_id].xy;
-    float2 final_size = PosSizeDataBuffer[instance_id].zw;
-    output.tile_data = TileDataBuffer[instance_id];
-    if (output.fx_type == FX_HOVER_RESIZE)
-    {
-        float2 object_center = final_pos + final_size * 0.5;
-        float2 half_size = final_size * 0.5;
-        float2 offset = CURSOR_POS - object_center;
-        float2 closest_point_vec = clamp(offset, -half_size, half_size);
-        float2 dist_vec = offset - closest_point_vec;
-        dist_vec.x *= SCREEN_RES.x / SCREEN_RES.y;
-        float dist = length(dist_vec);
-        const float HOVER_RADIUS = 0.008;
-        float proximity = saturate(1.0 - dist / HOVER_RADIUS);
-        proximity = 1.0 - (1.0 - proximity) * (1.0 - proximity);
-        const float max_scale = 1.125;
-        float scale_factor = 1.0 + (max_scale - 1.0) * (proximity*2);
-        final_pos = object_center - (final_size * scale_factor * 0.5);
-        final_size *= scale_factor;
-    }
-    output.object_pos_size = float4(final_pos, final_size);
-    uint local_vertex_id = vertex_id % 6;
-    float2 local_quad_uv;
-    switch (local_vertex_id) {
-        case 0: case 3: local_quad_uv = float2(0.0, 0.0); break; 
-        case 1: case 5: local_quad_uv = float2(1.0, 1.0); break; 
-        case 2:         local_quad_uv = float2(0.0, 1.0); break; 
-        case 4:         local_quad_uv = float2(1.0, 0.0); break; 
-    }
-    float2 texture_uv = local_quad_uv;
-    if (output.draw_mode == DRAW_MODE_TEXT || output.draw_mode == DRAW_MODE_NUMBER) {
-        texture_uv.y = 1.0 - texture_uv.y;
-    }
-    output.uv = GetTextureUV(output.draw_mode, texture_uv, TileDataBuffer[instance_id], vertex_id, final_pos, final_size);
-    float2 final_vertex_pos = CalculateVertexPosition(output.fn_type, final_pos, final_size, local_quad_uv);
-    output.local_uv = local_quad_uv;
-    output.pos.xy = final_vertex_pos * 2.0 - 1.0;
-    output.pos.zw = float2(0.5, 1.0);
+    float2 finalPos = ApplyAnimation(output.animType, expandedPos, expandedSize, quadUv);
+    output.position = float4(finalPos * 2.0 - 1.0, 0.5, 1.0);
 }
 #endif
 
+// --- PIXEL SHADER v3.3 (Smart Blur) ---
+
 #ifdef PIXEL_SHADER
 
-float4 ApplyOverlay(float4 base, float4 blend) {
-    float r = (base.r < 0.5) ? (2.0 * base.r * blend.r) : (1.0 - 2.0 * (1.0 - base.r) * (1.0 - blend.r));
-    float g = (base.g < 0.5) ? (2.0 * base.g * blend.g) : (1.0 - 2.0 * (1.0 - base.g) * (1.0 - blend.g));
-    float b = (base.b < 0.5) ? (2.0 * base.b * blend.b) : (1.0 - 2.0 * (1.0 - base.b) * (1.0 - blend.b));
-    return float4(r, g, b, base.a);
+float Random(float2 uv)
+{
+    // 1. dot - скалярное произведение для смешивания координат
+    // 2. sin - для создания периодичности
+    // 3. Умножение на большое число - для создания "хаоса"
+    // 4. frac - берет дробную часть, оставляя число в диапазоне [0.0, 1.0]
+    return frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453);
 }
 
-float4 GetBackgroundBlurColor(vs2ps input) {
-    float4 sumColor = 0;
-    float blur_strength = input.draw_mode - DRAW_MODE_BLUR_BACKGROUND_START + 1;
-    float2 TexelSize = (1.0 / SCREEN_RES.xy) * blur_strength;
-    const int BlurRadius = 4;
-    [unroll]
-    for (int y = -BlurRadius; y <= BlurRadius; ++y) {
-        [unroll]
-        for (int x = -BlurRadius; x <= BlurRadius; ++x) {
-            sumColor += tex_backbuffer.Sample(s0_s, input.uv + float2(x, y) * TexelSize);
-        }
+// Вспомогательная функция для шума внутри лупа
+float2 GetRandomNoise(float2 uv, float seed) {
+    float n1 = Random(uv + float2(seed, seed));
+    float n2 = Random(uv - float2(seed, seed) + 0.15);
+    return float2(n1, n2) - 0.5; // range [-0.5, 0.5]
+}
+
+float4 main(VertexOutput input) : SV_Target0 {
+    // 1. Clipping
+    if (input.clipRect.z > 0) {
+        float2 cMin = float2(input.clipRect.x, ScreenRes.y - input.clipRect.y - input.clipRect.w);
+        float2 cMax = cMin + input.clipRect.zw;
+        if (any(input.position.xy < cMin) || any(input.position.xy > cMax)) discard;
     }
-    float4 blurred_background = sumColor / ((BlurRadius * 2 + 1) * (BlurRadius * 2 + 1));
-    blurred_background.rgb *= 0.75;
-    float3 full_overlay_rgb = ApplyOverlay(blurred_background, input.color).rgb;
-    float3 full_lerp_rgb = input.color.rgb;
-    float3 combined_effect_rgb = lerp(full_overlay_rgb, full_lerp_rgb, 1.0);
-    float3 final_rgb = lerp(blurred_background.rgb, combined_effect_rgb, input.color.a);
-    return float4(final_rgb, 1.0); 
-}
 
-float4 GetBaseTextureColor(vs2ps input) {
-    float4 base_color = float4(1, 1, 1, 1);
+    // 2. Procedural Modes
+    if (input.drawMode == MODE_HSV) return float4(HsvToRgb(float3(input.extraData.x, input.contentUV.x, 1-input.contentUV.y)), input.color.a);
+    if (input.drawMode == MODE_CURSOR) return length(input.contentUV * 2.0 - 1.0) > 1.0 ? 0 : input.color;
+    if (input.drawMode == MODE_GRADIENT) return float4(HsvToRgb(float3(input.contentUV.x, 1, 1)), input.color.a);
+
+    // =================================================================================
+    // UNIFIED SAMPLING
+    // =================================================================================
+    float4 rawTexture = float4(1, 1, 1, 1);
     
-    // --- ЭФФЕКТ: ХРОМАТИЧЕСКАЯ АБЕРРАЦИЯ (Сдвиг каналов) ---
-    if (input.fx_type == FX_CHROMATIC)
-    {
-        // Смещение в пикселях (можно менять)
-        float2 shift_amount = float2(15.0 / SCREEN_RES.x, 0); 
-        
-        float4 r_sample, g_sample, b_sample;
-        float2 uv_r = input.uv - shift_amount;
-        float2 uv_b = input.uv + shift_amount;
-        
-        switch(input.draw_mode) {
-            case DRAW_MODE_NUMBER:
-            case DRAW_MODE_TEXT:             
-                r_sample = tex_atlas_font.Sample(s0_s, uv_r);
-                g_sample = tex_atlas_font.Sample(s0_s, input.uv);
-                b_sample = tex_atlas_font.Sample(s0_s, uv_b);
-                break;
-            case DRAW_MODE_TEXTURE_OVERLAY:  
-            case DRAW_MODE_TEXTURE_MULTIPLY: 
-                r_sample = tex_atlas_icons.Sample(s0_s, float2(uv_r.x, 1.0 - uv_r.y));
-                g_sample = tex_atlas_icons.Sample(s0_s, float2(input.uv.x, 1.0 - input.uv.y));
-                b_sample = tex_atlas_icons.Sample(s0_s, float2(uv_b.x, 1.0 - uv_b.y));
-                break;
-        }
-        // Собираем обратно
-        base_color = float4(r_sample.r, g_sample.g, b_sample.b, g_sample.a);
-    }
-    else 
-    {
-        // Стандартная выборка
-        switch(input.draw_mode) {
-            case DRAW_MODE_NUMBER:
-            case DRAW_MODE_TEXT:             
-                base_color = tex_atlas_font.Sample(s0_s, input.uv);
-                break;
-            case DRAW_MODE_TEXTURE_OVERLAY:  
-            case DRAW_MODE_TEXTURE_MULTIPLY: 
-                base_color = tex_atlas_icons.Sample(s0_s, float2(input.uv.x, 1.0 - input.uv.y));
-                break;
+    bool isBlurBg = (input.drawMode >= MODE_BLUR_BG_START && input.drawMode <= 99);
+    bool insideBounds = (input.contentUV.x >= 0.0 && input.contentUV.x <= 1.0 && 
+                         input.contentUV.y >= 0.0 && input.contentUV.y <= 1.0);
+
+    if (!insideBounds && !isBlurBg) {
+        rawTexture = float4(0, 0, 0, 0); 
+    } 
+    else if (input.drawMode != MODE_SOLID && !isBlurBg) {
+        float2 uv = input.atlasRect.xy + input.contentUV * input.atlasRect.zw;
+        if (input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
+            rawTexture = AtlasFont.Sample(LinearSampler, uv);
+        } else {
+            rawTexture = AtlasIcons.Sample(LinearSampler, float2(uv.x, 1.0 - uv.y));
         }
     }
-    
-    // --- ЭФФЕКТ: GRAYSCALE (Обесцвечивание) ---
-    if (input.fx_type == FX_GRAYSCALE)
-    {
-        float gray = dot(base_color.rgb, float3(0.299, 0.587, 0.114));
-        base_color.rgb = float3(gray, gray, gray);
-        // Можно чуть приглушить альфу для заблокированных элементов
-        base_color.a *= 0.8; 
+
+    // 3. Shadow Layer
+    float4 shadowLayer = float4(0,0,0,0);
+    if (input.fxType == FX_DROP_SHADOW && input.drawMode != MODE_MASKED_BLUR && !isBlurBg) {
+        if (rawTexture.a > 0.0) {
+            shadowLayer = float4(0, 0, 0, rawTexture.a * 0.5 * input.color.a);
+        }
     }
 
-    return base_color;
-}
+    // 4. Object Logic
+    float4 objectLayer = float4(0,0,0,0);
 
-float4 ApplyObjectBlur(float4 base_color, vs2ps input) {
-    if (input.fx_type != FX_BLUR || input.draw_mode == DRAW_MODE_SOLID) { return base_color; }
-    float4 blur_sum = 0;
-    float blur_spread = 2.0 / 256.0;
-    [unroll]
-    for (int y = -1; y <= 2; y++) {
-        [unroll]
-        for (int x = -1; x <= 2; x++) {
-            float2 sample_uv = input.uv + float2(x, y) * blur_spread;
-            switch (input.draw_mode) {
-                case DRAW_MODE_NUMBER:
-                case DRAW_MODE_TEXT:             blur_sum += tex_atlas_font.Sample(s0_s, sample_uv); break;
-                case DRAW_MODE_TEXTURE_OVERLAY:  
-                case DRAW_MODE_TEXTURE_MULTIPLY: blur_sum += tex_atlas_icons.Sample(s0_s, float2(sample_uv.x, 1.0 - sample_uv.y)); break;
+    if (insideBounds || isBlurBg) {
+        
+        // --- SMART BLUR LOGIC ---
+        if (input.drawMode == MODE_MASKED_BLUR || isBlurBg) {
+            
+            float targetStrength = 0.0;
+            float layerOpacity = 0.0;
+            
+            // --- MODE 9000 SETUP ---
+            if (input.drawMode == MODE_MASKED_BLUR) {
+                float maskVal = rawTexture.r; 
+                targetStrength = maskVal * 8.25; // Целевая сила
+                layerOpacity = maskVal; 
+            } 
+            // --- OLD BLUR MODES SETUP (90-99) ---
+            else {
+                targetStrength = 0.5 + (float)(input.drawMode - 90) * 0.6;
+                layerOpacity = input.color.a;
             }
-        }
-    }
-    return blur_sum / 16.0;
-}
 
-float4 GetFinalBlendedColor(float4 tex_color, vs2ps input) {
-    switch(input.draw_mode) {
-        case DRAW_MODE_TEXTURE_MULTIPLY:
-            return tex_color * input.color;
-        case DRAW_MODE_TEXTURE_OVERLAY: {
-            return tex_color; 
-        }
-        case DRAW_MODE_NUMBER:
-        case DRAW_MODE_TEXT:
-            return float4(input.color.rgb, tex_color.r * input.color.a);
-        case DRAW_MODE_SOLID: 
-        default:
-            return input.color;
-    }
-}
+            if (layerOpacity > 0.001) {
+                float3 blurredColor = float3(0,0,0);
+                float2 uv = input.position.xy / ScreenRes;
 
-float GetDistanceToEdge(float2 uv)
-{
-    float dist_x = min(uv.x, 1.0 - uv.x);
-    float dist_y = min(uv.y, 1.0 - uv.y);
-    return min(dist_x, dist_y);
-}
-
-float GetAlpha(int mode, float2 uv) {
-    switch(mode) {
-        case DRAW_MODE_NUMBER:
-        case DRAW_MODE_TEXT:             return tex_atlas_font.Sample(s0_s, uv).r;
-        case DRAW_MODE_TEXTURE_OVERLAY:  
-        case DRAW_MODE_TEXTURE_MULTIPLY: return tex_atlas_icons.Sample(s0_s, float2(uv.x, 1.0 - uv.y)).a;
-        case DRAW_MODE_SOLID:            return 1.0;
-        default:                         return 0.0;
-    }
-}
-
-void main(vs2ps input, out float4 result : SV_Target0)
-{
-    result = float4(0,0,0,0); 
-    if (input.clip_rect.z > 0.0 && input.clip_rect.w > 0.0)
-    {
-        float clip_min_x = input.clip_rect.x;
-        float clip_max_x = input.clip_rect.x + input.clip_rect.z;
-        float clip_min_y = SCREEN_RES.y - input.clip_rect.y - input.clip_rect.w;
-        float clip_max_y = clip_min_y + input.clip_rect.w;
-        bool is_outside = 
-            input.pos.x < clip_min_x 
-            || input.pos.x > clip_max_x
-            || input.pos.y < clip_min_y 
-            || input.pos.y > clip_max_y;
-        if (is_outside) { discard; }
-    }
-
-    switch(input.draw_mode)
-    {
-        case 728386: // HSV
-        {
-            float hue = input.tile_data.x; 
-            float saturation = input.local_uv.x;
-            float value = 1.0 - input.local_uv.y;
-            float3 final_rgb = HsvToRgb(float3(hue, saturation, value));
-            result = float4(final_rgb, input.color.a);
-            return;
-        }
-        case 728387: // Cursor Circle
-        {
-            float2 centered_uv = input.local_uv * 2.0 - 1.0;
-            if (length(centered_uv) > 1.0) discard;
-            result = input.color;
-            return;
-        }
-        case 728388: // Hue Gradient
-        {
-            float hue = input.local_uv.x;
-            float3 final_rgb = HsvToRgb(float3(hue, 1.0, 1.0));
-            result = float4(final_rgb, input.color.a);
-            return;
-        }
-    }
-
-    if (input.draw_mode >= DRAW_MODE_BLUR_BACKGROUND_START && input.draw_mode <= DRAW_MODE_BLUR_BACKGROUND_END)
-    {
-        result = GetBackgroundBlurColor(input);
-        return; 
-    }
-
-    float4 base_color = GetBaseTextureColor(input);
-    float4 final_color = GetFinalBlendedColor(ApplyObjectBlur(base_color, input), input);
-
-    if (input.fx_type == FX_DROP_SHADOW)
-    {
-        if (final_color.a < 0.99)
-        {
-            float2 shadow_offset_px = float2(1.0, -1.0); 
-
-            float2 obj_size_px = input.object_pos_size.zw * SCREEN_RES;
-
-            obj_size_px = max(obj_size_px, float2(1.0, 1.0));
-
-            float2 local_uv_shift = shadow_offset_px / obj_size_px;
-
-            float2 source_local_uv = input.local_uv - local_uv_shift;
-
-            bool is_source_inside_sprite = 
-                source_local_uv.x >= 0.0 && source_local_uv.x <= 1.0 &&
-                source_local_uv.y >= 0.0 && source_local_uv.y <= 1.0;
-
-            if (is_source_inside_sprite)
-            {
-                float2 uv_per_pixel = float2(
-                    1.0 / obj_size_px.x,
-                    1.0 / obj_size_px.y
-                );
-                float2 shadow_uv_offset = uv_per_pixel * shadow_offset_px;
+                // ========================================================
+                // ТРЮК С ЛИМИТОМ И ДЕГРАДАЦИЕЙ
+                // ========================================================
+                // 1. SafeStride: До 4.0 пикселей качество нормальное.
+                // Мы замораживаем расширение на 4.0, чтобы не было "4 глаз".
+                float safeStrideVal = min(targetStrength, 4.0);
                 
-                // Сэмплим
-                float caster_alpha = GetAlpha(input.draw_mode, input.uv - shadow_uv_offset);
+                // 2. Degradation: Всё, что выше 4.0, превращается в шум.
+                // Это создает эффект матового стекла.
+                float degradation = max(0.0, targetStrength - 4.0);
                 
-                if (caster_alpha > 0.5)
-                {
-                    float4 shadow_color = float4(0, 0, 0, 0.5); 
-                    final_color = lerp(shadow_color, final_color, final_color.a);
+                float2 stride = safeStrideVal / ScreenRes;
+
+                [unroll]
+                for(int x=-1; x<=1; x++) {
+                    [unroll] 
+                    for(int y=-1; y<=1; y++) {
+                        // Базовое смещение (Box Blur)
+                        float2 offset = float2(x, y) * stride;
+                        
+                        // Добавляем шум (Frosted Glass), если сила > 4.0
+                        // seed зависит от координат выборки (x,y), чтобы шум был равномерным
+                        float2 jitter = float2(0,0);
+                        if (degradation > 0.0) {
+                             // 0.004 - эмпирический коэффициент "зернистости"
+                             jitter = GetRandomNoise(uv, (float)(x * 10 + y)) * degradation * 0.004;
+                        }
+
+                        blurredColor += TexBackbuffer.Sample(LinearSampler, uv + offset + jitter).rgb;
+                    }
                 }
+                blurredColor /= 9.0;
+                
+                objectLayer = float4(blurredColor, layerOpacity);
             }
         }
-    }
-
-    // --- FX_HOVER_OUTLINE_INWARD (Исправленный, с пиксельной толщиной) ---
-    if (input.fx_type == FX_HOVER_OUTLINE_INWARD)
-    {
-        const float outline_thickness_px = 3.0; 
-        float obj_width_px = input.object_pos_size.z * SCREEN_RES.x;
-        float obj_height_px = input.object_pos_size.w * SCREEN_RES.y;
-
-        float dist_uv_x = min(input.local_uv.x, 1.0 - input.local_uv.x);
-        float dist_uv_y = min(input.local_uv.y, 1.0 - input.local_uv.y);
         
-        float dist_px_x = dist_uv_x * obj_width_px;
-        float dist_px_y = dist_uv_y * obj_height_px;
-        float min_dist_px = min(dist_px_x, dist_px_y);
+        // --- OTHER MODES ---
+        else if (input.drawMode == MODE_COLOR_REPLACE) {
+            float maxC = max(rawTexture.r, max(rawTexture.g, rawTexture.b));
+            float minC = min(rawTexture.r, min(rawTexture.g, rawTexture.b));
+            float texSat = maxC - minC; 
+            float texLuma = dot(rawTexture.rgb, float3(0.299, 0.587, 0.114));
+            float inputLuma = dot(input.color.rgb, float3(0.299, 0.587, 0.114));
+            float3 retargetedColor = input.color.rgb * (texLuma / max(0.01, inputLuma));
+            float mixFactor = saturate(texSat * 10.0);
+            float3 finalRGB = lerp(rawTexture.rgb, retargetedColor, mixFactor);
+            objectLayer = float4(finalRGB, rawTexture.a * input.color.a);
+        }
+        else if (input.drawMode == MODE_SOLID) {
+            objectLayer = input.color;
+        }
+        else if (input.drawMode == MODE_TEX_MULTIPLY) { 
+            objectLayer = rawTexture * input.color;
+        }
+        else if (input.drawMode == MODE_TEX_OVERLAY) { 
+            objectLayer = rawTexture;
+            // objectLayer.a *= input.color.a;
+        }
+        else { // Text/Number
+            objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
+        }
 
-        float outline_factor = step(min_dist_px, outline_thickness_px);
-        
-        if (GetAlpha(input.draw_mode, input.uv) > 0.5)
-        {
-            final_color.rgb = lerp(final_color.rgb, float3(1,1,1), outline_factor * 0.7);
+        // FX: Grayscale
+        if (input.fxType == FX_GRAYSCALE && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
+            float g = dot(objectLayer.rgb, float3(0.3, 0.59, 0.11));
+            objectLayer.rgb = float3(g,g,g);
         }
     }
 
-    if (final_color.a > 0.01)
-    {
-        if (input.fx_type == FX_HOVER_SHEEN)
-        {
-            float dist_from_edge = GetDistanceToEdge(input.uv);
-            const float sheen_border_width = 0.1;
-            float edge_mask = pow(1.0 - saturate(dist_from_edge / sheen_border_width), 2.0);
+    // 5. Outline Effect
+    if (input.fxType == FX_OUTLINE && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
+         float2 px = 1.0 / (input.objectRect.zw * ScreenRes);
+         float2 uvBase = input.atlasRect.xy; 
+         float2 uvSz = input.atlasRect.zw;
+         float a = 0;
+         float2 offs[4] = { float2(px.x,0), float2(-px.x,0), float2(0,px.y), float2(0,-px.y) };
+         [unroll]
+         for(int k=0; k<4; k++) {
+             float2 cUV = input.contentUV + offs[k];
+             if(cUV.x>0 && cUV.x<1 && cUV.y>0 && cUV.y<1) {
+                 float2 fUV = uvBase + cUV * uvSz;
+                 if(input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) 
+                     a += AtlasFont.Sample(LinearSampler, fUV).r;
+                 else 
+                     a += AtlasIcons.Sample(LinearSampler, float2(fUV.x, 1.0-fUV.y)).a;
+             }
+         }
+         if (a > 0.0 && objectLayer.a < 0.9) objectLayer = float4(0,0,0,1);
+    }
 
-            float2 object_pos = input.object_pos_size.xy;
-            float2 object_size = input.object_pos_size.zw;
-            float2 cursor_relative_to_object = (CURSOR_POS - object_pos) / object_size;
+    // 6. HIGHLIGHT EFFECTS
+    if (objectLayer.a > 0.01) 
+    {
+        // SHEEN (Auto)
+        if (input.fxType == FX_HOVER_SHEEN) {
+            float speed = 2.5;
+            float val = (input.contentUV.x + input.contentUV.y * 0.5) * 2.0; 
+            float sheenPos = frac(val - GlobalTime * speed * 0.5);
+            float sheen = smoothstep(0.4, 0.5, sheenPos) * (1.0 - smoothstep(0.5, 0.6, sheenPos));
+            sheen = pow(sheen, 3.0); 
+            objectLayer.rgb += float3(1.0, 1.0, 1.0) * sheen * 0.8 * objectLayer.a;
+        }
+        // SHINE (Mouse)
+        if (input.fxType == FX_HOVER_SHINE) {
+            float2 object_pos = input.objectRect.xy;
+            float2 object_size = input.objectRect.zw;
+            float2 cursor_relative_to_object = (CursorPos - object_pos) / object_size;
             float2 shine_dir = normalize(float2(1.0, -1.0));
-            float2 local_uv = input.uv - 0.5;
+            float2 local_uv = input.contentUV - 0.5;
             float projection = dot(local_uv, shine_dir);
             float shine_pos = (cursor_relative_to_object.x - 0.5) * 1.2;
             const float stripe_width = 0.15;
-            float shine_intensity = pow(saturate(1.0 - abs(projection - shine_pos) / stripe_width), 3.0);
-            
-            float final_sheen = shine_intensity * edge_mask;
-
-            if (GetAlpha(input.draw_mode, input.uv) > 0.5)
-            {
-                final_color.rgb += float3(1,1,1) * final_sheen * 1.5;
-            }
-        }
-        if (input.fx_type == FX_HOVER_SHINE)
-        {
-            float2 object_pos = input.object_pos_size.xy;
-            float2 object_size = input.object_pos_size.zw;
-            float2 cursor_relative_to_object = (CURSOR_POS - object_pos) / object_size;
-            float2 shine_dir = normalize(float2(1.0, -1.0));
-            float2 local_uv = input.uv - 0.5;
-            float projection = dot(local_uv, shine_dir);
-            float shine_pos = (cursor_relative_to_object.x - 0.5) * 1.2;
-            const float stripe_width = 0.15;
-            float dist_from_shine = abs(projection - shine_pos);
-            float intensity = pow(saturate(1.0 - dist_from_shine / stripe_width), 3.0);
-            final_color.rgb += float3(1,1,1) * intensity * 0.7;
+            float intensity = pow(saturate(1.0 - abs(projection - shine_pos) / stripe_width), 3.0);
+            objectLayer.rgb += float3(1.0, 1.0, 1.0) * intensity * 0.7 * objectLayer.a;
         }
     }
 
-    if (input.fn_type == FN_DISINTEGRATE)
-    {
-        // --- КОНФИГУРАЦИЯ (Крути здесь) ---
-        float grain_scale = 40.0;        // РАЗМЕР ЗЕРНА (чем больше число, тем мельче пыль)
-        float burn_speed  = 1.0;         // СКОРОСТЬ анимации
-        float glow_width  = 0.08;        // ТОЛЩИНА горящей кромки
-        float noise_impact = 0.5;        // ВЛИЯНИЕ ШУМА (0.0 - ровная линия, 1.0 - хаос)
-        // ---------------------------------
-
-        // 1. Аспект-коррекция (чтобы зерно шума было КВАДРАТНЫМ, а не растянутым)
-        // Умножаем UV на соотношение сторон объекта
-        float aspect = input.object_pos_size.z / input.object_pos_size.w;
-        float2 noise_uv = input.local_uv * float2(aspect, 1.0) * grain_scale;
-
-        // 2. Направление сжигания: Правый верхний угол
-        // В UV: Лево-Низ (0,0), Право-Верх (1,1)
-        // Нам нужно, чтобы значение росло к правому верхнему углу
-        float burn_gradient = (input.local_uv.x + input.local_uv.y) * 0.5;
-
-        // 3. Генерация шума
-        float n = Noise(noise_uv);
-
-        // 4. Прогресс (от 0.0 до 1.0)
-        // frac(time * burn_speed) заставит эффект повторяться
-        float progress = frac(time * burn_speed); 
-        
-        // Масштабируем градиент так, чтобы в начале (0.0) всё было цело, 
-        // а в конце (1.0) всё исчезло.
-        float current_threshold = progress * 1.5; 
-
-        // Итоговая карта сгорания
-        float final_burn_map = burn_gradient + (n * noise_impact);
-
-        // 5. ЛОГИКА ОТРЕЗАНИЯ (DISCARD)
-        if (final_burn_map < current_threshold)
-        {
-            discard;
-        }
-
-        // 6. ГОРЯЩАЯ КРОМКА (Ember Effect)
-        // Если пиксель находится близко к границе отрезания
-        float edge_dist = final_burn_map - current_threshold;
-        if (edge_dist < glow_width)
-        {
-            // Плавное затухание яркости кромки
-            float glow_intensity = 1.0 - (edge_dist / glow_width);
-            
-            // Цвет: Ярко-оранжевый, переходящий в желтый (через pow для сочности)
-            float3 fire_color = float3(1.5, 0.4, 0.1); 
-            float3 gold_color = float3(2.0, 1.5, 0.2);
-            float3 final_glow = lerp(fire_color, gold_color, glow_intensity);
-            
-            // Применяем свечение (HDR-like яркость)
-            final_color.rgb += final_glow * glow_intensity * 3.0;
-            final_color.a = saturate(final_color.a + glow_intensity);
-        }
+    // 7. Final Blend
+    float4 finalColor;
+    finalColor.a = objectLayer.a + shadowLayer.a * (1.0 - objectLayer.a);
+    if (finalColor.a > 0.0) {
+        finalColor.rgb = (objectLayer.rgb * objectLayer.a + shadowLayer.rgb * shadowLayer.a * (1.0 - objectLayer.a)) / finalColor.a;
+    } else {
+        finalColor = float4(0, 0, 0, 0);
     }
 
-    if (final_color.a < 0.01) discard;
-    result = final_color;
+    if (finalColor.a < 0.01) discard;
+    return finalColor;
 }
 #endif

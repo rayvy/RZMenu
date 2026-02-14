@@ -94,83 +94,97 @@ Local $current_sizeY
             {{ handle_button_logic(element, parent_element, mod_file,scene) }}
     {% endif %}
     {{generate_hovertext(element)}}
+    $P_PX = $PositionX
+    $P_PY = $PositionY
+    $P_SX = $SizeX
+    $P_SY = $SizeY
+    ;Presets
+    {{generate_presets(element,mod_file,scene)}}
+    ;Childs
     {{generate_child(element,mod_file,scene)}}
     endif
     endif
 {%endmacro%}
 {#MAINSTUFF#}
 
-{# OTHER STUFF#}
-{%macro generate_position_and_size(element,parent_element,mod_file,scene)%}
-    {% if scene.rzm.addons.debugger_info == 1 %}
-    ; >>>>>>>>>>>>>>>>>>>>> DEBUG START: {{ element.element_name }} <<<<<<<<<<<<<<<<<<<<<
-    ; [1] RAW DATA INSPECTION
-    ; Raw elem_class val: '{{ element.elem_class }}'
-    ; Type Checks:        IsString={{ element.elem_class is string }} | IsNumber={{ element.elem_class is number }} | IsIterable={{ element.elem_class is iterable }} | IsNone={{ element.elem_class is none }}
-    {% if element.elem_class is iterable and element.elem_class is not string %}
-    ; List Inspection:    Length={{ element.elem_class|length }} | Item[0]='{{ element.elem_class[0] }}' | Item[0]TypeString={{ element.elem_class[0] is string }}
-    {% endif %}
-    
-    ; [2] CLASS RESOLUTION
-    ; utils.get_cls raw:  '{{ utils.get_cls(element) }}'
-    ; utils.get_cls trim: '{{ utils.get_cls(element)|trim }}'
-    
-    ; [3] DICTIONARY LOOKUP
-    ; Target Class Key:   'GRID_CONTAINER'
-    ; Dict has Key?:      {{ 'GRID_CONTAINER' in utils.CLASS_ATTRIBUTES }}
-    ; Dict Value for Key: {{ utils.CLASS_ATTRIBUTES.get('GRID_CONTAINER', 'KEY_NOT_FOUND') }}
-    ; Dict Value for Cls: {{ utils.CLASS_ATTRIBUTES.get(utils.get_cls(element)|trim, 'CLASS_NOT_FOUND_IN_DICT') }}
-    
-    ; [4] FUNCTION RESULT
-    ; has 'isMovable'?:   {{ utils.has_attribute(element, 'isMovable') }}
-    ; has 'isResizable'?: {{ utils.has_attribute(element, 'isResizable') }}
-    ; <<<<<<<<<<<<<<<<<<<<< DEBUG END <<<<<<<<<<<<<<<<<<<<<
-    {% endif %}
-
-    {% set class_name = utils.get_cls(element)|trim %}
-    {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
-    {# Примечание: тут сложный фильтр по детям. Если elem_class у детей тоже строка, selectattr может сбоить. Но пока оставим как есть #}
-    {% set grid_child = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
-    ;POSITION
-    {% if element.position_is_formula %}
-        $positionX = ({{ element.position_formula_x }})
-        $positionY = ({{ element.position_formula_y }})
-    {% elif element.parent_id > -1%}
-        $positionX = $positionX + {{ element.position[0] if element.position else 0}}
-        $positionY = $positionY + {{ element.position[1] if element.position else 0}}
-    {% elif utils.has_attribute(element, 'isMovable')%}
-        ;isMovable
-        $positionX = ${{element.element_name}}PositionX
-        $positionY = ${{element.element_name}}PositionY
-    {% else %}
-        $positionX = {{ element.position[0] if element.position else 0}}
-        $positionY = {{ element.position[1] if element.position else 0}}
-    {% endif %}
-    {% if class_name == 'GRID_CONTAINER' and element.parent_id > -1%}
-        ${{element.element_name}}PositionX = $positionX
-        ${{element.element_name}}PositionY = $positionY
-    {%endif%}
-    ;SIZE
-    {% if class_name == 'ANCHOR' and grid_child %}
-        ${{ element.element_name }}SizeX = ${{grid_child.element_name}}SizeX
-        $sizeX = ${{ element.element_name }}SizeX
-        $sizeY = {{ element.size[1] | default(0) | int}}
-    {% elif element.size_is_formula %}
-        $sizeX = ({{ element.size_formula_x | default('(123) * $sizeMultiplier')}}) * $sizeMultiplier
-        $sizeY = ({{ element.size_formula_y | default('(123) * $sizeMultiplier')}}) * $sizeMultiplier
-    {% elif utils.has_attribute(element, 'isResizable')%}
-        ;isResizable
-        $sizeX = (${{ element.element_name | default(poisitionX) | string }}SizeX) * $sizeMultiplier
-        $sizeY = (${{ element.element_name | default(poisitionY) | string }}SizeY) * $sizeMultiplier
-    {% elif element.size and element.size|length == 2 %}
-        $sizeX = ({{ element.size[0] }}) * $sizeMultiplier
-        $sizeY = ({{ element.size[1] }}) * $sizeMultiplier
-    {% else %}
-        $sizeX = (100) * $sizeMultiplier
-        $sizeY = (100) * $sizeMultiplier
-    {% endif %}
+{%macro generate_presets(element, mod_file, scene)%}
+    {% for ref in element.preset_ids %}
+    ;{{ref.preset_id}}
+        {% set preset_item = scene.rzm.elements | selectattr('id', 'equalto', ref.preset_id) | first %}
+        {% if preset_item %}
+            $positionX = $P_PX
+            $positionY = $P_PY
+            $sizeX = $P_SX
+            $sizeY = $P_SY
+            run = CommandListElement{{preset_item.element_name}}
+        {% endif %}
+    {% endfor %}
 {%endmacro%}
 
+{# OTHER STUFF#}
+{%macro generate_position_and_size(element,parent_element,mod_file,scene)%}
+    {% set class_name = utils.get_cls(element)|trim %}
+    
+    {% if element.is_preset %}
+        {# ЛОГИКА ДЛЯ ПРЕСЕТОВ: Либо наследуют всё, либо применяют формулу поверх наследства #}
+        
+        {% if element.position_is_formula %}
+        ; Preset Position Formula
+        $positionX = {{ element.position_formula_x }}
+        $positionY = {{ element.position_formula_y }}
+        {% endif %}
+
+        {% if element.size_is_formula %}
+        ; Preset Size Formula
+        $sizeX = {{ element.size_formula_x | default('$sizeX') }}
+        $sizeY = {{ element.size_formula_y | default('$sizeY') }}
+        {% endif %}
+
+    {% else %}
+        {# СТАНДАРТНАЯ ЛОГИКА ДЛЯ ОБЫЧНЫХ ЭЛЕМЕНТОВ #}
+        {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
+        {% set grid_child = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
+        
+        ;POSITION
+        {% if element.position_is_formula %}
+            $positionX = ({{ element.position_formula_x }})
+            $positionY = ({{ element.position_formula_y }})
+        {% elif element.parent_id > -1%}
+            $positionX = $positionX + {{ element.position[0] if element.position else 0}}
+            $positionY = $positionY + {{ element.position[1] if element.position else 0}}
+        {% elif utils.has_attribute(element, 'isMovable')%}
+            $positionX = ${{element.element_name}}PositionX
+            $positionY = ${{element.element_name}}PositionY
+        {% else %}
+            $positionX = {{ element.position[0] if element.position else 0}}
+            $positionY = {{ element.position[1] if element.position else 0}}
+        {% endif %}
+
+        {% if class_name == 'GRID_CONTAINER' and element.parent_id > -1%}
+            ${{element.element_name}}PositionX = $positionX
+            ${{element.element_name}}PositionY = $positionY
+        {%endif%}
+
+        ;SIZE
+        {% if class_name == 'ANCHOR' and grid_child %}
+            ${{ element.element_name }}SizeX = ${{grid_child.element_name}}SizeX
+            $sizeX = ${{ element.element_name }}SizeX
+            $sizeY = {{ element.size[1] | default(0) | int}}
+        {% elif element.size_is_formula %}
+            $sizeX = ({{ element.size_formula_x | default('(100) * $sizeMultiplier')}}) * $sizeMultiplier
+            $sizeY = ({{ element.size_formula_y | default('(100) * $sizeMultiplier')}}) * $sizeMultiplier
+        {% elif utils.has_attribute(element, 'isResizable')%}
+            $sizeX = (${{ element.element_name | default('noname') }}SizeX) * $sizeMultiplier
+            $sizeY = (${{ element.element_name | default('noname') }}SizeY) * $sizeMultiplier
+        {% elif element.size and element.size|length == 2 %}
+            $sizeX = ({{ element.size[0] }}) * $sizeMultiplier
+            $sizeY = ({{ element.size[1] }}) * $sizeMultiplier
+        {% else %}
+            $sizeX = (100) * $sizeMultiplier
+            $sizeY = (100) * $sizeMultiplier
+        {% endif %}
+    {% endif %}
+{%endmacro%}
 {%macro generate_interactions(element, parent_element)%}
     {% set is_child_of_grid = parent_element and utils.get_cls(parent_element)|trim == 'GRID_CONTAINER' %}
     {% if not is_child_of_grid %}
@@ -345,12 +359,8 @@ Local $current_sizeY
 {%endmacro%}
 
 {%macro generate_child(element,mod_file,scene)%}
-    $P_PX = $PositionX
-    $P_PY = $PositionY
-    $P_SX = $SizeX
-    $P_SY = $SizeY
     {% for child in scene.rzm.elements %}
-        {% if child.parent_id == element.id %}
+        {% if child.parent_id == element.id and not child.is_preset %}
             $PositionX = $P_PX
             $PositionY = $P_PY
             $SizeX = $P_SX

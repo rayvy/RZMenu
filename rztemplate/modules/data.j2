@@ -277,13 +277,15 @@ global $rayvich_back_values_w110
 {% macro anchors_generate(mod_file,scene) %}
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
-        {% if utils.get_cls(element)|trim == 'GRID_CONTAINER'%}
-        global persist ${{element.element_name}}scroll = 0
-        {% endif%}
-        global persist ${{element.element_name}}PositionX = {{ (element.position | default([0,0]))[0] }}
-        global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
-        global persist ${{element.element_name}}SizeX = {{ (element.size | default([0,0]))[0] }}
-        global persist ${{element.element_name}}SizeY = {{ (element.size | default([0,0]))[1] }}
+        {% if not element.is_preset %}
+            {% if utils.get_cls(element)|trim == 'GRID_CONTAINER'%}
+            global persist ${{element.element_name}}scroll = 0
+            {% endif%}
+            global persist ${{element.element_name}}PositionX = {{ (element.position | default([0,0]))[0] }}
+            global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
+            global persist ${{element.element_name}}SizeX = {{ (element.size | default([0,0]))[0] }}
+            global persist ${{element.element_name}}SizeY = {{ (element.size | default([0,0]))[1] }}
+        {% endif %}
     {% endfor %}
 {% endif %}
 {% endmacro %}
