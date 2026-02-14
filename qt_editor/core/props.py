@@ -290,6 +290,42 @@ def update_fx(target_ids, index, value):
             blender_bridge.safe_undo_push("RZM: Update FX")
             signals.SIGNALS.data_changed.emit()
 
+def add_preset_id(target_ids, preset_id):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "preset_ids"):
+                # Check if already exists
+                exists = False
+                for p in elem.preset_ids:
+                    if p.preset_id == preset_id:
+                        exists = True
+                        break
+                if not exists:
+                    new_p = elem.preset_ids.add()
+                    new_p.preset_id = preset_id
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Preset")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_preset_id(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "preset_ids") and index < len(elem.preset_ids):
+                elem.preset_ids.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Preset")
+            signals.SIGNALS.data_changed.emit()
+
 def perform_math_operation(target_ids, prop_name, op_str, sub_index=None):
     if not target_ids: return
 

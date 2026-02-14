@@ -194,16 +194,13 @@ def get_selection_details(selected_ids, active_id):
             # Computed Helpers
             "is_multi": len(selected_ids) > 1,
             "is_grid_child": is_grid_child,
-            # Computed Helpers
-            "is_multi": len(selected_ids) > 1,
-            "is_grid_child": is_grid_child,
             
             # Presets
             "is_preset": get_uniform("is_preset", default=False),
             "qt_preset_hide": get_uniform("qt_preset_hide", default=False),
-            "presets": [
-                p.preset_id for p in target.presets
-            ] if target and hasattr(target, "presets") else [],
+            "preset_ids": [
+                p.preset_id for p in target.preset_ids
+            ] if target and hasattr(target, "preset_ids") else [],
         }
         return data
     return None
@@ -295,10 +292,10 @@ def get_viewport_data():
         if getattr(host_elem, "qt_preset_hide", False):
             continue
             
-        if not hasattr(host_elem, "presets"): continue # Safety if property not added yet
+        if not hasattr(host_elem, "preset_ids"): continue # Safety if property not added yet
         
         # Iterate presets assigned to this element
-        for p_ref in host_elem.presets:
+        for p_ref in host_elem.preset_ids:
             preset_id = p_ref.preset_id
             preset_source = elem_map.get(preset_id)
             

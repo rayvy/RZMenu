@@ -392,46 +392,13 @@ class RZPresetList(QtWidgets.QWidget):
         pid = self.spin_id.value()
         ctx = RZContextManager.get_instance().get_snapshot()
         if ctx.selected_ids:
-            # We need a dedicated prop function for this
-            # Since core.props methods usually generic, we might need a custom one or 
-            # use a generic 'add_collection_item' if available.
-            # Let's assume we add a specific one in props.py or call wrapper here.
-            # WRAPPER:
-            import bpy
-            if not bpy.context or not bpy.context.scene: return
-            
-            # This is "EXECUTION" logic which should be in core, but for speed logic here:
-            # But wait, we can't access Blender Context safely from Qt thread regarding Undo?
-            # RZMenu commands usually go through core/props.py which wraps in Undo.
-            # I should add 'add_preset(ids, preset_id)' to props.py? 
-            # Or just use the generic logic if possible.
-            # For now, let's implement the logic here via call_op_batch-like approach or direct update
-            # ACTUALLY: Best to trust core/props.py to have 'add_preset_ref'.
-            # I will assume I need to implement it there or use a generic one.
-            # Let's use a dynamic one defined here for now using blender_bridge
-            
-            def op_add_preset(elem, _pid):
-                if not hasattr(elem, "presets"): return
-                # Check exists
-                for p in elem.presets:
-                    if p.preset_id == _pid: return
-                new_p = elem.presets.add()
-                new_p.preset_id = _pid
-
-            core.blender_bridge.execute_on_elements(list(ctx.selected_ids), op_add_preset, pid, undo_name="Add Preset")
-            SIGNALS.data_changed.emit()
+            core.props.add_preset_id(ctx.selected_ids, pid)
 
     def remove_item(self, index):
         if self._block: return
         ctx = RZContextManager.get_instance().get_snapshot()
         if ctx.selected_ids:
-            def op_rem_preset(elem, _idx):
-                if not hasattr(elem, "presets"): return
-                if _idx < len(elem.presets):
-                    elem.presets.remove(_idx)
-            
-            core.blender_bridge.execute_on_elements(list(ctx.selected_ids), op_rem_preset, index, undo_name="Remove Preset")
-            SIGNALS.data_changed.emit()
+            core.props.remove_preset_id(ctx.selected_ids, index)
 
 
 class RZMInspectorPanel(RZEditorPanel):
@@ -926,9 +893,9 @@ class RZMInspectorPanel(RZEditorPanel):
             # --- Presets ---
             self.chk_is_preset.setChecked(props.get('is_preset', False))
             self.chk_preset_hide.setChecked(props.get('qt_preset_hide', False))
-            # Extract preset list from props. Note: read.py needs to populate this!
-            # Using 'presets' key.
-            self.list_presets.update_data(props.get('presets', [])) # Expecting list of IDs
+            # Extract preset list from props. 
+            # Using 'preset_ids' key.
+            self.list_presets.update_data(props.get('preset_ids', [])) # Expecting list of IDs
 
             # --- Visibility ---
             vis_mode = props.get('visibility_mode', 'ALWAYS')
