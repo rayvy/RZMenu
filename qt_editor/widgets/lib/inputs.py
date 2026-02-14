@@ -124,6 +124,63 @@ class RZFormulaHighlighter(QtGui.QSyntaxHighlighter):
             start, end = match.span()
             self.setFormat(start, end - start, self.format_var)
 
+class RZIniHighlighter(QtGui.QSyntaxHighlighter):
+    """
+    Highlights INI / 3DMigoto syntax.
+    - [Sections]
+    - keys = 
+    - ; Comments
+    - $Variables, @Toggles, #Shapes
+    """
+    def __init__(self, document):
+        super().__init__(document)
+        self.update_theme()
+        
+    def update_theme(self):
+        theme = get_current_theme()
+        
+        # 1. Section: [Abc] -> Blue/Accent
+        self.fmt_section = QtGui.QTextCharFormat()
+        self.fmt_section.setForeground(QtGui.QColor(theme.get('accent', '#5298D4')))
+        self.fmt_section.setFontWeight(QtGui.QFont.Bold)
+        
+        # 2. Key: something = -> Orange
+        self.fmt_key = QtGui.QTextCharFormat()
+        self.fmt_key.setForeground(QtGui.QColor(theme.get('text_keyword', '#D19A66')))
+        
+        # 3. Comment: ; ... -> Grey
+        self.fmt_comment = QtGui.QTextCharFormat()
+        self.fmt_comment.setForeground(QtGui.QColor(theme.get('text_dim', '#5C6370')))
+        self.fmt_comment.setFontItalic(True)
+        
+        # 4. Variable: $var -> Red
+        self.fmt_var = QtGui.QTextCharFormat()
+        self.fmt_var.setForeground(QtGui.QColor(theme.get('text_variable', '#E06C75')))
+        # self.fmt_var.setFontWeight(QtGui.QFont.Bold)
+
+    def highlightBlock(self, text):
+        # 1. Comments (take precedence over everything else usually, or last?)
+        # If we match comment first, we can fill it. But regex order matters.
+        
+        # Let's iterate matches.
+        
+        # Section [...]
+        for match in re.finditer(r'^\[.*?\]', text):
+            self.setFormat(match.start(), match.end() - match.start(), self.fmt_section)
+            
+        # Key (start of line, before =)
+        # matches "key =" or "key="
+        for match in re.finditer(r'^[^=;\n]+(?==)', text):
+             self.setFormat(match.start(), match.end() - match.start(), self.fmt_key)
+             
+        # Variables (anywhere)
+        for match in re.finditer(r'[\$@#][a-zA-Z0-9_]+', text):
+            self.setFormat(match.start(), match.end() - match.start(), self.fmt_var)
+
+        # Comments (semicolon to end)
+        for match in re.finditer(r';.*', text):
+            self.setFormat(match.start(), match.end() - match.start(), self.fmt_comment)
+
 class RZFormulaInput(QtWidgets.QPlainTextEdit):
     """
     Advanced text edit for formulas with Autocomplete and Syntax Highlighting.
@@ -347,3 +404,12 @@ class RZCodeTextEdit(RZFormulaInput):
         # Let's just reimplement the necessary part without the "Consume Enter" block.
         QtWidgets.QPlainTextEdit.keyPressEvent(self, event)
         self._check_autocomplete()
+
+    def set_highlighter(self, highlighter_class):
+        """Allows swapping the highlighter (e.g. to INI)."""
+        if highlighter_class:
+            self.highlighter = highlighter_class(self.document())
+            self.highlighter.update_theme()
+            self.highlighter.rehighlight()
+        else:
+            self.highlighter = None

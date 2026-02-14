@@ -64,3 +64,12 @@
 {% endblock %}
 
 {% endcall %}
+
+[CommandListPreSnippet]
+{%- if scene.rzm %}
+{{ scene.rzm.config.pre_snippet | default(";There Nothing")}}
+{% endif %}
+[CommandListPostSnippet]
+{%- if scene.rzm %}
+{{ scene.rzm.config.post_snippet | default(";There Nothing")}}
+{% endif %}

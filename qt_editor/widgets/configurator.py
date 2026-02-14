@@ -5,7 +5,7 @@ from .lib.widgets import (
     RZComboBox, RZCheckBox, RZSpinBox, RZDoubleSpinBox
 )
 from .lib.theme import get_current_theme
-from .lib.inputs import RZFormulaInput
+from .lib.inputs import RZFormulaInput, RZCodeTextEdit, RZIniHighlighter
 import bpy
 from ..core.signals import SIGNALS
 
@@ -587,6 +587,75 @@ class TexWorksTab(BaseConfigTab):
         self.update_ui()
 
 
+class SnippetTab(BaseConfigTab):
+    """
+    Tab for editing Pre/Post Code Snippets (INI syntax).
+    """
+    def __init__(self, property_name="", title="", parent=None):
+        super().__init__(parent)
+        self.property_name = property_name # e.g. "pre_snippet"
+        self.title = title
+        self._init_ui()
+
+    def _init_ui(self):
+        # We want the text edit to fill the space, so we don't use the default scroll area layout from BaseConfigTab?
+        # BaseConfigTab puts everything in a scroll area. For a large text edit, 
+        # it's often better to have the text edit itself be the scrollable widget.
+        
+        # Let's bypass the base layout slightly or just clear it.
+        # Base class: self.layout -> scroll_area -> content -> scroll_layout
+        
+        # We can just add the editor to scroll_layout, but make sure it expands?
+        # Or better, hide the scroll area and add our editor directly to self.layout
+        self.scroll_area.hide()
+        
+        # Container for editor
+        container = QtWidgets.QWidget()
+        l = QtWidgets.QVBoxLayout(container)
+        l.setContentsMargins(0, 0, 0, 0)
+        
+        l.addWidget(RZLabel(f"{self.title} (INI Syntax):"))
+        
+        self.editor = RZCodeTextEdit()
+        self.editor.set_highlighter(RZIniHighlighter)
+        self.editor.editingFinished.connect(self.on_text_changed)
+        
+        # Ensure it expands
+        self.editor.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        
+        l.addWidget(self.editor)
+        self.layout.addWidget(container)
+
+    def update_ui(self):
+        self._block = True
+        if not bpy.context or not bpy.context.scene: return
+        rzm = bpy.context.scene.rzm
+        config = rzm.config
+        
+        # Check if property exists (user might not have added multiple lines to p_settings yet)
+        if not hasattr(config, self.property_name):
+            if self.editor.isEnabled():
+                self.editor.setPlainText(f"Error: Property '{self.property_name}' not found in RZMenuConfig.\nPlease update p_settings.py")
+                self.editor.setEnabled(False)
+            return
+            
+        self.editor.setEnabled(True)
+        val = getattr(config, self.property_name)
+        if self.editor.toPlainText() != val:
+            self.editor.setPlainText(val)
+            
+        self._block = False
+
+    def on_text_changed(self):
+        if self._block: return
+        # Use generic update_config_setting op
+        # Note: update_config_setting takes 'prop_name', 'val_str'
+        self._call_op("update_config_setting", 
+                      prop_name=self.property_name, 
+                      val_str=self.editor.toPlainText(), 
+                      is_int=False)
+
+
 class RZConfiguratorManager(QtWidgets.QWidget):
     """
     Main widget for the Configurator Panel.
@@ -614,6 +683,8 @@ class RZConfiguratorManager(QtWidgets.QWidget):
         
         self.add_tab("General", GeneralTab())
         self.add_tab("TexWorks", TexWorksTab())
+        self.add_tab("PreSnippet", SnippetTab("pre_snippet", "Pre-Injection Code"))
+        self.add_tab("PostSnippet", SnippetTab("post_snippet", "Post-Injection Code"))
         # Extensible point: self.add_tab("VFX", VFXTab())
         
         self.apply_theme()

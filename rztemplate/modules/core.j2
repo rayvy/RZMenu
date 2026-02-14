@@ -129,7 +129,9 @@ if $active
     {% if scene.rzm.shapes %}
     ;run = CustomShaderComputeShapes
     {% endif %}
+    run = CommandListPreSnippet
     run = CommandListEntryPoint
+    run = CommandListPostSnippet
 endif
 
 post $active = 0

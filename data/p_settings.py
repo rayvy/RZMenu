@@ -36,7 +36,10 @@ class RZMGameSettings(bpy.types.PropertyGroup):
         description="Internal string used by Jinja2 templates"
     )
 
-class RZMenuConfig(bpy.types.PropertyGroup): canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
+class RZMenuConfig(bpy.types.PropertyGroup): 
+    canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
+    pre_snippet: StringProperty(name="Pre Snippet", default="")
+    post_snippet: StringProperty(name="Post Snippet", default="")
 
 class DependencyStatus(bpy.types.PropertyGroup):
     """Holds the status of a single dependency."""
