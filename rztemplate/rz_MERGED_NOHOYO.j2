@@ -235,10 +235,10 @@ endif
 hash = {{ component.vb0_hash }}
 {{note("Signal our mod that object is found on screen and we can start overriding it")}}
 $object_detected = 1
-$active = 1
 {{note("Signal our mod that object LoD is NOT found on screen (only components with LoDs should do it)")}}
 {%- if component.lods | length > 0 and component.lods[0].vb0_hash != component.vb0_hash %}
 $lod_detected = 0
+$active = 1
 {%- endif %}
 if $mod_enabled && DRAW_TYPE == 4
     {{note("Skip original draw call")}}

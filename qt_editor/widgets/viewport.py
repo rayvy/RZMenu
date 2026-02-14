@@ -430,7 +430,26 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         
         if has_image and not self.custom_color: bg_color.setAlpha(30)
         if self.is_locked_pos or self.is_locked_size: bg_color = bg_color.darker(120)
-        painter.fillRect(rect, bg_color)
+        
+        # --- BLENDING RENDERING ---
+        if has_image:
+            mode = getattr(self, "image_blending_mode", "NONE")
+            if mode == "OVERLAY":
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Overlay)
+                painter.fillRect(rect, bg_color)
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+            elif mode == "COLOR_HUE":
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Hue)
+                painter.fillRect(rect, bg_color)
+                painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+            elif mode == "NONE":
+                # Only rgba from texture, skip color fill
+                pass
+            else:
+                # Fallback to normal (legacy behavior)
+                painter.fillRect(rect, bg_color)
+        else:
+            painter.fillRect(rect, bg_color)
         
         border_width, border_color_str = 1.0, t.get('vp_handle_border', '#000')
         if self.is_active:
