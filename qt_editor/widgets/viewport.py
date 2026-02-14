@@ -20,6 +20,31 @@ from ..core.logic import FormulaEvaluator
 
 HANDLE_SIZE = 8
 
+class RZFontAtlasMetrics:
+    """
+    Emulates the atlas metrics used in the shader.
+    The constants here align with the user's font generation script:
+    FONT_SIZE = 128, ATLAS_BASE_CELL_SIZE = 16, ATLAS_SCALE = 8 -> 128
+    """
+    def __init__(self, font_family):
+        self.font = QtGui.QFont(font_family)
+        # We need the metrics for the base font size used in the atlas
+        self.font.setPixelSize(128) 
+        self.f_metrics = QtGui.QFontMetricsF(self.font)
+        self.cell_size = 128.0 
+
+    def get(self, char):
+        rect = self.f_metrics.boundingRect(char)
+        # offX / offY in PIL/Shader terms are left/top of bbox relative to baseline
+        # QFontMetricsF.leftBearing gives us the X offset
+        return type('GlyphMetrics', (), {
+            'advance': self.f_metrics.horizontalAdvance(char),
+            'offX': rect.left(),
+            'offY': rect.top(),
+            'glyphW': rect.width(),
+            'glyphH': rect.height()
+        })
+
 class RZHandleItem(QtWidgets.QGraphicsRectItem):
     TOP_LEFT, TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT = range(8)
 
@@ -357,50 +382,109 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         t = get_current_theme()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
-        # --- ОТРИСОВКА ТЕКСТА (WYSIWYG MVP) ---
+        # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3) ---
+        # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3 - SHADER MATCH) ---
         if self.elem_type == 'TEXT':
-            # 1. Шрифт
-            if self._custom_font_family:
-                font = QtGui.QFont(self._custom_font_family)
-            else:
-                font = QtGui.QFont("Arial")
+            text = self.text_id if self.text_id else self.name
+            if not text: return
 
-            # Размер шрифта относительно высоты элемента (MVP Scaling)
-            font_pixel_size = max(1, int(rect.height() * 0.8))
-            font.setPixelSize(font_pixel_size)
-            painter.setFont(font)
+            # 1. Init Metrics & Font
+            font_family = self._custom_font_family if self._custom_font_family else "Arial"
+            metrics = RZFontAtlasMetrics(font_family)
+            chars = list(text)[:32]
 
-            # 2. Цвет
+            # 2. Scale Calculation (HEIGHT BASED)
+            # Shader: scale = (size.y * ScreenRes.y) / cs;
+            # Qt: rect.height() is already (size.y * ScreenRes.y) in pixels
+            base_scale = rect.height() / metrics.cell_size
+
+            # 3. Calculate Raw Content Width (in 128px space)
+            total_w = 0.0
+            first_off = 0.0
+            if chars:
+                first_m = metrics.get(chars[0])
+                first_off = first_m.offX
+                for i in range(len(chars) - 1):
+                    total_w += metrics.get(chars[i]).advance
+                last_m = metrics.get(chars[-1])
+                # Shader logic for last char width
+                total_w += last_m.offX + last_m.glyphW - first_off
+
+            # 4. Squeeze Logic (Auto-Fit)
+            # Shader: if (currentTextWidth > inputLimitWidth) squeeze...
+            limit_px = rect.width()
+            current_px = total_w * base_scale
+            squeeze = 1.0
+            
+            if limit_px > 1.0 and current_px > limit_px:
+                squeeze = limit_px / current_px
+
+            # 5. Alignment Shift calculation
+            align_map = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}
+            align = align_map.get(self.alignment.split('_')[-1], 0)
+            
+            shift_128 = 0.0
+            if align == 1: # Center
+                shift_128 = (first_off * 2.0 + total_w) * 0.5
+            elif align == 2: # Right
+                shift_128 = first_off + total_w
+
+            # 6. Drawing
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            
+            # Color
             text_color = QtGui.QColor(t.get('text_bright', '#FFF'))
             if self.custom_color and len(self.custom_color) >= 3:
                 r, g, b = [int(c*255) for c in self.custom_color[:3]]
                 text_color = QtGui.QColor(r, g, b)
             painter.setPen(text_color)
-
-            # 3. Текст (рисуем text_id)
-            # Используем text_id. Если его нет — фоллбэк на "TEXT" или пустоту
-            display_text = self.text_id if self.text_id else self.name
             
-            # Отрисовка без отступов (AlignLeft | AlignVCenter), без клиппинга
-            painter.drawText(rect, 
-                             QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter | QtCore.Qt.TextDontClip, 
-                             display_text)
+            # Apply Transform:
+            # We translate to the Start Point, then Scale the coordinate system.
+            # This allows us to draw using 128px metrics directly and get the "Squished" glyph look correctly.
+            
+            # X start: rect.left() - (shift converted to pixels)
+            # But since we will scale X by (base_scale * squeeze), we apply shift in local space
+            
+            painter.translate(rect.left(), rect.top())
+            painter.scale(base_scale * squeeze, base_scale)
+            
+            # Font setup (use the large 128px font from metrics)
+            painter.setFont(metrics.font)
 
-            # 4. Рамка выделения (поверх текста, пунктир)
+            cur_x_128 = 0.0
+            ref_a = metrics.get('A') # Reference for baseline alignment
+            
+            # Draw Loop
+            for char in chars:
+                m = metrics.get(char)
+                
+                # Y Position Calculation (Shader match)
+                # Shader: baseAdj = (ref.offY + ref.glyphH + (128.0/7.5) - (m.offY + m.glyphH))
+                # The constant 17.066 comes from 128.0 / 7.5
+                base_adj = (ref_a.offY + ref_a.glyphH + 17.0666 - (m.offY + m.glyphH))
+                
+                # Coordinates in 128px space
+                # X: Current cursor - Alignment Shift + Char Offset
+                draw_x = cur_x_128 - shift_128 + m.offX
+                draw_y = base_adj 
+                
+                # Draw
+                target_rect = QtCore.QRectF(draw_x, draw_y, m.glyphW, m.glyphH)
+                painter.drawText(target_rect, QtCore.Qt.AlignCenter | QtCore.Qt.TextDontClip, char)
+                
+                cur_x_128 += m.advance
+
+            painter.restore()
+
+            # Selection Border
             if self.isSelected():
                  painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_selection', '#FFF')), 1, QtCore.Qt.DashLine))
                  painter.setBrush(QtCore.Qt.NoBrush)
                  painter.drawRect(rect)
-
-            # 5. Индикатор блокировки (опционально)
-            if self.is_locked_pos or self.is_locked_size:
-                painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
-                lock_font = QtGui.QFont("Arial", 8)
-                painter.setFont(lock_font)
-                painter.drawText(rect.adjusted(0,0,-2,2), QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, "🔒")
-
+            
             return
-        # --------------------------------------
 
         has_image = False
         if self.image_id != -1:
