@@ -162,8 +162,26 @@ def duplicate_elements(target_ids):
             if hasattr(src, "color"): new_elem.color = src.color[:]
             new_elem.image_id = src.image_id
             new_elem.image_mode = src.image_mode
+            new_elem.image_blending_mode = getattr(src, "image_blending_mode", 'NONE')
             new_elem.tile_uv = src.tile_uv[:]
             new_elem.tile_size = src.tile_size[:]
+            
+            # Additional Formula Logic
+            new_elem.color_is_formula = src.color_is_formula
+            new_elem.color_formula_r = src.color_formula_r
+            new_elem.color_formula_g = src.color_formula_g
+            new_elem.color_formula_b = src.color_formula_b
+            new_elem.color_formula_a = src.color_formula_a
+            
+            new_elem.value_link_is_formula = src.value_link_is_formula
+            new_elem.value_link_formula = src.value_link_formula
+            
+            new_elem.transform_is_formula = getattr(src, "transform_is_formula", False)
+            new_elem.transform_formula = getattr(src, "transform_formula", "")
+            
+            # Preset Specifics
+            new_elem.is_preset = getattr(src, "is_preset", False)
+            new_elem.qt_preset_hide = getattr(src, "qt_preset_hide", False)
             
             # Visibility & State
             new_elem.visibility_mode = src.visibility_mode
@@ -184,6 +202,11 @@ def duplicate_elements(target_ids):
             new_elem.disable_button_popup = src.disable_button_popup
             
             # Copy Collections
+            if hasattr(src, "preset_ids"):
+                for p in src.preset_ids:
+                    new_p = new_elem.preset_ids.add()
+                    new_p.preset_id = p.preset_id
+
             for ci in src.conditional_images:
                 new_ci = new_elem.conditional_images.add()
                 new_ci.condition = ci.condition

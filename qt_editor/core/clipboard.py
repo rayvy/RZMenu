@@ -39,6 +39,7 @@ def copy_elements(target_ids):
                 
                 "image_id": elem.image_id,
                 "image_mode": elem.image_mode,
+                "image_blending_mode": getattr(elem, "image_blending_mode", 'NONE'),
                 "tile_uv": list(elem.tile_uv),
                 "tile_size": list(elem.tile_size),
                 
@@ -49,6 +50,13 @@ def copy_elements(target_ids):
                 "color_formula_a": elem.color_formula_a,
                 "value_link_is_formula": elem.value_link_is_formula,
                 "value_link_formula": elem.value_link_formula,
+                
+                "transform_is_formula": getattr(elem, "transform_is_formula", False),
+                "transform_formula": getattr(elem, "transform_formula", ""),
+                
+                "is_preset": getattr(elem, "is_preset", False),
+                "qt_preset_hide": getattr(elem, "qt_preset_hide", False),
+                "preset_ids": [p.preset_id for p in elem.preset_ids] if hasattr(elem, "preset_ids") else [],
                 
                 "visibility_mode": elem.visibility_mode,
                 "visibility_condition": elem.visibility_condition,
@@ -126,6 +134,7 @@ def paste_elements(target_x=None, target_y=None):
             
             new_elem.image_id = item.get("image_id", -1)
             new_elem.image_mode = item.get("image_mode", "SINGLE")
+            new_elem.image_blending_mode = item.get("image_blending_mode", "NONE")
             new_elem.tile_uv = item.get("tile_uv", [0,0])
             new_elem.tile_size = item.get("tile_size", [1,1])
             
@@ -136,6 +145,12 @@ def paste_elements(target_x=None, target_y=None):
             new_elem.color_formula_a = item.get("color_formula_a", "1")
             new_elem.value_link_is_formula = item.get("value_link_is_formula", False)
             new_elem.value_link_formula = item.get("value_link_formula", "")
+            
+            new_elem.transform_is_formula = item.get("transform_is_formula", False)
+            new_elem.transform_formula = item.get("transform_formula", "")
+            
+            new_elem.is_preset = item.get("is_preset", False)
+            new_elem.qt_preset_hide = item.get("qt_preset_hide", False)
             
             new_elem.visibility_mode = item.get("visibility_mode", "ALWAYS")
             new_elem.visibility_condition = item.get("visibility_condition", "")
@@ -153,6 +168,10 @@ def paste_elements(target_x=None, target_y=None):
             new_elem.disable_button_popup = item.get("disable_button_popup", False)
 
             # Collections
+            if "preset_ids" in item:
+                for pid in item["preset_ids"]:
+                    new_p = new_elem.preset_ids.add()
+                    new_p.preset_id = pid
             for ci in item.get("conditional_images", []):
                 new_ci = new_elem.conditional_images.add()
                 new_ci.condition = ci["condition"]
