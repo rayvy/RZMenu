@@ -1,6 +1,6 @@
 /* 
 ================================================================================
-SHADER: UI COMPOSITOR v3.2 (SHINE RESTORED)
+SHADER: UI COMPOSITOR v3.3 (AUTO-FIT TEXT ADDED)
 ================================================================================
 */
 
@@ -15,7 +15,8 @@ Buffer<float4>    DrawParamsBuffer : register(t110);
 
 Texture2D<float4> AtlasIcons : register(t80);
 Texture2D<float4> AtlasFont : register(t82);
-Texture2D<float4> TexBackbuffer : register(t89);
+Texture2D<float4> TexBlurMap : register(t89);
+Texture2D<float4> TexBackbuffer : register(t90);
 SamplerState      LinearSampler : register(s0);
 
 // --- GLOBAL VARS ---
@@ -46,10 +47,10 @@ static const int ANIM_DISINTEGRATE = 3;
 // --- FX CONSTANTS ---
 static const int FX_OUTLINE = 1;
 static const int FX_DROP_SHADOW = 2;
-static const int FX_HOVER_SHEEN = 3; // Auto animation (Time)
+static const int FX_HOVER_SHEEN = 3; 
 static const int FX_HOVER_RESIZE = 4;
 static const int FX_GRAYSCALE = 5;
-static const int FX_HOVER_SHINE = 8; // RESTORED: Mouse interaction
+static const int FX_HOVER_SHINE = 8; 
 
 static const uint MAX_CHARS = 32;
 static const uint FONT_GRID_SIZE = 16;
@@ -135,6 +136,17 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, inout float2 pos, inout fl
             CharMetrics last = FetchCharMetrics(chars[count-1]);
             totalW += last.offX + last.glyphW - firstOff;
         }
+
+        // --- AUTO-FIT LOGIC (SQUISH) ---
+        float inputLimitWidth = size.x * ScreenRes.x; // Лимит ширины из $sizeX
+        float currentTextWidth = totalW * scale;      // Реальная ширина текста
+        float squeeze = 1.0;
+
+        // Если задан лимит (> 1px) И текст шире лимита -> сжимаем
+        if (inputLimitWidth > 1.0 && currentTextWidth > inputLimitWidth) {
+            squeeze = inputLimitWidth / currentTextWidth;
+        }
+        // -------------------------------
         
         float shift = 0;
         int align = (int)tile.z;
@@ -142,7 +154,8 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, inout float2 pos, inout fl
         if (align == 2) shift = firstOff + totalW;
         
         float2 basePos = pos;
-        basePos.x -= (shift / ScreenRes.x) * scale;
+        // Применяем squeeze к сдвигу выравнивания
+        basePos.x -= (shift / ScreenRes.x) * scale * squeeze;
         
         uint idx = vID / 6;
         uint code = (idx < count) ? chars[idx] : ' ';
@@ -154,9 +167,12 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, inout float2 pos, inout fl
         
         float baseAdj = (ref.offY + ref.glyphH + (128.0/7.5) - (m.offY + m.glyphH));
         pos.y = basePos.y + (baseAdj / ScreenRes.y) * scale;
-        pos.x = basePos.x + ((curX + m.offX) / ScreenRes.x) * scale;
         
-        size.x = (m.glyphW / ScreenRes.x) * scale;
+        // Применяем squeeze к позиции буквы (уменьшаем расстояние между буквами)
+        pos.x = basePos.x + ((curX + m.offX) / ScreenRes.x) * scale * squeeze;
+        
+        // Применяем squeeze к ширине самой буквы (сплющиваем букву)
+        size.x = (m.glyphW / ScreenRes.x) * scale * squeeze;
         size.y = (m.glyphH / ScreenRes.y) * scale;
         
         float2 uvCell = 1.0 / float2(16.0, (float)(h / cs));
@@ -252,18 +268,13 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
 
 float Random(float2 uv)
 {
-    // 1. dot - скалярное произведение для смешивания координат
-    // 2. sin - для создания периодичности
-    // 3. Умножение на большое число - для создания "хаоса"
-    // 4. frac - берет дробную часть, оставляя число в диапазоне [0.0, 1.0]
     return frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453);
 }
 
-// Вспомогательная функция для шума внутри лупа
 float2 GetRandomNoise(float2 uv, float seed) {
     float n1 = Random(uv + float2(seed, seed));
     float n2 = Random(uv - float2(seed, seed) + 0.15);
-    return float2(n1, n2) - 0.5; // range [-0.5, 0.5]
+    return float2(n1, n2) - 0.5; 
 }
 
 float4 main(VertexOutput input) : SV_Target0 {
@@ -279,9 +290,7 @@ float4 main(VertexOutput input) : SV_Target0 {
     if (input.drawMode == MODE_CURSOR) return length(input.contentUV * 2.0 - 1.0) > 1.0 ? 0 : input.color;
     if (input.drawMode == MODE_GRADIENT) return float4(HsvToRgb(float3(input.contentUV.x, 1, 1)), input.color.a);
 
-    // =================================================================================
     // UNIFIED SAMPLING
-    // =================================================================================
     float4 rawTexture = float4(1, 1, 1, 1);
     
     bool isBlurBg = (input.drawMode >= MODE_BLUR_BG_START && input.drawMode <= 99);
@@ -319,13 +328,11 @@ float4 main(VertexOutput input) : SV_Target0 {
             float targetStrength = 0.0;
             float layerOpacity = 0.0;
             
-            // --- MODE 9000 SETUP ---
             if (input.drawMode == MODE_MASKED_BLUR) {
                 float maskVal = rawTexture.r; 
-                targetStrength = maskVal * 8.25; // Целевая сила
+                targetStrength = maskVal * 8.25; 
                 layerOpacity = maskVal; 
             } 
-            // --- OLD BLUR MODES SETUP (90-99) ---
             else {
                 targetStrength = 0.5 + (float)(input.drawMode - 90) * 0.6;
                 layerOpacity = input.color.a;
@@ -334,45 +341,13 @@ float4 main(VertexOutput input) : SV_Target0 {
             if (layerOpacity > 0.001) {
                 float3 blurredColor = float3(0,0,0);
                 float2 uv = input.position.xy / ScreenRes;
-
-                // ========================================================
-                // ТРЮК С ЛИМИТОМ И ДЕГРАДАЦИЕЙ
-                // ========================================================
-                // 1. SafeStride: До 4.0 пикселей качество нормальное.
-                // Мы замораживаем расширение на 4.0, чтобы не было "4 глаз".
-                float safeStrideVal = min(targetStrength, 4.0);
-                
-                // 2. Degradation: Всё, что выше 4.0, превращается в шум.
-                // Это создает эффект матового стекла.
-                float degradation = max(0.0, targetStrength - 4.0);
-                
-                float2 stride = safeStrideVal / ScreenRes;
-
-                [unroll]
-                for(int x=-1; x<=1; x++) {
-                    [unroll] 
-                    for(int y=-1; y<=1; y++) {
-                        // Базовое смещение (Box Blur)
-                        float2 offset = float2(x, y) * stride;
-                        
-                        // Добавляем шум (Frosted Glass), если сила > 4.0
-                        // seed зависит от координат выборки (x,y), чтобы шум был равномерным
-                        float2 jitter = float2(0,0);
-                        if (degradation > 0.0) {
-                             // 0.004 - эмпирический коэффициент "зернистости"
-                             jitter = GetRandomNoise(uv, (float)(x * 10 + y)) * degradation * 0.004;
-                        }
-
-                        blurredColor += TexBackbuffer.Sample(LinearSampler, uv + offset + jitter).rgb;
-                    }
-                }
-                blurredColor /= 9.0;
-                
-                objectLayer = float4(blurredColor, layerOpacity);
+                float correctedOpacity = 1.0 - pow(max(0.0, 1.0 - layerOpacity), 4.0);
+                float3 boost = 1.0 + (1.0 - correctedOpacity) * 0.2; 
+                float4 sampleColor = TexBackbuffer.Sample(LinearSampler, uv);
+                blurredColor = sampleColor.rgb * boost;
+                objectLayer = float4(blurredColor, correctedOpacity);
             }
         }
-        
-        // --- OTHER MODES ---
         else if (input.drawMode == MODE_COLOR_REPLACE) {
             float maxC = max(rawTexture.r, max(rawTexture.g, rawTexture.b));
             float minC = min(rawTexture.r, min(rawTexture.g, rawTexture.b));
@@ -392,13 +367,11 @@ float4 main(VertexOutput input) : SV_Target0 {
         }
         else if (input.drawMode == MODE_TEX_OVERLAY) { 
             objectLayer = rawTexture;
-            // objectLayer.a *= input.color.a;
         }
         else { // Text/Number
             objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
         }
 
-        // FX: Grayscale
         if (input.fxType == FX_GRAYSCALE && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
             float g = dot(objectLayer.rgb, float3(0.3, 0.59, 0.11));
             objectLayer.rgb = float3(g,g,g);
@@ -429,7 +402,6 @@ float4 main(VertexOutput input) : SV_Target0 {
     // 6. HIGHLIGHT EFFECTS
     if (objectLayer.a > 0.01) 
     {
-        // SHEEN (Auto)
         if (input.fxType == FX_HOVER_SHEEN) {
             float speed = 2.5;
             float val = (input.contentUV.x + input.contentUV.y * 0.5) * 2.0; 
@@ -438,7 +410,6 @@ float4 main(VertexOutput input) : SV_Target0 {
             sheen = pow(sheen, 3.0); 
             objectLayer.rgb += float3(1.0, 1.0, 1.0) * sheen * 0.8 * objectLayer.a;
         }
-        // SHINE (Mouse)
         if (input.fxType == FX_HOVER_SHINE) {
             float2 object_pos = input.objectRect.xy;
             float2 object_size = input.objectRect.zw;

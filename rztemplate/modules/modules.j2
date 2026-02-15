@@ -574,20 +574,20 @@ global $FaceDecal_Skin_PastIndex
 global $FaceDecal_Scars_PastIndex
 global $FaceDecal_Tattoo_FacePastIndex
 
-global persist $HSV_H_EYEBROWS = 0
-global persist $HSV_S_EYEBROWS = 0
-global persist $HSV_V_EYEBROWS = 0
+global persist $EYEBROWS_HSV_H = 0
+global persist $EYEBROWS_HSV_S = 0
+global persist $EYEBROWS_HSV_V = 0
 
-global persist $HSV_H_EYELASHES = 0
-global persist $HSV_S_EYELASHES = 0
-global persist $HSV_V_EYELASHES = 0
+global persist $EYELASHES_HSV_H = 0
+global persist $EYELASHES_HSV_S = 0
+global persist $EYELASHES_HSV_V = 0
 
-global $HSV_H_EYEBROWS_Past
-global $HSV_S_EYEBROWS_Past
-global $HSV_V_EYEBROWS_Past
-global $HSV_H_EYELASHES_Past
-global $HSV_S_EYELASHES_Past
-global $HSV_V_EYELASHES_Past
+global $EYEBROWS_HSV_H_Past
+global $EYEBROWS_HSV_S_Past
+global $EYEBROWS_HSV_V_Past
+global $EYELASHES_HSV_H_Past
+global $EYELASHES_HSV_S_Past
+global $EYELASHES_HSV_V_Past
 
 global persist $FaceDecal_Makeup_Mouth_0Index = -1
 global persist $FaceDecal_Makeup_Cheeks_0Index = -1
@@ -664,12 +664,12 @@ $FaceDecal_Skin_PastIndex = $FaceDecal_Skin_Index
 $FaceDecal_Scars_PastIndex = $FaceDecal_Scars_Index
 $FaceDecal_Tattoo_FacePastIndex = $FaceDecal_Tattoo_FaceIndex
 
-$HSV_H_EYEBROWS_Past = $HSV_H_EYEBROWS
-$HSV_S_EYEBROWS_Past = $HSV_S_EYEBROWS
-$HSV_V_EYEBROWS_Past = $HSV_V_EYEBROWS
-$HSV_H_EYELASHES_Past = $HSV_H_EYELASHES
-$HSV_S_EYELASHES_Past = $HSV_S_EYELASHES
-$HSV_V_EYELASHES_Past = $HSV_V_EYELASHES
+$EYEBROWS_HSV_H_Past = $EYEBROWS_HSV_H
+$EYEBROWS_HSV_S_Past = $EYEBROWS_HSV_S
+$EYEBROWS_HSV_V_Past = $EYEBROWS_HSV_V
+$EYELASHES_HSV_H_Past = $EYELASHES_HSV_H
+$EYELASHES_HSV_S_Past = $EYELASHES_HSV_S
+$EYELASHES_HSV_V_Past = $EYELASHES_HSV_V
 
 $FaceDecal_Makeup_Mouth_0PastIndex = $FaceDecal_Makeup_Mouth_0Index
 $FaceDecal_Makeup_Cheeks_0PastIndex = $FaceDecal_Makeup_Cheeks_0Index
@@ -750,9 +750,9 @@ y44 = $TWFEyeLashesConfigPosY
 z44 = $TWFEyeLashesConfigSizeW
 w44 = $TWFEyeLashesConfigSizeH
 ; HSV Params
-x43 = $HSV_H_EYELASHES
-y43 = $HSV_S_EYELASHES
-z43 = $HSV_V_EYELASHES
+x43 = $EYELASHES_HSV_H
+y43 = $EYELASHES_HSV_S
+z43 = $EYELASHES_HSV_V
 w43 = 1
 dispatch = ($TWFEyeLashesConfigSizeW + 31) // 32, ($TWFEyeLashesConfigSizeH + 31) //32, 1
 
@@ -776,9 +776,9 @@ y44 = $TWFEyeBrowsConfigPosY
 z44 = $TWFEyeBrowsConfigSizeW
 w44 = $TWFEyeBrowsConfigSizeH
 ; HSV Params
-x43 = $HSV_H_EYEBROWS
-y43 = $HSV_S_EYEBROWS
-z43 = $HSV_V_EYEBROWS
+x43 = $EYEBROWS_HSV_H
+y43 = $EYEBROWS_HSV_S
+z43 = $EYEBROWS_HSV_V
 w43 = 1
 dispatch = ($TWFEyeBrowsConfigSizeW + 31) // 32, ($TWFEyeBrowsConfigSizeH + 31) //32, 1
 
@@ -1081,10 +1081,10 @@ if $FaceDecal_Tattoo_FacePastIndex != $FaceDecal_Tattoo_FaceIndex
     $needsUpdate = 1 
 endif
 
-if $HSV_H_EYEBROWS_Past != $HSV_H_EYEBROWS || $HSV_S_EYEBROWS_Past != $HSV_S_EYEBROWS || $HSV_V_EYEBROWS_Past != $HSV_V_EYEBROWS
+if $EYEBROWS_HSV_H_Past != $EYEBROWS_HSV_H || $EYEBROWS_HSV_S_Past != $EYEBROWS_HSV_S || $EYEBROWS_HSV_V_Past != $EYEBROWS_HSV_V
     $needsUpdate = 1
 endif
-if $HSV_H_EYELASHES_Past != $HSV_H_EYELASHES || $HSV_S_EYELASHES_Past != $HSV_S_EYELASHES || $HSV_V_EYELASHES_Past != $HSV_V_EYELASHES
+if $EYELASHES_HSV_H_Past != $EYELASHES_HSV_H || $EYELASHES_HSV_S_Past != $EYELASHES_HSV_S || $EYELASHES_HSV_V_Past != $EYELASHES_HSV_V
     $needsUpdate = 1
 endif
 

@@ -331,13 +331,14 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
-    # Обновили сигнатуру: добавлен аргумент text_id и order
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE'):
+    # Обновили сигнатуру: добавлен аргумент text_id, text_align и order
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE'):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
         self.text_id = text_id if text_id is not None else "TEST" # Сохраняем text_id
+        self.text_align = text_align
         self.order = order  # Сохраняем порядок в массиве для Z-index
         self.alignment = alignment
         self.custom_color = color
@@ -421,7 +422,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
             # 5. Alignment Shift calculation
             align_map = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}
-            align = align_map.get(self.alignment.split('_')[-1], 0)
+            align = align_map.get(self.text_align, 0)
             
             shift_128 = 0.0
             if align == 1: # Center
@@ -904,6 +905,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 data.get('text_content', ''),
                 data.get('alignment', 'BOTTOM_LEFT'),
                 text_id=data.get('text_id', ''),
+                text_align=data.get('text_align', 'LEFT'),
                 color=data.get('color', None),
                 grid_props=grid_props,
                 pos_is_formula=data.get('pos_is_formula', False),

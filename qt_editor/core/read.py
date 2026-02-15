@@ -259,6 +259,7 @@ def get_viewport_data():
             "is_locked_pos": getattr(elem, "qt_lock_pos", False),
             "is_locked_size": getattr(elem, "qt_lock_size", False),
             "alignment": getattr(elem, "alignment", "BOTTOM_LEFT"),
+            "text_align": getattr(elem, "text_align", "LEFT"),
 
             # Formula Logic (Color / Logic)
             "color_is_formula": getattr(elem, "color_is_formula", False),

@@ -290,6 +290,12 @@ Local $current_sizeY
         run = CustomShaderRCI2D
         {% endif %}
         run = CommandListGetImageCords{{ element.image_id }}
+        {% if element.image_blending_mode == "OVERLAY" %}
+        $drawtype = 2
+        {% elif element.image_blending_mode == "COLOR"%}
+        $drawtype = 21
+        {% else %}
+        {% endif %}
     {% endif %}
 
     {# --- Часть 2: Conditional List (ID: 1) --- #}
@@ -441,13 +447,7 @@ Local $current_sizeY
         {# --- Логика клика --- #}
         if $id == $clickTriggerID
         
-        {# === НОВАЯ ЛОГИКА: ФОРМУЛА ИЛИ СТАНДАРТ === #}
-        {% if element.value_link_is_formula %}
-            {# Если включен режим формулы — вставляем сырой код #}
-            {{ element.value_link_formula}}
-        {% else %}
-            {# Иначе — выполняем стандартную логику переключения переменных #}
-            
+            {# 1. СТАНДАРТНАЯ ЛОГИКА (Выполняется всегда первой) #}
             {% if first_link.value_name and target_var_is_toggle == 1 %}
                 {% for toggle in scene.rzm.toggle_definitions %}
                     {% if toggle.toggle_name == target_var %}
@@ -462,36 +462,38 @@ Local $current_sizeY
                 {% set max_val = (first_link.value_max | default(1.0) | float) | int if (first_link.value_max | default(1.0) | float) > 1 else 2 %}
                 ${{ target_var }} = (${{ target_var }} + 1) % {{ max_val }}
             {% endif %}
-            
-        {% endif %}
-        {# ========================================== #}
 
-    endif
+            {# 2. ЛОГИКА ФОРМУЛЫ (Добавляется ПОСЛЕ стандартной логики) #}
+            {% if element.value_link_is_formula %}
+                {{ element.value_link_formula }}
+            {% endif %}
+
+        endif
     
         {# Логика вызова попапа #}
         {% if utils.has_attribute(element, 'hadPopup') and not element.disable_button_popup %}
-    if w33 > 0.4 || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
-        run = CommandListElement{{ element.element_name }}Popup
-    endif
+            if w33 > 0.4 || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+                run = CommandListElement{{ element.element_name }}Popup
+            endif
         {# Логика для геймпада, если попап отключен #}
         {% else %}
-    if $isGamepadEditing == 1 && $GamepadEditedID == $id
-        if $Gamepad_Interaction_Type == 1
-            ${{ target_var }} = 1 - ${{ target_var }}
-        endif
-    endif
+            if $isGamepadEditing == 1 && $GamepadEditedID == $id
+                if $Gamepad_Interaction_Type == 1
+                    ${{ target_var }} = 1 - ${{ target_var }}
+                endif
+            endif
         {% endif %}
 
     {% else %}
         {# --- Логика для простой кнопки БЕЗ value_link --- #}
-    if $id == $clickTriggerID
-        {# === ЗДЕСЬ ТОЖЕ ДОБАВЛЯЕМ ПОДДЕРЖКУ ФОРМУЛЫ === #}
-        {% if element.value_link_is_formula %}
-            {{ element.value_link_formula }}
-        {% else %}
+        if $id == $clickTriggerID
             ; Click registered for simple action button: {{ element.element_name }}
-        {% endif %}
-    endif
+            
+            {# Здесь просто выполняем формулу, так как переменных нет #}
+            {% if element.value_link_is_formula %}
+                {{ element.value_link_formula }}
+            {% endif %}
+        endif
     {% endif %}
 
     {# --- MASTER/SLAVE синхронизация value_link --- #}
@@ -603,14 +605,40 @@ endif
     endif
 {%endmacro%}
 {% macro HSVColorPicker(element, parent_element, mod_file, scene) %}
-    {% set prefix = element.element_name %}
-    {# Ссылки на переменные #}
-    {% set var_H = "$" + prefix + "_HSV_H" %}
-    {% set var_S = "$" + prefix + "_HSV_S" %}
-    {% set var_V = "$" + prefix + "_HSV_V" %}
+    {# --- НАСТРОЙКА ИМЕН И ПЕРЕМЕННЫХ --- #}
+    {% set element_id_name = element.element_name %}
+    
+    {# Переменные для логики Multi-Link #}
+    {% set is_multi_link = false %}
+    {% set state_var = "" %}
+    {% set link_targets = [] %}
+
+    {# Определение префикса переменных (var_prefix) #}
+    {% if element.value_link %}
+        {% if element.value_link|length == 1 %}
+            {# СЦЕНАРИЙ 2: Одинарная ссылка. Заменяем префикс переменных на имя ссылки #}
+            {% set var_prefix = utils.format_var(element.value_link[0].value_name) %}
+        {% else %}
+            {# СЦЕНАРИЙ 3: Мульти-ссылка. Префикс локальный (буфер), включаем логику свитча #}
+            {% set var_prefix = element_id_name %}
+            {% set is_multi_link = true %}
+            {# 0-й индекс - переменная состояния #}
+            {% set state_var = "$" + utils.format_var(element.value_link[0].value_name) %}
+            {# Остальные - цели #}
+            {% set link_targets = element.value_link[1:] %}
+        {% endif %}
+    {% else %}
+        {# СЦЕНАРИЙ 1: Нет ссылок. Префикс берется от имени элемента #}
+        {% set var_prefix = element_id_name %}
+    {% endif %}
+
+    {# Формируем итоговые имена переменных H/S/V #}
+    {% set var_H = "$" + var_prefix + "_HSV_H" %}
+    {% set var_S = "$" + var_prefix + "_HSV_S" %}
+    {% set var_V = "$" + var_prefix + "_HSV_V" %}
     
     ; --- ГЛАВНЫЙ ЭЛЕМЕНТ (Квадрат Saturation/Value) ---
-    [CommandListElement{{ prefix }}]
+    [CommandListElement{{ element_id_name }}]
     $id = {{ element.id }}
     local $LocalVisibility
     $LocalVisibility = 1
@@ -622,8 +650,25 @@ endif
     local $P_SY
 
     if $LocalVisibility
+        
+        ; --- [СЦЕНАРИЙ 3] LOAD LOGIC: Загружаем данные из целей в буфер ---
+        {% if is_multi_link %}
+            {% for target in link_targets %}
+                {% set t_name = utils.format_var(target.value_name) %}
+                {% if loop.first %}
+        if {{ state_var }} == {{ loop.index0 }}
+                {% else %}
+        elif {{ state_var }} == {{ loop.index0 }}
+                {% endif %}
+            {{ var_H }} = ${{ t_name }}_HSV_H
+            {{ var_S }} = ${{ t_name }}_HSV_S
+            {{ var_V }} = ${{ t_name }}_HSV_V
+            {% endfor %}
+        endif
+        {% endif %}
+        ; ------------------------------------------------------------------
+
         ; 1. Генерируем позицию и размер стандартным методом движка
-        ; Это позволит работать якорям, align и прочему из редактора
         {{generate_position_and_size(element,parent_element,mod_file,scene)}}
 
         ; 2. СРАЗУ сохраняем эти данные.
@@ -635,12 +680,12 @@ endif
         $SizeY = $SizeY * 0.9
 
         ; --- Взаимодействие (Квадрат) ---
-        ; Тут $position/$size все еще от квадрата, логика сработает верно
         run = CommandListCoreFNUpdateHoverState
         run = CommandListNavProcessElement
         run = CommandListCoreFNHandleClick
         run = CommandListCoreFNHandleHold
-        run = CommandListElement{{ prefix }}_Helper
+        ; Хелпер меняет локальные var_H/S/V (или целевые, если сценарий 2)
+        run = CommandListElement{{ element_id_name }}_Helper
 
         ; --- Отрисовка HSV квадрата ---
         $drawType = 728386
@@ -649,11 +694,10 @@ endif
         run = CustomShaderRCI2D
 
         ; --- Отрисовка курсора внутри квадрата ---
-        ; Вычисляем позицию точки
         local $cursorPosX = $P_PX + ($P_SX * {{ var_S }})
         local $cursorPosY = $P_PY + ($P_SY * (1.0 - {{ var_V }}))
         
-        ; Тень курсора (меняем глобальные pos/size, чтобы нарисовать точку)
+        ; Тень курсора
         $drawType = 728387
         $positionX = $cursorPosX - 6
         $positionY = $cursorPosY - 6
@@ -676,20 +720,38 @@ endif
         $colorA = 1.0
         run = CustomShaderRCI2D
 
-        ; 3. ВАЖНО: Восстанавливаем координаты КВАДРАТА
-        ; Если этого не сделать, Слайдер унаследует размер 10х10 и позицию точки курсора.
+        ; 3. ВАЖНО: Восстанавливаем координаты КВАДРАТА для слайдера
         $PositionX = $P_PX
         $PositionY = $P_PY
         $SizeX = $P_SX
         $SizeY = $P_SY
 
         ; --- Вызов слайдера Hue ---
-        ; Теперь он запустится, имея во входных данных координаты Квадрата
-        run = CommandListElement{{ prefix }}_HueSlider
+        ; Слайдер может изменить var_H
+        run = CommandListElement{{ element_id_name }}_HueSlider
+
+        ; --- [СЦЕНАРИЙ 3] SAVE LOGIC: Выгружаем буфер обратно в цели ---
+        ; Делаем это ПОСЛЕ helpers и HueSlider, чтобы сохранить свежие изменения
+        {% if is_multi_link %}
+            {% for target in link_targets %}
+                {% set t_name = utils.format_var(target.value_name) %}
+                {% if loop.first %}
+        if {{ state_var }} == {{ loop.index0 }}
+                {% else %}
+        elif {{ state_var }} == {{ loop.index0 }}
+                {% endif %}
+            ${{ t_name }}_HSV_H = {{ var_H }}
+            ${{ t_name }}_HSV_S = {{ var_S }}
+            ${{ t_name }}_HSV_V = {{ var_V }}
+            {% endfor %}
+        endif
+        {% endif %}
+        ; ---------------------------------------------------------------
+
     endif
 
     ; --- ХЕЛПЕР ГЛАВНОГО ЭЛЕМЕНТА ---
-    [CommandListElement{{ prefix }}_Helper]
+    [CommandListElement{{ element_id_name }}_Helper]
     if $capturedID == {{ element.id }}
         local $s_val = ($cursorX - $positionX) / $sizeX
         local $v_val = 1.0 - (($cursorY - $positionY) / $sizeY)
@@ -710,7 +772,7 @@ endif
         {{ var_S }} = $s_val
         {{ var_V }} = $v_val
     endif
-    ; (Логику геймпада я опустил для краткости, она остается прежней)
+
     if $isGamepadEditing == 1 && $GamepadEditedID == {{ element.id }}
         local $hold_speed = 0.35
         if $nav_key_request_right == 1
@@ -740,28 +802,24 @@ endif
     endif
 
     ; --- ЭЛЕМЕНТ: СЛАЙДЕР HUE ---
-    [CommandListElement{{ prefix }}_HueSlider]
+    [CommandListElement{{ element_id_name }}_HueSlider]
     $id = {{ element.id + 10000 }}
     local $LocalVisibility
     $LocalVisibility = 1
 
     if $LocalVisibility
-        ; Мы унаследовали $positionX/Y/SizeX/Y от родителя (Квадрата)
-        ; Теперь корректируем их под себя.
-        
         ; Сдвигаем Y: Позиция Y квадрата + Высота квадрата + Отступ (20)
         $positionY = $positionY
 
-        ; Высота слайдера фиксированная (20), ширина такая же как у квадрата (унаследована)
+        ; Высота слайдера фиксированная, ширина такая же как у квадрата
         $sizeY = $SizeY * 0.10
 
         ; --- Взаимодействие ---
-        ; Теперь $position/$size соответствуют полоске слайдера
         run = CommandListCoreFNUpdateHoverState
         run = CommandListNavProcessElement
         run = CommandListCoreFNHandleClick
         run = CommandListCoreFNHandleHold
-        run = CommandListElement{{ prefix }}_HueSlider_Helper
+        run = CommandListElement{{ element_id_name }}_HueSlider_Helper
 
         ; --- Отрисовка градиента ---
         $drawType = 728388
@@ -773,7 +831,6 @@ endif
         
         $drawType = 0
         $positionX = $cursorPosX - 2
-        ; Центруем курсор по вертикали относительно полоски
         $positionY = $positionY - 2
         $sizeX = 4
         $sizeY = $sizeY + 4
@@ -786,7 +843,7 @@ endif
     endif
 
     ; --- ХЕЛПЕР СЛАЙДЕРА HUE ---
-    [CommandListElement{{ prefix }}_HueSlider_Helper]
+    [CommandListElement{{ element_id_name }}_HueSlider_Helper]
     if $capturedID == {{ element.id + 10000 }}
         local $h_val = ($cursorX - $positionX) / $sizeX
         if $h_val < 0.0
