@@ -30,7 +30,8 @@ global $slot_count = 4
 ;global $page_count = 3
 global $navDirection = -1
 global $first_run = 1
-global $first_run_texworks = 1
+global $initFrame = 0
+global $ModInitialised = 0
 global $click = 0
 global $Freq
 global $vertex_loaded = 0
@@ -234,6 +235,18 @@ global $RZM_OUTPUT_VALUE_2
 global $RZM_OUTPUT_VALUE_3
 global $RZM_OUTPUT_VALUE_4
 ;BackValues
+global $rayvich_back_values_x24
+global $rayvich_back_values_y24
+global $rayvich_back_values_z24
+global $rayvich_back_values_w24
+global $rayvich_back_values_x43
+global $rayvich_back_values_y43
+global $rayvich_back_values_z43
+global $rayvich_back_values_w43
+global $rayvich_back_values_x44
+global $rayvich_back_values_y44
+global $rayvich_back_values_z44
+global $rayvich_back_values_w44
 global $rayvich_back_values_x90
 global $rayvich_back_values_y90
 global $rayvich_back_values_z90
@@ -319,6 +332,6 @@ global $rayvich_back_values_w110
 
 {% macro shape_generate(mod_file,scene) %}
     {% for shape in scene.rzm.shapes %}
-        global persist ${{ shape.shape_name | default(Error) | string}} = 0
+        global persist ${{utils.format_var(shape.shape_name | default(Error) | string)}} = 0
     {% endfor %}
 {% endmacro%}

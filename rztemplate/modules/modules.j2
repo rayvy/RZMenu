@@ -67,8 +67,17 @@ run = CustomShaderRCI2D
 		[CommandListSafeTexWorks.{{-utils.clean_resource(res_name)}}.CHECK]
 		local $isInit = 0
 		if this === null && $isInit == 0
+			{% if (utils.clean_resource(res_name)) == "AtlasDIFFUSE" %}
+			if Resource{{-utils.clean_resource(res_name)}} == null
+			run = CommandListAddonsTexWorks
+			endif
+			{% endif %}
 			this = copy Resource{{-utils.clean_resource(res_name)}}
+			if this === null
+			$isInit = 0
+			else
 			$isInit = 1
+			endif
 		endif
 	{% endfor %}
 {% endif %}
@@ -111,14 +120,12 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		{% if texture.tw_use_morph %}
 		run = CustomShaderMorph{{ texture.tw_name }}{{ config.tw_config_name }}
 		{% endif %}
-		{% if texture.tw_use_hsv %}
-		run = CustomShaderHSV{{ texture.tw_name }}{{ config.tw_config_name }}
-		{% endif %}
 		{% if texture.tw_use_decal_tattoo %}
 		run = CommandListDecalTattooUpdate
 		run = CustomShaderTattoo{{ texture.tw_name }}{{ config.tw_config_name }}
 		{% endif %}
 		{% if texture.tw_use_decal_fluid %}
+		run = CommandListDecalFluidUpdate
 		run = CustomShaderfluid{{ texture.tw_name }}{{ config.tw_config_name }}
 		{% endif %}
 	{% endfor %}
@@ -128,13 +135,24 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 {# --- 3. ШЕЙДЕРЫ ДЛЯ КОПИРОВАНИЯ И ОБРАБОТКИ --- #}
 {% for config in scene.rzm.addons.tw_texture_configs %}
 	{% for texture in scene.rzm.addons.tw_textures %}
+		{% if texture.tw_use_hsv %}
+        {% set hsv_link = texture.tw_hsv_value_link if texture.tw_hsv_value_link else "ResourceVar_" ~ texture.tw_name ~ "_HSV" %}
+        [Constants]
+        global persist ${{utils.format_var(hsv_link)}}_HSV_H = {{ "%.3f"|format(texture.tw_hsv_value_link_color[0]) }}
+        global persist ${{utils.format_var(hsv_link)}}_HSV_S = {{ "%.3f"|format(texture.tw_hsv_value_link_color[1]) }}
+        global persist ${{utils.format_var(hsv_link)}}_HSV_V = {{ "%.3f"|format(texture.tw_hsv_value_link_color[2]) }}
+        {% endif %}
 		{% if texture.tw_base_resource_name %}
 		;Custom Resource Name: {{texture.tw_base_resource_name}}
 		{% else %}
 		[Resource{{texture.tw_name }}{{config.tw_config_name}}]
 		filename = Textures/{{texture.tw_name}}{{config.tw_config_name}}.dds
 		{% endif %}
-		{# 3.1. Базовое копирование из исходной текстуры в атлас #}
+		{% if texture.tw_use_hsv and texture.tw_hsv_mode == 'MASKED' %}
+        [Resource{{ texture.tw_name }}{{ config.tw_config_name }}.MASK]
+        filename = Textures/{{ texture.tw_name }}{{ config.tw_config_name }}.MASK.dds
+        {% endif %}
+		{# 3.1. Базовое копирование и HSV коррекция (совмещено для оптимизации) #}
 		[CustomShaderUpdate{{ texture.tw_name }}{{ config.tw_config_name }}]
 		cs = /modules/texworks/cs_update_region.hlsl
 		cs-u0 = ref ResourceAtlas{{ config.tw_config_name }}
@@ -143,37 +161,37 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		{% else %}
 		cs-t0 = Resource{{ texture.tw_name }}{{ config.tw_config_name }}
 		{% endif %}
-		x44 = {{ (((texture | default({})).tw_position | default([0,0]))[0]) }}
-		y44 = {{ (((texture | default({})).tw_position | default([0,0]))[1]) }}
-		z44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[0]) }}
-		w44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}
-		dispatch = {{ ((texture.tw_size | default([1024,1024]))[0] ) }} // 32, {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}//32, 1
+		{% if texture.tw_use_hsv and texture.tw_hsv_mode == 'MASKED' %}
+        {% if texture.tw_base_resource_name %}
+        cs-t1 = Resource{{ texture.tw_base_resource_name }}.MASK
+        {% else %}
+        cs-t1 = Resource{{ texture.tw_name }}{{ config.tw_config_name }}.MASK
+        {% endif %}
+        {% endif %}
 
-		{# 3.2. Морфинг (если включен) #}
-		{% if texture.tw_use_morph %}
-		[CustomShaderMorph{{ texture.tw_name }}{{ config.tw_config_name }}]
-		cs = /modules/texworks/cs_morph.hlsl
-		cs-u0 = ref ResourceAtlas{{ config.tw_config_name }}
-		cs-t0 = Resource{{ texture.tw_morph_target_name }}{{ config.tw_config_name }}
-		cs-cb0 = {% if texture.tw_morph_value_link %}{{ texture.tw_morph_value_link }}{% else %}ResourceVar_{{ texture.tw_name }}_Morph{% endif %} 
-		x44 = {{ (((texture | default({})).tw_position | default([0,0]))[0]) }}
-		y44 = {{ (((texture | default({})).tw_position | default([0,0]))[1]) }}
-		z44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[0]) }}
-		w44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}
-		dispatch = {{ ((texture.tw_size | default([1024,1024]))[0] ) }} // 32, {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}//32, 1{% endif %}
-
-		{# 3.3. HSV Коррекция (если включена) #}
+		{# HSV Параметры (x43=H, y43=S, z43=V) #}
 		{% if texture.tw_use_hsv %}
-		[CustomShaderHSV{{ texture.tw_name }}{{ config.tw_config_name }}]
-		cs = /modules/texworks/cs_hsv_{{ "masked" if texture.tw_hsv_mode == 'MASKED' else "unmasked" }}.hlsl
-		cs-u0 = ref ResourceAtlas{{ config.tw_config_name }}
-		cs-cb0 = {% if texture.tw_hsv_value_link %}{{ texture.tw_hsv_value_link }}{% else %}ResourceVar_{{ texture.tw_name }}_HSV{% endif %} 
+        {% set hsv_link = texture.tw_hsv_value_link if texture.tw_hsv_value_link else "ResourceVar_" ~ texture.tw_name ~ "_HSV" %}
+        x43 = ${{utils.format_var(hsv_link)}}_HSV_H - {{ "%.3f"|format(texture.tw_hsv_value_link_color[0]) }}
+        y43 = ${{utils.format_var(hsv_link)}}_HSV_S - {{ "%.3f"|format(texture.tw_hsv_value_link_color[1]) }}
+        z43 = ${{utils.format_var(hsv_link)}}_HSV_V - {{ "%.3f"|format(texture.tw_hsv_value_link_color[2]) }}
+		{% if texture.tw_use_hsv and texture.tw_hsv_mode == 'MASKED' %}
+		w43 = 1.0
+		{% else %}
+		w43 = 0.0
+		{% endif %}
+        {% else %}
+        x43 = 0
+        y43 = 0
+        z43 = 0
+        {% endif %}
+
+		{# Координаты в атласе #}
 		x44 = {{ (((texture | default({})).tw_position | default([0,0]))[0]) }}
 		y44 = {{ (((texture | default({})).tw_position | default([0,0]))[1]) }}
 		z44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[0]) }}
 		w44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}
 		dispatch = {{ ((texture.tw_size | default([1024,1024]))[0] ) }} // 32, {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}//32, 1
-		{% endif %}
 
 		{# 3.4. Декаль Тату (если включена) #}
 		{% if texture.tw_use_decal_tattoo %}
@@ -190,7 +208,7 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		global $DecalTattooButt0PastIndex
 		global $DecalTattooButt1PastIndex
 		global $DecalTattooButt2PastIndex
-		[CommandListTexWorkCheckChanges]
+		[Present]
 		post $DecalTattooPubic0PastIndex = $DecalTattooPubic0Index
 		post $DecalTattooBoobs0PastIndex = $DecalTattooBoobs0Index
 		post $DecalTattooBoobs1PastIndex = $DecalTattooBoobs1Index
@@ -216,85 +234,6 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 			run = CommandListAddonsTexWorks
 		endif
 
-		;Правильно
-		;[KeyTestDecal0]
-		;key = 1
-		;type = hold
-		;run = CommandListDecalTattooPubicSet
-
-		[CommandListDecalTattooPubicSet]
-		if $DecalTattooPubic0Index <= 7
-		$DecalTattooPubic0Index = $DecalTattooPubic0Index + 1
-		elif $DecalTattooPubic0Index > 7
-		$DecalTattooPubic0Index = -1
-		endif
-		run = CommandListAddonsTexWorks
-
-		;Правильно - исправленные кнопки
-		;[KeyTestDecal2]
-		;key = 2
-		;type = hold
-		;run = CommandListDecalTattooBoobs0Set
-
-		[CommandListDecalTattooBoobs0Set]
-		if $DecalTattooBoobs0Index <= 7
-		$DecalTattooBoobs0Index = $DecalTattooBoobs0Index + 1
-		elif $DecalTattooBoobs0Index > 7
-		$DecalTattooBoobs0Index = -1
-		endif
-		run = CommandListAddonsTexWorks
-
-		;[KeyTestDecal3]
-		;key = 3
-		;type = hold
-		;run = CommandListDecalTattooBoobs1Set
-
-		[CommandListDecalTattooBoobs1Set]
-		if $DecalTattooBoobs1Index <= 7
-		$DecalTattooBoobs1Index = $DecalTattooBoobs1Index + 1
-		elif $DecalTattooBoobs1Index > 7
-		$DecalTattooBoobs1Index = -1
-		endif
-		run = CommandListAddonsTexWorks
-
-		;[KeyTestDecal4]
-		;key = 4
-		;type = hold
-		;run = CommandListDecalTattooButt0Set
-
-		[CommandListDecalTattooButt0Set]
-		if $DecalTattooButt0Index <= 7
-		$DecalTattooButt0Index = $DecalTattooButt0Index + 1
-		elif $DecalTattooButt0Index > 7
-		$DecalTattooButt0Index = -1
-		endif
-		run = CommandListAddonsTexWorks
-
-		;[KeyTestDecal5]
-		;key = 5
-		;type = hold
-		;run = CommandListDecalTattooButt1Set
-
-		[CommandListDecalTattooButt1Set]
-		if $DecalTattooButt1Index <= 7
-		$DecalTattooButt1Index = $DecalTattooButt1Index + 1
-		elif $DecalTattooButt1Index > 7
-		$DecalTattooButt1Index = -1
-		endif
-		run = CommandListAddonsTexWorks
-
-		;[KeyTestDecal6]
-		;key = 6
-		;type = hold
-		;run = CommandListDecalTattooButt2Set
-
-		[CommandListDecalTattooButt2Set]
-		if $DecalTattooButt2Index <= 4
-		$DecalTattooButt2Index = $DecalTattooButt2Index + 1
-		elif $DecalTattooButt2Index > 4
-		$DecalTattooButt2Index = -1
-		endif
-		run = CommandListAddonsTexWorks
 		[CommandListDecalTattooUpdate]
 		run = CommandListDecalTattooPubicCompute
 		run = CommandListDecalTattooBoobsLeftCompute
@@ -366,9 +305,110 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		
 		{# 3.5. Декаль Кам (если включена) #}
 		{% if texture.tw_use_decal_fluid %}
-		[CustomShaderfluid{{ texture.tw_name }}{{ config.tw_config_name }}]
-		cs = /modules/texworks/cs_fluid_instancer.hlsl
-		; ... параметры для шейдера кам ...
+		[Constants]
+		global persist $DecalFluidPubic0Index
+		global persist $DecalFluidBoobs0Index
+		global persist $DecalFluidBoobs1Index
+		global persist $DecalFluidButt0Index
+		global persist $DecalFluidButt1Index
+		global persist $DecalFluidButt2Index
+		global $DecalFluidPubic0PastIndex
+		global $DecalFluidBoobs0PastIndex
+		global $DecalFluidBoobs1PastIndex
+		global $DecalFluidButt0PastIndex
+		global $DecalFluidButt1PastIndex
+		global $DecalFluidButt2PastIndex
+		[Present]
+		post $DecalFluidPubic0PastIndex = $DecalFluidPubic0Index
+		post $DecalFluidBoobs0PastIndex = $DecalFluidBoobs0Index
+		post $DecalFluidBoobs1PastIndex = $DecalFluidBoobs1Index
+		post $DecalFluidButt0PastIndex = $DecalFluidButt0Index
+		post $DecalFluidButt1PastIndex = $DecalFluidButt1Index
+		post $DecalFluidButt2PastIndex = $DecalFluidButt2Index
+		if $DecalFluidPubic0PastIndex != $DecalFluidPubic0Index
+			run = CommandListAddonsTexWorks
+		endif
+		if $DecalFluidBoobs0PastIndex != $DecalFluidBoobs0Index
+			run = CommandListAddonsTexWorks
+		endif
+		if $DecalFluidBoobs1PastIndex != $DecalFluidBoobs1Index
+			run = CommandListAddonsTexWorks
+		endif
+		if $DecalFluidButt0PastIndex != $DecalFluidButt0Index
+			run = CommandListAddonsTexWorks
+		endif
+		if $DecalFluidButt1PastIndex != $DecalFluidButt1Index
+			run = CommandListAddonsTexWorks
+		endif
+		if $DecalFluidButt2PastIndex != $DecalFluidButt2Index
+			run = CommandListAddonsTexWorks
+		endif
+
+		[CommandListDecalFluidUpdate]
+		run = CommandListDecalFluidPubicCompute
+		run = CommandListDecalFluidBoobsLeftCompute
+		run = CommandListDecalFluidBoobsRightCompute
+		run = CommandListDecalFluidButtLeftCompute
+		run = CommandListDecalFluidButtRightCompute
+		run = CommandListDecalFluidButtCenterCompute
+		[CommandListDecalFluidPubicCompute]
+		x70 = 0
+		y70 = $DecalFluidPubic0Index
+		run = CustomShaderDecalFluidController
+		x70 = 1
+		y70 = $DecalFluidPubic0Index
+		run = CustomShaderDecalFluidController
+		[CommandListDecalFluidBoobsLeftCompute]
+		x70 = 2
+		y70 = $DecalFluidBoobs0Index
+		run = CustomShaderDecalFluidController
+		[CommandListDecalFluidBoobsRightCompute]
+		x70 = 3
+		y70 = $DecalFluidBoobs1Index
+		run = CustomShaderDecalFluidController
+		[CommandListDecalFluidButtLeftCompute]
+		x70 = 4
+		y70 = $DecalFluidButt0Index
+		run = CustomShaderDecalFluidController
+		[CommandListDecalFluidButtRightCompute]
+		x70 = 5
+		y70 = $DecalFluidButt1Index
+		run = CustomShaderDecalFluidController
+		[CommandListDecalFluidButtCenterCompute]
+		x70 = 6
+		y70 = $DecalFluidButt2Index
+		run = CustomShaderDecalFluidController
+		[CustomShaderDecalFluidController]
+		cs-u0 = ResourceDecalFluidDataBuffer
+		cs = /modules/texworks/fluid/decal_compute.hlsl
+		dispatch = 1, 1, 1
+		[ResourceDecalFluidDataBuffer]
+		type = RWBuffer
+		format = R32G32_UINT
+		array = 16
+		[ResourceFluidPubic]
+		filename = /modules/texworks/fluid/pubic.png
+		[ResourceFluidBoobs]
+		filename = /modules/texworks/fluid/boobs.png
+		[ResourceFluidButt]
+		filename = /modules/texworks/fluid/butt.png
+		[ResourceFluidButtUP]
+		filename = /modules/texworks/fluid/butt_up.png
+		[CustomShaderFluid{{ texture.tw_name }}{{ config.tw_config_name }}]
+		run = CustomShaderDecalFluidController
+		cs = /modules/texworks/fluid/decal_draw.hlsl
+		cs-u0 = ResourceAtlasDiffuse
+		cs-t1 = ResourceDecalFluidDataBuffer
+		cs-t2 = ResourceDecalPubicMask
+		cs-t60 = ResourceFluidPubic 
+		cs-t61 = ResourceFluidBoobs
+		cs-t62 = ResourceFluidButt
+		cs-t63 = ResourceFluidButtUP
+		x44 = {{ (((texture | default({})).tw_position | default([0,0]))[0]) }}
+		y44 = {{ (((texture | default({})).tw_position | default([0,0]))[1]) }}
+		z44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[0]) }}
+		w44 = {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}
+		dispatch = {{ ((texture.tw_size | default([1024,1024]))[0] ) }} // 32, {{ (((texture | default({})).tw_size | default([1024,1024]))[1]) }}//32, 1
 		{% endif %}
 
 	{% endfor %}
@@ -671,14 +711,23 @@ filename = Textures/FaceM.dds
 cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref ResourceAtlas.HAIR.DIFFUSE
 cs-t0 = ResourceHairD
+x43 = 0
+y43 = 0
+z43 = 0
+x44 = 0
+y44 = 0
+z44 = 2048
+w44 = 1024
+dispatch = 2048 // 32, 1024//32, 1
+
 x43 = $HAIR_HSV_H - 0.274
 y43 = $HAIR_HSV_S - 0.360
 z43 = $HAIR_HSV_V - 0.557
 x44 = 0
 y44 = 0
-z44 = 2048
-w44 = 2048
-dispatch = 2048 // 32, 2048//32, 1
+z44 = 1024
+w44 = 1024
+dispatch = 1024 // 32, 1024//32, 1
 x43 = 0
 y43 = 0
 z43 = 0
@@ -693,6 +742,9 @@ msaa = 1
 mips = 1
 
 [CustomShaderUpdateComponentEYE]
+x43 = 0
+y43 = 0
+z43 = 0
 cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref ResourceAtlas.EYE.DIFFUSE
 cs-t0 = ResourceEYED
@@ -786,6 +838,9 @@ run = CustomShaderDeum.Cheeks
 cs = /modules/facetexworks/cs_update_region.hlsl
 cs-u0 = ref ResourceFaceDiffuse
 cs-t0 = ResourceFaceBaseDiffuse
+x43 = 0
+y43 = 0
+z43 = 0
 x44 = 0
 y44 = 0
 z44 = $TexWorksFaceSize

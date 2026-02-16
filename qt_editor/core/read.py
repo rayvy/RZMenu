@@ -113,6 +113,12 @@ def get_selection_details(selected_ids, active_id):
             "visibility_mode": get_uniform("visibility_mode", default="ALWAYS"),
             "visibility_condition": get_uniform("visibility_condition", default=""),
             
+            # Events
+            "hover_event_enabled": get_uniform("hover_event_enabled", default=False),
+            "hover_event_formula": get_uniform("hover_event_formula", default=""),
+            "click_event_enabled": get_uniform("click_event_enabled", default=False),
+            "click_event_formula": get_uniform("click_event_formula", default=""),
+            
             # Transform - Logic (Formula vs Static)
             "position_is_formula": get_uniform("position_is_formula", default=False),
             "size_is_formula": get_uniform("size_is_formula", default=False),

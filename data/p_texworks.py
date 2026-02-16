@@ -1,6 +1,6 @@
 # RZMenu/data/p_texworks.py
 import bpy
-from bpy.props import StringProperty, IntProperty, BoolProperty, EnumProperty, PointerProperty, IntVectorProperty, CollectionProperty
+from bpy.props import StringProperty, IntProperty, BoolProperty, EnumProperty, PointerProperty, IntVectorProperty, FloatVectorProperty, CollectionProperty
 
 class TexResource(bpy.types.PropertyGroup):
     tex_name: StringProperty(name="Resource Name", description="Уникальное имя ресурса в проекте")
@@ -40,6 +40,7 @@ class TexWorksTexture(bpy.types.PropertyGroup):
     tw_use_hsv: BoolProperty(name="Use HSV", default=False)
     tw_hsv_mode: EnumProperty(name="HSV Mode", items=[('UNMASKED', "Unmasked", ""), ('MASKED', "Masked", "")], default='UNMASKED')
     tw_hsv_value_link: StringProperty(name="HSV Value Link", description="Привязка к ($) или (@). Пусто = авто-переменная")
+    tw_hsv_value_link_color: FloatVectorProperty(name="Default ValueLink HSV offset values", size=3, default=(0.0, 0.0, 0.0))
     tw_use_morph: BoolProperty(name="Use Morph", default=False)
     tw_morph_target_name: StringProperty(name="Morph Target Texture", description="Имя текстуры-цели для морфинга")
     tw_morph_value_link: StringProperty(name="Morph Value Link", description="Привязка к ($) или (@). Пусто = авто-переменная")

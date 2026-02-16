@@ -637,7 +637,7 @@ class RZMInspectorPanel(RZEditorPanel):
         form_vis = QtWidgets.QFormLayout(self.grp_vis)
         
         self.cb_vis_mode = RZComboBox()
-        self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL"])
+        self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL", "HIDED"])
         self.cb_vis_mode.currentTextChanged.connect(lambda t: self._emit_change('visibility_mode', t))
         form_vis.addRow("Mode:", self.cb_vis_mode)
 
@@ -932,26 +932,58 @@ class RZMInspectorPanel(RZEditorPanel):
         h_vl_formula.addWidget(self.chk_vl_formula)
         h_vl_formula.addStretch()
         layout_logic.addLayout(h_vl_formula)
-
-        self.stack_vl = QtWidgets.QStackedLayout()
         
-        # Mode 0: List of Links
+        # Value Links - Now showing both simultaneously
         self.list_links = RZValueLinkList()
-        self.stack_vl.addWidget(self.list_links)
-
-        # Mode 1: Raw Formula
+        layout_logic.addWidget(self.list_links)
+        
         self.edit_vl_formula = RZCodeTextEdit()
         self.edit_vl_formula.setPlaceholderText("Link Formula (e.g. run = CommandList...)")
-        self.edit_vl_formula.editingFinished.connect(lambda: self._emit_change('value_link_formula', self.edit_vl_formula.text()))
-        self.stack_vl.addWidget(self.edit_vl_formula)
-        
-        layout_logic.addLayout(self.stack_vl)
+        self.edit_vl_formula.setMinimumHeight(60)
+        self.edit_vl_formula.editingFinished.connect(lambda: self._emit_change('value_link_formula', self.edit_vl_formula.toPlainText()))
+        layout_logic.addWidget(self.edit_vl_formula)
         
         layout_logic.addWidget(RZLabel("FX Rules:"))
         self.list_fx = RZFXList()
         layout_logic.addWidget(self.list_fx)
         
         self.layout_props.addWidget(self.grp_logic)
+        
+        # === GROUP: EVENTS ===
+        self.grp_events = RZGroupBox("Custom Events")
+        layout_events = QtWidgets.QVBoxLayout(self.grp_events)
+        
+        # Hover Event
+        h_hov_head = QtWidgets.QHBoxLayout()
+        h_hov_head.addWidget(RZLabel("Hover Event"))
+        h_hov_head.addStretch()
+        self.chk_hover_event = RZCheckBox("Enable")
+        self.chk_hover_event.toggled.connect(lambda v: self._emit_change('hover_event_enabled', v))
+        h_hov_head.addWidget(self.chk_hover_event)
+        layout_events.addLayout(h_hov_head)
+        
+        self.edit_hover_fx = RZCodeTextEdit()
+        self.edit_hover_fx.setPlaceholderText("Custom code on hover...")
+        self.edit_hover_fx.setMinimumHeight(60)
+        self.edit_hover_fx.editingFinished.connect(lambda: self._emit_change('hover_event_formula', self.edit_hover_fx.toPlainText()))
+        layout_events.addWidget(self.edit_hover_fx)
+        
+        # Click Event
+        h_clk_head = QtWidgets.QHBoxLayout()
+        h_clk_head.addWidget(RZLabel("Click Event"))
+        h_clk_head.addStretch()
+        self.chk_click_event = RZCheckBox("Enable")
+        self.chk_click_event.toggled.connect(lambda v: self._emit_change('click_event_enabled', v))
+        h_clk_head.addWidget(self.chk_click_event)
+        layout_events.addLayout(h_clk_head)
+        
+        self.edit_click_fx = RZCodeTextEdit()
+        self.edit_click_fx.setPlaceholderText("Custom code on click...")
+        self.edit_click_fx.setMinimumHeight(60)
+        self.edit_click_fx.editingFinished.connect(lambda: self._emit_change('click_event_formula', self.edit_click_fx.toPlainText()))
+        layout_events.addWidget(self.edit_click_fx)
+        
+        self.layout_props.addWidget(self.grp_events)
         
         # === GROUP: BUTTON SPECIFICS ===
         self.grp_btn = RZGroupBox("Button Options")
@@ -1147,13 +1179,16 @@ class RZMInspectorPanel(RZEditorPanel):
             # --- Logic ---
             vl_is_form = props.get('value_link_is_formula', False)
             self.chk_vl_formula.setChecked(vl_is_form)
-            self.stack_vl.setCurrentIndex(1 if vl_is_form else 0)
+            # Both now always visible
+            self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
+            self.edit_vl_formula.setText(props.get('value_link_formula', ''))
             
-            if vl_is_form:
-                self.edit_vl_formula.setText(props.get('value_link_formula', ''))
-            else:
-                self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
-                
+            # --- Events ---
+            self.chk_hover_event.setChecked(props.get('hover_event_enabled', False))
+            self.edit_hover_fx.setText(props.get('hover_event_formula', ''))
+            self.chk_click_event.setChecked(props.get('click_event_enabled', False))
+            self.edit_click_fx.setText(props.get('click_event_formula', ''))
+            
             self.list_fx.update_data(props.get('fx', []))
 
             self.tile_uv_x.setValue(props.get('tile_uv_x', 0))

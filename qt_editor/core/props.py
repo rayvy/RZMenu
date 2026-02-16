@@ -66,6 +66,12 @@ PROP_MAP = {
     "disable_button_nums": ("disable_button_nums", None, 'D'),
     "disable_button_popup": ("disable_button_popup", None, 'D'),
     "text_mode": ("text_mode", None, 'D'),
+    
+    # Events
+    "hover_event_enabled": ("hover_event_enabled", None, 'D'),
+    "hover_event_formula": ("hover_event_formula", None, 'D'),
+    "click_event_enabled": ("click_event_enabled", None, 'D'),
+    "click_event_formula": ("click_event_formula", None, 'D'),
 
     # Color Formula
     "color_is_formula": ("color_is_formula", None, 'D'),

@@ -14,6 +14,8 @@ $scissorW = 0
 if {{element.visibility_condition}}
     $LocalVisibility = 1
 endif
+{% elif element.visibility_mode == 'HIDED' %}
+    $LocalVisibility = 0
 {% else %}
     $LocalVisibility = 1
 {% endif %}
@@ -194,7 +196,7 @@ Local $current_sizeY
 {%macro generate_interactions(element, parent_element)%}
     {% set is_child_of_grid = parent_element and utils.get_cls(parent_element)|trim == 'GRID_CONTAINER' %}
     {% if not is_child_of_grid %}
-        {% if utils.has_any_attribute(element) %}
+        {% if utils.has_any_attribute(element) or element.hover_event_enabled or element.click_event_enabled %}
         run = CommandListCoreFNUpdateHoverState
         {% endif %}
         {% if utils.has_attribute(element, 'isClickable') or utils.has_attribute(element, 'isHoldable')%}
@@ -215,7 +217,23 @@ Local $current_sizeY
             $LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
             endif
         {% endif %}
+
+        {# --- Новые блоки кастомных событий --- #}
+        {% if element.hover_event_enabled and element.hover_event_formula %}
+        {# Выполняется, когда мышь над элементом #}
+        if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+        {{ element.hover_event_formula }}
+        endif
+        {% endif %}
+
+        {% if element.click_event_enabled and element.click_event_formula %}
+        {# Выполняется при клике #}
+        if $id == $clickTriggerID
+        {{ element.click_event_formula }}
+        endif
+        {% endif %}
     {% endif %}
+
     {% if utils.has_attribute(element, 'isMovable')%}
         run = CommandListCoreAlignment.ANTICHECK
         ${{element.element_name}}PositionX = $positionX 
@@ -226,7 +244,6 @@ Local $current_sizeY
         ${{element.element_name}}SizeX = $SizeX
         ${{element.element_name}}SizeY = $SizeY
     {% endif %}
-
 {%endmacro%}
 
 {%macro generate_color(element)%}
@@ -295,6 +312,7 @@ Local $current_sizeY
         {% elif element.image_blending_mode == "COLOR"%}
         $drawtype = 21
         {% else %}
+        ;NO BLEND
         {% endif %}
     {% endif %}
 
@@ -547,22 +565,89 @@ else
 endif
 {% endmacro %}
 
-{% macro handle_slider_logic(element, parent_element, mod_file,scene) %}
-;slider
+{% macro debug_element_data(element) %}
+; ================= DEBUG START: {{ element.element_name }} =================
+; 1. Проверка наличия value_link:
+{% if element.value_link is defined %}
+    ;    -> value_link ОПРЕДЕЛЕН (is defined)
+{% else %}
+    ;    -> value_link НЕ ОПРЕДЕЛЕН (undefined) - Ошибка парсера!
+{% endif %}
+
+; 2. Проверка содержимого (если есть):
 {% if element.value_link %}
-    {% set first_link = element.value_link[0] %}
-    run = CommandList{{element.element_name}}Helper
+    ;    -> value_link содержит {{ element.value_link|length }} элементов.
+    {% for link in element.value_link %}
+        ;    -> Link #{{ loop.index0 }}:
+        ;       Raw Data: {{ link }}
+        ;       Name: '{{ link.value_name }}'
+        ;       Min: '{{ link.value_min }}'
+        ;       Max: '{{ link.value_max }}'
+    {% endfor %}
+{% endif %}
+
+; 3. Проверка ключей объекта элемента (что вообще есть):
+;    Keys: {{ element.keys() | list if element.keys is defined else 'Cannot list keys' }}
+; ================= DEBUG END =================
+{% endmacro %}
+
+{% macro handle_slider_logic(element, parent_element, mod_file, scene) %}
+    {# --- ЗАПУСК ДЕБАГА --- #}
+    {{ debug_element_data(element) }}
+
+    ;slider logic start for {{ element.element_name }}
     
-    {# Вычисляем нормализованное значение [0-1] для отображения на слайдере #}
-    local $range_span_display = {{ (first_link.value_max | default(1.0) | float) }} - {{ (first_link.value_min| default(0.0) | float) }}
-    if $range_span_display > 0.0001
-        x24 = (${{utils.format_var(first_link.value_name)}} - {{ (first_link.value_min| default(0.0) | float) }}) / $range_span_display
-    else
-        x24 = 0.0
+    {# --- Визуальная подсветка (работает всегда) --- #}
+    if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+        y110 = 1
     endif
 
-    run = CommandListCoreFNHandleHold
-{% endif %}
+    {# --- Проверка данных --- #}
+    {% if element.value_link and element.value_link|length > 0 %}
+        
+        {# Используем SET, как в кнопках, чтобы зафиксировать данные до вывода #}
+        {% set first_link = element.value_link[0] %}
+        
+        {# Проверяем, есть ли имя переменной #}
+        {% if first_link.value_name %}
+            {% set target_var = utils.format_var(first_link.value_name) %}
+            {% set min_val = (first_link.value_min | default(0.0) | float) %}
+            {% set max_val = (first_link.value_max | default(1.0) | float) %}
+            
+            ; Var found: {{ target_var }} (Min: {{ min_val }}, Max: {{ max_val }})
+            
+            run = CommandList{{element.element_name}}Helper
+            
+            {# --- Расчет для отображения (Var -> UI) --- #}
+            local $range_span = {{ max_val }} - {{ min_val }}
+            
+            if $range_span > 0.0001
+                x24 = (${{ target_var }} - {{ min_val }}) / $range_span
+            else
+                x24 = 0.0
+            endif
+
+            run = CommandListCoreFNHandleHold
+            
+            {# --- Запись значения (UI -> Var) --- #}
+            {# Добавляем проверку, чтобы не писать в пустоту #}
+            if $range_span > 0.0001
+                ${{ target_var }} = {{ min_val }} + (x24 * $range_span)
+            endif
+            
+            {# --- Формулы --- #}
+            {% if element.value_link_is_formula %}
+                {{ element.value_link_formula }}
+            {% endif %}
+
+        {% else %}
+            ; ERROR: value_link существует, но value_name пустой!
+        {% endif %}
+        
+    {% else %}
+        ; WARNING: Блок value_link не сработал.
+        ; Причина: {% if not element.value_link %}Объект пуст или None{% else %}Длина списка 0{% endif %}
+    {% endif %}
 {% endmacro %}
 
 {%macro ControllerCursor(element,parent_element,mod_file,scene)%}
@@ -641,7 +726,16 @@ endif
     [CommandListElement{{ element_id_name }}]
     $id = {{ element.id }}
     local $LocalVisibility
-    $LocalVisibility = 1
+    {% if element.visibility_mode == 'CONDITIONAL' %}
+    $LocalVisibility = 0
+    if {{element.visibility_condition}}
+        $LocalVisibility = 1
+    endif
+    {% elif element.visibility_mode == 'HIDED' %}
+        $LocalVisibility = 0
+    {% else %}
+        $LocalVisibility = 1
+    {% endif %}
     
     ; Переменные для хранения "родительских" координат квадрата
     local $P_PX

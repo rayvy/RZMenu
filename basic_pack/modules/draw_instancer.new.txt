@@ -1,0 +1,470 @@
+Texture1D<float4> IniParams : register(t120);
+#define SCREEN_RES IniParams[99].zw
+#define CURSOR_POS IniParams[99].xy
+#define time IniParams[98].w
+
+Buffer<float4> PosSizeDataBuffer    : register(t100);
+Buffer<float4> ColorDataBuffer      : register(t101);
+Buffer<float4> TileDataBuffer       : register(t102); 
+Buffer<uint>   TextPoolBuffer       : register(t103);
+Buffer<float4> ClippingDataBuffer   : register(t109);
+Buffer<float4> DrawParamsBuffer     : register(t110);
+Texture2D<float4> tex_atlas_icons   : register(t80);
+Texture2D<float4> tex_atlas_font    : register(t82);
+Texture2D<float4> tex_backbuffer    : register(t89);
+SamplerState s0_s : register(s0);
+
+// --- MODES ---
+#define DRAW_MODE_SOLID                 0
+#define DRAW_MODE_TEXTURE_OVERLAY       1
+#define DRAW_MODE_TEXTURE_MULTIPLY      2
+#define DRAW_MODE_TEXT                  3
+#define DRAW_MODE_NUMBER                4
+#define DRAW_MODE_COLOR_MASK            11 
+#define DRAW_MODE_HSL                   12 
+#define DRAW_MODE_MASKED_BLUR           89 
+#define DRAW_MODE_BLUR_BACKGROUND_START 90
+#define DRAW_MODE_BLUR_BACKGROUND_END   99
+
+// --- FX ---
+#define FN_ROTATE         1
+#define FN_HOVER_TURN     2
+#define FN_DISINTEGRATE   3
+#define FX_HOVER_OUTLINE_INWARD 1
+#define FX_DROP_SHADOW    2  
+#define FX_HOVER_SHEEN    3
+#define FX_HOVER_RESIZE   4
+#define FX_GRAYSCALE      5  
+#define FX_CHROMATIC      6  
+#define FX_HOVER_SHINE    8
+
+#define MAX_CHARS_PER_INSTANCE 32
+#define MAX_CHARS_PER_NUMBER   32 
+#define CELL_GRID_HEIGHT 6 
+
+struct vs2ps {
+    float4 pos             : SV_Position;
+    float4 color           : COLOR0;
+    float2 uv              : TEXCOORD0;       // UV для текста/backbuffer
+    float2 local_uv        : TEXCOORD1;       // 0..1 для всего квада (с учетом расширения)
+    float  fn_type         : TEXCOORD2;
+    float  fx_type         : TEXCOORD3;
+    nointerpolation int draw_mode : TEXCOORD4; 
+    float4 object_pos_size : TEXCOORD5;
+    float4 clip_rect       : TEXCOORD6;
+    float4 tile_data       : TEXCOORD7;
+    float4 shadow_pad      : TEXCOORD8;       // Параметры умной тени
+};
+
+// --- HELPERS ---
+
+float3 HslToRgb(float3 hsl) {
+    float3 rgb = clamp( abs(fmod(hsl.x*6.0+float3(0.0,4.0,2.0),6.0)-3.0)-1.0, 0.0, 1.0 );
+    return hsl.z + hsl.y * (rgb-0.5)*(1.0-abs(2.0*hsl.z-1.0));
+}
+
+float Random(float2 uv) {
+    return frac(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float Noise(float2 uv) {
+    float2 i = floor(uv);
+    float2 f = frac(uv);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return lerp(lerp(Random(i), Random(i + float2(1.0, 0.0)), u.x),
+                lerp(Random(i + float2(0.0, 1.0)), Random(i + float2(1.0, 1.0)), u.x), u.y);
+}
+
+// Вычисляет UV атласа иконок прямо в пиксельном шейдере для точности
+float2 CalculateAtlasUV(float4 tile_data, float2 local_uv_content) {
+    uint w, h; tex_atlas_icons.GetDimensions(w, h);
+    float2 atlas_size = float2(max(1, w), max(1, h));
+    // tile_data: x,y = offset px, z,w = size px
+    float2 uv = (tile_data.xy + local_uv_content * tile_data.zw) / atlas_size;
+    return float2(uv.x, 1.0 - uv.y); // Инверсия Y для атласа иконок
+}
+
+#ifdef VERTEX_SHADER
+
+struct CharMetrics {
+    float advance; float glyphWidth; float glyphHeight; float offsetX; float offsetY;
+};
+
+CharMetrics get_char_metrics(uint c) {
+    CharMetrics metrics = (CharMetrics)0;
+    if (c < 32 || c >= 127) c = 32;
+    uint atlas_width, atlas_height;
+    tex_atlas_font.GetDimensions(atlas_width, atlas_height);
+    if (atlas_width == 0) return metrics;
+    const uint BASE_CELL_SIZE = 16;
+    uint scale = atlas_width / (BASE_CELL_SIZE * 16);
+    if (scale < 1) scale = 1;
+    float cell_size_px = (float)(BASE_CELL_SIZE * scale);
+    uint char_index = c - 32;
+    uint metadata_grid_height = atlas_height / cell_size_px - CELL_GRID_HEIGHT; 
+    uint metadata_start_y = (atlas_height / cell_size_px - metadata_grid_height) * cell_size_px;
+    uint meta_x = char_index % atlas_width;
+    uint meta_y = metadata_start_y + (char_index / atlas_width) * 2;
+    float4 em1 = tex_atlas_font.Load(int3(meta_x, meta_y, 0));
+    float4 em2 = tex_atlas_font.Load(int3(meta_x, meta_y + 1, 0));
+    metrics.advance     = (em1.r * 2.0) * cell_size_px;
+    metrics.glyphWidth  = (em1.g * 2.0) * cell_size_px;
+    metrics.offsetX     = ((em1.b * 2.0) - 1.0) * cell_size_px;
+    metrics.offsetY     = ((em1.a * 2.0) - 1.0) * cell_size_px;
+    metrics.glyphHeight = (em2.r * 2.0) * cell_size_px; 
+    return metrics;
+}
+
+// Этот метод теперь используется ТОЛЬКО для Текста и Бэкграунда.
+// Иконки (1,2,11,12,89) рассчитываются в PS.
+float2 GetTextureUV_VS(int draw_mode, float2 local_quad_uv, float4 tile_data, uint vertex_id, inout float2 final_pos, inout float2 final_size)
+{
+    // Блюр фона (обычный) использует экранные координаты
+    if (draw_mode >= DRAW_MODE_BLUR_BACKGROUND_START && draw_mode <= DRAW_MODE_BLUR_BACKGROUND_END) {
+        return float2(final_pos.x + local_quad_uv.x * final_size.x, 1.0 - (final_pos.y + local_quad_uv.y * final_size.y));
+    }
+    
+    // Для Masked Blur (89) нам нужны экранные координаты для фона, маску возьмем в PS
+    if (draw_mode == DRAW_MODE_MASKED_BLUR) {
+        return float2(final_pos.x + local_quad_uv.x * final_size.x, 1.0 - (final_pos.y + local_quad_uv.y * final_size.y));
+    }
+
+    if (draw_mode == DRAW_MODE_TEXT || draw_mode == DRAW_MODE_NUMBER) {
+            uint char_codes[MAX_CHARS_PER_INSTANCE];
+            uint num_chars = 0;
+            if (draw_mode == DRAW_MODE_TEXT) {
+                uint string_start_offset = (uint)tile_data.x;
+                num_chars = min((uint)tile_data.y, MAX_CHARS_PER_INSTANCE);
+                for (uint i = 0; i < num_chars; ++i) char_codes[i] = TextPoolBuffer[string_start_offset + i];
+            } else {
+                float raw_val=tile_data.x;int precision=clamp((int)tile_data.y,0,9);float p10=1.0;for(int p=0;p<precision;p++)p10*=10.0;float val=round(raw_val*p10)/p10;if(val<0.0){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='-';val=-val;}val+=1e-7;uint ip=(uint)val;if(ip==0){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='0';}else{uint tip=ip;uint id[10];uint nid=0;while(tip>0&&nid<10){id[nid++]=tip%10;tip/=10;}for(uint i=0;i<nid;++i){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='0'+id[nid-1-i];}}if(precision>0){if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='.';float fp=val-(float)ip;for(int i=0;i<precision;++i){fp*=10.0f;uint d=(uint)fp;if(d>9)d=9;if(num_chars<MAX_CHARS_PER_NUMBER)char_codes[num_chars++]='0'+d;fp-=(float)d;}}
+            }
+            float2 base_pos = final_pos;
+            uint atlas_width, atlas_height; tex_atlas_font.GetDimensions(atlas_width, atlas_height);
+            float cell_size_px = (float)(atlas_width / 16);
+            float desired_line_height = final_size.y * SCREEN_RES.y;
+            float final_scale = desired_line_height / cell_size_px;
+            CharMetrics reference_metrics = get_char_metrics('A');
+            float reference_drop = reference_metrics.offsetY + reference_metrics.glyphHeight;
+            int alignment = (int)tile_data.z;
+            if (alignment > 0 && num_chars > 0) {
+                CharMetrics first = get_char_metrics(char_codes[0]);
+                float min_x = first.offsetX;
+                float advance = 0;
+                for (uint i = 0; i < num_chars - 1; ++i) advance += get_char_metrics(char_codes[i]).advance;
+                CharMetrics last = get_char_metrics(char_codes[num_chars - 1]);
+                float max_x = advance + last.offsetX + last.glyphWidth;
+                float shift = (alignment == 1) ? (min_x + max_x) / 2.0f : max_x;
+                base_pos.x -= (shift / SCREEN_RES.x) * final_scale;
+            }
+            uint char_index = vertex_id / 6;
+            uint current_char_code = (char_index < num_chars) ? char_codes[char_index] : ' ';
+            float cursor_offset_x = 0;
+            for (uint i = 0; i < char_index; ++i) cursor_offset_x += get_char_metrics(char_codes[i]).advance;
+            CharMetrics metrics = get_char_metrics(current_char_code);
+            float current_drop = metrics.offsetY + metrics.glyphHeight;
+            final_pos.y = base_pos.y + (((reference_drop+(128/7.5)) - current_drop) / SCREEN_RES.y) * final_scale;
+            final_pos.x = base_pos.x + ((cursor_offset_x + metrics.offsetX) / SCREEN_RES.x) * final_scale;
+            final_size.x = (metrics.glyphWidth / SCREEN_RES.x) * final_scale;
+            final_size.y = (metrics.glyphHeight / SCREEN_RES.y) * final_scale;
+            uint grid_x = (current_char_code - 32) % 16;
+            uint grid_y = (current_char_code - 32) / 16;
+            float2 uv_cell_size = 1.0 / float2(16.0, (float)(atlas_height / cell_size_px));
+            float2 uv_start_pos = float2(grid_x, grid_y) * uv_cell_size;
+            float2 uv_offset = float2(metrics.offsetX, metrics.offsetY) / cell_size_px * uv_cell_size;
+            float2 uv_size = float2(metrics.glyphWidth, metrics.glyphHeight) / cell_size_px * uv_cell_size;
+            return uv_start_pos + uv_offset + local_quad_uv * uv_size;
+    }
+    
+    // Для иконок возвращаем просто local_uv, расчет будет в PS
+    return local_quad_uv;
+}
+
+float2 CalculateVertexPosition(float fn_type, float2 final_pos, float2 final_size, float2 local_quad_uv)
+{
+    float2 calculated_pos = final_pos + local_quad_uv * final_size;
+    if (fn_type == FN_HOVER_TURN) {
+        float2 local_model_pos = local_quad_uv - 0.5;
+        float2 object_center = final_pos + final_size * 0.5;
+        float2 direction = CURSOR_POS - object_center;
+        direction.y *= SCREEN_RES.y / SCREEN_RES.x;
+        float intensity = saturate(1.0 - length(direction) / 0.1);
+        intensity = pow(intensity, 2);
+        if (length(direction) > 0.001) direction = normalize(direction);
+        float perspective_offset = dot(local_model_pos, direction);
+        local_model_pos -= direction * perspective_offset * intensity * 0.1;
+        calculated_pos = (local_model_pos * final_size) + object_center;
+    }
+    else if (fn_type == FN_ROTATE) {
+        float angle = 2.0 * 3.14159265 * time;
+        float2x2 rot = float2x2(cos(angle), -sin(angle), sin(angle), cos(angle));
+        calculated_pos = mul(rot, local_quad_uv - 0.5) * final_size + final_pos + final_size * 0.5;
+    }
+    return calculated_pos;
+}
+
+void main(out vs2ps output, uint vertex_id : SV_VertexID, uint instance_id : SV_InstanceID)
+{
+    output = (vs2ps)0;
+    output.draw_mode = (int)round(DrawParamsBuffer[instance_id].w);
+    
+    if (output.draw_mode != DRAW_MODE_TEXT && output.draw_mode != DRAW_MODE_NUMBER && vertex_id >= 6) { output.pos = float4(2,2,0,1); return; }
+    if (output.draw_mode == DRAW_MODE_TEXT) { uint num_chars = (uint)TileDataBuffer[instance_id].y; if ((vertex_id / 6) >= min(num_chars, (uint)MAX_CHARS_PER_INSTANCE)) { output.pos = float4(2,2,0,1); return; } }
+    if (output.draw_mode == DRAW_MODE_NUMBER) { if ((vertex_id / 6) >= (uint)MAX_CHARS_PER_NUMBER) { output.pos = float4(2,2,0,1); return; } }
+    
+    output.clip_rect = ClippingDataBuffer[instance_id];
+    output.color   = ColorDataBuffer[instance_id];
+    output.fn_type = DrawParamsBuffer[instance_id].x;
+    output.fx_type = DrawParamsBuffer[instance_id].y;
+    output.tile_data = TileDataBuffer[instance_id];
+    
+    float2 final_pos  = PosSizeDataBuffer[instance_id].xy;
+    float2 final_size = PosSizeDataBuffer[instance_id].zw;
+
+    // --- SMART SHADOW EXPANSION ---
+    output.shadow_pad = float4(0,0,1,1); // xy=start, zw=scale
+    if (output.fx_type == FX_DROP_SHADOW) {
+        float2 padding_px = float2(15.0, 15.0);
+        float2 screen_res_safe = max(SCREEN_RES, float2(1,1));
+        float2 padding_uv_size = padding_px / screen_res_safe;
+        
+        float2 old_size = final_size;
+        final_size = old_size + padding_uv_size * 2.0;
+        final_pos = final_pos - padding_uv_size;
+        
+        float2 content_start = padding_uv_size / max(final_size, float2(0.0001, 0.0001));
+        float2 content_scale = old_size / max(final_size, float2(0.0001, 0.0001));
+        output.shadow_pad = float4(content_start, content_scale);
+    }
+
+    if (output.fx_type == FX_HOVER_RESIZE) {
+        float2 object_center = final_pos + final_size * 0.5;
+        float2 offset = CURSOR_POS - object_center;
+        float2 closest = clamp(offset, -final_size*0.5, final_size*0.5);
+        float dist = length((offset - closest) * float2(SCREEN_RES.x/SCREEN_RES.y, 1.0));
+        float scale = 1.0 + 0.125 * pow(saturate(1.0 - dist/0.008), 2.0);
+        final_pos = object_center - (final_size * scale * 0.5);
+        final_size *= scale;
+    }
+    
+    output.object_pos_size = float4(final_pos, final_size);
+    
+    uint local_vertex_id = vertex_id % 6;
+    float2 local_quad_uv;
+    switch (local_vertex_id) {
+        case 0: case 3: local_quad_uv = float2(0.0, 0.0); break; 
+        case 1: case 5: local_quad_uv = float2(1.0, 1.0); break; 
+        case 2:         local_quad_uv = float2(0.0, 1.0); break; 
+        case 4:         local_quad_uv = float2(1.0, 0.0); break; 
+    }
+    output.local_uv = local_quad_uv; 
+    
+    // Подготовка UV. Для текста - полная математика. Для иконок - просто проброс, пересчитаем в PS.
+    float2 texture_uv_base = local_quad_uv;
+    if (output.draw_mode == DRAW_MODE_TEXT || output.draw_mode == DRAW_MODE_NUMBER) {
+        texture_uv_base.y = 1.0 - texture_uv_base.y;
+    }
+    output.uv = GetTextureUV_VS(output.draw_mode, texture_uv_base, TileDataBuffer[instance_id], vertex_id, final_pos, final_size);
+    
+    float2 final_vertex_pos = CalculateVertexPosition(output.fn_type, final_pos, final_size, local_quad_uv);
+    output.pos.xy = final_vertex_pos * 2.0 - 1.0;
+    output.pos.zw = float2(0.5, 1.0);
+}
+#endif
+
+#ifdef PIXEL_SHADER
+
+float4 ApplyOverlay(float4 base, float4 blend) {
+    float3 r = (base.rgb < 0.5) ? (2.0 * base.rgb * blend.rgb) : (1.0 - 2.0 * (1.0 - base.rgb) * (1.0 - blend.rgb));
+    return float4(r, base.a);
+}
+
+void ApplySheenShine(inout float4 color, vs2ps input, float alpha_mask, float2 local_uv) {
+    if (alpha_mask <= 0.01) return;
+    
+    // Используем переданный local_uv (который является content_uv), чтобы эффекты не растягивались на тень
+    if (input.fx_type == FX_HOVER_SHEEN) {
+        float dist = min(min(local_uv.x, 1.0 - local_uv.x), min(local_uv.y, 1.0 - local_uv.y));
+        float edge = pow(1.0 - saturate(dist / 0.1), 2.0);
+        float proj = dot(local_uv - 0.5, normalize(float2(1.0, -1.0)));
+        // Для позиции блика нужна реальная относительная позиция курсора к контенту
+        float2 real_size = input.object_pos_size.zw * input.shadow_pad.zw; 
+        float2 real_pos = input.object_pos_size.xy + input.shadow_pad.xy * input.object_pos_size.zw;
+        float pos_param = (((CURSOR_POS.x - real_pos.x) / real_size.x) - 0.5) * 1.2;
+        
+        color.rgb += float3(1,1,1) * pow(saturate(1.0 - abs(proj - pos_param) / 0.15), 3.0) * edge * 1.5;
+    }
+    if (input.fx_type == FX_HOVER_SHINE) {
+        float proj = dot(local_uv - 0.5, normalize(float2(1.0, -1.0)));
+        float2 real_size = input.object_pos_size.zw * input.shadow_pad.zw; 
+        float2 real_pos = input.object_pos_size.xy + input.shadow_pad.xy * input.object_pos_size.zw;
+        float pos_param = (((CURSOR_POS.x - real_pos.x) / real_size.x) - 0.5) * 1.2;
+        color.rgb += float3(1,1,1) * pow(saturate(1.0 - abs(proj - pos_param) / 0.15), 3.0) * 0.7;
+    }
+}
+
+float4 GetBaseTextureColor(vs2ps input, float2 content_local_uv) {
+    float4 color = float4(1,1,1,1);
+    
+    if (input.draw_mode == DRAW_MODE_NUMBER || input.draw_mode == DRAW_MODE_TEXT) {
+        // Текст использует UV из вертекс шейдера
+        color = tex_atlas_font.Sample(s0_s, input.uv);
+    } 
+    else {
+        // Все иконочные режимы используют пересчет UV в PS для точности
+        float2 atlas_uv = CalculateAtlasUV(input.tile_data, content_local_uv);
+        color = tex_atlas_icons.Sample(s0_s, atlas_uv);
+        
+        if (input.fx_type == FX_CHROMATIC) {
+             float2 shift = float2(10.0/SCREEN_RES.x, 0); // Грубая оценка для PS
+             color.r = tex_atlas_icons.Sample(s0_s, atlas_uv - shift).r;
+             color.b = tex_atlas_icons.Sample(s0_s, atlas_uv + shift).b;
+        }
+    }
+    
+    if (input.draw_mode == DRAW_MODE_COLOR_MASK) {
+        float lum = dot(color.rgb, float3(0.299, 0.587, 0.114));
+        color.rgb = input.color.rgb * lum;
+        // Альфа остается от текстуры
+    }
+    else if (input.draw_mode == DRAW_MODE_HSL) {
+        color.rgb = HslToRgb(color.rgb);
+    }
+    
+    if (input.fx_type == FX_GRAYSCALE) {
+        float g = dot(color.rgb, float3(0.3, 0.59, 0.11));
+        color = float4(g, g, g, color.a * 0.8);
+    }
+    return color;
+}
+
+float4 GetBackgroundBlurColor(vs2ps input, float2 content_local_uv) {
+    float blur_strength = input.draw_mode - DRAW_MODE_BLUR_BACKGROUND_START + 1;
+    
+    if (input.draw_mode == DRAW_MODE_MASKED_BLUR) {
+        // Семплим маску по локальным координатам контента
+        float2 mask_uv = CalculateAtlasUV(input.tile_data, content_local_uv);
+        float mask = tex_atlas_icons.Sample(s0_s, mask_uv).r;
+        blur_strength = mask * 10.0;
+        
+        // Если маски нет, отдаем чистый фон (альфа 1, чтобы не дискарднулось)
+        if (mask < 0.001) return float4(tex_backbuffer.Sample(s0_s, input.uv).rgb, 1.0);
+    }
+
+    if (blur_strength < 0.5) return float4(tex_backbuffer.Sample(s0_s, input.uv).rgb, 1.0);
+
+    float4 sum = 0;
+    float2 ts = (1.0 / SCREEN_RES.xy) * blur_strength;
+    [unroll] for (int y = -3; y <= 3; ++y) {
+        [unroll] for (int x = -3; x <= 3; ++x) {
+            sum += tex_backbuffer.Sample(s0_s, input.uv + float2(x, y) * ts);
+        }
+    }
+    float4 blurred = sum / 49.0;
+    
+    if (input.draw_mode == DRAW_MODE_MASKED_BLUR) {
+        float4 sharp = tex_backbuffer.Sample(s0_s, input.uv);
+        float4 res = lerp(sharp, blurred, saturate(blur_strength / 10.0));
+        return float4(res.rgb, 1.0);
+    }
+
+    blurred.rgb *= 0.75;
+    float3 overlay = ApplyOverlay(blurred, input.color).rgb;
+    return float4(lerp(blurred.rgb, lerp(overlay, input.color.rgb, 1.0), input.color.a), 1.0); 
+}
+
+void ApplyPixelCrop(inout float4 color, float2 uv, float2 sz) {
+    if (sz.x < 4.0) return;
+    float2 d = 2.0 / sz;
+    if (uv.x < d.x || uv.x > 1-d.x || uv.y < d.y || uv.y > 1-d.y) color = 0;
+}
+
+void main(vs2ps input, out float4 result : SV_Target0)
+{
+    result = 0;
+    
+    // Clipping
+    if (input.clip_rect.z > 0) {
+        if (input.pos.x < input.clip_rect.x || input.pos.x > input.clip_rect.x + input.clip_rect.z ||
+            input.pos.y < SCREEN_RES.y - input.clip_rect.y - input.clip_rect.w || 
+            input.pos.y > SCREEN_RES.y - input.clip_rect.y) discard;
+    }
+
+    // Вычисляем UV контента (0..1 внутри объекта, игнорируя поля тени)
+    float2 content_local_uv = (input.local_uv - input.shadow_pad.xy) / input.shadow_pad.zw;
+    bool is_in_content = (content_local_uv.x >= 0.0 && content_local_uv.x <= 1.0 &&
+                          content_local_uv.y >= 0.0 && content_local_uv.y <= 1.0);
+
+    // Логика Блюров
+    if ((input.draw_mode >= DRAW_MODE_BLUR_BACKGROUND_START && input.draw_mode <= DRAW_MODE_BLUR_BACKGROUND_END) || input.draw_mode == DRAW_MODE_MASKED_BLUR)
+    {
+        // Блюру разрешено рисоваться только внутри контента (иначе тень растянет фон)
+        if (!is_in_content) discard;
+        
+        result = GetBackgroundBlurColor(input, content_local_uv);
+        ApplySheenShine(result, input, 1.0, content_local_uv); 
+        return; 
+    }
+
+    float4 final_color = float4(0,0,0,0);
+
+    if (is_in_content) {
+        float4 base = GetBaseTextureColor(input, content_local_uv);
+        
+        if (input.draw_mode == DRAW_MODE_TEXTURE_MULTIPLY) final_color = base * input.color;
+        else if (input.draw_mode == DRAW_MODE_TEXTURE_OVERLAY) final_color = base;
+        else if (input.draw_mode == DRAW_MODE_COLOR_MASK || input.draw_mode == DRAW_MODE_HSL) final_color = float4(base.rgb, base.a * input.color.a);
+        else if (input.draw_mode == DRAW_MODE_TEXT || input.draw_mode == DRAW_MODE_NUMBER) final_color = float4(input.color.rgb, base.r * input.color.a);
+        else final_color = input.color;
+
+        ApplyPixelCrop(final_color, content_local_uv, input.object_pos_size.zw * SCREEN_RES * input.shadow_pad.zw);
+    }
+
+    // Shadow
+    if (input.fx_type == FX_DROP_SHADOW) {
+        // Мы используем контентные координаты. Сдвигаем их обратно, чтобы узнать, попадает ли тень в пиксель
+        float2 shadow_offset = float2(5.0, -5.0) / (input.object_pos_size.zw * SCREEN_RES * input.shadow_pad.zw);
+        float2 probe_uv = content_local_uv - shadow_offset;
+        
+        if (probe_uv.x >= 0 && probe_uv.x <= 1 && probe_uv.y >= 0 && probe_uv.y <= 1) {
+             // Семплим альфу контента в точке probe_uv
+             float alpha_there = 0;
+             if (input.draw_mode == DRAW_MODE_TEXT || input.draw_mode == DRAW_MODE_NUMBER) {
+                  // Для текста сложно восстановить UV, используем приближение input.uv (может быть неточно при тени)
+                  alpha_there = tex_atlas_font.Sample(s0_s, input.uv - float2(5.0,-5.0)*fwidth(input.uv)).r;
+             } else {
+                  float2 atlas_uv = CalculateAtlasUV(input.tile_data, probe_uv);
+                  alpha_there = tex_atlas_icons.Sample(s0_s, atlas_uv).a;
+             }
+             
+             if (alpha_there > 0.5) final_color = lerp(float4(0,0,0,0.5), final_color, final_color.a);
+        }
+    }
+
+    // Outline
+    if (input.fx_type == FX_HOVER_OUTLINE_INWARD && is_in_content) {
+        float2 sz = input.object_pos_size.zw * SCREEN_RES * input.shadow_pad.zw;
+        float d = min(min(content_local_uv.x, 1-content_local_uv.x)*sz.x, min(content_local_uv.y, 1-content_local_uv.y)*sz.y);
+        // Получаем альфу текущего пикселя (немного избыточно, но точно)
+        float current_alpha = final_color.a; 
+        if (d < 3.0 && current_alpha > 0.5) final_color.rgb = lerp(final_color.rgb, float3(1,1,1), 0.7);
+    }
+
+    // Sheen/Shine
+    if (final_color.a > 0.01) {
+        ApplySheenShine(final_color, input, final_color.a, content_local_uv);
+    }
+    
+    // Disintegrate
+    if (input.fn_type == FN_DISINTEGRATE && is_in_content) {
+         float asp = input.object_pos_size.z / input.object_pos_size.w;
+         float prog = frac(time);
+         float map = (content_local_uv.x + content_local_uv.y)*0.5 + Noise(content_local_uv * float2(asp, 1) * 40)*0.5;
+         if (map < prog * 1.5) discard;
+         if (map - prog*1.5 < 0.08) final_color.rgb += float3(1.5, 0.4, 0.1) * 2.0;
+    }
+
+    if (final_color.a < 0.01) discard;
+    result = final_color;
+}
+#endif

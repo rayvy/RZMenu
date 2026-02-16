@@ -365,8 +365,20 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 decal_box = main_col.box(); decal_box.label(text="Decals:")
                 decal_box.prop(item, "tw_use_decal_tattoo"); decal_box.prop(item, "tw_use_decal_derma"); decal_box.prop(item, "tw_use_decal_fluid")
                 
-                hsv_box = main_col.box(); hsv_box.prop(item, "tw_use_hsv")
-                if item.tw_use_hsv: hsv_box.prop(item, "tw_hsv_mode", text="Mode"); hsv_box.prop(item, "tw_hsv_value_link", text="Link")
+                hsv_box = main_col.box()
+                hsv_box.prop(item, "tw_use_hsv")
+
+                if item.tw_use_hsv:
+                    hsv_box.prop(item, "tw_hsv_mode", text="Mode")
+                    hsv_box.prop(item, "tw_hsv_value_link", text="Link")
+                    
+                    # Создаем визуальную группу для оффсетов
+                    row = hsv_box.row(align=True)
+                    row.label(text="Offsets:")
+                    # Отрисовываем каждый индекс вектора отдельно с короткими именами
+                    row.prop(item, "tw_hsv_value_link_color", index=0, text="H")
+                    row.prop(item, "tw_hsv_value_link_color", index=1, text="S")
+                    row.prop(item, "tw_hsv_value_link_color", index=2, text="V")
                 morph_box = main_col.box(); morph_box.prop(item, "tw_use_morph")
                 if item.tw_use_morph: morph_box.prop(item, "tw_morph_target_name", text="Target"); morph_box.prop(item, "tw_morph_value_link", text="Link")
 

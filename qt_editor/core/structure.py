@@ -201,6 +201,12 @@ def duplicate_elements(target_ids):
             new_elem.disable_button_nums = src.disable_button_nums
             new_elem.disable_button_popup = src.disable_button_popup
             
+            # Events
+            new_elem.hover_event_enabled = src.hover_event_enabled
+            new_elem.hover_event_formula = src.hover_event_formula
+            new_elem.click_event_enabled = src.click_event_enabled
+            new_elem.click_event_formula = src.click_event_formula
+            
             # Copy Collections
             if hasattr(src, "preset_ids"):
                 for p in src.preset_ids:

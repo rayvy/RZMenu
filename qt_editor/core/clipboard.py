@@ -73,6 +73,11 @@ def copy_elements(target_ids):
                 "disable_button_nums": elem.disable_button_nums,
                 "disable_button_popup": elem.disable_button_popup,
                 
+                "hover_event_enabled": elem.hover_event_enabled,
+                "hover_event_formula": elem.hover_event_formula,
+                "click_event_enabled": elem.click_event_enabled,
+                "click_event_formula": elem.click_event_formula,
+                
                 "conditional_images": [{"condition": ci.condition, "image_id": ci.image_id} for ci in elem.conditional_images],
                 "text_mode": elem.text_mode,
                 "conditional_texts": [{"condition": ct.condition, "text_id": ct.text_id} for ct in elem.conditional_texts],
@@ -168,6 +173,12 @@ def paste_elements(target_x=None, target_y=None):
             
             new_elem.disable_button_nums = item.get("disable_button_nums", False)
             new_elem.disable_button_popup = item.get("disable_button_popup", False)
+            
+            new_elem.hover_event_enabled = item.get("hover_event_enabled", False)
+            new_elem.hover_event_formula = item.get("hover_event_formula", "")
+            new_elem.click_event_enabled = item.get("click_event_enabled", False)
+            new_elem.click_event_formula = item.get("click_event_formula", "")
+            
             new_elem.text_mode = item.get("text_mode", "SINGLE")
 
             # Collections
