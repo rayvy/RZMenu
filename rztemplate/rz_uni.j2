@@ -30,7 +30,11 @@
 {{core.entryPoint(mod_file,scene)}}
 {{core.baseCompute(mod_file,scene)}}
 {{core.menuDrawUi(mod_file,scene)}}
+{% if scene.rzm.game.name == "ArknightsEndfield" %}
+{{core.shape_generate_arknights(extracted_object, merged_object, buffers, scene)}}
+{% else %}
 {{core.shape_generate(mod_file,scene)}}
+{% endif %}
 {% endblock %}
 
 {{fn.Base()}}

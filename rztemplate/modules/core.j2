@@ -977,3 +977,137 @@ endif
     {% endfor %}
 {% endfor %}
 {% endmacro %}
+{% macro shape_generate_arknights(extracted_object, merged_object, buffers, scene) %}
+[CustomShaderComputeShapes]
+{% for id, component in enumerate(extracted_object.components) %}
+    {# Проверяем, существует ли кастомный VB0 для этого компонента в списке буферов мода #}
+    {% if ('Component' ~ id ~ '_VB0') in buffers %}
+        {# Проверяем, есть ли у нас вообще данные о вершинах в кастомном объекте #}
+        {% if merged_object.components[id].vertex_count > 0 %}
+            run = CustomShaderComputeShapes_Component{{ id }}
+        {% endif %}
+    {% endif %}
+{% endfor %}
+
+; --- Compute Shaders Definitions ---
+
+{% for id, component in enumerate(extracted_object.components) %}
+    {# Генерируем шейдеры только для тех компонентов, которые мы реально заменяем #}
+    {% if ('Component' ~ id ~ '_VB0') in buffers and merged_object.components[id].vertex_count > 0 %}
+    
+    [CustomShaderComputeShapes_Component{{ id }}]
+    cs = ./modules/position_shape_linear_ENDFIELD.hlsl
+    
+    ; Инициализация: берем базовую позицию из файла .buf
+    cs-u5 = copy Resource_Component{{ id }}_VB0_Base
+
+    {# --- Перебор всех шейп-ключей из сцены Blender/RZM --- #}
+    {% for shape in scene.rzm.shapes %}
+        {% for key in shape.shape_keys %}
+            
+            {# --- STATIC SHAPES (Type 0) --- #}
+            {% if shape.shape_type | default(0) | int == 0 %}
+            
+            {% if key.mode == 1 %}
+                ; Advanced Key Logic (Limits & Multipliers)
+                x88 = ${{ shape.shape_name | default('Error') | string }}
+                {% set range_min = key.input_range_min | default(0.0) | float %}
+                {% set range_max = key.input_range_max | default(1.0) | float %}
+                {% set multiplier = key.multiplier | default(1.0) | float %}
+                {% set range_span = range_max - range_min %}
+                
+                if x88 <= {{ range_min }}
+                    x88 = 0.0
+                else if x88 >= {{ range_max }}
+                    x88 = 1.0
+                else
+                    {% if range_span > 0.0001 %}
+                    x88 = (x88 - {{ range_min }}) / {{ range_span }}
+                    {% else %}
+                    x88 = 0.0
+                    {% endif %}
+                endif
+                x88 = x88 * {{ multiplier }}
+            {% else %}
+                ; Simple Key Logic
+                x88 = ${{ shape.shape_name | default('Error') | string }}
+            {% endif %}
+
+            ; Смешивание (Base + Delta * x88)
+            cs-t50 = copy Resource_Component{{ id }}_VB0_Base
+            cs-t51 = copy Resource_Component{{ id }}_VB0_{{ shape.shape_name }}_{{ key.key_name }}
+            
+            ; Результат пишем обратно в u5 (аккумуляция)
+            Resource_Component{{ id }}_VB0 = ref cs-u5
+            Dispatch = {{ merged_object.components[id].vertex_count }}, 1, 1
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    ; Запуск анимационных шейпов (если есть)
+    run = CustomShaderComputeShapes_Component{{ id }}_Anim
+
+    ; Очистка ресурсов шейдера
+    cs-u5 = null
+    cs-t50 = null
+    cs-t51 = null
+
+    [CustomShaderComputeShapes_Component{{ id }}_Anim]
+    cs = ./modules/position_shape_anim_ENDFIELD.hlsl
+    {% for shape in scene.rzm.shapes %}
+        {% for key in shape.shape_keys %}
+            {# --- ANIMATED SHAPES (Type 1) --- #}
+            {% if shape.shape_type | default(0) | int == 1 %}
+            x88 = ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
+            y88 = {{ key.anim_type_index | default(0) | int }}
+            z88 = {{ key.anim_start_frame| default(0.0) | float }}
+            w88 = {{ key.anim_end_frame | default(1.0) | float }}
+            
+            cs-t50 = copy Resource_Component{{ id }}_VB0_Base
+            cs-t51 = copy Resource_Component{{ id }}_VB0_{{ shape.shape_name }}_{{ key.key_name }}
+            
+            Resource_Component{{ id }}_VB0 = ref cs-u5
+            Dispatch = {{ merged_object.components[id].vertex_count }}, 1, 1
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    {% endif %}
+{% endfor %}
+
+
+; ==============================================================================
+; RESOURCES: POSITION BUFFERS (EFMI Naming)
+; ==============================================================================
+
+; --- Base Shape Resources ---
+{% for id, component in enumerate(extracted_object.components) %}
+    {% if ('Component' ~ id ~ '_VB0') in buffers and merged_object.components[id].vertex_count > 0 %}
+    
+    ; Исходная позиция (без морфов)
+    [Resource_Component{{ id }}_VB0_Base]
+    type = Buffer
+    stride = 16
+    filename = Meshes/Component{{ id }}_VB0.buf
+    {% endif %}
+{% endfor %}
+
+; --- Shape Keys Resources ---
+{% for shape in scene.rzm.shapes %}
+    {% for key in shape.shape_keys %}
+        ; ShapeKey: {{ shape.shape_name }}.{{ key.key_name }}
+        
+        {% for id, component in enumerate(extracted_object.components) %}
+            {% if ('Component' ~ id ~ '_VB0') in buffers and merged_object.components[id].vertex_count > 0 %}
+            
+        [Resource_Component{{ id }}_VB0_{{ shape.shape_name }}_{{ key.key_name }}]
+        type = Buffer
+        stride = 16
+        filename = Meshes{{ key.key_name }}/Component{{ id }}_VB0.buf
+            
+            {% endif %}
+        {% endfor %}
+        
+    {% endfor %}
+{% endfor %}
+
+{% endmacro %}
