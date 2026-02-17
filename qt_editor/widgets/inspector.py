@@ -418,7 +418,7 @@ class RZFXList(QtWidgets.QWidget):
 
 class RZPresetItem(QtWidgets.QWidget):
     """A single row in the Preset list."""
-    def __init__(self, index, preset_id, parent=None):
+    def __init__(self, index, preset_id, preset_name="Unknown", parent=None):
         super().__init__(parent)
         self.index = index
         self.parent_list = parent
@@ -428,16 +428,32 @@ class RZPresetItem(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
         
-        self.lbl_id = RZLabel(f"ID: {preset_id}")
+        display_text = f"{preset_name} (ID: {preset_id})"
+        self.lbl_id = RZLabel(display_text)
         layout.addWidget(self.lbl_id, 1)
         
-        # We could potentially add a name lookup here if available in quick snapshot
-        # But for now, just ID is fine.
+        # Reordering buttons
+        self.btn_up = RZPushButton("▲")
+        self.btn_up.setFixedWidth(24)
+        self.btn_up.clicked.connect(self._on_move_up)
+        layout.addWidget(self.btn_up)
+        
+        self.btn_down = RZPushButton("▼")
+        self.btn_down.setFixedWidth(24)
+        self.btn_down.clicked.connect(self._on_move_down)
+        layout.addWidget(self.btn_down)
         
         self.btn_del = RZPushButton("✕")
         self.btn_del.setFixedWidth(24)
         self.btn_del.clicked.connect(self._on_delete)
         layout.addWidget(self.btn_del)
+
+    def _on_move_up(self):
+        if self.index > 0:
+            self.parent_list.reorder_item(self.index, self.index - 1)
+
+    def _on_move_down(self):
+        self.parent_list.reorder_item(self.index, self.index + 1)
 
     def _on_delete(self):
         self.parent_list.remove_item(self.index)
@@ -455,10 +471,8 @@ class RZPresetList(QtWidgets.QWidget):
         self.layout_main.addLayout(self.layout_items)
         
         h_add = QtWidgets.QHBoxLayout()
-        self.spin_id = RZSpinBox()
-        self.spin_id.setRange(1, 1000000)
-        self.spin_id.setPrefix("ID: ")
-        h_add.addWidget(self.spin_id)
+        self.cb_add_preset = RZComboBox()
+        h_add.addWidget(self.cb_add_preset, 1)
         
         self.btn_add = RZPushButton("+ Add Preset")
         self.btn_add.clicked.connect(self.add_item)
@@ -477,18 +491,37 @@ class RZPresetList(QtWidgets.QWidget):
             w = self.layout_items.takeAt(0).widget()
             if w: w.deleteLater()
             
+        elements = core.read.get_all_elements_list()
+        name_map = {e['id']: e['name'] for e in elements}
+            
         for i, pid in enumerate(preset_list):
-            item_w = RZPresetItem(i, pid, self)
+            name = name_map.get(pid, "Unknown")
+            item_w = RZPresetItem(i, pid, name, self)
             self.layout_items.addWidget(item_w)
+        
+        # Update dropdown with available preset elements
+        self.cb_add_preset.blockSignals(True)
+        self.cb_add_preset.clear()
+        preset_elements = [e for e in elements if e.get('is_preset', False)]
+        for e in preset_elements:
+            self.cb_add_preset.addItem(f"{e['name']} (ID: {e['id']})", e['id'])
+        self.cb_add_preset.blockSignals(False)
         
         self._block = False
 
     def add_item(self):
         if self._block: return
-        pid = self.spin_id.value()
+        pid = self.cb_add_preset.currentData()
+        if pid is None: return
         ctx = RZContextManager.get_instance().get_snapshot()
         if ctx.selected_ids:
             core.props.add_preset_id(ctx.selected_ids, pid)
+
+    def reorder_item(self, old_index, new_index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.reorder_preset_id(ctx.selected_ids, old_index, new_index)
 
     def remove_item(self, index):
         if self._block: return
@@ -516,6 +549,34 @@ class RZMInspectorPanel(RZEditorPanel):
         self.tabs = QtWidgets.QTabWidget()
         layout.addWidget(self.tabs)
         
+        # --- ANCHOR NAVIGATION ---
+        self.w_nav = QtWidgets.QWidget()
+        self.w_nav.setObjectName("InspectorNavBar")
+        self.w_nav.setFixedHeight(30)
+        l_nav = QtWidgets.QHBoxLayout(self.w_nav)
+        l_nav.setContentsMargins(0, 0, 0, 0)
+        l_nav.setSpacing(2)
+        
+        nav_items = [
+            ("Identity", "grp_ident"),
+            ("Presets", "grp_presets"),
+            ("Visibility", "grp_vis"),
+            ("Anchor", "grp_anchor"),
+            ("Transform", "grp_trans"),
+            ("Grid", "grp_grid"),
+            ("Style", "grp_style"),
+            ("Logic", "grp_logic"),
+            ("Events", "grp_events")
+        ]
+        
+        for label, grp_name in nav_items:
+            btn = RZPushButton(label)
+            btn.setFixedHeight(24)
+            btn.clicked.connect(lambda _, n=grp_name: self._scroll_to_group(n))
+            l_nav.addWidget(btn)
+        
+        layout.insertWidget(1, self.w_nav) # Insert below tab bar (though tab bar might be hidden now)
+
         # --- TAB 1: Properties ---
         self.scroll_area = QtWidgets.QScrollArea()
         self.scroll_area.setObjectName("InspectorScrollArea")
@@ -546,10 +607,18 @@ class RZMInspectorPanel(RZEditorPanel):
         self.table_raw.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
         self.table_raw.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers) 
         layout_raw.addWidget(self.table_raw)
-        self.tabs.addTab(self.tab_raw, "Raw Data")
+        # self.tabs.addTab(self.tab_raw, "Raw Data")
         
         self.has_data = False
         self._block_signals = False
+
+    def _scroll_to_group(self, group_name):
+        """Scrolls the scroll area to the target group widget."""
+        target_widget = getattr(self, group_name, None)
+        if target_widget:
+            # We want to scroll to the top of this widget
+            pos = target_widget.pos().y()
+            self.scroll_area.verticalScrollBar().setValue(pos)
 
     def set_row_visible(self, widget, visible):
         """Helper to hide/show both the widget and its label in a QFormLayout."""
@@ -584,8 +653,8 @@ class RZMInspectorPanel(RZEditorPanel):
 
     def _init_properties_ui(self):
         # === GROUP: IDENTITY ===
-        grp_ident = RZGroupBox("Identity")
-        form_ident = QtWidgets.QFormLayout(grp_ident)
+        self.grp_ident = RZGroupBox("Identity")
+        form_ident = QtWidgets.QFormLayout(self.grp_ident)
         
         self.lbl_id = RZLabel("ID: None")
         form_ident.addRow("ID:", self.lbl_id)
@@ -612,7 +681,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.chk_main_window.toggled.connect(lambda v: self._emit_change('is_main_window', v))
         form_ident.addRow("", self.chk_main_window)
         
-        self.layout_props.addWidget(grp_ident)
+        self.layout_props.addWidget(self.grp_ident)
         
         # === GROUP: PRESETS ===
         self.grp_presets = RZGroupBox("Presets System")
@@ -808,8 +877,8 @@ class RZMInspectorPanel(RZEditorPanel):
         self.layout_props.addWidget(self.grp_grid)
 
         # === GROUP: STYLE & CONTENT ===
-        grp_style = RZGroupBox("Style & Content")
-        layout_style = QtWidgets.QVBoxLayout(grp_style)
+        self.grp_style = RZGroupBox("Style & Content")
+        layout_style = QtWidgets.QVBoxLayout(self.grp_style)
         
         # Color
         h_col = QtWidgets.QHBoxLayout()
@@ -829,29 +898,41 @@ class RZMInspectorPanel(RZEditorPanel):
 
         # Mode 1: Four Formula Inputs
         self.w_color_formulas = QtWidgets.QWidget()
-        l_col_f = QtWidgets.QHBoxLayout(self.w_color_formulas)
+        l_col_f = QtWidgets.QVBoxLayout(self.w_color_formulas)
         l_col_f.setContentsMargins(0, 0, 0, 0)
         l_col_f.setSpacing(2)
         
+        h_r = QtWidgets.QHBoxLayout()
+        h_r.addWidget(RZLabel("R:"))
         self.edit_col_r = RZFormulaInput()
-        self.edit_col_r.setPlaceholderText("R")
+        self.edit_col_r.setPlaceholderText("Red formula...")
         self.edit_col_r.editingFinished.connect(lambda: self._emit_change('color_formula_r', self.edit_col_r.text()))
-        l_col_f.addWidget(self.edit_col_r)
+        h_r.addWidget(self.edit_col_r)
+        l_col_f.addLayout(h_r)
         
+        h_g = QtWidgets.QHBoxLayout()
+        h_g.addWidget(RZLabel("G:"))
         self.edit_col_g = RZFormulaInput()
-        self.edit_col_g.setPlaceholderText("G")
+        self.edit_col_g.setPlaceholderText("Green formula...")
         self.edit_col_g.editingFinished.connect(lambda: self._emit_change('color_formula_g', self.edit_col_g.text()))
-        l_col_f.addWidget(self.edit_col_g)
+        h_g.addWidget(self.edit_col_g)
+        l_col_f.addLayout(h_g)
         
+        h_b = QtWidgets.QHBoxLayout()
+        h_b.addWidget(RZLabel("B:"))
         self.edit_col_b = RZFormulaInput()
-        self.edit_col_b.setPlaceholderText("B")
+        self.edit_col_b.setPlaceholderText("Blue formula...")
         self.edit_col_b.editingFinished.connect(lambda: self._emit_change('color_formula_b', self.edit_col_b.text()))
-        l_col_f.addWidget(self.edit_col_b)
+        h_b.addWidget(self.edit_col_b)
+        l_col_f.addLayout(h_b)
         
+        h_a = QtWidgets.QHBoxLayout()
+        h_a.addWidget(RZLabel("A:"))
         self.edit_col_a = RZFormulaInput()
-        self.edit_col_a.setPlaceholderText("A")
+        self.edit_col_a.setPlaceholderText("Alpha formula...")
         self.edit_col_a.editingFinished.connect(lambda: self._emit_change('color_formula_a', self.edit_col_a.text()))
-        l_col_f.addWidget(self.edit_col_a)
+        h_a.addWidget(self.edit_col_a)
+        l_col_f.addLayout(h_a)
         
         self.stack_color.addWidget(self.w_color_formulas)
         layout_style.addLayout(self.stack_color)
@@ -919,7 +1000,7 @@ class RZMInspectorPanel(RZEditorPanel):
         
         layout_style.addWidget(self.w_legacy_text)
 
-        self.layout_props.addWidget(grp_style)
+        self.layout_props.addWidget(self.grp_style)
         
         # === GROUP: LOGIC ===
         self.grp_logic = RZGroupBox("Logic")
@@ -929,6 +1010,7 @@ class RZMInspectorPanel(RZEditorPanel):
         h_vl_formula = QtWidgets.QHBoxLayout()
         self.chk_vl_formula = RZCheckBox("Formula Mode")
         self.chk_vl_formula.toggled.connect(lambda v: self._emit_change('value_link_is_formula', v))
+        self.chk_vl_formula.toggled.connect(lambda v: self.edit_vl_formula.setVisible(v))
         h_vl_formula.addWidget(self.chk_vl_formula)
         h_vl_formula.addStretch()
         layout_logic.addLayout(h_vl_formula)
@@ -1182,6 +1264,7 @@ class RZMInspectorPanel(RZEditorPanel):
             # Both now always visible
             self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
             self.edit_vl_formula.setText(props.get('value_link_formula', ''))
+            self.edit_vl_formula.setVisible(vl_is_form)
             
             # --- Events ---
             self.chk_hover_event.setChecked(props.get('hover_event_enabled', False))

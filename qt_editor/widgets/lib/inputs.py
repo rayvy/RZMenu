@@ -195,9 +195,7 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         
         # Single line behavior
-        self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setTabChangesFocus(True)
         
         # Popup setup

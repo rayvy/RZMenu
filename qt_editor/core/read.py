@@ -14,7 +14,8 @@ def get_all_elements_list():
             "class_type": elem.elem_class,
             "parent_id": pid,
             "is_hidden": getattr(elem, "qt_hide", False),
-            "is_selectable": getattr(elem, "qt_selectable", True)
+            "is_selectable": getattr(elem, "qt_selectable", True),
+            "is_preset": getattr(elem, "is_preset", False)
         })
     return results
 

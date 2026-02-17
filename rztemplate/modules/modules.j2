@@ -68,9 +68,9 @@ run = CustomShaderRCI2D
 		local $isInit = 0
 		if this === null && $isInit == 0
 			{% if (utils.clean_resource(res_name)) == "AtlasDIFFUSE" %}
-			if Resource{{-utils.clean_resource(res_name)}} == null
-			run = CommandListAddonsTexWorks
-			endif
+			;if Resource{{-utils.clean_resource(res_name)}} == null
+			;run = CommandListAddonsTexWorks
+			;endif
 			{% endif %}
 			this = copy Resource{{-utils.clean_resource(res_name)}}
 			if this === null
