@@ -139,9 +139,9 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		{% if texture.tw_use_hsv %}
         {% set hsv_link = texture.tw_hsv_value_link if texture.tw_hsv_value_link else "ResourceVar_" ~ texture.tw_name ~ "_HSV" %}
         [Constants]
-        global persist ${{utils.format_var(hsv_link)}}_HSV_H = {{ "%.3f"|format(texture.tw_hsv_value_link_color[0]) }}
-        global persist ${{utils.format_var(hsv_link)}}_HSV_S = {{ "%.3f"|format(texture.tw_hsv_value_link_color[1]) }}
-        global persist ${{utils.format_var(hsv_link)}}_HSV_V = {{ "%.3f"|format(texture.tw_hsv_value_link_color[2]) }}
+        global persist ${{utils.format_var(hsv_link)}}_X = {{ "%.3f"|format(texture.tw_hsv_value_link_color[0]) }}
+        global persist ${{utils.format_var(hsv_link)}}_Y = {{ "%.3f"|format(texture.tw_hsv_value_link_color[1]) }}
+        global persist ${{utils.format_var(hsv_link)}}_Z = {{ "%.3f"|format(texture.tw_hsv_value_link_color[2]) }}
         {% endif %}
 		{% if texture.tw_base_resource_name %}
 		;Custom Resource Name: {{texture.tw_base_resource_name}}
@@ -173,7 +173,7 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		{# HSV Параметры (x43=H, y43=S, z43=V) #}
 		{% if texture.tw_use_hsv %}
         {% set hsv_link = texture.tw_hsv_value_link if texture.tw_hsv_value_link else "ResourceVar_" ~ texture.tw_name ~ "_HSV" %}
-        x43 = ${{utils.format_var(hsv_link)}}_HSV_H - {{ "%.3f"|format(texture.tw_hsv_value_link_color[0]) }}
+        x43 = ${{utils.format_var(hsv_link)}}_X - {{ "%.3f"|format(texture.tw_hsv_value_link_color[0]) }}
         y43 = ${{utils.format_var(hsv_link)}}_HSV_S - {{ "%.3f"|format(texture.tw_hsv_value_link_color[1]) }}
         z43 = ${{utils.format_var(hsv_link)}}_HSV_V - {{ "%.3f"|format(texture.tw_hsv_value_link_color[2]) }}
 		{% if texture.tw_use_hsv and texture.tw_hsv_mode == 'MASKED' %}
@@ -615,39 +615,39 @@ global $FaceDecal_Skin_PastIndex
 global $FaceDecal_Scars_PastIndex
 global $FaceDecal_Tattoo_FacePastIndex
 
-global persist $EYEBROWS_HSV_H = 0.208
+global persist $EYEBROWS_X = 0.208
 global persist $EYEBROWS_HSV_S = 0.66
 global persist $EYEBROWS_HSV_V = 0.51
 
-global persist $EYELASHES_HSV_H = 0.0055
+global persist $EYELASHES_X = 0.0055
 global persist $EYELASHES_HSV_S = 0.28
 global persist $EYELASHES_HSV_V = 0.27
 
-global persist $EYE_HSV_H = 0.253
+global persist $EYE_X = 0.253
 global persist $EYE_HSV_S = 0.672
 global persist $EYE_HSV_V = 0.478
 
-global persist $HAIR_HSV_H = 0.274
+global persist $HAIR_X = 0.274
 global persist $HAIR_HSV_S = 0.360
 global persist $HAIR_HSV_V = 0.557
 
-global persist $LIPS_HSV_H = 0.051
+global persist $LIPS_X = 0.051
 global persist $LIPS_HSV_S = 0.279
 global persist $LIPS_HSV_V = 0.859
 
-global $EYEBROWS_HSV_H_Past
+global $EYEBROWS_X_Past
 global $EYEBROWS_HSV_S_Past
 global $EYEBROWS_HSV_V_Past
-global $EYELASHES_HSV_H_Past
+global $EYELASHES_X_Past
 global $EYELASHES_HSV_S_Past
 global $EYELASHES_HSV_V_Past
-global $EYE_HSV_H_Past
+global $EYE_X_Past
 global $EYE_HSV_S_Past
 global $EYE_HSV_V_Past
-global $HAIR_HSV_H_Past
+global $HAIR_X_Past
 global $HAIR_HSV_S_Past
 global $HAIR_HSV_V_Past
-global $LIPS_HSV_H_Past
+global $LIPS_X_Past
 global $LIPS_HSV_S_Past
 global $LIPS_HSV_V_Past
 
@@ -721,7 +721,7 @@ z44 = 2048
 w44 = 1024
 dispatch = 2048 // 32, 1024//32, 1
 
-x43 = $HAIR_HSV_H - 0.274
+x43 = $HAIR_X - 0.274
 y43 = $HAIR_HSV_S - 0.360
 z43 = $HAIR_HSV_V - 0.557
 x44 = 0
@@ -749,7 +749,7 @@ z43 = 0
 cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref ResourceAtlas.EYE.DIFFUSE
 cs-t0 = ResourceEYED
-x43 = $EYE_HSV_H - 0.253
+x43 = $EYE_X - 0.253
 y43 = $EYE_HSV_S - 0.672
 z43 = $EYE_HSV_V - 0.478
 x44 = 0
@@ -784,10 +784,10 @@ endif
 
 run = CommandListAddonsFaceTexWorks.UPDATE.Conditions
 
-if $HAIR_HSV_H_Past != $HAIR_HSV_H || $HAIR_HSV_S_Past != $HAIR_HSV_S || $HAIR_HSV_V_Past != $HAIR_HSV_V
+if $HAIR_X_Past != $HAIR_X || $HAIR_HSV_S_Past != $HAIR_HSV_S || $HAIR_HSV_V_Past != $HAIR_HSV_V
     run = CustomShaderUpdateComponentHAIR
 endif
-if $EYE_HSV_H_Past != $EYE_HSV_H || $EYE_HSV_S_Past != $EYE_HSV_S || $EYE_HSV_V_Past != $EYE_HSV_V
+if $EYE_X_Past != $EYE_X || $EYE_HSV_S_Past != $EYE_HSV_S || $EYE_HSV_V_Past != $EYE_HSV_V
     run = CustomShaderUpdateComponentEYE
 endif
 
@@ -798,10 +798,10 @@ $FaceDecal_Skin_PastIndex = $FaceDecal_Skin_Index
 $FaceDecal_Scars_PastIndex = $FaceDecal_Scars_Index
 $FaceDecal_Tattoo_FacePastIndex = $FaceDecal_Tattoo_FaceIndex
 
-$EYEBROWS_HSV_H_Past = $EYEBROWS_HSV_H
+$EYEBROWS_X_Past = $EYEBROWS_X
 $EYEBROWS_HSV_S_Past = $EYEBROWS_HSV_S
 $EYEBROWS_HSV_V_Past = $EYEBROWS_HSV_V
-$EYELASHES_HSV_H_Past = $EYELASHES_HSV_H
+$EYELASHES_X_Past = $EYELASHES_X
 $EYELASHES_HSV_S_Past = $EYELASHES_HSV_S
 $EYELASHES_HSV_V_Past = $EYELASHES_HSV_V
 
@@ -888,7 +888,7 @@ y44 = $TWFEyeLashesConfigPosY
 z44 = $TWFEyeLashesConfigSizeW
 w44 = $TWFEyeLashesConfigSizeH
 ; HSV Params
-x43 = $EYELASHES_HSV_H - 0.0055
+x43 = $EYELASHES_X - 0.0055
 y43 = $EYELASHES_HSV_S - 0.28
 z43 = $EYELASHES_HSV_V - 0.27
 w43 = 1
@@ -914,7 +914,7 @@ y44 = $TWFEyeBrowsConfigPosY
 z44 = $TWFEyeBrowsConfigSizeW
 w44 = $TWFEyeBrowsConfigSizeH
 ; HSV Params
-x43 = $EYEBROWS_HSV_H - 0.208
+x43 = $EYEBROWS_X - 0.208
 y43 = $EYEBROWS_HSV_S - 0.66
 z43 = $EYEBROWS_HSV_V - 0.51
 w43 = 1
@@ -938,7 +938,7 @@ y44 = $TWFLIPSConfigPosY
 z44 = $TWFLIPSConfigSizeW
 w44 = $TWFLIPSConfigSizeH
 ; HSV Params
-x43 = $LIPS_HSV_H - 0.051
+x43 = $LIPS_X - 0.051
 y43 = $LIPS_HSV_S - 0.279
 z43 = $LIPS_HSV_V - 0.859
 w43 = 1
@@ -1242,13 +1242,13 @@ if $FaceDecal_Tattoo_FacePastIndex != $FaceDecal_Tattoo_FaceIndex
     $needsUpdate = 1 
 endif
 
-if $EYEBROWS_HSV_H_Past != $EYEBROWS_HSV_H || $EYEBROWS_HSV_S_Past != $EYEBROWS_HSV_S || $EYEBROWS_HSV_V_Past != $EYEBROWS_HSV_V
+if $EYEBROWS_X_Past != $EYEBROWS_X || $EYEBROWS_HSV_S_Past != $EYEBROWS_HSV_S || $EYEBROWS_HSV_V_Past != $EYEBROWS_HSV_V
     $needsUpdate = 1
 endif
-if $EYELASHES_HSV_H_Past != $EYELASHES_HSV_H || $EYELASHES_HSV_S_Past != $EYELASHES_HSV_S || $EYELASHES_HSV_V_Past != $EYELASHES_HSV_V
+if $EYELASHES_X_Past != $EYELASHES_X || $EYELASHES_HSV_S_Past != $EYELASHES_HSV_S || $EYELASHES_HSV_V_Past != $EYELASHES_HSV_V
     $needsUpdate = 1
 endif
-if $LIPS_HSV_H_Past != $LIPS_HSV_H || $LIPS_HSV_S_Past != $LIPS_HSV_S || $LIPS_HSV_V_Past != $LIPS_HSV_V
+if $LIPS_X_Past != $LIPS_X || $LIPS_HSV_S_Past != $LIPS_HSV_S || $LIPS_HSV_V_Past != $LIPS_HSV_V
     $needsUpdate = 1
 endif
 

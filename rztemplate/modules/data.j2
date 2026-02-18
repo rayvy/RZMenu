@@ -307,9 +307,9 @@ global $rayvich_back_values_w110
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
         {% if element.tag == 'HSVColorPicker' %}
-        global persist ${{element.element_name}}_HSV_H = 0.0
-        global persist ${{element.element_name}}_HSV_S = 1.0
-        global persist ${{element.element_name}}_HSV_V = 1.0
+        global persist ${{element.element_name}}_X = 0.0
+        global persist ${{element.element_name}}_Y = 1.0
+        global persist ${{element.element_name}}_Z = 1.0
         {% endif %}
     {% endfor %}
 {% endif %}

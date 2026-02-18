@@ -2,7 +2,7 @@
 bl_info = {
     "name": "RZMenu Constructor",
     "author": "Rayvich & Gemini",
-    "version": (3, 5, 0),
+    "version": (3, 5, 9),
     "blender": (4, 1, 0), 
     "location": "View3D > N Panel > RZ Constructor",
     "description": "Comprehensive scene-based UI editor (Refactored Core).",

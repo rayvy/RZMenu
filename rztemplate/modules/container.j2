@@ -650,9 +650,9 @@ endif
     {% endif %}
 
     {# Формируем итоговые имена переменных H/S/V #}
-    {% set var_H = "$" + var_prefix + "_HSV_H" %}
-    {% set var_S = "$" + var_prefix + "_HSV_S" %}
-    {% set var_V = "$" + var_prefix + "_HSV_V" %}
+    {% set var_H = "$" + var_prefix + "_X" %}
+    {% set var_S = "$" + var_prefix + "_Y" %}
+    {% set var_V = "$" + var_prefix + "_Z" %}
     
     ; --- ГЛАВНЫЙ ЭЛЕМЕНТ (Квадрат Saturation/Value) ---
     [CommandListElement{{ element_id_name }}]
@@ -686,9 +686,9 @@ endif
                 {% else %}
         elif {{ state_var }} == {{ loop.index0 }}
                 {% endif %}
-            {{ var_H }} = ${{ t_name }}_HSV_H
-            {{ var_S }} = ${{ t_name }}_HSV_S
-            {{ var_V }} = ${{ t_name }}_HSV_V
+            {{ var_H }} = ${{ t_name }}_X
+            {{ var_S }} = ${{ t_name }}_Y
+            {{ var_V }} = ${{ t_name }}_Z
             {% endfor %}
         endif
         {% endif %}
@@ -766,9 +766,9 @@ endif
                 {% else %}
         elif {{ state_var }} == {{ loop.index0 }}
                 {% endif %}
-            ${{ t_name }}_HSV_H = {{ var_H }}
-            ${{ t_name }}_HSV_S = {{ var_S }}
-            ${{ t_name }}_HSV_V = {{ var_V }}
+            ${{ t_name }}_X = {{ var_H }}
+            ${{ t_name }}_Y = {{ var_S }}
+            ${{ t_name }}_Z = {{ var_V }}
             {% endfor %}
         endif
         {% endif %}
