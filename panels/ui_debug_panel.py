@@ -450,6 +450,14 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                     # HSV & Masking
                     lower_grid = s_item.column(align=True)
                     
+                    # Slot Transform (Pass 0 / Main)
+                    lower_grid.label(text="Transform (Pass 0):")
+                    t_row = lower_grid.row(align=True)
+                    t_row.prop(slot, "rotation")
+                    t_row.prop(slot, "dummy")
+                    t_row.prop(slot, "mirror", text="", icon='MOD_MIRROR', toggle=True)
+                    t_row.prop(slot, "flip", text="", icon='UV_SYNC_SELECT', toggle=True)
+
                     h_row = lower_grid.row(align=True)
                     h_row.prop(slot, "hsv_enabled", text="HSV", icon='COLOR')
                     if slot.hsv_enabled:
@@ -466,6 +474,17 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                     p_row = lower_grid.row(align=True)
                     p_row.prop(slot, "multi_pass_mode", text="Pass")
                     p_row.prop(slot, "multi_pass_data", text="")
+
+                    if slot.multi_pass_mode != 'NONE':
+                        mp_box = lower_grid.box()
+                        mp_box.label(text="Transform (Multi-pass):")
+                        mp_box.prop(slot, "multi_pass_rect")
+                        
+                        mp_row = mp_box.row(align=True)
+                        mp_row.prop(slot, "multi_pass_rotation", text="Rot")
+                        mp_row.prop(slot, "multi_pass_dummy", text="Dmy")
+                        mp_row.prop(slot, "multi_pass_mirror", text="", icon='MOD_MIRROR', toggle=True)
+                        mp_row.prop(slot, "multi_pass_flip", text="", icon='UV_SYNC_SELECT', toggle=True)
 
     def draw_special_variables(self, layout, rzm):
         layout.separator()

@@ -244,20 +244,24 @@ class RZM_OT_MoveTwDecalLayer(bpy.types.Operator):
             coll.move(self.index, target_idx)
         return {'FINISHED'}
 
-def create_dummy_png(path):
-    """Создает пустой PNG файл (1x1 прозрачный)."""
+def create_dummy_png(path, width=1, height=1, color=(255, 0, 0, 128)):
+    """Создает пустой PNG файл заданного размера и цвета."""
     import struct
     import zlib
 
     # PNG Signature
     png_sig = b'\x89PNG\r\n\x1a\n'
     
-    # IHDR chunk: 1x1, 8-bit RGBA, non-interlaced
-    ihdr_data = struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)
+    # IHDR chunk
+    ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
     ihdr_chunk = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', zlib.crc32(b'IHDR' + ihdr_data) & 0xffffffff)
     
-    # IDAT chunk: 1 pixel (0,0,0,0)
-    pixel_data = b'\x00\x00\x00\x00\x00' # Filter 0 + RGBA
+    # IDAT chunk
+    # Row filter + pixels
+    r, g, b, a = color
+    pixel = struct.pack('BBBB', r, g, b, a)
+    row = b'\x00' + (pixel * width)
+    pixel_data = row * height
     compressed_data = zlib.compress(pixel_data)
     idat_chunk = struct.pack('>I', len(compressed_data)) + b'IDAT' + compressed_data + struct.pack('>I', zlib.crc32(b'IDAT' + compressed_data) & 0xffffffff)
     
@@ -287,17 +291,28 @@ class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
             return {'CANCELLED'}
 
         base_dir = os.path.join(target_path, "TexWorks")
-        
+        if not os.path.exists(base_dir):
+            os.makedirs(base_dir, exist_ok=True)
+            
         created_folders = 0
         created_files = 0
+        created_masks = 0
 
         for block in rzm.tw_blocks:
             block_dir = os.path.join(base_dir, block.name)
-            
+            block_res_name = block.resource_name or block.name
+
             for comp in block.components:
                 comp_dir = os.path.join(block_dir, comp.name)
                 
                 for slot in comp.slots:
+                    # Create root mask
+                    mask_name = f"{block_res_name} {comp.name} {slot.name} Mask.png"
+                    mask_path = os.path.join(base_dir, mask_name)
+                    if not os.path.exists(mask_path):
+                        if create_dummy_png(mask_path, slot.rect[2], slot.rect[3]):
+                            created_masks += 1
+
                     for layer in slot.decal_layers:
                         layer_dir = os.path.join(comp_dir, layer.name)
                         
@@ -308,10 +323,10 @@ class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
                         for i in range(layer.count):
                             file_path = os.path.join(layer_dir, f"{i}.png")
                             if not os.path.exists(file_path):
-                                if create_dummy_png(file_path):
+                                if create_dummy_png(file_path, slot.rect[2], slot.rect[3]):
                                     created_files += 1
 
-        self.report({'INFO'}, f"TexWorks Export: {created_folders} folders, {created_files} files created.")
+        self.report({'INFO'}, f"TexWorks Export: {created_folders} folders, {created_files} files, {created_masks} masks created.")
         return {'FINISHED'}
 
 class RZ_OT_TexWorksDebugSync(bpy.types.Operator):
@@ -322,19 +337,59 @@ class RZ_OT_TexWorksDebugSync(bpy.types.Operator):
 
     def execute(self, context):
         rzm = context.scene.rzm
+        target_path = get_target_path(context)
         
         print("\n" + "="*50)
-        print("TEXWORKS DATA SYNC DEBUG")
+        print("TEXWORKS DATA SYNC DEBUG (BLENDER DATA)")
         print("="*50)
 
         for b_idx, block in enumerate(rzm.tw_blocks):
-            print(f"Block [{b_idx}]: {block.name} (Shader: {block.shader_type})")
+            print(f"Block [{b_idx}]: {block.name} (Shader: {block.shader_type}, Resource: {block.resource_name})")
             for c_idx, comp in enumerate(block.components):
                 print(f"  Component [{c_idx}]: {comp.name}")
                 for s_idx, slot in enumerate(comp.slots):
-                    print(f"    Slot [{s_idx}]: {slot.name} (Active: {slot.active})")
+                    print(f"    Slot [{s_idx}]: {slot.name} (Active: {slot.active}, Rect: {list(slot.rect)})")
                     for l_idx, layer in enumerate(slot.decal_layers):
                         print(f"      Layer [{l_idx}]: {layer.name} (Index: {layer.index}, Count: {layer.count})")
+        
+        if target_path:
+            base_dir = os.path.join(target_path, "TexWorks")
+            if os.path.exists(base_dir):
+                print("\n" + "="*50)
+                print("TEXWORKS DATA SYNC DEBUG (PHYSICAL DATA)")
+                print("="*50)
+                
+                # Scan and group
+                theoretical_structure = {} # {Block: {Component: {Slot: [Layers]}}}
+                
+                # First level: Masks in root
+                masks = [f for f in os.listdir(base_dir) if f.endswith("Mask.png")]
+                if masks:
+                    print("Root Masks found:")
+                    for m in masks: print(f"  - {m}")
+                
+                # Walk blocks
+                for block_name in [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]:
+                    block_path = os.path.join(base_dir, block_name)
+                    theoretical_structure[block_name] = {}
+                    
+                    for comp_name in [d for d in os.listdir(block_path) if os.path.isdir(os.path.join(block_path, d))]:
+                        comp_path = os.path.join(block_path, comp_name)
+                        theoretical_structure[block_name][comp_name] = {}
+                        
+                        for layer_name in [d for d in os.listdir(comp_path) if os.path.isdir(os.path.join(comp_path, d))]:
+                            layer_path = os.path.join(comp_path, layer_name)
+                            files = os.listdir(layer_path)
+                            theoretical_structure[block_name][comp_name][layer_name] = files
+
+                # Print grouped structure
+                for b_name, comps in theoretical_structure.items():
+                    print(f"Block: {b_name}")
+                    for c_name, layers in comps.items():
+                        print(f"  Component: {c_name}")
+                        for l_name, files in layers.items():
+                            print(f"    Folder/Layer: {l_name} ({len(files)} files)")
+                            # Optimization: just count files to avoid console spam if there are many
         
         print("="*50 + "\n")
         self.report({'INFO'}, "TexWorks data printed to console.")

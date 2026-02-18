@@ -61,6 +61,12 @@ class TexWorksSlot(bpy.types.PropertyGroup):
     name: StringProperty(name="Slot Name", default="Arm")
     active: BoolProperty(default=True)
     
+    # Transform
+    rotation: bpy.props.IntProperty(name="Rotation")
+    dummy: bpy.props.IntProperty(name="Dummy")
+    mirror: bpy.props.BoolProperty(name="Mirror")
+    flip: bpy.props.BoolProperty(name="Flip")
+
     # Слои декалей (Tattoo, Fluid, Blood и т.д.)
     decal_layers: CollectionProperty(type=TexWorksDecalLayer)
     active_layer_index: IntProperty()
@@ -90,6 +96,13 @@ class TexWorksSlot(bpy.types.PropertyGroup):
         default='NONE'
     )
     multi_pass_data: FloatVectorProperty(name="Pass Data", size=4, default=(0.0, 0.0, 0.0, 1.0))
+    
+    # New Multi-pass data (Normalized)
+    multi_pass_rect: IntVectorProperty(name="Pass Rect (X, Y, W, H)", size=4, default=(0, 0, 1024, 1024))
+    multi_pass_rotation: IntProperty(name="Pass Rotation")
+    multi_pass_dummy: IntProperty(name="Pass Dummy")
+    multi_pass_mirror: BoolProperty(name="Pass Mirror")
+    multi_pass_flip: BoolProperty(name="Pass Flip")
 
     # HSV: Теперь одна ссылка на Векторную переменную
     hsv_enabled: BoolProperty(default=False)

@@ -172,15 +172,15 @@ x43 = ${{ v_name }}_X - {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 
 y43 = ${{ v_name }}_Y - {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
 z43 = ${{ v_name }}_Z - {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.0) }}
 w43 = 1.0 {# HSV Enabled #}
-x44 = {{ comp.rect[0] + slot.rect[0] }}
+x44 = {{ comp.rect[0] + slot.rect[0] }} {# USAGE: comp.rect and slot.rect #}
 y44 = {{ comp.rect[1] + slot.rect[1] }}
 z44 = {{ slot.rect[2] }}
 w44 = {{ slot.rect[3] }}
 {% set mir_val = 1.0 if slot.multi_pass_mode == 'DUPLICATE' else (2.0 if slot.multi_pass_mode == 'INDIVIDUAL' else 0.0) %}
-x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }}
-y45 = {{ "%.3f"|format(slot.multi_pass_data[1]) }}
+x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }} {# USAGE: old multi_pass_data[0] #}
+y45 = {{ "%.3f"|format(slot.multi_pass_data[1]) }} {# USAGE: old multi_pass_data[1] #}
 z45 = {{ "%.1f"|format(mir_val) }}
-w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }}
+w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }} {# USAGE: old multi_pass_data[3] #}
 dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 {% endif %}
 
@@ -215,14 +215,14 @@ if ${{ l_var }} >= 0
     
     {# Pass 0 (Original) #}
     cs-t1 = {% if slot.pass0_use_mask %}{% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}{% else %}null{% endif %}
-    x44 = {{ comp.rect[0] + slot.rect[0] }}
+    x44 = {{ comp.rect[0] + slot.rect[0] }} {# USAGE: Pass 0 Offset #}
     y44 = {{ comp.rect[1] + slot.rect[1] }}
     z44 = {{ slot.rect[2] }}
     w44 = {{ slot.rect[3] }}
-    x45 = 0.0
+    x45 = 0.0 {# TODO: Replace with new slot.rotation / slot.dummy #}
     y45 = 0.0
-    z45 = 0.0
-    w45 = 1.0
+    z45 = 0.0 {# TODO: Replace with new slot.mirror #}
+    w45 = 1.0 {# TODO: Replace with new slot.flip #}
     dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
     
     {# Pass 1 (Multi-Pass / Mirror) #}
@@ -231,12 +231,12 @@ if ${{ l_var }} >= 0
     cs-t1 = {% if slot.pass1_use_mask %}{% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}{% else %}null{% endif %}
     {% set atlas_center = "2048" %}
     {% if slot.multi_pass_mode == 'DUPLICATE' or slot.multi_pass_mode == 'INDIVIDUAL' %}
-    x44 = (2 * {{ atlas_center }}) - {{ comp.rect[0] + slot.rect[0] }} - {{ slot.rect[2] }}
+    x44 = (2 * {{ atlas_center }}) - {{ comp.rect[0] + slot.rect[0] }} - {{ slot.rect[2] }} {# TODO: Replace with new multi_pass_rect #}
     {% endif %}
-    x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }}
+    x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }} {# USAGE: old multi_pass_data #}
     y45 = {{ "%.3f"|format(slot.multi_pass_data[1]) }}
-    z45 = 1.0 {# Individual or Duplicate both use mirrored layout #}
-    w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }}
+    z45 = 1.0 {# TODO: Replace with multi_pass_mirror #}
+    w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }} {# TODO: Replace with multi_pass_flip #}
     dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
     {% endif %}
 endif
