@@ -25,7 +25,7 @@
     {% if scene.rzm.toggle_definitions %}
         {% for toggle in scene.rzm.toggle_definitions %}
             {% if toggle.toggle_name %}
-            global persist ${{ toggle.toggle_name }} = 0   
+            global persist ${{utils.format_var(toggle.toggle_name)}} = 0   
             {%endif%}
                 {#{toggle.toggle_length}#}
         {% endfor %}
@@ -850,20 +850,20 @@ if $dt+$sppeeedyy < $sppeeedyy
 {% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
     {% if shape.anim_condition %}
     if {{ shape.anim_condition }}
-        ${{ shape.shape_name | default('Error') | string}}Freq = ${{ shape.shape_name | default('Error') | string}}Freq + ${{ shape.shape_name | default('Error') | string}} * ($sppeeedyy)
+        ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($sppeeedyy)
     endif
     {% else %}
-    ${{ shape.shape_name | default('Error') | string}}Freq = ${{ shape.shape_name | default('Error') | string}}Freq + ${{ shape.shape_name | default('Error') | string}} * ($sppeeedyy)
+    ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($sppeeedyy)
     {% endif %}
 {% endfor %}
 else
 {% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
     {% if shape.anim_condition %}
     if {{ shape.anim_condition }}
-        ${{ shape.shape_name | default('Error') | string}}Freq = ${{ shape.shape_name | default('Error') | string}}Freq + ${{ shape.shape_name | default('Error') | string}} * ($dt+$sppeeedyy)
+        ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($dt+$sppeeedyy)
     endif
     {% else %}
-    ${{ shape.shape_name | default('Error') | string}}Freq = ${{ shape.shape_name | default('Error') | string}}Freq + ${{ shape.shape_name | default('Error') | string}} * ($dt+$sppeeedyy)
+    ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($dt+$sppeeedyy)
     {% endif %}
 {% endfor %}
 endif
@@ -885,7 +885,7 @@ endif
             {% if shape.shape_type == "Linear" | default("Linear") %}
             {% if key.mode == 1 %}
                 ;Advanced Key
-                x88 = ${{ shape.shape_name | default('Error') | string }}
+                x88 = ${{utils.format_var(shape.shape_name | default('Error') | string)}}
                 {% set range_min = key.input_range_min | default(0.0) | float %}
                 {% set range_max = key.input_range_max | default(1.0) | float %}
                 {% set multiplier = key.multiplier | default(1.0) | float %}
@@ -903,10 +903,10 @@ endif
                 endif
                 x88 = x88 * {{ multiplier }}
                 {% else %}
-                x88 = ${{ shape.shape_name | default('Error') | string }}
+                x88 = ${{utils.format_var(shape.shape_name | default('Error') | string)}}
             {% endif %}
             cs-t50 = copy Resource{{ component.fullname }}Position.Base
-            cs-t51 = copy Resource{{ component.fullname }}Position.{{ shape.shape_name | default('Error') | string}}_{{ key.key_name }}
+            cs-t51 = copy Resource{{ component.fullname }}Position.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}
             Resource{{ component.fullname }}Position = ref cs-u5
             Dispatch = {{ component.vertex_count }}, 1, 1
             {% endif %}
@@ -929,7 +929,7 @@ endif
             z88 = {{ key.anim_start_frame| default(0.0) | float }}
             w88 = {{ key.anim_end_frame | default(1.0) | float }}
             cs-t50 = copy Resource{{ component.fullname }}Position.Base
-            cs-t51 = copy Resource{{ component.fullname }}Position.{{ shape.shape_name | default('Error') | string}}_{{ key.key_name }}
+            cs-t51 = copy Resource{{ component.fullname }}Position.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}
             Resource{{ component.fullname }}Position = ref cs-u5
             Dispatch = {{ component.vertex_count }}, 1, 1
             {% endif %}
@@ -962,13 +962,13 @@ endif
     {% for key in shape.shape_keys %}
         ;ShapeKey Resource: {{ shape.shape_name }}.{{ key.key_name }}
         {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 and component.strides %}
-        [Resource{{ component.fullname }}Position.{{ shape.shape_name | default('Error') | string}}_{{ key.key_name }}]
+        [Resource{{ component.fullname }}Position.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}]
         type = Buffer
         stride = {{ component.strides.position }}
         filename = /{{ key.key_name }}/{{ component.fullname }}Position.buf
 
         {% if mod_file.game.name == "HonkaiStarRail" %}
-        [Resource{{ component.fullname }}PositionCS.{{ shape.shape_name | default('Error') | string}}_{{ key.key_name }}]
+        [Resource{{ component.fullname }}PositionCS.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}]
         type = StructuredBuffer
         stride = {{ component.strides.position }}
         filename = /{{ key.key_name }}/{{ component.fullname }}Position.buf

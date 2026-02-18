@@ -1,3 +1,4 @@
+{% import "modules/utils.j2" as utils with context %}
 {# --- Вспомогательный макрос: Получение реального объекта --- #}
 {% macro _get_real_object(input_obj) -%}
     {%- set obj_name = input_obj.name if input_obj.name is defined else input_obj -%}
@@ -67,7 +68,7 @@
                     {% if toggle_indices %}
                         {# Сохраняем имя, чтобы потом закрыть #}
                         {% set _ = active_toggles.append(toggle_name) %}
-                        if ${{ toggle_name }} == {{ toggle_indices|join(' || $' + toggle_name + ' == ') }}
+                        if ${{utils.format_var(toggle_name)}} == {{ toggle_indices|join(' || $' + toggle_name + ' == ') }}
                     {% endif %}
                 {% endif %}
             {% endfor %}
