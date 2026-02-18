@@ -40,9 +40,8 @@ class TexOverride(bpy.types.PropertyGroup):
 
 class TexWorksMaterial(bpy.types.PropertyGroup):
     name: StringProperty(name="Material Name", default="NewMaterial")
-    use_diffuse: BoolProperty(name="Use Diffuse", default=True)
-    use_normalmap: BoolProperty(name="Use NormalMap", default=False)
-    use_materialmap: BoolProperty(name="Use MaterialMap", default=False)
+    # x46 parameters in shader
+    parameters: FloatVectorProperty(name="Parameters (x46)", size=4, default=(0.0, 0.0, 0.0, 1.0))
     
     diffuse_blend_mode: EnumProperty(
         name="Diffuse Blend",
@@ -55,6 +54,7 @@ class TexWorksMaterial(bpy.types.PropertyGroup):
 class TexWorksDecalLayer(bpy.types.PropertyGroup):
     name: StringProperty(name="Material Name", default="Tattoo")
     index: IntProperty(name="Index", default=0)
+    count: IntProperty(name="Total Textures", default=1, min=1)
     active: BoolProperty(default=True)
 
 class TexWorksSlot(bpy.types.PropertyGroup):
@@ -65,40 +65,48 @@ class TexWorksSlot(bpy.types.PropertyGroup):
     decal_layers: CollectionProperty(type=TexWorksDecalLayer)
     active_layer_index: IntProperty()
     
-    # Координаты X, Y, W, H
+    # Координаты X, Y, W, H на атласе компонента
     rect: IntVectorProperty(name="Rect (X, Y, W, H)", size=4, default=(0, 0, 1024, 1024))
     
     # Маскирование
+    mask_enabled: BoolProperty(name="Use Mask", default=False)
     mask_source: EnumProperty(
         items=[('TEXTURE_ALPHA', "Source Alpha", ""), ('SEPARATE_MASK', "Separate Mask", ""), ('CHANNEL_R', "R", ""), ('CHANNEL_G', "G", ""), ('CHANNEL_B', "B", "")],
         default='TEXTURE_ALPHA'
     )
+    
+    # Управление маской в мультипассе
+    pass0_use_mask: BoolProperty(name="Mask Pass 0", default=True)
+    pass1_use_mask: BoolProperty(name="Mask Pass 1", default=False)
 
-    # Зеркалирование и Оффсеты (Buffer Data: offset_x, offset_y, mirror, flip)
-    mirror_mode: EnumProperty(
-        name="Mirror Mode",
+    # Мультипасс (бывший Mirror)
+    multi_pass_mode: EnumProperty(
+        name="Pass Mode",
         items=[
-            ('NONE', "None", ""),
+            ('NONE', "Single Pass", ""),
             ('DUPLICATE', "Duplicate (Sync)", ""),
             ('INDIVIDUAL', "Individual (L/R)", "")
         ],
         default='NONE'
     )
-    mirror_data: FloatVectorProperty(name="Mirror Data", size=4, default=(0.0, 0.0, 0.0, 1.0))
+    multi_pass_data: FloatVectorProperty(name="Pass Data", size=4, default=(0.0, 0.0, 0.0, 1.0))
 
     # HSV: Теперь одна ссылка на Векторную переменную
     hsv_enabled: BoolProperty(default=False)
+    hsv_mask_enabled: BoolProperty(name="Use HSV Mask", default=False)
     hsv_link: StringProperty(name="HSV Variable", description="Link to a VECTOR value ($MyVar)")
     hsv_base: FloatVectorProperty(name="HSV Base", size=4, default=(0.0, 0.0, 0.0, 1.0))
-
-    condition: StringProperty(name="Condition")
 
 # --- 4. COMPONENTS & MAIN BLOCKS ---
 
 class TexWorksComponent(bpy.types.PropertyGroup):
     name: StringProperty(name="Component Name", default="NewComponent")
-    resource_name: StringProperty(name="Resource Name", description="Link to a resource (Physical/Virtual)")
+    # Базовый ресурс (исходная текстура кожи/одежды)
+    base_resource_name: StringProperty(name="Base Resource", description="Original texture for the canvas")
+    base_rect: IntVectorProperty(name="Base Rect (X, Y, W, H)", size=4, default=(0, 0, 1024, 1024))
+    
     rect: IntVectorProperty(name="Rect (X, Y, W, H)", size=4, default=(0, 0, 4096, 4096))
+    mask_enabled: BoolProperty(name="Use Component Mask", default=False)
     slots: CollectionProperty(type=TexWorksSlot)
     active_slot_index: IntProperty()
 
@@ -107,8 +115,20 @@ class TexWorksMainBlock(bpy.types.PropertyGroup):
     name: StringProperty(name="Block Name", default="MainBlock")
     resource_name: StringProperty(name="Output Resource", description="Virtual texture for this block")
     
-    # Список имен ресурсов, которые являются атласами (VIRTUAL ресурсы)
-    output_atlases: CollectionProperty(type=bpy.types.PropertyGroup) # Можно сделать коллекцию StringProperty
-    
+    # Подложка (Backdrop) - инициализируется один раз
+    backdrop_enabled: BoolProperty(name="Use Backdrop", default=False)
+    backdrop_resource_name: StringProperty(name="Backdrop Res", description="Global podlozhka for the block")
+    backdrop_rect: IntVectorProperty(name="Backdrop Rect", size=4, default=(0, 0, 4096, 4096))
+
+    shader_type: EnumProperty(
+        name="Shader Type",
+        items=[
+            ('DIFFUSE', "Diffuse (decal_draw.hlsl)", ""),
+            ('MATERIAL', "Material (decal_draw_material.hlsl)", ""),
+            ('NORMAL', "Normal (decal_draw_material.hlsl)", ""),
+        ],
+        default='DIFFUSE'
+    )
+
     components: CollectionProperty(type=TexWorksComponent)
     active_component_index: IntProperty()

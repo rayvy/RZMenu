@@ -5,7 +5,7 @@
 
 {% call utils.clean_ws(max_empty=1) %}
 ; =======================================================================================
-;                                     TEXWORKS CORE (v3.5.3)
+;                                     TEXWORKS CORE (v3.5.6)
 ; =======================================================================================
 
 ; --- 1. GLOBAL RESOURCES ---
@@ -24,7 +24,7 @@ mips = 1
 {% endif %}
 {% endfor %}
 
-; --- 2. GLOBAL OVERRIDES ---
+; --- 2. GLOBAL OVERRIDES (Atlas Protection) ---
 {% for over in rzm.tw_overrides %}
 [TextureOverride{{ over.name }}]
 hash = {{ over.hash }}
@@ -48,10 +48,13 @@ endif
 
 ; --- 3. MAIN BLOCKS ---
 {% for block in rzm.tw_blocks %}
-; Block: {{ block.name }}
-{# ХВАТИТ ОПЯТЬ ПИСАТЬ {% if block.resource_name %} #} {# {% if block.resource_name is not defined %} ЭТО ПРАВИЛЬНЫЙ МЕТОД, ТАК МЫ ОПРЕДЕЛЯЕМ ЧТО ТЕКСТУРЫ НЕТ!#}
-{% if block.resource_name is not defined %}
-[Resource{{ utils.clean_resource(block.resource_name) }}]
+; Block: {{ block.name }} ({{ block.shader_type }})
+{% set block_res = utils.clean_resource(block.resource_name) %}
+
+{# Auto-generate resource if output resource name is missing #}
+{% if not block.resource_name %}
+{% set block_res = block.name ~ "_Atlas" %}
+[Resource{{ block_res }}]
 type = RWTexture2D
 width = 4096
 height = 4096
@@ -61,67 +64,182 @@ msaa = 1
 mips = 1
 {% endif %}
 
-{% for comp in block.components %}
-; Component: {{ comp.name }}
-{% set comp_res = comp.resource_name if comp.resource_name else (block.resource_name if block.resource_name else 'AtlasMISSING') %}
-{% set comp_path = "modules/texworks/" ~ comp.name %}
+{% if block.backdrop_enabled and block.backdrop_resource_name %}
+[CommandListBlock_{{ block.name }}.GlobalInit]
+run = CustomShaderBlockBackdrop_{{ block.name }}
+$TW_Global_Init_Needed_{{ block.name }} = 0
 
+[CustomShaderBlockBackdrop_{{ block.name }}]
+cs = /modules/texworks/cs_update_region.hlsl
+cs-u0 = ref Resource{{ block_res }}
+cs-t0 = Resource{{ utils.clean_resource(block.backdrop_resource_name) }}
+cs-t1 = null
+x43 = 0
+y43 = 0
+z43 = 0
+w43 = 1.0
+x44 = {{ block.backdrop_rect[0] }}
+y44 = {{ block.backdrop_rect[1] }}
+z44 = {{ block.backdrop_rect[2] }}
+w44 = {{ block.backdrop_rect[3] }}
+x45 = 0.0
+y45 = 0.0
+z45 = 0.0
+w45 = 1.0
+dispatch = {{ block.backdrop_rect[2] }} // 32, {{ block.backdrop_rect[3] }} // 32, 1
+{% endif %}
+
+{% for comp in block.components %}
+; --- Component: {{ comp.name }} ---
+{% set comp_path = "modules/texworks/" ~ comp.name %}
+{% if comp.mask_enabled %}
 [Resource{{ comp.name }}Mask]
 filename = {{ comp_path }}/mask.png
+{% endif %}
 
 [CommandListUpdateComp_{{ block.name }}_{{ comp.name }}]
+{# 1. Base initialization pass #}
+run = CustomShaderUpdateCompBase_{{ block.name }}_{{ comp.name }}
+
+{# 2. HSV Adjustments #}
 {% for slot in comp.slots if slot.active %}
     {% if slot.hsv_link %}
 run = CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}
     {% endif %}
-    
+{% endfor %}
+
+{# 3. Decal Layers #}
+{% for slot in comp.slots if slot.active %}
     {% for layer in slot.decal_layers if layer.active %}
 run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}
     {% endfor %}
 {% endfor %}
 
-{% for slot in comp.slots if slot.active %}
-{% set slot_mask_res = "Resource" ~ comp.name ~ slot.name ~ "Mask" %}
-[{{ slot_mask_res }}]
-filename = {{ comp_path }}/{{ slot.name }}/{{ comp.name }}{{ slot.name }}.Mask.png
+{# --- Shaders for Component --- #}
 
-{% if slot.hsv_link %}
-[CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}]
+[CustomShaderUpdateCompBase_{{ block.name }}_{{ comp.name }}]
 cs = /modules/texworks/cs_update_region.hlsl
-cs-u0 = ref Resource{{ utils.clean_resource(comp_res) }}
+cs-u0 = ref Resource{{ block_res }}
+{% if comp.base_resource_name %}
+cs-t0 = Resource{{ utils.clean_resource(comp.base_resource_name) }}
+{% elif block.backdrop_enabled and block.backdrop_resource_name %}
+cs-t0 = Resource{{ utils.clean_resource(block.backdrop_resource_name) }}
+{% else %}
 cs-t0 = null
-cs-t1 = {{ slot_mask_res }}
-{% set v_name = utils.format_var(slot.hsv_link) %}
-x43 = ${{ v_name }}_X - {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
-y43 = ${{ v_name }}_Y - {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
-z43 = ${{ v_name }}_Z - {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.0) }}
-w43 = ${{ v_name }}_W
-x44 = {{ comp.rect[0] + slot.rect[0] }}
-y44 = {{ comp.rect[1] + slot.rect[1] }}
-z44 = {{ slot.rect[2] }}
-w44 = {{ slot.rect[3] }}
-dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 {% endif %}
-
-{% for layer in slot.decal_layers if layer.active %}
-{% set layer_res_name = "Resource" ~ block.name ~ comp.name ~ slot.name ~ layer.name %}
-[{{ layer_res_name }}]
-filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ layer.index }}.png
-
-[CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}]
-cs = /modules/texworks/cs_update_region.hlsl
-cs-u0 = ref Resource{{ utils.clean_resource(comp_res) }}
-cs-t0 = {{ layer_res_name }}
-cs-t1 = {{ slot_mask_res }}
+cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
 x43 = 0
 y43 = 0
 z43 = 0
 w43 = 1.0
+x44 = {{ comp.rect[0] }}
+y44 = {{ comp.rect[1] }}
+z44 = {{ comp.rect[2] }}
+w44 = {{ comp.rect[3] }}
+{# Mapping source rect #}
+x45 = {{ "%.3f"|format(comp.base_rect[0] / 4096) }}
+y45 = {{ "%.3f"|format(comp.base_rect[1] / 4096) }}
+z45 = 0.0
+w45 = 1.0
+dispatch = {{ comp.rect[2] }} // 32, {{ comp.rect[3] }} // 32, 1
+
+{% for slot in comp.slots if slot.active %}
+{# Slot Resources (Masks, Decal variations) #}
+{% if slot.mask_enabled %}
+[Resource{{ comp.name }}{{ slot.name }}Mask]
+filename = {{ comp_path }}/{{ slot.name }}/{{ comp.name }}{{ slot.name }}.Mask.png
+{% endif %}
+
+{% for layer in slot.decal_layers if layer.active %}
+    {% for i in range(layer.count) %}
+        {% set file_suffix = "" %}
+        {% if block.shader_type == 'NORMAL' %}{% set file_suffix = "_N" %}{% endif %}
+        {% if block.shader_type == 'MATERIAL' %}{% set file_suffix = "_M" %}{% endif %}
+[Resource_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}]
+filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ i }}{{ file_suffix }}.png
+    {% endfor %}
+{% endfor %}
+
+{# HSV Compute Shader #}
+{% if slot.hsv_link %}
+[CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}]
+cs = /modules/texworks/cs_update_region.hlsl
+cs-u0 = ref Resource{{ block_res }}
+cs-t0 = null
+cs-t1 = {% if slot.hsv_mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
+{% set v_name = utils.format_var(slot.hsv_link) %}
+x43 = ${{ v_name }}_X - {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
+y43 = ${{ v_name }}_Y - {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
+z43 = ${{ v_name }}_Z - {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.0) }}
+w43 = 1.0 {# HSV Enabled #}
 x44 = {{ comp.rect[0] + slot.rect[0] }}
 y44 = {{ comp.rect[1] + slot.rect[1] }}
 z44 = {{ slot.rect[2] }}
 w44 = {{ slot.rect[3] }}
+{% set mir_val = 1.0 if slot.multi_pass_mode == 'DUPLICATE' else (2.0 if slot.multi_pass_mode == 'INDIVIDUAL' else 0.0) %}
+x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }}
+y45 = {{ "%.3f"|format(slot.multi_pass_data[1]) }}
+z45 = {{ "%.1f"|format(mir_val) }}
+w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }}
 dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
+{% endif %}
+
+{# Layer Compute Shaders #}
+{% for layer in slot.decal_layers if layer.active %}
+{% set l_var = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name ~ "Index" %}
+{% set material = rzm.tw_materials.get(layer.name) %}
+[CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}]
+{% if block.shader_type == 'MATERIAL' or block.shader_type == 'NORMAL' %}
+cs = /modules/texworks/decal_draw_material.hlsl
+{% else %}
+cs = /modules/texworks/decal_draw.hlsl
+{% endif %}
+cs-u0 = ref Resource{{ block_res }}
+cs-t0 = null
+
+{# Index Switching #}
+{% for i in range(layer.count) %}
+{% if loop.first %}if ${{ l_var }} == {{ i }}{% else %}elif ${{ l_var }} == {{ i }}{% endif %}
+    cs-t0 = Resource_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
+{% endfor %}
+endif
+
+if ${{ l_var }} >= 0
+    {# Apply Material Parameters (x46) #}
+    {% if material %}
+    x46 = {{ "%.3f"|format(material.parameters[0]) }}
+    y46 = {{ "%.3f"|format(material.parameters[1]) }}
+    z46 = {{ "%.3f"|format(material.parameters[2]) }}
+    w46 = {{ "%.3f"|format(material.parameters[3]) }}
+    {% endif %}
+    
+    {# Pass 0 (Original) #}
+    cs-t1 = {% if slot.pass0_use_mask %}{% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}{% else %}null{% endif %}
+    x44 = {{ comp.rect[0] + slot.rect[0] }}
+    y44 = {{ comp.rect[1] + slot.rect[1] }}
+    z44 = {{ slot.rect[2] }}
+    w44 = {{ slot.rect[3] }}
+    x45 = 0.0
+    y45 = 0.0
+    z45 = 0.0
+    w45 = 1.0
+    dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
+    
+    {# Pass 1 (Multi-Pass / Mirror) #}
+    {% if slot.multi_pass_mode != 'NONE' %}
+    ; Pass 1 (Multi-Pass)
+    cs-t1 = {% if slot.pass1_use_mask %}{% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}{% else %}null{% endif %}
+    {% set atlas_center = "2048" %}
+    {% if slot.multi_pass_mode == 'DUPLICATE' or slot.multi_pass_mode == 'INDIVIDUAL' %}
+    x44 = (2 * {{ atlas_center }}) - {{ comp.rect[0] + slot.rect[0] }} - {{ slot.rect[2] }}
+    {% endif %}
+    x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }}
+    y45 = {{ "%.3f"|format(slot.multi_pass_data[1]) }}
+    z45 = 1.0 {# Individual or Duplicate both use mirrored layout #}
+    w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }}
+    dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
+    {% endif %}
+endif
 {% endfor %}
 {% endfor %}
 {% endfor %}
@@ -130,6 +248,10 @@ dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 ; --- 4. INITIALIZATION & HIERARCHY ---
 [Constants]
 global $TW_Init_Needed = 1
+{% for block in rzm.tw_blocks %}
+global $TW_Global_Init_Needed_{{ block.name }} = 1
+{% endfor %}
+
 {% set ns = namespace(processed_vars=[]) %}
 {% for block in rzm.tw_blocks %}
     {% for comp in block.components %}
@@ -162,6 +284,13 @@ endif
 
 {% for block in rzm.tw_blocks %}
 [CommandListBlock_{{ block.name }}]
+{# Global Backdrop Init (Runs Once) #}
+{% if block.backdrop_enabled and block.backdrop_resource_name %}
+if $TW_Global_Init_Needed_{{ block.name }} == 1
+    run = CommandListBlock_{{ block.name }}.GlobalInit
+endif
+{% endif %}
+
 {# Initialization #}
 if $TW_Init_Needed == 1
     {% for comp in block.components %}

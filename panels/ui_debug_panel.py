@@ -357,11 +357,10 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             m_box = mat_box.box()
             row = m_box.row(align=True)
             row.prop(mat, "name", text=f"[{i}]")
+            row.prop(mat, "shader_type", text="")
             row.prop(mat, "diffuse_blend_mode", text="")
-            row = m_box.row(align=True)
-            row.prop(mat, "use_diffuse", text="Diff")
-            row.prop(mat, "use_normalmap", text="Norm")
-            row.prop(mat, "use_materialmap", text="MatMap")
+            
+            m_box.prop(mat, "parameters", text="Params (x46)")
 
         # --- 4. MAIN BLOCKS (The Core Structure) ---
         block_box = main_box.box()
@@ -371,65 +370,103 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         
         for b_idx, block in enumerate(rzm.tw_blocks):
             b_box = block_box.box()
-            row = b_box.row(align=True)
-            row.prop(block, "name", text=f"Block {b_idx}")
-            row.prop(block, "resource_name", text="Out Res")
             
+            # Block Header
+            row = b_box.row(align=True)
+            row.label(text=f"BLOCK {b_idx}:", icon='MODIFIER_ON')
+            row.prop(block, "name", text="")
+            row.prop(block, "shader_type", text="")
+            
+            # Block Output Atlas
+            row = b_box.row(align=True)
+            row.prop(block, "resource_name", text="Output Atlas")
+            
+            # Backdrop Settings
+            back_box = b_box.box()
+            row = back_box.row(align=True)
+            row.prop(block, "backdrop_enabled", text="Use Backdrop", icon='IMAGE_BACKGROUND')
+            if block.backdrop_enabled:
+                row.prop(block, "backdrop_resource_name", text="Res")
+                row.prop(block, "backdrop_rect", text="Rect")
+
             # Components within Block
-            comp_area = b_box.box()
-            c_row = comp_area.row(align=True); c_row.label(text="Components:")
-            op = c_row.operator("rzm.add_tw_component", text="", icon='ADD'); op.block_index = b_idx
-            op = c_row.operator("rzm.remove_tw_component", text="", icon='REMOVE'); op.block_index = b_idx
+            comp_box = b_box.box()
+            c_header = comp_box.row(align=True)
+            c_header.label(text="COMPONENTS:", icon='GROUP')
+            op = c_header.operator("rzm.add_tw_component", text="", icon='ADD'); op.block_index = b_idx
+            op = c_header.operator("rzm.remove_tw_component", text="", icon='REMOVE'); op.block_index = b_idx
             
             for c_idx, comp in enumerate(block.components):
-                c_box = comp_area.box()
-                row = c_box.row(align=True)
-                row.prop(comp, "name", text=f"C{c_idx}")
-                row.prop(comp, "resource_name", text="Res")
-                row.prop(comp, "rect", text="Rect")
+                c_item = comp_box.box()
                 
-                # Slots within Component
-                slot_area = c_box.box()
-                s_row = slot_area.row(align=True); s_row.label(text="Slots:")
-                op = s_row.operator("rzm.add_tw_slot", text="", icon='ADD'); op.block_index = b_idx; op.comp_index = c_idx
-                op = s_row.operator("rzm.remove_tw_slot", text="", icon='REMOVE'); op.block_index = b_idx; op.comp_index = c_idx
+                # Component Header
+                row = c_item.row(align=True)
+                row.prop(comp, "name", text=f"Comp {c_idx}")
+                row.prop(comp, "mask_enabled", text="", icon='MOD_MASK')
+                
+                # Component Base Settings
+                split = c_item.split(factor=0.4)
+                split.prop(comp, "base_resource_name", text="Base Res")
+                split.prop(comp, "base_rect", text="Source")
+                
+                c_item.prop(comp, "rect", text="Atlas Rect")
+                
+                # Slots
+                slot_box = c_item.box()
+                s_header = slot_box.row(align=True)
+                s_header.label(text="SLOTS:", icon='NODE_SEL')
+                op = s_header.operator("rzm.add_tw_slot", text="", icon='ADD')
+                op.block_index = b_idx; op.comp_index = c_idx
+                op = s_header.operator("rzm.remove_tw_slot", text="", icon='REMOVE')
+                op.block_index = b_idx; op.comp_index = c_idx
                 
                 for s_idx, slot in enumerate(comp.slots):
-                    s_box = slot_area.box()
-                    row = s_box.row(align=True)
-                    row.prop(slot, "active", text="")
-                    row.prop(slot, "name", text=f"S{s_idx}")
+                    s_item = slot_box.box()
                     
-                    # Decal Layers within Slot
-                    layer_area = s_box.box()
-                    l_row = layer_area.row(align=True); l_row.label(text="Decal Layers:", icon='MOD_CLOTH')
+                    # Slot Header
+                    row = s_item.row(align=True)
+                    row.prop(slot, "active", text="")
+                    row.prop(slot, "name", text=f"Slot {s_idx}")
+                    row.prop(slot, "rect", text="")
+                    
+                    # Decal Layers (Compact)
+                    layer_box = s_item.box()
+                    l_row = layer_box.row(align=True)
+                    l_row.label(text="Layers:", icon='STRANDS')
                     op = l_row.operator("rzm.add_tw_decal_layer", text="", icon='ADD')
                     op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx
                     
                     for l_idx, layer in enumerate(slot.decal_layers):
-                        l_box = layer_area.box()
-                        row = l_box.row(align=True)
-                        row.prop(layer, "active", text="")
-                        row.prop(layer, "name", text="")
-                        row.prop(layer, "index", text="Idx")
+                        l_row = layer_box.row(align=True)
+                        l_row.prop(layer, "active", text="")
+                        l_row.prop(layer, "name", text="")
+                        l_row.prop(layer, "index", text="Idx")
+                        l_row.prop(layer, "count", text="Total")
                         
-                        # Move/Remove
-                        op = row.operator("rzm.move_tw_decal_layer", text="", icon='TRIA_UP')
+                        op = l_row.operator("rzm.move_tw_decal_layer", text="", icon='TRIA_UP')
                         op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx; op.direction = 'UP'
-                        op = row.operator("rzm.move_tw_decal_layer", text="", icon='TRIA_DOWN')
-                        op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx; op.direction = 'DOWN'
-                        op = row.operator("rzm.remove_tw_decal_layer", text="", icon='X')
+                        op = l_row.operator("rzm.remove_tw_decal_layer", text="", icon='X')
                         op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx
+
+                    # HSV & Masking
+                    lower_grid = s_item.column(align=True)
                     
-                    s_box.prop(slot, "rect", text="Rect")
-                    s_box.prop(slot, "hsv_link", text="HSV")
-                    
-                    row = s_box.row(align=True)
-                    row.prop(slot, "mask_source", text="Mask Source")
-                    
-                    row = s_box.row(align=True)
-                    row.prop(slot, "mirror_mode", text="Mirror")
-                    row.prop(slot, "mirror_data", text="")
+                    h_row = lower_grid.row(align=True)
+                    h_row.prop(slot, "hsv_enabled", text="HSV", icon='COLOR')
+                    if slot.hsv_enabled:
+                        h_row.prop(slot, "hsv_link", text="")
+                        h_row.prop(slot, "hsv_mask_enabled", text="", icon='MOD_MASK')
+
+                    m_row = lower_grid.row(align=True)
+                    m_row.prop(slot, "mask_enabled", text="Slot Mask", icon='MOD_MASK')
+                    if slot.mask_enabled:
+                        m_row.prop(slot, "mask_source", text="")
+                        m_row.prop(slot, "pass0_use_mask", text="P0")
+                        m_row.prop(slot, "pass1_use_mask", text="P1")
+
+                    p_row = lower_grid.row(align=True)
+                    p_row.prop(slot, "multi_pass_mode", text="Pass")
+                    p_row.prop(slot, "multi_pass_data", text="")
 
     def draw_special_variables(self, layout, rzm):
         layout.separator()
