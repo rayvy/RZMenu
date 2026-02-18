@@ -1,5 +1,7 @@
 # RZMenu/operators/texworks_ops.py
 import bpy
+import os
+from .export_manager import get_target_path
 
 # --- ОПЕРАТОРЫ ДЛЯ TEXWORKS ---
 
@@ -242,6 +244,102 @@ class RZM_OT_MoveTwDecalLayer(bpy.types.Operator):
             coll.move(self.index, target_idx)
         return {'FINISHED'}
 
+def create_dummy_png(path):
+    """Создает пустой PNG файл (1x1 прозрачный)."""
+    import struct
+    import zlib
+
+    # PNG Signature
+    png_sig = b'\x89PNG\r\n\x1a\n'
+    
+    # IHDR chunk: 1x1, 8-bit RGBA, non-interlaced
+    ihdr_data = struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)
+    ihdr_chunk = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', zlib.crc32(b'IHDR' + ihdr_data) & 0xffffffff)
+    
+    # IDAT chunk: 1 pixel (0,0,0,0)
+    pixel_data = b'\x00\x00\x00\x00\x00' # Filter 0 + RGBA
+    compressed_data = zlib.compress(pixel_data)
+    idat_chunk = struct.pack('>I', len(compressed_data)) + b'IDAT' + compressed_data + struct.pack('>I', zlib.crc32(b'IDAT' + compressed_data) & 0xffffffff)
+    
+    # IEND chunk
+    iend_chunk = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', zlib.crc32(b'IEND') & 0xffffffff)
+    
+    try:
+        with open(path, 'wb') as f:
+            f.write(png_sig + ihdr_chunk + idat_chunk + iend_chunk)
+        return True
+    except Exception as e:
+        print(f"Error creating dummy PNG: {e}")
+        return False
+
+class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
+    """Экспортирует иерархию папок и генерирует PNG заглушки для TexWorks."""
+    bl_idname = "rzm.tw_export_hierarchy"
+    bl_label = "Export TexWorks Hierarchy"
+    bl_description = "Создает структуру папок и PNG файлы на основе настроек TexWorks"
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        target_path = get_target_path(context)
+        
+        if not target_path:
+            self.report({'ERROR'}, "Mod path not set! Check Export Manager settings.")
+            return {'CANCELLED'}
+
+        base_dir = os.path.join(target_path, "TexWorks")
+        
+        created_folders = 0
+        created_files = 0
+
+        for block in rzm.tw_blocks:
+            block_dir = os.path.join(base_dir, block.name)
+            
+            for comp in block.components:
+                comp_dir = os.path.join(block_dir, comp.name)
+                
+                for slot in comp.slots:
+                    for layer in slot.decal_layers:
+                        layer_dir = os.path.join(comp_dir, layer.name)
+                        
+                        if not os.path.exists(layer_dir):
+                            os.makedirs(layer_dir, exist_ok=True)
+                            created_folders += 1
+                        
+                        for i in range(layer.count):
+                            file_path = os.path.join(layer_dir, f"{i}.png")
+                            if not os.path.exists(file_path):
+                                if create_dummy_png(file_path):
+                                    created_files += 1
+
+        self.report({'INFO'}, f"TexWorks Export: {created_folders} folders, {created_files} files created.")
+        return {'FINISHED'}
+
+class RZ_OT_TexWorksDebugSync(bpy.types.Operator):
+    """Выводит иерархию TexWorks в консоль."""
+    bl_idname = "rzm.tw_debug_sync"
+    bl_label = "Debug TexWorks Sync"
+    bl_description = "Выводит данные TexWorks в консоль для отладки"
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        
+        print("\n" + "="*50)
+        print("TEXWORKS DATA SYNC DEBUG")
+        print("="*50)
+
+        for b_idx, block in enumerate(rzm.tw_blocks):
+            print(f"Block [{b_idx}]: {block.name} (Shader: {block.shader_type})")
+            for c_idx, comp in enumerate(block.components):
+                print(f"  Component [{c_idx}]: {comp.name}")
+                for s_idx, slot in enumerate(comp.slots):
+                    print(f"    Slot [{s_idx}]: {slot.name} (Active: {slot.active})")
+                    for l_idx, layer in enumerate(slot.decal_layers):
+                        print(f"      Layer [{l_idx}]: {layer.name} (Index: {layer.index}, Count: {layer.count})")
+        
+        print("="*50 + "\n")
+        self.report({'INFO'}, "TexWorks data printed to console.")
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_UpdateTwItem,
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
@@ -251,4 +349,5 @@ classes_to_register = [
     RZM_OT_AddTwComponent, RZM_OT_RemoveTwComponent,
     RZM_OT_AddTwSlot, RZM_OT_RemoveTwSlot,
     RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_MoveTwDecalLayer,
+    RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
 ]

@@ -272,6 +272,13 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         if hasattr(bpy.ops.rzm, "initialize_mod"):
             sub_box.operator("rzm.initialize_mod", text="Initialize Mod", icon='MOD_BUILD')
 
+        # --- TexWorks Tools ---
+        col.separator()
+        col.label(text="TexWorks Tools:", icon='TEXTURE')
+        tw_box = col.box()
+        tw_box.operator("rzm.tw_export_hierarchy", text="Export Hierarchy", icon='FILE_FOLDER')
+        tw_box.operator("rzm.tw_debug_sync", text="Debug Sync", icon='CONSOLE')
+
 classes_to_register = [ 
     RZM_MT_AssignToggleMenu, 
     VIEW3D_PT_RZConstructorPanel, 
