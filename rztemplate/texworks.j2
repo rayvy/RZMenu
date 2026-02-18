@@ -1,0 +1,213 @@
+{% import "modules/utils.j2" as utils with context %}
+
+{% macro generate_texworks(mod_file, scene) %}
+{% set rzm = scene.rzm %}
+
+{% call utils.clean_ws(max_empty=1) %}
+; =======================================================================================
+;                                     TEXWORKS CORE (v3.5.3)
+; =======================================================================================
+
+; --- 1. GLOBAL RESOURCES ---
+{% for res in rzm.tw_resources %}
+[Resource{{ utils.clean_resource(res.name) }}]
+{% if res.type == 'ON_DISK' %}
+filename = Textures\{{ res.path.split('\\')[-1] if '.' in res.path.split('\\')[-1] else res.path.split('\\')[-1] ~ '.dds' }}
+{% elif res.type == 'VIRTUAL' %}
+type = RWTexture2D
+width = {{ res.resolution[0] }}
+height = {{ res.resolution[1] }}
+format = {{ res.format }}
+array = 1
+msaa = 1
+mips = 1
+{% endif %}
+{% endfor %}
+
+; --- 2. GLOBAL OVERRIDES ---
+{% for over in rzm.tw_overrides %}
+[TextureOverride{{ over.name }}]
+hash = {{ over.hash }}
+this = Resource{{ utils.clean_resource(over.resource_name) }}
+run = CommandListSafeTexWorks.{{ utils.clean_resource(over.resource_name) }}.CHECK
+{% endfor %}
+
+{% set unique_over_resources = rzm.tw_overrides | map(attribute='resource_name') | unique %}
+{% for res_name in unique_over_resources %}
+[CommandListSafeTexWorks.{{ utils.clean_resource(res_name) }}.CHECK]
+local $isInit = 0
+if this === null && $isInit == 0
+    this = copy Resource{{ utils.clean_resource(res_name) }}
+    if this === null
+        $isInit = 0
+    else
+        $isInit = 1
+    endif
+endif
+{% endfor %}
+
+; --- 3. MAIN BLOCKS ---
+{% for block in rzm.tw_blocks %}
+; Block: {{ block.name }}
+{# ХВАТИТ ОПЯТЬ ПИСАТЬ {% if block.resource_name %} #} {# {% if block.resource_name is not defined %} ЭТО ПРАВИЛЬНЫЙ МЕТОД, ТАК МЫ ОПРЕДЕЛЯЕМ ЧТО ТЕКСТУРЫ НЕТ!#}
+{% if block.resource_name is not defined %}
+[Resource{{ utils.clean_resource(block.resource_name) }}]
+type = RWTexture2D
+width = 4096
+height = 4096
+format = DXGI_FORMAT_R8G8B8A8_TYPELESS
+array = 1
+msaa = 1
+mips = 1
+{% endif %}
+
+{% for comp in block.components %}
+; Component: {{ comp.name }}
+{% set comp_res = comp.resource_name if comp.resource_name else (block.resource_name if block.resource_name else 'AtlasMISSING') %}
+{% set comp_path = "modules/texworks/" ~ comp.name %}
+
+[Resource{{ comp.name }}Mask]
+filename = {{ comp_path }}/mask.png
+
+[CommandListUpdateComp_{{ block.name }}_{{ comp.name }}]
+{% for slot in comp.slots if slot.active %}
+    {% if slot.hsv_link %}
+run = CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}
+    {% endif %}
+    
+    {% for layer in slot.decal_layers if layer.active %}
+run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}
+    {% endfor %}
+{% endfor %}
+
+{% for slot in comp.slots if slot.active %}
+{% set slot_mask_res = "Resource" ~ comp.name ~ slot.name ~ "Mask" %}
+[{{ slot_mask_res }}]
+filename = {{ comp_path }}/{{ slot.name }}/{{ comp.name }}{{ slot.name }}.Mask.png
+
+{% if slot.hsv_link %}
+[CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}]
+cs = /modules/texworks/cs_update_region.hlsl
+cs-u0 = ref Resource{{ utils.clean_resource(comp_res) }}
+cs-t0 = null
+cs-t1 = {{ slot_mask_res }}
+{% set v_name = utils.format_var(slot.hsv_link) %}
+x43 = ${{ v_name }}_X - {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
+y43 = ${{ v_name }}_Y - {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
+z43 = ${{ v_name }}_Z - {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.0) }}
+w43 = ${{ v_name }}_W
+x44 = {{ comp.rect[0] + slot.rect[0] }}
+y44 = {{ comp.rect[1] + slot.rect[1] }}
+z44 = {{ slot.rect[2] }}
+w44 = {{ slot.rect[3] }}
+dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
+{% endif %}
+
+{% for layer in slot.decal_layers if layer.active %}
+{% set layer_res_name = "Resource" ~ block.name ~ comp.name ~ slot.name ~ layer.name %}
+[{{ layer_res_name }}]
+filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ layer.index }}.png
+
+[CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}]
+cs = /modules/texworks/cs_update_region.hlsl
+cs-u0 = ref Resource{{ utils.clean_resource(comp_res) }}
+cs-t0 = {{ layer_res_name }}
+cs-t1 = {{ slot_mask_res }}
+x43 = 0
+y43 = 0
+z43 = 0
+w43 = 1.0
+x44 = {{ comp.rect[0] + slot.rect[0] }}
+y44 = {{ comp.rect[1] + slot.rect[1] }}
+z44 = {{ slot.rect[2] }}
+w44 = {{ slot.rect[3] }}
+dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+; --- 4. INITIALIZATION & HIERARCHY ---
+[Constants]
+global $TW_Init_Needed = 1
+{% set ns = namespace(processed_vars=[]) %}
+{% for block in rzm.tw_blocks %}
+    {% for comp in block.components %}
+global $TW_{{ comp.name }}_Is_Updated = 0
+global $Comp_{{ block.name }}_{{ comp.name }}_PastSum = -1
+        {% for slot in comp.slots if slot.active %}
+            {% if slot.hsv_link and slot.hsv_link not in ns.processed_vars %}
+                {% set v_name = utils.format_var(slot.hsv_link) %}
+global persist ${{ v_name }}_X = {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
+global persist ${{ v_name }}_Y = {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
+global persist ${{ v_name }}_Z = {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.0) }}
+global persist ${{ v_name }}_W = 0.0
+                {% set _ = ns.processed_vars.append(slot.hsv_link) %}
+            {% endif %}
+            {% for layer in slot.decal_layers if layer.active %}
+                {% set l_var = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name ~ "Index" %}
+global persist ${{ l_var }} = {{ layer.index }}
+global ${{ l_var }}Past = -1
+            {% endfor %}
+        {% endfor %}
+    {% endfor %}
+{% endfor %}
+
+[CommandListTexWorks]
+if $ModInitialised == 1
+    {% for block in rzm.tw_blocks %}
+    run = CommandListBlock_{{ block.name }}
+    {% endfor %}
+endif
+
+{% for block in rzm.tw_blocks %}
+[CommandListBlock_{{ block.name }}]
+{# Initialization #}
+if $TW_Init_Needed == 1
+    {% for comp in block.components %}
+    $TW_{{ comp.name }}_Is_Updated = 1
+    {% endfor %}
+    $TW_Init_Needed = 0
+endif
+
+{% for comp in block.components %}
+{# 1. Check Decal Changes #}
+{% for slot in comp.slots if slot.active %}
+    {% for layer in slot.decal_layers if layer.active %}
+        {% set l_var = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name ~ "Index" %}
+if ${{ l_var }} != ${{ l_var }}Past
+    $TW_{{ comp.name }}_Is_Updated = 1
+    ${{ l_var }}Past = ${{ l_var }}
+endif
+    {% endfor %}
+{% endfor %}
+
+{# 2. Check HSV Changes #}
+{% set sum_parts = [] %}
+{% for slot in comp.slots if slot.active %}
+    {% if slot.hsv_link %}
+        {% set v_name = utils.format_var(slot.hsv_link) %}
+        {% set _ = sum_parts.append("$" ~ v_name ~ "_X") %}
+        {% set _ = sum_parts.append("$" ~ v_name ~ "_Y") %}
+        {% set _ = sum_parts.append("$" ~ v_name ~ "_Z") %}
+        {% set _ = sum_parts.append("$" ~ v_name ~ "_W") %}
+    {% endif %}
+{% endfor %}
+{% if sum_parts %}
+local $current_sum_{{ block.name }}_{{ comp.name }} = {{ sum_parts | join(' + ') }}
+if $Comp_{{ block.name }}_{{ comp.name }}_PastSum != $current_sum_{{ block.name }}_{{ comp.name }}
+    $TW_{{ comp.name }}_Is_Updated = 1
+    $Comp_{{ block.name }}_{{ comp.name }}_PastSum = $current_sum_{{ block.name }}_{{ comp.name }}
+endif
+{% endif %}
+
+{# 3. Conditional Update #}
+if $TW_{{ comp.name }}_Is_Updated == 1
+    run = CommandListUpdateComp_{{ block.name }}_{{ comp.name }}
+    $TW_{{ comp.name }}_Is_Updated = 0
+endif
+{% endfor %}
+{% endfor %}
+
+{% endcall %}
+{% endmacro %}

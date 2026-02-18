@@ -1,46 +1,114 @@
 # RZMenu/data/p_texworks.py
 import bpy
-from bpy.props import StringProperty, IntProperty, BoolProperty, EnumProperty, PointerProperty, IntVectorProperty, FloatVectorProperty, CollectionProperty
+from bpy.props import (StringProperty, IntProperty, BoolProperty, EnumProperty, 
+                       PointerProperty, IntVectorProperty, FloatVectorProperty, CollectionProperty)
+
+# --- 1. CORE RESOURCES (Теперь включают параметры формата) ---
 
 class TexResource(bpy.types.PropertyGroup):
-    tex_name: StringProperty(name="Resource Name", description="Уникальное имя ресурса в проекте")
-    tex_resource_type: EnumProperty(name="Type", items=[('EMPTY', "Empty", ""), ('ON_DISK', "On Disk", ""), ('VIRTUAL', "Virtual", "")], default='ON_DISK', description="Тип текстурного ресурса")
-    tex_path: StringProperty(name="Path", description="Путь к файлу текстуры", subtype='FILE_PATH')
+    name: StringProperty(name="Resource Name")
+    type: EnumProperty(name="Type", items=[
+        ('EMPTY', "Empty", ""), 
+        ('ON_DISK', "On Disk (Physical)", ""), 
+        ('VIRTUAL', "Virtual (Canvas)", "")
+    ], default='ON_DISK')
+    
+    path: StringProperty(name="Path", subtype='FILE_PATH')
+    
+    # Эти параметры для VIRTUAL задаются вручную, 
+    # а для ON_DISK в будущем будут парситься из файла
+    resolution: IntVectorProperty(name="Resolution", size=2, default=(4096, 4096))
+    format: EnumProperty(
+        name="Format",
+        items=[
+            ('DXGI_FORMAT_R8G8B8A8_TYPELESS', "RGBA8 Typeless", ""),
+            ('DXGI_FORMAT_R8G8B8A8_UNORM', "RGBA8 UNORM", ""),
+            ('DXGI_FORMAT_R8G8B8A8_UNORM_SRGB', "RGBA8 UNORM SRGB", ""),
+            ('DXGI_FORMAT_R8G8_TYPELESS', "R8G8 Typeless (NormalMap)", ""),
+            ('DXGI_FORMAT_R32_FLOAT', "R32 Float", ""),
+            ('DXGI_FORMAT_BC7_UNORM', "BC7 UNORM", ""),
+        ],
+        default='DXGI_FORMAT_R8G8B8A8_TYPELESS'
+    )
 
 class TexOverride(bpy.types.PropertyGroup):
-    tex_name: StringProperty(name="Override Name", description="Имя слота для удобства")
-    tex_hash: StringProperty(name="Hash", description="Хэш ресурса для перехвата")
-    tex_resource_name: StringProperty(name="Resource Name", description="Имя ресурса из списка TexWorks Resources")
+    name: StringProperty(name="Override Name")
+    hash: StringProperty(name="Hash")
+    resource_name: StringProperty(name="Resource Name")
 
-class TexWorksAtlasConfig(bpy.types.PropertyGroup):
-    tw_width: IntProperty(name="Width", default=4096, min=256); tw_height: IntProperty(name="Height", default=4096, min=256)
-    tw_format: StringProperty(name="Format", default="DXGI_FORMAT_R8G8B8A8_TYPELESS")
+# --- 2. MATERIALS (Поведение) ---
 
-class TexWorksTextureConfig(bpy.types.PropertyGroup):
-    tw_config_name: StringProperty(name="Name", default="Body_Albedo")
-    tw_color_space: EnumProperty(name="Color Space", items=[('SRGB', "sRGB", ""), ('Linear', "Linear", "")], default='SRGB')
-    tw_atlas_settings: PointerProperty(type=TexWorksAtlasConfig)
+class TexWorksMaterial(bpy.types.PropertyGroup):
+    name: StringProperty(name="Material Name", default="NewMaterial")
+    use_diffuse: BoolProperty(name="Use Diffuse", default=True)
+    use_normalmap: BoolProperty(name="Use NormalMap", default=False)
+    use_materialmap: BoolProperty(name="Use MaterialMap", default=False)
+    
+    diffuse_blend_mode: EnumProperty(
+        name="Diffuse Blend",
+        items=[('LERP', "Lerp", ""), ('ADD', "Add", ""), ('MULTIPLY', "Multiply", ""), ('OVERLAY', "Overlay", "")],
+        default='LERP'
+    )
 
-class DecalConfig(bpy.types.PropertyGroup): pass
+# --- 3. SLOTS & DECAL LAYERS ---
 
-class AlternativeTexture(bpy.types.PropertyGroup):
-    tex_condition: StringProperty(name="Condition", description="Условие, при котором эта текстура будет активна")
-    tex_resource_name: StringProperty(name="Resource Name", description="Имя ресурса из TexWorks для использования")
+class TexWorksDecalLayer(bpy.types.PropertyGroup):
+    name: StringProperty(name="Material Name", default="Tattoo")
+    index: IntProperty(name="Index", default=0)
+    active: BoolProperty(default=True)
 
-class TexWorksTexture(bpy.types.PropertyGroup):
-    tw_name: StringProperty(name="Texture Name", default="MyVirtualTexture")
-    tw_base_resource_name: StringProperty(name="Base Resource", description="Имя основного ресурса для этой текстуры")
-    tw_position: IntVectorProperty(name="Position", size=2, default=(0, 0)); tw_size: IntVectorProperty(name="Size", size=2, default=(1024, 1024))
-    tw_is_expanded: BoolProperty(name="Expanded", default=True)
-    tw_alternatives: CollectionProperty(type=AlternativeTexture)
-    tw_use_decal_tattoo: BoolProperty(name="Use Tattoo Decal", default=False)
-    tw_use_decal_derma: BoolProperty(name="Use Derma Decal", default=False)
-    tw_use_decal_fluid: BoolProperty(name="Use Fluid Decal", default=False)
-    tw_decal_settings: PointerProperty(type=DecalConfig)
-    tw_use_hsv: BoolProperty(name="Use HSV", default=False)
-    tw_hsv_mode: EnumProperty(name="HSV Mode", items=[('UNMASKED', "Unmasked", ""), ('MASKED', "Masked", "")], default='UNMASKED')
-    tw_hsv_value_link: StringProperty(name="HSV Value Link", description="Привязка к ($) или (@). Пусто = авто-переменная")
-    tw_hsv_value_link_color: FloatVectorProperty(name="Default ValueLink HSV offset values", size=3, default=(0.0, 0.0, 0.0))
-    tw_use_morph: BoolProperty(name="Use Morph", default=False)
-    tw_morph_target_name: StringProperty(name="Morph Target Texture", description="Имя текстуры-цели для морфинга")
-    tw_morph_value_link: StringProperty(name="Morph Value Link", description="Привязка к ($) или (@). Пусто = авто-переменная")
+class TexWorksSlot(bpy.types.PropertyGroup):
+    name: StringProperty(name="Slot Name", default="Arm")
+    active: BoolProperty(default=True)
+    
+    # Слои декалей (Tattoo, Fluid, Blood и т.д.)
+    decal_layers: CollectionProperty(type=TexWorksDecalLayer)
+    active_layer_index: IntProperty()
+    
+    # Координаты X, Y, W, H
+    rect: IntVectorProperty(name="Rect (X, Y, W, H)", size=4, default=(0, 0, 1024, 1024))
+    
+    # Маскирование
+    mask_source: EnumProperty(
+        items=[('TEXTURE_ALPHA', "Source Alpha", ""), ('SEPARATE_MASK', "Separate Mask", ""), ('CHANNEL_R', "R", ""), ('CHANNEL_G', "G", ""), ('CHANNEL_B', "B", "")],
+        default='TEXTURE_ALPHA'
+    )
+
+    # Зеркалирование и Оффсеты (Buffer Data: offset_x, offset_y, mirror, flip)
+    mirror_mode: EnumProperty(
+        name="Mirror Mode",
+        items=[
+            ('NONE', "None", ""),
+            ('DUPLICATE', "Duplicate (Sync)", ""),
+            ('INDIVIDUAL', "Individual (L/R)", "")
+        ],
+        default='NONE'
+    )
+    mirror_data: FloatVectorProperty(name="Mirror Data", size=4, default=(0.0, 0.0, 0.0, 1.0))
+
+    # HSV: Теперь одна ссылка на Векторную переменную
+    hsv_enabled: BoolProperty(default=False)
+    hsv_link: StringProperty(name="HSV Variable", description="Link to a VECTOR value ($MyVar)")
+    hsv_base: FloatVectorProperty(name="HSV Base", size=4, default=(0.0, 0.0, 0.0, 1.0))
+
+    condition: StringProperty(name="Condition")
+
+# --- 4. COMPONENTS & MAIN BLOCKS ---
+
+class TexWorksComponent(bpy.types.PropertyGroup):
+    name: StringProperty(name="Component Name", default="NewComponent")
+    resource_name: StringProperty(name="Resource Name", description="Link to a resource (Physical/Virtual)")
+    rect: IntVectorProperty(name="Rect (X, Y, W, H)", size=4, default=(0, 0, 4096, 4096))
+    slots: CollectionProperty(type=TexWorksSlot)
+    active_slot_index: IntProperty()
+
+
+class TexWorksMainBlock(bpy.types.PropertyGroup):
+    name: StringProperty(name="Block Name", default="MainBlock")
+    resource_name: StringProperty(name="Output Resource", description="Virtual texture for this block")
+    
+    # Список имен ресурсов, которые являются атласами (VIRTUAL ресурсы)
+    output_atlases: CollectionProperty(type=bpy.types.PropertyGroup) # Можно сделать коллекцию StringProperty
+    
+    components: CollectionProperty(type=TexWorksComponent)
+    active_component_index: IntProperty()

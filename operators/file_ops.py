@@ -110,14 +110,81 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                 with open(json_path, 'r', encoding='utf-8') as f:
                     data_to_load = json.load(f)
 
+                # --- 3.5.0 SMART MIGRATION ---
+                def version_to_tuple(v_str):
+                    try: return tuple(map(int, str(v_str).split('.')))
+                    except: return (0, 0, 0)
+
+                file_version = version_to_tuple(data_to_load.get("version", "0.0.0"))
+                target_version = (3, 5, 0)
+
+                if file_version < target_version:
+                    print(f"[RZM] Legacy version {data_to_load.get('version')} detected. Migrating to 3.5.0...")
+                    
+                    addons_data = data_to_load.get("addons", {})
+                    
+                    # 1. Migrate Resources
+                    if "tw_resources" in addons_data:
+                        new_res = []
+                        for old_res in addons_data["tw_resources"]:
+                            new_res.append({
+                                "name": old_res.get("tex_name", "Unnamed"),
+                                "type": old_res.get("tex_resource_type", "ON_DISK"),
+                                "path": old_res.get("tex_path", ""),
+                                "resolution": [4096, 4096],
+                                "format": 'DXGI_FORMAT_R8G8B8A8_TYPELESS'
+                            })
+                        data_to_load["tw_resources"] = new_res
+                    
+                    # 2. Migrate Overrides
+                    if "tw_overrides" in addons_data:
+                        new_over = []
+                        for old_over in addons_data["tw_overrides"]:
+                            new_over.append({
+                                "name": old_over.get("tex_name", "Override"),
+                                "hash": old_over.get("tex_hash", ""),
+                                "resource_name": old_over.get("tex_resource_name", "")
+                            })
+                        data_to_load["tw_overrides"] = new_over
+                        
+                    # 3. Create Migration Block
+                    if "tw_textures" in addons_data:
+                        migration_block = {
+                            "name": "Legacy Migration",
+                            "resource_name": "", # Можно оставить пустым
+                            "components": []
+                        }
+                        for old_tex in addons_data["tw_textures"]:
+                            comp = {
+                                "name": old_tex.get("tw_name", "Component"),
+                                "resource_name": old_tex.get("tw_base_resource_name", ""),
+                                "rect": [*old_tex.get("tw_position", [0, 0]), *old_tex.get("tw_size", [1024, 1024])],
+                                "slots": []
+                            }
+                            # Создаем базовый слот для диффуза
+                            comp["slots"].append({
+                                "name": "Diffuse (Migrated)",
+                                "active": True,
+                                "material_index": 0,
+                                "image_id": -1,
+                                "rect": [0, 0, 1024, 1024]
+                            })
+                            migration_block["components"].append(comp)
+                        
+                        data_to_load["tw_blocks"] = [migration_block]
+                    
+                    # Cleanup old addon keys to avoid dict_to_rzm errors or clutter
+                    for k in ["tw_resources", "tw_overrides", "tw_texture_configs", "tw_textures"]:
+                        if k in addons_data: del addons_data[k]
+                
                 rzm = context.scene.rzm
                 
                 # 4. Clear existing RZM data
                 collections_to_clear = [
                     rzm.elements, rzm.rzm_values, rzm.toggle_definitions, rzm.images,
                     rzm.conditions, rzm.shapes, rzm.dependency_statuses,
-                    rzm.addons.tw_resources, rzm.addons.tw_overrides,
-                    rzm.addons.tw_texture_configs, rzm.addons.tw_textures
+                    rzm.tw_resources, rzm.tw_overrides,
+                    rzm.tw_materials, rzm.tw_blocks
                 ]
                 for coll in collections_to_clear:
                     coll.clear()
@@ -200,8 +267,8 @@ class RZM_OT_ResetScene(bpy.types.Operator):
         collections_to_clear = [
             rzm.elements, rzm.rzm_values, rzm.toggle_definitions, rzm.images, 
             rzm.conditions, rzm.shapes, rzm.dependency_statuses,
-            rzm.addons.tw_resources, rzm.addons.tw_overrides,
-            rzm.addons.tw_texture_configs, rzm.addons.tw_textures
+            rzm.tw_resources, rzm.tw_overrides,
+            rzm.tw_materials, rzm.tw_blocks
         ]
         for coll in collections_to_clear:
             coll.clear()

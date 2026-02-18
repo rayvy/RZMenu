@@ -179,17 +179,30 @@ class RZM_OT_UpdateValue(bpy.types.Operator):
         if self.index < 0 or self.index >= len(values): return {'CANCELLED'}
         
         val_item = values[self.index]
-        if hasattr(val_item, self.prop_name):
-            attr = getattr(val_item, self.prop_name)
-            target_type = type(attr)
-            try:
+        target = val_item
+        prop_path = self.prop_name.split('.')
+        for bit in prop_path[:-1]:
+            target = getattr(target, bit)
+        
+        final_prop = prop_path[-1]
+        
+        try:
+            if "[" in final_prop and final_prop.endswith("]"):
+                prop_name, idx_str = final_prop[:-1].split("[")
+                v_idx = int(idx_str)
+                vector = getattr(target, prop_name)
+                vector[v_idx] = float(self.val_str)
+            elif hasattr(target, final_prop):
+                attr = getattr(target, final_prop)
+                target_type = type(attr)
                 if target_type is int:
-                     setattr(val_item, self.prop_name, int(float(self.val_str)))
+                     setattr(target, final_prop, int(float(self.val_str)))
                 elif target_type is float:
-                     setattr(val_item, self.prop_name, float(self.val_str))
+                     setattr(target, final_prop, float(self.val_str))
                 else:
-                     setattr(val_item, self.prop_name, self.val_str)
-            except: pass
+                     setattr(target, final_prop, self.val_str)
+        except Exception as e:
+            print(f"RZM_OT_UpdateValue Error: {e}")
             
         return {'FINISHED'}
 

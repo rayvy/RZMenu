@@ -22,6 +22,7 @@ $TexPosX = $hoveredID
 run = CustomShaderRCI2D
 {% endif %}
 
+{% if scene.rzm.addons.tex_works == 1 %}
 {% if scene.rzm.addons.tw_resources %}
 ;tw_resources
 
@@ -82,7 +83,7 @@ run = CustomShaderRCI2D
 	{% endfor %}
 {% endif %}
 
-{% if scene.rzm.addons.tex_works == 1 %}
+
 {% if scene.rzm.addons.tw_texture_configs and scene.rzm.addons.tw_textures %}
 
 {# --- 1. ГЕНЕРАЦИЯ ПЕРЕМЕННЫХ ДЛЯ MORPH и HSV --- #}

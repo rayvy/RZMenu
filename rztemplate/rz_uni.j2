@@ -8,6 +8,7 @@
 {% import "modules/elements_helpers.j2" as elements_helpers with context %}
 {% import "modules/modules.j2" as modules with context %}
 {% import "modules/utils.j2" as utils with context %}
+{% import "texworks.j2" as texworks with context %}
 
 {% call utils.clean_ws(max_empty=1) %}
 
@@ -46,6 +47,7 @@
 	{{ elements_helpers.resources_generate(mod_file,scene)}}
 	{{ elements_helpers.grid_helpers_generate(mod_file,scene)}}
 	{{modules.generate_addons(mod_file,scene)}}
+	{{texworks.generate_texworks(mod_file,scene)}}
 	{{elements.elements_generate(mod_file,scene)}}
 {% endif %}
 

@@ -13,9 +13,8 @@ from .p_logic import (
     RZMShapeKey, RZMShape
 )
 from .p_texworks import (
-    TexResource, TexOverride, TexWorksAtlasConfig, 
-    TexWorksTextureConfig, DecalConfig, AlternativeTexture, 
-    TexWorksTexture
+    TexResource, TexOverride, TexWorksMaterial, 
+    TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock
 )
 from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, ConditionalText
@@ -27,7 +26,7 @@ from .p_settings import (
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
 class RZMenuProperties(bpy.types.PropertyGroup):
     game: PointerProperty(type=RZMGameSettings)
-    version: StringProperty(name="Version", default="3.0.1")
+    version: StringProperty(name="Version", default="3.5.0")
     config: PointerProperty(type=RZMenuConfig)
     export_settings: PointerProperty(type=RZMExportSettings)
     images: CollectionProperty(type=RZMenuImage)
@@ -44,11 +43,22 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     shapes: CollectionProperty(type=RZMShape)
     dependency_statuses: CollectionProperty(type=DependencyStatus)
 
+    # --- TexWorks Core ---
+    tw_resources: CollectionProperty(type=TexResource)
+    tw_overrides: CollectionProperty(type=TexOverride)
+    tw_materials: CollectionProperty(type=TexWorksMaterial)
+    tw_blocks: CollectionProperty(type=TexWorksMainBlock)
+    
+    active_tw_block_index: IntProperty()
+    active_tw_resource_index: IntProperty()
+    active_tw_material_index: IntProperty()
+
 classes_to_register = [
     RZMCaptureSettings, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
-    ValueLinkProperty, RZPresetReference, ConditionalText, RZMenuElement, TexResource, TexOverride, DecalConfig,
-    AlternativeTexture, TexWorksAtlasConfig, TexWorksTextureConfig, TexWorksTexture, 
+    ValueLinkProperty, RZPresetReference, ConditionalText, RZMenuElement, 
+    TexResource, TexOverride, TexWorksMaterial, 
+    TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
     RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMGameSettings, RZMenuProperties
 ]
 

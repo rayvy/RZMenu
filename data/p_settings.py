@@ -3,7 +3,7 @@ import bpy
 from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, IntVectorProperty
 
 # Импорт зависимостей для CollectionProperty
-from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
+# from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
 
 def update_rzm_game_name(self, context):
     """Обновляет строковое имя при выборе из списка"""
@@ -87,10 +87,6 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debugger_info: BoolProperty(name="DebuggerInfo", default=False)
     facetexworkspreseted: BoolProperty(name="FaceTexWorksPreseted", default=False)
     tex_works: BoolProperty(name="TexWorks", default=False)
-    tw_resources: CollectionProperty(type=TexResource)
-    tw_overrides: CollectionProperty(type=TexOverride)
-    tw_texture_configs: CollectionProperty(type=TexWorksTextureConfig)
-    tw_textures: CollectionProperty(type=TexWorksTexture)
     vfx: BoolProperty(name="VFX", default=False)
     shape_morph: BoolProperty(name="ShapeMorph", default=False)
     shape_morph_anim: BoolProperty(name="ShapeMorphAnim", default=False)

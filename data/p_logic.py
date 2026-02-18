@@ -9,8 +9,15 @@ class ValueLinkProperty(bpy.types.PropertyGroup):
     value_max: FloatProperty(name="Max Value", default=1.0)
 
 class ValueProperty(bpy.types.PropertyGroup):
-    value_name: StringProperty(name="Name"); value_type: EnumProperty(name="Type", items=[('INT', "Integer", ""), ('FLOAT', "Float", "")], default='INT')
-    int_value: IntProperty(name="Integer Value"); float_value: FloatProperty(name="Float Value")
+    value_name: StringProperty(name="Name")
+    value_type: EnumProperty(
+        name="Type", 
+        items=[('INT', "Integer", ""), ('FLOAT', "Float", ""), ('VECTOR', "Vector (Float4)", "")], 
+        default='INT'
+    )
+    int_value: IntProperty(name="Integer Value")
+    float_value: FloatProperty(name="Float Value")
+    vector_value: bpy.props.FloatVectorProperty(name="Vector Value", size=4, default=(0.0, 0.0, 0.0, 1.0))
 
 class ToggleDefinition(bpy.types.PropertyGroup):
     toggle_name: StringProperty(name="Toggle Name", description="Уникальное имя, e.g., ToggleA")

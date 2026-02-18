@@ -52,6 +52,9 @@ class RZM_UL_Values(bpy.types.UIList):
             row.prop(item, "int_value", text="")
         elif item.value_type == 'FLOAT':
             row.prop(item, "float_value", text="")
+        elif item.value_type == 'VECTOR':
+            # Drawing 4 components of the vector
+            row.prop(item, "vector_value", text="")
 
 class RZM_UL_ProjectToggles(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -310,77 +313,123 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         box.separator()
 
     def draw_tex_works_config(self, layout, rzm, context):
-        if not rzm.addons.tex_works: return
         layout.separator()
         main_box = layout.box()
-        main_box.label(text="TexWorks Configuration:")
-        addons = rzm.addons
+        main_box.label(text="TexWorks Core (New Format):", icon='TEXTURE')
         
+        # --- 1. GLOBAL RESOURCES ---
         res_box = main_box.box()
-        row = res_box.row(align=True); row.label(text="Texture Resources:")
-        op_row = row.row(align=True); op_row.operator("rzm.add_tw_resource", text="", icon='ADD'); op_row.operator("rzm.remove_tw_resource", text="", icon='REMOVE')
-        for i, item in enumerate(addons.tw_resources):
-            item_row = res_box.row(align=True); item_row.prop(item, "tex_name", text=f"[{i}]")
-            item_row.prop(item, "tex_resource_type", text="")
-            if item.tex_resource_type == 'ON_DISK': item_row.prop(item, "tex_path", text="")
-
-        over_box = main_box.box()
-        row = over_box.row(align=True); row.label(text="Texture Overrides (3DMigoto):")
-        op_row = row.row(align=True); op_row.operator("rzm.add_tw_override", text="", icon='ADD'); op_row.operator("rzm.remove_tw_override", text="", icon='REMOVE')
-        for i, item in enumerate(addons.tw_overrides):
-            item_row = over_box.row(align=True); item_row.prop(item, "tex_name", text=f"[{i}]"); item_row.prop(item, "tex_hash", text="Hash"); item_row.prop(item, "tex_resource_name", text="Resource")
-
-        config_box = main_box.box()
-        row = config_box.row(align=True); row.label(text="Global Texture Configurations:")
-        op_row = row.row(align=True); op_row.operator("rzm.add_tw_config", text="", icon='ADD'); op_row.operator("rzm.remove_tw_config", text="", icon='REMOVE')
-        for i, item in enumerate(addons.tw_texture_configs):
-            row = config_box.row(align=True); row.prop(item, "tw_config_name", text=""); row.prop(item, "tw_color_space", text="")
-            sub_box = config_box.box(); sub_box.label(text=f"Atlas Settings for '{item.tw_config_name}':")
-            atlas_settings = item.tw_atlas_settings; col = sub_box.column(align=True)
-            row_size = col.row(align=True); row_size.prop(atlas_settings, "tw_width", text="W"); row_size.prop(atlas_settings, "tw_height", text="H")
+        row = res_box.row(align=True); row.label(text="Resources:", icon='IMAGE_DATA')
+        row.operator("rzm.add_tw_resource", text="", icon='ADD')
+        row.operator("rzm.remove_tw_resource", text="", icon='REMOVE')
+        
+        for i, res in enumerate(rzm.tw_resources):
+            r_box = res_box.box()
+            row = r_box.row(align=True)
+            row.prop(res, "name", text=f"[{i}]")
+            row.prop(res, "type", text="")
+            if res.type == 'ON_DISK':
+                row.prop(res, "path", text="")
             
-            format_row = col.row(align=True)
-            format_row.prop(atlas_settings, "tw_format", text="Format")
-            context.window_manager.rzm_context_atlas_index = i
-            format_row.menu("RZM_MT_tw_format_menu", text="", icon='DOWNARROW_HLT')
+            row = r_box.row(align=True)
+            row.prop(res, "resolution", text="Res")
+            row.prop(res, "format", text="")
 
-        textures_box = main_box.box()
-        row = textures_box.row(align=True); row.label(text="Virtual Textures (Atlas):")
-        op_row = row.row(align=True); op_row.operator("rzm.add_tw_texture", text="", icon='ADD'); op_row.operator("rzm.remove_tw_texture", text="", icon='REMOVE')
-        for tex_idx, item in enumerate(addons.tw_textures):
-            item_box = textures_box.box(); row = item_box.row()
-            icon = 'TRIA_DOWN' if item.tw_is_expanded else 'TRIA_RIGHT'
-            row.prop(item, "tw_is_expanded", text="", icon=icon, emboss=False); row.prop(item, "tw_name", text="")
-            if item.tw_is_expanded:
-                main_col = item_box.column(align=True)
-                main_col.prop(item, "tw_base_resource_name", text="Base Resource")
-                main_col.prop(item, "tw_position", text="Position (X,Y)"); main_col.prop(item, "tw_size", text="Size (W,H)")
-                
-                alt_box = main_col.box(); alt_box.label(text="Alternatives:")
-                alt_ops = alt_box.row(align=True); op = alt_ops.operator("rzm.add_tw_alternative", text="Add", icon='ADD'); op.texture_index = tex_idx
-                op = alt_ops.operator("rzm.remove_tw_alternative", text="Remove", icon='REMOVE'); op.texture_index = tex_idx
-                for alt_idx, alt in enumerate(item.tw_alternatives):
-                    alt_row = alt_box.row(); alt_row.prop(alt, "resource_name", text=f"[{alt_idx}] Use"); alt_row.prop(alt, "condition", text="If")
-                
-                decal_box = main_col.box(); decal_box.label(text="Decals:")
-                decal_box.prop(item, "tw_use_decal_tattoo"); decal_box.prop(item, "tw_use_decal_derma"); decal_box.prop(item, "tw_use_decal_fluid")
-                
-                hsv_box = main_col.box()
-                hsv_box.prop(item, "tw_use_hsv")
+        # --- 2. GLOBAL OVERRIDES ---
+        over_box = main_box.box()
+        row = over_box.row(align=True); row.label(text="Overrides (3DMigoto):", icon='BLANK1')
+        row.operator("rzm.add_tw_override", text="", icon='ADD')
+        row.operator("rzm.remove_tw_override", text="", icon='REMOVE')
+        
+        for i, over in enumerate(rzm.tw_overrides):
+            row = over_box.row(align=True)
+            row.prop(over, "name", text=f"[{i}]")
+            row.prop(over, "hash", text="Hash")
+            row.prop(over, "resource_name", text="Res")
 
-                if item.tw_use_hsv:
-                    hsv_box.prop(item, "tw_hsv_mode", text="Mode")
-                    hsv_box.prop(item, "tw_hsv_value_link", text="Link")
+        # --- 3. GLOBAL MATERIALS ---
+        mat_box = main_box.box()
+        row = mat_box.row(align=True); row.label(text="Materials (Behavior):", icon='MATERIAL')
+        row.operator("rzm.add_tw_material", text="", icon='ADD')
+        row.operator("rzm.remove_tw_material", text="", icon='REMOVE')
+        
+        for i, mat in enumerate(rzm.tw_materials):
+            m_box = mat_box.box()
+            row = m_box.row(align=True)
+            row.prop(mat, "name", text=f"[{i}]")
+            row.prop(mat, "diffuse_blend_mode", text="")
+            row = m_box.row(align=True)
+            row.prop(mat, "use_diffuse", text="Diff")
+            row.prop(mat, "use_normalmap", text="Norm")
+            row.prop(mat, "use_materialmap", text="MatMap")
+
+        # --- 4. MAIN BLOCKS (The Core Structure) ---
+        block_box = main_box.box()
+        row = block_box.row(align=True); row.label(text="Blocks & Components:", icon='NODETREE')
+        row.operator("rzm.add_tw_block", text="", icon='ADD')
+        row.operator("rzm.remove_tw_block", text="", icon='REMOVE')
+        
+        for b_idx, block in enumerate(rzm.tw_blocks):
+            b_box = block_box.box()
+            row = b_box.row(align=True)
+            row.prop(block, "name", text=f"Block {b_idx}")
+            row.prop(block, "resource_name", text="Out Res")
+            
+            # Components within Block
+            comp_area = b_box.box()
+            c_row = comp_area.row(align=True); c_row.label(text="Components:")
+            op = c_row.operator("rzm.add_tw_component", text="", icon='ADD'); op.block_index = b_idx
+            op = c_row.operator("rzm.remove_tw_component", text="", icon='REMOVE'); op.block_index = b_idx
+            
+            for c_idx, comp in enumerate(block.components):
+                c_box = comp_area.box()
+                row = c_box.row(align=True)
+                row.prop(comp, "name", text=f"C{c_idx}")
+                row.prop(comp, "resource_name", text="Res")
+                row.prop(comp, "rect", text="Rect")
+                
+                # Slots within Component
+                slot_area = c_box.box()
+                s_row = slot_area.row(align=True); s_row.label(text="Slots:")
+                op = s_row.operator("rzm.add_tw_slot", text="", icon='ADD'); op.block_index = b_idx; op.comp_index = c_idx
+                op = s_row.operator("rzm.remove_tw_slot", text="", icon='REMOVE'); op.block_index = b_idx; op.comp_index = c_idx
+                
+                for s_idx, slot in enumerate(comp.slots):
+                    s_box = slot_area.box()
+                    row = s_box.row(align=True)
+                    row.prop(slot, "active", text="")
+                    row.prop(slot, "name", text=f"S{s_idx}")
                     
-                    # Создаем визуальную группу для оффсетов
-                    row = hsv_box.row(align=True)
-                    row.label(text="Offsets:")
-                    # Отрисовываем каждый индекс вектора отдельно с короткими именами
-                    row.prop(item, "tw_hsv_value_link_color", index=0, text="H")
-                    row.prop(item, "tw_hsv_value_link_color", index=1, text="S")
-                    row.prop(item, "tw_hsv_value_link_color", index=2, text="V")
-                morph_box = main_col.box(); morph_box.prop(item, "tw_use_morph")
-                if item.tw_use_morph: morph_box.prop(item, "tw_morph_target_name", text="Target"); morph_box.prop(item, "tw_morph_value_link", text="Link")
+                    # Decal Layers within Slot
+                    layer_area = s_box.box()
+                    l_row = layer_area.row(align=True); l_row.label(text="Decal Layers:", icon='MOD_CLOTH')
+                    op = l_row.operator("rzm.add_tw_decal_layer", text="", icon='ADD')
+                    op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx
+                    
+                    for l_idx, layer in enumerate(slot.decal_layers):
+                        l_box = layer_area.box()
+                        row = l_box.row(align=True)
+                        row.prop(layer, "active", text="")
+                        row.prop(layer, "name", text="")
+                        row.prop(layer, "index", text="Idx")
+                        
+                        # Move/Remove
+                        op = row.operator("rzm.move_tw_decal_layer", text="", icon='TRIA_UP')
+                        op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx; op.direction = 'UP'
+                        op = row.operator("rzm.move_tw_decal_layer", text="", icon='TRIA_DOWN')
+                        op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx; op.direction = 'DOWN'
+                        op = row.operator("rzm.remove_tw_decal_layer", text="", icon='X')
+                        op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx
+                    
+                    s_box.prop(slot, "rect", text="Rect")
+                    s_box.prop(slot, "hsv_link", text="HSV")
+                    
+                    row = s_box.row(align=True)
+                    row.prop(slot, "mask_source", text="Mask Source")
+                    
+                    row = s_box.row(align=True)
+                    row.prop(slot, "mirror_mode", text="Mirror")
+                    row.prop(slot, "mirror_data", text="")
 
     def draw_special_variables(self, layout, rzm):
         layout.separator()

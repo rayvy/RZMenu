@@ -35,9 +35,9 @@ def register():
                     __all_classes__.append(cls)
 
             # Also call the module's own register function if it exists
-            # (for properties, etc.)
-            if hasattr(module, "register"):
-                module.register()
+            # (for properties, etc.) - Only if it doesn't just re-register classes
+            # if hasattr(module, "register"):
+            #     module.register()
 
         except Exception as e:
             print(f"ERROR: Failed to register module '{module_path.name}': {e}")

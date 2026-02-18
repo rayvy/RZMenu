@@ -136,7 +136,7 @@ class ValuesTab(BaseListTab):
         self.inp_name.editingFinished.connect(self.synch_name)
         
         self.inp_type = QtWidgets.QComboBox()
-        self.inp_type.addItems(["INT", "FLOAT"])
+        self.inp_type.addItems(["INT", "FLOAT", "VECTOR"])
         self.inp_type.currentTextChanged.connect(self.synch_type)
         
         self.inp_val_int = QtWidgets.QSpinBox()
@@ -146,11 +146,24 @@ class ValuesTab(BaseListTab):
         self.inp_val_float = QtWidgets.QDoubleSpinBox()
         self.inp_val_float.setRange(-999999.0, 999999.0)
         self.inp_val_float.valueChanged.connect(self.synch_val_float)
+
+        # Vector UI
+        self.inp_val_vector_widget = QtWidgets.QWidget()
+        self.vec_layout = QtWidgets.QHBoxLayout(self.inp_val_vector_widget)
+        self.vec_layout.setContentsMargins(0, 0, 0, 0)
+        self.inp_vecs = []
+        for i in range(4):
+            sb = QtWidgets.QDoubleSpinBox()
+            sb.setRange(-999999.0, 999999.0)
+            sb.valueChanged.connect(lambda v, idx=i: self.synch_val_vector(idx, v))
+            self.vec_layout.addWidget(sb)
+            self.inp_vecs.append(sb)
         
         self.props_layout.addRow("Name:", self.inp_name)
         self.props_layout.addRow("Type:", self.inp_type)
         self.props_layout.addRow("Int Value:", self.inp_val_int)
         self.props_layout.addRow("Float Value:", self.inp_val_float)
+        self.props_layout.addRow("Vector:", self.inp_val_vector_widget)
 
     def refresh(self):
         if not bpy.context: return
@@ -197,10 +210,15 @@ class ValuesTab(BaseListTab):
             
         if self.inp_val_float.value() != val.float_value:
             self.inp_val_float.setValue(val.float_value)
+
+        for i in range(4):
+            if abs(self.inp_vecs[i].value() - val.vector_value[i]) > 0.0001:
+                self.inp_vecs[i].setValue(val.vector_value[i])
         
         # Visibility
         self.inp_val_int.setVisible(val.value_type == 'INT')
         self.inp_val_float.setVisible(val.value_type == 'FLOAT')
+        self.inp_val_vector_widget.setVisible(val.value_type == 'VECTOR')
         
         self.is_updating_ui = False
 
@@ -227,6 +245,12 @@ class ValuesTab(BaseListTab):
         if self.is_updating_ui: return
         row = self.list_widget.currentRow()
         bpy.ops.rzm.update_value(index=row, prop_name="float_value", val_str=str(v))
+
+    def synch_val_vector(self, idx, v):
+        if self.is_updating_ui: return
+        row = self.list_widget.currentRow()
+        # Prop name format for indexed update: vector_value[idx]
+        bpy.ops.rzm.update_value(index=row, prop_name=f"vector_value[{idx}]", val_str=str(v))
 
 class TogglesTab(BaseListTab):
     def __init__(self):

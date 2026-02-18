@@ -1,3 +1,4 @@
+{% import "texworks.j2" as texworks with context %}
 {% import "modules/functions.j2" as fn with context %}
 {% import "modules/utils.j2" as utils with context %}
 
@@ -111,7 +112,7 @@ endif
 if $initFrame > 1 && $ModInitialised != 1
 {% if scene.rzm %}
     {% if scene.rzm.addons.tex_works == 1 %}
-    run = CommandListAddonsTexWorks
+    run = CommandListTexWorks
     run = CommandListAddonsFaceTexWorks
     {% endif %}
 {% endif %}
@@ -137,6 +138,7 @@ if $active
     ;run = CustomShaderComputeShapes
     {% endif %}
     run = CommandListPreSnippet
+    run = CommandListTexWorks
     run = CommandListEntryPoint
     run = CommandListPostSnippet
 endif
