@@ -125,7 +125,7 @@ class RZTemplateEngine:
         data = {
             "meta": {"version": "1.1", "name": meta_name},
             "elements": [],
-            "dependencies": {"values": [], "toggles": [], "images": []},
+            "dependencies": {"values": [], "toggles": [], "images": [], "shapes": [], "conditions": []},
             "scene_settings": {},
             "assets_map": {},
             "offset_origin": [0, 0]
@@ -149,25 +149,38 @@ class RZTemplateEngine:
         min_y = min([e.position[1] for e in target_elements])
         data["offset_origin"] = [min_x, min_y]
 
-        deps_ids = {"values": set(), "toggles": set(), "images": set()}
+        deps_ids = {"values": set(), "toggles": set(), "images": set(), "shapes": set(), "conditions": set()}
 
         for elem in target_elements:
             d = rzm_to_dict(elem)
             d["_temp_original_id"] = elem.id
             data["elements"].append(d)
             
+            # Scan Value Links
             if hasattr(elem, "value_link"):
                 for link in elem.value_link:
                     name = link.value_name
                     if not name: continue
                     if name.startswith('@'): deps_ids["toggles"].add(name[1:])
+                    elif name.startswith('#'): deps_ids["shapes"].add(name[1:])
                     elif not name.startswith('#'): deps_ids["values"].add(name.replace('$', ''))
             
+            # Scan Images
             if hasattr(elem, "image_id") and elem.image_id != -1:
                 deps_ids["images"].add(elem.image_id)
             if hasattr(elem, "conditional_images"):
                 for ci in elem.conditional_images:
                     if ci.image_id != -1: deps_ids["images"].add(ci.image_id)
+
+        # Scan TexWorks dependencies
+        for tw_tex in self.rzm.addons.tw_textures:
+            # Note: This is a bit broad, ideally we only scan if the element or its hierarchy uses these textures.
+            # But since TexWorks is usually global for the scene, we include referenced vars.
+            for field in [tw_tex.tw_hsv_value_link, tw_tex.tw_morph_value_link]:
+                if not field: continue
+                if field.startswith('@'): deps_ids["toggles"].add(field[1:])
+                elif field.startswith('#'): deps_ids["shapes"].add(field[1:])
+                elif field.startswith('$'): deps_ids["values"].add(field[1:])
 
         for name in deps_ids["values"]:
             obj = next((v for v in self.rzm.rzm_values if v.value_name == name or v.value_name == f"${name}"), None)
@@ -176,6 +189,14 @@ class RZTemplateEngine:
         for name in deps_ids["toggles"]:
             obj = next((t for t in self.rzm.toggle_definitions if t.toggle_name == name), None)
             if obj: data["dependencies"]["toggles"].append(rzm_to_dict(obj))
+
+        for name in deps_ids["shapes"]:
+            obj = next((s for s in self.rzm.shapes if s.shape_name == name or s.shape_name == f"#{name}"), None)
+            if obj: data["dependencies"]["shapes"].append(rzm_to_dict(obj))
+            
+        for name in deps_ids["conditions"]:
+            obj = next((c for c in self.rzm.conditions if c.condition_name == name), None)
+            if obj: data["dependencies"]["conditions"].append(rzm_to_dict(obj))
 
         # Сохранение
         view_settings = self.scene.view_settings
@@ -287,6 +308,14 @@ class RZTemplateEngine:
             name = d.get("toggle_name")
             if not any(t.toggle_name == name for t in self.rzm.toggle_definitions):
                 dict_to_rzm(d, self.rzm.toggle_definitions.add())
+        for d in deps.get("shapes", []):
+            name = d.get("shape_name")
+            if not any(s.shape_name == name for s in self.rzm.shapes):
+                dict_to_rzm(d, self.rzm.shapes.add())
+        for d in deps.get("conditions", []):
+            name = d.get("condition_name")
+            if not any(c.condition_name == name for c in self.rzm.conditions):
+                dict_to_rzm(d, self.rzm.conditions.add())
 
     def create_elements(self, data, img_remap, root_parent_id, offset):
         max_id = max({e.id for e in self.rzm.elements} or {0})

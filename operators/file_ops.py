@@ -114,9 +114,10 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                 
                 # 4. Clear existing RZM data
                 collections_to_clear = [
-                    rzm.images, rzm.elements, rzm.rzm_values, rzm.toggle_definitions,
-                    rzm.conditions, rzm.shapes, rzm.addons.tw_texture_configs,
-                    rzm.addons.tw_textures, rzm.addons.tw_resources, rzm.addons.tw_overrides
+                    rzm.elements, rzm.rzm_values, rzm.toggle_definitions, rzm.images,
+                    rzm.conditions, rzm.shapes, rzm.dependency_statuses,
+                    rzm.addons.tw_resources, rzm.addons.tw_overrides,
+                    rzm.addons.tw_texture_configs, rzm.addons.tw_textures
                 ]
                 for coll in collections_to_clear:
                     coll.clear()
@@ -198,8 +199,9 @@ class RZM_OT_ResetScene(bpy.types.Operator):
         rzm = context.scene.rzm
         collections_to_clear = [
             rzm.elements, rzm.rzm_values, rzm.toggle_definitions, rzm.images, 
-            rzm.conditions, rzm.shapes, rzm.addons.tw_texture_configs, 
-            rzm.addons.tw_textures, rzm.addons.tw_resources, rzm.addons.tw_overrides
+            rzm.conditions, rzm.shapes, rzm.dependency_statuses,
+            rzm.addons.tw_resources, rzm.addons.tw_overrides,
+            rzm.addons.tw_texture_configs, rzm.addons.tw_textures
         ]
         for coll in collections_to_clear:
             coll.clear()
