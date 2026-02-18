@@ -91,7 +91,7 @@ dispatch = {{ block.backdrop_rect[2] }} // 32, {{ block.backdrop_rect[3] }} // 3
 
 {% for comp in block.components %}
 ; --- Component: {{ comp.name }} ---
-{% set comp_path = "modules/texworks/" ~ comp.name %}
+{% set comp_path = "TexWorks/" ~ block.name ~ "/" ~ comp.name %}
 {% if comp.mask_enabled %}
 [Resource{{ comp.name }}Mask]
 filename = {{ comp_path }}/mask.png
@@ -103,7 +103,7 @@ run = CustomShaderUpdateCompBase_{{ block.name }}_{{ comp.name }}
 
 {# 2. HSV Adjustments #}
 {% for slot in comp.slots if slot.active %}
-    {% if slot.hsv_link %}
+    {% if slot.hsv_enabled and slot.hsv_link %}
 run = CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}
     {% endif %}
 {% endfor %}
@@ -161,7 +161,7 @@ filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ i }}{{ file_suffi
 {% endfor %}
 
 {# HSV Compute Shader #}
-{% if slot.hsv_link %}
+{% if slot.hsv_enabled and slot.hsv_link %}
 [CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}]
 cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref Resource{{ block_res }}
@@ -258,13 +258,20 @@ global $TW_Global_Init_Needed_{{ block.name }} = 1
 global $TW_{{ comp.name }}_Is_Updated = 0
 global $Comp_{{ block.name }}_{{ comp.name }}_PastSum = -1
         {% for slot in comp.slots if slot.active %}
-            {% if slot.hsv_link and slot.hsv_link not in ns.processed_vars %}
+            {% if slot.hsv_enabled and slot.hsv_link %}
                 {% set v_name = utils.format_var(slot.hsv_link) %}
+                {% if v_name not in ns.processed_vars %}
+                    {# Проверяем, есть ли эта переменная в глобальном списке. Если нет - создаем #}
+                    {% set from_coll = namespace(found=false) %}
+                    {% for v in rzm.rzm_values if utils.format_var(v.value_name) == v_name %}{% set from_coll.found = true %}{% endfor %}
+                    {% if not from_coll.found %}
 global persist ${{ v_name }}_X = {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
-global persist ${{ v_name }}_Y = {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
-global persist ${{ v_name }}_Z = {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.0) }}
+global persist ${{ v_name }}_Y = {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.5) }}
+global persist ${{ v_name }}_Z = {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.6) }}
 global persist ${{ v_name }}_W = 0.0
-                {% set _ = ns.processed_vars.append(slot.hsv_link) %}
+                    {% endif %}
+                    {% set _ = ns.processed_vars.append(v_name) %}
+                {% endif %}
             {% endif %}
             {% for layer in slot.decal_layers if layer.active %}
                 {% set l_var = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name ~ "Index" %}

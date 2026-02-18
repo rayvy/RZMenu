@@ -209,9 +209,13 @@ class RZTemplateEngine:
                     for img_id in deps_ids["images"]:
                         rzm_img = next((img for img in self.rzm.images if img.id == img_id), None)
                         if not rzm_img: continue
+                        
                         bl_image = getattr(rzm_img, "image_pointer", None) or bpy.data.images.get(rzm_img.display_name)
-                        if not bl_image or not bl_image.has_data: continue
-
+                        
+                        # --- FIX START: Robust Image Check ---
+                        if not bl_image: continue
+                        
+                        # Определяем формат
                         fmt = bl_image.file_format or 'PNG'
                         ext = fmt.lower().replace('jpeg', 'jpg')
                         if ext not in ['jpg', 'png', 'tga', 'bmp']: ext = 'png'
@@ -219,22 +223,44 @@ class RZTemplateEngine:
                         archive_fname = f"asset_{img_id}.{ext}"
                         save_path = os.path.join(tmpdir, archive_fname)
                         
+                        success = False
                         try:
-                            bl_image.save_render(save_path)
-                            if os.path.exists(save_path):
+                            # 1. Packed Check
+                            if bl_image.packed_file:
+                                with open(save_path, 'wb') as f:
+                                    f.write(bl_image.packed_file.data)
+                                success = True
+                            # 2. Has Data Check
+                            elif bl_image.has_data:
+                                try:
+                                    bl_image.save(filepath=save_path)
+                                    success = True
+                                except:
+                                    bl_image.save_render(save_path)
+                                    success = True
+                            # 3. Filepath Check
+                            elif os.path.exists(bl_image.filepath):
+                                try:
+                                    bl_image.reload()
+                                    bl_image.save(filepath=save_path)
+                                    success = True
+                                except: pass
+                                
+                            if success and os.path.exists(save_path):
                                 zf.write(save_path, arcname=f"assets/{archive_fname}")
                                 data["assets_map"][str(img_id)] = archive_fname
-                                data["dependencies"]["images"].append(rzm_to_dict(rzm_img))
+                                # Важно: обновляем данные в JSON, чтобы ссылка на картинку была
+                                img_data = rzm_to_dict(rzm_img)
+                                data["dependencies"]["images"].append(img_data)
                         except Exception as e:
-                            print(f"[RZM] Error saving image {bl_image.name}: {e}")
+                            print(f"[RZM] Error saving template image {bl_image.name}: {e}")
+                        # --- FIX END ---
 
                 zf.writestr('template_data.json', json.dumps(data, indent=2))
         except Exception as e:
             print(f"[RZM] Critical Export Error: {e}")
             return False
-        finally:
-            view_settings.view_transform = old_transform
-
+            
         return True
 
     def import_template(self, filepath, position_offset=(0, 0), parent_id=-1):
@@ -292,7 +318,10 @@ class RZTemplateEngine:
 
         new_img = self.rzm.images.add()
         ids = {i.id for i in self.rzm.images}
-        new_id = (max(ids) + 1) if ids else 1
+        new_id = 1
+        while new_id in ids:
+            new_id += 1
+            
         new_img.id = new_id
         new_img.display_name = bl_image.name
         new_img.source_type = 'CUSTOM'

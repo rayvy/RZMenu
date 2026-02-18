@@ -8,7 +8,13 @@
     {% if scene.rzm.rzm_values %}
         {% for value in scene.rzm.rzm_values %}
             {% if value.value_name %}
-                {% if value.int_value %}
+                {% if value.value_type == 'VECTOR' %}
+                {% set v_name = utils.format_var(value.value_name) %}
+                global persist ${{ v_name }}_X = {{ "%.3f"|format(value.vector_value[0]) }}
+                global persist ${{ v_name }}_Y = {{ "%.3f"|format(value.vector_value[1]) }}
+                global persist ${{ v_name }}_Z = {{ "%.3f"|format(value.vector_value[2]) }}
+                global persist ${{ v_name }}_W = {{ "%.3f"|format(value.vector_value[3]) }}
+                {% elif value.value_type == 'INT' or value.int_value %}
                 global persist ${{utils.format_var(value.value_name)}} = {%if value.int_value != null%}{{value.int_value}}{%else%}0{%endif%}   
                 {% else %}
                 global persist ${{utils.format_var(value.value_name)}} = {%if value.float_value != null%}{{value.float_value}}{%else%}0.0{%endif%}    

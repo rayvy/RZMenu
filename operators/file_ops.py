@@ -4,10 +4,57 @@ import json
 import os
 import zipfile
 import tempfile
+import shutil
 from pathlib import Path
 
 # FIX IMPORTS: Linking to the new core modules
 from ..core.serialization import RZTemplateEngine, rzm_to_dict, dict_to_rzm
+
+# --- Helper для надежного сохранения изображения ---
+def robust_save_image(bl_image, save_path):
+    """
+    Пытается сохранить изображение любым доступным способом.
+    Приоритет:
+    1. Если упаковано -> сохраняем сырые байты (самый надежный способ).
+    2. Если есть путь на диске -> копируем файл.
+    3. Если есть данные в памяти -> используем image.save().
+    """
+    try:
+        # Способ 1: Изображение упаковано в blend-файл
+        if bl_image.packed_file:
+            with open(save_path, 'wb') as f:
+                f.write(bl_image.packed_file.data)
+            return True
+
+        # Способ 2: Стандартное сохранение (Raw bytes)
+        # save() надежнее save_render(), так как не зависит от Color Management
+        if bl_image.has_data:
+            try:
+                # Временно меняем filepath, чтобы сохранить куда нам надо, затем возвращаем
+                old_filepath = bl_image.filepath
+                try:
+                    bl_image.filepath_raw = save_path
+                    bl_image.save()
+                finally:
+                    bl_image.filepath_raw = old_filepath
+                return True
+            except:
+                pass # Если не вышло, пробуем save_render
+
+            # Fallback: Save Render
+            bl_image.save_render(save_path)
+            return True
+
+        # Способ 3: Копирование исходного файла, если он существует
+        source_path = bpy.path.abspath(bl_image.filepath)
+        if source_path and os.path.exists(source_path) and os.path.isfile(source_path):
+            shutil.copy2(source_path, save_path)
+            return True
+            
+    except Exception as e:
+        print(f"[RZM] Image Save Error ({bl_image.name}): {e}")
+    
+    return False
 
 # --- Сохранение / Загрузка / Сброс ---
 
@@ -29,40 +76,48 @@ class RZM_OT_SaveTemplate(bpy.types.Operator):
                 # 1. Save JSON structure
                 zf.writestr('scene.json', json.dumps(rzm_to_dict(context.scene.rzm), indent=2, ensure_ascii=False))
                 
-                # 2. Save Images
+                 # 2. Save Images
+                images_saved = 0
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    # --- [FIX START] Отключаем гамма-коррекцию (Filmic/AgX) ---
-                    view_settings = context.scene.view_settings
-                    old_transform = view_settings.view_transform
-                    view_settings.view_transform = 'Standard'
+                    print(f"[RZM] Processing {len(context.scene.rzm.images)} images...")
                     
-                    try:
-                        for img in context.scene.rzm.images:
-                            if img.source_type in {'CUSTOM', 'CAPTURED'} and img.image_pointer:
-                                bl_image = img.image_pointer
-                                
-                                if not bl_image.has_data:
-                                    continue
-                                    
-                                bl_image.file_format = bl_image.file_format or 'PNG'
-                                ext = bl_image.file_format.lower().replace('jpeg', 'jpg')
-                                if not ext: ext = 'png'
-                                
-                                filename = f"{img.display_name}.{ext}"
-                                save_path = os.path.join(tmpdir, filename)
-                                
-                                try:
-                                    bl_image.save_render(save_path)
+                    for img in context.scene.rzm.images:
+                        # Сохраняем и CUSTOM и CAPTURED, если есть поинтер
+                        if img.source_type in {'CUSTOM', 'CAPTURED'}:
+                            if not img.image_pointer:
+                                continue
+                            
+                            bl_image = img.image_pointer
+                            
+                            # Определяем формат
+                            fmt = bl_image.file_format or 'PNG'
+                            ext = fmt.lower().replace('jpeg', 'jpg')
+                            if ext not in {'png', 'jpg', 'tga', 'bmp', 'tiff'}: ext = 'png'
+                            
+                            # Имя файла внутри архива: ID_Name.ext
+                            # Очищаем имя от недопустимых символов для файловой системы
+                            safe_name = "".join([c for c in img.display_name if c.isalpha() or c.isdigit() or c in (' ', '-', '_')]).rstrip()
+                            if not safe_name: safe_name = "image"
+                            
+                            filename = f"{img.id}_{safe_name}.{ext}"
+                            save_path = os.path.join(tmpdir, filename)
+                            
+                            if robust_save_image(bl_image, save_path):
+                                if os.path.getsize(save_path) > 0:
                                     zf.write(save_path, arcname=f'images/{filename}')
-                                except Exception as e:
-                                    print(f"Warning: Failed to save image {img.display_name}: {e}")
-                    finally:
-                        # --- [FIX RESTORE] Возвращаем настройки цвета обратно ---
-                        view_settings.view_transform = old_transform
+                                    images_saved += 1
+                                else:
+                                    print(f"[RZM] Warning: Saved file {filename} is empty.")
+                            else:
+                                print(f"[RZM] Warning: Could not save data for '{img.display_name}'")
+                
+                print(f"[RZM] Total images saved to archive: {images_saved}")
 
             self.report({'INFO'}, f"RZM Scene saved to {self.filepath}")
         except Exception as e:
             self.report({'ERROR'}, f"Failed to save .rzm file: {e}")
+            import traceback
+            traceback.print_exc()
             return {'CANCELLED'}
         return {'FINISHED'}
 
@@ -71,7 +126,7 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
     """Загружает структуру RZM из .rzm (zip) архива."""
     bl_idname = "rzm.load_template"
     bl_label = "Load RZM Scene"
-    bl_options = {'REGISTER', 'UNDO'} # Standard undo is enabled
+    bl_options = {'REGISTER', 'UNDO'} 
     
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
     filter_glob: bpy.props.StringProperty(default="*.rzm", options={'HIDDEN'})
@@ -87,24 +142,73 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                 with zipfile.ZipFile(self.filepath, 'r') as zf:
                     zf.extractall(tmpdir)
                 
-                # 2. Pre-load images from the 'images' subfolder
-                loaded_images_map = {}
-                images_path = os.path.join(tmpdir, 'images')
-                if os.path.exists(images_path):
-                    for filename in os.listdir(images_path):
+                # 2. Pre-load images
+                loaded_images_map = {} # KEY = ID (int) -> Value = bpy.types.Image
+                loaded_images_by_name = {} # KEY = CleanName -> Value = bpy.types.Image (Fallback)
+
+                # Проверяем обе возможные папки (старая и новая структура)
+                possible_folders = ['images', 'assets']
+                found_images_folder = False
+                
+                for folder_name in possible_folders:
+                    images_path = os.path.join(tmpdir, folder_name)
+                    if not os.path.exists(images_path):
+                        continue
+                        
+                    found_images_folder = True
+                    image_files = os.listdir(images_path)
+                    print(f"[RZM] Found {len(image_files)} files in '{folder_name}'...")
+                    
+                    for filename in image_files:
+                        if filename.startswith('.'): continue
+                        
                         try:
                             full_path = os.path.join(images_path, filename)
-                            bl_image = bpy.data.images.load(full_path, check_existing=True)
-                            bl_image.pack() # Pack into .blend immediately
-                            # Use stem (filename without extension) as key
-                            loaded_images_map[Path(filename).stem] = bl_image
+                            
+                            # Попытка распарсить ID
+                            img_id = -1
+                            # Вариант 1: "123_Name.png"
+                            parts = filename.split('_', 1)
+                            if len(parts) >= 2 and parts[0].isdigit():
+                                img_id = int(parts[0])
+                            # Вариант 2: "asset_123.png" (из partial export)
+                            elif filename.startswith("asset_"):
+                                name_part = filename.split('.')[0] # убрать расширение
+                                id_part = name_part.replace("asset_", "")
+                                if id_part.isdigit():
+                                    img_id = int(id_part)
+                            
+                            # Загрузка
+                            bl_image = bpy.data.images.load(full_path, check_existing=False)
+                            # Важно: Сразу пакуем, чтобы данные остались в памяти после удаления tmp
+                            bl_image.pack() 
+                            
+                            if img_id != -1:
+                                loaded_images_map[img_id] = bl_image
+                            
+                            # Сохраняем также по имени (без расширения и ID) для фоллбэка
+                            clean_name = os.path.splitext(filename)[0]
+                            # Если имя вида "100_MyImage", сохраним "MyImage"
+                            if '_' in clean_name and clean_name.split('_')[0].isdigit():
+                                clean_name = clean_name.split('_', 1)[1]
+                            
+                            loaded_images_by_name[clean_name] = bl_image
+                            loaded_images_by_name[filename] = bl_image # и полное имя тоже
+                                
                         except Exception as e:
-                            print(f"WARNING: Could not load image {filename}: {e}")
-                
+                            print(f"[RZM] Error loading image {filename}: {e}")
+
+                if not found_images_folder:
+                    print("[RZM] Info: No 'images' or 'assets' folder found in archive.")
+
                 # 3. Load JSON Data
                 json_path = os.path.join(tmpdir, 'scene.json')
+                # Fallback для partial templates, которые могут называться template_data.json
                 if not os.path.exists(json_path):
-                    self.report({'ERROR'}, "Invalid RZM file: scene.json missing")
+                    json_path = os.path.join(tmpdir, 'template_data.json')
+
+                if not os.path.exists(json_path):
+                    self.report({'ERROR'}, "Invalid RZM file: json data missing")
                     return {'CANCELLED'}
 
                 with open(json_path, 'r', encoding='utf-8') as f:
@@ -192,22 +296,47 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                 # 5. Populate Data
                 dict_to_rzm(data_to_load, rzm)
                 
-                # 6. Relink Images (Connect loaded/existing images to RZM data)
+                # 6. Relink Images
                 lost_image_ids = set()
-                
-                # Determine path to base icons (assuming structure: RZMenu/operators/file_ops.py -> ... -> RZMenu/base_icons)
                 addon_dir = Path(__file__).parent.parent
                 base_icons_dir = addon_dir / "base_icons"
 
                 for rzm_image in rzm.images:
                     if rzm_image.source_type in {'CUSTOM', 'CAPTURED'}:
-                        # Try to find in the loaded zip images
-                        if rzm_image.display_name in loaded_images_map:
-                            rzm_image.image_pointer = loaded_images_map[rzm_image.display_name]
-                        else:
+                        found = False
+                        
+                        # Стратегия 1: Поиск по ID
+                        if rzm_image.id in loaded_images_map:
+                            rzm_image.image_pointer = loaded_images_map[rzm_image.id]
+                            found = True
+                        
+                        # Стратегия 2: Поиск по Display Name (Fallback)
+                        if not found and rzm_image.display_name:
+                            # Пробуем прямое совпадение
+                            if rzm_image.display_name in loaded_images_by_name:
+                                rzm_image.image_pointer = loaded_images_by_name[rzm_image.display_name]
+                                found = True
+                                print(f"[RZM] Relinked by NAME: {rzm_image.display_name}")
+                            # Пробуем очищенное имя (если в display_name было расширение)
+                            elif os.path.splitext(rzm_image.display_name)[0] in loaded_images_by_name:
+                                name_key = os.path.splitext(rzm_image.display_name)[0]
+                                rzm_image.image_pointer = loaded_images_by_name[name_key]
+                                found = True
+                                print(f"[RZM] Relinked by CLEAN NAME: {name_key}")
+
+                        if not found:
+                            # Проверка: вдруг это asset_ID.png, который не попал в мапу
+                            # Например rzm_image.display_name = "asset_3.png"
+                            if rzm_image.display_name in loaded_images_by_name:
+                                rzm_image.image_pointer = loaded_images_by_name[rzm_image.display_name]
+                                found = True
+                        
+                        if not found:
+                            print(f"[RZM] Failed to relink ID {rzm_image.id} ({rzm_image.display_name})")
                             lost_image_ids.add(rzm_image.id)
                     
                     elif rzm_image.source_type == 'BASE':
+                        print(f"[RZM] Relinking BASE image: {rzm_image.display_name} (ID: {rzm_image.id})")
                         # Try to find in base_icons folder
                         found_file = False
                         if base_icons_dir.exists():
@@ -229,22 +358,11 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                         
                         if not found_file:
                             lost_image_ids.add(rzm_image.id)
-                
-                # 7. Handle Broken Links (Optional visual indication)
-                if lost_image_ids:
-                    print(f"RZM Info: {len(lost_image_ids)} images could not be relinked.")
-                    for elem in rzm.elements:
-                        if elem.image_mode == 'SINGLE' and elem.image_id in lost_image_ids:
-                            elem.image_id = -9999 # Visual error flag
-                        else:
-                            for cond_img in elem.conditional_images:
-                                if cond_img.image_id in lost_image_ids:
-                                    cond_img.image_id = -9999
-            
-            self.report({'INFO'}, f"RZM Scene loaded successfully from {os.path.basename(self.filepath)}")
+
+            self.report({'INFO'}, f"RZM Scene loaded. {len(lost_image_ids)} images missed.")
 
         except Exception as e:
-            self.report({'ERROR'}, f"Failed to load .rzm file: {e}")
+            self.report({'ERROR'}, f"Failed to load: {e}")
             import traceback
             traceback.print_exc()
             return {'CANCELLED'}

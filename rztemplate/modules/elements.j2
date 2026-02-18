@@ -1,5 +1,6 @@
 {% set DEBUG = true %}
 {% import "modules/container.j2" as class_container with context %}
+{% import "modules/utils.j2" as utils with context %}
 
 {% set CLASS_NAME_MAP = {
     0: 'CONTAINER',
@@ -40,12 +41,7 @@
     'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
 } %}
 
-{% macro format_var(input_string) -%}
-    {%- if input_string -%}
-        {%- set chars_to_strip = '$@#%' -%}
-        {{- '$' ~ input_string.lstrip(chars_to_strip) -}}
-    {%- endif -%}
-{%- endmacro %}
+{# format_var macro removed - using utils.j2 version instead #}
 
 {% macro elements_generate(mod_file,scene) %}
     {% if scene.rzm and scene.rzm.elements %}
@@ -187,7 +183,7 @@ $sizeY = $container_height
     {% set master_name = master.value_name | default('') %}
     {% set master_min = master.value_min | default(0.0) | float %}
     {% set master_max = master.value_max | default(1.0) | float %}
-    {% set master_var = format_var(master_name) %}
+    {% set master_var = utils.get_var_name(master_name, scene) %}
 {% else %}
     {% set master = none %}
     {% set master_name = '' %}
@@ -196,7 +192,7 @@ $sizeY = $container_height
     {% set master_var = '' %}
 {% endif %}
 
-local $TargetValue = {{format_var(element.value_link[0].value_name)}}
+local $TargetValue = {{utils.get_var_name(master_name, scene)}}
 if $capturedID == $id
     $TargetValue = ($cursorX - $positionX) / $sizeX
 else if $clickTriggerID == $id
@@ -251,7 +247,7 @@ local $smoothing_factor = 0.25
     {% for slave in element.value_link[1:] %}
         {% set slave_name = slave.value_name | default('') %}
         {% if slave_name %}
-{{ format_var(slave_name) }} = {{ master_var }}
+{{ utils.get_var_name(slave_name, scene) }} = {{ master_var }}
         {% endif %}
     {% endfor %}
 {% endif %}

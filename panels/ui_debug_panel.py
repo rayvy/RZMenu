@@ -357,7 +357,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             m_box = mat_box.box()
             row = m_box.row(align=True)
             row.prop(mat, "name", text=f"[{i}]")
-            row.prop(mat, "shader_type", text="")
             row.prop(mat, "diffuse_blend_mode", text="")
             
             m_box.prop(mat, "parameters", text="Params (x46)")
