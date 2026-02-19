@@ -59,3 +59,4 @@ This document tracks technical debt, architectural issues, and "dirty hacks" ide
 ## ✅ Fixed / Improved
 
 - **Viewport Coordinates:** `viewport.py` now consistently uses `core.to_qt_coords` and `to_blender_delta`. The coordinate logic seems centralized.
+

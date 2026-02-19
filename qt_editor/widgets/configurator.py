@@ -48,6 +48,19 @@ class BaseConfigTab(QtWidgets.QWidget):
         except Exception as e:
             print(f"Error calling {op_id}: {e}")
 
+    def add_move_controls(self, widget, layout, coll_name, **hierarchy):
+        """Adds Up/Down buttons to a layout for reshuffling. Uses widget's item_index property."""
+        h_ctrl = QtWidgets.QHBoxLayout()
+        btn_up = RZPushButton("↑"); btn_up.setFixedWidth(25)
+        btn_up.clicked.connect(lambda: self._call_op("move_tw_item", collection_name=coll_name, 
+                                                     index=widget.property("item_index"), direction='UP', **hierarchy))
+        
+        btn_down = RZPushButton("↓"); btn_down.setFixedWidth(25)
+        btn_down.clicked.connect(lambda: self._call_op("move_tw_item", collection_name=coll_name, 
+                                                       index=widget.property("item_index"), direction='DOWN', **hierarchy))
+        h_ctrl.addWidget(btn_up); h_ctrl.addWidget(btn_down)
+        layout.addLayout(h_ctrl)
+
 class GeneralTab(BaseConfigTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -150,7 +163,7 @@ class GeneralTab(BaseConfigTab):
         self._call_op("update_addon_setting", prop_name=key, val_bool=val)
 
 
-class TexWorksTab(BaseConfigTab):
+class TexWorksLegacyTab(BaseConfigTab):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_ui()
@@ -559,6 +572,8 @@ class TexWorksTab(BaseConfigTab):
         self.update_ui()
 
 
+
+
 class SnippetTab(BaseConfigTab):
     """
     Tab for editing Pre/Post Code Snippets (INI syntax).
@@ -654,7 +669,7 @@ class RZConfiguratorManager(QtWidgets.QWidget):
         self.tabs = [] # List of (Name, WidgetInstance)
         
         self.add_tab("General", GeneralTab())
-        self.add_tab("TexWorks", TexWorksTab())
+        self.add_tab("TexWorks (Legacy)", TexWorksLegacyTab())
         self.add_tab("PreSnippet", SnippetTab("pre_snippet", "Pre-Injection Code"))
         self.add_tab("PostSnippet", SnippetTab("post_snippet", "Post-Injection Code"))
         # Extensible point: self.add_tab("VFX", VFXTab())

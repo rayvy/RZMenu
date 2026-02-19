@@ -456,7 +456,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                         l_row.prop(layer, "index", text="Idx")
                         l_row.prop(layer, "count", text="Total")
                         
-                        op = l_row.operator("rzm.move_tw_decal_layer", text="", icon='TRIA_UP')
+                        op = l_row.operator("rzm.move_tw_item", text="", icon='TRIA_UP')
                         op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx; op.direction = 'UP'
                         op = l_row.operator("rzm.remove_tw_decal_layer", text="", icon='X')
                         op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx

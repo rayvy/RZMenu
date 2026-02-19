@@ -228,20 +228,49 @@ class RZM_OT_RemoveTwDecalLayer(bpy.types.Operator):
         if 0 <= idx < len(coll): coll.remove(idx)
         return {'FINISHED'}
 
-class RZM_OT_MoveTwDecalLayer(bpy.types.Operator):
-    bl_idname = "rzm.move_tw_decal_layer"
-    bl_label = "Move Decal Layer"
+class RZM_OT_MoveTwItem(bpy.types.Operator):
+    """Generic operator to move a TexWorks collection item up or down."""
+    bl_idname = "rzm.move_tw_item"
+    bl_label = "Move TexWorks Item"
     bl_options = {'REGISTER', 'UNDO'}
-    block_index: bpy.props.IntProperty()
-    comp_index: bpy.props.IntProperty()
-    slot_index: bpy.props.IntProperty()
+    
+    collection_name: bpy.props.StringProperty()
     index: bpy.props.IntProperty()
     direction: bpy.props.EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])
+    
+    # Hierarchy path
+    block_index: bpy.props.IntProperty(default=-1)
+    comp_index: bpy.props.IntProperty(default=-1)
+    slot_index: bpy.props.IntProperty(default=-1)
+    
     def execute(self, context):
-        coll = context.scene.rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index].decal_layers
-        target_idx = self.index - 1 if self.direction == 'UP' else self.index + 1
-        if 0 <= target_idx < len(coll):
-            coll.move(self.index, target_idx)
+        rzm = context.scene.rzm
+        try:
+            if self.collection_name == "resources":
+                coll = rzm.tw_resources
+            elif self.collection_name == "overrides":
+                coll = rzm.tw_overrides
+            elif self.collection_name == "materials":
+                coll = rzm.tw_materials
+            elif self.collection_name == "blocks":
+                coll = rzm.tw_blocks
+            elif self.collection_name == "components":
+                coll = rzm.tw_blocks[self.block_index].components
+            elif self.collection_name == "slots":
+                coll = rzm.tw_blocks[self.block_index].components[self.comp_index].slots
+            elif self.collection_name == "decal_layers":
+                coll = rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index].decal_layers
+            else:
+                return {'CANCELLED'}
+            
+            target_idx = self.index - 1 if self.direction == 'UP' else self.index + 1
+            if 0 <= target_idx < len(coll):
+                coll.move(self.index, target_idx)
+                
+        except (AttributeError, IndexError) as e:
+            print(f"MoveTwItem Error: {e}")
+            return {'CANCELLED'}
+            
         return {'FINISHED'}
 
 def create_dummy_png(path, width=1, height=1, color=(255, 0, 0, 128)):
@@ -419,6 +448,6 @@ classes_to_register = [
     RZM_OT_AddTwBlock, RZM_OT_RemoveTwBlock,
     RZM_OT_AddTwComponent, RZM_OT_RemoveTwComponent,
     RZM_OT_AddTwSlot, RZM_OT_RemoveTwSlot,
-    RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_MoveTwDecalLayer,
+    RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_MoveTwItem,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
 ]
