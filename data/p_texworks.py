@@ -120,6 +120,15 @@ class TexWorksComponent(bpy.types.PropertyGroup):
     
     rect: IntVectorProperty(name="Rect (X, Y, W, H)", size=4, default=(0, 0, 4096, 4096))
     mask_enabled: BoolProperty(name="Use Component Mask", default=False)
+    
+    # TexMorph
+    tex_morph_enabled: BoolProperty(name="TexMorph", default=False)
+    tex_morph_resource_name: StringProperty(name="Morph Resource", description="Second texture for morphing")
+    tex_morph_link: StringProperty(name="Morph Variable", description="Link to a FLOAT value ($MyVar)")
+
+    # UI State
+    tw_is_expanded: BoolProperty(name="UI Expanded", default=False)
+
     slots: CollectionProperty(type=TexWorksSlot)
     active_slot_index: IntProperty()
 

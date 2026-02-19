@@ -1,10 +1,12 @@
 RWTexture2D<float4> Atlas : register(u0);
 Texture2D<float4> SourceTexture : register(t0);
 Texture2D<float4> MaskTexture : register(t1);
+Texture2D<float4> MorphTexture : register(t2);
 Texture1D<float4> IniParams : register(t120);
 
 #define RegionParams    IniParams[44]
 #define HSVParams       IniParams[43]
+#define MorphFactor     IniParams[24].x
 
 #define TargetOffset      uint2(RegionParams.x, RegionParams.y)
 #define RegionDimensions  uint2(RegionParams.z, RegionParams.w)
@@ -58,7 +60,12 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     if (localCoord.x >= RegionDimensions.x || localCoord.y >= RegionDimensions.y)
         return;
     float4 base_color = SourceTexture.Load(int3(localCoord, 0));
-    float3 final_rgb = base_color.rgb;
+    float4 morph_color = MorphTexture.Load(int3(localCoord, 0));
+    
+    // RZM_MORPH: Смешиваем основной слой с морф-текстурой
+    float4 morphed_color = lerp(base_color, morph_color, saturate(MorphFactor));
+    
+    float3 final_rgb = morphed_color.rgb;
     float mask_value = 1.0;
     if (EnableMask > 0.5f)
     {
@@ -66,13 +73,13 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     }
     if (mask_value > 0.01f)
     {
-        float3 hsv = RGBtoHSV(base_color.rgb);
+        float3 hsv = RGBtoHSV(morphed_color.rgb);
         hsv.x = frac(hsv.x + HueShift);
         hsv.y = saturate(hsv.y + SaturationShift);
         hsv.z = saturate(hsv.z + ValueShift);
         float3 modified_rgb = HSVtoRGB(hsv);
-        final_rgb = lerp(base_color.rgb, modified_rgb, mask_value);
+        final_rgb = lerp(morphed_color.rgb, modified_rgb, mask_value);
     }
     uint2 targetPixelCoord = TargetOffset + localCoord;
-    Atlas[targetPixelCoord] = float4(final_rgb, base_color.a);
+    Atlas[targetPixelCoord] = float4(final_rgb, morphed_color.a);
 }

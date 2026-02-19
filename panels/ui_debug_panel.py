@@ -417,6 +417,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 
                 c_item.prop(comp, "rect", text="Atlas Rect")
                 
+                # RZM_TEXMORPH: Прототипирование морфинга
+                m_row = c_item.row(align=True)
+                m_row.prop(comp, "tex_morph_enabled", text="TexMorph", icon='MOD_MIRROR')
+                if comp.tex_morph_enabled:
+                    m_row.prop(comp, "tex_morph_resource_name", text="Res")
+                    m_row.prop(comp, "tex_morph_link", text="Link")
+                
                 # Slots
                 slot_box = c_item.box()
                 s_header = slot_box.row(align=True)

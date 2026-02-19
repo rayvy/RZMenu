@@ -86,6 +86,7 @@ x45 = 0.0
 y45 = 0.0
 z45 = 0.0
 w45 = 1.0
+x24 = 0.0
 dispatch = {{ block.backdrop_rect[2] }} // 32, {{ block.backdrop_rect[3] }} // 32, 1
 {% endif %}
 
@@ -128,6 +129,12 @@ cs-t0 = Resource{{ utils.clean_resource(block.backdrop_resource_name) }}
 cs-t0 = null
 {% endif %}
 cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
+{# RZM_TEXMORPH: Добавляем текстуру для морфинга #}
+{% if comp.tex_morph_enabled and comp.tex_morph_resource_name %}
+cs-t2 = Resource{{ utils.clean_resource(comp.tex_morph_resource_name) }}
+{% else %}
+cs-t2 = null
+{% endif %}
 x43 = 0
 y43 = 0
 z43 = 0
@@ -141,6 +148,13 @@ x45 = {{ "%.3f"|format(comp.base_rect[0] / 4096) }}
 y45 = {{ "%.3f"|format(comp.base_rect[1] / 4096) }}
 z45 = 0.0
 w45 = 1.0
+
+{# RZM_TEXMORPH: Фактор смешивания #}
+{% if comp.tex_morph_enabled and comp.tex_morph_link %}
+x24 = ${{ utils.format_var(comp.tex_morph_link) }}
+{% else %}
+x24 = 0.0
+{% endif %}
 dispatch = {{ comp.rect[2] }} // 32, {{ comp.rect[3] }} // 32, 1
 
 {% for slot in comp.slots if slot.active %}
@@ -214,6 +228,7 @@ x45 = 0.0
 y45 = 0.0
 z45 = 0.0
 w45 = 1.0
+x24 = 0.0
 dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 {% endif %}
 
@@ -247,14 +262,14 @@ if ${{ l_var }} >= 0
     {# USAGE: xyzw41/42 - Debug Override (If active) #}
     {% if scene.rzm.addons.debugger_info %}
     ; Debug override data from UI (Linked to persist vars)
-    x41 = $RZM_DEBUG_VALUE_0
-    y41 = $RZM_DEBUG_VALUE_1
-    z41 = $RZM_DEBUG_VALUE_2
-    w41 = $RZM_DEBUG_VALUE_3
-    x42 = $RZM_DEBUG_VALUE_4
-    y42 = $RZM_DEBUG_VALUE_5
-    z42 = $RZM_DEBUG_VALUE_6
-    w42 = $RZM_DEBUG_VALUE_7
+    ;x41 = $RZM_DEBUG_VALUE_0
+    ;y41 = $RZM_DEBUG_VALUE_1
+    ;z41 = $RZM_DEBUG_VALUE_2
+    ;w41 = $RZM_DEBUG_VALUE_3
+    ;x42 = $RZM_DEBUG_VALUE_4
+    ;y42 = $RZM_DEBUG_VALUE_5
+    ;z42 = $RZM_DEBUG_VALUE_6
+    ;w42 = $RZM_DEBUG_VALUE_7
     {% endif %}
 
     {% if material %}
@@ -366,6 +381,11 @@ endif
         {% set _ = sum_parts.append("$" ~ v_name ~ "_W") %}
     {% endif %}
 {% endfor %}
+{# RZM_TEXMORPH: Учитываем фактор морфинга в сумме изменений компонента #}
+{% if comp.tex_morph_enabled and comp.tex_morph_link %}
+    {% set m_var = utils.format_var(comp.tex_morph_link) %}
+    {% set _ = sum_parts.append("$" ~ m_var) %}
+{% endif %}
 {% if sum_parts %}
 local $current_sum_{{ block.name }}_{{ comp.name }} = {{ sum_parts | join(' + ') }}
 if $Comp_{{ block.name }}_{{ comp.name }}_PastSum != $current_sum_{{ block.name }}_{{ comp.name }}

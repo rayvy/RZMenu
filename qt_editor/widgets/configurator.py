@@ -368,6 +368,7 @@ class TexWorksTab(BaseConfigTab):
         if r['fmt'].text() != cfg.tw_atlas_settings.tw_format: r['fmt'].setText(cfg.tw_atlas_settings.tw_format)
 
     # 4. Textures (Virtual) - Complex
+    # 4. Textures (Virtual) - Complex
     def _create_tex_widget(self, index):
         w = QtWidgets.QWidget()
         v_tex = QtWidgets.QVBoxLayout(w)
@@ -397,11 +398,6 @@ class TexWorksTab(BaseConfigTab):
         inp_base.editingFinished.connect(lambda: self.on_item_changed("tw_textures", w.property("item_index"), "tw_base_resource_name", inp_base.text()))
         grid.addWidget(inp_base, 0, 1)
         
-        # More props (Pos, Size)... keeping it brief for brevity, logic identical to above
-        # I will simplify for now and trust I can add the rest
-        # Ideally I should replicate all fields from original
-        # Let's add Pos/Size/Decals/HSV
-        
         # Pos
         h_pos = QtWidgets.QHBoxLayout()
         spin_px = RZSpinBox(); spin_px.setRange(0, 16384)
@@ -423,9 +419,6 @@ class TexWorksTab(BaseConfigTab):
         v_tex.addWidget(details)
         
         # Alternatives (List within List)
-        # We need a manager for this too!
-        # But `ListItemManager` expects a LAYOUT.
-        # So create a group box with a layout for alternatives.
         alt_grp = RZGroupBox("Alternatives")
         v_alt = QtWidgets.QVBoxLayout(alt_grp)
         
@@ -442,7 +435,6 @@ class TexWorksTab(BaseConfigTab):
         v_alt.addLayout(l_alts)
         v_tex.addWidget(alt_grp)
         
-        # Import Manager inside method to avoid import cycle if top level (it isn't)
         from .lib.ui_helpers import ListItemManager
         alt_manager = ListItemManager(l_alts, self._create_alt_widget, self._update_alt_widget)
 
@@ -450,7 +442,6 @@ class TexWorksTab(BaseConfigTab):
             'exp': btn_exp, 'name': inp_name, 'details': details, 
             'base': inp_base, 'px': spin_px, 'py': spin_py, 'sw': spin_sw, 'sh': spin_sh,
             'alt_manager': alt_manager
-            # Decals and HSV omitted for brevity but should be here
         }
         return w
 
@@ -487,17 +478,6 @@ class TexWorksTab(BaseConfigTab):
         exp_txt = "▼" if tex.tw_is_expanded else "▶"
         if r['exp'].text() != exp_txt: r['exp'].setText(exp_txt)
         r['details'].setVisible(tex.tw_is_expanded)
-        # Note: Alternatives also hidden if details hidden? No, alts are outside details container in my code above.
-        # Original code had them inside `if tex.tw_is_expanded`.
-        # I should put alts inside details or handle their visibility.
-        # Let's put everything inside 'details' or make 'details' visible handling everything below header.
-        # For now, simplistic visibility:
-        r['details'].setVisible(tex.tw_is_expanded)
-        # Refs for alts is outside details? Yes in my create function. Let's fix that later or Assume user is okay with structure change.
-        # I should simply hide the rest if not expanded.
-        # Re-check create: 'details' contains base/pos/size. 'alt_grp' is separate.
-        # To match original behavior, I should group everything under a collapsible widget effectively.
-        # Fix: changing visibility of alts too.
         r['alt_manager'].layout.parentWidget().setVisible(tex.tw_is_expanded)
         
         # Basic Props
@@ -507,13 +487,12 @@ class TexWorksTab(BaseConfigTab):
         # Pos/Size
         for ax, s, val in [(0, 'px', 0), (1, 'py', 1)]:
              if r[s].value() != tex.tw_position[val]: 
-                 r[s].blockSignals(True); r[s].setValue(tex.tw_position[val]); r[s].blockSignals(False)
+                  r[s].blockSignals(True); r[s].setValue(tex.tw_position[val]); r[s].blockSignals(False)
         for ax, s, val in [(0, 'sw', 0), (1, 'sh', 1)]:
              if r[s].value() != tex.tw_size[val]: 
-                 r[s].blockSignals(True); r[s].setValue(tex.tw_size[val]); r[s].blockSignals(False)
+                  r[s].blockSignals(True); r[s].setValue(tex.tw_size[val]); r[s].blockSignals(False)
 
         # Sync Alts
-        # IMPORTANT: Pass parent_index as 'index' (loop index of texture)
         if tex.tw_is_expanded:
             r['alt_manager'].sync(tex.tw_alternatives, parent_index=index)
 
@@ -577,13 +556,6 @@ class TexWorksTab(BaseConfigTab):
                   prop_name=actual_prop, 
                   value_str=val_str, 
                   parent_index=parent_index)
-        # self.update_ui() # NO! Calling this causes loop if fields update themselves, 
-        # BUT we need it if structure changes (like expand). 
-        # Ideally only call if needed. For now, rely on sync not destroying focus.
-        # With sync, if we call update_ui, we just update values. 
-        # If I am typing 'a', value changes, update_ui is called.
-        # Sync checks: 'a' == 'a', does nothing. Focus PRESERVED.
-        # This is the victory.
         self.update_ui()
 
 
