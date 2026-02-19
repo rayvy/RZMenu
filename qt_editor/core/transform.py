@@ -10,6 +10,8 @@ def resize_element(elem_id, x, y, w, h, silent=False):
         target = next((e for e in elements if e.id == elem_id), None)
         # ARCHITECT FIX: Check for split lock flag (size)
         if target and not getattr(target, "qt_lock_size", False):
+            # (red) Манипуляции и Трансформации: Teleportation / No Matrix.
+            # Direct modification of local coord without considering parent transform stack.
             target.position[0] = int(x)
             target.position[1] = int(y)
             target.size[0] = int(w)
@@ -50,6 +52,9 @@ def move_elements_delta(target_ids, delta_x, delta_y, silent=False):
         for elem in elements:
             # Only move roots
             if elem.id in root_target_ids and not getattr(elem, "qt_lock_pos", False):
+                # (red) Манипуляции и Трансформации: Teleportation issue.
+                # Adds delta to local position. If parent moved, this might double-transform 
+                # or if parent changed, this delta is in wrong space.
                 elem.position[0] += int(delta_x)
                 elem.position[1] += int(delta_y)
                 changed = True

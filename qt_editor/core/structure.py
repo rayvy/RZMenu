@@ -113,6 +113,10 @@ def reparent_element(child_id, new_parent_id):
         elements = bpy.context.scene.rzm.elements
         target = next((e for e in elements if e.id == child_id), None)
         if target:
+            # (red) Core UX: Teleportation / No Matrix.
+            # Просто меняет parent_id без пересчета координат. 
+            # New_Local = New_Parent_Inverse * Old_Global.
+            # Текущая реализация вызывает "телепортацию" визуально.
             target.parent_id = new_parent_id
             blender_bridge.safe_undo_push("RZM: Reparent")
             signals.SIGNALS.structure_changed.emit()

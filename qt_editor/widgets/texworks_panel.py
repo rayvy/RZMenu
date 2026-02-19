@@ -11,6 +11,7 @@ from ..core.signals import SIGNALS
 
 class TexWorksManager(QtWidgets.QWidget):
     """
+    (black) TEXWORKS Main Block Module: Полностью неработоспособен.
     Main manager for the standalone TexWorks panel.
     """
     def __init__(self, parent=None):
@@ -419,6 +420,8 @@ class TexWorksMainTab(BaseConfigTab):
         if comp_index >= 0: kwargs['comp_index'] = comp_index
         if slot_index >= 0: kwargs['slot_index'] = slot_index
         
+        # (red) Blender Bridge: Прямое обращение к данным в обход моста.
+        # Вызов оператора напрямую или через непрозрачный механизм _call_op.
         self._call_op("update_tw_item", **kwargs)
         
         # Refresh UI for structure changes
@@ -432,6 +435,7 @@ class TexWorksMainTab(BaseConfigTab):
         box.setStyleSheet("QGroupBox { border: 2px solid #5C5CFF; margin-top: 10px; }")
         vl = QtWidgets.QVBoxLayout(box); vl.setContentsMargins(5, 10, 5, 5); vl.setSpacing(2)
         
+        # (yellow) TexWorks (UX/UI): Layout & Alignment разваливается. Hardcoded layout construction.
         # Header
         h = QtWidgets.QHBoxLayout(); h.setContentsMargins(0,0,0,0)
         lbl = RZLabel("[0]"); h.addWidget(lbl)
@@ -743,7 +747,9 @@ class TexWorksMainTab(BaseConfigTab):
         vl.addWidget(btn_l)
         
         from .lib.ui_helpers import ListItemManager
+        # (black) TEXWORKS Редактор слоев: Модуль "мертв". Decal Layers logic might be broken in ListItemManager or sync.
         l_mgr = ListItemManager(ll, self._create_layer, self._update_layer)
+
         
         w.refs = {'lbl': lbl, 'name': name, 'rect_spins': rect_spins, 'rot': rot, 'dummy': dummy, 'mir': mir, 'flp': flp, 
                   'm_chk': m_chk, 'm_src': m_src, 'p0': p0, 'p1': p1, 'mp_m': mp_m, 'pass_det': pass_det, 'p_rect': p_rect_spins,
@@ -757,6 +763,8 @@ class TexWorksMainTab(BaseConfigTab):
         # RZ approach: The parent_index passed here is 'comp_index'. 
         # We must find block_index from the container's property if set, or we rely on the widget property persisting.
         
+        # (red) Hardcoding vs Framework: Fragile parent traversal. 
+        # Если иерархия виджетов изменится (например добавлен Layout wrapper), цикл сломается.
         # Strategy: Walk up to find the Component Widget
         p = w.parent()
         b_idx = -1
@@ -770,6 +778,7 @@ class TexWorksMainTab(BaseConfigTab):
         w.setProperty("item_index", index)
         w.setProperty("comp_index", parent_index)
         w.setProperty("block_index", b_idx)
+
         
         r = w.refs; r['lbl'].setText(f"[{index}]")
         
@@ -840,6 +849,9 @@ class TexWorksMainTab(BaseConfigTab):
             if c_idx == -1 and p.property("comp_index") is not None: c_idx = p.property("comp_index")
             if b_idx != -1 and c_idx != -1: break
             p = p.parent()
+        
+        # (red) Hardcoding vs Framework: Fragile parent traversal (Copy-Paste Logic).
+        # Similar issue as in _update_slot. Breaks if hierarchy changes.
             
         w.setProperty("item_index", index)
         w.setProperty("parent_index", parent_index) # This is slot index

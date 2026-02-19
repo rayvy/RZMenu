@@ -22,6 +22,8 @@ def get_stable_context():
     return {}
 
 def exec_in_context(op_func, **kwargs):
+    # (yellow) Context Manager: Логика прописана намертво. 
+    # Пытается найти VIEW_3D, но если оператор требует другого контекста (например, Image Editor), это упадет.
     ctx = get_stable_context()
     if not ctx: return {'CANCELLED'}
     try:

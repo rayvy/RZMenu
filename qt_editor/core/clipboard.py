@@ -105,6 +105,8 @@ def paste_elements(target_x=None, target_y=None):
             offset_x = target_x - min_x
             offset_y = target_y - min_y
         else:
+            # (yellow) Clipboard issue: Нужен Ctrl+Shift+V (Paste in Place) без офсета.
+            # Currently always applies offset_x = 20.
             offset_x = 20
             offset_y = -20
 
@@ -139,6 +141,10 @@ def paste_elements(target_x=None, target_y=None):
             new_elem.size_formula_x = item.get("size_formula_x", "")
             new_elem.size_formula_y = item.get("size_formula_y", "")
             
+            new_elem.size_formula_y = item.get("size_formula_y", "")
+            
+            # (yellow) Clipboard issue: Потеря путей к изображениям?
+            # Если image_id ссылается на временный ресурс, он может быть утерян.
             new_elem.image_id = item.get("image_id", -1)
             new_elem.image_mode = item.get("image_mode", "SINGLE")
             new_elem.image_blending_mode = item.get("image_blending_mode", "NONE")
