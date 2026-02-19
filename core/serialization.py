@@ -14,6 +14,10 @@ def rzm_to_dict(val):
     # 1. Простые типы (уже совместимы с JSON)
     if isinstance(val, (int, float, str, bool, type(None))):
         return val
+    
+    # 1.1 Защита от методов и функций
+    if callable(val):
+        return str(val)
 
     # 2. Обработка PropertyGroup (зарегистрированные свойства через bpy.props)
     if isinstance(val, bpy.types.PropertyGroup):
@@ -54,7 +58,9 @@ def rzm_to_dict(val):
     if hasattr(val, "to_list"):
         return val.to_list()
 
-    # Если мы не знаем что это, пробуем привести к строке или вернуть как есть
+    # Если мы не знаем что это, пробуем привести к строке если это не системный объект Blender
+    if hasattr(val, "bl_rna"):
+        return str(val)
     return val
 
 def dict_to_rzm(data_dict, blender_prop):
@@ -118,6 +124,7 @@ class RZTemplateEngine:
         print(f"[RZM] Exporting Template '{meta_name}' to {filepath}...")
         
         target_elements = self.get_element_hierarchy(root_ids)
+        print(f"[RZM] Found {len(target_elements)} elements in hierarchy.")
         if not target_elements:
             print("[RZM] Error: No elements to export.")
             return False
@@ -173,14 +180,22 @@ class RZTemplateEngine:
                     if ci.image_id != -1: deps_ids["images"].add(ci.image_id)
 
         # Scan TexWorks dependencies
-        for tw_tex in self.rzm.addons.tw_textures:
-            # Note: This is a bit broad, ideally we only scan if the element or its hierarchy uses these textures.
-            # But since TexWorks is usually global for the scene, we include referenced vars.
-            for field in [tw_tex.tw_hsv_value_link, tw_tex.tw_morph_value_link]:
-                if not field: continue
-                if field.startswith('@'): deps_ids["toggles"].add(field[1:])
-                elif field.startswith('#'): deps_ids["shapes"].add(field[1:])
-                elif field.startswith('$'): deps_ids["values"].add(field[1:])
+        for block in self.rzm.tw_blocks:
+            for comp in block.components:
+                # Component level: Morph link
+                if comp.tex_morph_enabled and comp.tex_morph_link:
+                    field = comp.tex_morph_link
+                    if field.startswith('@'): deps_ids["toggles"].add(field[1:])
+                    elif field.startswith('#'): deps_ids["shapes"].add(field[1:])
+                    elif field.startswith('$'): deps_ids["values"].add(field[1:])
+                
+                for slot in comp.slots:
+                    # Slot level: HSV link
+                    if slot.hsv_enabled and slot.hsv_link:
+                        field = slot.hsv_link
+                        if field.startswith('@'): deps_ids["toggles"].add(field[1:])
+                        elif field.startswith('#'): deps_ids["shapes"].add(field[1:])
+                        elif field.startswith('$'): deps_ids["values"].add(field[1:])
 
         for name in deps_ids["values"]:
             obj = next((v for v in self.rzm.rzm_values if v.value_name == name or v.value_name == f"${name}"), None)
@@ -256,11 +271,18 @@ class RZTemplateEngine:
                             print(f"[RZM] Error saving template image {bl_image.name}: {e}")
                         # --- FIX END ---
 
-                zf.writestr('template_data.json', json.dumps(data, indent=2))
+                # Save JSON
+                json_str = json.dumps(data, indent=2, ensure_ascii=False)
+                zf.writestr('template_data.json', json_str)
+                print(f"[RZM] template_data.json written ({len(json_str)} bytes)")
+
         except Exception as e:
             print(f"[RZM] Critical Export Error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
             
+        print("[RZM] Export finished successfully.")
         return True
 
     def import_template(self, filepath, position_offset=(0, 0), parent_id=-1):

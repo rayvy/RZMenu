@@ -99,7 +99,8 @@ run = CustomShaderRCI2D
 {% endif %}
 
 
-{% if scene.rzm.addons.tw_texture_configs and scene.rzm.addons.tw_textures %}
+{# Legacy TexWorks (Disabled)
+{% if False and scene.rzm.addons.tw_texture_configs and scene.rzm.addons.tw_textures %}
 
 {# --- 1. ГЕНЕРАЦИЯ ПЕРЕМЕННЫХ ДЛЯ MORPH и HSV --- #}
 {# Этот блок создает локальные переменные, если они не были привязаны к глобальным #}
@@ -146,6 +147,7 @@ run = CustomShaderVar_{{ texture.tw_name }}_HSV
 		{% endif %}
 	{% endfor %}
 {% endfor %}
+{% endif %} #}
 
 
 {# --- 3. ШЕЙДЕРЫ ДЛЯ КОПИРОВАНИЯ И ОБРАБОТКИ --- #}
