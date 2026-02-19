@@ -193,17 +193,21 @@ $sizeY = $container_height
 {% endif %}
 
 local $TargetValue = ${{utils.get_var_name(master_name, scene)}}
-if $capturedID == $id
-    $TargetValue = ($cursorX - $positionX) / $sizeX
-else if $clickTriggerID == $id
-    $TargetValue = ($cursorX - $positionX) / $sizeX
+local $range_span = {{ master_max }} - {{ master_min }}
+
+if $capturedID == $id || $clickTriggerID == $id
+    if $range_span > 0.0001
+        $TargetValue = {{ master_min }} + (($cursorX - $positionX) / $sizeX) * $range_span
+    else
+        $TargetValue = {{ master_min }}
+    endif
 endif
 
-{# RZM_SLIDER_LIMIT: Вычисление прогресса курсора (всегда 0.0 - 1.0) #}
-if $TargetValue < 0.0
-    $TargetValue = 0.0
-else if $TargetValue > 1.0
-    $TargetValue = 1.0
+{# RZM_SLIDER_LIMIT: Привязка к динамическому диапазону min/max #}
+if $TargetValue < {{ master_min }}
+    $TargetValue = {{ master_min }}
+else if $TargetValue > {{ master_max }}
+    $TargetValue = {{ master_max }}
 endif
 
 local $smoothing_factor = 0.25
@@ -213,10 +217,10 @@ local $smoothing_factor = 0.25
         {{ master_var }} = {{ master_var }} + ($TargetValue - {{ master_var }}) * $smoothing_factor
     endif
 
-    {# Gamepad управление для MASTER #}
+    {# Gamepad управление для MASTER с учетом диапазона #}
     if $isGamepadEditing == 1 && $GamepadEditedID == $id
-        local $tap_step = 0.1
-        local $hold_speed = 0.5
+        local $tap_step = $range_span * 0.1
+        local $hold_speed = $range_span * 0.5
 
         if $Gamepad_Interaction_Increase == 1
             if $Gamepad_Interaction_Type == 1
@@ -233,11 +237,11 @@ local $smoothing_factor = 0.25
         endif
     endif
 
-    {# RZM_SLIDER_LIMIT: Привязка значения к жесткому диапазону 0.0 - 1.0 (проблема здесь) #}
-    if {{ master_var }} > 1.0
-        {{ master_var }} = 1.0
-    else if {{ master_var }} < 0.0
-        {{ master_var }} = 0.0
+    {# RZM_SLIDER_LIMIT: Финальная привязка MASTER к его min/max параметрам #}
+    if {{ master_var }} > {{ master_max }}
+        {{ master_var }} = {{ master_max }}
+    else if {{ master_var }} < {{ master_min }}
+        {{ master_var }} = {{ master_min }}
     endif
 {% else %}
     {# Нет master — ничего не делаем (фоллбек) #}
