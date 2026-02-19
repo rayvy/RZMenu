@@ -144,10 +144,43 @@ w45 = 1.0
 dispatch = {{ comp.rect[2] }} // 32, {{ comp.rect[3] }} // 32, 1
 
 {% for slot in comp.slots if slot.active %}
-{# Slot Resources (Masks, Decal variations) #}
+{# Slot Resources (Masks, Decal variations, Config Buffer) #}
 {% if slot.mask_enabled %}
 [Resource{{ comp.name }}{{ slot.name }}Mask]
-filename = {{ comp_path }}/{{ slot.name }}/{{ comp.name }}{{ slot.name }}.Mask.png
+{% set clean_comp = comp.name.replace(" ", "") %}
+{% set clean_slot = slot.name.replace(" ", "") %}
+filename = {{ comp_path }}/{{ slot.name }}/{{ clean_comp }}{{ clean_slot }}.MASK.png
+{% endif %}
+
+{# New Config Buffer for Slot #}
+[Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config]
+type = Buffer
+format = R32_FLOAT
+{% if slot.multi_pass_mode != 'NONE' %}
+array = 16
+{% else %}
+array = 8
+{% endif %}
+{% set p0_x = comp.rect[0] + slot.rect[0] %}
+{% set p0_y = comp.rect[1] + slot.rect[1] %}
+{% set p0_w = slot.rect[2] %}
+{% set p0_h = slot.rect[3] %}
+{% set p0_rot = slot.rotation %}
+{% set p0_dmy = slot.dummy %}
+{% set p0_mir = 1.0 if slot.mirror else 0.0 %}
+{% set p0_flp = 1.0 if slot.flip else 0.0 %}
+{% if slot.multi_pass_mode != 'NONE' %}
+    {% set p1_x = slot.multi_pass_rect[0] %}
+    {% set p1_y = slot.multi_pass_rect[1] %}
+    {% set p1_w = slot.multi_pass_rect[2] %}
+    {% set p1_h = slot.multi_pass_rect[3] %}
+    {% set p1_rot = slot.multi_pass_rotation %}
+    {% set p1_dmy = slot.multi_pass_dummy %}
+    {% set p1_mir = 1.0 if slot.multi_pass_mirror else 0.0 %}
+    {% set p1_flp = 1.0 if slot.multi_pass_flip else 0.0 %}
+    data = {{ p0_x }} {{ p0_y }} {{ p0_w }} {{ p0_h }} {{ p0_rot }} {{ p0_dmy }} {{ p0_mir }} {{ p0_flp }} {{ p1_x }} {{ p1_y }} {{ p1_w }} {{ p1_h }} {{ p1_rot }} {{ p1_dmy }} {{ p1_mir }} {{ p1_flp }}
+{% else %}
+    data = {{ p0_x }} {{ p0_y }} {{ p0_w }} {{ p0_h }} {{ p0_rot }} {{ p0_dmy }} {{ p0_mir }} {{ p0_flp }}
 {% endif %}
 
 {% for layer in slot.decal_layers if layer.active %}
@@ -160,7 +193,7 @@ filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ i }}{{ file_suffi
     {% endfor %}
 {% endfor %}
 
-{# HSV Compute Shader #}
+{# HSV Compute Shader (TODO: Optional - currently updated to use buffer logic if needed) #}
 {% if slot.hsv_enabled and slot.hsv_link %}
 [CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}]
 cs = /modules/texworks/cs_update_region.hlsl
@@ -176,11 +209,11 @@ x44 = {{ comp.rect[0] + slot.rect[0] }} {# USAGE: comp.rect and slot.rect #}
 y44 = {{ comp.rect[1] + slot.rect[1] }}
 z44 = {{ slot.rect[2] }}
 w44 = {{ slot.rect[3] }}
-{% set mir_val = 1.0 if slot.multi_pass_mode == 'DUPLICATE' else (2.0 if slot.multi_pass_mode == 'INDIVIDUAL' else 0.0) %}
-x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }} {# USAGE: old multi_pass_data[0] #}
-y45 = {{ "%.3f"|format(slot.multi_pass_data[1]) }} {# USAGE: old multi_pass_data[1] #}
-z45 = {{ "%.1f"|format(mir_val) }}
-w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }} {# USAGE: old multi_pass_data[3] #}
+{# Old multi_pass_data usage removed #}
+x45 = 0.0 
+y45 = 0.0
+z45 = 0.0
+w45 = 1.0
 dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 {% endif %}
 
@@ -189,13 +222,12 @@ dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 {% set l_var = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name ~ "Index" %}
 {% set material = rzm.tw_materials.get(layer.name) %}
 [CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}]
-{% if block.shader_type == 'MATERIAL' or block.shader_type == 'NORMAL' %}
-cs = /modules/texworks/decal_draw_material.hlsl
-{% else %}
-cs = /modules/texworks/decal_draw.hlsl
-{% endif %}
+cs = /modules/texworks/decal_draw_NEW.hlsl
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
+cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
+cs-t2 = {% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
+cs-t3 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config
 
 {# Index Switching #}
 {% for i in range(layer.count) %}
@@ -206,6 +238,25 @@ endif
 
 if ${{ l_var }} >= 0
     {# Apply Material Parameters (x46) #}
+    {# USAGE: xyzw45 - Component Rect #}
+    x45 = {{ "%.1f"|format(comp.rect[0]) }}
+    y45 = {{ "%.1f"|format(comp.rect[1]) }}
+    z45 = {{ "%.1f"|format(comp.rect[2]) }}
+    w45 = {{ "%.1f"|format(comp.rect[3]) }}
+
+    {# USAGE: xyzw41/42 - Debug Override (If active) #}
+    {% if scene.rzm.addons.debugger_info %}
+    ; Debug override data from UI (Linked to persist vars)
+    x41 = $RZM_DEBUG_VALUE_0
+    y41 = $RZM_DEBUG_VALUE_1
+    z41 = $RZM_DEBUG_VALUE_2
+    w41 = $RZM_DEBUG_VALUE_3
+    x42 = $RZM_DEBUG_VALUE_4
+    y42 = $RZM_DEBUG_VALUE_5
+    z42 = $RZM_DEBUG_VALUE_6
+    w42 = $RZM_DEBUG_VALUE_7
+    {% endif %}
+
     {% if material %}
     x46 = {{ "%.3f"|format(material.parameters[0]) }}
     y46 = {{ "%.3f"|format(material.parameters[1]) }}
@@ -214,30 +265,16 @@ if ${{ l_var }} >= 0
     {% endif %}
     
     {# Pass 0 (Original) #}
-    cs-t1 = {% if slot.pass0_use_mask %}{% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}{% else %}null{% endif %}
-    x44 = {{ comp.rect[0] + slot.rect[0] }} {# USAGE: Pass 0 Offset #}
-    y44 = {{ comp.rect[1] + slot.rect[1] }}
-    z44 = {{ slot.rect[2] }}
-    w44 = {{ slot.rect[3] }}
-    x45 = 0.0 {# TODO: Replace with new slot.rotation / slot.dummy #}
-    y45 = 0.0
-    z45 = 0.0 {# TODO: Replace with new slot.mirror #}
-    w45 = 1.0 {# TODO: Replace with new slot.flip #}
+    x44 = 0
+    w44 = {{ 1.0 if slot.pass0_use_mask else 0.0 }}
     dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
     
-    {# Pass 1 (Multi-Pass / Mirror) #}
+    {# Pass 1 (Multi-Pass) #}
     {% if slot.multi_pass_mode != 'NONE' %}
     ; Pass 1 (Multi-Pass)
-    cs-t1 = {% if slot.pass1_use_mask %}{% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}{% else %}null{% endif %}
-    {% set atlas_center = "2048" %}
-    {% if slot.multi_pass_mode == 'DUPLICATE' or slot.multi_pass_mode == 'INDIVIDUAL' %}
-    x44 = (2 * {{ atlas_center }}) - {{ comp.rect[0] + slot.rect[0] }} - {{ slot.rect[2] }} {# TODO: Replace with new multi_pass_rect #}
-    {% endif %}
-    x45 = {{ "%.3f"|format(slot.multi_pass_data[0]) }} {# USAGE: old multi_pass_data #}
-    y45 = {{ "%.3f"|format(slot.multi_pass_data[1]) }}
-    z45 = 1.0 {# TODO: Replace with multi_pass_mirror #}
-    w45 = {{ "%.1f"|format(slot.multi_pass_data[3]) }} {# TODO: Replace with multi_pass_flip #}
-    dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
+    x44 = 1
+    w44 = {{ 1.0 if slot.pass1_use_mask else 0.0 }}
+    dispatch = ({{ slot.multi_pass_rect[2] }} + 31) // 32, ({{ slot.multi_pass_rect[3] }} + 31) // 32, 1
     {% endif %}
 endif
 {% endfor %}

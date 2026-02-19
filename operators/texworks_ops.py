@@ -306,15 +306,25 @@ class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
                 comp_dir = os.path.join(block_dir, comp.name)
                 
                 for slot in comp.slots:
-                    # Create root mask
-                    mask_name = f"{block_res_name} {comp.name} {slot.name} Mask.png"
-                    mask_path = os.path.join(base_dir, mask_name)
+                    slot_dir = os.path.join(comp_dir, slot.name)
+                    if not os.path.exists(slot_dir):
+                        os.makedirs(slot_dir, exist_ok=True)
+                        created_folders += 1
+
+                    # Create mask in slot folder
+                    # Naming: [CompName][SlotName].MASK.png (compressed)
+                    clean_comp = comp.name.replace(" ","")
+                    clean_slot = slot.name.replace(" ","")
+                    mask_name = f"{clean_comp}{clean_slot}.MASK.png"
+                    mask_path = os.path.join(slot_dir, mask_name)
+                    
                     if not os.path.exists(mask_path):
-                        if create_dummy_png(mask_path, slot.rect[2], slot.rect[3]):
+                        # Mask size matches component rect
+                        if create_dummy_png(mask_path, comp.rect[2], comp.rect[3]):
                             created_masks += 1
 
                     for layer in slot.decal_layers:
-                        layer_dir = os.path.join(comp_dir, layer.name)
+                        layer_dir = os.path.join(slot_dir, layer.name)
                         
                         if not os.path.exists(layer_dir):
                             os.makedirs(layer_dir, exist_ok=True)
@@ -377,18 +387,24 @@ class RZ_OT_TexWorksDebugSync(bpy.types.Operator):
                         comp_path = os.path.join(block_path, comp_name)
                         theoretical_structure[block_name][comp_name] = {}
                         
-                        for layer_name in [d for d in os.listdir(comp_path) if os.path.isdir(os.path.join(comp_path, d))]:
-                            layer_path = os.path.join(comp_path, layer_name)
-                            files = os.listdir(layer_path)
-                            theoretical_structure[block_name][comp_name][layer_name] = files
+                        for slot_name in [d for d in os.listdir(comp_path) if os.path.isdir(os.path.join(comp_path, d))]:
+                            slot_path = os.path.join(comp_path, slot_name)
+                            theoretical_structure[block_name][comp_name][slot_name] = {}
+                            
+                            for layer_name in [d for d in os.listdir(slot_path) if os.path.isdir(os.path.join(slot_path, d))]:
+                                layer_path = os.path.join(slot_path, layer_name)
+                                files = os.listdir(layer_path)
+                                theoretical_structure[block_name][comp_name][slot_name][layer_name] = files
 
                 # Print grouped structure
                 for b_name, comps in theoretical_structure.items():
                     print(f"Block: {b_name}")
-                    for c_name, layers in comps.items():
+                    for c_name, slots in comps.items():
                         print(f"  Component: {c_name}")
-                        for l_name, files in layers.items():
-                            print(f"    Folder/Layer: {l_name} ({len(files)} files)")
+                        for s_name, layers in slots.items():
+                            print(f"    Slot: {s_name}")
+                            for l_name, files in layers.items():
+                                print(f"      Folder/Layer: {l_name} ({len(files)} files)")
                             # Optimization: just count files to avoid console spam if there are many
         
         print("="*50 + "\n")

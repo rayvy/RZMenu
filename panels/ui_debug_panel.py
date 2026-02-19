@@ -306,6 +306,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         col = box.column()
         row = col.row(align=True)
         row.prop(addons, "debugger_info"); row.prop(addons, "tex_works"); row.prop(addons, "vfx"); row.prop(addons, "facetexworkspreseted")
+        
+        if addons.debugger_info:
+            box = col.box()
+            box.label(text="Debug Variables (8)", icon='CONSOLE')
+            grid = box.grid_flow(columns=2, align=True)
+            for i in range(8):
+                grid.prop(addons, f"debug_var_{i}", text=f"Var {i}")
         row = col.row(align=True)
         row.prop(addons, "shape_morph"); row.prop(addons, "shape_morph_anim")
         row = col.row(align=True)
@@ -473,7 +480,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
 
                     p_row = lower_grid.row(align=True)
                     p_row.prop(slot, "multi_pass_mode", text="Pass")
-                    p_row.prop(slot, "multi_pass_data", text="")
 
                     if slot.multi_pass_mode != 'NONE':
                         mp_box = lower_grid.box()

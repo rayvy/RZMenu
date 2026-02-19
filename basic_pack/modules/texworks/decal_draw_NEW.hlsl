@@ -1,18 +1,23 @@
-// --- decal_draw_optimized.hlsl ---
+// --- decal_draw_NEW.hlsl ---
 
 RWTexture2D<float4> Target : register(u0);      // Лицо
 Texture2D<float4> DecalTexture : register(t0);  // Текстура элемента
-Buffer<float> ConfigBuffer : register(t1);      // Оффсеты и флаги
+Texture2D<float4> CompMask : register(t1);      // Маска компоненты
+Texture2D<float4> SlotMask : register(t2);      // Маска слота
+Buffer<float> ConfigBuffer : register(t3);      // Оффсеты и флаги
 
 Texture1D<float4> IniParams : register(t120);
 
-// Теперь RegionParams - это НЕ размер лица, а координаты и размер ДЕКАЛИ
-#define DecalRect IniParams[44]
-
-// x44, y44 - Глобальная позиция начала рисования
-#define GlobalOrigin uint2(DecalRect.x, DecalRect.y)
-// z44, w44 - Реальный размер картинки
-#define DecalSize    uint2(DecalRect.z, DecalRect.w)
+// x44 - Номер пасса (0, 1, 2...)
+#define PassIndex (uint)IniParams[44].x
+// w44 - Флаг использования маски (1.0 = Да, 0.0 = Нет)
+#define UseMask (IniParams[44].w > 0.5f)
+// xyzw46 - Параметры материала
+#define MatParams IniParams[46]
+// xyzw45 - Прямоугольник компоненты (PosX, PosY, SizeW, SizeH)
+#define CompRect IniParams[45]
+// xyzw41, xyzw42 - Дебаг параметры (используются если IniParams[42].z > 0)
+#define DebugMode (uint)IniParams[42].z
 
 SamplerState samLinear {
     Filter = MIN_MAG_MIP_LINEAR;
@@ -23,28 +28,53 @@ SamplerState samLinear {
 [numthreads(32, 32, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
-    // localCoord теперь идет от (0,0) до (Width, Height) самой наклейки
+    // 1. Читаем параметры (из дебаг регистров или из буфера)
+    bool isDebug = (DebugMode > 0 && (DebugMode - 1) == PassIndex);
+    
+    float2 GlobalOrigin, DecalSize;
+    float fRotation, fDummy;
+    bool mirror, flip;
+    
+    if (isDebug)
+    {
+        GlobalOrigin = IniParams[41].xy;
+        DecalSize    = IniParams[41].zw;
+        fRotation    = IniParams[42].x;
+        fDummy       = IniParams[42].y;
+        mirror       = IniParams[42].z > 0.5f;
+        flip         = IniParams[42].w > 0.5f;
+    }
+    else
+    {
+        uint base = PassIndex * 8;
+        GlobalOrigin = float2(ConfigBuffer[base + 0], ConfigBuffer[base + 1]);
+        DecalSize    = float2(ConfigBuffer[base + 2], ConfigBuffer[base + 3]);
+        fRotation    = ConfigBuffer[base + 4];
+        fDummy       = ConfigBuffer[base + 5];
+        mirror       = ConfigBuffer[base + 6] > 0.5f;
+        flip         = ConfigBuffer[base + 7] > 0.5f;
+    }
+
+    // localCoord идет от (0,0) до (Width, Height) самой наклейки
     uint2 localCoord = dispatchThreadID.xy;
 
-    // 1. Проверка на выход за пределы размера ДЕКАЛИ 
-    // (так как dispatch запускается блоками по 32, хвост может вылезти)
-    if (localCoord.x >= DecalSize.x || localCoord.y >= DecalSize.y)
+    // 2. Проверка на выход за пределы размера ДЕКАЛИ
+    if (localCoord.x >= (uint)DecalSize.x || localCoord.y >= (uint)DecalSize.y)
         return;
 
-    // 2. Читаем доп. настройки из буфера
-    // Нам нужны только индексы 4,5 (Offset) и 6,7 (Flags)
-    // 0-3 пропускаем, так как взяли их из x44-w44
-    float fOffX   = ConfigBuffer[0];
-    float fOffY   = ConfigBuffer[1];
-    float fMirror = ConfigBuffer[2];
-    float fFlip   = ConfigBuffer[3];
-
-    int2 offset = int2(fOffX, fOffY);
-    bool mirror = fMirror > 0.5f;
-    bool flip   = fFlip > 0.5f;
-
     // 3. Вычисляем координаты UV для чтения текстуры
-    float2 uv = (float2(localCoord) + 0.5f) / float2(DecalSize);
+    float2 uv = (float2(localCoord) + 0.5f) / DecalSize;
+
+    // --- НОВЫЙ БЛОК ВРАЩЕНИЯ ---
+    if (abs(fRotation) > 0.001f)
+    {
+        float rad = radians(fRotation);
+        float s = sin(rad);
+        float c = cos(rad);
+        float2 centeredUV = uv - 0.5f;
+        uv.x = centeredUV.x * c - centeredUV.y * s + 0.5f;
+        uv.y = centeredUV.x * s + centeredUV.y * c + 0.5f;
+    }
 
     // Применяем зеркалирование/переворот к UV
     if (mirror) uv.x = 1.0f - uv.x;
@@ -53,16 +83,30 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     // 4. Читаем цвет декали
     float4 decalColor = DecalTexture.SampleLevel(samLinear, uv, 0);
 
-    // Оптимизация: Если пиксель полностью прозрачный, не трогаем память лица
+    // Оптимизация: Если пиксель прозрачный, выходим
     if (decalColor.a <= 0.001f) 
         return;
 
-    // 5. Вычисляем куда писать на лице
-    // Глобальная позиция + Смещение потока + Доп.Оффсет из конфига
-    int2 targetPos = GlobalOrigin + localCoord + offset;
+    // 5. Применяем маски если они есть
+    if (UseMask)
+    {
+        float2 absoluteCoord = GlobalOrigin + localCoord;
+        float2 faceUV = (absoluteCoord - CompRect.xy + 0.5f) / CompRect.zw;
+        
+        float maskVal = 1.0f;
+        maskVal *= CompMask.SampleLevel(samLinear, faceUV, 0).r;
+        maskVal *= SlotMask.SampleLevel(samLinear, faceUV, 0).r;
+        
+        decalColor.a *= maskVal;
+    }
+    
+    if (decalColor.a <= 0.001f)
+        return;
 
-    // ЗАЩИТА: Проверяем, не вылезли ли мы за границы текстуры лица (1024x1024)
-    // Иначе драйвер может крашнуться или будет артефакт
+    // 6. Вычисляем куда писать на целевой текстуре
+    int2 targetPos = GlobalOrigin + localCoord;
+
+    // ЗАЩИТА: Проверяем границы
     uint2 faceDim;
     Target.GetDimensions(faceDim.x, faceDim.y);
     
@@ -71,7 +115,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     {
         float4 finalColor = Target[targetPos];
         
-        // Blending
+        // Блендинг
         finalColor.rgb = lerp(finalColor.rgb, decalColor.rgb, decalColor.a);
         finalColor.a = max(finalColor.a, decalColor.a);
 

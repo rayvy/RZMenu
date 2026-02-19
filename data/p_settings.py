@@ -94,3 +94,13 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     rtoggle_compute: BoolProperty(name="RToggleCompute", default=False)
     frame_trace: BoolProperty(name="FrameTrace", default=False)
     
+    # Custom Debug Variables
+    debug_var_0: StringProperty(name="Debug Var 0", default="")
+    debug_var_1: StringProperty(name="Debug Var 1", default="")
+    debug_var_2: StringProperty(name="Debug Var 2", default="")
+    debug_var_3: StringProperty(name="Debug Var 3", default="")
+    debug_var_4: StringProperty(name="Debug Var 4", default="")
+    debug_var_5: StringProperty(name="Debug Var 5", default="")
+    debug_var_6: StringProperty(name="Debug Var 6", default="")
+    debug_var_7: StringProperty(name="Debug Var 7", default="")
+    

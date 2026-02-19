@@ -199,6 +199,7 @@ else if $clickTriggerID == $id
     $TargetValue = ($cursorX - $positionX) / $sizeX
 endif
 
+{# RZM_SLIDER_LIMIT: Вычисление прогресса курсора (всегда 0.0 - 1.0) #}
 if $TargetValue < 0.0
     $TargetValue = 0.0
 else if $TargetValue > 1.0
@@ -232,7 +233,7 @@ local $smoothing_factor = 0.25
         endif
     endif
 
-    {# Привязка MASTER к его min/max (используем значения из PropertyGroup) #}
+    {# RZM_SLIDER_LIMIT: Привязка значения к жесткому диапазону 0.0 - 1.0 (проблема здесь) #}
     if {{ master_var }} > 1.0
         {{ master_var }} = 1.0
     else if {{ master_var }} < 0.0

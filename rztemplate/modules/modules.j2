@@ -6,11 +6,21 @@
 ;Addons Activity
 
 {% if scene.rzm.addons.debugger_info == 1 %}
+[Constants]
+global persist $RZM_DEBUG_VALUE_0 = {{ scene.rzm.addons.debug_var_0 if scene.rzm.addons.debug_var_0 else "0" }}
+global persist $RZM_DEBUG_VALUE_1 = {{ scene.rzm.addons.debug_var_1 if scene.rzm.addons.debug_var_1 else "0" }}
+global persist $RZM_DEBUG_VALUE_2 = {{ scene.rzm.addons.debug_var_2 if scene.rzm.addons.debug_var_2 else "0" }}
+global persist $RZM_DEBUG_VALUE_3 = {{ scene.rzm.addons.debug_var_3 if scene.rzm.addons.debug_var_3 else "0" }}
+global persist $RZM_DEBUG_VALUE_4 = {{ scene.rzm.addons.debug_var_4 if scene.rzm.addons.debug_var_4 else "0" }}
+global persist $RZM_DEBUG_VALUE_5 = {{ scene.rzm.addons.debug_var_5 if scene.rzm.addons.debug_var_5 else "0" }}
+global persist $RZM_DEBUG_VALUE_6 = {{ scene.rzm.addons.debug_var_6 if scene.rzm.addons.debug_var_6 else "0" }}
+global persist $RZM_DEBUG_VALUE_7 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+
 [CommandListElementDebug]
-;HoverID Debug
+; Hover ID Debug
 $drawType = 4
 $PositionX = 200
-$PositionY = 0
+$PositionY = -64
 $sizeX = (1000) * $sizeMultiplier
 $sizeY = (100) * $sizeMultiplier
 $colorR = 1
@@ -18,8 +28,13 @@ $colorG = 0
 $colorB = 1
 $colorA = 1
 $TexPosX = $hoveredID
-
 run = CustomShaderRCI2D
+
+{% for i in range(8) %}
+$PositionY = $PositionY + 100
+$TexPosX = $RZM_DEBUG_VALUE_{{ i }}
+run = CustomShaderRCI2D
+{% endfor %}
 {% endif %}
 
 {% if scene.rzm.addons.tex_works == 1 %}

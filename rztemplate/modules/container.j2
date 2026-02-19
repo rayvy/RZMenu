@@ -571,6 +571,7 @@ endif
 {% if element.value_link %}
     {% set first_link = element.value_link[0] %}
     run = CommandList{{element.element_name}}Helper
+    {# RZM_SLIDER_LIMIT: Визуализация — приведение значения к 0.0-1.0 для отображения ползунка #}
     local $range_span_display = {{ (first_link.value_max | default(1.0) | float) }} - {{ (first_link.value_min| default(0.0) | float) }}
     if $range_span_display > 0.0001
         x24 = (${{utils.format_var(first_link.value_name)}} - {{ (first_link.value_min| default(0.0) | float) }}) / $range_span_display
