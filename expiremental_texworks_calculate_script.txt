@@ -1,0 +1,167 @@
+import bpy
+import bmesh
+import math
+import time
+import numpy as np
+from mathutils import Vector, kdtree
+
+# --- ОПЕРАТОР ВЫЧИСЛЕНИЯ ---
+class TEXWORKS_OT_calc_uv_bounds(bpy.types.Operator):
+    """Рассчет координат (Top-Left 0,0) и Lattice деформации"""
+    bl_idname = "texworks.calc_uv_bounds"
+    bl_label = "Calculate Decal Config"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    resolution_x: bpy.props.IntProperty(name="Res X", default=2048, min=1)
+    resolution_y: bpy.props.IntProperty(name="Res Y", default=2048, min=1)
+    padding: bpy.props.IntProperty(name="Padding (Px)", default=4, min=0)
+    uv_epsilon: bpy.props.FloatProperty(default=0.0001, precision=5)
+    lattice_strength: bpy.props.FloatProperty(name="Warp Strength", default=1.0, min=0.0, max=1.0)
+
+    def execute(self, context):
+        start_time = time.time()
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "Select a Mesh object")
+            return {'CANCELLED'}
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        uv_layer = bm.loops.layers.uv.verify()
+
+        selected_faces = [f for f in bm.faces if f.select]
+        if not selected_faces:
+            self.report({'WARNING'}, "Nothing selected")
+            return {'CANCELLED'}
+
+        print(f"\n{'='*60}")
+        print(f"[TexWorks] Processing {len(selected_faces)} faces (Top-Left 0,0 Mode)")
+
+        # --- 1. ОСТРОВА ---
+        def quantize(val): return int(val / self.uv_epsilon)
+        vert_uv_map = {}
+        face_list = []
+        for i, face in enumerate(selected_faces):
+            face_list.append(face)
+            for loop in face.loops:
+                uv = loop[uv_layer].uv
+                key = (loop.vert.index, quantize(uv.x), quantize(uv.y))
+                if key not in vert_uv_map: vert_uv_map[key] = []
+                vert_uv_map[key].append(i)
+
+        visited = np.zeros(len(selected_faces), dtype=bool)
+        islands_indices = []
+        for i in range(len(selected_faces)):
+            if visited[i]: continue
+            stack = [i]; visited[i] = True; current_island = []
+            while stack:
+                idx = stack.pop(); current_island.append(idx)
+                for loop in face_list[idx].loops:
+                    uv = loop[uv_layer].uv
+                    key = (loop.vert.index, quantize(uv.x), quantize(uv.y))
+                    for n_idx in vert_uv_map.get(key, []):
+                        if not visited[n_idx]: visited[n_idx] = True; stack.append(n_idx)
+            islands_indices.append(current_island)
+
+        # --- 2. ОБРАБОТКА ---
+        for pass_idx, face_indices in enumerate(islands_indices):
+            uv_points = []
+            for idx in face_indices:
+                for loop in face_list[idx].loops:
+                    uv = loop[uv_layer].uv
+                    uv_points.append(Vector((uv.x, uv.y, 0.0)))
+
+            np_coords = np.array([(v.x, v.y) for v in uv_points], dtype=np.float32)
+            min_u, min_v = np.min(np_coords, axis=0)
+            max_u, max_v = np.max(np_coords, axis=0)
+            
+            # --- КОНВЕРТАЦИЯ В TOP-LEFT (Y axis flip) ---
+            # В UV: min_v это низ. В CS: это будет px_max_y.
+            # В UV: max_v это верх. В CS: это будет px_min_y (начало отрисовки).
+            
+            px_min_x = math.floor(min_u * self.resolution_x) - self.padding
+            px_max_x = math.ceil(max_u * self.resolution_x) + self.padding
+            
+            # Инвертируем Y для CS (0 = Top)
+            px_min_y = math.floor((1.0 - max_v) * self.resolution_y) - self.padding
+            px_max_y = math.ceil((1.0 - min_v) * self.resolution_y) + self.padding
+            
+            width = px_max_x - px_min_x
+            height = px_max_y - px_min_y
+            
+            # --- LATTICE (WARP) ---
+            kd = kdtree.KDTree(len(uv_points))
+            for i, v in enumerate(uv_points): kd.insert(v, i)
+            kd.balance()
+
+            mid_u = (min_u + max_u) * 0.5
+            mid_v = (min_v + max_v) * 0.5
+            
+            # Точки сетки (Ordered TL to BR)
+            # Row 0: Top (Max V в UV)
+            # Row 1: Mid
+            # Row 2: Bot (Min V в UV)
+            targets = [
+                Vector((min_u, max_v, 0)), Vector((mid_u, max_v, 0)), Vector((max_u, max_v, 0)),
+                Vector((min_u, mid_v, 0)), Vector((mid_u, mid_v, 0)), Vector((max_u, mid_v, 0)),
+                Vector((min_u, min_v, 0)), Vector((mid_u, min_v, 0)), Vector((max_u, min_v, 0))
+            ]
+            
+            lattice_offsets = []
+            size_u = max(0.0001, max_u - min_u)
+            size_v = max(0.0001, max_v - min_v)
+
+            for t_idx, target in enumerate(targets):
+                co, index, dist = kd.find(target)
+                
+                off_x = (co.x - target.x) / size_u
+                # В CS Y инвертирован, поэтому (TargetV - RealV) 
+                # Если RealV ниже TargetV, то оффсет Y будет ПОЛОЖИТЕЛЬНЫМ (двигаем вниз в CS)
+                off_y = (target.y - co.y) / size_v
+                
+                off_x *= self.lattice_strength
+                off_y *= self.lattice_strength
+                lattice_offsets.append(f"{off_x:.4f} {off_y:.4f}")
+
+            print(f"\n[PASS {pass_idx}] Analysis (CS Top-Left Mode):")
+            print(f"  >> CONFIG (Origin+Size): {px_min_x} {px_min_y} {width} {height}")
+            print(f"  >> WARP 3x3 (TL to BR): {' '.join(lattice_offsets)}")
+
+        self.report({'INFO'}, f"Calculated {len(islands_indices)} islands. Check Console.")
+        return {'FINISHED'}
+
+# --- UI ---
+class TEXWORKS_PT_uv_helper(bpy.types.Panel):
+    bl_label = "TexWorks Helper"
+    bl_idname = "TEXWORKS_PT_uv_helper"
+    bl_space_type = 'IMAGE_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = "TexWorks"
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.window_manager.texworks_calc_props
+        col = layout.column(align=True)
+        col.prop(props, "res_x"); col.prop(props, "res_y"); col.prop(props, "padding")
+        layout.separator()
+        col.prop(props, "lattice_strength", slider=True)
+        layout.separator()
+        layout.operator("texworks.calc_uv_bounds", text="Calculate Config", icon='UV')
+
+class TexWorksCalcProps(bpy.types.PropertyGroup):
+    res_x: bpy.props.IntProperty(name="Res X", default=2048)
+    res_y: bpy.props.IntProperty(name="Res Y", default=2048)
+    padding: bpy.props.IntProperty(name="Pad", default=4)
+    uv_epsilon: bpy.props.FloatProperty(default=0.0001)
+    lattice_strength: bpy.props.FloatProperty(name="Warp Strength", default=1.0, min=0.0, max=1.0)
+
+classes = (TEXWORKS_OT_calc_uv_bounds, TEXWORKS_PT_uv_helper, TexWorksCalcProps)
+
+def register():
+    for cls in classes: bpy.utils.register_class(cls)
+    bpy.types.WindowManager.texworks_calc_props = bpy.props.PointerProperty(type=TexWorksCalcProps)
+
+def unregister():
+    del bpy.types.WindowManager.texworks_calc_props
+    for cls in reversed(classes): bpy.utils.unregister_class(cls)
+
+if __name__ == "__main__": register()

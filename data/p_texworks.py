@@ -104,6 +104,16 @@ class TexWorksSlot(bpy.types.PropertyGroup):
     multi_pass_mirror: BoolProperty(name="Pass Mirror")
     multi_pass_flip: BoolProperty(name="Pass Flip")
 
+    # Warp (Lattice 3x3)
+    warp_p0_enabled: BoolProperty(name="Warp Pass 0", default=False)
+    warp_p0_debug: BoolProperty(name="Debug Mode P0", default=False)
+    # 18 floats = 9 points (x, y)
+    warp_p0_grid: FloatVectorProperty(name="Lattice P0", size=18, default=(0.0,)*18)
+
+    warp_p1_enabled: BoolProperty(name="Warp Pass 1", default=False)
+    warp_p1_debug: BoolProperty(name="Debug Mode P1", default=False)
+    warp_p1_grid: FloatVectorProperty(name="Lattice P1", size=18, default=(0.0,)*18)
+
     # HSV: Теперь одна ссылка на Векторную переменную
     hsv_enabled: BoolProperty(default=False)
     hsv_mask_enabled: BoolProperty(name="Use HSV Mask", default=False)

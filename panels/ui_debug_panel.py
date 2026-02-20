@@ -480,6 +480,35 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                 row.prop(slot, "mirror", text="", icon='MOD_MIRROR', toggle=True)
                                 row.prop(slot, "flip", text="", icon='UV_SYNC_SELECT', toggle=True)
 
+                                # --- WARPING & LATTICE ---
+                                w_box = s_item.box()
+                                w_box.label(text="Warping & Lattice (3x3):", icon='GRID')
+                                
+                                # Pass 0 Warp
+                                p0_w = w_box.box()
+                                row = p0_w.row(align=True)
+                                row.prop(slot, "warp_p0_enabled", text="Pass 0 Warp")
+                                row.prop(slot, "warp_p0_debug", text="Debug", icon='CONSOLE')
+                                if slot.warp_p0_enabled:
+                                    grid = p0_w.grid_flow(columns=3, even_columns=True, even_rows=False, align=True)
+                                    for i in range(9):
+                                        col = grid.column(align=True)
+                                        col.prop(slot, "warp_p0_grid", index=i*2, text="X")
+                                        col.prop(slot, "warp_p0_grid", index=i*2+1, text="Y")
+                                
+                                # Pass 1 Warp (only if multi-pass enabled)
+                                if slot.multi_pass_mode != 'NONE':
+                                    p1_w = w_box.box()
+                                    row = p1_w.row(align=True)
+                                    row.prop(slot, "warp_p1_enabled", text="Pass 1 Warp")
+                                    row.prop(slot, "warp_p1_debug", text="Debug", icon='CONSOLE')
+                                    if slot.warp_p1_enabled:
+                                        grid = p1_w.grid_flow(columns=3, even_columns=True, even_rows=False, align=True)
+                                        for i in range(9):
+                                            col = grid.column(align=True)
+                                            col.prop(slot, "warp_p1_grid", index=i*2, text="X")
+                                            col.prop(slot, "warp_p1_grid", index=i*2+1, text="Y")
+
                                 # --- LAYERS (Вкладки) ---
                                 layer_box = s_item.box()
                                 l_header = layer_box.row(align=True)

@@ -1,0 +1,2900 @@
+{% import "modules/elements.j2" as elements with context %}
+{% import "modules/utils.j2" as utils with context %}
+
+{%macro debug_snippet()%}
+
+[Constants]
+global persist $DEBUG_PANELPositionX = 700
+global persist $DEBUG_PANELPositionY = 100
+global persist $DEBUG_PANELSizeX = 360
+global persist $DEBUG_PANELSizeY = 499
+[CommandListElementDEBUG_PANEL]
+$id = 6946595
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $DEBUG_PANELPositionX
+$positionY = $DEBUG_PANELPositionY
+
+;SIZE
+
+$sizeX = (360) * $sizeMultiplier
+$sizeY = (499) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListCoreFNComputeMouseInteractions.Move
+
+run = CommandListCoreAlignment.ANTICHECK
+$DEBUG_PANELPositionX = $positionX 
+$DEBUG_PANELPositionY = $positionY
+run = CommandListCoreAlignment.Check
+
+; ================= IMAGE DEBUG =================
+; Element: DEBUG_PANEL
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV0_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV1_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV2_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV3_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV4_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV5_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV6_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV7_S
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV0_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV1_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV2_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV3_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV4_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV5_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV6_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV7_P
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV7_M
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV6_M
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV5_M
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV4_M
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV3_M
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV2_M
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV1_M
+
+$PositionX = $P_PX
+$PositionY = $P_PY
+$SizeX = $P_SX
+$SizeY = $P_SY
+run = CommandListElementRDV0_M
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV0_S]
+
+$id = 6946596
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 20
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV0_SHelper
+
+local $range_span_display = 1024.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_0 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV1_S]
+
+$id = 6946597
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 80
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV1_SHelper
+
+local $range_span_display = 1024.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_1 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV2_S]
+
+$id = 6946598
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 140
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV2_SHelper
+
+local $range_span_display = 1024.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_2 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV3_S]
+
+$id = 6946599
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 200
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV3_SHelper
+
+local $range_span_display = 1024.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_3 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV4_S]
+
+$id = 6946600
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 260
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV4_SHelper
+
+local $range_span_display = 360.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_4 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV5_S]
+
+$id = 6946601
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 320
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV5_SHelper
+
+local $range_span_display = 1.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_5 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV6_S]
+
+$id = 6946602
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 380
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV6_SHelper
+
+local $range_span_display = 1.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_6 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;SLIDER
+
+;
+
+[CommandListElementRDV7_S]
+
+$id = 6946603
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 60
+$positionY = $positionY + 440
+
+;SIZE
+
+$sizeX = (237) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.20000000298023224
+$colorG = 0.20000000298023224
+$colorB = 0.20000000298023224
+$colorA = 0.8999999761581421
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+;slider
+
+run = CommandListRDV7_SHelper
+
+local $range_span_display = 1.0 - 0.0
+if $range_span_display > 0.0001
+x24 = ($RZM_DEBUG_VALUE_7 - 0.0) / $range_span_display
+else
+x24 = 0.0
+endif
+
+run = CommandListCoreFNHandleHold
+
+run = CustomShaderRCI2D_SLIDER
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV0_P]
+
+$id = 6946604
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 20
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_0 = $RZM_DEBUG_VALUE_0 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV0_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV0_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV1_P]
+
+$id = 6946605
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 80
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_1 = $RZM_DEBUG_VALUE_1 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV1_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV1_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV2_P]
+
+$id = 6946606
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 140
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_2 = $RZM_DEBUG_VALUE_2 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV2_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV2_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV3_P]
+
+$id = 6946607
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 200
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_3 = $RZM_DEBUG_VALUE_3 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV3_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV3_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV4_P]
+
+$id = 6946608
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 260
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_4 = $RZM_DEBUG_VALUE_4 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV4_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV4_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV5_P]
+
+$id = 6946609
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 320
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_5 = $RZM_DEBUG_VALUE_5 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV5_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV5_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV6_P]
+
+$id = 6946610
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 380
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_6 = $RZM_DEBUG_VALUE_6 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV6_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV6_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV7_P]
+
+$id = 6946611
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 303
+$positionY = $positionY + 440
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 1.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_7 = $RZM_DEBUG_VALUE_7 + 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV7_P
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV7_P
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV7_M]
+
+$id = 6946612
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 440
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_7 = $RZM_DEBUG_VALUE_7 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV7_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV7_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV6_M]
+
+$id = 6946613
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 380
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_6 = $RZM_DEBUG_VALUE_6 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV6_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV6_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV5_M]
+
+$id = 6946614
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 320
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_5 = $RZM_DEBUG_VALUE_5 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV5_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV5_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV4_M]
+
+$id = 6946615
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 260
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_4 = $RZM_DEBUG_VALUE_4 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV4_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV4_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV3_M]
+
+$id = 6946616
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 200
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_3 = $RZM_DEBUG_VALUE_3 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV3_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV3_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV2_M]
+
+$id = 6946617
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 140
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_2 = $RZM_DEBUG_VALUE_2 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV2_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV2_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV1_M]
+
+$id = 6946618
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 80
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_1 = $RZM_DEBUG_VALUE_1 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV1_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV1_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;BUTTON
+
+;
+
+[CommandListElementRDV0_M]
+
+$id = 6946619
+local $LocalVisibility
+$LocalVisibility = 0
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+
+$LocalVisibility = 1
+
+if $LocalVisibility
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+local $LocalHoverTimer
+local $LocalHoldTimer
+if $LocalHoldTimer > 0
+$LocalHoldTimer = $LocalHoldTimer - $dt  
+endif
+local $P_PX
+local $P_PY
+local $P_SX
+local $P_SY
+
+;POSITION
+
+$positionX = $positionX + 12
+$positionY = $positionY + 20
+
+;SIZE
+
+$sizeX = (43) * $sizeMultiplier
+$sizeY = (45) * $sizeMultiplier
+
+;No Transform Formula
+
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 1.0
+$colorA = 0.5000076293945312
+
+if $LocalVisibility
+$element_align = 0
+run = CommandListCoreAlignment.Check
+
+run = CommandListCoreFNUpdateHoverState
+
+run = CommandListNavProcessElement
+
+run = CommandListCoreFNHandleClick
+
+run = CommandListCoreFNHandleHold
+if w33 > 0.2
+$LocalHoldTimer = ($LocalHoldTimer + w33) + $dt
+endif
+
+if $id == $clickTriggerID
+$RZM_DEBUG_VALUE_0 = $RZM_DEBUG_VALUE_0 - 1
+endif
+
+; ================= IMAGE DEBUG =================
+; Element: RDV0_M
+; Raw Mode: SINGLE
+; Converted Mode: 0
+; Image ID: -1
+; ===============================================
+
+run = CustomShaderRCI2D
+
+if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+y110 = 1
+endif
+
+if $id == $clickTriggerID
+; Click registered for simple action button: RDV0_M
+
+endif
+
+$P_PX = $PositionX
+$P_PY = $PositionY
+$P_SX = $SizeX
+$P_SY = $SizeY
+;Presets
+
+;Childs
+
+endif
+endif
+
+;DEBUG HELPER: ADDITIONAL GENERATE
+
+;CONTAINER
+
+;ANCHOR
+
+;SLIDER
+
+[CommandListRDV0_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_0
+local $range_span = 1024.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 1024.0
+$TargetValue = 1024.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_0 != $TargetValue
+$RZM_DEBUG_VALUE_0 = $RZM_DEBUG_VALUE_0 + ($TargetValue - $RZM_DEBUG_VALUE_0) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_0 = $RZM_DEBUG_VALUE_0 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_0 = $RZM_DEBUG_VALUE_0 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_0 = $RZM_DEBUG_VALUE_0 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_0 = $RZM_DEBUG_VALUE_0 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_0 > 1024.0
+$RZM_DEBUG_VALUE_0 = 1024.0
+else if $RZM_DEBUG_VALUE_0 < 0.0
+$RZM_DEBUG_VALUE_0 = 0.0
+endif
+
+;SLIDER
+
+[CommandListRDV1_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_1
+local $range_span = 1024.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 1024.0
+$TargetValue = 1024.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_1 != $TargetValue
+$RZM_DEBUG_VALUE_1 = $RZM_DEBUG_VALUE_1 + ($TargetValue - $RZM_DEBUG_VALUE_1) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_1 = $RZM_DEBUG_VALUE_1 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_1 = $RZM_DEBUG_VALUE_1 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_1 = $RZM_DEBUG_VALUE_1 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_1 = $RZM_DEBUG_VALUE_1 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_1 > 1024.0
+$RZM_DEBUG_VALUE_1 = 1024.0
+else if $RZM_DEBUG_VALUE_1 < 0.0
+$RZM_DEBUG_VALUE_1 = 0.0
+endif
+
+;SLIDER
+
+[CommandListRDV2_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_2
+local $range_span = 1024.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 1024.0
+$TargetValue = 1024.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_2 != $TargetValue
+$RZM_DEBUG_VALUE_2 = $RZM_DEBUG_VALUE_2 + ($TargetValue - $RZM_DEBUG_VALUE_2) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_2 = $RZM_DEBUG_VALUE_2 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_2 = $RZM_DEBUG_VALUE_2 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_2 = $RZM_DEBUG_VALUE_2 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_2 = $RZM_DEBUG_VALUE_2 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_2 > 1024.0
+$RZM_DEBUG_VALUE_2 = 1024.0
+else if $RZM_DEBUG_VALUE_2 < 0.0
+$RZM_DEBUG_VALUE_2 = 0.0
+endif
+
+;SLIDER
+
+[CommandListRDV3_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_3
+local $range_span = 1024.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 1024.0
+$TargetValue = 1024.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_3 != $TargetValue
+$RZM_DEBUG_VALUE_3 = $RZM_DEBUG_VALUE_3 + ($TargetValue - $RZM_DEBUG_VALUE_3) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_3 = $RZM_DEBUG_VALUE_3 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_3 = $RZM_DEBUG_VALUE_3 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_3 = $RZM_DEBUG_VALUE_3 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_3 = $RZM_DEBUG_VALUE_3 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_3 > 1024.0
+$RZM_DEBUG_VALUE_3 = 1024.0
+else if $RZM_DEBUG_VALUE_3 < 0.0
+$RZM_DEBUG_VALUE_3 = 0.0
+endif
+
+;SLIDER
+
+[CommandListRDV4_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_4
+local $range_span = 360.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 360.0
+$TargetValue = 360.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_4 != $TargetValue
+$RZM_DEBUG_VALUE_4 = $RZM_DEBUG_VALUE_4 + ($TargetValue - $RZM_DEBUG_VALUE_4) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_4 = $RZM_DEBUG_VALUE_4 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_4 = $RZM_DEBUG_VALUE_4 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_4 = $RZM_DEBUG_VALUE_4 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_4 = $RZM_DEBUG_VALUE_4 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_4 > 360.0
+$RZM_DEBUG_VALUE_4 = 360.0
+else if $RZM_DEBUG_VALUE_4 < 0.0
+$RZM_DEBUG_VALUE_4 = 0.0
+endif
+
+;SLIDER
+
+[CommandListRDV5_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_5
+local $range_span = 1.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 1.0
+$TargetValue = 1.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_5 != $TargetValue
+$RZM_DEBUG_VALUE_5 = $RZM_DEBUG_VALUE_5 + ($TargetValue - $RZM_DEBUG_VALUE_5) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_5 = $RZM_DEBUG_VALUE_5 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_5 = $RZM_DEBUG_VALUE_5 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_5 = $RZM_DEBUG_VALUE_5 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_5 = $RZM_DEBUG_VALUE_5 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_5 > 1.0
+$RZM_DEBUG_VALUE_5 = 1.0
+else if $RZM_DEBUG_VALUE_5 < 0.0
+$RZM_DEBUG_VALUE_5 = 0.0
+endif
+
+;SLIDER
+
+[CommandListRDV6_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_6
+local $range_span = 1.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 1.0
+$TargetValue = 1.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_6 != $TargetValue
+$RZM_DEBUG_VALUE_6 = $RZM_DEBUG_VALUE_6 + ($TargetValue - $RZM_DEBUG_VALUE_6) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_6 = $RZM_DEBUG_VALUE_6 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_6 = $RZM_DEBUG_VALUE_6 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_6 = $RZM_DEBUG_VALUE_6 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_6 = $RZM_DEBUG_VALUE_6 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_6 > 1.0
+$RZM_DEBUG_VALUE_6 = 1.0
+else if $RZM_DEBUG_VALUE_6 < 0.0
+$RZM_DEBUG_VALUE_6 = 0.0
+endif
+
+;SLIDER
+
+[CommandListRDV7_SHelper]
+
+local $TargetValue = $RZM_DEBUG_VALUE_7
+local $range_span = 1.0 - 0.0
+
+if $capturedID == $id || $clickTriggerID == $id
+if $range_span > 0.0001
+$TargetValue = 0.0 + (($cursorX - $positionX) / $sizeX) * $range_span
+else
+$TargetValue = 0.0
+endif
+endif
+
+if $TargetValue < 0.0
+$TargetValue = 0.0
+else if $TargetValue > 1.0
+$TargetValue = 1.0
+endif
+
+local $smoothing_factor = 0.25
+
+if $RZM_DEBUG_VALUE_7 != $TargetValue
+$RZM_DEBUG_VALUE_7 = $RZM_DEBUG_VALUE_7 + ($TargetValue - $RZM_DEBUG_VALUE_7) * $smoothing_factor
+endif
+
+if $isGamepadEditing == 1 && $GamepadEditedID == $id
+local $tap_step = $range_span * 0.1
+local $hold_speed = $range_span * 0.5
+
+if $Gamepad_Interaction_Increase == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_7 = $RZM_DEBUG_VALUE_7 + $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_7 = $RZM_DEBUG_VALUE_7 + ($hold_speed * $dt)
+endif
+else if $Gamepad_Interaction_Decrease == 1
+if $Gamepad_Interaction_Type == 1
+$RZM_DEBUG_VALUE_7 = $RZM_DEBUG_VALUE_7 - $tap_step
+else if $Gamepad_Interaction_Type == 2
+$RZM_DEBUG_VALUE_7 = $RZM_DEBUG_VALUE_7 - ($hold_speed * $dt)
+endif
+endif
+endif
+
+if $RZM_DEBUG_VALUE_7 > 1.0
+$RZM_DEBUG_VALUE_7 = 1.0
+else if $RZM_DEBUG_VALUE_7 < 0.0
+$RZM_DEBUG_VALUE_7 = 0.0
+endif
+{%endmacro%}

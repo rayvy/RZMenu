@@ -1,6 +1,9 @@
 {% import "modules/elements.j2" as elements with context %}
 {% import "modules/utils.j2" as utils with context %}
 
+{% import "modules/debug_snippet.j2" as debug_snippet with context %}
+
+
 {%macro generate_addons(mod_file,scene)%}
 {% if scene.rzm.addons %}
 ;Addons Activity
@@ -35,6 +38,8 @@ $PositionY = $PositionY + 100
 $TexPosX = $RZM_DEBUG_VALUE_{{ i }}
 run = CustomShaderRCI2D
 {% endfor %}
+
+{{debug_snippet.debug_snippet()}}
 {% endif %}
 
 {% if scene.rzm.addons.sandevistan_zzz == 1 %}

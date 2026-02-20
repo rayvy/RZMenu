@@ -112,7 +112,12 @@ run = CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}
 {# 3. Decal Layers #}
 {% for slot in comp.slots if slot.active %}
     {% for layer in slot.decal_layers if layer.active %}
-run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}
+        {% if slot.warp_p0_debug %};DEBUG MOD ON FOR {{ slot.name }}Pass0{% endif %}
+run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P0
+        {% if slot.multi_pass_mode != 'NONE' %}
+            {% if slot.warp_p1_debug %};DEBUG MOD ON FOR {{ slot.name }}Pass1{% endif %}
+run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P1
+        {% endif %}
     {% endfor %}
 {% endfor %}
 
@@ -197,6 +202,23 @@ array = 8
     data = {{ p0_x }} {{ p0_y }} {{ p0_w }} {{ p0_h }} {{ p0_rot }} {{ p0_dmy }} {{ p0_mir }} {{ p0_flp }}
 {% endif %}
 
+{# Warp Buffers #}
+{% if slot.warp_p0_enabled %}
+[Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P0]
+type = Buffer
+format = R32G32_FLOAT
+array = 9
+data = {% for v in slot.warp_p0_grid %}{{ "%.5f"|format(v) }} {% endfor %}
+{% endif %}
+
+{% if slot.warp_p1_enabled %}
+[Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P1]
+type = Buffer
+format = R32G32_FLOAT
+array = 9
+data = {% for v in slot.warp_p1_grid %}{{ "%.5f"|format(v) }} {% endfor %}
+{% endif %}
+
 {% for layer in slot.decal_layers if layer.active %}
     {% for i in range(layer.count) %}
         {% set file_suffix = "" %}
@@ -236,32 +258,28 @@ dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 {% for layer in slot.decal_layers if layer.active %}
 {% set l_var_base = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name %}
 {% set material = rzm.tw_materials.get(layer.name) %}
-[CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}]
+
+{# SHARED PARAMETERS MACRO #}
+{% macro layer_shader_params(pass_idx) %}
 cs = /modules/texworks/decal_draw_NEW.hlsl
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
 cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
 cs-t2 = {% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
 cs-t3 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config
+{% if pass_idx == 0 and slot.warp_p0_enabled %}
+cs-t4 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P0
+{% elif pass_idx == 1 and slot.warp_p1_enabled %}
+cs-t4 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P1
+{% endif %}
 
-{# Pass Variables setup #}
-{# USAGE: xyzw45 - Component Rect #}
 x45 = {{ "%.1f"|format(comp.rect[0]) }}
 y45 = {{ "%.1f"|format(comp.rect[1]) }}
 z45 = {{ "%.1f"|format(comp.rect[2]) }}
 w45 = {{ "%.1f"|format(comp.rect[3]) }}
 
-{# USAGE: xyzw41/42 - Debug Override (If active) #}
 {% if scene.rzm.addons.debugger_info %}
 ; Debug override data from UI (Linked to persist vars)
-;x41 = $RZM_DEBUG_VALUE_0
-;y41 = $RZM_DEBUG_VALUE_1
-;z41 = $RZM_DEBUG_VALUE_2
-;w41 = $RZM_DEBUG_VALUE_3
-;x42 = $RZM_DEBUG_VALUE_4
-;y42 = $RZM_DEBUG_VALUE_5
-;z42 = $RZM_DEBUG_VALUE_6
-;w42 = $RZM_DEBUG_VALUE_7
 {% endif %}
 
 {% if material %}
@@ -270,8 +288,11 @@ y46 = {{ "%.3f"|format(material.parameters[1]) }}
 z46 = {{ "%.3f"|format(material.parameters[2]) }}
 w46 = {{ "%.3f"|format(material.parameters[3]) }}
 {% endif %}
+{% endmacro %}
 
-{# --- PASS 0 (Original) --- #}
+{# --- PASS 0 SHADER --- #}
+[CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P0]
+{{ layer_shader_params(0) }}
 if ${{ l_var_base }}Index0 >= 0
     {# Index Switching Pass 0 #}
     {% for i in range(layer.count) %}
@@ -285,13 +306,12 @@ if ${{ l_var_base }}Index0 >= 0
     dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
 endif
 
-{# --- PASS 1 (Multi-Pass) --- #}
+{# --- PASS 1 SHADER --- #}
 {% if slot.multi_pass_mode != 'NONE' %}
-    {% set p1_idx_var = l_var_base ~ "Index1" if slot.multi_pass_mode == 'INDIVIDUAL' else l_var_base ~ "Index0" %}
+[CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P1]
+{{ layer_shader_params(1) }}
+{% set p1_idx_var = l_var_base ~ "Index1" if slot.multi_pass_mode == 'INDIVIDUAL' else l_var_base ~ "Index0" %}
 if ${{ p1_idx_var }} >= 0
-    ; Reset cs-t0 before second pass switch
-    cs-t0 = null
-
     {# Index Switching Pass 1 #}
     {% for i in range(layer.count) %}
     {% if loop.first %}if ${{ p1_idx_var }} == {{ i }}{% else %}elif ${{ p1_idx_var }} == {{ i }}{% endif %}

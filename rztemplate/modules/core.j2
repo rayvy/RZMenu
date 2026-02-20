@@ -208,6 +208,13 @@ run = CommandListElement{{ element.element_name }}
 {% endif %}
 {%- endfor -%}
 {% endif -%}
+{% if scene.rzm %}
+    {% if scene.rzm.addons %}
+        {% if scene.rzm.addons.debugger_info == 1 %}
+run = CommandListElementDEBUG_PANEL
+        {% endif %}
+    {% endif %}
+{% endif %}
 run = CommandListInteractionManager
 run = CommandListNavFinalizeSearch
 {% if scene.rzm %}
