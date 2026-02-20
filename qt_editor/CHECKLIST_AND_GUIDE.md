@@ -32,7 +32,7 @@ This document was generated based on the "Technical Report (UI Tool for 3DMigoto
     - [ ] Fix: Fragile `while p: ... parent()` loops in `_update_slot` and `_update_layer`.
 
 ### 3. Transformation & UX
-- [ ] **Teleportation** `core/structure.py`
+- [/] **Teleportation** `core/structure.py`
     - [ ] Status: **(red)** `reparent_element`.
     - [ ] Fix: Implement matrix compensation.
         ```python
@@ -41,12 +41,14 @@ This document was generated based on the "Technical Report (UI Tool for 3DMigoto
         elem.parent_id = new_parent
         elem.matrix_local = elem.parent.matrix_world.inverted() @ old_global
         ```
-- [ ] **Teleportation** `core/transform.py`
+- [/] **Teleportation** `core/transform.py`
     - [ ] Status: **(red)** `move_elements_delta`.
     - [ ] Fix: Ensure delta is applied in correct space (Local vs Global) depending on parent.
-- [ ] **Gizmo Issues** `widgets/viewport.py`
-    - [ ] Fix: `RZHandleItem` Z-Index (10000) might be causing fighting.
-    - [ ] Fix: `handle_resize` calculation assumes simple hierarchy. Needs `mapFromScene` / `mapToItem` logic.
+- [/] **Gizmo Issues** `widgets/viewport.py`
+    - [ ] Status: **(Regression)** Frame-rate drops & Teleportation on Resize.
+    - [ ] Fix: Implement Transform Caching (cache matrices on mousePress).
+    - [ ] Fix: Anchor-Locked Resizing (define static pivot).
+    - [ ] Fix: Multi-Selection Resizing (Collective Bounding Box).
 
 ### 4. Data & Assets
 - [ ] **Clipboard** `core/clipboard.py`
@@ -92,3 +94,77 @@ I have marked the code with comments:
 - Look for `# (yellow)` in `clipboard.py` and `blender_bridge.py`.
 
 Use `Ctrl+Shift+F` (Global Search) for these tags to jump to problem areas.
+
+---
+
+## 🚨 POST-MORTEM & RECOVERY PLAN (FEB 2026)
+
+This section was added after an aborted session on 2026-02-20. The code has been reverted to a stable state. Use this guide to resume work without repeating the same mistakes.
+
+### 🛑 Failed Implementations (Do Not Blindly Retry)
+The following features caused critical regressions and system instability.
+
+#### 1. Transform Caching ("The Cannon Shot")
+*   **Attempt:** Caching `initial_scene_pos` and `matrices` on `mousePress` to avoid recalculation during drag.
+*   **Failure:**
+    *   **Recursive Drift:** `mouseMoveEvent` calculated a delta (`current - start`) and emitted it. The Blender Bridge applied this delta *cumulatively* to the object's position on every frame, causing exponential acceleration (e.g., `x += 10` became `x += 10, x += 20, x += 30...`).
+    *   **Signal Noise:** Emitting signals on every pixel move flooded the bridge, causing massive FPS drops.
+*   **Recovery Strategy:**
+    *   **Throttle Signals:** Only emit update signals to Blender every `N` ms, or only on `mouseRelease`.
+    *   **Visual vs Logical:** Update Qt Items visually in real-time (smooth), but update Blender Data *only* at the end of the operation.
+
+#### 2. Anchor-Locked Resizing ("The Teleport")
+*   **Attempt:** Calculating a fixed "Anchor Point" (opposite corner) in Scene Space and applying `setPos` to the item to keep it in place while resizing.
+*   **Failure:**
+    *   **Coordinate Space Mismatch:** `scenePos()` returns Scene Coordinates. `setPos()` expects **Parent Local** Coordinates. Applying Scene Coords to a child item caused it to fly off to `(SceneX, SceneY)` relative to its parent, effectively doubling its position offset.
+    *   **NameError:** Usage of undefined variables (e.g., `is_ctrl`) inside helper functions due to scope issues.
+*   **Recovery Strategy:**
+    *   **Strict Mapping:** ALWAYS map calculated coordinates: `ParentItem.mapFromScene(TargetScenePos)` before calling `setPos`.
+    *   **Atomic Updates:** Use `setRect` and `setPos` together. If possible, use `setGeometry` or a custom atomic method.
+
+#### 3. Precision & Snapping ("Micro-teleportation")
+*   **Attempt:** Rounding coordinates to integers to match RZMenu's data structure.
+*   **Failure:**
+    *   **Deadzone:** Rounding `0.4` to `0` meant small mouse movements were ignored.
+    *   **Drift:** Continuous rounding of floating-point accumulators resulted in a "walking" error where the object would slowly drift 1px at a time or snap back to an old position on release.
+*   **Recovery Strategy:**
+    *   **Float Visuals, Int Data:** Allow Qt Items to float (sub-pixel) during drag. Only Cast to Int when saving to Blender Data.
+    *   **Final Sync:** On `mouseRelease`, force the Qt Item to snap to the exact Integer position stored in Blender to ensure 1:1 sync.
+
+---
+
+### 🏗 Architecture Guide for Future Edits
+
+#### 1. Input Handling (Viewport)
+*   **Rule:** Do NOT put logic in `mouseMoveEvent`. It runs hundreds of times per second.
+*   **Pattern:**
+    ```python
+    def mouseMoveEvent(self, event):
+        # 1. Calc Delta (Raw Float)
+        # 2. Update Visuals (Qt Item setPos) -> Fast, no bridge calls
+        # 3. (Optional) Throttle Signal -> Emit to Blender every 50ms
+    ```
+
+#### 2. Coordinate Systems
+*   **Scene Space:** Global view. Use for mouse interaction and absolute positioning.
+*   **Local Space:** Relative to Parent. Use for storage and `setPos`.
+*   **Conversion:**
+    ```python
+    # Correct Reparenting / Move Logic
+    target_pos_scene = ... # Calculated from mouse
+    parent = item.parentItem()
+    if parent:
+        target_pos_local = parent.mapFromScene(target_pos_scene)
+        item.setPos(target_local_pt)
+    else:
+        item.setPos(target_pos_scene)
+    ```
+
+#### 3. Debugging Tools
+*   **Disable Snapping:** Before testing core math, implement a global flag `DISABLE_SNAPPING = True` to isolate whether bugs are from constraints or raw logic.
+*   **Visual Debug:** Draw the "Target Rect" and "Anchor Point" as debug lines (`QGraphicsLineItem`) during resize to see where the math thinks the object should be.
+
+### 📋 Next Steps (Prioritized)
+1.  **Re-verify Basics:** After revert, confirm standard single-item move works.
+2.  **Fix Multi-Selection (Logic Only):** Implement the Bounding Box math *without* touching the Coordinate System first. Print the calculated values to console to verify scale factors.
+3.  **Implement Coordinate Mapping:** Create a robust helper function `set_scene_pos(item, point)` that handles the parent mapping automatically, and use it everywhere.
