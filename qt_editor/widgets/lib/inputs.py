@@ -246,6 +246,30 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
             self.highlighter.rehighlight()
             
         self._apply_popup_theme()
+        self._pattern = ""
+        self._originals = []
+
+    def set_pattern(self, pattern, originals=None):
+        self._pattern = pattern
+        self._originals = originals or []
+        self.setText(pattern)
+        # Visual feedback for pattern mode
+        font = self.font()
+        font.setItalic(bool(pattern))
+        self.setFont(font)
+
+    def get_pattern(self):
+        return self._pattern
+
+    def get_originals(self):
+        return self._originals
+
+    def clear_pattern(self):
+        self._pattern = ""
+        self._originals = []
+        font = self.font()
+        font.setItalic(False)
+        self.setFont(font)
 
     def _apply_popup_theme(self):
         theme = get_current_theme()

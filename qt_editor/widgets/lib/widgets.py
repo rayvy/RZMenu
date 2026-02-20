@@ -602,6 +602,9 @@ class RZLineEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
+        self._pattern = ""
+        self._originals = []
+        
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -614,3 +617,25 @@ class RZLineEdit(QtWidgets.QLineEdit):
             }}
             QLineEdit:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
         """)
+
+    def set_pattern(self, pattern, originals=None):
+        self._pattern = pattern
+        self._originals = originals or []
+        self.setText(pattern)
+        # Visual feedback for pattern mode
+        font = self.font()
+        font.setItalic(bool(pattern))
+        self.setFont(font)
+
+    def get_pattern(self):
+        return self._pattern
+
+    def get_originals(self):
+        return self._originals
+
+    def clear_pattern(self):
+        self._pattern = ""
+        self._originals = []
+        font = self.font()
+        font.setItalic(False)
+        self.setFont(font)

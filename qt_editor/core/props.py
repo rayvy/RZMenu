@@ -1,6 +1,7 @@
 import bpy
 from . import signals
 from . import blender_bridge
+from ..utils.string_utils import find_common_pattern, apply_pattern_change
 
 # Centralized property mapping to reduce duplication (DRY)
 # Format: "qt_prop_name": ("blender_prop_meta", sub_index, signal_type)
@@ -451,3 +452,131 @@ def unhide_all_elements():
             blender_bridge.safe_undo_push("RZM: Unhide All")
             signals.SIGNALS.structure_changed.emit()
             signals.SIGNALS.transform_changed.emit()
+
+def update_property_multi_pattern(target_ids, prop_name, new_pattern, sub_index=None, originals=None):
+    print(f"\n[CORE_PROPS] update_property_multi_pattern for '{prop_name}'")
+    print(f"  Targets: {target_ids}")
+    print(f"  New Pattern: '{new_pattern}'")
+    print(f"  Originals provided: {len(originals) if originals else 'None'}")
+    
+    if not target_ids: return
+    
+    mapping = PROP_MAP.get(prop_name)
+    if mapping is None: return
+
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        targets = [e for e in elements if e.id in target_ids]
+        if not targets: 
+            print("  !! No targets found in Blender")
+            return
+
+        bl_prop = mapping[0]
+        bl_idx = mapping[1] if mapping[1] is not None else sub_index
+        sig_type = mapping[2] 
+
+        # 1. Source of Truth: Use provided originals or fall back to current RNA
+        if originals and len(originals) == len(targets):
+            original_values = [str(v) for v in originals]
+            print(f"  Using provided originals: {original_values}")
+        else:
+            print("  Falling back to RNA values (Originals missing or length mismatch)")
+            original_values = []
+            for e in targets:
+                val = getattr(e, bl_prop)
+                if bl_idx is not None: val = val[bl_idx]
+                original_values.append(str(val))
+            print(f"  RNA values: {original_values}")
+
+        # 2. Re-detect the pattern from original values to know what to replace
+        old_pattern, _ = find_common_pattern(original_values)
+        print(f"  Detected old pattern: '{old_pattern}'")
+        
+        if not old_pattern or old_pattern == new_pattern:
+            print("  No change needed or no pattern detected")
+            return
+
+        # 3. Apply pattern change
+        try:
+            new_values = apply_pattern_change(original_values, old_pattern, new_pattern)
+            print(f"  Transformation result: {new_values}")
+        except Exception as e:
+            print(f"  !! Error in apply_pattern_change: {e}")
+            return
+
+        # 4. Write back
+        changed = False
+        for i, elem in enumerate(targets):
+            new_val = new_values[i]
+            if bl_idx is not None:
+                curr = getattr(elem, bl_prop)
+                if str(curr[bl_idx]) != new_val:
+                    curr[bl_idx] = new_val
+                    setattr(elem, bl_prop, curr)
+                    changed = True
+            else:
+                if str(getattr(elem, bl_prop)) != new_val:
+                    setattr(elem, bl_prop, new_val)
+                    changed = True
+
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Pattern Rename {prop_name}")
+            signals.SIGNALS.data_changed.emit()
+            if sig_type == 'S':
+                signals.SIGNALS.structure_changed.emit()
+
+def update_value_link_multi_pattern(target_ids, index, field, new_pattern, originals=None):
+    print(f"\n[CORE_PROPS] update_value_link_multi_pattern index={index}, field='{field}'")
+    print(f"  Targets: {target_ids}")
+    print(f"  New Pattern: '{new_pattern}'")
+    print(f"  Originals provided: {len(originals) if originals else 'None'}")
+
+    if not target_ids or index < 0: return
+    
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        targets = [e for e in elements if e.id in target_ids]
+        
+        # Filter targets that actually have this value link index
+        valid_targets = [e for e in targets if index < len(e.value_link)]
+        if not valid_targets: 
+            print("  !! No valid targets with this VL index")
+            return
+
+        # 1. Source of Truth
+        if originals and len(originals) == len(valid_targets):
+            original_values = [str(v) for v in originals]
+            print(f"  Using provided originals: {original_values}")
+        else:
+            print("  Falling back to RNA values")
+            original_values = [str(getattr(e.value_link[index], field)) for e in valid_targets]
+            print(f"  RNA values: {original_values}")
+
+        # 2. Re-detect pattern
+        old_pattern, _ = find_common_pattern(original_values)
+        print(f"  Detected old pattern: '{old_pattern}'")
+        
+        if not old_pattern or old_pattern == new_pattern:
+            print("  No change needed or no pattern detected")
+            return
+
+        # 3. Apply pattern change
+        try:
+            new_values = apply_pattern_change(original_values, old_pattern, new_pattern)
+            print(f"  Transformation result: {new_values}")
+        except Exception as e:
+            print(f"  !! Error in apply_pattern_change: {e}")
+            return
+
+        # 4. Write back
+        changed = False
+        for i, elem in enumerate(valid_targets):
+            item = elem.value_link[index]
+            new_val = new_values[i]
+            if str(getattr(item, field)) != new_val:
+                setattr(item, field, new_val)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Pattern Rename VL {field}")
+            signals.SIGNALS.data_changed.emit()

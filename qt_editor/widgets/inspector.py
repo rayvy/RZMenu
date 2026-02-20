@@ -256,10 +256,21 @@ class RZValueLinkItem(QtWidgets.QWidget):
         l_range.addWidget(self.spin_max)
         
         layout.addWidget(self.w_ranges)
-        # self.w_ranges.setVisible(is_slider)
+        
+        # Pattern mode for Value Name
+        pattern = data.get('value_name_pattern')
+        if pattern:
+            self.edit_name.set_pattern(pattern)
+        else:
+            self.edit_name.clear_pattern()
+            self.edit_name.setText(data.get('value_name', ''))
 
     def _on_name_changed(self):
-        self.parent_list.item_changed(self.index, 'value_name', self.edit_name.text())
+        new_val = self.edit_name.text()
+        if self.edit_name.get_pattern():
+            self.parent_list.item_pattern_changed(self.index, 'value_name', new_val, self.edit_name.get_originals())
+        else:
+            self.parent_list.item_changed(self.index, 'value_name', new_val)
 
     def _on_min_changed(self, val):
         self.parent_list.item_changed(self.index, 'value_min', float(val))
@@ -318,7 +329,19 @@ class RZValueLinkList(QtWidgets.QWidget):
         if self._block: return
         ctx = RZContextManager.get_instance().get_snapshot()
         if ctx.selected_ids:
+            # Safety for literal dots in standard update
+            if len(ctx.selected_ids) > 1 and isinstance(value, str) and "..." in value:
+                print(f"[VL_LIST] Blocking standard VL update at index {index} because it contains '...'")
+                return
+            print(f"[VL_LIST] Standard update VL index {index}, field '{field}': {value}")
             core.props.update_value_link(ctx.selected_ids, index, field, value)
+
+    def item_pattern_changed(self, index, field, new_pattern, originals=None):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            print(f"[VL_LIST] Pattern update VL index {index}, field '{field}'. Originals: {len(originals) if originals else 'None'}")
+            core.props.update_value_link_multi_pattern(ctx.selected_ids, index, field, new_pattern, originals)
 
 
 class RZFXItem(QtWidgets.QWidget):
@@ -1107,14 +1130,39 @@ class RZMInspectorPanel(RZEditorPanel):
                 core.update_property_multi(ctx.selected_ids, 'qt_lock_size', val)
                 return
 
-            # Use mapping to determine if we need int casting
-            from ..core.props import PROP_MAP
-            mapping = PROP_MAP.get(key)
-            if mapping and mapping[1] is not None: # It's a sub-index prop often needing int
-                 val = int(float(val))
-            elif key in ['grid_cell_size', 'priority', 'grid_min_cells', 'grid_max_cells']:
-                 val = int(float(val))
+            # Check for pattern mode (multi-renaming)
+            is_pattern_edit = False
+            if key == 'element_name' and self.name_edit.get_pattern():
+                is_pattern_edit = True
+                print(f"[INSPECTOR] Pattern edit for 'element_name'. Originals: {len(self.name_edit.get_originals())}")
+                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, self.name_edit.get_originals())
+            elif key == 'text_id' and self.edit_txt_id.get_pattern():
+                is_pattern_edit = True
+                print(f"[INSPECTOR] Pattern edit for 'text_id'. Originals: {len(self.edit_txt_id.get_originals())}")
+                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, self.edit_txt_id.get_originals())
+            elif key == 'hover_text_id' and self.edit_hov_txt.get_pattern():
+                is_pattern_edit = True
+                print(f"[INSPECTOR] Pattern edit for 'hover_text_id'. Originals: {len(self.edit_hov_txt.get_originals())}")
+                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, self.edit_hov_txt.get_originals())
             
+            if is_pattern_edit:
+                return
+
+            # Safety: don't allow writing literal "..." in standard mode if multi-selected
+            if len(ctx.selected_ids) > 1 and isinstance(val, str) and "..." in val:
+                print(f"[INSPECTOR] Blocking standard update for '{key}' because it contains '...' but no pattern mode active.")
+                return
+
+            print(f"[INSPECTOR] Standard update for '{key}': {val}")
+            if is_pattern_edit:
+                return
+
+            # Safety: don't allow writing literal "..." in standard mode if multi-selected
+            if len(ctx.selected_ids) > 1 and isinstance(val, str) and "..." in val:
+                print(f"[INSPECTOR] Blocking standard update for '{key}' because it contains '...' but no pattern mode active.")
+                return
+
+            print(f"[INSPECTOR] Standard update for '{key}': {val}")
             core.update_property_multi(ctx.selected_ids, key, val, sub)
 
     def _emit_math(self, key, op_str):
@@ -1132,7 +1180,14 @@ class RZMInspectorPanel(RZEditorPanel):
             
             # --- Identity ---
             self.lbl_id.setText(f"ID: {props.get('id')}" if not props.get('is_multi') else "Multiple Selection")
-            self.name_edit.setText(props.get('name', ''))
+            
+            # Pattern mode for Name
+            name_pattern = props.get('name_pattern')
+            if name_pattern:
+                self.name_edit.set_pattern(name_pattern, props.get('original_names'))
+            else:
+                self.name_edit.clear_pattern()
+                self.name_edit.setText(props.get('name', ''))
             self.edit_tag.setText(props.get('tag', ''))
             self.spin_priority.setValue(props.get('priority', 0))
             self.chk_main_window.setChecked(props.get('is_main_window') is True)
@@ -1276,8 +1331,20 @@ class RZMInspectorPanel(RZEditorPanel):
 
             self.tile_uv_x.setValue(props.get('tile_uv_x', 0))
             self.tile_uv_y.setValue(props.get('tile_uv_y', 0))
-            self.edit_txt_id.setText(props.get('text_id', ''))
-            self.edit_hov_txt.setText(props.get('hover_text_id', ''))
+            
+            # Text ID pattern
+            txt_pat = props.get('text_id_pattern')
+            if txt_pat: self.edit_txt_id.set_pattern(txt_pat, props.get('original_text_ids'))
+            else:
+                self.edit_txt_id.clear_pattern()
+                self.edit_txt_id.setText(props.get('text_id', ''))
+                
+            # Hover Text ID pattern
+            hov_pat = props.get('hover_text_id_pattern')
+            if hov_pat: self.edit_hov_txt.set_pattern(hov_pat, props.get('original_hover_text_ids'))
+            else:
+                self.edit_hov_txt.clear_pattern()
+                self.edit_hov_txt.setText(props.get('hover_text_id', ''))
 
             # --- Text Mode ---
             txt_mode = props.get('text_mode', 'SINGLE')

@@ -2,6 +2,7 @@
 import bpy
 import re
 from ..utils.image_cache import ImageCache
+from ..utils.string_utils import find_common_pattern
 
 def get_all_elements_list():
     results = []
@@ -103,6 +104,8 @@ def get_selection_details(selected_ids, active_id):
             "exists": True, "id": target.id, "active_id": active_id,
             "selected_ids": list(selected_ids), 
             "name": target.element_name if len(selection) <= 1 else "Multiple Elements",
+            "name_pattern": find_common_pattern([e.element_name for e in selection])[0] if len(selection) > 1 else "",
+            "original_names": [e.element_name for e in selection] if len(selection) > 1 else [],
             "class_type": get_uniform("elem_class"),
             
             # Identity & Meta
@@ -150,7 +153,11 @@ def get_selection_details(selected_ids, active_id):
             "color_formula_b": get_uniform("color_formula_b", default="1"),
             "color_formula_a": get_uniform("color_formula_a", default="1"),
             "text_id": get_uniform("text_id", default=""),
+            "text_id_pattern": find_common_pattern([e.text_id for e in selection])[0] if len(selection) > 1 else "",
+            "original_text_ids": [e.text_id for e in selection] if len(selection) > 1 else [],
             "hover_text_id": get_uniform("hover_text_id", default=""),
+            "hover_text_id_pattern": find_common_pattern([e.hover_text_id for e in selection])[0] if len(selection) > 1 else "",
+            "original_hover_text_ids": [e.hover_text_id for e in selection] if len(selection) > 1 else [],
             "text_mode": get_uniform("text_mode", default="SINGLE"),
             "conditional_texts": [
                 {"condition": ct.condition, "text_id": ct.text_id} 
@@ -187,10 +194,18 @@ def get_selection_details(selected_ids, active_id):
             "value_links": [
                 {
                     "value_name": vl.value_name,
+                    "value_name_pattern": find_common_pattern([
+                        next((v.value_name for v in e.value_link if i < len(e.value_link)), "") 
+                        for e in selection
+                    ])[0] if len(selection) > 1 else "",
+                    "original_value_names": [
+                        next((v.value_name for v in e.value_link if i < len(e.value_link)), "") 
+                        for e in selection
+                    ] if len(selection) > 1 else [],
                     "value_min": vl.value_min,
                     "value_max": vl.value_max
                 }
-                for vl in target.value_link
+                for i, vl in enumerate(target.value_link)
             ] if target else [],
             
             "fx": [
