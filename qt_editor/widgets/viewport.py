@@ -1197,7 +1197,6 @@ class RZViewportView(QtWidgets.QGraphicsView):
 
     def dragMoveEvent(self, event):
         mime = event.mimeData()
-        # ОЧЕНЬ ВАЖНО: dragMoveEvent тоже должен подтверждать прием!
         if (mime.hasUrls() or 
             mime.hasFormat("application/x-rzmenu-image-id") or 
             mime.hasFormat("application/x-rzmenu-template")): 
@@ -1207,12 +1206,18 @@ class RZViewportView(QtWidgets.QGraphicsView):
             scene_pos = self.mapToScene(event.pos())
             item = self.rz_scene.itemAt(scene_pos, QtGui.QTransform())
             
-            # Reset previous highlight
+            # Update hover_id in context manager
+            ctx = RZContextManager.get_instance()
+            target_uid = item.uid if isinstance(item, RZElementItem) else -1
+            ctx.set_hover_id(target_uid)
+            
+            # Reset previous highlight if target changed
             if hasattr(self, '_last_dnd_item') and self._last_dnd_item != item:
                 if self._last_dnd_item and shiboken6.isValid(self._last_dnd_item):
                     if hasattr(self._last_dnd_item, 'set_drop_highlight'):
                         self._last_dnd_item.set_drop_highlight(False)
             
+            # Set new highlight
             if isinstance(item, RZElementItem) and (mime.hasUrls() or mime.hasFormat("application/x-rzmenu-image-id")):
                 item.set_drop_highlight(True)
                 self._last_dnd_item = item
@@ -1221,12 +1226,34 @@ class RZViewportView(QtWidgets.QGraphicsView):
         else:
             super().dragMoveEvent(event)
 
+    def dragLeaveEvent(self, event):
+        # Clear highlight when leaving viewport
+        if hasattr(self, '_last_dnd_item') and self._last_dnd_item:
+            if shiboken6.isValid(self._last_dnd_item):
+                if hasattr(self._last_dnd_item, 'set_drop_highlight'):
+                    self._last_dnd_item.set_drop_highlight(False)
+        self._last_dnd_item = None
+        RZContextManager.get_instance().set_hover_id(-1)
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event):
         try:
             mime = event.mimeData()
             scene_pos = self.mapToScene(event.pos())
             bx = int(scene_pos.x())
             by = int(scene_pos.y())
+            
+            # Get target item from context
+            ctx = RZContextManager.get_instance()
+            target_uid = ctx._hover_id
+            
+            # Clear highlight
+            if hasattr(self, '_last_dnd_item') and self._last_dnd_item:
+                if shiboken6.isValid(self._last_dnd_item):
+                    if hasattr(self._last_dnd_item, 'set_drop_highlight'):
+                        self._last_dnd_item.set_drop_highlight(False)
+            self._last_dnd_item = None
+            ctx.set_hover_id(-1)
 
             # 1. Внутренний Шаблон (Из Asset Browser)
             if mime.hasFormat("application/x-rzmenu-template"):
@@ -1244,9 +1271,13 @@ class RZViewportView(QtWidgets.QGraphicsView):
             if mime.hasFormat("application/x-rzmenu-image-id"):
                 data = mime.data("application/x-rzmenu-image-id")
                 image_id = int(data.data().decode('utf-8'))
-                core.create_element_with_image(image_id, bx, by)
-                event.acceptProposedAction()
-                return
+                
+                if target_uid >= 0:
+                    core.update_property_multi([target_uid], "image_id", image_id)
+                else:
+                    core.create_element_with_image(image_id, bx, by)
+                
+                event.acceptProposedAction(); return
 
             # 3. Внешний файл (Из Windows Explorer)
             if mime.hasUrls():
@@ -1257,21 +1288,19 @@ class RZViewportView(QtWidgets.QGraphicsView):
                     if not path: continue
                     ext = os.path.splitext(path)[1].lower()
 
-                    # Если кинули .rzmt СНАРУЖИ -> просто импортируем (как ты просил в п.3)
                     if ext == '.rzmt':
-                        print(f"[Viewport] External Template Drop: {path}")
                         blender_bridge.import_template_direct(path, offset=(bx + offset_counter, by - offset_counter))
                         offset_counter += 20
-                    
-                    # Если кинули картинку -> импорт и создание
                     elif ext in ['.png', '.jpg', '.jpeg', '.tga', '.bmp']:
                         img_id, _ = core.import_image_from_path(path)
                         if img_id is not None:
-                            core.create_element_with_image(img_id, bx + offset_counter, by - offset_counter)
+                            if target_uid >= 0 and offset_counter == 0:
+                                core.update_property_multi(target_uid, {"image_id": img_id})
+                            else:
+                                core.create_element_with_image(img_id, bx + offset_counter, by - offset_counter)
                             offset_counter += 20
                             
-                event.acceptProposedAction()
-                return
+                event.acceptProposedAction(); return
 
             super().dropEvent(event)
 
