@@ -551,6 +551,20 @@ class RZM_OT_SetSlotCalcRes(bpy.types.Operator):
             pass
         return {'FINISHED'}
 
+class RZM_OT_CalcSplittedIslandConfig(bpy.types.Operator):
+    bl_idname = "rzm.calc_splitted_island_config"
+    bl_label = "Calculate Splitted Island (Exp)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    block_index: bpy.props.IntProperty()
+    comp_index: bpy.props.IntProperty()
+    slot_index: bpy.props.IntProperty()
+
+    def execute(self, context):
+        self.report({'INFO'}, "Splitted Island Calculation (Experimental Placeholder)")
+        # TODO: Implement seamless double-pass math here
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_UpdateTwItem,
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
@@ -562,5 +576,6 @@ classes_to_register = [
     RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_SetTwActiveLayer, RZM_OT_MoveTwItem,
     RZM_OT_CalcSlotConfig,
     RZM_OT_SetSlotCalcRes,
+    RZM_OT_CalcSplittedIslandConfig,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
 ]

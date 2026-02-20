@@ -496,6 +496,8 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                 
                                 op1 = op_row.operator("rzm.calc_slot_config", text="Calculate Pass 1", icon='PLAY')
                                 op1.block_index = b_idx; op1.comp_index = c_idx; op1.slot_index = s_idx; op1.target_pass = 1
+                                
+                                calc_box.operator("rzm.calc_splitted_island_config", text="Calc Splitted Island (Exp)", icon='MOD_UVPROJECT').block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx
 
                                 # --- TRANSFORM GROUP (PASS 0) ---
                                 t_box = s_item.box()
