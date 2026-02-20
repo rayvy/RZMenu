@@ -469,6 +469,34 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                 row.prop(slot, "name", text="Slot Name")
                                 row.operator("rzm.remove_tw_slot", text="", icon='X').block_index = b_idx; op.comp_index = c_idx; op.index = s_idx
                                 
+                                # --- UV CALCULATOR (Auto-Config) ---
+                                calc_box = s_item.box()
+                                calc_box.label(text="UV Calculator (Auto-Config):", icon='UV')
+                                
+                                # Resolution Controls
+                                res_row = calc_box.row(align=True)
+                                res_row.prop(slot, "calc_res_x", text="X")
+                                res_row.prop(slot, "calc_res_y", text="Y")
+                                
+                                # Presets
+                                pre_row = calc_box.row(align=True)
+                                pre2 = pre_row.operator("rzm.set_slot_calc_res", text="Set 2048")
+                                pre2.block_index = b_idx; pre2.comp_index = c_idx; pre2.slot_index = s_idx; pre2.res = 2048
+                                
+                                pre4 = pre_row.operator("rzm.set_slot_calc_res", text="Set 4096")
+                                pre4.block_index = b_idx; pre4.comp_index = c_idx; pre4.slot_index = s_idx; pre4.res = 4096
+                                
+                                # Padding
+                                calc_box.prop(slot, "calc_padding", text="Padding (Px)")
+                                
+                                # Calc Buttons
+                                op_row = calc_box.row(align=True)
+                                op0 = op_row.operator("rzm.calc_slot_config", text="Calculate Pass 0", icon='PLAY')
+                                op0.block_index = b_idx; op0.comp_index = c_idx; op0.slot_index = s_idx; op0.target_pass = 0
+                                
+                                op1 = op_row.operator("rzm.calc_slot_config", text="Calculate Pass 1", icon='PLAY')
+                                op1.block_index = b_idx; op1.comp_index = c_idx; op1.slot_index = s_idx; op1.target_pass = 1
+
                                 # --- TRANSFORM GROUP (PASS 0) ---
                                 t_box = s_item.box()
                                 t_box.label(text="Transform (Pass 0 / Main):", icon='NODE_SOCKET_MATRIX')

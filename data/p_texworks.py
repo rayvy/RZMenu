@@ -114,6 +114,11 @@ class TexWorksSlot(bpy.types.PropertyGroup):
     warp_p1_debug: BoolProperty(name="Debug Mode P1", default=False)
     warp_p1_grid: FloatVectorProperty(name="Lattice P1", size=18, default=(0.0,)*18)
 
+    # UV Calculator Settings
+    calc_res_x: IntProperty(name="Res X", default=2048, min=1)
+    calc_res_y: IntProperty(name="Res Y", default=2048, min=1)
+    calc_padding: IntProperty(name="Padding", default=4, min=0)
+
     # HSV: Теперь одна ссылка на Векторную переменную
     hsv_enabled: BoolProperty(default=False)
     hsv_mask_enabled: BoolProperty(name="Use HSV Mask", default=False)

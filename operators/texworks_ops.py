@@ -228,6 +228,8 @@ class RZM_OT_RemoveTwDecalLayer(bpy.types.Operator):
         if 0 <= idx < len(coll): coll.remove(idx)
         return {'FINISHED'}
 
+from ..utils.texworks_calc import calculate_slot_config
+
 class RZM_OT_SetActiveBlock(bpy.types.Operator):
     bl_idname = "rzm.set_active_block"
     bl_label = "Set Active Block"
@@ -482,6 +484,73 @@ class RZ_OT_TexWorksDebugSync(bpy.types.Operator):
         self.report({'INFO'}, "TexWorks data printed to console.")
         return {'FINISHED'}
 
+class RZM_OT_CalcSlotConfig(bpy.types.Operator):
+    bl_idname = "rzm.calc_slot_config"
+    bl_label = "Calculate Slot Config"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    block_index: bpy.props.IntProperty()
+    comp_index: bpy.props.IntProperty()
+    slot_index: bpy.props.IntProperty()
+    target_pass: bpy.props.IntProperty(default=0) # 0 = Pass 0, 1 = Pass 1
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        try:
+            slot = rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index]
+        except IndexError:
+            self.report({'ERROR'}, "Invalid Slot selection")
+            return {'CANCELLED'}
+
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "Select a Mesh object")
+            return {'CANCELLED'}
+
+        res_x = slot.calc_res_x
+        res_y = slot.calc_res_y
+        padding = slot.calc_padding
+        
+        result = calculate_slot_config(obj, res_x, res_y, padding)
+        
+        if not result:
+            self.report({'ERROR'}, "Calculation failed (check selection)")
+            return {'CANCELLED'}
+
+        rect, lattice = result
+        
+        if self.target_pass == 0:
+            slot.rect = rect
+            slot.warp_p0_enabled = True
+            slot.warp_p0_grid = lattice
+        else:
+            slot.multi_pass_rect = rect
+            slot.warp_p1_enabled = True
+            slot.warp_p1_grid = lattice
+
+        self.report({'INFO'}, f"Calculated Pass {self.target_pass} for {slot.name}")
+        return {'FINISHED'}
+
+class RZM_OT_SetSlotCalcRes(bpy.types.Operator):
+    bl_idname = "rzm.set_slot_calc_res"
+    bl_label = "Set Calc Resolution"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    block_index: bpy.props.IntProperty()
+    comp_index: bpy.props.IntProperty()
+    slot_index: bpy.props.IntProperty()
+    res: bpy.props.IntProperty()
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        try:
+            slot = rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index]
+            slot.calc_res_x = self.res
+            slot.calc_res_y = self.res
+        except IndexError:
+            pass
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_UpdateTwItem,
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
@@ -491,5 +560,7 @@ classes_to_register = [
     RZM_OT_AddTwComponent, RZM_OT_RemoveTwComponent, RZM_OT_SetActiveComponent,
     RZM_OT_AddTwSlot, RZM_OT_RemoveTwSlot, RZM_OT_SetActiveSlot,
     RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_SetTwActiveLayer, RZM_OT_MoveTwItem,
+    RZM_OT_CalcSlotConfig,
+    RZM_OT_SetSlotCalcRes,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
 ]

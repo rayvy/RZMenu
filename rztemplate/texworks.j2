@@ -112,10 +112,69 @@ run = CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}
 {# 3. Decal Layers #}
 {% for slot in comp.slots if slot.active %}
     {% for layer in slot.decal_layers if layer.active %}
-        {% if slot.warp_p0_debug %};DEBUG MOD ON FOR {{ slot.name }}Pass0{% endif %}
+            {% if slot.warp_p0_debug %}
+            ;DEBUG MOD ON FOR {{ slot.name }}Pass0
+            ;DEBUG MODE For Lattice
+            ;TopLeft float2
+            ;x30 = 0.0
+            ;y30 = 0.0
+            ;TopMiddle float2
+            ;x31 = 0.0
+            ;y31 = 0.0
+            ;TopRight float2
+            ;x32 = 0.0
+            ;y32 = 0.0
+            ;CenterLeft float2
+            ;x33 = 0.0
+            ;y33 = 0.0
+            ;CenterMiddle float2
+            ;x34 = 0.0
+            ;y34 = 0.0
+            ;CenterRight float2
+            ;x35 = 0.0
+            ;y35 = 0.0
+            ;BottomLeft float2
+            ;x36 = 0.0
+            ;y36 = 0.0
+            ;BottomMiddle float2
+            ;x37 = 0.0
+            ;y37 = 0.0
+            ;BottomRight float2
+            ;x38 = 0.0
+            ;y38 = 0.0
+            {% endif %}
 run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P0
         {% if slot.multi_pass_mode != 'NONE' %}
-            {% if slot.warp_p1_debug %};DEBUG MOD ON FOR {{ slot.name }}Pass1{% endif %}
+            {% if slot.warp_p1_debug %}
+            ;DEBUG MOD ON FOR {{ slot.name }}Pass1
+            ;TopLeft float2
+            ;x30 = 0.0
+            ;y30 = 0.0
+            ;TopMiddle float2
+            ;x31 = 0.0
+            ;y31 = 0.0
+            ;TopRight float2
+            ;x32 = 0.0
+            ;y32 = 0.0
+            ;CenterLeft float2
+            ;x33 = 0.0
+            ;y33 = 0.0
+            ;CenterMiddle float2
+            ;x34 = 0.0
+            ;y34 = 0.0
+            ;CenterRight float2
+            ;x35 = 0.0
+            ;y35 = 0.0
+            ;BottomLeft float2
+            ;x36 = 0.0
+            ;y36 = 0.0
+            ;BottomMiddle float2
+            ;x37 = 0.0
+            ;y37 = 0.0
+            ;BottomRight float2
+            ;x38 = 0.0
+            ;y38 = 0.0
+            {% endif %}
 run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P1
         {% endif %}
     {% endfor %}
@@ -171,15 +230,11 @@ dispatch = {{ comp.rect[2] }} // 32, {{ comp.rect[3] }} // 32, 1
 filename = {{ comp_path }}/{{ slot.name }}/{{ clean_comp }}{{ clean_slot }}.MASK.png
 {% endif %}
 
-{# New Config Buffer for Slot #}
-[Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config]
+{# New Config Buffers for Slot #}
+[Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.P0]
 type = Buffer
 format = R32_FLOAT
-{% if slot.multi_pass_mode != 'NONE' %}
-array = 16
-{% else %}
 array = 8
-{% endif %}
 {% set p0_x = comp.rect[0] + slot.rect[0] %}
 {% set p0_y = comp.rect[1] + slot.rect[1] %}
 {% set p0_w = slot.rect[2] %}
@@ -188,18 +243,22 @@ array = 8
 {% set p0_dmy = slot.dummy %}
 {% set p0_mir = 1.0 if slot.mirror else 0.0 %}
 {% set p0_flp = 1.0 if slot.flip else 0.0 %}
+data = {{ p0_x }} {{ p0_y }} {{ p0_w }} {{ p0_h }} {{ p0_rot }} {{ p0_dmy }} {{ p0_mir }} {{ p0_flp }}
+
 {% if slot.multi_pass_mode != 'NONE' %}
-    {% set p1_x = slot.multi_pass_rect[0] %}
-    {% set p1_y = slot.multi_pass_rect[1] %}
-    {% set p1_w = slot.multi_pass_rect[2] %}
-    {% set p1_h = slot.multi_pass_rect[3] %}
-    {% set p1_rot = slot.multi_pass_rotation %}
-    {% set p1_dmy = slot.multi_pass_dummy %}
-    {% set p1_mir = 1.0 if slot.multi_pass_mirror else 0.0 %}
-    {% set p1_flp = 1.0 if slot.multi_pass_flip else 0.0 %}
-    data = {{ p0_x }} {{ p0_y }} {{ p0_w }} {{ p0_h }} {{ p0_rot }} {{ p0_dmy }} {{ p0_mir }} {{ p0_flp }} {{ p1_x }} {{ p1_y }} {{ p1_w }} {{ p1_h }} {{ p1_rot }} {{ p1_dmy }} {{ p1_mir }} {{ p1_flp }}
-{% else %}
-    data = {{ p0_x }} {{ p0_y }} {{ p0_w }} {{ p0_h }} {{ p0_rot }} {{ p0_dmy }} {{ p0_mir }} {{ p0_flp }}
+[Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.P1]
+type = Buffer
+format = R32_FLOAT
+array = 8
+{% set p1_x = slot.multi_pass_rect[0] %}
+{% set p1_y = slot.multi_pass_rect[1] %}
+{% set p1_w = slot.multi_pass_rect[2] %}
+{% set p1_h = slot.multi_pass_rect[3] %}
+{% set p1_rot = slot.multi_pass_rotation %}
+{% set p1_dmy = slot.multi_pass_dummy %}
+{% set p1_mir = 1.0 if slot.multi_pass_mirror else 0.0 %}
+{% set p1_flp = 1.0 if slot.multi_pass_flip else 0.0 %}
+data = {{ p1_x }} {{ p1_y }} {{ p1_w }} {{ p1_h }} {{ p1_rot }} {{ p1_dmy }} {{ p1_mir }} {{ p1_flp }}
 {% endif %}
 
 {# Warp Buffers #}
@@ -266,7 +325,7 @@ cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
 cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
 cs-t2 = {% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
-cs-t3 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config
+cs-t3 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.P{{ pass_idx }}
 {% if pass_idx == 0 and slot.warp_p0_enabled %}
 cs-t4 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P0
 {% elif pass_idx == 1 and slot.warp_p1_enabled %}
@@ -300,8 +359,6 @@ if ${{ l_var_base }}Index0 >= 0
         cs-t0 = Resource_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
-
-    x44 = 0
     w44 = {{ 1.0 if (slot.mask_enabled and slot.pass0_use_mask) else 0.0 }}
     dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
 endif
@@ -318,8 +375,6 @@ if ${{ p1_idx_var }} >= 0
         cs-t0 = Resource_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
-
-    x44 = 1
     w44 = {{ 1.0 if (slot.mask_enabled and slot.pass1_use_mask) else 0.0 }}
     dispatch = ({{ slot.multi_pass_rect[2] }} + 31) // 32, ({{ slot.multi_pass_rect[3] }} + 31) // 32, 1
 endif
