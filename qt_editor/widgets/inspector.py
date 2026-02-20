@@ -1134,16 +1134,19 @@ class RZMInspectorPanel(RZEditorPanel):
             is_pattern_edit = False
             if key == 'element_name' and self.name_edit.get_pattern():
                 is_pattern_edit = True
-                print(f"[INSPECTOR] Pattern edit for 'element_name'. Originals: {len(self.name_edit.get_originals())}")
-                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, self.name_edit.get_originals())
+                originals = self.name_edit.get_originals()
+                print(f"[INSPECTOR] Pattern edit for 'element_name'. Originals ({len(originals)}): {originals}")
+                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, originals)
             elif key == 'text_id' and self.edit_txt_id.get_pattern():
                 is_pattern_edit = True
-                print(f"[INSPECTOR] Pattern edit for 'text_id'. Originals: {len(self.edit_txt_id.get_originals())}")
-                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, self.edit_txt_id.get_originals())
+                originals = self.edit_txt_id.get_originals()
+                print(f"[INSPECTOR] Pattern edit for 'text_id'. Originals ({len(originals)}): {originals}")
+                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, originals)
             elif key == 'hover_text_id' and self.edit_hov_txt.get_pattern():
                 is_pattern_edit = True
-                print(f"[INSPECTOR] Pattern edit for 'hover_text_id'. Originals: {len(self.edit_hov_txt.get_originals())}")
-                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, self.edit_hov_txt.get_originals())
+                originals = self.edit_hov_txt.get_originals()
+                print(f"[INSPECTOR] Pattern edit for 'hover_text_id'. Originals ({len(originals)}): {originals}")
+                core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, originals)
             
             if is_pattern_edit:
                 return

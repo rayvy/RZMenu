@@ -478,15 +478,15 @@ def update_property_multi_pattern(target_ids, prop_name, new_pattern, sub_index=
         # 1. Source of Truth: Use provided originals or fall back to current RNA
         if originals and len(originals) == len(targets):
             original_values = [str(v) for v in originals]
-            print(f"  Using provided originals: {original_values}")
+            print(f"  [SOURCE_OF_TRUTH] Using provided originals: {original_values}")
         else:
-            print("  Falling back to RNA values (Originals missing or length mismatch)")
+            print(f"  [SOURCE_OF_TRUTH] Falling back to RNA values (Originals: {len(originals) if originals else 'None'}, Targets: {len(targets)})")
             original_values = []
             for e in targets:
                 val = getattr(e, bl_prop)
                 if bl_idx is not None: val = val[bl_idx]
                 original_values.append(str(val))
-            print(f"  RNA values: {original_values}")
+            print(f"  [SOURCE_OF_TRUTH] RNA values: {original_values}")
 
         # 2. Re-detect the pattern from original values to know what to replace
         old_pattern, _ = find_common_pattern(original_values)
@@ -546,11 +546,11 @@ def update_value_link_multi_pattern(target_ids, index, field, new_pattern, origi
         # 1. Source of Truth
         if originals and len(originals) == len(valid_targets):
             original_values = [str(v) for v in originals]
-            print(f"  Using provided originals: {original_values}")
+            print(f"  [SOURCE_OF_TRUTH] Using provided originals for VL: {original_values}")
         else:
-            print("  Falling back to RNA values")
+            print(f"  [SOURCE_OF_TRUTH] Falling back to RNA values for VL (Originals: {len(originals) if originals else 'None'}, Targets: {len(valid_targets)})")
             original_values = [str(getattr(e.value_link[index], field)) for e in valid_targets]
-            print(f"  RNA values: {original_values}")
+            print(f"  [SOURCE_OF_TRUTH] RNA values for VL: {original_values}")
 
         # 2. Re-detect pattern
         old_pattern, _ = find_common_pattern(original_values)
