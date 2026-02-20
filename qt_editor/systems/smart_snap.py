@@ -19,7 +19,8 @@ class SmartSnapSystem:
             if isinstance(item, RZElementItem) and item.isVisible() and item not in exclude_items:
                 # Нормализуем Rect, чтобы ширина/высота всегда были положительными
                 r = item.rect().normalized()
-                pos = item.pos()
+                # Use scenePos() for true Global Coordinates
+                pos = item.scenePos()
                 # Абсолютные координаты в сцене
                 scene_rect = QtCore.QRectF(pos.x() + r.x(), pos.y() + r.y(), r.width(), r.height())
                 targets.append(scene_rect)

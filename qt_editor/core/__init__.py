@@ -3,7 +3,7 @@
 # This makes "import core" work just like before.
 
 from .signals import SIGNALS, IS_UPDATING_FROM_QT
-from .maths import to_qt_coords, to_blender_delta, get_global_pos, get_local_pos_from_global
+from .maths import to_qt_coords, to_blender_delta, to_blender_coords, get_global_pos, get_local_pos_from_global
 from .blender_bridge import get_stable_context, exec_in_context, refresh_viewports, safe_undo_push
 
 from .read import (
@@ -22,6 +22,7 @@ from .transform import (
     resize_element,
     move_elements_delta,
     set_element_position,
+    set_multiple_element_positions,
     update_element_pos,
     align_elements
 )

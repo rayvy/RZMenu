@@ -48,9 +48,10 @@ class RZFontAtlasMetrics:
 class RZHandleItem(QtWidgets.QGraphicsRectItem):
     TOP_LEFT, TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT = range(8)
 
-    def __init__(self, handle_type, parent):
-        super().__init__(0, 0, HANDLE_SIZE, HANDLE_SIZE, parent)
+    def __init__(self, handle_type, target_item):
+        super().__init__(0, 0, HANDLE_SIZE, HANDLE_SIZE) # Parent is None (Scene Root)
         self.handle_type = handle_type
+        self.target_item = target_item # The item this handle manipulates
         
         t = get_current_theme()
         self.normal_brush = QtGui.QBrush(QtGui.QColor(t.get('vp_handle', '#FFFFFF')))
@@ -58,8 +59,8 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         
         self.setBrush(self.normal_brush)
         self.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_handle_border', '#000000')), 1))
-        # Rayvich: Possible bugs - Fixed priority by setting extremely high Z
-        self.setZValue(10000) 
+        # Rayvich: Fix Blocking - Handles are now Scene Roots with max Z.
+        self.setZValue(1e9) 
         
         cursors = {
             self.TOP_LEFT: QtCore.Qt.SizeFDiagCursor, self.BOTTOM_RIGHT: QtCore.Qt.SizeFDiagCursor,
@@ -72,7 +73,7 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         self._start_mouse_pos = None
 
     def hoverEnterEvent(self, event):
-        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
+        if self.target_item and (getattr(self.target_item, 'is_locked_pos', False) or getattr(self.target_item, 'is_locked_size', False)):
             return
         self.setBrush(self.hover_brush)
         super().hoverEnterEvent(event)
@@ -93,15 +94,15 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         painter.drawRoundedRect(self.rect(), 2, 2)
 
     def mousePressEvent(self, event):
-        if self.parentItem() and (getattr(self.parentItem(), 'is_locked_pos', False) or getattr(self.parentItem(), 'is_locked_size', False)):
+        if self.target_item and (getattr(self.target_item, 'is_locked_pos', False) or getattr(self.target_item, 'is_locked_size', False)):
             event.ignore(); return
         
         self._start_mouse_pos = event.scenePos()
         
-        # Prepare Smart Snap targets (exclude self)
+        # Prepare Smart Snap targets (exclude self's target)
         scene = self.scene()
         if scene:
-            scene.prepare_smart_snap(exclude_items=[self.parentItem()])
+            scene.prepare_smart_snap(exclude_items=[self.target_item])
             scene.interaction_start_signal.emit()
         
         event.accept()
@@ -109,14 +110,14 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
     def mouseMoveEvent(self, event):
         if self._start_mouse_pos is not None:
             total_delta = event.scenePos() - self._start_mouse_pos
-            self.parentItem().handle_resize(self.handle_type, total_delta)
+            self.target_item.handle_resize(self.handle_type, total_delta)
             event.accept()
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         self._start_mouse_pos = None
-        self.parentItem().finalize_resize()
+        self.target_item.finalize_resize()
         
         scene = self.scene()
         if scene:
@@ -158,7 +159,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self._initial_pos = None
         self._aspect_ratio = 1.0
 
-        self.setFlags(QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | QtWidgets.QGraphicsItem.ItemIsSelectable)
+        self.setFlags(QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | QtWidgets.QGraphicsItem.ItemIsSelectable | QtWidgets.QGraphicsItem.ItemSendsScenePositionChanges)
         
         # Инициализация шрифта
         self._ensure_font_loaded()
@@ -184,6 +185,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         else:
             print(f"[VIEWPORT] Font not found at: {font_path}")
 
+    def itemChange(self, change, value):
+        if change == QtWidgets.QGraphicsItem.ItemScenePositionHasChanged:
+            self.update_handles_pos()
+        return super().itemChange(change, value)
+
     def get_inner_origin(self): return self.rect().topLeft()
 
     def get_anchor_offset(self, w, h, alignment):
@@ -201,26 +207,48 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
     def create_handles(self):
         if self.handles: return
+        scene = self.scene()
+        if not scene: return
+        
         for h_type in range(8):
-            self.handles[h_type] = RZHandleItem(h_type, self)
+            h_item = RZHandleItem(h_type, self) # Parent is None
+            scene.addItem(h_item)
+            self.handles[h_type] = h_item
+            
         self.update_handles_pos()
 
     def update_handles_pos(self):
         if not self.handles: return
-        r = self.rect()
-        x, y, w, h = r.x(), r.y(), r.width(), r.height()
+        
+        # Calculate Global (Scene) Position for handles
+        # because they are now Scene Roots.
+        local_r = self.rect()
+        # We need points in scene space
+        x, y, w, h = local_r.x(), local_r.y(), local_r.width(), local_r.height()
         hs, hh = HANDLE_SIZE, HANDLE_SIZE / 2
-        positions = [
+        
+        # Local offsets for handles
+        positions_local = [
             (x - hh, y - hh), (x + w/2 - hh, y - hh), (x + w - hh, y - hh),
             (x + w - hh, y + h/2 - hh), (x + w - hh, y + h - hh), (x + w/2 - hh, y + h - hh),
             (x - hh, y + h - hh), (x - hh, y + h/2 - hh)
         ]
-        for h_type, pos in enumerate(positions):
-            if h_type in self.handles: self.handles[h_type].setPos(*pos)
+        
+        for h_type, local_pos in enumerate(positions_local):
+            if h_type in self.handles:
+                # Map local point to scene
+                scene_pt = self.mapToScene(QtCore.QPointF(*local_pos))
+                self.handles[h_type].setPos(scene_pt)
 
     def set_handles_visible(self, visible):
-        if not self.handles and visible: self.create_handles()
-        for handle in self.handles.values(): handle.setVisible(visible)
+        if visible:
+             if not self.handles: self.create_handles()
+        
+        if self.handles:
+            for handle in self.handles.values(): 
+                handle.setVisible(visible)
+            if visible:
+                self.update_handles_pos() # Ensure alignment on show
 
     def finalize_resize(self):
         self._initial_rect = None
@@ -769,11 +797,24 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
             # Лидер группы для расчета снаппинга
             leader = movable_items[0]
-            start_pos = self._initial_item_positions[leader]
+            start_pos_local = self._initial_item_positions[leader]
             
-            # Целевая позиция лидера БЕЗ снаппинга
-            raw_target_x = start_pos.x() + total_dx
-            raw_target_y = start_pos.y() + total_dy
+            # Целевая позиция лидера БЕЗ снаппинга (LOCAL)
+            raw_target_local_x = start_pos_local.x() + total_dx
+            raw_target_local_y = start_pos_local.y() + total_dy
+            
+            # --- CONVERT TO GLOBAL FOR SNAPPING ---
+            # We need to know where this local point is in Global Space.
+            # Only the parent's transform matters.
+            parent_item = leader.parentItem()
+            if parent_item:
+                # Map the local point to scene
+                raw_global_pt = parent_item.mapToScene(QtCore.QPointF(raw_target_local_x, raw_target_local_y))
+            else:
+                raw_global_pt = QtCore.QPointF(raw_target_local_x, raw_target_local_y)
+                
+            raw_target_global_x = raw_global_pt.x()
+            raw_target_global_y = raw_global_pt.y()
             
             # --- ОПРЕДЕЛЕНИЕ РЕЖИМА СНАППИНГА ---
             modes = {
@@ -791,52 +832,53 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                     modes['grid'] = True
                     modes['adhesion'] = True
 
-            # Формируем гипотетический Rect в новой позиции
+            # Формируем гипотетический Rect в новой позиции (GLOBAL)
             # Используем normalized(), чтобы избежать проблем с отрицательными размерами
             lr = leader.rect().normalized()
-            hypothetical_rect = QtCore.QRectF(raw_target_x + lr.x(), raw_target_y + lr.y(), lr.width(), lr.height())
+            hypothetical_rect_global = QtCore.QRectF(
+                raw_target_global_x + lr.x(), 
+                raw_target_global_y + lr.y(), 
+                lr.width(), 
+                lr.height()
+            )
             
-            # --- ВЫЗОВ SOLVER ---
+            # --- ВЫЗОВ SOLVER (Global Space) ---
             self.clear_smart_snap_guides_only()
             
             # Если хотя бы один режим включен, считаем
             if any(modes.values()):
-                final_x, final_y, guides = self.snap_sys.solve_snap(
-                    hypothetical_rect, 
+                final_global_x, final_global_y, guides = self.snap_sys.solve_snap(
+                    hypothetical_rect_global, 
                     self._cached_targets, 
                     self.grid_size, 
                     modes
                 )
                 self.set_smart_guides(guides)
             else:
-                final_x, final_y = raw_target_x, raw_target_y
+                final_global_x, final_global_y = raw_target_global_x, raw_target_global_y
+
+            # --- CONVERT BACK TO LOCAL DELTA ---
+            if parent_item:
+                final_local_pt = parent_item.mapFromScene(QtCore.QPointF(final_global_x, final_global_y))
+            else:
+                final_local_pt = QtCore.QPointF(final_global_x, final_global_y)
+                
+            final_local_x = final_local_pt.x()
+            final_local_y = final_local_pt.y()
 
             # --- ПРИМЕНЕНИЕ ---
-            # Рассчитываем итоговую дельту для всей группы
-            leader_shift_x = final_x - start_pos.x()
-            leader_shift_y = final_y - start_pos.y()
+            # Рассчитываем итоговую дельту для всей группы (LOCAL SPACE)
+            leader_shift_x = final_local_x - start_pos_local.x()
+            leader_shift_y = final_local_y - start_pos_local.y()
             
-            # Blender Sync (накопитель)
-            if not hasattr(self, '_last_processed_shift'): self._last_processed_shift = QtCore.QPointF(0, 0)
+            # Remove incremental Blender updates (Causes Drift/Snap-back)
+            # We now commit only on MouseRelease.
             
-            step_dx = leader_shift_x - self._last_processed_shift.x()
-            step_dy = leader_shift_y - self._last_processed_shift.y()
-            
-            if step_dx == 0 and step_dy == 0: return
-
-            self._accum_x += step_dx; self._accum_y += step_dy
-            blender_dx = int(self._accum_x); blender_dy = int(self._accum_y)
-            
-            if blender_dx != 0 or blender_dy != 0:
-                self._accum_x -= blender_dx; self._accum_y -= blender_dy
-                bdx, bdy = core.to_blender_delta(blender_dx, blender_dy)
-                self.item_moved_signal.emit(float(bdx), float(bdy))
-                self._last_processed_shift += QtCore.QPointF(blender_dx, blender_dy)
-
             # Визуальное обновление
             for item in movable_items:
                 item_start = self._initial_item_positions[item]
-                item.setPos(item_start.x() + leader_shift_x, item_start.y() + leader_shift_y)
+                new_pos = QtCore.QPointF(item_start.x() + leader_shift_x, item_start.y() + leader_shift_y)
+                item.setPos(new_pos)
         else:
             super().mouseMoveEvent(event)
 
@@ -844,6 +886,32 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         if self._is_dragging_items:
             self._is_dragging_items = False
             self._drag_start_pos = None
+            
+            # --- COMMIT BATCH UPDATE ---
+            if hasattr(self, '_initial_item_positions') and self._initial_item_positions:
+                pos_data = {}
+                movable_items = []
+                # Re-verify items are valid
+                for item in self._initial_item_positions:
+                    if shiboken6.isValid(item):
+                        movable_items.append(item)
+                
+                # Collect final local positions
+                for item in movable_items:
+                    # RZMenu usually stores integer positions
+                    # item.pos() returns Local coordinates (Qt Space: Y Down)
+                    # We MUST convert to Blender Space (Y Up) before saving.
+                    qt_pos = item.pos()
+                    bx, by = core.to_blender_coords(qt_pos.x(), qt_pos.y())
+                    
+                    px = int(bx)
+                    py = int(by)
+                    pos_data[item.uid] = (px, py)
+                
+                if pos_data:
+                    # Pass mode='LOCAL' because we read item.pos() (Local)
+                    core.set_multiple_element_positions(pos_data, mode='LOCAL')
+            
             if hasattr(self, '_initial_item_positions'): del self._initial_item_positions
             if hasattr(self, '_last_processed_shift'): del self._last_processed_shift
             self.clear_smart_snap()

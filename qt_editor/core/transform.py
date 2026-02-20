@@ -58,6 +58,37 @@ def update_element_pos(elem_id, x, y, silent=False):
     """Legacy/Convenience wrapper for set_element_position(..., mode='LOCAL')."""
     set_element_position(elem_id, x, y, mode='LOCAL', silent=silent)
 
+def set_multiple_element_positions(pos_data, mode='GLOBAL', silent=False):
+    """
+    Batch update element positions.
+    :param pos_data: dict {elem_id: (x, y)}
+    :param mode: 'GLOBAL' or 'LOCAL'
+    """
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        elements = bpy.context.scene.rzm.elements
+        elem_map = {e.id: e for e in elements}
+        
+        changed = False
+        for eid, (x, y) in pos_data.items():
+            target = elem_map.get(eid)
+            if target and not getattr(target, "qt_lock_pos", False):
+                if mode == 'GLOBAL':
+                    parent_id = getattr(target, "parent_id", -1)
+                    lx, ly = get_local_pos_from_global(x, y, parent_id, elem_map)
+                    target.position[0] = int(lx)
+                    target.position[1] = int(ly)
+                else:
+                    target.position[0] = int(x)
+                    target.position[1] = int(y)
+                changed = True
+                
+        if changed and not silent:
+            signals.SIGNALS.transform_changed.emit()
+            signals.SIGNALS.data_changed.emit()
+    finally:
+        signals.IS_UPDATING_FROM_QT = False
+
 def move_elements_delta(target_ids, delta_x, delta_y, silent=False):
     """
     Apply delta to local position.

@@ -7,6 +7,10 @@ def to_blender_delta(qt_dx, qt_dy):
     """ Qt Delta -> Blender Delta """
     return float(qt_dx), float(-qt_dy)
 
+def to_blender_coords(qt_x, qt_y):
+    """ Qt (Y Down) -> Blender (Y Up) """
+    return float(qt_x), float(-qt_y)
+
 def get_global_pos(element, elem_map):
     """
     Recursively calculate global position from a Blender element.
