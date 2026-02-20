@@ -2,6 +2,7 @@
 import bpy
 from . import signals
 from . import blender_bridge
+from .maths import get_global_pos, get_local_pos_from_global
 from ..conf import get_config
 
 def get_next_available_id(elements):
@@ -107,20 +108,32 @@ def reorder_elements(target_id, insert_after_id):
     finally:
         signals.IS_UPDATING_FROM_QT = False
 
-def reparent_element(child_id, new_parent_id):
+def reparent_element(child_id, new_parent_id, silent=False):
     signals.IS_UPDATING_FROM_QT = True
     try:
         elements = bpy.context.scene.rzm.elements
-        target = next((e for e in elements if e.id == child_id), None)
+        elem_map = {e.id: e for e in elements}
+        
+        target = elem_map.get(child_id)
         if target:
-            # (red) Core UX: Teleportation / No Matrix.
-            # Просто меняет parent_id без пересчета координат. 
-            # New_Local = New_Parent_Inverse * Old_Global.
-            # Текущая реализация вызывает "телепортацию" визуально.
+            # 1. Get Current Global Position
+            curr_gx, curr_gy = get_global_pos(target, elem_map)
+            
+            # 2. Assign New Parent
             target.parent_id = new_parent_id
+            
+            # 3. Calculate Required Local Position to maintain Global Pos
+            new_local_x, new_local_y = get_local_pos_from_global(curr_gx, curr_gy, new_parent_id, elem_map)
+            
+            # 4. Apply
+            target.position[0] = int(new_local_x)
+            target.position[1] = int(new_local_y)
+            
             blender_bridge.safe_undo_push("RZM: Reparent")
-            signals.SIGNALS.structure_changed.emit()
-            signals.SIGNALS.transform_changed.emit()
+            
+            if not silent:
+                signals.SIGNALS.structure_changed.emit()
+                signals.SIGNALS.transform_changed.emit()
     finally:
         signals.IS_UPDATING_FROM_QT = False
 

@@ -2,6 +2,7 @@
 import bpy
 from . import signals
 from . import blender_bridge
+from .maths import get_local_pos_from_global
 
 def resize_element(elem_id, x, y, w, h, silent=False):
     signals.IS_UPDATING_FROM_QT = True
@@ -23,19 +24,53 @@ def resize_element(elem_id, x, y, w, h, silent=False):
     finally:
         signals.IS_UPDATING_FROM_QT = False
 
+def set_element_position(elem_id, x, y, mode='GLOBAL', silent=False):
+    """
+    Unified entry point for setting element position.
+    :param mode: 'GLOBAL' (Scene Coords) or 'LOCAL' (Parent Coords)
+    """
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        elements = bpy.context.scene.rzm.elements
+        target = next((e for e in elements if e.id == elem_id), None)
+        
+        if target and not getattr(target, "qt_lock_pos", False):
+            if mode == 'GLOBAL':
+                # Convert Global -> Local
+                elem_map = {e.id: e for e in elements}
+                parent_id = getattr(target, "parent_id", -1)
+                
+                lx, ly = get_local_pos_from_global(x, y, parent_id, elem_map)
+                target.position[0] = int(lx)
+                target.position[1] = int(ly)
+            else:
+                # Direct Local Set
+                target.position[0] = int(x)
+                target.position[1] = int(y)
+            
+            if not silent:
+                signals.SIGNALS.transform_changed.emit()
+                signals.SIGNALS.data_changed.emit()
+    finally:
+        signals.IS_UPDATING_FROM_QT = False
+
+def update_element_pos(elem_id, x, y, silent=False):
+    """Legacy/Convenience wrapper for set_element_position(..., mode='LOCAL')."""
+    set_element_position(elem_id, x, y, mode='LOCAL', silent=silent)
+
 def move_elements_delta(target_ids, delta_x, delta_y, silent=False):
+    """
+    Apply delta to local position.
+    WARNING: This logic is strictly LOCAL. 
+    If used on a child element, it moves relative to parent.
+    Use set_element_position(mode='GLOBAL') for interaction where visual position matters most.
+    """
     signals.IS_UPDATING_FROM_QT = True
     try:
         if not target_ids: return
         elements = bpy.context.scene.rzm.elements
         
-        # Rayvich: Possible bugs - Double movement in hierarchy
-        # Only move elements if their parent is NOT in the selection.
-        # Moving a parent automatically moves the child's coordinate context later during evaluation/refresh.
-        # But wait, Blender rzm.elements properties are absolute? 
-        # No, they are usually relative if it's a nested UI system.
-        
-        # Determine roots of the selection
+        # Determine roots of the selection to avoid double-movement
         id_to_parent = {e.id: e.parent_id for e in elements}
         root_target_ids = []
         for tid in target_ids:
@@ -50,11 +85,7 @@ def move_elements_delta(target_ids, delta_x, delta_y, silent=False):
 
         changed = False
         for elem in elements:
-            # Only move roots
             if elem.id in root_target_ids and not getattr(elem, "qt_lock_pos", False):
-                # (red) Манипуляции и Трансформации: Teleportation issue.
-                # Adds delta to local position. If parent moved, this might double-transform 
-                # or if parent changed, this delta is in wrong space.
                 elem.position[0] += int(delta_x)
                 elem.position[1] += int(delta_y)
                 changed = True
