@@ -137,7 +137,7 @@ def reparent_element(child_id, new_parent_id, silent=False):
     finally:
         signals.IS_UPDATING_FROM_QT = False
 
-def duplicate_elements(target_ids):
+def duplicate_elements(target_ids, offset=20):
     signals.IS_UPDATING_FROM_QT = True
     try:
         if not target_ids: return []
@@ -154,7 +154,7 @@ def duplicate_elements(target_ids):
             new_elem.elem_class = src.elem_class
             
             # Position/Size
-            new_elem.position = (src.position[0] + 20, src.position[1] - 20) 
+            new_elem.position = (src.position[0] + offset, src.position[1] - offset) 
             new_elem.size = src.size[:]
             new_elem.parent_id = src.parent_id 
             

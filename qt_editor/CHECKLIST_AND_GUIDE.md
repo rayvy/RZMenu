@@ -32,30 +32,24 @@ This document was generated based on the "Technical Report (UI Tool for 3DMigoto
     - [ ] Fix: Fragile `while p: ... parent()` loops in `_update_slot` and `_update_layer`.
 
 ### 3. Transformation & UX
-- [/] **Teleportation** `core/structure.py`
-    - [ ] Status: **(red)** `reparent_element`.
-    - [ ] Fix: Implement matrix compensation.
-        ```python
-        # Pseudo-code fix
-        old_global = elem.matrix_world
-        elem.parent_id = new_parent
-        elem.matrix_local = elem.parent.matrix_world.inverted() @ old_global
-        ```
-- [/] **Teleportation** `core/transform.py`
-    - [ ] Status: **(red)** `move_elements_delta`.
-    - [ ] Fix: Ensure delta is applied in correct space (Local vs Global) depending on parent.
-- [/] **Gizmo Issues** `widgets/viewport.py`
-    - [ ] Status: **(Regression)** Frame-rate drops & Teleportation on Resize.
-    - [ ] Fix: Implement Transform Caching (cache matrices on mousePress).
-    - [ ] Fix: Anchor-Locked Resizing (define static pivot).
-    - [ ] Fix: Multi-Selection Resizing (Collective Bounding Box).
+- [x] **Teleportation** `core/structure.py`
+    - [x] Status: **(green)** Fixed via Global Pos math.
+- [x] **Teleportation** `core/transform.py`
+    - [x] Status: **(green)** Fixed via `to_blender_coords` sign flip correction.
+- [x] **Group Movement** `widgets/viewport.py`
+    - [x] Status: **(green)** Fixed via Batch Commit on MouseRelease.
+- [x] **Gizmo Issues** `widgets/viewport.py`
+    - [x] Status: **(green)** Handles moved to Scene-Root with Max Z.
+- [ ] **New: Ghost Handles** `widgets/viewport.py`
+    - [ ] Status: **(yellow)** Handles remain after element deletion.
+- [ ] **New: Keyboard Shortcuts** `widgets/viewport.py`
+    - [ ] Status: **(yellow)** Layout-dependent (e.g. "Ф" check). Needs physical key codes.
 
 ### 4. Data & Assets
-- [ ] **Clipboard** `core/clipboard.py`
-    - [ ] Status: **(yellow)** Missing "Paste in Place".
-    - [ ] Fix: Add `paste_in_place` argument to `paste_elements` (offset=0).
-    - [ ] Status: **(yellow)** Image Path Loss.
-    - [ ] Fix: Ensure `image_id` refers to persistent data, or copy image data to new ID if it's temp.
+- [/] **Clipboard** `core/clipboard.py`
+    - [ ] Status: **(yellow)** Missing "Paste in Place" (Ctrl+Shift+V).
+- [ ] **DnD Assignment** `widgets/viewport.py`
+    - [ ] Status: **(yellow)** Dragging image onto element should replace image_id, not create new element.
 
 ---
 

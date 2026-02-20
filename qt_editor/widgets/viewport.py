@@ -163,6 +163,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         
         # Инициализация шрифта
         self._ensure_font_loaded()
+        self._is_drop_target = False
 
     @classmethod
     def _ensure_font_loaded(cls):
@@ -240,6 +241,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                 scene_pt = self.mapToScene(QtCore.QPointF(*local_pos))
                 self.handles[h_type].setPos(scene_pt)
 
+    def set_drop_highlight(self, active):
+        if self._is_drop_target != active:
+            self._is_drop_target = active
+            self.update()
+
     def set_handles_visible(self, visible):
         if visible:
              if not self.handles: self.create_handles()
@@ -249,6 +255,15 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                 handle.setVisible(visible)
             if visible:
                 self.update_handles_pos() # Ensure alignment on show
+
+    def cleanup_handles(self):
+        """Removes handles from the scene explicitly."""
+        scene = self.scene()
+        if scene and self.handles:
+            for handle in self.handles.values():
+                if shiboken6.isValid(handle):
+                    scene.removeItem(handle)
+        self.handles.clear()
 
     def finalize_resize(self):
         self._initial_rect = None
@@ -593,6 +608,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             lock_txt = "🔒" if self.is_locked_pos and self.is_locked_size else "🔒P" if self.is_locked_pos else "🔒S"
             painter.setPen(QtGui.QColor(t.get('vp_locked', '#F00')))
             painter.drawText(text_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, lock_txt)
+
+        if self._is_drop_target:
+            painter.setPen(QtGui.QPen(QtGui.QColor(0, 255, 0), 3))
+            painter.drawRect(rect.adjusted(2, 2, -2, -2))
 
         if self.pos_is_formula or self.size_is_formula:
             f_rect = QtCore.QRect(rect.x() + rect.width() - 14, rect.y() + rect.height() - 14, 10, 10)
@@ -946,7 +965,11 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         for data in elements_data:
             if data.get('image_id', -1) != -1: cache.pre_cache_image(data['image_id'])
         for uid in (current_ids - incoming_ids):
-            if uid in self._items_map and shiboken6.isValid(self._items_map[uid]): self.removeItem(self._items_map[uid])
+            item = self._items_map.get(uid)
+            if item and shiboken6.isValid(item):
+                if hasattr(item, 'cleanup_handles'):
+                    item.cleanup_handles()
+                self.removeItem(item)
             if uid in self._items_map: del self._items_map[uid]
 
     def _update_items_state(self, elements_data, resolved_layout, selected_ids, active_id):
@@ -1063,36 +1086,34 @@ class RZViewportView(QtWidgets.QGraphicsView):
     def keyPressEvent(self, event):
         modifiers = event.modifiers()
         key = event.key()
-        # Rayvich: Possible bugs - Shortcut layout/keyboard language independence
-        text = event.text().upper()
         
+        is_shift = bool(modifiers & QtCore.Qt.ShiftModifier)
+        is_ctrl = bool(modifiers & QtCore.Qt.ControlModifier)
+        is_alt = bool(modifiers & QtCore.Qt.AltModifier)
+
         # Shift + A: Add Menu
-        if (key == QtCore.Qt.Key_A or text == "A" or text == "Ф") and (modifiers & QtCore.Qt.ShiftModifier):
-            # Map global cursor to scene
+        if key == QtCore.Qt.Key_A and is_shift and not is_ctrl:
             scene_pos = self.mapToScene(self.mapFromGlobal(QtGui.QCursor.pos()))
             self.open_add_menu(scene_pos)
-            event.accept()
-            return
+            event.accept(); return
 
         # Ctrl + A: Select All
-        elif (key == QtCore.Qt.Key_A or text == "A" or text == "Ф") and (modifiers & QtCore.Qt.ControlModifier):
+        elif key == QtCore.Qt.Key_A and is_ctrl and not is_shift:
             items = [i for i in self.scene().items() if isinstance(i, RZElementItem) and i.is_selectable]
             ids = [i.uid for i in items]
-            if ids:
-                self.rz_scene.selection_changed_signal.emit(ids, None)
-            event.accept()
-            return
+            if ids: self.rz_scene.selection_changed_signal.emit(ids, None)
+            event.accept(); return
 
-        # H: Hide / Unhide
-        elif (key == QtCore.Qt.Key_H or text == "H" or text == "Р"): # Russian H
+        # H / Alt+H: Hide / Unhide
+        elif key == QtCore.Qt.Key_H:
             am = self._find_action_manager()
             if am:
-                op_id = "rzm.unhide_all" if modifiers & QtCore.Qt.AltModifier else "rzm.toggle_hide"
+                op_id = "rzm.unhide_all" if is_alt else "rzm.toggle_hide"
                 if op_id in am.q_actions: am.q_actions[op_id].trigger()
             event.accept(); return
             
         # L: Lock
-        elif (key == QtCore.Qt.Key_L or text == "L" or text == "Д"): # Russian L
+        elif key == QtCore.Qt.Key_L:
             am = self._find_action_manager()
             if am:
                 op_id = "rzm.toggle_lock"
@@ -1105,21 +1126,38 @@ class RZViewportView(QtWidgets.QGraphicsView):
             if am and "rzm.delete" in am.q_actions: am.q_actions["rzm.delete"].trigger()
             event.accept(); return
             
-        # Standard Copy/Paste/Duplicate (Ctrl+C, Ctrl+V, Ctrl+D)
-        elif modifiers & QtCore.Qt.ControlModifier:
+        # Clipboard Operations
+        if is_ctrl:
             am = self._find_action_manager()
             if not am: return super().keyPressEvent(event)
+
+            # C: Copy
+            if key == QtCore.Qt.Key_C:
+                if "rzm.copy" in am.q_actions: am.q_actions["rzm.copy"].trigger()
+                event.accept(); return
             
-            op_map = {
-                "C": "rzm.copy", "С": "rzm.copy", # RU С
-                "V": "rzm.paste", "М": "rzm.paste", # RU М
-                "D": "rzm.duplicate", "В": "rzm.duplicate" # RU В (D is on same key as RU В)
-            }
-            if text in op_map and op_map[text] in am.q_actions:
-                am.q_actions[op_map[text]].trigger()
+            # V / Ctrl+Shift+V: Paste
+            elif key == QtCore.Qt.Key_V:
+                if is_shift:
+                    # Paste in Place (No offset)
+                    from ..core import clipboard
+                    clipboard.paste_elements(offset=0)
+                else:
+                    if "rzm.paste" in am.q_actions: am.q_actions["rzm.paste"].trigger()
+                event.accept(); return
+                
+            # D / Ctrl+Shift+D: Duplicate
+            elif key == QtCore.Qt.Key_D:
+                if is_shift:
+                    # Duplicate in Place (No offset)
+                    ctx = RZContextManager.get_instance().get_snapshot()
+                    if ctx.selected_ids:
+                        from ..core import structure
+                        structure.duplicate_elements(list(ctx.selected_ids), offset=0)
+                else:
+                    if "rzm.duplicate" in am.q_actions: am.q_actions["rzm.duplicate"].trigger()
                 event.accept(); return
 
-            
         super().keyPressEvent(event)
 
     def open_add_menu(self, scene_pos):
@@ -1162,8 +1200,24 @@ class RZViewportView(QtWidgets.QGraphicsView):
         # ОЧЕНЬ ВАЖНО: dragMoveEvent тоже должен подтверждать прием!
         if (mime.hasUrls() or 
             mime.hasFormat("application/x-rzmenu-image-id") or 
-            mime.hasFormat("application/x-rzmenu-template")): # <--- ВАЖНО
+            mime.hasFormat("application/x-rzmenu-template")): 
             event.acceptProposedAction()
+            
+            # --- Smart DnD Highlight ---
+            scene_pos = self.mapToScene(event.pos())
+            item = self.rz_scene.itemAt(scene_pos, QtGui.QTransform())
+            
+            # Reset previous highlight
+            if hasattr(self, '_last_dnd_item') and self._last_dnd_item != item:
+                if self._last_dnd_item and shiboken6.isValid(self._last_dnd_item):
+                    if hasattr(self._last_dnd_item, 'set_drop_highlight'):
+                        self._last_dnd_item.set_drop_highlight(False)
+            
+            if isinstance(item, RZElementItem) and (mime.hasUrls() or mime.hasFormat("application/x-rzmenu-image-id")):
+                item.set_drop_highlight(True)
+                self._last_dnd_item = item
+            else:
+                self._last_dnd_item = None
         else:
             super().dragMoveEvent(event)
 
@@ -1248,6 +1302,29 @@ class RZViewportView(QtWidgets.QGraphicsView):
         self.btn_settings.setToolTip("Viewport Settings")
         self.btn_settings.clicked.connect(self.show_settings_menu)
         layout.addWidget(self.btn_settings)
+
+        # Alignment Toolbar
+        layout.addSpacing(4)
+        v_line = QtWidgets.QFrame(); v_line.setFrameShape(QtWidgets.QFrame.VLine); v_line.setStyleSheet("color: rgba(255,255,255,20)"); layout.addWidget(v_line)
+        layout.addSpacing(4)
+
+        align_actions = [
+            ("⬅", "LEFT", "Align Left"), ("⏐", "CENTER_X", "Align Center X"), ("➡", "RIGHT", "Align Right"),
+            ("⬆", "TOP", "Align Top"), ("⎯", "CENTER_Y", "Align Center Y"), ("⬇", "BOTTOM", "Align Bottom")
+        ]
+        from .. import core
+        from .viewport import RZContextManager # Need current selection
+        
+        def run_align(mode):
+            ctx = RZContextManager.get_instance().get_snapshot()
+            if ctx.selected_ids:
+                core.align_elements(list(ctx.selected_ids), mode)
+
+        for icon, mode, tip in align_actions:
+            btn = QtWidgets.QPushButton(icon)
+            btn.setToolTip(tip)
+            btn.clicked.connect(lambda checked=False, m=mode: run_align(m))
+            layout.addWidget(btn)
         
         self.overlay_container.adjustSize()
 

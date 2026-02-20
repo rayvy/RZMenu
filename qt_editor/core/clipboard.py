@@ -86,7 +86,7 @@ def copy_elements(target_ids):
             }
             _INTERNAL_CLIPBOARD.append(data)
 
-def paste_elements(target_x=None, target_y=None):
+def paste_elements(target_x=None, target_y=None, offset=20):
     global _INTERNAL_CLIPBOARD
     if not _INTERNAL_CLIPBOARD: return []
     
@@ -106,9 +106,9 @@ def paste_elements(target_x=None, target_y=None):
             offset_y = target_y - min_y
         else:
             # (yellow) Clipboard issue: Нужен Ctrl+Shift+V (Paste in Place) без офсета.
-            # Currently always applies offset_x = 20.
-            offset_x = 20
-            offset_y = -20
+            # Now uses the passed offset parameter.
+            offset_x = offset
+            offset_y = -offset
 
         for item in _INTERNAL_CLIPBOARD:
             new_id = structure.get_next_available_id(elements)
