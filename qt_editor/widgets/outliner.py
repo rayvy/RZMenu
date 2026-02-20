@@ -24,12 +24,20 @@ class RZDraggableTree(RZDraggableTreeWidget):
     def __init__(self):
         super().__init__()
 
-        self.setHeaderLabels(["Name", "Vis", "Sel"])
-        self.header().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        self.header().setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
-        self.header().setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
-        self.setColumnWidth(1, 30)
-        self.setColumnWidth(2, 30)
+        self.setHeaderLabels(["Name", "👁", "➤"]) 
+        header = self.header()
+        header.setStretchLastSection(False) 
+        header.setMinimumSectionSize(20) # Allow smaller columns if needed
+        
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
+        
+        header.resizeSection(1, 26) # Slightly larger than 24 to be safe with icons
+        header.resizeSection(2, 26)
+        
+        # Ensure header sections are centered for icons
+        header.setDefaultAlignment(QtCore.Qt.AlignCenter)
 
     def _on_item_clicked(self, item, column):
         """Override base class to handle specific column clicks."""
