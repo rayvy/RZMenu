@@ -477,8 +477,14 @@ Local $current_sizeY
                     {% endif %}
                 {% endfor %}
             {% else %}
-                {% set max_val = (first_link.value_max | default(1.0) | float) | int if (first_link.value_max | default(1.0) | float) > 1 else 2 %}
-                ${{ target_var }} = (${{ target_var }} + 1) % {{ max_val }}
+                {% set min_val = first_link.value_min | default(0.0) | float %}
+                {% set max_val = first_link.value_max | default(1.0) | float %}
+                ; Cycling logic for range [{{ min_val }}, {{ max_val }}]
+                if ${{ target_var }} < {{ max_val }}
+                    ${{ target_var }} = ${{ target_var }} + 1
+                else
+                    ${{ target_var }} = {{ min_val }}
+                endif
             {% endif %}
 
             {# 2. ЛОГИКА ФОРМУЛЫ (Добавляется ПОСЛЕ стандартной логики) #}

@@ -104,6 +104,38 @@ class RZM_OT_DuplicateElement(bpy.types.Operator):
             new_sub.string_value = sub_item.string_value
             new_sub.int_value = sub_item.int_value
             new_sub.float_value = sub_item.float_value
+            
+        # Value Links (Fix: Copy Min/Max)
+        for sub_item in source_elem.value_link:
+            new_sub = new_elem.value_link.add()
+            new_sub.value_name = sub_item.value_name
+            new_sub.value_min = sub_item.value_min
+            new_sub.value_max = sub_item.value_max
+            
+        # Conditional Images
+        for sub_item in source_elem.conditional_images:
+            new_sub = new_elem.conditional_images.add()
+            new_sub.condition = sub_item.condition
+            new_sub.image_id = sub_item.image_id
+            
+        # Conditional Texts
+        for sub_item in source_elem.conditional_texts:
+            new_sub = new_elem.conditional_texts.add()
+            new_sub.condition = sub_item.condition
+            new_sub.text_id = sub_item.text_id
+            
+        # Toggles
+        for sub_item in source_elem.toggles:
+            new_sub = new_elem.toggles.add()
+            new_sub.toggle_name = sub_item.toggle_name
+            for bit in sub_item.bits:
+                new_bit = new_sub.bits.add()
+                new_bit.value = bit.value
+                
+        # Presets
+        for sub_item in source_elem.preset_ids:
+            new_sub = new_elem.preset_ids.add()
+            new_sub.preset_id = sub_item.preset_id
 
         new_elem.id = get_next_available_id(elements)
         new_elem.element_name = f"{source_elem.element_name}_Copy"
