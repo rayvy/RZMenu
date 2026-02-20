@@ -368,136 +368,189 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             
             m_box.prop(mat, "parameters", text="Params (x46)")
 
-        # --- 4. MAIN BLOCKS (The Core Structure) ---
+        # --- 4. MAIN BLOCKS ---
         block_box = main_box.box()
-        row = block_box.row(align=True); row.label(text="Blocks & Components:", icon='NODETREE')
+        row = block_box.row(align=True)
+        row.label(text="Blocks:", icon='NODETREE')
         row.operator("rzm.add_tw_block", text="", icon='ADD')
         row.operator("rzm.remove_tw_block", text="", icon='REMOVE')
         
-        for b_idx, block in enumerate(rzm.tw_blocks):
-            b_box = block_box.box()
-            
-            # Block Header
-            row = b_box.row(align=True)
-            row.label(text=f"BLOCK {b_idx}:", icon='MODIFIER_ON')
-            row.prop(block, "name", text="")
-            row.prop(block, "shader_type", text="")
-            
-            # Block Output Atlas
-            row = b_box.row(align=True)
-            row.prop(block, "resource_name", text="Output Atlas")
-            
-            # Backdrop Settings
-            back_box = b_box.box()
-            row = back_box.row(align=True)
-            row.prop(block, "backdrop_enabled", text="Use Backdrop", icon='IMAGE_BACKGROUND')
-            if block.backdrop_enabled:
-                row.prop(block, "backdrop_resource_name", text="Res")
-                row.prop(block, "backdrop_rect", text="Rect")
+        # Вкладки Блоков (Если блоков много)
+        if rzm.tw_blocks:
+            tabs = block_box.row(align=True)
+            for i, block in enumerate(rzm.tw_blocks):
+                is_active = (i == rzm.active_tw_block_index)
+                btn_text = block.name if block.name else f"B{i}"
+                # Оператор переключения активного блока
+                op = tabs.operator("rzm.set_active_block", text=btn_text, depress=is_active)
+                op.index = i
 
-            # Components within Block
-            comp_box = b_box.box()
-            c_header = comp_box.row(align=True)
-            c_header.label(text="COMPONENTS:", icon='GROUP')
-            op = c_header.operator("rzm.add_tw_component", text="", icon='ADD'); op.block_index = b_idx
-            op = c_header.operator("rzm.remove_tw_component", text="", icon='REMOVE'); op.block_index = b_idx
-            
-            for c_idx, comp in enumerate(block.components):
-                c_item = comp_box.box()
+            # Отображаем только АКТИВНЫЙ блок
+            b_idx = rzm.active_tw_block_index
+            if 0 <= b_idx < len(rzm.tw_blocks):
+                block = rzm.tw_blocks[b_idx]
+                b_box = block_box.box()
                 
-                # Component Header
-                row = c_item.row(align=True)
-                row.prop(comp, "name", text=f"Comp {c_idx}")
-                row.prop(comp, "mask_enabled", text="", icon='MOD_MASK')
+                # Block Header
+                row = b_box.row(align=True)
+                row.prop(block, "name", text="Block Name")
+                row.prop(block, "shader_type", text="")
                 
-                # Component Base Settings
-                split = c_item.split(factor=0.4)
-                split.prop(comp, "base_resource_name", text="Base Res")
-                split.prop(comp, "base_rect", text="Source")
+                # Block Output Atlas
+                row = b_box.row(align=True)
+                row.prop(block, "resource_name", text="Output Atlas")
                 
-                c_item.prop(comp, "rect", text="Atlas Rect")
+                # --- BACKDROP ---
+                back_box = b_box.box()
+                row = back_box.row(align=True)
+                row.prop(block, "backdrop_enabled", text="Use Backdrop", icon='IMAGE_BACKGROUND')
+                if block.backdrop_enabled:
+                    row.prop(block, "backdrop_resource_name", text="Res")
+                    row.prop(block, "backdrop_rect", text="Rect")
+
+                # --- COMPONENTS (Вкладки) ---
+                comp_section = b_box.box()
+                c_header = comp_section.row(align=True)
+                c_header.label(text="Components:", icon='GROUP')
+                op = c_header.operator("rzm.add_tw_component", text="", icon='ADD'); op.block_index = b_idx
                 
-                # RZM_TEXMORPH: Прототипирование морфинга
-                m_row = c_item.row(align=True)
-                m_row.prop(comp, "tex_morph_enabled", text="TexMorph", icon='MOD_MIRROR')
-                if comp.tex_morph_enabled:
-                    m_row.prop(comp, "tex_morph_resource_name", text="Res")
-                    m_row.prop(comp, "tex_morph_link", text="Link")
-                
-                # Slots
-                slot_box = c_item.box()
-                s_header = slot_box.row(align=True)
-                s_header.label(text="SLOTS:", icon='NODE_SEL')
-                op = s_header.operator("rzm.add_tw_slot", text="", icon='ADD')
-                op.block_index = b_idx; op.comp_index = c_idx
-                op = s_header.operator("rzm.remove_tw_slot", text="", icon='REMOVE')
-                op.block_index = b_idx; op.comp_index = c_idx
-                
-                for s_idx, slot in enumerate(comp.slots):
-                    s_item = slot_box.box()
+                if block.components:
+                    c_tabs = comp_section.row(align=True)
+                    for i, comp in enumerate(block.components):
+                        is_active = (i == block.active_component_index)
+                        c_btn_text = comp.name if comp.name else f"C{i}"
+                        op = c_tabs.operator("rzm.set_active_component", text=c_btn_text, depress=is_active)
+                        op.block_index = b_idx
+                        op.index = i
                     
-                    # Slot Header
-                    row = s_item.row(align=True)
-                    row.prop(slot, "active", text="")
-                    row.prop(slot, "name", text=f"Slot {s_idx}")
-                    row.prop(slot, "rect", text="")
-                    
-                    # Decal Layers (Compact)
-                    layer_box = s_item.box()
-                    l_row = layer_box.row(align=True)
-                    l_row.label(text="Layers:", icon='STRANDS')
-                    op = l_row.operator("rzm.add_tw_decal_layer", text="", icon='ADD')
-                    op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx
-                    
-                    for l_idx, layer in enumerate(slot.decal_layers):
-                        l_row = layer_box.row(align=True)
-                        l_row.prop(layer, "active", text="")
-                        l_row.prop(layer, "name", text="")
-                        l_row.prop(layer, "index", text="Idx")
-                        l_row.prop(layer, "count", text="Total")
+                    # Содержимое активного компонента
+                    c_idx = block.active_component_index
+                    if 0 <= c_idx < len(block.components):
+                        comp = block.components[c_idx]
+                        c_item = comp_section.box()
                         
-                        op = l_row.operator("rzm.move_tw_item", text="", icon='TRIA_UP')
-                        op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx; op.direction = 'UP'
-                        op = l_row.operator("rzm.remove_tw_decal_layer", text="", icon='X')
-                        op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = l_idx
-
-                    # HSV & Masking
-                    lower_grid = s_item.column(align=True)
-                    
-                    # Slot Transform (Pass 0 / Main)
-                    lower_grid.label(text="Transform (Pass 0):")
-                    t_row = lower_grid.row(align=True)
-                    t_row.prop(slot, "rotation")
-                    t_row.prop(slot, "dummy")
-                    t_row.prop(slot, "mirror", text="", icon='MOD_MIRROR', toggle=True)
-                    t_row.prop(slot, "flip", text="", icon='UV_SYNC_SELECT', toggle=True)
-
-                    h_row = lower_grid.row(align=True)
-                    h_row.prop(slot, "hsv_enabled", text="HSV", icon='COLOR')
-                    if slot.hsv_enabled:
-                        h_row.prop(slot, "hsv_link", text="")
-                        h_row.prop(slot, "hsv_mask_enabled", text="", icon='MOD_MASK')
-
-                    m_row = lower_grid.row(align=True)
-                    m_row.prop(slot, "mask_enabled", text="Slot Mask", icon='MOD_MASK')
-                    if slot.mask_enabled:
-                        m_row.prop(slot, "mask_source", text="")
-                        m_row.prop(slot, "pass0_use_mask", text="P0")
-                        m_row.prop(slot, "pass1_use_mask", text="P1")
-
-                    p_row = lower_grid.row(align=True)
-                    p_row.prop(slot, "multi_pass_mode", text="Pass")
-
-                    if slot.multi_pass_mode != 'NONE':
-                        mp_box = lower_grid.box()
-                        mp_box.label(text="Transform (Multi-pass):")
-                        mp_box.prop(slot, "multi_pass_rect")
+                        # Настройки компонента
+                        row = c_item.row(align=True)
+                        row.prop(comp, "name", text="Name")
+                        row.prop(comp, "mask_enabled", text="", icon='MOD_MASK')
+                        op_rem = row.operator("rzm.remove_tw_component", text="", icon='X')
+                        op_rem.block_index = b_idx
+                        op_rem.index = c_idx
                         
-                        mp_row = mp_box.row(align=True)
-                        mp_row.prop(slot, "multi_pass_rotation", text="Rot")
-                        mp_row.prop(slot, "multi_pass_dummy", text="Dmy")
-                        mp_row.prop(slot, "multi_pass_mirror", text="", icon='MOD_MIRROR', toggle=True)
-                        mp_row.prop(slot, "multi_pass_flip", text="", icon='UV_SYNC_SELECT', toggle=True)
+                        split = c_item.split(factor=0.4)
+                        split.prop(comp, "base_resource_name", text="Base Res")
+                        split.prop(comp, "base_rect", text="Source")
+                        c_item.prop(comp, "rect", text="Atlas Rect")
+
+                        # --- SLOTS (Вкладки) ---
+                        slot_section = c_item.box()
+                        s_header = slot_section.row(align=True)
+                        s_header.label(text="Slots:", icon='NODE_SEL')
+                        op = s_header.operator("rzm.add_tw_slot", text="", icon='ADD')
+                        op.block_index = b_idx; op.comp_index = c_idx
+
+                        if comp.slots:
+                            s_tabs = slot_section.row(align=True)
+                            for i, slot in enumerate(comp.slots):
+                                is_active = (i == comp.active_slot_index)
+                                s_btn_text = slot.name if slot.name else f"S{i}"
+                                op = s_tabs.operator("rzm.set_active_slot", text=s_btn_text, depress=is_active)
+                                op.block_index = b_idx; op.comp_index = c_idx; op.index = i
+
+                            # Содержимое активного слота
+                            s_idx = comp.active_slot_index
+                            if 0 <= s_idx < len(comp.slots):
+                                slot = comp.slots[s_idx]
+                                s_item = slot_section.box()
+                                
+                                # Настройки слота
+                                row = s_item.row(align=True)
+                                row.prop(slot, "active", text="")
+                                row.prop(slot, "name", text="Slot Name")
+                                row.operator("rzm.remove_tw_slot", text="", icon='X').block_index = b_idx; op.comp_index = c_idx; op.index = s_idx
+                                
+                                # --- TRANSFORM GROUP (PASS 0) ---
+                                t_box = s_item.box()
+                                t_box.label(text="Transform (Pass 0 / Main):", icon='NODE_SOCKET_MATRIX')
+                                col = t_box.column(align=True)
+                                col.prop(slot, "rect", text="Atlas Rect")
+                                
+                                row = col.row(align=True)
+                                row.prop(slot, "rotation")
+                                row.prop(slot, "mirror", text="", icon='MOD_MIRROR', toggle=True)
+                                row.prop(slot, "flip", text="", icon='UV_SYNC_SELECT', toggle=True)
+
+                                # --- LAYERS (Вкладки) ---
+                                layer_box = s_item.box()
+                                l_header = layer_box.row(align=True)
+                                l_header.label(text="Layers:", icon='STRANDS')
+                                op = l_header.operator("rzm.add_tw_decal_layer", text="", icon='ADD')
+                                op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx
+                                
+                                if slot.decal_layers:
+                                    l_tabs = layer_box.row(align=True)
+                                    for i, layer in enumerate(slot.decal_layers):
+                                        is_active = (i == slot.active_layer_index)
+                                        l_btn_text = layer.name if layer.name else f"L{i}"
+                                        op = l_tabs.operator("rzm.set_tw_active_layer", text=l_btn_text, depress=is_active)
+                                        op.block_index = b_idx; op.comp_index = c_idx; op.slot_index = s_idx; op.index = i
+
+                                    # Информация активного слоя
+                                    l_idx = slot.active_layer_index
+                                    if 0 <= l_idx < len(slot.decal_layers):
+                                        active_layer = slot.decal_layers[l_idx]
+                                        l_info = layer_box.box()
+                                        
+                                        row = l_info.row(align=True)
+                                        row.prop(active_layer, "active", text="")
+                                        row.prop(active_layer, "name", text="")
+                                        
+                                        row = l_info.row(align=True)
+                                        row.prop(active_layer, "index", text="Idx")
+                                        row.prop(active_layer, "count", text="Total")
+                                        
+                                        # Управление слоем (Перемещение/Удаление)
+                                        ops = row.row(align=True)
+                                        op_up = ops.operator("rzm.move_tw_item", icon='TRIA_UP', text="")
+                                        op_up.collection_name = 'decal_layers'
+                                        op_up.block_index = b_idx; op_up.comp_index = c_idx; op_up.slot_index = s_idx; op_up.index = l_idx; op_up.direction = 'UP'
+                                        
+                                        op_down = ops.operator("rzm.move_tw_item", icon='TRIA_DOWN', text="")
+                                        op_down.collection_name = 'decal_layers'
+                                        op_down.block_index = b_idx; op_down.comp_index = c_idx; op_down.slot_index = s_idx; op_down.index = l_idx; op_down.direction = 'DOWN'
+                                        
+                                        op_rem = ops.operator("rzm.remove_tw_decal_layer", icon='X', text="")
+                                        op_rem.block_index = b_idx; op_rem.comp_index = c_idx; op_rem.slot_index = s_idx; op_rem.index = l_idx
+
+                                # --- FX & MASKING ---
+                                fx_box = s_item.box()
+                                fx_box.label(text="Effects & Masking:", icon='MODIFIER')
+                                
+                                h_row = fx_box.row(align=True)
+                                h_row.prop(slot, "hsv_enabled", text="HSV", icon='COLOR')
+                                if slot.hsv_enabled:
+                                    h_row.prop(slot, "hsv_link", text="")
+                                    h_row.prop(slot, "hsv_mask_enabled", text="", icon='MOD_MASK')
+
+                                m_box = fx_box.box()
+                                m_row = m_box.row(align=True)
+                                m_row.prop(slot, "mask_enabled", text="Slot Mask", icon='MOD_MASK')
+                                if slot.mask_enabled:
+                                    m_row.prop(slot, "mask_source", text="")
+                                    m_row.prop(slot, "pass0_use_mask", text="P0")
+                                    m_row.prop(slot, "pass1_use_mask", text="P1")
+
+                                # --- MULTI-PASS ---
+                                mp_box = s_item.box()
+                                mp_box.prop(slot, "multi_pass_mode", text="Pass Mode")
+                                if slot.multi_pass_mode != 'NONE':
+                                    mp_box.label(text="Transform (Multi-pass):")
+                                    mp_box.prop(slot, "multi_pass_rect", text="Atlas Rect")
+                                    
+                                    mp_row = mp_box.row(align=True)
+                                    mp_row.prop(slot, "multi_pass_rotation", text="Rot")
+                                    mp_row.prop(slot, "multi_pass_mirror", text="", icon='MOD_MIRROR', toggle=True)
+                                    mp_row.prop(slot, "multi_pass_flip", text="", icon='UV_SYNC_SELECT', toggle=True)
 
     def draw_special_variables(self, layout, rzm):
         layout.separator()

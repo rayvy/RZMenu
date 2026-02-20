@@ -228,6 +228,48 @@ class RZM_OT_RemoveTwDecalLayer(bpy.types.Operator):
         if 0 <= idx < len(coll): coll.remove(idx)
         return {'FINISHED'}
 
+class RZM_OT_SetActiveBlock(bpy.types.Operator):
+    bl_idname = "rzm.set_active_block"
+    bl_label = "Set Active Block"
+    bl_options = {'REGISTER', 'UNDO'}
+    index: bpy.props.IntProperty()
+    def execute(self, context):
+        context.scene.rzm.active_tw_block_index = self.index
+        return {'FINISHED'}
+
+class RZM_OT_SetActiveComponent(bpy.types.Operator):
+    bl_idname = "rzm.set_active_component"
+    bl_label = "Set Active Component"
+    bl_options = {'REGISTER', 'UNDO'}
+    block_index: bpy.props.IntProperty()
+    index: bpy.props.IntProperty()
+    def execute(self, context):
+        context.scene.rzm.tw_blocks[self.block_index].active_component_index = self.index
+        return {'FINISHED'}
+
+class RZM_OT_SetActiveSlot(bpy.types.Operator):
+    bl_idname = "rzm.set_active_slot"
+    bl_label = "Set Active Slot"
+    bl_options = {'REGISTER', 'UNDO'}
+    block_index: bpy.props.IntProperty()
+    comp_index: bpy.props.IntProperty()
+    index: bpy.props.IntProperty()
+    def execute(self, context):
+        context.scene.rzm.tw_blocks[self.block_index].components[self.comp_index].active_slot_index = self.index
+        return {'FINISHED'}
+
+class RZM_OT_SetTwActiveLayer(bpy.types.Operator):
+    bl_idname = "rzm.set_tw_active_layer"
+    bl_label = "Set Active Layer"
+    bl_options = {'REGISTER', 'UNDO'}
+    block_index: bpy.props.IntProperty()
+    comp_index: bpy.props.IntProperty()
+    slot_index: bpy.props.IntProperty()
+    index: bpy.props.IntProperty()
+    def execute(self, context):
+        context.scene.rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index].active_layer_index = self.index
+        return {'FINISHED'}
+
 class RZM_OT_MoveTwItem(bpy.types.Operator):
     """Generic operator to move a TexWorks collection item up or down."""
     bl_idname = "rzm.move_tw_item"
@@ -445,9 +487,9 @@ classes_to_register = [
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
     RZM_OT_AddTwOverride, RZM_OT_RemoveTwOverride,
     RZM_OT_AddTwMaterial, RZM_OT_RemoveTwMaterial,
-    RZM_OT_AddTwBlock, RZM_OT_RemoveTwBlock,
-    RZM_OT_AddTwComponent, RZM_OT_RemoveTwComponent,
-    RZM_OT_AddTwSlot, RZM_OT_RemoveTwSlot,
-    RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_MoveTwItem,
+    RZM_OT_AddTwBlock, RZM_OT_RemoveTwBlock, RZM_OT_SetActiveBlock,
+    RZM_OT_AddTwComponent, RZM_OT_RemoveTwComponent, RZM_OT_SetActiveComponent,
+    RZM_OT_AddTwSlot, RZM_OT_RemoveTwSlot, RZM_OT_SetActiveSlot,
+    RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_SetTwActiveLayer, RZM_OT_MoveTwItem,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
 ]
