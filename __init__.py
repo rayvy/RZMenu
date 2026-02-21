@@ -1,4 +1,5 @@
 # RZMenu/__init__.py
+# Lasciate ogni speranza, voi ch'entrate
 bl_info = {
     "name": "RZMenu Constructor",
     "author": "Rayvich & Gemini",

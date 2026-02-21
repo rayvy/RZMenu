@@ -582,3 +582,18 @@ def update_value_link_multi_pattern(target_ids, index, field, new_pattern, origi
         if changed:
             blender_bridge.safe_undo_push(f"RZM: Pattern Rename VL {field}")
             signals.SIGNALS.data_changed.emit()
+def update_element_id(old_id, new_id):
+    """Special handler for ID changes via dedicated operator."""
+    if old_id == new_id: return
+    
+    print(f"[CORE_PROPS] update_element_id: {old_id} -> {new_id}")
+    
+    try:
+        # We use direct operator call because it handles complex hierarchy logic
+        bpy.ops.rzm.update_element_id(old_id=old_id, new_id=new_id)
+        
+        # Structure changed is emitted by the operator itself, 
+        # but we re-emit just in case to ensure UI full refresh
+        signals.SIGNALS.structure_changed.emit()
+    except Exception as e:
+        print(f"[CORE_PROPS] Error updating ID: {e}")

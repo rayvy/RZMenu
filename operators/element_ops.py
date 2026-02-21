@@ -209,7 +209,7 @@ class RZM_OT_SetElementPosition(bpy.types.Operator):
     """API Operator: Sets position for a specific element ID"""
     bl_idname = "rzm.set_element_position"
     bl_label = "Set Position"
-    bl_options = {'REGISTER', 'UNDO'} # <-- ВАЖНО: UNDO включено
+    bl_options = {'REGISTER', 'UNDO'}
 
     element_id: bpy.props.IntProperty()
     x: bpy.props.IntProperty()
@@ -217,18 +217,88 @@ class RZM_OT_SetElementPosition(bpy.types.Operator):
 
     def execute(self, context):
         rzm = context.scene.rzm
-        # Ищем элемент по ID
         target = next((e for e in rzm.elements if e.id == self.element_id), None)
-        
         if not target:
             return {'CANCELLED'}
-        
-        # Меняем данные (Блендер запомнит это состояние)
         target.position[0] = self.x
         target.position[1] = self.y
+        return {'FINISHED'}
+
+class RZM_OT_UpdateElementID(bpy.types.Operator):
+    """Updates an element ID, handling children and collisions (swapping)."""
+    bl_idname = "rzm.update_element_id"
+    bl_label = "Update Element ID"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    old_id: bpy.props.IntProperty()
+    new_id: bpy.props.IntProperty()
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        elements = rzm.elements
+        debug = rzm.addons.debugger_info
         
-        # Сообщаем всем, что данные изменились
-        # (В реальном проекте тут будет более умная система событий)
+        if self.old_id == self.new_id:
+            return {'FINISHED'}
+
+        target = next((e for e in elements if e.id == self.old_id), None)
+        collision = next((e for e in elements if e.id == self.new_id), None)
+
+        if not target:
+            self.report({'ERROR'}, f"Element with ID {self.old_id} not found")
+            return {'CANCELLED'}
+
+        if debug:
+            print(f"[RZM_DEBUG] Changing ID {self.old_id} -> {self.new_id}")
+
+        if collision:
+            if debug:
+                print(f"[RZM_DEBUG] Collision detected between ID {self.old_id} and {self.new_id}. Swapping.")
+            
+            # --- SWAP LOGIC (SAFE) ---
+            # Collect children first to avoid circular re-parenting
+            target_children = [e for e in elements if e.parent_id == self.old_id]
+            collision_children = [e for e in elements if e.parent_id == self.new_id]
+
+            # 1. Swap the IDs of the parents
+            target.id = self.new_id
+            collision.id = self.old_id
+
+            # 2. Update children to follow their respective parents to their NEW IDs
+            for e in target_children:
+                e.parent_id = self.new_id
+                if debug: print(f"  > Target's Child {e.element_name} parent_id: {self.old_id} -> {self.new_id}")
+            
+            for e in collision_children:
+                e.parent_id = self.old_id
+                if debug: print(f"  > Collision's Child {e.element_name} parent_id: {self.new_id} -> {self.old_id}")
+            
+            if debug:
+                print(f"[RZM_DEBUG] Swap complete: {target.element_name}({self.new_id}) and {collision.element_name}({self.old_id})")
+            
+        else:
+            # --- SIMPLE UPDATE LOGIC ---
+            # Collect children first
+            target_children = [e for e in elements if e.parent_id == self.old_id]
+
+            # 1. Update parent ID
+            target.id = self.new_id
+
+            # 2. Update children
+            for e in target_children:
+                e.parent_id = self.new_id
+                if debug: print(f"  > Child {e.element_name} parent_id: {self.old_id} -> {self.new_id}")
+            
+            if debug:
+                print(f"[RZM_DEBUG] ID update complete: {target.element_name}({self.new_id})")
+
+        # Report to Blender UI as well
+        self.report({'INFO'}, f"ID Updated: {self.old_id} -> {self.new_id}")
+
+        # Update active index if needed (though Qt usually handles this via ID)
+        from ..qt_editor.core.signals import SIGNALS
+        SIGNALS.structure_changed.emit()
+
         return {'FINISHED'}
 
 classes_to_register = [
@@ -238,5 +308,6 @@ classes_to_register = [
     RZM_OT_DeselectElement,
     RZM_OT_MoveElementUp,
     RZM_OT_MoveElementDown,
-    RZM_OT_SetElementPosition
+    RZM_OT_SetElementPosition,
+    RZM_OT_UpdateElementID
 ]

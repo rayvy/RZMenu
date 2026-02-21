@@ -679,8 +679,10 @@ class RZMInspectorPanel(RZEditorPanel):
         self.grp_ident = RZGroupBox("Identity")
         form_ident = QtWidgets.QFormLayout(self.grp_ident)
         
-        self.lbl_id = RZLabel("ID: None")
-        form_ident.addRow("ID:", self.lbl_id)
+        self.spin_id = RZSpinBox()
+        self.spin_id.setRange(0, 99999)
+        self.spin_id.editingFinished.connect(self._on_id_changed)
+        form_ident.addRow("ID:", self.spin_id)
 
         self.name_edit = RZLineEdit()
         self.name_edit.editingFinished.connect(lambda: self._emit_change('element_name', self.name_edit.text()))
@@ -1173,6 +1175,18 @@ class RZMInspectorPanel(RZEditorPanel):
             print(f"[INSPECTOR] Standard update for '{key}': {val}")
             core.update_property_multi(ctx.selected_ids, key, val, sub)
 
+    def _on_id_changed(self):
+        if self._block_signals: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if len(ctx.selected_ids) != 1: return
+        
+        old_id = ctx.active_id
+        new_id = int(self.spin_id.value())
+        if old_id == new_id: return
+        
+        # Use specialized ID updater
+        core.props.update_element_id(old_id, new_id)
+
     def _emit_math(self, key, op_str):
         ctx = RZContextManager.get_instance().get_snapshot()
         if not ctx.selected_ids: return
@@ -1187,7 +1201,13 @@ class RZMInspectorPanel(RZEditorPanel):
             self.tab_raw.setEnabled(True)
             
             # --- Identity ---
-            self.lbl_id.setText(f"ID: {props.get('id')}" if not props.get('is_multi') else "Multiple Selection")
+            is_single = not props.get('is_multi')
+            self.spin_id.setEnabled(is_single)
+            if is_single:
+                self.spin_id.setValue(props.get('id', 0))
+            else:
+                self.spin_id.setSpecialValueText("Multiple")
+                self.spin_id.setValue(0)
             
             # Pattern mode for Name
             name_pattern = props.get('name_pattern')
@@ -1382,7 +1402,8 @@ class RZMInspectorPanel(RZEditorPanel):
             self.has_data = False
             self.scroll_content.setEnabled(False)
             self.tab_raw.setEnabled(False)
-            self.lbl_id.setText("No Selection")
+            self.spin_id.setSpecialValueText("None")
+            self.spin_id.setValue(0)
             self.name_edit.clear()
 
         self._block_signals = False
