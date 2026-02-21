@@ -88,7 +88,7 @@
     "system": {
         "version": "2.1.0",
         "ui_scale": 1.0,
-        "last_layout": "Default"
+        "last_layout": "CONFIG"
     },
     "element_defaults": {
         "CONTAINER": {

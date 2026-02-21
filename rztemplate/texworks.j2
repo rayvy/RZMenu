@@ -459,6 +459,7 @@ if $ModInitialised == 1
     {% for block in rzm.tw_blocks %}
     run = CommandListBlock_{{ block.name }}
     {% endfor %}
+    run = CommandListTexWorks_Finalize
 endif
 
 {% for block in rzm.tw_blocks %}
@@ -496,12 +497,10 @@ endif
         {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 if ${{ l_var_base }}Index0 != ${{ l_var_base }}IndexPast0
     $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 1
-    ${{ l_var_base }}IndexPast0 = ${{ l_var_base }}Index0
 endif
         {% if slot.multi_pass_mode == 'INDIVIDUAL' %}
 if ${{ l_var_base }}Index1 != ${{ l_var_base }}IndexPast1
     $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 1
-    ${{ l_var_base }}IndexPast1 = ${{ l_var_base }}Index1
 endif
         {% endif %}
     {% endfor %}
@@ -527,7 +526,6 @@ endif
 local $current_sum_{{ block.name }}_{{ comp.name }} = {{ sum_parts | join(' + ') }}
 if $Comp_{{ block.name }}_{{ comp.name }}_PastSum != $current_sum_{{ block.name }}_{{ comp.name }}
     $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 1
-    $Comp_{{ block.name }}_{{ comp.name }}_PastSum = $current_sum_{{ block.name }}_{{ comp.name }}
 endif
 {% endif %}
 
@@ -537,6 +535,42 @@ if $TW_{{ block.name }}_{{ comp.name }}_Is_Updated == 1
     $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 0
 endif
 {% endfor %}
+{% endfor %}
+
+[CommandListTexWorks_Finalize]
+{# Finalizing Indices Sync #}
+{% for block in rzm.tw_blocks %}
+    {% for comp in block.components %}
+        {% for slot in comp.slots if slot.active %}
+            {% for layer in slot.decal_layers if layer.active %}
+                {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
+${{ l_var_base }}IndexPast0 = ${{ l_var_base }}Index0
+                {% if slot.multi_pass_mode == 'INDIVIDUAL' %}
+${{ l_var_base }}IndexPast1 = ${{ l_var_base }}Index1
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+        
+        {% set sum_parts = [] %}
+        {% for slot in comp.slots if slot.active %}
+            {% if slot.hsv_link %}
+                {% set v_name = utils.format_var(slot.hsv_link) %}
+                {% set _ = sum_parts.append("$" ~ v_name ~ "_X") %}
+                {% set _ = sum_parts.append("$" ~ v_name ~ "_Y") %}
+                {% set _ = sum_parts.append("$" ~ v_name ~ "_Z") %}
+                {% set _ = sum_parts.append("$" ~ v_name ~ "_W") %}
+            {% endif %}
+        {% endfor %}
+        {% if comp.tex_morph_enabled and comp.tex_morph_link %}
+            {% set m_var = utils.format_var(comp.tex_morph_link) %}
+            {% set _ = sum_parts.append("$" ~ m_var) %}
+        {% endif %}
+        {% if sum_parts %}
+$Comp_{{ block.name }}_{{ comp.name }}_PastSum = {{ sum_parts | join(' + ') }}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
+
 
 {# Reset Shader Config #}
 x46 = 0.0
@@ -548,7 +582,6 @@ x47 = 0.0
 y47 = 0.0
 z47 = 0.0
 w47 = 0.0
-{% endfor %}
 
 {% endcall %}
 {% endmacro %}
