@@ -122,9 +122,11 @@ class RZInputController(QtCore.QObject):
             "Alt+L": "rzm.toggle_selectable",
             
             # --- Clipboard / Duplication ---
-            "Ctrl+C": "rzm.copy",                # <--- Исправление 2: Copy
-            "Ctrl+V": "rzm.paste",               # <--- Исправление 3: Paste
-            "Ctrl+D": "rzm.duplicate",           # <--- Исправление 4: Duplicate
+            "Ctrl+C": "rzm.copy",
+            "Ctrl+V": "rzm.paste",
+            "Ctrl+Shift+V": {"op": "rzm.paste", "args": {"mode": "LOCAL", "offset": 0}},
+            "Ctrl+D": "rzm.duplicate",
+            "Ctrl+Shift+D": {"op": "rzm.duplicate", "args": {"offset": 0}},
             "Shift+D": "rzm.duplicate",          # Blender-style duplicate
             
             # --- Deletion ---

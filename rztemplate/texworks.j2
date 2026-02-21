@@ -50,6 +50,7 @@ endif
 {% for block in rzm.tw_blocks %}
 ; Block: {{ block.name }} ({{ block.shader_type }})
 {% set block_res = utils.clean_resource(block.resource_name) %}
+{% set tex_block_name = block.shared_textures_block if block.use_shared_textures and block.shared_textures_block else block.name %}
 
 {# Auto-generate resource if output resource name is missing #}
 {% if not block.resource_name %}
@@ -94,8 +95,10 @@ dispatch = {{ block.backdrop_rect[2] }} // 32, {{ block.backdrop_rect[3] }} // 3
 ; --- Component: {{ comp.name }} ---
 {% set comp_path = "TexWorks/" ~ block.name ~ "/" ~ comp.name %}
 {% if comp.mask_enabled %}
-[Resource{{ comp.name }}Mask]
+{% if not block.use_shared_textures %}
+[Resource{{ block.name }}{{ comp.name }}Mask]
 filename = {{ comp_path }}/mask.png
+{% endif %}
 {% endif %}
 
 [CommandListUpdateComp_{{ block.name }}_{{ comp.name }}]
@@ -243,13 +246,16 @@ dispatch = {{ comp.rect[2] }} // 32, {{ comp.rect[3] }} // 32, 1
 {% for slot in comp.slots if slot.active %}
 {# Slot Resources (Masks, Decal variations, Config Buffer) #}
 {% if slot.mask_enabled %}
-[Resource{{ comp.name }}{{ slot.name }}Mask]
+{% if not block.use_shared_textures %}
+[Resource{{ block.name }}{{ comp.name }}{{ slot.name }}Mask]
 {% set clean_comp = comp.name.replace(" ", "") %}
 {% set clean_slot = slot.name.replace(" ", "") %}
 filename = {{ comp_path }}/{{ slot.name }}/{{ clean_comp }}{{ clean_slot }}.MASK.png
 {% endif %}
+{% endif %}
 
 {# New Config Buffers for Slot #}
+{% if not comp.use_shared_config %}
 [Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.P0]
 type = Buffer
 format = R32_FLOAT
@@ -279,8 +285,10 @@ array = 8
 {% set p1_flp = 1.0 if slot.multi_pass_flip else 0.0 %}
 data = {{ p1_x }} {{ p1_y }} {{ p1_w }} {{ p1_h }} {{ p1_rot }} {{ p1_dmy }} {{ p1_mir }} {{ p1_flp }}
 {% endif %}
+{% endif %}
 
 {# Warp Buffers #}
+{% if not comp.use_shared_config %}
 {% if slot.warp_p0_enabled %}
 [Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P0]
 type = Buffer
@@ -296,7 +304,9 @@ format = R32G32_FLOAT
 array = 9
 data = {% for v in slot.warp_p1_grid %}{{ "%.5f"|format(v) }} {% endfor %}
 {% endif %}
+{% endif %}
 
+{% if not block.use_shared_textures %}
 {% for layer in slot.decal_layers if layer.active %}
     {% for i in range(layer.count) %}
         {% set file_suffix = "" %}
@@ -306,6 +316,7 @@ data = {% for v in slot.warp_p1_grid %}{{ "%.5f"|format(v) }} {% endfor %}
 filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ i }}{{ file_suffix }}.png
     {% endfor %}
 {% endfor %}
+{% endif %}
 
 {# HSV Compute Shader (TODO: Optional - currently updated to use buffer logic if needed) #}
 {% if slot.hsv_enabled and slot.hsv_link %}
@@ -313,7 +324,7 @@ filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ i }}{{ file_suffi
 cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
-cs-t1 = {% if slot.hsv_mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
+cs-t1 = {% if slot.hsv_mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}Mask{% else %}null{% endif %}
 {% set v_name = utils.format_var(slot.hsv_link) %}
 x43 = ${{ v_name }}_X - {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
 y43 = ${{ v_name }}_Y - {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
@@ -334,21 +345,24 @@ dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 
 {# Layer Compute Shaders #}
 {% for layer in slot.decal_layers if layer.active %}
-{% set l_var_base = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name %}
+{% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 {% set material = rzm.tw_materials.get(layer.name) %}
 
 {# SHARED PARAMETERS MACRO #}
 {% macro layer_shader_params(pass_idx) %}
-cs = /modules/texworks/decal_draw_NEW.hlsl
+{% set warp_enabled = (pass_idx == 0 and slot.warp_p0_enabled) or (pass_idx == 1 and slot.warp_p1_enabled) %}
+cs = /modules/{% if warp_enabled %}decal_draw_wrap.hlsl{% else %}decal_draw.hlsl{% endif %}
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
-cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
-cs-t2 = {% if slot.mask_enabled %}Resource{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
-cs-t3 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.P{{ pass_idx }}
+cs-t1 = {% if comp.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}Mask{% else %}null{% endif %}
+cs-t2 = {% if slot.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
+{% set cfg_block = comp.shared_config_block if comp.use_shared_config and comp.shared_config_block else block.name %}
+{% set cfg_comp = comp.shared_config_component if comp.use_shared_config and comp.shared_config_component else comp.name %}
+cs-t3 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.P{{ pass_idx }}
 {% if pass_idx == 0 and slot.warp_p0_enabled %}
-cs-t4 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P0
+cs-t4 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P0
 {% elif pass_idx == 1 and slot.warp_p1_enabled %}
-cs-t4 = Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.Warp.P1
+cs-t4 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P1
 {% endif %}
 
 x45 = {{ "%.1f"|format(comp.rect[0]) }}
@@ -359,13 +373,6 @@ w45 = {{ "%.1f"|format(comp.rect[3]) }}
 {% if scene.rzm.addons.debugger_info %}
 ; Debug override data from UI (Linked to persist vars)
 {% endif %}
-
-{% if material %}
-x46 = {{ "%.3f"|format(material.parameters[0]) }}
-y46 = {{ "%.3f"|format(material.parameters[1]) }}
-z46 = {{ "%.3f"|format(material.parameters[2]) }}
-w46 = {{ "%.3f"|format(material.parameters[3]) }}
-{% endif %}
 {% endmacro %}
 
 {# --- PASS 0 SHADER --- #}
@@ -375,7 +382,7 @@ if ${{ l_var_base }}Index0 >= 0
     {# Index Switching Pass 0 #}
     {% for i in range(layer.count) %}
     {% if loop.first %}if ${{ l_var_base }}Index0 == {{ i }}{% else %}elif ${{ l_var_base }}Index0 == {{ i }}{% endif %}
-        cs-t0 = Resource_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
+        cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
     w44 = {{ 1.0 if (slot.mask_enabled and slot.pass0_use_mask) else 0.0 }}
@@ -391,7 +398,7 @@ if ${{ p1_idx_var }} >= 0
     {# Index Switching Pass 1 #}
     {% for i in range(layer.count) %}
     {% if loop.first %}if ${{ p1_idx_var }} == {{ i }}{% else %}elif ${{ p1_idx_var }} == {{ i }}{% endif %}
-        cs-t0 = Resource_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
+        cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
     w44 = {{ 1.0 if (slot.mask_enabled and slot.pass1_use_mask) else 0.0 }}
@@ -405,34 +412,35 @@ endif
 
 ; --- 4. INITIALIZATION & HIERARCHY ---
 [Constants]
-global $TW_Init_Needed = 1
 {% for block in rzm.tw_blocks %}
+global $TW_Init_Needed_{{ block.name }} = 1
 global $TW_Global_Init_Needed_{{ block.name }} = 1
 {% endfor %}
 
-{% set ns = namespace(processed_vars=[]) %}
+{% set tw_vars %}
+{% set processed_vars = [] %}
 {% for block in rzm.tw_blocks %}
     {% for comp in block.components %}
-global $TW_{{ comp.name }}_Is_Updated = 0
+global $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 0
 global $Comp_{{ block.name }}_{{ comp.name }}_PastSum = -1
         {% for slot in comp.slots if slot.active %}
             {% if slot.hsv_enabled and slot.hsv_link %}
                 {% set v_name = utils.format_var(slot.hsv_link) %}
-                {% if v_name not in ns.processed_vars %}
+                {% if v_name not in processed_vars %}
                     {# Проверяем, есть ли эта переменная в глобальном списке. Если нет - создаем #}
-                    {% set from_coll = namespace(found=false) %}
-                    {% for v in rzm.rzm_values if utils.format_var(v.value_name) == v_name %}{% set from_coll.found = true %}{% endfor %}
+                    {% set from_coll = {'found': false} %}
+                    {% for v in rzm.rzm_values if utils.format_var(v.value_name) == v_name %}{% if from_coll.update({'found': true}) %}{% endif %}{% endfor %}
                     {% if not from_coll.found %}
 global persist ${{ v_name }}_X = {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
 global persist ${{ v_name }}_Y = {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.5) }}
 global persist ${{ v_name }}_Z = {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.6) }}
 global persist ${{ v_name }}_W = 0.0
                     {% endif %}
-                    {% set _ = ns.processed_vars.append(v_name) %}
+                    {% set _ = processed_vars.append(v_name) %}
                 {% endif %}
             {% endif %}
             {% for layer in slot.decal_layers if layer.active %}
-                {% set l_var_base = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name %}
+                {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 global persist ${{ l_var_base }}Index0 = -1
 global ${{ l_var_base }}IndexPast0 = -1
                 {% if slot.multi_pass_mode == 'INDIVIDUAL' %}
@@ -443,6 +451,8 @@ global ${{ l_var_base }}IndexPast1 = -1
         {% endfor %}
     {% endfor %}
 {% endfor %}
+{% endset %}
+{{ utils.deduplicate(tw_vars) }}
 
 [CommandListTexWorks]
 if $ModInitialised == 1
@@ -453,6 +463,17 @@ endif
 
 {% for block in rzm.tw_blocks %}
 [CommandListBlock_{{ block.name }}]
+{# Shader Config Injection #}
+x46 = {{ "%.3f"|format(block.shader_config[0]) }}
+y46 = {{ "%.3f"|format(block.shader_config[1]) }}
+z46 = {{ "%.3f"|format(block.shader_config[2]) }}
+w46 = {{ "%.3f"|format(block.shader_config[3]) }}
+
+x47 = {{ "%.3f"|format(block.shader_overlay[0]) }}
+y47 = {{ "%.3f"|format(block.shader_overlay[1]) }}
+z47 = {{ "%.3f"|format(block.shader_overlay[2]) }}
+w47 = {{ "%.3f"|format(block.shader_overlay[3]) }}
+
 {# Global Backdrop Init (Runs Once) #}
 {% if block.backdrop_enabled and block.backdrop_resource_name %}
 if $TW_Global_Init_Needed_{{ block.name }} == 1
@@ -461,25 +482,25 @@ endif
 {% endif %}
 
 {# Initialization #}
-if $TW_Init_Needed == 1
+if $TW_Init_Needed_{{ block.name }} == 1
     {% for comp in block.components %}
-    $TW_{{ comp.name }}_Is_Updated = 1
+    $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 1
     {% endfor %}
-    $TW_Init_Needed = 0
+    $TW_Init_Needed_{{ block.name }} = 0
 endif
 
 {% for comp in block.components %}
 {# 1. Check Decal Changes #}
 {% for slot in comp.slots if slot.active %}
     {% for layer in slot.decal_layers if layer.active %}
-        {% set l_var_base = "TW_D" ~ block.name ~ comp.name ~ slot.name ~ layer.name %}
+        {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 if ${{ l_var_base }}Index0 != ${{ l_var_base }}IndexPast0
-    $TW_{{ comp.name }}_Is_Updated = 1
+    $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 1
     ${{ l_var_base }}IndexPast0 = ${{ l_var_base }}Index0
 endif
         {% if slot.multi_pass_mode == 'INDIVIDUAL' %}
 if ${{ l_var_base }}Index1 != ${{ l_var_base }}IndexPast1
-    $TW_{{ comp.name }}_Is_Updated = 1
+    $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 1
     ${{ l_var_base }}IndexPast1 = ${{ l_var_base }}Index1
 endif
         {% endif %}
@@ -505,17 +526,28 @@ endif
 {% if sum_parts %}
 local $current_sum_{{ block.name }}_{{ comp.name }} = {{ sum_parts | join(' + ') }}
 if $Comp_{{ block.name }}_{{ comp.name }}_PastSum != $current_sum_{{ block.name }}_{{ comp.name }}
-    $TW_{{ comp.name }}_Is_Updated = 1
+    $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 1
     $Comp_{{ block.name }}_{{ comp.name }}_PastSum = $current_sum_{{ block.name }}_{{ comp.name }}
 endif
 {% endif %}
 
 {# 3. Conditional Update #}
-if $TW_{{ comp.name }}_Is_Updated == 1
+if $TW_{{ block.name }}_{{ comp.name }}_Is_Updated == 1
     run = CommandListUpdateComp_{{ block.name }}_{{ comp.name }}
-    $TW_{{ comp.name }}_Is_Updated = 0
+    $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 0
 endif
 {% endfor %}
+
+{# Reset Shader Config #}
+x46 = 0.0
+y46 = 0.0
+z46 = 0.0
+w46 = 0.0
+
+x47 = 0.0
+y47 = 0.0
+z47 = 0.0
+w47 = 0.0
 {% endfor %}
 
 {% endcall %}

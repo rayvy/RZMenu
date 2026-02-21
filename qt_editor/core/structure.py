@@ -163,9 +163,10 @@ def duplicate_elements(target_ids, offset=20):
             new_elem.elem_class = src.elem_class
             
             # Position/Size
+            # If offset is 0, it's a 1:1 duplicate
             new_elem.position = (src.position[0] + offset, src.position[1] - offset) 
             new_elem.size = src.size[:]
-            new_elem.parent_id = src.parent_id 
+            new_elem.parent_id = src.parent_id
             
             # Formula Logic
             new_elem.position_is_formula = src.position_is_formula

@@ -148,6 +148,62 @@ class RZM_OT_AddTwBlock(bpy.types.Operator):
         context.scene.rzm.tw_blocks.add()
         return {'FINISHED'}
 
+def copy_properties(src, target):
+    """Recursively copies properties from one PropertyGroup to another."""
+    if not src or not target: return
+    
+    for prop in src.bl_rna.properties:
+        ident = prop.identifier
+        if ident in {"rna_type"}: continue
+        
+        # Collection handling: add then recurse
+        if prop.type == 'COLLECTION':
+            src_coll = getattr(src, ident)
+            target_coll = getattr(target, ident)
+            # We don't clear() because it's a new item, but if it were an update, clear() would be needed.
+            # In duplicate mode, target_coll is usually empty if it's a fresh .add()
+            target_coll.clear()
+            for src_item in src_coll:
+                target_item = target_coll.add()
+                copy_properties(src_item, target_item)
+            continue
+            
+        if prop.is_readonly: continue
+        
+        try:
+            setattr(target, ident, getattr(src, ident))
+        except Exception as e:
+            print(f"Error copying property {ident}: {e}")
+
+class RZM_OT_DuplicateTwBlock(bpy.types.Operator):
+    bl_idname = "rzm.duplicate_tw_block"
+    bl_label = "Duplicate Block"
+    bl_options = {'REGISTER', 'UNDO'}
+    index: bpy.props.IntProperty(default=-1)
+    
+    def execute(self, context):
+        rzm = context.scene.rzm
+        try:
+            idx = self.index if self.index >= 0 else rzm.active_tw_block_index
+            if idx < 0 or idx >= len(rzm.tw_blocks): return {'CANCELLED'}
+            
+            src_block = rzm.tw_blocks[idx]
+            new_block = rzm.tw_blocks.add()
+            
+            # Copy all props
+            copy_properties(src_block, new_block)
+            
+            # Override name with copy suffix
+            new_block.name = src_block.name + "_copy"
+            
+            # Select new block
+            rzm.active_tw_block_index = len(rzm.tw_blocks) - 1
+            
+        except (IndexError, AttributeError):
+            return {'CANCELLED'}
+        
+        return {'FINISHED'}
+
 class RZM_OT_RemoveTwBlock(bpy.types.Operator):
     bl_idname = "rzm.remove_tw_block"
     bl_label = "Remove Block"
@@ -607,7 +663,7 @@ classes_to_register = [
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
     RZM_OT_AddTwOverride, RZM_OT_RemoveTwOverride,
     RZM_OT_AddTwMaterial, RZM_OT_RemoveTwMaterial,
-    RZM_OT_AddTwBlock, RZM_OT_RemoveTwBlock, RZM_OT_SetActiveBlock,
+    RZM_OT_AddTwBlock, RZM_OT_RemoveTwBlock, RZM_OT_DuplicateTwBlock, RZM_OT_SetActiveBlock,
     RZM_OT_AddTwComponent, RZM_OT_RemoveTwComponent, RZM_OT_SetActiveComponent,
     RZM_OT_AddTwSlot, RZM_OT_RemoveTwSlot, RZM_OT_SetActiveSlot,
     RZM_OT_AddTwDecalLayer, RZM_OT_RemoveTwDecalLayer, RZM_OT_SetTwActiveLayer, RZM_OT_MoveTwItem,

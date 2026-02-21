@@ -425,7 +425,7 @@ class TexWorksMainTab(BaseConfigTab):
         self._call_op("update_tw_item", **kwargs)
         
         # Refresh UI for structure changes
-        if prop in ['tw_is_expanded', 'backdrop_enabled', 'tex_morph_enabled', 'mask_enabled', 'hsv_enabled', 'multi_pass_mode']:
+        if prop in ['tw_is_expanded', 'backdrop_enabled', 'tex_morph_enabled', 'mask_enabled', 'hsv_enabled', 'multi_pass_mode', 'use_shared_textures', 'use_shared_config']:
             self.update_ui()
 
     # --- BLOCK ---
@@ -453,6 +453,10 @@ class TexWorksMainTab(BaseConfigTab):
         cb_type.currentTextChanged.connect(lambda v: self._on_val("blocks", w.property("item_index"), "shader_type", v))
         h.addWidget(cb_type)
         
+        dup = RZPushButton("Duplicate"); dup.setFixedWidth(80)
+        dup.clicked.connect(lambda: (self._call_op("duplicate_tw_block", index=w.property("item_index")), self.update_ui()))
+        h.addWidget(dup)
+        
         rem = RZPushButton("×"); rem.setFixedWidth(25)
         rem.clicked.connect(lambda: (self._call_op("remove_tw_block", index=w.property("item_index")), self.update_ui()))
         h.addWidget(rem)
@@ -464,10 +468,24 @@ class TexWorksMainTab(BaseConfigTab):
         b_chk.toggled.connect(lambda v: self._on_val("blocks", w.property("item_index"), "backdrop_enabled", str(v)))
         hb.addWidget(b_chk)
         
-        b_res = RZLineEdit(); b_res.setPlaceholderText("Backdrop Res")
-        b_res.editingFinished.connect(lambda: self._on_val("blocks", w.property("item_index"), "backdrop_resource_name", b_res.text()))
         hb.addWidget(b_res)
         vl.addLayout(hb)
+
+        # Shared Textures
+        hs = QtWidgets.QHBoxLayout(); hs.setContentsMargins(20, 0, 0, 0)
+        s_chk = RZCheckBox("Shared Textures")
+        s_chk.toggled.connect(lambda v: self._on_val("blocks", w.property("item_index"), "use_shared_textures", str(v)))
+        hs.addWidget(s_chk)
+        
+        s_block = RZLineEdit(); s_block.setPlaceholderText("Source Block")
+        s_block.editingFinished.connect(lambda: self._on_val("blocks", w.property("item_index"), "shared_textures_block", s_block.text()))
+        hs.addWidget(s_block)
+        
+        hs.addWidget(RZLabel("UV Rescale:"))
+        uv_scale = RZDoubleSpinBox(); uv_scale.setRange(0.01, 10.0); uv_scale.setSingleStep(0.1); uv_scale.setFixedWidth(60)
+        uv_scale.valueChanged.connect(lambda v: self._on_val("blocks", w.property("item_index"), "uv_rescale", str(v)))
+        hs.addWidget(uv_scale)
+        vl.addLayout(hs)
         
         # Backdrop Rect
         hrb = QtWidgets.QHBoxLayout(); hrb.setContentsMargins(20, 0, 0, 0)
@@ -489,7 +507,12 @@ class TexWorksMainTab(BaseConfigTab):
         from .lib.ui_helpers import ListItemManager
         c_mgr = ListItemManager(cl, self._create_comp, self._update_comp)
         
-        w.refs = {'lbl': lbl, 'name': name, 'res': res, 'cb_type': cb_type, 'b_chk': b_chk, 'b_res': b_res, 'b_rect_spins': b_rect_spins, 'c_mgr': c_mgr}
+        w.refs = {
+            'lbl': lbl, 'name': name, 'res': res, 'cb_type': cb_type, 
+            'b_chk': b_chk, 'b_res': b_res, 'b_rect_spins': b_rect_spins, 
+            's_chk': s_chk, 's_block': s_block, 'uv_scale': uv_scale,
+            'c_mgr': c_mgr
+        }
         return w
 
     def _update_block(self, w, item, index, parent_index=-1):
@@ -501,14 +524,19 @@ class TexWorksMainTab(BaseConfigTab):
         if r['cb_type'].currentText() != item.shader_type:
             r['cb_type'].blockSignals(True); r['cb_type'].setCurrentText(item.shader_type); r['cb_type'].blockSignals(False)
             
-        r['b_chk'].setChecked(item.backdrop_enabled)
-        r['b_res'].setText(item.backdrop_resource_name); r['b_res'].setVisible(item.backdrop_enabled)
-        r['b_rect_spins'][0].parentWidget().setVisible(item.backdrop_enabled) # Hide whole rect layout if disabled? Optional, keeping rect visible for now
+        w.refs['b_chk'].setChecked(item.backdrop_enabled)
+        w.refs['b_res'].setText(item.backdrop_resource_name)
+        w.refs['b_res'].setVisible(item.backdrop_enabled)
+        for i, s in enumerate(w.refs['b_rect_spins']):
+            s.setValue(item.backdrop_rect[i])
+            s.setVisible(item.backdrop_enabled)
+
+        w.refs['s_chk'].setChecked(item.use_shared_textures)
+        w.refs['s_block'].setText(item.shared_textures_block)
+        w.refs['s_block'].setVisible(item.use_shared_textures)
+        w.refs['uv_scale'].setValue(item.uv_rescale)
         
-        for i in range(4):
-            if r['b_rect_spins'][i].value() != item.backdrop_rect[i]: r['b_rect_spins'][i].setValue(item.backdrop_rect[i])
-            
-        r['c_mgr'].sync(item.components, parent_index=index)
+        w.refs['c_mgr'].update(item.components, parent_index=index)
 
     # --- COMPONENT ---
     def _create_comp(self, index):
@@ -574,6 +602,21 @@ class TexWorksMainTab(BaseConfigTab):
             spin.valueChanged.connect(lambda v, i=i: self._on_val("components", w.property("item_index"), f"rect[{i}]", str(v), block_index=w.property("block_index")))
             ht.addWidget(spin); rect_spins.append(spin)
         v_det.addLayout(ht)
+
+        # Shared Config
+        hc = QtWidgets.QHBoxLayout(); hc.setContentsMargins(0, 0, 0, 0)
+        c_shared = RZCheckBox("Shared Config")
+        c_shared.toggled.connect(lambda v: self._on_val("components", w.property("item_index"), "use_shared_config", str(v), block_index=w.property("block_index")))
+        hc.addWidget(c_shared)
+        
+        c_sh_block = RZLineEdit(); c_sh_block.setPlaceholderText("Src Block")
+        c_sh_block.editingFinished.connect(lambda: self._on_val("components", w.property("item_index"), "shared_config_block", c_sh_block.text(), block_index=w.property("block_index")))
+        hc.addWidget(c_sh_block)
+        
+        c_sh_comp = RZLineEdit(); c_sh_comp.setPlaceholderText("Src Comp")
+        c_sh_comp.editingFinished.connect(lambda: self._on_val("components", w.property("item_index"), "shared_config_component", c_sh_comp.text(), block_index=w.property("block_index")))
+        hc.addWidget(c_sh_comp)
+        v_det.addLayout(hc)
         
         # Slots Section
         sl = QtWidgets.QVBoxLayout(); v_det.addLayout(sl)
@@ -585,7 +628,13 @@ class TexWorksMainTab(BaseConfigTab):
         s_mgr = ListItemManager(sl, self._create_slot, self._update_slot)
         
         vl.addWidget(details)
-        w.refs = {'exp': exp, 'name': name, 'base': base, 'details': details, 'm_chk': m_chk, 'm_res': m_res, 'm_link': m_link, 'c_mask': c_mask, 'base_rect': base_rect_spins, 'rect': rect_spins, 's_mgr': s_mgr}
+        w.refs = {
+            'exp': exp, 'name': name, 'base': base, 'details': details, 
+            'm_chk': m_chk, 'm_res': m_res, 'm_link': m_link, 
+            'c_mask': c_mask, 'base_rect': base_rect_spins, 'rect': rect_spins, 
+            'c_shared': c_shared, 'c_sh_block': c_sh_block, 'c_sh_comp': c_sh_comp,
+            's_mgr': s_mgr
+        }
         return w
 
     def _update_comp(self, w, item, index, parent_index=-1):
@@ -608,9 +657,14 @@ class TexWorksMainTab(BaseConfigTab):
         
         for i in range(4):
             if r['base_rect'][i].value() != item.base_rect[i]: r['base_rect'][i].setValue(item.base_rect[i])
+        for i in range(4):
             if r['rect'][i].value() != item.rect[i]: r['rect'][i].setValue(item.rect[i])
+
+        r['c_shared'].setChecked(item.use_shared_config)
+        r['c_sh_block'].setText(item.shared_config_block); r['c_sh_block'].setVisible(item.use_shared_config)
+        r['c_sh_comp'].setText(item.shared_config_component); r['c_sh_comp'].setVisible(item.use_shared_config)
             
-        r['s_mgr'].sync(item.slots, parent_index=index)
+        r['s_mgr'].update(item.slots, block_index=parent_index, comp_index=index)
 
     # --- SLOT ---
     def _create_slot(self, index):

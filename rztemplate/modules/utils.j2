@@ -99,10 +99,10 @@
 {%- macro get_var_name(name, scene, auto_x=true) -%}
     {%- if not name -%}{%- else -%}
         {%- set base = name.lstrip('$@#%') -%}
-        {%- set found = namespace(type='FLOAT') -%}
+        {%- set found = {'type': 'FLOAT'} -%}
         {%- if scene.rzm and scene.rzm.rzm_values -%}
             {%- for v in scene.rzm.rzm_values if v.value_name.lstrip('$@#%') == base -%}
-                {%- set found.type = v.value_type -%}
+                {%- if found.update({'type': v.value_type}) -%}{%- endif -%}
             {%- endfor -%}
         {%- endif -%}
         {%- if found.type == 'VECTOR' and auto_x -%}
@@ -139,3 +139,27 @@
         {%- endif -%}
     {%- endfor -%}
 {%- endmacro -%}
+
+{% macro deduplicate(text)%}
+{% set string = text %}
+{% set string_array = [] %}
+{# 1. Разбиваем строку на массив по строкам #}
+{% set string_array = string.split('\n') %}
+
+{% set unique_strings = [] %}
+
+{# 2. Удаляем дубликаты #}
+{% for line in string_array %}
+    {% if line not in unique_strings %}
+        {% set _ = unique_strings.append(line) %}
+    {% endif %}
+{% endfor %}
+
+{% for line in unique_strings %}
+{{ line }}
+{% endfor %}
+{%endmacro%}
+
+{% macro merge_strings(a, b) -%}
+{{ a ~ '\n' ~ b }}
+{%- endmacro %}

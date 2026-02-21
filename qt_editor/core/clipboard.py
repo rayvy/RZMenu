@@ -14,12 +14,17 @@ def copy_elements(target_ids):
     if not bpy.context or not bpy.context.scene: return
     elements = bpy.context.scene.rzm.elements
     
+    elem_map = {e.id: e for e in elements}
+    from .maths import get_global_pos
+
     for elem in elements:
         if elem.id in target_ids:
+            gx, gy = get_global_pos(elem, elem_map)
             data = {
                 "name": elem.element_name,
                 "class": elem.elem_class,
                 "pos": list(elem.position),
+                "global_pos": [gx, gy],
                 "size": list(elem.size),
                 "color": list(elem.color) if hasattr(elem, "color") else [1,1,1,1],
                 "alignment": elem.alignment,
@@ -86,7 +91,7 @@ def copy_elements(target_ids):
             }
             _INTERNAL_CLIPBOARD.append(data)
 
-def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1):
+def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='GLOBAL'):
     global _INTERNAL_CLIPBOARD
     if not _INTERNAL_CLIPBOARD: return []
     
@@ -103,34 +108,46 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1):
         offset_x = 0
         offset_y = 0
         
-        if target_x is not None and target_y is not None:
-            min_x = min(item["pos"][0] for item in _INTERNAL_CLIPBOARD)
-            min_y = min(item["pos"][1] for item in _INTERNAL_CLIPBOARD)
+        # Calculate offset based on target (usually mouse)
+        # For LOCAL mode, we ignore mouse target to ensure absolute 1:1 values as requested
+        if mode != 'LOCAL' and target_x is not None and target_y is not None:
+            ref_key = "global_pos" if mode == 'GLOBAL' else "pos"
+            min_x = min(item[ref_key][0] for item in _INTERNAL_CLIPBOARD)
+            min_y = min(item[ref_key][1] for item in _INTERNAL_CLIPBOARD)
             offset_x = target_x - min_x
             offset_y = target_y - min_y
         else:
             offset_x = offset
             offset_y = -offset
 
+        from .maths import get_local_pos_from_global
+
         for item in _INTERNAL_CLIPBOARD:
             new_id = structure.get_next_available_id(elements)
             new_elem = elements.add()
-            new_elem.id = new_id
+            new_id = new_elem.id = new_id
             new_elem.element_name = item["name"] + "_copy"
             new_elem.elem_class = item["class"]
             
-            # Global Position
-            gx = item["pos"][0] + offset_x
-            gy = item["pos"][1] + offset_y
-            
-            # Parenting & Coord Conversion
-            if parent_id != -1:
+            if mode == 'LOCAL':
+                # 1:1 Preservation (ignore parent transforms)
                 new_elem.parent_id = parent_id
-                from .maths import get_local_pos_from_global
-                lx, ly = get_local_pos_from_global(gx, gy, parent_id, elem_map)
-                new_elem.position = (int(lx), int(ly))
+                new_elem.position[0] = item["pos"][0] + offset_x
+                new_elem.position[1] = item["pos"][1] + offset_y
             else:
-                new_elem.position = (int(gx), int(gy))
+                # GLOBAL Preservation (default)
+                # Calculate new target global pos
+                gx = item.get("global_pos", item["pos"])[0] + offset_x
+                gy = item.get("global_pos", item["pos"])[1] + offset_y
+                
+                # Parenting & Coord Conversion
+                if parent_id != -1:
+                    new_elem.parent_id = parent_id
+                    lx, ly = get_local_pos_from_global(gx, gy, parent_id, elem_map)
+                    new_elem.position = (int(lx), int(ly))
+                else:
+                    new_elem.parent_id = -1
+                    new_elem.position = (int(gx), int(gy))
             
             new_elem.size = item["size"]
             

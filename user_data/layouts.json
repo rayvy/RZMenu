@@ -76,26 +76,26 @@
         "type": "SPLITTER",
         "orientation": 1,
         "sizes": [
-            424,
-            1261,
+            760,
+            925,
             857
         ],
         "children": [
             {
                 "type": "SPLITTER",
-                "orientation": 2,
+                "orientation": 1,
                 "sizes": [
-                    529,
-                    402
+                    484,
+                    272
                 ],
                 "children": [
                     {
                         "type": "AREA",
-                        "panel_id": "OUTLINER"
+                        "panel_id": "ASSETS"
                     },
                     {
                         "type": "AREA",
-                        "panel_id": "ASSETS"
+                        "panel_id": "OUTLINER"
                     }
                 ]
             },
@@ -126,6 +126,62 @@
                             {
                                 "type": "AREA",
                                 "panel_id": "VARIABLES"
+                            },
+                            {
+                                "type": "AREA",
+                                "panel_id": "CONFIGURATOR"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    "CONFIG": {
+        "type": "SPLITTER",
+        "orientation": 1,
+        "sizes": [
+            257,
+            669,
+            409,
+            1203
+        ],
+        "children": [
+            {
+                "type": "AREA",
+                "panel_id": "TEXWORKS"
+            },
+            {
+                "type": "AREA",
+                "panel_id": "TEXWORKS"
+            },
+            {
+                "type": "AREA",
+                "panel_id": "TEXWORKS"
+            },
+            {
+                "type": "SPLITTER",
+                "orientation": 1,
+                "sizes": [
+                    518,
+                    681
+                ],
+                "children": [
+                    {
+                        "type": "AREA",
+                        "panel_id": "VARIABLES"
+                    },
+                    {
+                        "type": "SPLITTER",
+                        "orientation": 2,
+                        "sizes": [
+                            100,
+                            831
+                        ],
+                        "children": [
+                            {
+                                "type": "AREA",
+                                "panel_id": "VIEWPORT"
                             },
                             {
                                 "type": "AREA",

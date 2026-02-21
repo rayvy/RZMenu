@@ -164,10 +164,10 @@ class RZ_OT_Duplicate(RZOperator):
     label = "Duplicate"
     requires_selection = True
     def execute(self, context: RZContext, **kwargs):
-        new_ids = core.duplicate_elements(context.selected_ids)
+        offset = kwargs.get('offset', 20)
+        new_ids = core.duplicate_elements(context.selected_ids, offset=offset)
         if new_ids:
-            # Active ID is undefined in bulk duplicate, usually handled by core logic or set to none
-            RZContextManager.get_instance().set_selection(new_ids, -1)
+            RZContextManager.get_instance().set_selection(set(new_ids), new_ids[0])
 
 class RZ_OT_Copy(RZOperator):
     id = "rzm.copy"
@@ -187,7 +187,7 @@ class RZ_OT_Paste(RZOperator):
         if context.hover_area == "VIEWPORT":
             target_x, target_y = context.mouse_scene_pos
         
-        # Priority 2: Use explicit use_mouse flag (fallback for context menu or legacy)
+        # Priority 2: Use explicit use_mouse flag
         elif kwargs.get('use_mouse', False):
             win = kwargs.get('window')
             if win:
@@ -197,13 +197,15 @@ class RZ_OT_Paste(RZOperator):
                 scene_pos = viewport.mapToScene(view_pos)
                 target_x = int(scene_pos.x())
                 target_y = int(-scene_pos.y())
-            
+
         # Call core logic
-        new_ids = core.paste_elements(target_x, target_y, parent_id=context.active_id)
+        mode = kwargs.get('mode', 'GLOBAL')
+        offset = kwargs.get('offset', 0)
+        new_ids = core.paste_elements(target_x, target_y, offset=offset, parent_id=context.active_id, mode=mode)
         
         # Select new objects
         if new_ids:
-            RZContextManager.get_instance().set_selection(set(new_ids), -1)
+            RZContextManager.get_instance().set_selection(set(new_ids), new_ids[0])
 
 class RZ_OT_Align(RZOperator):
     id = "rzm.align"

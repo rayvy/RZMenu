@@ -3,15 +3,11 @@
 
 {% macro resources_generate(mod_file,scene) %}
 {% set text_offset_tracker = [0] %}
-{% set processed_ids = namespace(
-    text_elements=[],
-    hover_text_elements=[],
-    images=[]
-) %}
+{% set processed_ids = {'text_elements': [], 'hover_text_elements': [], 'images': []} %}
 
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
-        {% if element.text_id and element.id not in processed_ids.text_elements %}
+        {% if element.text_id and element.id not in processed_ids['text_elements'] %}
     
     {# --- Инициализация переменных --- #}
     {% set fallback_text = element.text_id | default("NO_TEXT") %}
@@ -90,10 +86,10 @@ endif
     data = "{{ res.content }}"
     {% endfor %}
 
-    {% set _ = processed_ids.text_elements.append(element.id) %}
+    {% set _ = processed_ids['text_elements'].append(element.id) %}
 {% endif %}
 
-        {% if element.hover_text_id and element.id not in processed_ids.hover_text_elements %}
+        {% if element.hover_text_id and element.id not in processed_ids['hover_text_elements'] %}
             {% set text_content = element.hover_text_id %}
             {% set text_length = text_content | length %}
             {% set current_offset = text_offset_tracker[0] %}
@@ -109,20 +105,20 @@ endif
 
             {% set _ = text_offset_tracker.pop(0) %}
             {% set _ = text_offset_tracker.append(current_offset + text_length) %}
-            {% set _ = processed_ids.hover_text_elements.append(element.id) %}
+            {% set _ = processed_ids['hover_text_elements'].append(element.id) %}
         {% endif %}
 
     {% endfor %}
     [CommandListGetImageCords-1]
     {% for image in scene.rzm.images %}
-        {% if image.id not in processed_ids.images %}
+        {% if image.id not in processed_ids['images'] %}
             [CommandListGetImageCords{{ image.id }}]
             $drawType = 1
             $texPosX = {{ image.uv_coords[0] }}
             $texPosY = {{ image.uv_coords[1] }}
             $texSizeX = {{ image.uv_size[0] }}
             $texSizeY = {{ image.uv_size[1] }}
-        {% set _ = processed_ids.images.append(image.id) %}
+        {% set _ = processed_ids['images'].append(image.id) %}
         {% endif %}
     {% endfor %}
 {% endif %}
@@ -133,7 +129,7 @@ endif
         {% if utils.has_attribute(element, 'hadPopup') and (element.value_link is defined and (element.value_link|length) > 0) %}
 
             {# ------------------ MASTER/SLAVE Init ------------------ #}
-            {% set popup_elements_count = namespace(elements=[2]) %}
+            {% set popup_elements_count = {'elements': [2]} %}
             {% set master_link = element.value_link[0] %}
             {% set master_name = master_link.value_name | default('') %}
             {% set target_variable_str = utils.format_var(master_name) %}
@@ -148,8 +144,8 @@ endif
                 {% set target_toggle_name = master_name[1:] %}
                 {% for toggle_def in scene.rzm.toggle_definitions or [] %}
                     {% if toggle_def.toggle_name == target_toggle_name %}
-                        {% set _ = popup_elements_count.elements.pop(0) %}
-                        {% set _ = popup_elements_count.elements.insert(0, toggle_def.toggle_length|int) %}
+                        {% set _ = popup_elements_count['elements'].pop(0) %}
+                        {% set _ = popup_elements_count['elements'].insert(0, toggle_def.toggle_length|int) %}
                     {% endif %}
                 {% endfor %}
             {% else %}
@@ -161,8 +157,8 @@ endif
                 {# Защита от дурака: минимум 2 элемента #}
                 {% if calc_count < 2 %}{% set calc_count = 2 %}{% endif %}
 
-                {% set _ = popup_elements_count.elements.pop(0) %}
-                {% set _ = popup_elements_count.elements.insert(0, calc_count) %}
+                {% set _ = popup_elements_count['elements'].pop(0) %}
+                {% set _ = popup_elements_count['elements'].insert(0, calc_count) %}
             {% endif %}
 
 [CommandListElement{{ element.element_name }}Popup]
@@ -175,9 +171,9 @@ endif
 $id = 12
 $drawType = 0
 ; Центрируем Popup относительно кнопки
-$positionX = ($positionX + ($SizeX/2)) - ($popupIconSize * {{ popup_elements_count.elements[0] }})/2
+$positionX = ($positionX + ($SizeX/2)) - ($popupIconSize * {{ popup_elements_count['elements'][0] }})/2
 $positionY = $positionY + ($SizeY * 1.1 * ($popupShown))
-$sizeX = $popupIconSize * {{ popup_elements_count.elements[0] }}
+$sizeX = $popupIconSize * {{ popup_elements_count['elements'][0] }}
 if $popupShown < 0.8
     $sizeY = 0
 else
@@ -200,7 +196,7 @@ local $LocalPosX
 local $LocalPosY
 local $LocalSizeX
 local $LocalSizeY
-local $popupElements = {{ popup_elements_count.elements[0] }}
+local $popupElements = {{ popup_elements_count['elements'][0] }}
 local $segmentSize
 ; Min Value для смещения (если диапазон начинается не с 0)
 local $valMin = {{ val_min }}
@@ -214,7 +210,7 @@ $segmentSize = $LocalSizeX / $popupElements
 
 ; --- Обработка клика мыши ---
 if $cursorX > $LocalPosX && $cursorX < ($LocalPosX + $LocalSizeX) && $cursorY > $LocalPosY && $cursorY < ($LocalPosY + $LocalSizeY)
-    {% for i in range(popup_elements_count.elements[0]) %}
+    {% for i in range(popup_elements_count['elements'][0]) %}
     if $cursorX >= ($LocalPosX + $segmentSize * {{ i }}) && $cursorX < ($LocalPosX + $segmentSize * ({{ i }} + 1))
         ; Присваиваем индекс + минимальное смещение
         ${{ target_variable_str }} = {{ val_min + i }}
@@ -243,7 +239,7 @@ $positionY = $PositionY + ($SizeY * 0.15)
 $SizeY = $SizeY * 0.75
 
 ; --- Отрисовка иконок ---
-{% for i in range(popup_elements_count.elements[0]) %}
+{% for i in range(popup_elements_count['elements'][0]) %}
 $positionX = $LocalPosX + ($segmentSize * {{ i }})
 $sizeX = ($segmentSize)
 ; Индекс текстуры обычно равен индексу шага (0, 1, 2...), даже если значение переменной другое

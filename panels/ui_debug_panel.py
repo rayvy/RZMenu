@@ -373,6 +373,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         row = block_box.row(align=True)
         row.label(text="Blocks:", icon='NODETREE')
         row.operator("rzm.add_tw_block", text="", icon='ADD')
+        row.operator("rzm.duplicate_tw_block", text="", icon='DUPLICATE')
         row.operator("rzm.remove_tw_block", text="", icon='REMOVE')
         
         # Вкладки Блоков (Если блоков много)
@@ -399,6 +400,19 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 # Block Output Atlas
                 row = b_box.row(align=True)
                 row.prop(block, "resource_name", text="Output Atlas")
+
+                # Shader Config (x46/x47)
+                conf_box = b_box.box()
+                conf_box.label(text="Shader Settings:", icon='SETTINGS')
+                conf_box.prop(block, "shader_config", text="Color Control (x46)")
+                conf_box.prop(block, "shader_overlay", text="Color Overlay (x47)")
+
+                shared_box = b_box.box()
+                shared_box.label(text="Shared Resources:", icon='LINKED')
+                shared_box.prop(block, "use_shared_textures")
+                if block.use_shared_textures:
+                    shared_box.prop(block, "shared_textures_block")
+                shared_box.prop(block, "uv_rescale")
                 
                 # --- BACKDROP ---
                 back_box = b_box.box()
@@ -436,6 +450,14 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                         op_rem = row.operator("rzm.remove_tw_component", text="", icon='X')
                         op_rem.block_index = b_idx
                         op_rem.index = c_idx
+
+                        shared_c_box = c_item.box()
+                        shared_c_box.label(text="Shared Config:", icon='LINKED')
+                        row = shared_c_box.row(align=True)
+                        row.prop(comp, "use_shared_config", text="Share")
+                        if comp.use_shared_config:
+                            row.prop(comp, "shared_config_block", text="Block")
+                            row.prop(comp, "shared_config_component", text="Comp")
                         
                         split = c_item.split(factor=0.4)
                         split.prop(comp, "base_resource_name", text="Base Res")

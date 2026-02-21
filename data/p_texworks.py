@@ -1,6 +1,6 @@
 # RZMenu/data/p_texworks.py
 import bpy
-from bpy.props import (StringProperty, IntProperty, BoolProperty, EnumProperty, 
+from bpy.props import (StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, 
                        PointerProperty, IntVectorProperty, FloatVectorProperty, CollectionProperty)
 
 # --- 1. CORE RESOURCES (Теперь включают параметры формата) ---
@@ -141,6 +141,21 @@ class TexWorksComponent(bpy.types.PropertyGroup):
     tex_morph_resource_name: StringProperty(name="Morph Resource", description="Second texture for morphing")
     tex_morph_link: StringProperty(name="Morph Variable", description="Link to a FLOAT value ($MyVar)")
 
+    # Shared Config (Config/Warp)
+    use_shared_config: BoolProperty(
+        name="Use Shared Config",
+        description="Don't generate config/warp resources, use from another block/component",
+        default=False
+    )
+    shared_config_block: StringProperty(
+        name="Source Block",
+        description="Name of the block to take config from"
+    )
+    shared_config_component: StringProperty(
+        name="Source Component",
+        description="Name of the component to take config from"
+    )
+
     # UI State
     tw_is_expanded: BoolProperty(name="UI Expanded", default=False)
 
@@ -165,6 +180,34 @@ class TexWorksMainBlock(bpy.types.PropertyGroup):
             ('NORMAL', "Normal (decal_draw_material.hlsl)", ""),
         ],
         default='DIFFUSE'
+    )
+
+    shader_config: FloatVectorProperty(
+        name="Shader Config (x46)", 
+        size=4, 
+        default=(1.0, 1.0, 1.0, 1.0)
+    )
+
+    shader_overlay: FloatVectorProperty(
+        name="Shader Overlay (x47)", 
+        size=4, 
+        default=(0.0, 0.0, 0.0, 0.0)
+    )
+
+    use_shared_textures: BoolProperty(
+        name="Use Shared Textures",
+        description="Don't generate resources, use textures from another block",
+        default=False
+    )
+    shared_textures_block: StringProperty(
+        name="Source Block",
+        description="Name of the block to take textures from"
+    )
+
+    uv_rescale: FloatProperty(
+        name="UV Rescale",
+        description="Global UV rescale factor for future map optimizations (e.g. 4k -> 2k)",
+        default=1.0
     )
 
     components: CollectionProperty(type=TexWorksComponent)
