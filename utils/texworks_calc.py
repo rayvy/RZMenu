@@ -96,3 +96,132 @@ def calculate_slot_config(obj, res_x, res_y, padding, lattice_strength=1.0):
         bm.free()
 
     return rect, lattice_offsets
+
+def get_bmesh_islands(bm, selected_faces):
+    """
+    Разбивает список граней на связные группы (островки).
+    Возвращает список списков граней.
+    """
+    faces_todo = set(selected_faces)
+    islands = []
+
+    while faces_todo:
+        seed = faces_todo.pop()
+        island = {seed}
+        stack = [seed]
+        
+        while stack:
+            f = stack.pop()
+            # Ищем соседей через ребра
+            for edge in f.edges:
+                for linked_face in edge.link_faces:
+                    if linked_face in faces_todo:
+                        island.add(linked_face)
+                        faces_todo.remove(linked_face)
+                        stack.append(linked_face)
+        
+        islands.append(list(island))
+    
+    return islands
+
+def measure_island_stats(bm, faces, uv_layer):
+    """
+    Возвращает словарь с метриками островка:
+    - 3D Площадь (для пропорций)
+    - Центр UV (для сортировки лево-право)
+    """
+    total_area = 0.0
+    uv_centers = []
+    
+    for f in faces:
+        total_area += f.calc_area()
+        for loop in f.loops:
+            uv = loop[uv_layer].uv
+            uv_centers.append(uv)
+            
+    # Средний UV центр
+    if uv_centers:
+        avg_u = sum(uv.x for uv in uv_centers) / len(uv_centers)
+        avg_v = sum(uv.y for uv in uv_centers) / len(uv_centers)
+    else:
+        avg_u, avg_v = 0.0, 0.0
+        
+    return {
+        'faces': faces,
+        'area': total_area,
+        'center_u': avg_u
+    }
+
+def calculate_seamless_split_config(obj, res_x, res_y, padding):
+    """
+    Специализированный расчет для Split Decals.
+    Гарантирует равномерную плотность текселей между двумя кусками.
+    """
+    if obj.mode == 'EDIT':
+        bm = bmesh.from_edit_mesh(obj.data)
+    else:
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        
+    uv_layer = bm.loops.layers.uv.verify()
+    selected_faces = [f for f in bm.faces if f.select]
+    
+    if not selected_faces:
+        if obj.mode != 'EDIT': bm.free()
+        return None
+
+    # 1. Находим островки
+    islands_faces = get_bmesh_islands(bm, selected_faces)
+    
+    if len(islands_faces) != 2:
+        print(f"Algorithm expects exactly 2 islands, found {len(islands_faces)}")
+        if obj.mode != 'EDIT': bm.free()
+        return None
+
+    # 2. Анализируем каждый островок
+    island_data = []
+    for faces in islands_faces:
+        stats = measure_island_stats(bm, faces, uv_layer)
+        
+        # Временная эмуляция выбора для вызова базового калькулятора
+        for f in bm.faces: f.select = False
+        for f in faces: f.select = True
+        
+        # Считаем "Сырой" конфиг (как он есть сейчас по UV)
+        raw_rect, raw_lattice = calculate_slot_config(obj, res_x, res_y, padding)
+        
+        stats['rect'] = list(raw_rect) # Convert to list to modify
+        stats['lattice'] = raw_lattice
+        island_data.append(stats)
+
+    # Восстанавливаем выделение
+    for f in selected_faces: f.select = True
+
+    # 3. Сортируем: Pass 0 (слева), Pass 1 (справа)
+    island_data.sort(key=lambda x: x['center_u'])
+    
+    pass0 = island_data[0]
+    pass1 = island_data[1]
+
+    # 4. МАТЕМАТИКА БЕСШОВНОСТИ (DENSITY NORMALIZATION)
+    total_area_3d = pass0['area'] + pass1['area']
+    if total_area_3d <= 0.00001: return None 
+
+    ratio0 = pass0['area'] / total_area_3d
+    ratio1 = pass1['area'] / total_area_3d
+
+    total_pixel_width = pass0['rect'][2] + pass1['rect'][2]
+    
+    new_w0 = int(round(total_pixel_width * ratio0))
+    new_w1 = int(round(total_pixel_width * ratio1))
+    
+    pass0['rect'][2] = new_w0
+    pass1['rect'][2] = new_w1
+    
+    if obj.mode != 'EDIT':
+        bm.free()
+
+    return (
+        {'rect': tuple(pass0['rect']), 'lattice': pass0['lattice'], 'ratio': ratio0},
+        {'rect': tuple(pass1['rect']), 'lattice': pass1['lattice'], 'ratio': ratio1}
+    )

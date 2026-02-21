@@ -112,70 +112,89 @@ run = CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}
 {# 3. Decal Layers #}
 {% for slot in comp.slots if slot.active %}
     {% for layer in slot.decal_layers if layer.active %}
-            {% if slot.warp_p0_debug %}
-            ;DEBUG MOD ON FOR {{ slot.name }}Pass0
-            ;DEBUG MODE For Lattice
-            ;TopLeft float2
-            ;x30 = 0.0
-            ;y30 = 0.0
-            ;TopMiddle float2
-            ;x31 = 0.0
-            ;y31 = 0.0
-            ;TopRight float2
-            ;x32 = 0.0
-            ;y32 = 0.0
-            ;CenterLeft float2
-            ;x33 = 0.0
-            ;y33 = 0.0
-            ;CenterMiddle float2
-            ;x34 = 0.0
-            ;y34 = 0.0
-            ;CenterRight float2
-            ;x35 = 0.0
-            ;y35 = 0.0
-            ;BottomLeft float2
-            ;x36 = 0.0
-            ;y36 = 0.0
-            ;BottomMiddle float2
-            ;x37 = 0.0
-            ;y37 = 0.0
-            ;BottomRight float2
-            ;x38 = 0.0
-            ;y38 = 0.0
-            {% endif %}
+        {% if slot.warp_p0_debug %}
+x30 = $RZM_DEBUG_VALUE_0
+y30 = $RZM_DEBUG_VALUE_1
+x31 = $RZM_DEBUG_VALUE_2
+y31 = $RZM_DEBUG_VALUE_3
+x32 = $RZM_DEBUG_VALUE_4
+y32 = $RZM_DEBUG_VALUE_5
+x33 = $RZM_DEBUG_VALUE_6
+y33 = $RZM_DEBUG_VALUE_7
+x34 = $RZM_DEBUG_VALUE_8
+y34 = $RZM_DEBUG_VALUE_9
+x35 = $RZM_DEBUG_VALUE_10
+y35 = $RZM_DEBUG_VALUE_11
+x36 = $RZM_DEBUG_VALUE_12
+y36 = $RZM_DEBUG_VALUE_13
+x37 = $RZM_DEBUG_VALUE_14
+y37 = $RZM_DEBUG_VALUE_15
+x38 = $RZM_DEBUG_VALUE_16
+y38 = $RZM_DEBUG_VALUE_17
+        {% endif %}
 run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P0
+        {% if slot.warp_p0_debug %}
+x30 = 0
+y30 = 0
+x31 = 0
+y31 = 0
+x32 = 0
+y32 = 0
+x33 = 0
+y33 = 0
+x34 = 0
+y34 = 0
+x35 = 0
+y35 = 0
+x36 = 0
+y36 = 0
+x37 = 0
+y37 = 0
+x38 = 0
+y38 = 0
+        {% endif %}
         {% if slot.multi_pass_mode != 'NONE' %}
             {% if slot.warp_p1_debug %}
-            ;DEBUG MOD ON FOR {{ slot.name }}Pass1
-            ;TopLeft float2
-            ;x30 = 0.0
-            ;y30 = 0.0
-            ;TopMiddle float2
-            ;x31 = 0.0
-            ;y31 = 0.0
-            ;TopRight float2
-            ;x32 = 0.0
-            ;y32 = 0.0
-            ;CenterLeft float2
-            ;x33 = 0.0
-            ;y33 = 0.0
-            ;CenterMiddle float2
-            ;x34 = 0.0
-            ;y34 = 0.0
-            ;CenterRight float2
-            ;x35 = 0.0
-            ;y35 = 0.0
-            ;BottomLeft float2
-            ;x36 = 0.0
-            ;y36 = 0.0
-            ;BottomMiddle float2
-            ;x37 = 0.0
-            ;y37 = 0.0
-            ;BottomRight float2
-            ;x38 = 0.0
-            ;y38 = 0.0
+x30 = $RZM_DEBUG_VALUE_0
+y30 = $RZM_DEBUG_VALUE_1
+x31 = $RZM_DEBUG_VALUE_2
+y31 = $RZM_DEBUG_VALUE_3
+x32 = $RZM_DEBUG_VALUE_4
+y32 = $RZM_DEBUG_VALUE_5
+x33 = $RZM_DEBUG_VALUE_6
+y33 = $RZM_DEBUG_VALUE_7
+x34 = $RZM_DEBUG_VALUE_8
+y34 = $RZM_DEBUG_VALUE_9
+x35 = $RZM_DEBUG_VALUE_10
+y35 = $RZM_DEBUG_VALUE_11
+x36 = $RZM_DEBUG_VALUE_12
+y36 = $RZM_DEBUG_VALUE_13
+x37 = $RZM_DEBUG_VALUE_14
+y37 = $RZM_DEBUG_VALUE_15
+x38 = $RZM_DEBUG_VALUE_16
+y38 = $RZM_DEBUG_VALUE_17
             {% endif %}
 run = CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P1
+            {% if slot.warp_p1_debug %}
+x30 = 0
+y30 = 0
+x31 = 0
+y31 = 0
+x32 = 0
+y32 = 0
+x33 = 0
+y33 = 0
+x34 = 0
+y34 = 0
+x35 = 0
+y35 = 0
+x36 = 0
+y36 = 0
+x37 = 0
+y37 = 0
+x38 = 0
+y38 = 0
+            {% endif %}
         {% endif %}
     {% endfor %}
 {% endfor %}

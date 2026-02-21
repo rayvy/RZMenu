@@ -228,7 +228,7 @@ class RZM_OT_RemoveTwDecalLayer(bpy.types.Operator):
         if 0 <= idx < len(coll): coll.remove(idx)
         return {'FINISHED'}
 
-from ..utils.texworks_calc import calculate_slot_config
+from ..utils.texworks_calc import calculate_slot_config, calculate_seamless_split_config
 
 class RZM_OT_SetActiveBlock(bpy.types.Operator):
     bl_idname = "rzm.set_active_block"
@@ -561,8 +561,45 @@ class RZM_OT_CalcSplittedIslandConfig(bpy.types.Operator):
     slot_index: bpy.props.IntProperty()
 
     def execute(self, context):
-        self.report({'INFO'}, "Splitted Island Calculation (Experimental Placeholder)")
-        # TODO: Implement seamless double-pass math here
+        rzm = context.scene.rzm
+        try:
+            slot = rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index]
+        except IndexError:
+            self.report({'ERROR'}, "Invalid Slot selection")
+            return {'CANCELLED'}
+
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "Select a Mesh object")
+            return {'CANCELLED'}
+
+        # Параметры слота
+        res_x = slot.calc_res_x
+        res_y = slot.calc_res_y
+        padding = slot.calc_padding
+
+        # Вызываем новый умный алгоритм
+        # Он вернет данные сразу для ДВУХ проходов
+        result = calculate_seamless_split_config(obj, res_x, res_y, padding)
+
+        if not result:
+            self.report({'ERROR'}, "Error: Select exactly 2 UV Islands/Linked Faces")
+            return {'CANCELLED'}
+
+        pass0_data, pass1_data = result
+
+        # Применяем данные
+        # PASS 0 (Левая/Первая часть)
+        slot.rect = pass0_data['rect']
+        slot.warp_p0_enabled = True
+        slot.warp_p0_grid = pass0_data['lattice']
+
+        # PASS 1 (Правая/Вторая часть)
+        slot.multi_pass_rect = pass1_data['rect']
+        slot.warp_p1_enabled = True
+        slot.warp_p1_grid = pass1_data['lattice']
+
+        self.report({'INFO'}, f"Calculated Seamless Split: Ratio {pass0_data['ratio']:.2f} / {pass1_data['ratio']:.2f}")
         return {'FINISHED'}
 
 classes_to_register = [

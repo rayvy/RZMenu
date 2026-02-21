@@ -18,6 +18,16 @@ global persist $RZM_DEBUG_VALUE_4 = {{ scene.rzm.addons.debug_var_4 if scene.rzm
 global persist $RZM_DEBUG_VALUE_5 = {{ scene.rzm.addons.debug_var_5 if scene.rzm.addons.debug_var_5 else "0" }}
 global persist $RZM_DEBUG_VALUE_6 = {{ scene.rzm.addons.debug_var_6 if scene.rzm.addons.debug_var_6 else "0" }}
 global persist $RZM_DEBUG_VALUE_7 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_8 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_9 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_10 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_11 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_12 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_13 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_14 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_15 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_16 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
+global persist $RZM_DEBUG_VALUE_17 = {{ scene.rzm.addons.debug_var_7 if scene.rzm.addons.debug_var_7 else "0" }}
 
 [CommandListElementDebug]
 ; Hover ID Debug
@@ -33,13 +43,11 @@ $colorA = 1
 $TexPosX = $hoveredID
 run = CustomShaderRCI2D
 
-{% for i in range(8) %}
+{% for i in range(17) %}
 $PositionY = $PositionY + 100
 $TexPosX = $RZM_DEBUG_VALUE_{{ i }}
 run = CustomShaderRCI2D
 {% endfor %}
-
-{{debug_snippet.debug_snippet()}}
 {% endif %}
 
 {% if scene.rzm.addons.sandevistan_zzz == 1 %}
