@@ -28,7 +28,16 @@ def create_element(class_type, pos_x, pos_y, parent_id=-1):
         new_element.id = new_id
         new_element.elem_class = class_type
         new_element.element_name = f"{class_type.capitalize()}_{new_id}"
-        new_element.position = (int(pos_x), int(pos_y))
+        
+        # --- PARENTING & COORDINATES ---
+        if parent_id != -1:
+            new_element.parent_id = parent_id
+            # Convert global pos_x, pos_y to local
+            elem_map = {e.id: e for e in elements}
+            lx, ly = get_local_pos_from_global(pos_x, pos_y, parent_id, elem_map)
+            new_element.position = (int(lx), int(ly))
+        else:
+            new_element.position = (int(pos_x), int(pos_y))
         
         # Apply Size
         width = defaults.get("width", 150)

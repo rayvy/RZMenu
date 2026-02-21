@@ -199,7 +199,7 @@ class RZ_OT_Paste(RZOperator):
                 target_y = int(-scene_pos.y())
             
         # Call core logic
-        new_ids = core.paste_elements(target_x, target_y)
+        new_ids = core.paste_elements(target_x, target_y, parent_id=context.active_id)
         
         # Select new objects
         if new_ids:

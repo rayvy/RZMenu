@@ -25,6 +25,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     element_name: StringProperty(name="Name"); id: IntProperty(name="Unique ID"); parent_id: IntProperty(name="Parent ID", default=-1)
     is_preset: BoolProperty(name="Is Preset", default=False)
     priority: IntProperty(name="Priority", default=0); tag: StringProperty(name="Tag")
+    qt_priority: IntProperty(name="QT Priority", default=0)
     elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", "")], default='CONTAINER')
     visibility_mode: EnumProperty(name="Visibility", items=[('ALWAYS', "Always Visible", ""), ('CONDITIONAL', "Conditional", ""), ('HIDED', "Hided", "")], default='ALWAYS')
     visibility_condition: StringProperty(name="Condition", description="e.g., $var > 0 or @ToggleA[1]")

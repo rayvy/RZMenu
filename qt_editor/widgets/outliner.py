@@ -119,10 +119,26 @@ class RZMOutlinerPanel(RZEditorPanel):
         """Fetch and display current element list from core."""
         if not self._is_panel_active:
             return
-        data = core.get_all_elements_list()
-        self.update_ui(data)
+        
+        # SAVE SCROLL POSITION
+        scroll_bar = self.tree.verticalScrollBar()
+        old_scroll = scroll_bar.value()
+
+        elements_list = core.get_all_elements_list()
+        if not elements_list:
+            # If no elements, clear tree and reset block_signals
+            self._block_signals = True # Block signals during clear
+            self.tree.clear()
+            self._block_signals = False
+            return
+        
+        self.update_ui(elements_list)
         # Also sync selection after data refresh
         self.sync_selection()
+
+        # RESTORE SCROLL POSITION
+        # We use a singleShot to apply it after visual layout is ready.
+        QtCore.QTimer.singleShot(0, lambda: scroll_bar.setValue(old_scroll))
     
     def sync_selection(self):
         """Sync tree selection with context manager."""
@@ -131,14 +147,20 @@ class RZMOutlinerPanel(RZEditorPanel):
         ctx = RZContextManager.get_instance().get_snapshot()
         self.set_selection_silent(ctx.selected_ids, ctx.active_id)
 
-    def _on_items_reordered(self, target_id, new_parent_id):
-        """Handle drag-drop reparenting and broadcast to all panels."""
-        # Logic: If new_parent_id is None, it means the item was dropped to root (-1)
-        pid = new_parent_id if new_parent_id is not None else -1
-        core.reparent_element(target_id, pid)
-        # Force signal explicitly because core.reparent_element emits it, 
-        # but just to be sure we are aligned with the flow.
-        # Actually core.reparent_element already emits structure_changed.
+    def _on_items_reordered(self, target_ids, new_parent_id, sibling_ids):
+        """Handle drag-drop reparenting for multiple items and normalize priorities."""
+        # 1. First move items to the new parent
+        for tid in target_ids:
+            core.reparent_element(tid, new_parent_id, silent=True)
+        
+        # 2. Normalize priorities of ALL siblings to match the visual order in the tree
+        # We use a step of 10 to leave gaps for manual adjustments
+        for i, sid in enumerate(sibling_ids):
+            core.update_property_multi([sid], "qt_priority", i * 10)
+        
+        # Trigger global updates
+        SIGNALS.structure_changed.emit()
+        SIGNALS.transform_changed.emit()
     
     def _on_toggle_hide(self, uid):
         """Handle visibility toggle via action manager."""
@@ -198,6 +220,10 @@ class RZMOutlinerPanel(RZEditorPanel):
         if not elements_list:
             self._block_signals = False
             return
+
+        # SORT BY QT_PRIORITY
+        # Blender data might not be sorted, so we do it here for visual order
+        elements_list = sorted(elements_list, key=lambda x: x.get('qt_priority', 0))
 
         item_map = {}
         theme = get_current_theme()

@@ -63,8 +63,8 @@ class RZDraggableTreeWidget(RZBaseTreeWidget):
     Emits signals when items are reordered.
     """
 
-    # Signal emitted when items are reordered: (moved_item_id, new_parent_id)
-    items_reordered = QtCore.Signal(int, object)
+    # Signal emitted when items are reordered: (moved_item_ids_list, new_parent_id, siblings_ids_list)
+    items_reordered = QtCore.Signal(list, int, list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -78,14 +78,25 @@ class RZDraggableTreeWidget(RZBaseTreeWidget):
         # Standard Qt drop handling
         super().dropEvent(event)
 
-        # Calculate new positions
+        # Calculate new positions for all moved items
+        moved_ids = [item.data(0, QtCore.Qt.UserRole) for item in source_items]
+        
+        # We assume they all get the same new parent in a single drop event
+        # (Qt's tree widget handles the internal parent change for all selected items)
         first_item = source_items[0]
-        moved_id = first_item.data(0, QtCore.Qt.UserRole)
-
         parent_item = first_item.parent()
-        new_parent_id = parent_item.data(0, QtCore.Qt.UserRole) if parent_item else None
+        new_parent_id = parent_item.data(0, QtCore.Qt.UserRole) if parent_item else -1
 
-        self.items_reordered.emit(moved_id, new_parent_id)
+        # SIBLINGS (The visual order of all items in this parent after the drop)
+        siblings = []
+        if parent_item:
+            for i in range(parent_item.childCount()):
+                siblings.append(parent_item.child(i).data(0, QtCore.Qt.UserRole))
+        else:
+            for i in range(self.topLevelItemCount()):
+                siblings.append(self.topLevelItem(i).data(0, QtCore.Qt.UserRole))
+
+        self.items_reordered.emit(moved_ids, new_parent_id, siblings)
 
     def get_expanded_item_ids(self):
         """Get IDs of currently expanded items."""

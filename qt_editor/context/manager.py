@@ -32,6 +32,12 @@ class RZContextManager:
         self._state_tags: Set[str] = set()
         self._initialized = True
 
+    @property
+    def active_id(self) -> int: return self._active_id
+    
+    @property
+    def selected_ids(self) -> Set[int]: return self._selected_ids
+
     @classmethod
     def get_instance(cls) -> 'RZContextManager':
         if cls._instance is None: cls()
@@ -80,6 +86,12 @@ class RZContextManager:
         # Давай создадим временный snapshot прямо тут, чтобы использовать мощь Wrappers
         snap = self.get_snapshot()
         
+        active_info = "None"
+        if snap.active_element and snap.active_element.exists:
+            active_info = f"{snap.active_element.class_type} ('{snap.active_element.name}') [ID: {snap.active_id}]"
+        elif self._active_id != -1:
+            active_info = f"ID {self._active_id} (Not Found)"
+        
         hover_info = "None"
         if snap.hover_element and snap.hover_element.exists:
             # ВОТ ОНО! Читаем класс и имя через обертку
@@ -91,8 +103,8 @@ class RZContextManager:
             f"--- RZ CONTEXT ---\n"
             f"State:     {self._current_state.name}\n"
             f"Area:      {self._hover_area}\n"
-            f"Hover ID:  {self._hover_id}\n"
-            f"Hover:     {hover_info}\n"  # <--- Теперь тут будет класс!
+            f"Active:    {active_info}\n"
+            f"Hover:     {hover_info}\n"
             f"Selected:  {list(self._selected_ids)}\n"
             f"Scene Pos: ({self._mouse_scene_pos[0]:.1f}, {self._mouse_scene_pos[1]:.1f})"
         )

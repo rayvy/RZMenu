@@ -53,6 +53,7 @@ PROP_MAP = {
     "color": ("color", None, 'D'),
     "tag": ("tag", None, 'D'),
     "priority": ("priority", None, 'D'),
+    "qt_priority": ("qt_priority", None, 'D'),
     "is_main_window": ("is_main_window", None, 'D'),
     "visibility_mode": ("visibility_mode", None, 'D'),
     "visibility_condition": ("visibility_condition", None, 'D'),

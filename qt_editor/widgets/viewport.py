@@ -745,7 +745,14 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 target_uid = self._cycle_stack[0]
                 self._last_click_pos = event.scenePos()
 
-            self.selection_changed_signal.emit(target_uid, modifier_str)
+            # Rayvich Multi-Drag Fix: Check if target is already in selection
+            ctx = RZContextManager.get_instance().get_snapshot()
+            if target_uid in ctx.selected_ids:
+                # Keep current selection, but update active ID
+                RZContextManager.get_instance().set_selection(ctx.selected_ids, target_uid)
+            else:
+                # Standard selection behavior
+                self.selection_changed_signal.emit(target_uid, modifier_str)
             
             target_item = self._items_map.get(target_uid)
             if target_item and not target_item.is_locked_pos and not getattr(target_item, "_is_layout_controlled", False) and not target_item.pos_is_formula:
@@ -753,9 +760,11 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 self._drag_start_pos = event.scenePos()
                 self._accum_x = 0.0; self._accum_y = 0.0
                 
-                # Rayvich: Possible bugs - Multi-drag persistence
-                selected_items = [i for i in self.selectedItems() if isinstance(i, RZElementItem)]
-                if target_item not in selected_items: selected_items.append(target_item)
+                # Rayvich: Multi-Drag Fix - Use context manager's selection as source of truth
+                ctx = RZContextManager.get_instance().get_snapshot()
+                selected_items = [self._items_map[uid] for uid in ctx.selected_ids if uid in self._items_map]
+                if target_item and target_item not in selected_items:
+                    selected_items.append(target_item)
                 
                 # PARENTING FIX: Filter selected_items to only move root elements of the selection.
                 # Moving a parent already moves the child.
@@ -1182,8 +1191,12 @@ class RZViewportView(QtWidgets.QGraphicsView):
         menu.exec(QtGui.QCursor.pos())
 
     def _create_at_pos(self, class_type, scene_pos):
-        bx, by = core.to_qt_coords(scene_pos.x(), scene_pos.y())
-        core.create_element(class_type, bx, by)
+        bx, by = core.to_blender_coords(scene_pos.x(), scene_pos.y())
+        parent_id = RZContextManager.get_instance().active_id
+        core.create_element(class_type, bx, by, parent_id=parent_id)
+        # Emit signal to update all panels
+        from ..core.signals import SIGNALS
+        SIGNALS.structure_changed.emit()
 
     def dragEnterEvent(self, event):
         mime = event.mimeData()
@@ -1696,8 +1709,13 @@ class RZViewportPanel(RZEditorPanel):
                     if clicked_id in new_selection:
                         new_selection.remove(clicked_id)
                 else:
-                    new_selection = {clicked_id}
-                    new_active = clicked_id
+                    # If clicked item is already selected, don't clear the rest of the selection
+                    # This allows dragging multiple items without holding Shift
+                    if clicked_id in new_selection:
+                        new_active = clicked_id
+                    else:
+                        new_selection = {clicked_id}
+                        new_active = clicked_id
         
         RZContextManager.get_instance().set_selection(new_selection, new_active)
     

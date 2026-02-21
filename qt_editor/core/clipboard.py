@@ -86,15 +86,19 @@ def copy_elements(target_ids):
             }
             _INTERNAL_CLIPBOARD.append(data)
 
-def paste_elements(target_x=None, target_y=None, offset=20):
+def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1):
     global _INTERNAL_CLIPBOARD
     if not _INTERNAL_CLIPBOARD: return []
     
     signals.IS_UPDATING_FROM_QT = True
     try:
         if not bpy.context or not bpy.context.scene: return []
-        elements = bpy.context.scene.rzm.elements
+        rzm = bpy.context.scene.rzm
+        elements = rzm.elements
         new_ids = []
+
+        # Map for coordinate math
+        elem_map = {e.id: e for e in elements}
 
         offset_x = 0
         offset_y = 0
@@ -105,8 +109,6 @@ def paste_elements(target_x=None, target_y=None, offset=20):
             offset_x = target_x - min_x
             offset_y = target_y - min_y
         else:
-            # (yellow) Clipboard issue: Нужен Ctrl+Shift+V (Paste in Place) без офсета.
-            # Now uses the passed offset parameter.
             offset_x = offset
             offset_y = -offset
 
@@ -117,12 +119,20 @@ def paste_elements(target_x=None, target_y=None, offset=20):
             new_elem.element_name = item["name"] + "_copy"
             new_elem.elem_class = item["class"]
             
-            px = int(item["pos"][0] + offset_x)
-            py = int(item["pos"][1] + offset_y)
+            # Global Position
+            gx = item["pos"][0] + offset_x
+            gy = item["pos"][1] + offset_y
             
-            new_elem.position = (px, py)
+            # Parenting & Coord Conversion
+            if parent_id != -1:
+                new_elem.parent_id = parent_id
+                from .maths import get_local_pos_from_global
+                lx, ly = get_local_pos_from_global(gx, gy, parent_id, elem_map)
+                new_elem.position = (int(lx), int(ly))
+            else:
+                new_elem.position = (int(gx), int(gy))
+            
             new_elem.size = item["size"]
-            new_elem.parent_id = -1 
             
             # Simple Props
             new_elem.color = item.get("color", [1,1,1,1])
