@@ -84,7 +84,9 @@ PROP_MAP = {
     # Value Link Formula
     "value_link_is_formula": ("value_link_is_formula", None, 'D'),
     "value_link_formula": ("value_link_formula", None, 'D'),
+    "disable_export": ("disable_export", None, 'S'),
     "class_type": ("elem_class", None, 'S'),
+
 }
 
 from ..utils import logger

@@ -40,6 +40,8 @@ class RZMenuConfig(bpy.types.PropertyGroup):
     canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
     pre_snippet: StringProperty(name="Pre Snippet", default="")
     post_snippet: StringProperty(name="Post Snippet", default="")
+    mod_info: StringProperty(name="Mod Info", default="", description="Custom mod metadata for meta.j2")
+
 
 class DependencyStatus(bpy.types.PropertyGroup):
     """Holds the status of a single dependency."""
@@ -104,3 +106,107 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debug_var_6: StringProperty(name="Debug Var 6", default="")
     debug_var_7: StringProperty(name="Debug Var 7", default="")
     
+class RZMCreditItem(bpy.types.PropertyGroup):
+    """Класс для одного человека в списке Credits"""
+    name: StringProperty(
+        name="Name", 
+        description="Имя мододела/помощника",
+        default="Unknown Hero"
+    )
+    role: StringProperty(
+        name="Role", 
+        description="Заслуга (например: Порт модели, Текстуры, Скрипты)",
+        default="General Support"
+    )
+    link: StringProperty(
+        name="Link", 
+        description="Ссылка (Twitter, Patreon, Github и т.д.)",
+        default=""
+    )
+
+class RZMFeatureItem(bpy.types.PropertyGroup):
+    """Класс для списка фичей (Features)"""
+    text: StringProperty(
+        name="Feature", 
+        description="Описание фичи (например: Total Control: 7 base toggles)",
+        default=""
+    )
+
+class RZMMetaDataSettings(bpy.types.PropertyGroup):
+    
+    # --- 1. БАЗОВАЯ ИНФОРМАЦИЯ ---
+    character_name: StringProperty(
+        name="Character", 
+        default="Fluorite",
+        description="Имя персонажа"
+    )
+    outfit_name: StringProperty(
+        name="Outfit", 
+        default="Bunnysuit",
+        description="Название костюма/мода"
+    )
+    version_num: StringProperty(
+        name="Version", 
+        default="1.0.0",
+        description="Версия самого мода (патч)"
+    )
+
+    # --- 2. PATREON / РЕЛИЗНАЯ ИНФА ---
+    # EnumProperty идеален для Тиров — в Blender это будет красивый выпадающий список
+    patreon_tier: EnumProperty(
+        name="Patreon Tier",
+        description="Уровень доступа (для генерации тегов)",
+        items=[
+            ('PUBLIC', "Public (Free)", "Бесплатный релиз для всех"),
+            ('TIER_1', "Tier 1", "Базовый платный тир"),
+            ('TIER_2', "Tier 2", "Продвинутый тир"),
+            ('SPICED', "Spiced Tier", "Максимальный / NSFW тир"),
+            ('WIP', "Work in Progress", "Дев-билд, не для релиза")
+        ],
+        default='PUBLIC'
+    )
+    is_nsfw: BoolProperty(
+        name="NSFW Flag", 
+        default=True,
+        description="Добавляет тег [NSFW] в генерацию"
+    )
+    
+    # --- 3. ОПИСАНИЕ И ТЕХНИЧКА ---
+    # В Blender нет полноценного многострочного поля свойств в UI, 
+    # но можно сделать длинную строку, которую мы разобьем в Jinja, или хранить короткий лор.
+    description: StringProperty(
+        name="Lore / Description", 
+        default="Usually, snakes eat bunnies. This one decided to put on the suit and ears instead.",
+        description="Художественное описание"
+    )
+    menu_keybind: StringProperty(
+        name="Menu Keybind", 
+        default="/", 
+        description="Кнопка для открытия RZMenu"
+    )
+    requirements: StringProperty(
+        name="Requirements", 
+        default="EFMI (XXMI LAUNCHER)",
+        description="Требования для работы мода"
+    )
+
+    # --- 4. АВТОРСТВО И КОМЬЮНИТИ ---
+    author_name: StringProperty(
+        name="Main Author", 
+        default="Rayvich"
+    )
+    community_respect: StringProperty(
+        name="Community Respect",
+        default="Zlevir, Spectrum, AGMG server community.",
+        description="Кому летит отдельный респект (через запятую)"
+    )
+
+    # --- 5. ДИНАМИЧЕСКИЕ СПИСКИ (Коллекции) ---
+    # Список создателей (Тот самый "стринг лист")
+    credits_list: CollectionProperty(type=RZMCreditItem)
+    # Индекс для UI (обязательно нужен, если будешь рисовать список через template_list)
+    credits_list_index: IntProperty(default=0) 
+
+    # Список фичей (Features: Body Engineering, Dirty Work и тд)
+    features_list: CollectionProperty(type=RZMFeatureItem)
+    features_list_index: IntProperty(default=0)

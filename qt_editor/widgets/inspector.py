@@ -703,6 +703,11 @@ class RZMInspectorPanel(RZEditorPanel):
         self.chk_main_window = RZCheckBox("Is Main Window")
         self.chk_main_window.toggled.connect(lambda v: self._emit_change('is_main_window', v))
         form_ident.addRow("", self.chk_main_window)
+
+        #Добавь сюда галочку для disable export
+        self.chk_disable_export = RZCheckBox("Disable Export")
+        self.chk_disable_export.toggled.connect(lambda v: self._emit_change('disable_export', v))
+        form_ident.addRow("", self.chk_disable_export)
         
         self.layout_props.addWidget(self.grp_ident)
         
@@ -1194,6 +1199,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.edit_tag.setText(props.get('tag', ''))
             self.spin_priority.setValue(props.get('priority', 0))
             self.chk_main_window.setChecked(props.get('is_main_window') is True)
+            self.chk_disable_export.setChecked(props.get('disable_export') is True)
 
             class_type = props.get('class_type')
             if class_type: self.cb_class.setCurrentText(class_type)
@@ -1265,14 +1271,6 @@ class RZMInspectorPanel(RZEditorPanel):
             # Use toPlainText if needed or setText via helper
             self.edit_trans_fx.setText(props.get('transform_formula', ''))
             self.edit_trans_fx.setVisible(trans_is_form)
-
-            self.sl_h.setEnabled(can_edit_size)
-
-            # --- Transform Formula ---
-            trans_is_form = props.get('transform_is_formula') is True
-            self.chk_trans_formula.setChecked(trans_is_form)
-            self.edit_trans_fx.setText(props.get('transform_formula', ''))
-            self.edit_trans_fx.setEnabled(trans_is_form)
 
             # --- Grid Container ---
             is_grid = (class_type == "GRID_CONTAINER")

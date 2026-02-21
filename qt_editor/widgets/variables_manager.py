@@ -326,9 +326,13 @@ class ShapesTab(BaseListTab):
         self.inp_cond = QtWidgets.QLineEdit()
         self.inp_cond.editingFinished.connect(self.synch_cond)
         
+        self.chk_disable_export = QtWidgets.QCheckBox("Disable Export")
+        self.chk_disable_export.toggled.connect(self.synch_disable_export)
+        
         self.props_layout.addRow("Name:", self.inp_name)
         self.props_layout.addRow("Type:", self.inp_type)
         self.props_layout.addRow("Anim Condition:", self.inp_cond)
+        self.props_layout.addRow("", self.chk_disable_export)
         
         # Nested ShapeKeys List
         self.keys_group = QtWidgets.QGroupBox("Shape Keys")
@@ -404,6 +408,8 @@ class ShapesTab(BaseListTab):
             self.inp_type.setCurrentText(shape.shape_type)
         if self.inp_cond.text() != shape.anim_condition:
             self.inp_cond.setText(shape.anim_condition)
+        if self.chk_disable_export.isChecked() != shape.disable_export:
+            self.chk_disable_export.setChecked(shape.disable_export)
         self.is_updating_ui = False
         
         self.refresh_keys_list(shape)
@@ -422,7 +428,13 @@ class ShapesTab(BaseListTab):
     def synch_cond(self):
         if self.is_updating_ui: return
         row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_shape(shape_index=row, prop_name="anim_condition", val_str=self.inp_cond.text())
+        _val = self.inp_cond.text()
+        bpy.ops.rzm.update_shape(shape_index=row, prop_name="anim_condition", val_str=_val)
+
+    def synch_disable_export(self, v):
+        if self.is_updating_ui: return
+        row = self.list_widget.currentRow()
+        bpy.ops.rzm.update_shape(shape_index=row, prop_name="disable_export", val_str=str(v))
 
     # --- Shape Keys Logic
     def refresh_keys_list(self, shape):

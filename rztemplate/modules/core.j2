@@ -388,12 +388,15 @@ z85 = $window0AreaZ
 w85 = $window0AreaW
 {% if scene.rzm and scene.rzm.elements %}
 {%- for element in scene.rzm.elements if element.parent_id == -1 -%}
+{%- if not (element.disable_export and not element.is_preset) -%}
 {%- if element.is_preset == True -%}
 ;run = CommandListElement{{ element.element_name }}
 {% else -%}
 run = CommandListElement{{ element.element_name }}
 {% endif %}
+{%- endif -%}
 {%- endfor -%}
+
 {% endif -%}
 run = CommandListInteractionManager
 run = CommandListNavFinalizeSearch
@@ -473,7 +476,7 @@ if $inputMode == 0
 endif
 {% if scene.rzm %}
     {% for grid in scene.rzm.elements %}
-        {% if grid.elem_class == 'GRID_CONTAINER' %}
+        {% if grid.elem_class == 'GRID_CONTAINER' and not (grid.disable_export and not grid.is_preset) %}
             ${{ grid.element_name }}_new_frame = 1
         {% endif %}
     {% endfor %}
@@ -1316,10 +1319,15 @@ global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
             [Resource_Component{{ id }}_VB0_{{ shape.shape_name }}_{{ key.key_name }}]
             type = Buffer
             stride = 16
+            {% if shape.disable_export %}
+            filename = Meshes0/Component{{ id }}_VB0.buf
+            {% else %}
             filename = Meshes{{ key.key_name }}/Component{{ id }}_VB0.buf
+            {% endif %}
             {% endif %}
         {% endfor %}
     {% endfor %}
 {% endfor %}
+
 
 {% endmacro %}

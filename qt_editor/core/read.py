@@ -112,6 +112,8 @@ def get_selection_details(selected_ids, active_id):
             "tag": get_uniform("tag", default=""),
             "priority": get_uniform("priority", default=0),
             "is_main_window": get_uniform("is_main_window", default=False),
+            "disable_export": get_uniform("disable_export", default=False),
+
             
             # Visibility
             "visibility_mode": get_uniform("visibility_mode", default="ALWAYS"),
@@ -270,6 +272,8 @@ def get_viewport_data():
             "formula_h": getattr(elem, "size_formula_y", ""),
             "transform_is_formula": getattr(elem, "transform_is_formula", False),
             "transform_formula": getattr(elem, "transform_formula", ""),
+            "disable_export": getattr(elem, "disable_export", False),
+
 
             # Visuals
             "image_id": getattr(elem, "image_id", -1),

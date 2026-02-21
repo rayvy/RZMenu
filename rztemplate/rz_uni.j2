@@ -9,12 +9,10 @@
 {% import "modules/modules.j2" as modules with context %}
 {% import "modules/utils.j2" as utils with context %}
 {% import "texworks.j2" as texworks with context %}
+{% import "modules/meta.j2" as meta with context %}
+{{ meta.mod_info_generate(mod_file, scene) }}
 
 {% call utils.clean_ws(max_empty=1) %}
-
-;RZMenu 3.0 (Universal Engine)
-;Target Game: {{ scene.rzm.game.name }}
-
 {% if scene.rzm.game.name == "ArknightsEndfield" %}
     {{ efmi.main_logic(extracted_object, merged_object, mod_info, buffers, textures, cfg) }}
 {% else %}

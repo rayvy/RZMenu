@@ -317,7 +317,7 @@ global $rayvich_back_values_w110
 {{shape_generate(mod_file,scene)}}
 {% if scene.rzm %}
     {% for grid in scene.rzm.elements %}
-        {% if utils.get_cls(grid)|trim == 'GRID_CONTAINER' %}
+        {% if utils.get_cls(grid)|trim == 'GRID_CONTAINER' and not (grid.disable_export and not grid.is_preset) %}
             global ${{ grid.element_name }}_new_frame = 1
         {% endif %}
     {% endfor %}
@@ -329,7 +329,7 @@ global $rayvich_back_values_w110
 {% macro anchors_generate(mod_file,scene) %}
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
-        {% if not element.is_preset %}
+        {% if not element.is_preset and not element.disable_export %}
             {% if utils.get_cls(element)|trim == 'GRID_CONTAINER'%}
             global persist ${{element.element_name}}scroll = 0
             {% endif%}
@@ -345,7 +345,7 @@ global $rayvich_back_values_w110
 {% macro special_generate(mod_file,scene) %}
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
-        {% if element.tag == 'HSVColorPicker' %}
+        {% if element.tag == 'HSVColorPicker' and not (element.disable_export and not element.is_preset) %}
         global persist ${{element.element_name}}_X = 0.0
         global persist ${{element.element_name}}_Y = 1.0
         global persist ${{element.element_name}}_Z = 1.0

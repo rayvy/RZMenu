@@ -262,8 +262,10 @@ class RZConfiguratorManager(QtWidgets.QWidget):
         self.tabs = [] # List of (Name, WidgetInstance)
         
         self.add_tab("General", GeneralTab())
+        self.add_tab("Mod Info", SnippetTab("mod_info", "Mod Information"))
         self.add_tab("PreSnippet", SnippetTab("pre_snippet", "Pre-Injection Code"))
         self.add_tab("PostSnippet", SnippetTab("post_snippet", "Post-Injection Code"))
+
         # Extensible point: self.add_tab("VFX", VFXTab())
         
         self.apply_theme()

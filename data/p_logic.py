@@ -64,4 +64,5 @@ class RZMShape(bpy.types.PropertyGroup):
         name="Anim Condition",
         description="Условие для проигрывания анимации (e.g., $var > 0). Пустое поле = всегда активно."
     )
+    disable_export: BoolProperty(name="Disable Export", description="If active, this shape variable will not be exported to templates", default=False)
     shape_keys: CollectionProperty(type=RZMShapeKey)

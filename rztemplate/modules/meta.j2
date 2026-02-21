@@ -1,0 +1,63 @@
+{# --- SMART PARSER & REPLACER v5 (THE JUICY SCENARIO) --- #}
+
+{%- macro parse_and_replace_tags(text, scene) -%}
+    {%- if text -%}
+        {# 1. Блок ПОДГОТОВЛЕННЫХ ПЕРЕМЕННЫХ (Контекст).
+              Ключи пишем в нижнем регистре без пробелов для бронебойности. #}
+        {%- set ctx = {
+            'modname': scene.rzm.config.name,
+            'name': scene.rzm.config.name,
+            'nazvaniemodaazachemparsitnedorusskiy': scene.rzm.config.name,
+            'author': scene.rzm.config.author if scene.rzm.config.author is defined else '',
+            'game': scene.rzm.game.name if scene.rzm.game.name is defined else '',
+            'version': scene.rzm.config.version if scene.rzm.config.version is defined else ''
+        } -%}
+
+        {# 2. Нарезаем текст #}
+        {%- set parts = text.split('{{') -%}
+        {%- set state = {'output': parts[0]} -%}
+        
+        {%- if parts | length > 1 -%}
+            {%- for part in parts -%}
+                {%- if loop.index0 > 0 -%}
+                    {%- if '}}' in part -%}
+                        {%- set subparts = part.split('}}', 1) -%}
+                        {%- set inner_tag = subparts[0] -%}
+                        {%- set remainder = subparts[1] if subparts | length > 1 else '' -%}
+
+                        {# Зачищаем тег от пробелов, подчеркиваний и вопросов #}
+                        {%- set clean_var = inner_tag | lower | replace(' ', '') | replace('_', '') | replace('?', '') -%}
+
+                        {# Инициализируем замену исходным тегом #}
+                        {%- set replace = {'val': '{{' ~ inner_tag ~ '}}'} -%}
+
+                        {# --- ЛОГИКА ЗАМЕНЫ ЧЕРЕЗ СЛОВАРЬ --- #}
+                        {%- if clean_var in ctx -%}
+                            {# Берем значение. Если оно пустое/None, ставим заглушку, чтобы было видно результат! #}
+                            {%- set final_val = ctx[clean_var] | default('[EMPTY_' ~ clean_var | upper ~ ']', true) | string -%}
+                            {%- if replace.update({'val': final_val}) -%}{%- endif -%}
+                        {%- endif -%}
+
+                        {# Склеиваем стейт #}
+                        {%- if state.update({'output': state.output ~ replace.val ~ remainder}) -%}{%- endif -%}
+                    {%- else -%}
+                        {%- if state.update({'output': state.output ~ '{{' ~ part}) -%}{%- endif -%}
+                    {%- endif -%}
+                {%- endif -%}
+            {%- endfor -%}
+        {%- endif -%}
+
+        {{- state.output -}}
+    {%- endif -%}
+{%- endmacro -%}
+
+
+{# --- MAIN GENERATOR --- #}
+
+{% macro mod_info_generate(mod_file, scene) %}
+{% if scene.rzm and scene.rzm.config.mod_info %}
+;RZMenu 3.0 (Universal Engine)
+;Target Game: {{ scene.rzm.game.name }}
+{{ parse_and_replace_tags(scene.rzm.config.mod_info, scene) }}
+{% endif %}
+{% endmacro %}

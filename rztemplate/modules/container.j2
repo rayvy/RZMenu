@@ -391,7 +391,8 @@ Local $current_sizeY
 
 {%macro generate_child(element,mod_file,scene)%}
     {% for child in scene.rzm.elements %}
-        {% if child.parent_id == element.id and not child.is_preset %}
+        {% if child.parent_id == element.id and not child.is_preset and not child.disable_export %}
+
             $PositionX = $P_PX
             $PositionY = $P_PY
             $SizeX = $P_SX
