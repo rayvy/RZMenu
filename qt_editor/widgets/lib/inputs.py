@@ -438,3 +438,157 @@ class RZCodeTextEdit(RZFormulaInput):
             self.highlighter.rehighlight()
         else:
             self.highlighter = None
+
+class RZModInfoHighlighter(QtGui.QSyntaxHighlighter):
+    """
+    Highlighter for Mod Info. 
+    Tags like {{character_name}} are highlighted.
+    """
+    def __init__(self, document):
+        super().__init__(document)
+        self.update_theme()
+        
+    def update_theme(self):
+        theme = get_current_theme()
+        self.fmt_tag = QtGui.QTextCharFormat()
+        self.fmt_tag.setForeground(QtGui.QColor(theme.get('accent', '#5298D4')))
+        self.fmt_tag.setFontWeight(QtGui.QFont.Bold)
+
+        # Highlighting for replaced values in preview mode
+        self.fmt_replaced = QtGui.QTextCharFormat()
+        accent = QtGui.QColor(theme.get('accent', '#5298D4'))
+        self.fmt_replaced.setForeground(accent)
+        self.fmt_replaced.setFontWeight(QtGui.QFont.Bold)
+
+    def highlightBlock(self, text):
+        # 1. Match markers \x01 ... \x02 (Replaced values in preview)
+        for match in re.finditer(r'\x01(.*?)\x02', text):
+            self.setFormat(match.start(), match.end() - match.start(), self.fmt_replaced)
+
+        # 2. Match {{anything}} (Tags in code mode)
+        for match in re.finditer(r'\{\{.*?\}\}', text):
+            self.setFormat(match.start(), match.end() - match.start(), self.fmt_tag)
+
+class RZModInfoTextEdit(RZCodeTextEdit):
+    """
+    Specialized editor for Mod Info with {{ }} autocomplete 
+    and Live Preview on unfocus.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._raw_text = ""
+        self._is_preview = False
+        self.highlighter = RZModInfoHighlighter(self.document())
+        self.textChanged.connect(self._on_text_changed_internal)
+        
+    def _on_text_changed_internal(self):
+        # Only update raw text if we are NOT in preview mode
+        if not self._is_preview:
+            self._raw_text = self.toPlainText()
+
+    def focusInEvent(self, event):
+        if self._is_preview:
+            # Restore raw text for editing
+            self.blockSignals(True)
+            self.setPlainText(self._raw_text)
+            self.blockSignals(False)
+            
+            self._is_preview = False
+            # Re-enable highlighting for tags
+            self.highlighter.rehighlight()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        if self._is_preview: return # Already in preview
+        
+        # Save current text before switching
+        self._raw_text = self.toPlainText()
+        
+        # Preview mode
+        preview_text = core_read.evaluate_mod_info(self._raw_text, highlight=True)
+        self._is_preview = True
+        
+        # Block signals to prevent textChanged from triggering while we set preview text
+        self.blockSignals(True)
+        self.setPlainText(preview_text)
+        self.blockSignals(False)
+        
+        # Emit that we are finished with the ORIGINAL raw text
+        self.editingFinished.emit()
+        self.popup.hide()
+
+    def text(self):
+        return self._raw_text
+
+    def set_text_safe(self, t):
+        if self.hasFocus(): 
+            return # Don't overwrite what user is currently typing!
+            
+        self._raw_text = str(t)
+        self.blockSignals(True)
+        if not self.hasFocus():
+            preview_text = core_read.evaluate_mod_info(self._raw_text, highlight=True)
+            self._is_preview = True
+            self.setPlainText(preview_text)
+        else:
+            self.setPlainText(self._raw_text)
+        self.blockSignals(False)
+
+    def _check_autocomplete(self):
+        if self._is_preview: return
+        
+        text = self.toPlainText()
+        cursor_pos = self.cursorPosition()
+        left_text = text[:cursor_pos]
+        
+        # Regex: Find word starting with {{
+        match = re.search(r'\{\{([a-zA-Z0-9_]*)$', left_text)
+        
+        if match:
+            token = match.group(0) # e.g. "{{" or "{{char"
+            self._show_suggestions(token)
+        else:
+            self.popup.hide()
+
+    def _show_suggestions(self, token):
+        all_tags = core_read.get_metadata_suggestions()
+        # Case insensitive filtering
+        filtered = [v for v in all_tags if v.lower().startswith(token.lower())]
+        
+        if not filtered:
+            self.popup.hide()
+            return
+
+        self.popup.clear()
+        self.popup.addItems(filtered)
+        self.popup.setCurrentRow(0)
+        
+        rect = self.cursorRect()
+        global_pos = self.mapToGlobal(rect.bottomLeft())
+        self.popup.move(global_pos.x(), global_pos.y() + 5)
+        self.popup.setFixedSize(250, min(150, len(filtered) * 25 + 5))
+        self.popup.show()
+
+    def _complete_selection(self, item):
+        if not item: return
+        completion = item.text() + "}}" # Add closing braces if they weren't matched? 
+        # Actually suggestions already have {{tag}}. If user typed {{ and got {{tag}} 
+        # we replacement should be smart.
+        
+        text = self.toPlainText()
+        cursor_pos = self.cursorPosition()
+        left_text = text[:cursor_pos]
+        
+        match = re.search(r'\{\{([a-zA-Z0-9_]*)$', left_text)
+        if match:
+            start, end = match.span()
+            prefix = left_text[:start]
+            suffix = text[cursor_pos:]
+            
+            # If suffix already starts with }}, don't duplicate (unlikely if user just typed)
+            # Suggestion is e.g. "{{character_name}}"
+            new_text = prefix + completion + suffix
+            self.setPlainText(new_text)
+            self.setCursorPosition(len(prefix) + len(completion))
+            
+        self.popup.hide()

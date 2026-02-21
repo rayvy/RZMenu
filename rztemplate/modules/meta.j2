@@ -1,18 +1,25 @@
-{# --- SMART PARSER & REPLACER v5 (THE JUICY SCENARIO) --- #}
+{# --- SMART PARSER & REPLACER v5.1 (WITH 3DMIGOTO COMMENTS) --- #}
 
 {%- macro parse_and_replace_tags(text, scene) -%}
     {%- if text -%}
         {# 1. Блок ПОДГОТОВЛЕННЫХ ПЕРЕМЕННЫХ (Контекст).
               Ключи пишем в нижнем регистре без пробелов для бронебойности. #}
         {%- set ctx = {
-            'modname': scene.rzm.config.name,
-            'name': scene.rzm.config.name,
-            'nazvaniemodaazachemparsitnedorusskiy': scene.rzm.config.name,
-            'author': scene.rzm.config.author if scene.rzm.config.author is defined else '',
-            'game': scene.rzm.game.name if scene.rzm.game.name is defined else '',
-            'version': scene.rzm.config.version if scene.rzm.config.version is defined else ''
+            'charactername': scene.rzm.meta_data.character_name,
+            'outfitname': scene.rzm.meta_data.outfit_name,
+            'versionnum': scene.rzm.meta_data.version_num,
+            'patreontier': scene.rzm.meta_data.patreon_tier | replace('_', ' '),
+            'description': scene.rzm.meta_data.description,
+            'menukeybind': scene.rzm.meta_data.menu_keybind,
+            'requirements': scene.rzm.meta_data.requirements,
+            'authorname': scene.rzm.meta_data.author_name,
+            'communityrespect': scene.rzm.meta_data.community_respect,
+            'modname': scene.rzm.export_settings.mod_name,
+            'gamename': scene.rzm.game.name,
+            'credits': scene.rzm.meta_data.credits_list | map(attribute='name') | join(', '),
+            'features': scene.rzm.meta_data.features_list | map(attribute='text') | join(', ')
         } -%}
-
+        
         {# 2. Нарезаем текст #}
         {%- set parts = text.split('{{') -%}
         {%- set state = {'output': parts[0]} -%}
@@ -47,7 +54,12 @@
             {%- endfor -%}
         {%- endif -%}
 
-        {{- state.output -}}
+        {# 3. Построчно добавляем комментарии 3Dmigoto (;) #}
+        {%- set lines = state.output.split('\n') -%}
+        {%- for line in lines -%}
+            ;{{ line | replace('\r', '') }}
+            {%- if not loop.last %}{{ '\n' }}{% endif -%}
+        {%- endfor -%}
     {%- endif -%}
 {%- endmacro -%}
 
@@ -56,8 +68,16 @@
 
 {% macro mod_info_generate(mod_file, scene) %}
 {% if scene.rzm and scene.rzm.config.mod_info %}
-;RZMenu 3.0 (Universal Engine)
+;RZMenu 3.6.1 (Universal Engine)
 ;Target Game: {{ scene.rzm.game.name }}
+
+; change key parametr if you want to swap key from {{scene.rzm.meta_data.menu_keybind}} to which you want
+[KeyMenu]
+condition = $active == 1
+key = no_modifiers {{scene.rzm.meta_data.menu_keybind}}
+type = cycle
+$menu = 0,1
+
 {{ parse_and_replace_tags(scene.rzm.config.mod_info, scene) }}
 {% endif %}
 {% endmacro %}

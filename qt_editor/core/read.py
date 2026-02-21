@@ -60,7 +60,56 @@ def get_variable_suggestions():
 
     return sorted(suggestions)
 
+def get_metadata_suggestions():
+    """
+    Returns a list of tags for Mod Info autocomplete, e.g. {{character_name}}
+    """
+    if not bpy.context or not bpy.context.scene: return []
+    rzm = bpy.context.scene.rzm
+    meta = rzm.meta_data
+    
+    # Base fields from RZMMetaDataSettings
+    suggestions = [
+        "{{character_name}}", "{{outfit_name}}", "{{version_num}}",
+        "{{patreon_tier}}", "{{description}}", "{{menu_keybind}}",
+        "{{requirements}}", "{{author_name}}", "{{community_respect}}",
+        "{{mod_name}}", "{{game_name}}"
+    ]
+    return sorted(suggestions)
+
+def evaluate_mod_info(text, highlight=False):
+    """
+    Primitive replacement of tags for live preview in UI.
+    If highlight is True, wraps replaced values in markers.
+    """
+    if not text or not bpy.context or not bpy.context.scene: return text
+    rzm = bpy.context.scene.rzm
+    meta = rzm.meta_data
+    
+    replacements = {
+        "{{character_name}}": meta.character_name,
+        "{{outfit_name}}": meta.outfit_name,
+        "{{version_num}}": meta.version_num,
+        "{{patreon_tier}}": meta.patreon_tier,
+        "{{description}}": meta.description,
+        "{{menu_keybind}}": meta.menu_keybind,
+        "{{requirements}}": meta.requirements,
+        "{{author_name}}": meta.author_name,
+        "{{community_respect}}": meta.community_respect,
+        "{{mod_name}}": rzm.export_settings.mod_name,
+        "{{game_name}}": rzm.game.name
+    }
+    
+    result = text
+    for tag, val in replacements.items():
+        sub_val = str(val)
+        if highlight:
+            sub_val = f"\x01{sub_val}\x02"
+        result = result.replace(tag, sub_val)
+    return result
+
 def get_selection_details(selected_ids, active_id):
+
     if not bpy.context or not bpy.context.scene: return None
     elements = bpy.context.scene.rzm.elements
     selection = [e for e in elements if e.id in selected_ids]

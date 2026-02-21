@@ -40,6 +40,10 @@ class RZM_OT_UpdateConfigSetting(bpy.types.Operator):
             self.report({'ERROR'}, f"Failed to update {self.prop_name}: {e}")
             return {'CANCELLED'}
             
+        # Emit signal for UI refresh
+        from ..qt_editor.core.signals import SIGNALS
+        SIGNALS.data_changed.emit()
+            
         return {'FINISHED'}
 
 class RZM_OT_UpdateExportSetting(bpy.types.Operator):
@@ -56,9 +60,7 @@ class RZM_OT_UpdateExportSetting(bpy.types.Operator):
     def execute(self, context):
         settings = context.scene.rzm.export_settings
         if not hasattr(settings, self.prop_name):
-             # Try root properties if not in export_settings?
-             # User prompt showed some props on root RZMenuProperties (export_texture_slots)
-             # Let's check root if not in settings
+             # Try root properties if not in export_settings
              settings = context.scene.rzm
              if not hasattr(settings, self.prop_name):
                  return {'CANCELLED'}
@@ -90,10 +92,37 @@ class RZM_OT_UpdateAddonSetting(bpy.types.Operator):
             return {'FINISHED'}
         return {'CANCELLED'}
 
+class RZM_OT_UpdateMetadataSetting(bpy.types.Operator):
+    """Update a metadata setting."""
+    bl_idname = "rzm.update_metadata_setting"
+    bl_label = "Update Metadata"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    prop_name: bpy.props.StringProperty()
+    val_str: bpy.props.StringProperty()
+    val_bool: bpy.props.BoolProperty()
+    use_bool: bpy.props.BoolProperty(default=False)
+
+    def execute(self, context):
+        meta = context.scene.rzm.meta_data
+        if hasattr(meta, self.prop_name):
+            if self.use_bool:
+                setattr(meta, self.prop_name, self.val_bool)
+            else:
+                setattr(meta, self.prop_name, self.val_str)
+            
+            # Emit signal for UI refresh
+            from ..qt_editor.core.signals import SIGNALS
+            SIGNALS.data_changed.emit()
+            
+            return {'FINISHED'}
+        return {'CANCELLED'}
+
 classes_to_register = [
     RZM_OT_UpdateConfigSetting,
     RZM_OT_UpdateExportSetting,
     RZM_OT_UpdateAddonSetting,
+    RZM_OT_UpdateMetadataSetting,
 ]
 
 def register():

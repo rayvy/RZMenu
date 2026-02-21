@@ -1,6 +1,6 @@
 # RZMenu/data/p_settings.py
 import bpy
-from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, IntVectorProperty
+from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, IntVectorProperty, PointerProperty
 
 # Импорт зависимостей для CollectionProperty
 # from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
