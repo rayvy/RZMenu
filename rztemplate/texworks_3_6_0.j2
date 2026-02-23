@@ -7,27 +7,6 @@
 ; =======================================================================================
 ;                                     TEXWORKS CORE (v3.5.6)
 ; =======================================================================================
-[Constants]
-global $x43val
-global $y43val
-global $z43val
-global $w43val
-
-[CommandListTexWorks.SaveTexWorksVALS]
-$x43val = x43
-$y43val = y43
-$z43val = z43
-$w43val = w43
-x43 = 0.0
-y43 = 0.0
-z43 = 0.0
-w43 = 0.0
-
-[CommandListTexWorks.RestoreTexWorksVALS]
-x43 = $x43val
-y43 = $y43val
-z43 = $z43val
-w43 = $w43val
 
 ; --- 1. GLOBAL RESOURCES ---
 {% for res in rzm.tw_resources %}
@@ -92,19 +71,26 @@ run = CustomShaderBlockBackdrop_{{ block.name }}
 $TW_Global_Init_Needed_{{ block.name }} = 0
 
 [CustomShaderBlockBackdrop_{{ block.name }}]
-run = CommandListTexWorks.SaveTexWorksVALS
-cs = /modules/cs_update_region.hlsl
+cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = Resource{{ utils.clean_resource(block.backdrop_resource_name) }}
 cs-t1 = null
+x43 = 0
+y43 = 0
+z43 = 0
+w43 = 1.0
 x44 = {{ block.backdrop_rect[0] }}
 y44 = {{ block.backdrop_rect[1] }}
 z44 = {{ block.backdrop_rect[2] }}
 w44 = {{ block.backdrop_rect[3] }}
+x45 = 0.0
+y45 = 0.0
+z45 = 0.0
+w45 = 1.0
 x24 = 0.0
-dispatch = ({{ block.backdrop_rect[2] }} + 31) // 32, ({{ block.backdrop_rect[3] }} + 31) // 32, 1
-run = CommandListTexWorks.RestoreTexWorksVALS
+dispatch = {{ block.backdrop_rect[2] }} // 32, {{ block.backdrop_rect[3] }} // 32, 1
 {% endif %}
+
 {% for comp in block.components %}
 ; --- Component: {{ comp.name }} ---
 {% set comp_path = "TexWorks/" ~ block.name ~ "/" ~ comp.name %}
@@ -219,8 +205,7 @@ y38 = 0
 {# --- Shaders for Component --- #}
 
 [CustomShaderUpdateCompBase_{{ block.name }}_{{ comp.name }}]
-run = CommandListTexWorks.SaveTexWorksVALS
-cs = /modules/cs_update_region.hlsl
+cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref Resource{{ block_res }}
 {% if comp.base_resource_name %}
 cs-t0 = Resource{{ utils.clean_resource(comp.base_resource_name) }}
@@ -236,38 +221,19 @@ cs-t2 = Resource{{ utils.clean_resource(comp.tex_morph_resource_name) }}
 {% else %}
 cs-t2 = null
 {% endif %}
-{% if comp.hsv_enabled is true%}
-{% set v_name = utils.format_var(comp.hsv_link) %}
-{% set v_base = comp.hsv_base %}
-{# COMPATIBILITY FIX: Robust dictionary lookup and scoping fix #}
-{% set ns = {'v_obj': none, 'v_base': comp.hsv_base} %}
-{% set v_target = comp.hsv_link.lstrip('$@#%').strip()|lower %}
-{% for val in rzm.rzm_values %}
-    {% if val.value_name.lstrip('$@#%').strip()|lower == v_target %}
-        {% if ns.update({'v_obj': val}) or true %}{% endif %}
-    {% endif %}
-{% endfor %}
-{% set v_obj = ns.v_obj %}
-{% if v_obj and v_obj.value_type == 'VECTOR' %}
-    {# If component base in UI is (0,0,0), use variable default from blender #}
-    {% if comp.hsv_base[0] == 0 and comp.hsv_base[1] == 0 and comp.hsv_base[2] == 0 %}
-        {% if ns.update({'v_base': v_obj.vector_value}) or true %}{% endif %}
-    {% endif %}
-{% endif %}
-{% set v_base = ns.v_base %}
-x43 = ${{ v_name }}_X - {{ "%.3f"|format(v_base[0]) }}
-y43 = ${{ v_name }}_Y - {{ "%.3f"|format(v_base[1]) }}
-z43 = ${{ v_name }}_Z - {{ "%.3f"|format(v_base[2]) }}
-w43 = {{ "%.3f"|format(v_base[3]) }} {# HSV Enabled + Strength #}
-{% endif %}
+x43 = 0
+y43 = 0
+z43 = 0
+w43 = 1.0
 x44 = {{ comp.rect[0] }}
 y44 = {{ comp.rect[1] }}
 z44 = {{ comp.rect[2] }}
 w44 = {{ comp.rect[3] }}
-;x45 = {{ comp.base_rect[0] }}
-;y45 = {{ comp.base_rect[1] }}
-;z45 = {{ comp.base_rect[2] }}
-;w45 = {{ comp.base_rect[3] }}
+{# Mapping source rect #}
+x45 = {{ "%.3f"|format(comp.base_rect[0] / 4096) }}
+y45 = {{ "%.3f"|format(comp.base_rect[1] / 4096) }}
+z45 = 0.0
+w45 = 1.0
 
 {# RZM_TEXMORPH: Фактор смешивания #}
 {% if comp.tex_morph_enabled and comp.tex_morph_link %}
@@ -275,9 +241,7 @@ x24 = ${{ utils.format_var(comp.tex_morph_link) }}
 {% else %}
 x24 = 0.0
 {% endif %}
-{% if comp.mask_enabled %}w24 = 1{% else %}w24 = 0{% endif %}
-dispatch = ({{ comp.rect[2] }} + 31) // 32, ({{ comp.rect[3] }} + 31) // 32, 1
-run = CommandListTexWorks.RestoreTexWorksVALS
+dispatch = {{ comp.rect[2] }} // 32, {{ comp.rect[3] }} // 32, 1
 
 {% for slot in comp.slots if slot.active %}
 {# Slot Resources (Masks, Decal variations, Config Buffer) #}
@@ -357,45 +321,26 @@ filename = {{ comp_path }}/{{ slot.name }}/{{ layer.name }}/{{ i }}{{ file_suffi
 {# HSV Compute Shader (TODO: Optional - currently updated to use buffer logic if needed) #}
 {% if slot.hsv_enabled and slot.hsv_link %}
 [CustomShaderUpdateSlotHSV_{{ block.name }}_{{ comp.name }}_{{ slot.name }}]
-run = CommandListTexWorks.SaveTexWorksVALS
-cs = /modules/decal_draw_hsv.hlsl
+cs = /modules/texworks/cs_update_region.hlsl
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
-cs-t5 = {% if slot.hsv_mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}Mask{% else %}null{% endif %}
+cs-t1 = {% if slot.hsv_mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}Mask{% else %}null{% endif %}
 {% set v_name = utils.format_var(slot.hsv_link) %}
-{% set v_base = slot.hsv_base %}
-{# COMPATIBILITY FIX: Robust dictionary lookup and scoping fix #}
-{% set ns = {'v_obj': none, 'v_base': slot.hsv_base} %}
-{% set v_target = slot.hsv_link.lstrip('$@#%').strip()|lower %}
-{% for val in rzm.rzm_values %}
-    {% if val.value_name.lstrip('$@#%').strip()|lower == v_target %}
-        {% if ns.update({'v_obj': val}) or true %}{% endif %}
-    {% endif %}
-{% endfor %}
-{% set v_obj = ns.v_obj %}
-{% if v_obj and v_obj.value_type == 'VECTOR' %}
-    {# If slot base in UI is (0,0,0), use variable default from blender #}
-    {% if slot.hsv_base[0] == 0 and slot.hsv_base[1] == 0 and slot.hsv_base[2] == 0 %}
-        {% if ns.update({'v_base': v_obj.vector_value}) or true %}{% endif %}
-    {% endif %}
-{% endif %}
-{% set v_base = ns.v_base %}
-x43 = ${{ v_name }}_X - {{ "%.3f"|format(v_base[0]) }}
-y43 = ${{ v_name }}_Y - {{ "%.3f"|format(v_base[1]) }}
-z43 = ${{ v_name }}_Z - {{ "%.3f"|format(v_base[2]) }}
-w43 = {{ "%.3f"|format(v_base[3]) }} {# HSV Enabled + Strength #}
+x43 = ${{ v_name }}_X - {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
+y43 = ${{ v_name }}_Y - {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.0) }}
+z43 = ${{ v_name }}_Z - {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.0) }}
+w43 = 1.0 {# HSV Enabled #}
 x44 = {{ comp.rect[0] + slot.rect[0] }} {# USAGE: comp.rect and slot.rect #}
 y44 = {{ comp.rect[1] + slot.rect[1] }}
 z44 = {{ slot.rect[2] }}
 w44 = {{ slot.rect[3] }}
-x45 = 0.0
+{# Old multi_pass_data usage removed #}
+x45 = 0.0 
 y45 = 0.0
 z45 = 0.0
-w45 = 0.0
-
-{% if slot.hsv_mask_enabled %}w24 = 1 {% else %} w24 = 0{% endif %}
-dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
-run = CommandListTexWorks.RestoreTexWorksVALS
+w45 = 1.0
+x24 = 0.0
+dispatch = {{ slot.rect[2] }} // 32, {{ slot.rect[3] }} // 32, 1
 {% endif %}
 
 {# Layer Compute Shaders #}
@@ -409,20 +354,21 @@ run = CommandListTexWorks.RestoreTexWorksVALS
 cs = /modules/{% if warp_enabled %}decal_draw_wrap.hlsl{% else %}decal_draw.hlsl{% endif %}
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
-cs-t5 = {% if slot.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
+cs-t1 = {% if comp.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}Mask{% else %}null{% endif %}
+cs-t2 = {% if slot.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
 {% set cfg_block = comp.shared_config_block if comp.use_shared_config and comp.shared_config_block else block.name %}
 {% set cfg_comp = comp.shared_config_component if comp.use_shared_config and comp.shared_config_component else comp.name %}
-cs-t6 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.P{{ pass_idx }}
+cs-t3 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.P{{ pass_idx }}
 {% if pass_idx == 0 and slot.warp_p0_enabled %}
-cs-t7 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P0
+cs-t4 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P0
 {% elif pass_idx == 1 and slot.warp_p1_enabled %}
-cs-t7 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P1
+cs-t4 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P1
 {% endif %}
 
-;x45 = {{ "%.1f"|format(comp.rect[0]) }}
-;y45 = {{ "%.1f"|format(comp.rect[1]) }}
-;z45 = {{ "%.1f"|format(comp.rect[2]) }}
-;w45 = {{ "%.1f"|format(comp.rect[3]) }}
+x45 = {{ "%.1f"|format(comp.rect[0]) }}
+y45 = {{ "%.1f"|format(comp.rect[1]) }}
+z45 = {{ "%.1f"|format(comp.rect[2]) }}
+w45 = {{ "%.1f"|format(comp.rect[3]) }}
 
 {% if scene.rzm.addons.debugger_info %}
 ; Debug override data from UI (Linked to persist vars)
@@ -439,7 +385,7 @@ if ${{ l_var_base }}Index0 >= 0
         cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
-    w24 = {{ 1.0 if (slot.mask_enabled and slot.pass0_use_mask) else 0.0 }}
+    w44 = {{ 1.0 if (slot.mask_enabled and slot.pass0_use_mask) else 0.0 }}
     dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
 endif
 
@@ -455,7 +401,7 @@ if ${{ p1_idx_var }} >= 0
         cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
-    w24 = {{ 1.0 if (slot.mask_enabled and slot.pass1_use_mask) else 0.0 }}
+    w44 = {{ 1.0 if (slot.mask_enabled and slot.pass1_use_mask) else 0.0 }}
     dispatch = ({{ slot.multi_pass_rect[2] }} + 31) // 32, ({{ slot.multi_pass_rect[3] }} + 31) // 32, 1
 endif
 {% endif %}
@@ -478,6 +424,21 @@ global $TW_Global_Init_Needed_{{ block.name }} = 1
 global $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 0
 global $Comp_{{ block.name }}_{{ comp.name }}_PastSum = -1
         {% for slot in comp.slots if slot.active %}
+            {% if slot.hsv_enabled and slot.hsv_link %}
+                {% set v_name = utils.format_var(slot.hsv_link) %}
+                {% if v_name not in processed_vars %}
+                    {# Проверяем, есть ли эта переменная в глобальном списке. Если нет - создаем #}
+                    {% set from_coll = {'found': false} %}
+                    {% for v in rzm.rzm_values if utils.format_var(v.value_name) == v_name %}{% if from_coll.update({'found': true}) %}{% endif %}{% endfor %}
+                    {% if not from_coll.found %}
+global persist ${{ v_name }}_X = {{ "%.3f"|format(slot.hsv_base[0] if slot.hsv_base else 0.0) }}
+global persist ${{ v_name }}_Y = {{ "%.3f"|format(slot.hsv_base[1] if slot.hsv_base else 0.5) }}
+global persist ${{ v_name }}_Z = {{ "%.3f"|format(slot.hsv_base[2] if slot.hsv_base else 0.6) }}
+global persist ${{ v_name }}_W = 0.0
+                    {% endif %}
+                    {% set _ = processed_vars.append(v_name) %}
+                {% endif %}
+            {% endif %}
             {% for layer in slot.decal_layers if layer.active %}
                 {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 global persist ${{ l_var_base }}Index0 = -1
@@ -504,10 +465,10 @@ endif
 {% for block in rzm.tw_blocks %}
 [CommandListBlock_{{ block.name }}]
 {# Shader Config Injection #}
-x43 = {{ "%.3f"|format(block.shader_config[0]) }}
-y43 = {{ "%.3f"|format(block.shader_config[1]) }}
-z43 = {{ "%.3f"|format(block.shader_config[2]) }}
-w43 = {{ "%.3f"|format(block.shader_config[3]) }}
+x46 = {{ "%.3f"|format(block.shader_config[0]) }}
+y46 = {{ "%.3f"|format(block.shader_config[1]) }}
+z46 = {{ "%.3f"|format(block.shader_config[2]) }}
+w46 = {{ "%.3f"|format(block.shader_config[3]) }}
 
 x47 = {{ "%.3f"|format(block.shader_overlay[0]) }}
 y47 = {{ "%.3f"|format(block.shader_overlay[1]) }}
@@ -547,17 +508,6 @@ endif
 
 {# 2. Check HSV Changes #}
 {% set sum_parts = [] %}
-
-{# --- ДОБАВИТЬ ВОТ ЭТОТ БЛОК --- #}
-{% if comp.hsv_enabled and comp.hsv_link %}
-    {% set cv_name = utils.format_var(comp.hsv_link) %}
-    {% set _ = sum_parts.append("$" ~ cv_name ~ "_X") %}
-    {% set _ = sum_parts.append("$" ~ cv_name ~ "_Y") %}
-    {% set _ = sum_parts.append("$" ~ cv_name ~ "_Z") %}
-    {% set _ = sum_parts.append("$" ~ cv_name ~ "_W") %}
-{% endif %}
-{# ------------------------------ #}
-
 {% for slot in comp.slots if slot.active %}
     {% if slot.hsv_link %}
         {% set v_name = utils.format_var(slot.hsv_link) %}
@@ -602,15 +552,6 @@ ${{ l_var_base }}IndexPast1 = ${{ l_var_base }}Index1
         {% endfor %}
         
         {% set sum_parts = [] %}
-
-        {% if comp.hsv_enabled and comp.hsv_link %}
-            {% set cv_name = utils.format_var(comp.hsv_link) %}
-            {% set _ = sum_parts.append("$" ~ cv_name ~ "_X") %}
-            {% set _ = sum_parts.append("$" ~ cv_name ~ "_Y") %}
-            {% set _ = sum_parts.append("$" ~ cv_name ~ "_Z") %}
-            {% set _ = sum_parts.append("$" ~ cv_name ~ "_W") %}
-        {% endif %}
-
         {% for slot in comp.slots if slot.active %}
             {% if slot.hsv_link %}
                 {% set v_name = utils.format_var(slot.hsv_link) %}
@@ -632,10 +573,10 @@ $Comp_{{ block.name }}_{{ comp.name }}_PastSum = {{ sum_parts | join(' + ') }}
 
 
 {# Reset Shader Config #}
-x46 = 1.0
-y46 = 1.0
-z46 = 1.0
-w46 = 1.0
+x46 = 0.0
+y46 = 0.0
+z46 = 0.0
+w46 = 0.0
 
 x47 = 0.0
 y47 = 0.0

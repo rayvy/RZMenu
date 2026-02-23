@@ -428,33 +428,52 @@ class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
         created_masks = 0
 
         for block in rzm.tw_blocks:
-            block_dir = os.path.join(base_dir, block.name)
-            block_res_name = block.resource_name or block.name
+            # RZM_TW_EXPORT_OPT: Skip blocks that use shared textures
+            if block.use_shared_textures:
+                continue
 
+            block_dir = os.path.join(base_dir, block.name)
+            
             for comp in block.components:
                 comp_dir = os.path.join(block_dir, comp.name)
                 
-                for slot in comp.slots:
-                    slot_dir = os.path.join(comp_dir, slot.name)
-                    if not os.path.exists(slot_dir):
-                        os.makedirs(slot_dir, exist_ok=True)
+                # RZM_TW_EXPORT_OPT: Create mask.png ONLY if mask_enabled or hsv_mask_enabled
+                if comp.mask_enabled or comp.hsv_mask_enabled:
+                    if not os.path.exists(comp_dir):
+                        os.makedirs(comp_dir, exist_ok=True)
                         created_folders += 1
-
-                    # Create mask in slot folder
-                    # Naming: [CompName][SlotName].MASK.png (compressed)
-                    clean_comp = comp.name.replace(" ","")
-                    clean_slot = slot.name.replace(" ","")
-                    mask_name = f"{clean_comp}{clean_slot}.MASK.png"
-                    mask_path = os.path.join(slot_dir, mask_name)
                     
+                    mask_path = os.path.join(comp_dir, "mask.png")
                     if not os.path.exists(mask_path):
-                        # Mask size matches component rect
+                        # Use component rect for mask size
                         if create_dummy_png(mask_path, comp.rect[2], comp.rect[3]):
                             created_masks += 1
 
-                    for layer in slot.decal_layers:
-                        layer_dir = os.path.join(slot_dir, layer.name)
+                for slot in comp.slots:
+                    slot_dir = os.path.join(comp_dir, slot.name)
+                    
+                    # RZM_TW_EXPORT_OPT: Check if slot needs a mask or has layers
+                    has_layers = any(l.active for l in slot.decal_layers)
+                    
+                    if slot.mask_enabled or slot.hsv_mask_enabled or has_layers:
+                        if not os.path.exists(slot_dir):
+                            os.makedirs(slot_dir, exist_ok=True)
+                            created_folders += 1
+
+                    if slot.mask_enabled or slot.hsv_mask_enabled:
+                        clean_comp = comp.name.replace(" ","")
+                        clean_slot = slot.name.replace(" ","")
+                        mask_name = f"{clean_comp}{clean_slot}.MASK.png"
+                        mask_path = os.path.join(slot_dir, mask_name)
                         
+                        if not os.path.exists(mask_path):
+                            if create_dummy_png(mask_path, slot.rect[2], slot.rect[3]):
+                                created_masks += 1
+
+                    for layer in slot.decal_layers:
+                        if not layer.active: continue
+                        
+                        layer_dir = os.path.join(slot_dir, layer.name)
                         if not os.path.exists(layer_dir):
                             os.makedirs(layer_dir, exist_ok=True)
                             created_folders += 1
@@ -466,6 +485,206 @@ class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
                                     created_files += 1
 
         self.report({'INFO'}, f"TexWorks Export: {created_folders} folders, {created_files} files, {created_masks} masks created.")
+        return {'FINISHED'}
+
+class RZM_OT_TwCreateEasyMask(bpy.types.Operator):
+    """Генерирует маску (красный цвет на черном фоне) на основе выделенных UV."""
+    bl_idname = "rzm.tw_create_easy_mask"
+    bl_label = "Easy Mask"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    block_idx: bpy.props.IntProperty()
+    comp_idx: bpy.props.IntProperty()
+    slot_idx: bpy.props.IntProperty(default=-1)
+
+    def execute(self, context):
+        import numpy as np
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+
+        rzm = context.scene.rzm
+        try:
+            block = rzm.tw_blocks[self.block_idx]
+            comp = block.components[self.comp_idx]
+            item = comp if self.slot_idx == -1 else comp.slots[self.slot_idx]
+        except IndexError:
+            return {'CANCELLED'}
+
+        # Находим путь для сохранения
+        target_path = get_target_path(context)
+        if not target_path:
+            self.report({'ERROR'}, "Mod path not set!")
+            return {'CANCELLED'}
+
+        comp_dir = os.path.join(target_path, "TexWorks", block.name, comp.name)
+        if self.slot_idx == -1:
+            filepath = os.path.join(comp_dir, "mask.png")
+        else:
+            slot_name = item.name
+            clean_comp = comp.name.replace(" ", "")
+            clean_slot = slot_name.replace(" ", "")
+            filepath = os.path.join(comp_dir, slot_name, f"{clean_comp}{clean_slot}.MASK.png")
+
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+        # Размеры для экспорта (всегда на основе компонента)
+        comp_width, comp_height = int(comp.rect[2]), int(comp.rect[3])
+        if comp_width <= 0 or comp_height <= 0:
+            comp_width, comp_height = 2048, 2048
+
+        # Для слотов вычисляем область автоматически (игнорируя враппинг)
+        if self.slot_idx != -1:
+            obj = context.active_object
+            if not obj or obj.type != 'MESH':
+                self.report({'ERROR'}, "Select the target mesh for Slot UV calculation")
+                return {'CANCELLED'}
+            
+            result = calculate_slot_config(obj, comp_width, comp_height, padding=0)
+            if not result:
+                self.report({'ERROR'}, "Failed to calculate UV zone for slot (no selection?)")
+                return {'CANCELLED'}
+            
+            # Обновляем rect слота (игнорируем lattice)
+            item.rect = result[0]
+        
+        # Временный файл для экспорта UV
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_export = os.path.join(temp_dir, "rzm_uv_export.png")
+
+        try:
+            bpy.ops.uv.export_layout(
+                filepath=temp_export,
+                export_all=False,
+                mode='PNG',
+                size=(comp_width, comp_height),
+                opacity=1.0
+            )
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to export UV layout: {e}")
+            return {'CANCELLED'}
+
+        # Пост-процессинг через Blender Image + NumPy (R8 Mask + Crop)
+        try:
+            # Загружаем временный файл
+            tmp_img = bpy.data.images.load(temp_export, check_existing=True)
+            tmp_img.colorspace_settings.name = 'Non-Color'
+            
+            # Работаем с пикселями (RGBA Float)
+            w, h = tmp_img.size
+            pixels = np.array(tmp_img.pixels)
+            pixels = pixels.reshape((h, w, 4))
+            
+            # RZM_R8_LOGIC: Alpha -> Red, G=0, B=0, A=1.0
+            # У свежего экспорта Blender UV: фон прозрачный (Alpha=0), линии непрозрачные (Alpha>0)
+            alpha_channel = pixels[:, :, 3].copy()
+            new_pixels = np.zeros_like(pixels)
+            new_pixels[:, :, 0] = alpha_channel # Red = Alpha
+            new_pixels[:, :, 3] = 1.0           # Alpha = 1.0 (Solid Black background)
+            
+            # Если это слот - обрезаем
+            if self.slot_idx != -1:
+                sx, sy, sw, sh = item.rect
+                # Blender Image координаты Y идут снизу вверх
+                # item.rect Y идет сверху вниз
+                y_start = h - (sy + sh)
+                y_end = h - sy
+                x_start = sx
+                x_end = sx + sw
+                
+                # Защита от выхода за границы
+                y_start = max(0, min(h, int(y_start)))
+                y_end = max(0, min(h, int(y_end)))
+                x_start = max(0, min(w, int(x_start)))
+                x_end = max(0, min(w, int(x_end)))
+                
+                new_pixels = new_pixels[y_start:y_end, x_start:x_end]
+                final_w, final_h = x_end - x_start, y_end - y_start
+            else:
+                final_w, final_h = w, h
+
+            # Создаем/Обновляем результирующее изображение
+            img_name = os.path.basename(filepath)
+            img = bpy.data.images.get(img_name)
+            if img: bpy.data.images.remove(img)
+            
+            img = bpy.data.images.new(img_name, final_w, final_h, alpha=True)
+            img.pixels = new_pixels.flatten()
+            img.filepath_raw = filepath
+            img.file_format = 'PNG'
+            img.save()
+            
+            # Очистка
+            bpy.data.images.remove(tmp_img)
+            if os.path.exists(temp_export): os.remove(temp_export)
+            
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to post-process mask: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
+        # Копирование в буфер обмена (Windows Only 64-bit safe method)
+
+        # Копирование в буфер обмена (Windows Only 64-bit safe method from UvTEX(2048).py)
+        try:
+             import ctypes
+             from ctypes import wintypes
+             
+             CF_PNG = ctypes.windll.user32.RegisterClipboardFormatW("PNG")
+             with open(filepath, "rb") as f:
+                 png_bytes = f.read()
+             
+             user32 = ctypes.windll.user32
+             kernel32 = ctypes.windll.kernel32
+             
+             # Явное определение типов для 64-битной совместимости
+             kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+             kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+             kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+             kernel32.GlobalLock.restype = wintypes.LPVOID
+             kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+             kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+             user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+             user32.SetClipboardData.restype = wintypes.HANDLE
+             
+             GMEM_MOVEABLE = 0x0002
+             GMEM_ZEROINIT = 0x0040
+             
+             hCd = kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, len(png_bytes))
+             if not hCd:
+                 raise Exception("GlobalAlloc failed")
+             
+             pBuf = kernel32.GlobalLock(hCd)
+             if not pBuf:
+                 kernel32.GlobalFree(hCd)
+                 raise Exception("GlobalLock failed")
+             
+             try:
+                 ctypes.memmove(pBuf, png_bytes, len(png_bytes))
+             finally:
+                 kernel32.GlobalUnlock(hCd)
+             
+             if not user32.OpenClipboard(None):
+                 kernel32.GlobalFree(hCd)
+                 raise Exception("OpenClipboard failed")
+             
+             try:
+                 user32.EmptyClipboard()
+                 if not user32.SetClipboardData(CF_PNG, hCd):
+                     kernel32.GlobalFree(hCd)
+                     raise Exception("SetClipboardData failed")
+                 hCd = None # Sysem now owns the memory
+             finally:
+                 user32.CloseClipboard()
+             
+             if hCd:
+                 kernel32.GlobalFree(hCd)
+
+             self.report({'INFO'}, f"Mask saved to {filepath} and copied to clipboard!")
+        except Exception as e:
+             self.report({'INFO'}, f"Mask saved to {filepath} (Clipboard failed: {e})")
+
         return {'FINISHED'}
 
 class RZ_OT_TexWorksDebugSync(bpy.types.Operator):
@@ -670,5 +889,6 @@ classes_to_register = [
     RZM_OT_CalcSlotConfig,
     RZM_OT_SetSlotCalcRes,
     RZM_OT_CalcSplittedIslandConfig,
+    RZM_OT_TwCreateEasyMask,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
 ]

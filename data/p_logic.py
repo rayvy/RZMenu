@@ -22,6 +22,7 @@ class ValueProperty(bpy.types.PropertyGroup):
 class ToggleDefinition(bpy.types.PropertyGroup):
     toggle_name: StringProperty(name="Toggle Name", description="Уникальное имя, e.g., ToggleA")
     toggle_length: IntProperty(name="Length", default=8, min=1, max=32)
+    toggle_start_index: IntProperty(name="Start Index", default=0, min=0, max=999)
     toggle_is_expanded: BoolProperty(name="Expanded", default=False)
     show_occupancy: BoolProperty(
         name="Show Slot Occupancy", 

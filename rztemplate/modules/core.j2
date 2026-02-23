@@ -32,7 +32,7 @@
     {% if scene.rzm.toggle_definitions %}
         {% for toggle in scene.rzm.toggle_definitions %}
             {% if toggle.toggle_name %}
-            global persist ${{utils.format_var(toggle.toggle_name)}} = 0   
+            global persist ${{utils.format_var(toggle.toggle_name)}} = {{toggle.toggle_start_index | default(0) | int}}   
             {%endif%}
                 {#{toggle.toggle_length}#}
         {% endfor %}
@@ -1320,7 +1320,7 @@ global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
             type = Buffer
             stride = 16
             {% if shape.disable_export %}
-            filename = Meshes0/Component{{ id }}_VB0.buf
+            filename = Meshes/Component{{ id }}_VB0.buf
             {% else %}
             filename = Meshes{{ key.key_name }}/Component{{ id }}_VB0.buf
             {% endif %}

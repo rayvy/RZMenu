@@ -262,9 +262,14 @@ class TogglesTab(BaseListTab):
         self.inp_len = QtWidgets.QSpinBox()
         self.inp_len.setRange(1, 32)
         self.inp_len.valueChanged.connect(self.synch_len)
+
+        self.inp_start_idx = QtWidgets.QSpinBox()
+        self.inp_start_idx.setRange(0, 999)
+        self.inp_start_idx.valueChanged.connect(self.synch_start_idx)
         
         self.props_layout.addRow("Name:", self.inp_name)
         self.props_layout.addRow("Length:", self.inp_len)
+        self.props_layout.addRow("Start Index:", self.inp_start_idx)
 
     def refresh(self):
         if not bpy.context: return
@@ -298,6 +303,8 @@ class TogglesTab(BaseListTab):
             self.inp_name.setText(t.toggle_name)
         if self.inp_len.value() != t.toggle_length:
             self.inp_len.setValue(t.toggle_length)
+        if self.inp_start_idx.value() != t.toggle_start_index:
+            self.inp_start_idx.setValue(t.toggle_start_index)
         self.is_updating_ui = False
 
     def synch_name(self):
@@ -310,6 +317,11 @@ class TogglesTab(BaseListTab):
         if self.is_updating_ui: return
         row = self.list_widget.currentRow()
         bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_length", val_str=str(v))
+
+    def synch_start_idx(self, v):
+        if self.is_updating_ui: return
+        row = self.list_widget.currentRow()
+        bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_start_index", val_str=str(v))
 
 class ShapesTab(BaseListTab):
     def __init__(self):

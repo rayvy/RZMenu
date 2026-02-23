@@ -121,6 +121,7 @@ class TexWorksSlot(bpy.types.PropertyGroup):
 
     # HSV: Теперь одна ссылка на Векторную переменную
     hsv_enabled: BoolProperty(default=False)
+    hsv_only: BoolProperty(name="HSV Only", default=False)
     hsv_mask_enabled: BoolProperty(name="Use HSV Mask", default=False)
     hsv_link: StringProperty(name="HSV Variable", description="Link to a VECTOR value ($MyVar)")
     hsv_base: FloatVectorProperty(name="HSV Base", size=4, default=(0.0, 0.0, 0.0, 1.0))
@@ -161,6 +162,12 @@ class TexWorksComponent(bpy.types.PropertyGroup):
 
     slots: CollectionProperty(type=TexWorksSlot)
     active_slot_index: IntProperty()
+
+    # HSV (Component level)
+    hsv_enabled: BoolProperty(default=False)
+    hsv_mask_enabled: BoolProperty(name="Use HSV Mask", default=False)
+    hsv_link: StringProperty(name="HSV Variable", description="Link to a VECTOR value ($MyVar)")
+    hsv_base: FloatVectorProperty(name="HSV Base", size=4, default=(0.0, 0.0, 0.0, 1.0))
 
 
 class TexWorksMainBlock(bpy.types.PropertyGroup):

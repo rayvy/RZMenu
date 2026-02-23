@@ -447,6 +447,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                         row = c_item.row(align=True)
                         row.prop(comp, "name", text="Name")
                         row.prop(comp, "mask_enabled", text="", icon='MOD_MASK')
+                        # RZM_TW: Button for Easy Mask
+                        if comp.mask_enabled or comp.hsv_mask_enabled:
+                            op_mask = row.operator("rzm.tw_create_easy_mask", text="", icon='BRUSH_DATA')
+                            op_mask.block_idx = b_idx
+                            op_mask.comp_idx = c_idx
+                            op_mask.slot_idx = -1
+                        
                         op_rem = row.operator("rzm.remove_tw_component", text="", icon='X')
                         op_rem.block_index = b_idx
                         op_rem.index = c_idx
@@ -463,6 +470,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                         split.prop(comp, "base_resource_name", text="Base Res")
                         split.prop(comp, "base_rect", text="Source")
                         c_item.prop(comp, "rect", text="Atlas Rect")
+
+                        # --- FX & MASKING (Component) ---
+                        h_row = c_item.row(align=True)
+                        h_row.prop(comp, "hsv_enabled", text="HSV", icon='COLOR')
+                        if comp.hsv_enabled:
+                            h_row.prop(comp, "hsv_link", text="")
+                            h_row.prop(comp, "hsv_mask_enabled", text="", icon='MOD_MASK')
 
                         # --- SLOTS (Вкладки) ---
                         slot_section = c_item.box()
@@ -610,6 +624,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                 
                                 h_row = fx_box.row(align=True)
                                 h_row.prop(slot, "hsv_enabled", text="HSV", icon='COLOR')
+                                h_row.prop(slot, "hsv_only", text="Only")
                                 if slot.hsv_enabled:
                                     h_row.prop(slot, "hsv_link", text="")
                                     h_row.prop(slot, "hsv_mask_enabled", text="", icon='MOD_MASK')
@@ -617,6 +632,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                 m_box = fx_box.box()
                                 m_row = m_box.row(align=True)
                                 m_row.prop(slot, "mask_enabled", text="Slot Mask", icon='MOD_MASK')
+                                # RZM_TW: Button for Easy Mask
+                                if slot.mask_enabled or slot.hsv_mask_enabled:
+                                    op_mask = m_row.operator("rzm.tw_create_easy_mask", text="", icon='BRUSH_DATA')
+                                    op_mask.block_idx = b_idx
+                                    op_mask.comp_idx = c_idx
+                                    op_mask.slot_idx = s_idx
+
                                 if slot.mask_enabled:
                                     m_row.prop(slot, "mask_source", text="")
                                     m_row.prop(slot, "pass0_use_mask", text="P0")
