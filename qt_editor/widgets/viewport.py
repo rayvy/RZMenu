@@ -20,6 +20,26 @@ from ..core.logic import FormulaEvaluator
 
 HANDLE_SIZE = 8
 
+class RZFontManager:
+    """
+    Centralized cache for font metrics to prevent expensive re-instantiation.
+    """
+    _instance = None
+    
+    def __init__(self):
+        self._metrics_cache = {} # font_family -> RZFontAtlasMetrics
+        
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def get_metrics_for_family(self, font_family):
+        if font_family not in self._metrics_cache:
+            self._metrics_cache[font_family] = RZFontAtlasMetrics(font_family)
+        return self._metrics_cache[font_family]
+
 class RZFontAtlasMetrics:
     """
     Emulates the atlas metrics used in the shader.
@@ -32,18 +52,21 @@ class RZFontAtlasMetrics:
         self.font.setPixelSize(128) 
         self.f_metrics = QtGui.QFontMetricsF(self.font)
         self.cell_size = 128.0 
+        self._glyph_cache = {}
 
     def get(self, char):
-        rect = self.f_metrics.boundingRect(char)
-        # offX / offY in PIL/Shader terms are left/top of bbox relative to baseline
-        # QFontMetricsF.leftBearing gives us the X offset
-        return type('GlyphMetrics', (), {
-            'advance': self.f_metrics.horizontalAdvance(char),
-            'offX': rect.left(),
-            'offY': rect.top(),
-            'glyphW': rect.width(),
-            'glyphH': rect.height()
-        })
+        if char not in self._glyph_cache:
+            rect = self.f_metrics.boundingRect(char)
+            # offX / offY in PIL/Shader terms are left/top of bbox relative to baseline
+            # QFontMetricsF.leftBearing gives us the X offset
+            self._glyph_cache[char] = type('GlyphMetrics', (), {
+                'advance': self.f_metrics.horizontalAdvance(char),
+                'offX': rect.left(),
+                'offY': rect.top(),
+                'glyphW': rect.width(),
+                'glyphH': rect.height()
+            })
+        return self._glyph_cache[char]
 
 class RZHandleItem(QtWidgets.QGraphicsRectItem):
     TOP_LEFT, TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT = range(8)
@@ -434,7 +457,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
             # 1. Init Metrics & Font
             font_family = self._custom_font_family if self._custom_font_family else "Arial"
-            metrics = RZFontAtlasMetrics(font_family)
+            metrics = RZFontManager.instance().get_metrics_for_family(font_family)
             chars = list(text)[:32]
 
             # 2. Scale Calculation (HEIGHT BASED)
@@ -676,26 +699,47 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         t = get_current_theme()
         bg_color = QtGui.QColor(t.get('vp_bg', '#1E1E1E'))
         painter.fillRect(rect, bg_color)
+        
+        # Performance Layer: Adaptive Level of Detail
+        # Avoid drawing thousands of lines when zoomed out.
+        current_zoom = painter.transform().m11()
+        
+        # Don't draw grid at all if zoomed out extremely far
+        if current_zoom < 0.05:
+            self._draw_axes(painter, rect)
+            return
+
         grid_color = QtGui.QColor(t.get('vp_grid_color', 'rgba(255, 255, 255, 30)'))
         left, right = int(rect.left()), int(rect.right())
         top, bottom = int(rect.top()), int(rect.bottom())
         step = self.grid_size
         major_step = step * 5
         
-        painter.setPen(QtGui.QPen(grid_color, 0.5))
-        first_x = left - (left % step); first_y = top - (top % step)
-        for x in range(first_x, right + step, step):
-            if x % major_step != 0: painter.drawLine(x, top, x, bottom)
-        for y in range(first_y, bottom + step, step):
-            if y % major_step != 0: painter.drawLine(left, y, right, y)
+        # Level 1: Full Grid (Zoom >= 0.6)
+        if current_zoom >= 0.6:
+            painter.setPen(QtGui.QPen(grid_color, 0.5))
+            first_x = left - (left % step); first_y = top - (top % step)
+            for x in range(first_x, right + step, step):
+                if x % major_step != 0: painter.drawLine(x, top, x, bottom)
+            for y in range(first_y, bottom + step, step):
+                if y % major_step != 0: painter.drawLine(left, y, right, y)
 
-        major_color = grid_color.lighter(150)
-        major_color.setAlpha(min(grid_color.alpha() * 2, 255))
-        painter.setPen(QtGui.QPen(major_color, 1.0))
-        first_major_x = left - (left % major_step); first_major_y = top - (top % major_step)
-        for x in range(first_major_x, right + major_step, major_step): painter.drawLine(x, top, x, bottom)
-        for y in range(first_major_y, bottom + major_step, major_step): painter.drawLine(left, y, right, y)
+        # Level 2: Major Grid Only (Zoom >= 0.15)
+        if current_zoom >= 0.15:
+            major_color = grid_color.lighter(150)
+            major_color.setAlpha(min(grid_color.alpha() * 2, 255))
+            painter.setPen(QtGui.QPen(major_color, 1.0))
+            first_major_x = left - (left % major_step); first_major_y = top - (top % major_step)
+            for x in range(first_major_x, right + major_step, major_step): 
+                painter.drawLine(x, top, x, bottom)
+            for y in range(first_major_y, bottom + major_step, major_step): 
+                painter.drawLine(left, y, right, y)
         
+        self._draw_axes(painter, rect)
+
+    def _draw_axes(self, painter, rect):
+        left, right = rect.left(), rect.right()
+        top, bottom = rect.top(), rect.bottom()
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 80), 1.5))
         if left <= 0 <= right: painter.drawLine(0, top, 0, bottom)
         if top <= 0 <= bottom: painter.drawLine(left, 0, right, 0)
