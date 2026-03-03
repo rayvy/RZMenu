@@ -45,7 +45,17 @@ THEME_DARK = {
     "error": "#FF5555",
     "success": "#50FA7B",
     
-    # --- Viewport Specific ---
+    # --- Premium Tokens (Apple Magic) ---
+    "radius_sm": "8px",
+    "radius_md": "16px",
+    "radius_lg": "24px",
+    "shadow_soft": "rgba(0, 0, 0, 80)",
+    "shadow_deep": "rgba(0, 0, 0, 150)",
+    "anim_fast": 150,
+    "anim_normal": 300,
+    "anim_slow": 500,
+
+    # Viewport Specific
     "vp_bg": "#1E1E1E",
     "vp_selection": "#FFFFFF",
     "vp_active": "#FF8C00",

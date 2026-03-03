@@ -38,6 +38,11 @@ def generate_qss(t: dict) -> str:
     bg_type = t.get("bg_type", "solid")
     bg_root_col = t.get('bg_root', '#20232A')
     
+    # Premium Design Tokens
+    r_sm = t.get("radius_sm", "4px")
+    r_md = t.get("radius_md", "8px")
+    r_lg = t.get("radius_lg", "12px")
+    
     # Calculate Panel Color with Opacity
     # This acts as the "Tint" or "Glass Color"
     panel_opacity = float(t.get("panel_opacity", 1.0))
@@ -45,11 +50,10 @@ def generate_qss(t: dict) -> str:
     bg_panel_rgba = _rgba(bg_panel_raw, panel_opacity)
     
     border_main = t.get('border_main', '#3A404A')
+    accent = t.get('accent', '#5298D4')
+    accent_hover = t.get('accent_hover', '#6AACDE')
 
     # --- 2. GENERATE BACKGROUND CSS RULES ---
-    # This string will be injected either into #RZMEditorWindow (Unified) 
-    # OR into #RZMInspectorPanel etc (Individual)
-    
     complex_bg_css = ""
     
     if bg_type == "image":
@@ -66,160 +70,124 @@ def generate_qss(t: dict) -> str:
             
         if full_bg_path:
             if bg_fit in ["Stretch", "Cover"]:
-                # Force stretch using border-image
-                complex_bg_css = f"""
-                    border-image: url("{full_bg_path}") 0 0 0 0 stretch stretch;
-                    background-image: none;
-                """
+                complex_bg_css = f'border-image: url("{full_bg_path}") 0 0 0 0 stretch stretch; background-image: none;'
             elif bg_fit == "Tile":
-                # Strict repeat settings
-                complex_bg_css = f"""
-                    border-image: none;
-                    background-image: url("{full_bg_path}");
-                    background-repeat: repeat;
-                    background-position: top left;
-                    background-origin: content; 
-                """
+                complex_bg_css = f'border-image: none; background-image: url("{full_bg_path}"); background-repeat: repeat; background-position: top left; background-origin: content;'
             else: # Contain / Center
-                complex_bg_css = f"""
-                    border-image: none;
-                    background-image: url("{full_bg_path}");
-                    background-repeat: no-repeat;
-                    background-position: center;
-                """
+                complex_bg_css = f'border-image: none; background-image: url("{full_bg_path}"); background-repeat: no-repeat; background-position: center;'
 
     elif bg_type == "gradient":
-        c1 = t.get("bg_grad_1", "#333")
-        c2 = t.get("bg_grad_2", "#000")
+        c1, c2 = t.get("bg_grad_1", "#333"), t.get("bg_grad_2", "#000")
         direction = t.get("bg_grad_dir", "Vertical")
-        
         coords = "x1:0, y1:0, x2:0, y2:1"
         if direction == "Horizontal": coords = "x1:0, y1:0, x2:1, y2:0"
         elif direction == "Diagonal": coords = "x1:0, y1:0, x2:1, y2:1"
-        
-        complex_bg_css = f"""
-            background: qlineargradient(spread:pad, {coords}, stop:0 {c1}, stop:1 {c2}); 
-            border-image: none;
-        """
+        complex_bg_css = f"background: qlineargradient(spread:pad, {coords}, stop:0 {c1}, stop:1 {c2}); border-image: none;"
 
     # --- 3. CONSTRUCT SELECTORS ---
-    
-    # Defaults
     window_bg_rules = f"background-color: {bg_root_col};"
     panel_bg_rules = f"background-color: {bg_panel_rgba};" # Glass by default
     
-    if bg_scope == "Unified":
-        # Window gets the fancy background
-        # Panels get the transparent color
-        if bg_type != "solid":
-            window_bg_rules = f"""
-                background-color: {bg_root_col};
-                {complex_bg_css}
-            """
+    if bg_scope == "Unified" and bg_type != "solid":
+        window_bg_rules = f"background-color: {bg_root_col}; {complex_bg_css}"
+    elif bg_scope != "Unified" and bg_type != "solid":
+        panel_bg_rules = f"background-color: {bg_panel_rgba}; {complex_bg_css}"
             
-    else: # Individual Mode
-        # Window is solid
-        # Panels get the fancy background
-        if bg_type != "solid":
-            # NOTE: We must ensure children don't inherit this image!
-            # We apply it to the ID selector.
-            panel_bg_rules = f"""
-                background-color: {bg_panel_rgba};
-                {complex_bg_css}
-            """
-
     return f"""
     /* --- GLOBAL RESET --- */
     QWidget, QDialog {{
         background-color: {bg_root_col};
         color: {t.get('text_main', '#E0E2E4')};
-        font-family: sans-serif; 
+        font-family: 'Segoe UI', system-ui, sans-serif; 
         font-size: 10pt;
     }}
     
     /* --- MAIN WINDOW --- */
-    #RZMEditorWindow {{
-        {window_bg_rules}
-    }}
+    #RZMEditorWindow {{ {window_bg_rules} }}
 
     #RZContextWidget_HEADER {{
-        background-color: {t.get('bg_header_main', t.get('bg_header', '#1A1D23'))};
+        background-color: {t.get('bg_header_main', '#1A1D23')};
         border-bottom: 1px solid {border_main};
+        min-height: 48px;
     }}
 
     #RZContextWidget_FOOTER {{
-        background-color: {t.get('bg_footer_main', t.get('bg_header', '#1A1D23'))};
+        background-color: {t.get('bg_footer_main', '#1A1D23')};
         border-top: 1px solid {border_main};
+        min-height: 28px;
     }}
 
     #RZAreaHeader {{
-        background-color: {t.get('bg_area_header', t.get('bg_header', '#333842'))};
+        background-color: {t.get('bg_area_header', '#333842')};
         border-bottom: 1px solid {border_main};
+        padding: 4px 10px;
     }}
 
-    /* --- PANELS --- */
-    /* Using specific IDs to prevent leakage */
+    /* --- PANELS (Apple-Style Glassy Containers) --- */
     #RZMInspectorPanel, #RZMOutlinerPanel, #RZViewportPanel {{
         {panel_bg_rules}
-        border: 1px solid {border_main};
-        border-radius: 4px;
+        border: 1px solid {t.get('border_contrast', '#4A505A')};
+        border-radius: {r_md};
     }}
     
-    /* FIX: Prevent background image inheritance in Individual Mode */
-    /* This ensures buttons inside the inspector don't get the background image */
     #RZMInspectorPanel QWidget, #RZMOutlinerPanel QWidget {{
         background-image: none;
         border-image: none;
         background-color: transparent; 
     }}
 
-    /* --- CHILD CONTAINERS (Tabs, Groups) --- */
-    /* They need to be transparent to show the panel's background */
-    
+    /* --- GROUP BOXES --- */
     QGroupBox {{
         border: 1px solid {border_main};
-        border-radius: 4px;
-        margin-top: 6px;
-        background-color: {_rgba(t.get('bg_panel', '#333'), 0.3)}; /* Slight tint for groups */
+        border-radius: {r_sm};
+        margin-top: 12px;
+        background-color: {_rgba(t.get('bg_panel', '#333'), 0.2)};
+        padding: 8px;
     }}
     QGroupBox::title {{
         subcontrol-origin: margin;
         subcontrol-position: top left;
-        padding: 0 4px;
-        left: 10px;
-        background-color: transparent;
-        color: {t.get('text_dark', '#999')};
+        padding: 0 8px;
+        left: 12px;
+        color: {t.get('text_bright', '#FFF')};
+        font-weight: bold;
     }}
     
+    /* --- TAB OVERHAUL (Premium Minimal) --- */
     QTabWidget::pane {{
         border: 1px solid {border_main};
-        background-color: transparent; /* Transparent to see panel bg */
+        border-radius: {r_sm};
+        background-color: transparent;
+        top: -1px;
     }}
-    
     QTabBar::tab {{
-        background: {t.get('bg_root', '#222')};
+        background: transparent;
         color: {t.get('text_dark', '#999')};
-        padding: 5px 10px;
-        border: 1px solid {border_main};
-        border-bottom: none;
-        border-top-left-radius: 4px;
-        border-top-right-radius: 4px;
+        padding: 10px 20px;
+        margin-right: 4px;
+        border-bottom: 2px solid transparent;
     }}
-    QTabBar::tab:selected, QTabBar::tab:hover {{
-        background: {bg_panel_rgba};
+    QTabBar::tab:hover {{
+        background: rgba(255, 255, 255, 10);
         color: {t.get('text_main', '#EEE')};
     }}
+    QTabBar::tab:selected {{
+        color: {accent};
+        border-bottom: 2px solid {accent};
+        font-weight: bold;
+    }}
 
-    /* --- WIDGETS --- */
+    /* --- INPUTS & CONTROLS --- */
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
         background-color: {t.get('bg_input', '#252930')};
         border: 1px solid {t.get('border_input', '#444')};
-        border-radius: 3px;
-        padding: 3px;
+        border-radius: {r_sm};
+        padding: 6px;
         color: {t.get('text_main', '#EEE')};
     }}
     QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
-        border: 1px solid {t.get('accent', '#5298D4')};
+        border: 1px solid {accent};
+        background-color: rgba(255, 255, 255, 5);
     }}
     QComboBox::drop-down {{
         border-left: 1px solid {t.get('border_input', '#444')};
@@ -229,15 +197,18 @@ def generate_qss(t: dict) -> str:
         background-color: {t.get('bg_header', '#3A404A')};
         color: {t.get('text_main', '#EEE')};
         border: 1px solid {t.get('border_input', '#444')};
-        border-radius: 3px;
-        padding: 4px 10px;
+        border-radius: {r_sm};
+        padding: 8px 16px;
+        font-weight: 500;
     }}
     QPushButton:hover {{
-        background-color: {t.get('accent_hover', '#6AACDE')};
+        background-color: {accent};
         color: {t.get('accent_text', '#FFF')};
+        border: 1px solid {accent_hover};
     }}
     QPushButton:pressed {{
-        background-color: {t.get('accent', '#5298D4')};
+        background-color: {accent_hover};
+        padding-top: 9px; padding-bottom: 7px;
     }}
     QPushButton:disabled {{
         color: {t.get('text_disabled', '#666')};
@@ -246,47 +217,51 @@ def generate_qss(t: dict) -> str:
     
     #BtnSpecial {{ border: none; color: {t.get('text_dark', '#999')}; }}
     #BtnWarning {{ background-color: {t.get('error', '#FF5555')}; color: {t.get('text_bright', '#FFF')}; }}
-    #BtnWarning:hover {{ background-color: {t.get('error', '#FF5555')}; opacity: 0.8; }}
     
-    /* Sliders Custom */
-    RZSmartSlider QPushButton {{ background: {t.get('bg_header', '#333')}; border: none; padding: 0px; }}
-    _RZDragLabel {{ color: {t.get('text_dark', '#999')}; padding-right: 4px; }}
-
-    /* Tables & Trees */
+    /* Tables & Trees (Minimalist) */
     QHeaderView::section {{
-        background-color: {t.get('bg_header', '#333')};
-        padding: 4px;
-        border: 1px solid {border_main};
+        background-color: transparent;
+        padding: 8px;
+        border: none;
+        border-bottom: 1px solid {border_main};
         color: {t.get('text_dark', '#999')};
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 8pt;
     }}
     QTableWidget, QTreeWidget {{
-        background-color: {t.get('bg_input', '#222')}; /* Keep inputs solid usually */
-        border: 1px solid {border_main};
+        background-color: transparent;
+        border: none;
     }}
-    QTableWidget::item, QTreeWidget::item {{ color: {t.get('text_main', '#EEE')}; }}
-    QTableWidget::item:selected, QTreeWidget::item:selected {{
+    QTreeWidget::item {{
+        padding: 6px;
+        border-radius: {r_sm};
+    }}
+    QTreeWidget::item:hover {{
+        background-color: rgba(255, 255, 255, 10);
+    }}
+    QTreeWidget::item:selected {{
         background-color: {t.get('selection', '#4A6E91')};
         color: {t.get('text_bright', '#FFF')};
     }}
+
+    /* Scrollbars (Sleek Minimalist) */
+    QScrollBar:vertical {{
+        border: none; background: transparent; width: 8px; margin: 0px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {t.get('border_contrast', '#555')}; min-height: 40px; border-radius: 4px;
+    }}
+    QScrollBar::handle:vertical:hover {{ background: {accent}; }}
+    QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{
+        height: 0px; width: 0px; background: none;
+    }}
     
-    /* Splitter */
     QSplitter::handle {{
         background-color: {t.get('handle_splitter', '#1E2227')};
     }}
-    QSplitter::handle:horizontal {{
-        width: 4px;
-    }}
-    QSplitter::handle:vertical {{
-        height: 4px;
-    }}
     QSplitter::handle:hover {{
-        background-color: {t.get('accent', '#5298D4')};
-    }}
-    
-    QScrollBar:vertical {{
-        border: none; background: {t.get('bg_root', '#222')}; width: 10px; margin: 0px;
-    }}
-    QScrollBar::handle:vertical {{
-        background: {t.get('bg_header', '#444')}; min-height: 20px; border-radius: 4px;
+        background-color: {accent};
     }}
     """
+

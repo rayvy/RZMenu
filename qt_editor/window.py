@@ -8,6 +8,7 @@ ARCHITECTURE (Phase 8.3):
 - No direct panel references are stored (prevents RuntimeError on panel swap)
 """
 import datetime
+import os
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from . import core, actions
@@ -22,6 +23,7 @@ from .widgets.area import RZAreaWidget
 from .context import RZContextManager
 from .widgets.lib import theme
 from .widgets.lib.widgets import RZContextAwareWidget
+from .utils.icons import IconManager
 from .core.signals import SIGNALS
 from .conf.manager import get_config, set_config_value
 
@@ -29,8 +31,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("RZMEditorWindow")
-        self.setWindowTitle("RZMenu Editor (Context Driven)")
-        self.resize(1100, 600)
+        self.setWindowTitle("RZMenu Editor (Apple Magic)")
+        self.resize(1100, 650)
 
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         
@@ -47,37 +49,33 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # --- UI LAYOUT ---
         self.root_layout = QtWidgets.QVBoxLayout(self) 
-        self.root_layout.setContentsMargins(5,5,5,5)
-        self.root_layout.setSpacing(5)
+        self.root_layout.setContentsMargins(10, 10, 10, 10)
+        self.root_layout.setSpacing(8)
         
         # 1. TOOLBAR (HEADER)
         self.toolbar_container = RZContextAwareWidget("HEADER", self)
         self.toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_container)
-        self.toolbar_layout.setContentsMargins(5,5,5,5)
+        self.toolbar_layout.setContentsMargins(12, 8, 12, 8)
+        self.toolbar_layout.setSpacing(6)
         self.setup_toolbar() 
         self.root_layout.addWidget(self.toolbar_container)
         
-        # 2. FOOTER (Создаем ДО контента, чтобы UI элементы существовали)
+        # 2. FOOTER
         self.footer_container = RZContextAwareWidget("FOOTER", self)
         self.footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
-        self.footer_layout.setContentsMargins(5, 2, 5, 2)
+        self.footer_layout.setContentsMargins(12, 4, 12, 4)
         self.setup_footer() 
-        # Добавляем футер в layout пока в конец. 
-        # apply_layout вставит сплиттер между хедером (0) и футером (1).
         self.root_layout.addWidget(self.footer_container)
 
         # 3. CONTENT (Dynamic Splitter & Config Load)
         self.splitter = None 
         
         # Читаем конфиг
-        from .conf.manager import get_config, set_config_value
         last_layout = get_config().get("system", {}).get("last_layout", "Default")
         
         # Применяем лайаут (он вставится по индексу 1)
         self.apply_layout(last_layout)
-        
-        # Теперь UI готов, можно безопасно обновить выбор в комбобоксе
-        self._update_layout_combo(select_name=last_layout)
+        self._update_layout_tabs(select_name=last_layout)
 
         # Connect alt_mode to areas
         if hasattr(self.input_controller, "alt_mode_changed"):
@@ -107,137 +105,116 @@ class RZMEditorWindow(QtWidgets.QWidget):
         PanelFactory.register(texworks_panel.RZMTexWorksPanel)
 
     def _trigger_initial_refresh(self):
-        """Trigger initial data load by emitting structure_changed signal."""
         SIGNALS.structure_changed.emit()
 
     def _get_all_areas(self):
-        """Helper to find all RZAreaWidget instances in the current layout."""
         if self.splitter:
             return self.splitter.findChildren(RZAreaWidget)
         return []
 
     def _broadcast_alt_mode(self, active):
-        """Broadcast alt_mode to all viewport panels in all areas."""
         for area in self._get_all_areas():
             panel = area.get_current_panel()
             if panel and hasattr(panel, 'set_alt_mode'):
                 panel.set_alt_mode(active)
 
     def _on_selection_changed(self):
-        """Update action manager UI state when selection changes."""
         self.action_manager.update_ui_state()
 
     def sync_from_blender(self):
-        """Called externally to sync data from Blender."""
-        if not self.isVisible():
-            return
-        
-        # Check if any viewport is in user interaction mode
+        if not self.isVisible(): return
         for area in self._get_all_areas():
             panel = area.get_current_panel()
             if panel and hasattr(panel, 'rz_scene'):
-                if panel.rz_scene._is_user_interaction:
-                    return
-        
-        # Trigger refresh via signals - panels handle themselves
+                if panel.rz_scene._is_user_interaction: return
         SIGNALS.structure_changed.emit()
 
     def full_refresh(self):
-        """Trigger a full refresh of all panels via signals."""
         SIGNALS.structure_changed.emit()
 
-    # -------------------------------------------------------------------------
-    # LAYOUT MANAGEMENT
-    # -------------------------------------------------------------------------
     def apply_layout(self, layout_name):
-        """Reconstruct the central widget tree based on saved layout data."""
-        # 1. Get Data
         data = self.layout_manager.get_layout_data(layout_name)
-        
-        # 2. Build new widget tree
         new_splitter = self.layout_manager.build_layout(data)
         
-        # 3. Swap in UI
         if self.splitter:
-            # Remove old splitter from layout
             self.root_layout.removeWidget(self.splitter)
             self.splitter.deleteLater()
-            self.splitter = None
         
         self.splitter = new_splitter
-        
-        # Insert between Header (index 0) and Footer (index 2, currently missing, so insert at 1)
-        # Note: In __init__, we add Header, then call this, then add Footer.
-        # So usually insert at index 1 is safe.
         self.root_layout.insertWidget(1, self.splitter)
-        
-        # 4. Refresh Data
-        # Give UI a moment to layout before requesting data
         QtCore.QTimer.singleShot(50, self.full_refresh)
 
     def save_current_layout(self):
-        """Open dialog to save current layout."""
-        name, ok = QtWidgets.QInputDialog.getText(
-            self, "Save Layout", "Layout Name:"
-        )
+        name, ok = QtWidgets.QInputDialog.getText(self, "Save Layout", "Layout Name:")
         if ok and name:
             self.layout_manager.save_layout(name, self.splitter)
-            self._update_layout_combo(select_name=name)
+            self._update_layout_tabs(select_name=name)
 
     def reset_layout(self):
-        """Reset to default layout."""
         self.apply_layout("Default")
-        self._update_layout_combo(select_name="Default")
+        self._update_layout_tabs(select_name="Default")
 
-    def _update_layout_combo(self, select_name=None):
-        """Refresh the combo box items."""
-        self.combo_layouts.blockSignals(True)
-        self.combo_layouts.clear()
-        
+    def _update_layout_tabs(self, select_name=None):
+        self.layout_tabs.blockSignals(True)
+        # QTabBar has no .clear() - remove tabs in a loop
+        while self.layout_tabs.count() > 0:
+            self.layout_tabs.removeTab(0)
+            
         names = self.layout_manager.get_layout_names()
-        self.combo_layouts.addItems(names)
+        for name in names:
+            self.layout_tabs.addTab(name)
         
         if select_name and select_name in names:
-            self.combo_layouts.setCurrentText(select_name)
-            
-        self.combo_layouts.blockSignals(False)
+            idx = names.index(select_name)
+            self.layout_tabs.setCurrentIndex(idx)
+        self.layout_tabs.blockSignals(False)
 
-    def _on_layout_combo_changed(self, name):
-        """Handle user changing layout via combo box."""
+    def _on_layout_tab_changed(self, index):
+        name = self.layout_tabs.tabText(index)
         self.apply_layout(name)
-        # Persist layout choice
         set_config_value("system", "last_layout", name)
 
-    # -------------------------------------------------------------------------
-    # UI SETUP
-    # -------------------------------------------------------------------------
     def setup_toolbar(self):
-        def add_btn(text, op_id):
-            btn = QtWidgets.QPushButton(text)
+        def add_btn(icon_name, op_id, tooltip=None, special=False):
+            icon = IconManager.get_instance().get_icon(icon_name)
+            btn = QtWidgets.QPushButton(icon, "")
+            btn.setFixedSize(36, 36)
+            btn.setIconSize(QtCore.QSize(22, 22))
+            if tooltip: btn.setToolTip(tooltip)
+            if special: btn.setObjectName("BtnSpecial")
             self.toolbar_layout.addWidget(btn)
             self.action_manager.connect_button(btn, op_id)
             return btn
 
-        add_btn("Refresh", "rzm.refresh")
-        self.toolbar_layout.addSpacing(20)
-        add_btn("Undo", "rzm.undo")
-        add_btn("Redo", "rzm.redo")
-        self.toolbar_layout.addSpacing(20)
-        self.btn_del = add_btn("Delete", "rzm.delete") 
+        add_btn("rotate", "rzm.refresh", "Refresh All Data")
+        self.toolbar_layout.addSpacing(10)
+        add_btn("arrow_left", "rzm.undo", "Undo Action")
+        add_btn("arrow_right", "rzm.redo", "Redo Action")
+        self.toolbar_layout.addSpacing(10)
+        add_btn("circle_x", "rzm.delete", "Delete Selected") 
+        
+        self.toolbar_layout.addStretch()
+
+        # --- LAYOUT TABS (TOP ALIGNED) ---
+        self.layout_tabs = QtWidgets.QTabBar()
+        self.layout_tabs.setObjectName("LayoutTabBar")
+        self.layout_tabs.setExpanding(False)
+        self.layout_tabs.setDrawBase(False)
+        self.layout_tabs.currentChanged.connect(self._on_layout_tab_changed)
+        self.toolbar_layout.addWidget(self.layout_tabs)
+
         self.toolbar_layout.addStretch()
         
-        btn_settings = QtWidgets.QPushButton("Preferences")
-        btn_settings.setObjectName("BtnSpecial")
-        btn_settings.clicked.connect(self.open_settings)
-        self.toolbar_layout.addWidget(btn_settings)
+        btn_pref = add_btn("gear", "rzm.open_preferences", "Editor Preferences", special=True)
+        btn_pref.clicked.connect(self.open_settings)
 
     def setup_footer(self):
-        # --- LEFT: Context Info ---
         self.lbl_context = QtWidgets.QLabel("Context: NONE")
         self.footer_layout.addWidget(self.lbl_context)
         
         sep = QtWidgets.QLabel("|")
         sep.setObjectName("FooterSeparator")
+        sep.setStyleSheet("color: #444;")
         self.footer_layout.addWidget(sep)
         
         self.lbl_last_op = QtWidgets.QLabel("Last Op: None")
@@ -246,38 +223,26 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         self.footer_layout.addStretch()
         
-        # --- RIGHT: Layout Controls ---
-        lbl_layout = QtWidgets.QLabel("Layout:")
-        self.footer_layout.addWidget(lbl_layout)
-
-        self.combo_layouts = QtWidgets.QComboBox()
-        self.combo_layouts.setMinimumWidth(100)
-        self._update_layout_combo(select_name="Default")
-        self.combo_layouts.currentTextChanged.connect(self._on_layout_combo_changed)
-        self.footer_layout.addWidget(self.combo_layouts)
-
-        btn_save = QtWidgets.QPushButton("+")
+        btn_save = QtWidgets.QPushButton(IconManager.get_instance().get_icon("circle_+"), "")
         btn_save.setFixedSize(24, 24)
         btn_save.setToolTip("Save Current Layout")
         btn_save.clicked.connect(self.save_current_layout)
         self.footer_layout.addWidget(btn_save)
 
-        btn_reset = QtWidgets.QPushButton("Reset")
-        btn_reset.setToolTip("Reset to Default Layout")
+        btn_reset = QtWidgets.QPushButton(IconManager.get_instance().get_icon("rotate"), "")
+        btn_reset.setFixedSize(24, 24)
+        btn_reset.setToolTip("Reset to Default")
         btn_reset.clicked.connect(self.reset_layout)
         self.footer_layout.addWidget(btn_reset)
 
         self.on_context_area_changed() 
 
-    # --- FOOTER UPDATES ---
     def on_context_area_changed(self):
         ctx = RZContextManager.get_instance().get_snapshot()
         area = ctx.hover_area
         t = theme.get_current_theme()
-        
         self.lbl_context.setText(f"Context: {area}")
-        
-        color = t.get(f"ctx_{area.lower()}", t['text_dark'])
+        color = t.get(f"ctx_{area.lower()}", t.get('text_dark', '#888'))
         self.lbl_context.setStyleSheet(f"color: {color}; font-weight: bold;")
 
     def update_footer_op(self, op_name):
@@ -288,54 +253,32 @@ class RZMEditorWindow(QtWidgets.QWidget):
         dlg.exec() 
 
     def on_config_changed(self, section):
-        """React to global config changes."""
         if section == "appearance":
             qss = theme.generate_stylesheet()
             self.apply_global_theme(qss)
 
     def apply_global_theme(self, qss):
-        """Deep update of the Main Window and all areas."""
         self.setStyleSheet(qss)
-
-        # Update all Areas (they will update their current panels)
-        # Dynamic traversal instead of hardcoded areas
         for area in self._get_all_areas():
             if hasattr(area, 'update_theme_styles'):
                 area.update_theme_styles()
-
-        # Footer
         self.on_context_area_changed()
-        
-        # Trigger refresh for visual updates
         SIGNALS.structure_changed.emit()
 
-    # -------------------------------------------------------------------------
-    # DEBUG OVERLAY
-    # -------------------------------------------------------------------------
     def setup_debug_overlay(self):
         t = theme.get_current_theme()
         self.debug_label = QtWidgets.QLabel(self)
-        self.debug_label.setStyleSheet(f"""
-            background-color: {t['debug_bg']};
-            color: {t['debug_text']};
-            font-family: Consolas, monospace;
-            font-size: 11px;
-            padding: 5px;
-            border: 1px solid {t['debug_border']};
-        """)
+        self.debug_label.setStyleSheet(f"background-color: {t.get('debug_bg', 'rgba(0,0,0,150)')}; color: {t.get('debug_text', '#0F0')}; font-family: monospace; font-size: 10px; padding: 5px; border-radius: 4px;")
         self.debug_label.setVisible(False)
         self.debug_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents) 
         self.debug_timer = QtCore.QTimer(self)
         self.debug_timer.timeout.connect(self._update_debug_text)
-        self.debug_label.move(10, self.height() - 130) 
-        self.debug_label.resize(300, 110)
-        
-        # Ensure it stays on top of the viewport
+        self.debug_label.move(15, self.height() - 140) 
         self.debug_label.raise_()
 
     def resizeEvent(self, event):
         if hasattr(self, 'debug_label'):
-            self.debug_label.move(10, self.height() - 130)
+            self.debug_label.move(15, self.height() - 140)
         super().resizeEvent(event)
 
     def toggle_debug_panel(self):
@@ -352,3 +295,4 @@ class RZMEditorWindow(QtWidgets.QWidget):
         txt = RZContextManager.get_instance().get_debug_string()
         self.debug_label.setText(txt)
         self.debug_label.adjustSize()
+

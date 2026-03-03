@@ -225,6 +225,14 @@ class RZ_OT_ToggleDebug(RZOperator):
             win.toggle_debug_panel()
         return
 
+class RZ_OT_OpenPreferences(RZOperator):
+    id = "rzm.open_preferences"
+    label = "Preferences"
+    def execute(self, context, **kwargs):
+        win = kwargs.get('window')
+        if win:
+            win.open_settings()
+
 # --- REGISTRY ---
 
 _CLASSES = [
@@ -235,7 +243,8 @@ _CLASSES = [
     RZ_OT_UnhideAll,
     RZ_OT_Duplicate, RZ_OT_Copy, RZ_OT_Paste,
     RZ_OT_Align,
-    RZ_OT_ToggleDebug
+    RZ_OT_ToggleDebug,
+    RZ_OT_OpenPreferences
 ]
 
 OPERATOR_REGISTRY = {}

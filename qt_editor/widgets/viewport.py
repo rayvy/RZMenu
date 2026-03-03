@@ -17,6 +17,7 @@ from ..context.states import RZInteractionState
 from .lib.theme import get_current_theme
 from .panel_base import RZEditorPanel
 from ..core.logic import FormulaEvaluator
+from .lib.animations import SpringAnimation, LiquidFillEffect
 
 HANDLE_SIZE = 8
 
@@ -25,10 +26,10 @@ class RZFontManager:
     Centralized cache for font metrics to prevent expensive re-instantiation.
     """
     _instance = None
-    
+
     def __init__(self):
         self._metrics_cache = {} # font_family -> RZFontAtlasMetrics
-        
+
     @classmethod
     def instance(cls):
         if cls._instance is None:
@@ -49,9 +50,9 @@ class RZFontAtlasMetrics:
     def __init__(self, font_family):
         self.font = QtGui.QFont(font_family)
         # We need the metrics for the base font size used in the atlas
-        self.font.setPixelSize(128) 
+        self.font.setPixelSize(128)
         self.f_metrics = QtGui.QFontMetricsF(self.font)
-        self.cell_size = 128.0 
+        self.cell_size = 128.0
         self._glyph_cache = {}
 
     def get(self, char):
@@ -75,16 +76,16 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
         super().__init__(0, 0, HANDLE_SIZE, HANDLE_SIZE) # Parent is None (Scene Root)
         self.handle_type = handle_type
         self.target_item = target_item # The item this handle manipulates
-        
+
         t = get_current_theme()
         self.normal_brush = QtGui.QBrush(QtGui.QColor(t.get('vp_handle', '#FFFFFF')))
         self.hover_brush = QtGui.QBrush(QtGui.QColor(t.get('vp_active', '#FF8C00')))
-        
+
         self.setBrush(self.normal_brush)
         self.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_handle_border', '#000000')), 1))
         # Rayvich: Fix Blocking - Handles are now Scene Roots with max Z.
-        self.setZValue(1e9) 
-        
+        self.setZValue(1e9)
+
         cursors = {
             self.TOP_LEFT: QtCore.Qt.SizeFDiagCursor, self.BOTTOM_RIGHT: QtCore.Qt.SizeFDiagCursor,
             self.TOP_RIGHT: QtCore.Qt.SizeBDiagCursor, self.BOTTOM_LEFT: QtCore.Qt.SizeBDiagCursor,
@@ -119,15 +120,15 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
     def mousePressEvent(self, event):
         if self.target_item and (getattr(self.target_item, 'is_locked_pos', False) or getattr(self.target_item, 'is_locked_size', False)):
             event.ignore(); return
-        
+
         self._start_mouse_pos = event.scenePos()
-        
+
         # Prepare Smart Snap targets (exclude self's target)
         scene = self.scene()
         if scene:
             scene.prepare_smart_snap(exclude_items=[self.target_item])
             scene.interaction_start_signal.emit()
-        
+
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -141,12 +142,12 @@ class RZHandleItem(QtWidgets.QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         self._start_mouse_pos = None
         self.target_item.finalize_resize()
-        
+
         scene = self.scene()
         if scene:
             scene.clear_smart_snap()
             scene.interaction_end_signal.emit()
-            
+
         super().mouseReleaseEvent(event)
 
 
@@ -159,7 +160,23 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.uid = uid
         self.elem_type = elem_type
         self.name = name
-        self.text_content = name
+
+        # --- PHASE 2.2: ANIMATION LAYER ---
+        self._tilt_spring = SpringAnimation(stiffness=200, damping=20, parent=None)
+        self._tilt_spring.value_changed.connect(self._on_tilt_changed)
+
+        self._select_fill = LiquidFillEffect(None)
+        self._select_fill.update_requested.connect(self.update)
+        self._is_selected_state = False
+
+        self._drag_velocity = QtCore.QPointF(0, 0)
+        self._last_drag_pos = None
+
+        self._init_data()
+        self.create_handles()
+
+    def _init_data(self):
+        self.text_content = self.name
         self.text_id = ""  # Поле для хранения text_id
         self.is_active = False
         self.is_locked_pos = False
@@ -188,6 +205,23 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self._ensure_font_loaded()
         self._is_drop_target = False
 
+    def _on_tilt_changed(self, angle):
+        self.setRotation(angle)
+        
+    def set_target_tilt(self, angle):
+        self._tilt_spring.set_target(angle)
+
+    def set_selection_progress(self, progress):
+        self._select_fill.set_progress(progress)
+
+    def itemChange(self, change, value):
+        if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
+            self._is_selected_state = bool(value)
+            self.set_selection_progress(1.0 if self._is_selected_state else 0.0)
+        if change == QtWidgets.QGraphicsItem.ItemScenePositionHasChanged:
+            self.update_handles_pos()
+        return super().itemChange(change, value)
+
     @classmethod
     def _ensure_font_loaded(cls):
         """Загрузка кастомного шрифта bahnscrift.ttf"""
@@ -209,10 +243,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         else:
             print(f"[VIEWPORT] Font not found at: {font_path}")
 
-    def itemChange(self, change, value):
-        if change == QtWidgets.QGraphicsItem.ItemScenePositionHasChanged:
-            self.update_handles_pos()
-        return super().itemChange(change, value)
+
 
     def get_inner_origin(self): return self.rect().topLeft()
 
@@ -449,6 +480,12 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         t = get_current_theme()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
+        # --- PHASE 2.2: SELECTION FILL (LIQUID) ---
+        if self._is_selected_state:
+            select_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
+            select_col.setAlpha(60) # Soft underwater feel
+            self._select_fill.draw(painter, QtCore.QRectF(rect), select_col)
+
         # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3) ---
         # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3 - SHADER MATCH) ---
         if self.elem_type == 'TEXT':
@@ -545,9 +582,9 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
             painter.restore()
 
-            # Selection Border
+            # Selection Border (PHASE 2.2: Modern Glow)
             if self.isSelected():
-                 painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_selection', '#FFF')), 1, QtCore.Qt.DashLine))
+                 painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_selection', '#FFF')), 1.5))
                  painter.setBrush(QtCore.Qt.NoBrush)
                  painter.drawRect(rect)
             
@@ -617,7 +654,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         painter.setPen(pen)
         painter.drawRect(rect)
 
-        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 180), 1.0))
+        painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_handle_bg', 'rgba(255, 255, 255, 180)')), 1.0))
         painter.drawLine(-4, 0, 4, 0); painter.drawLine(0, -4, 0, 4)
 
         text_rect = rect.adjusted(5, 5, -5, -5)
@@ -666,6 +703,11 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self._cycle_stack = []
         self._last_click_pos = None
         self._active_id = -1
+
+        # --- PHASE 2.2: DRAG PHYSICS ---
+        self._last_drag_pos = None
+        self._drag_velocity = QtCore.QPointF(0, 0)
+        self._velocity_smooth = 0.7 
 
     def prepare_smart_snap(self, exclude_items):
         """Called on interaction start to cache possible targets."""
@@ -802,6 +844,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             if target_item and not target_item.is_locked_pos and not getattr(target_item, "_is_layout_controlled", False) and not target_item.pos_is_formula:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
+                self._last_drag_pos = event.scenePos()
+                self._drag_velocity = QtCore.QPointF(0, 0)
                 self._accum_x = 0.0; self._accum_y = 0.0
                 
                 # Rayvich: Multi-Drag Fix - Use context manager's selection as source of truth
@@ -951,13 +995,40 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 item_start = self._initial_item_positions[item]
                 new_pos = QtCore.QPointF(item_start.x() + leader_shift_x, item_start.y() + leader_shift_y)
                 item.setPos(new_pos)
+
+            # --- PHASE 2.2: FLYING PAPER PHYSICS ---
+            if hasattr(self, '_last_drag_pos') and self._last_drag_pos:
+                vx = current_pos.x() - self._last_drag_pos.x()
+                # Smooth velocity tracker
+                self._drag_velocity.setX(self._drag_velocity.x() * (1.0 - self._velocity_smooth) + vx * self._velocity_smooth)
+                
+                # Map velocity to tilt angle (+/- 15 degrees)
+                tilt_angle = max(-15.0, min(15.0, self._drag_velocity.x() * 0.5))
+                
+                # Apply tilt to all selected items via the spring animation
+                ctx = RZContextManager.get_instance().get_snapshot()
+                for uid in ctx.selected_ids:
+                    it = self._items_map.get(uid)
+                    if it and hasattr(it, 'set_target_tilt'):
+                        it.set_target_tilt(tilt_angle)
+            
+            self._last_drag_pos = current_pos
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self._is_dragging_items:
+            # --- PHASE 2.2: RESET PHYSICS ---
+            ctx = RZContextManager.get_instance().get_snapshot()
+            for uid in ctx.selected_ids:
+                it = self._items_map.get(uid)
+                if it and hasattr(it, 'set_target_tilt'):
+                    it.set_target_tilt(0.0)
+
             self._is_dragging_items = False
             self._drag_start_pos = None
+            self._last_drag_pos = None
+            self._drag_velocity = QtCore.QPointF(0, 0)
             
             # --- COMMIT BATCH UPDATE ---
             if hasattr(self, '_initial_item_positions') and self._initial_item_positions:
