@@ -5,6 +5,8 @@ from .theme import get_current_theme
 from ...utils.image_cache import ImageCache
 from ...core import read as core_read # For suggestions
 from ...core import blender_bridge
+from ...utils.debounce import RZDebouncer
+from ...utils.evaluation import get_formula_preview
 
 class RZImageComboBox(QtWidgets.QComboBox):
     """
@@ -212,6 +214,59 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         self.highlighter = RZFormulaHighlighter(self.document())
         
         self.apply_theme()
+        
+        self._apply_popup_theme()
+        self._pattern = ""
+        self._originals = []
+        
+        # Debouncing support
+        self.debouncer = RZDebouncer(delay_ms=400, parent=self)
+        self.debouncer.timeout.connect(self.editingFinished.emit)
+        # Real-time preview integration
+        self.preview_label = QtWidgets.QLabel(self)
+        self.preview_label.setStyleSheet("color: #888; background: transparent; padding: 2px;")
+        self.preview_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.preview_label.hide()
+        
+        self.textChanged.connect(self._on_formula_changed)
+
+    def _on_formula_changed(self):
+        # Trigger both debounced commit AND debounced preview update
+        self.debouncer.trigger(self._update_preview)
+
+    def _update_preview(self):
+        text = self.toPlainText().strip()
+        if not text:
+            self.preview_label.hide()
+            return
+            
+        res = get_formula_preview(text)
+        if res and res != text:
+             self.preview_label.setText(f"= {res}")
+             self.preview_label.show()
+             self._reposition_preview()
+        else:
+             self.preview_label.hide()
+
+    def _reposition_preview(self):
+        # Position in top right corner
+        self.preview_label.adjustSize()
+        self.preview_label.move(self.width() - self.preview_label.width() - 5, 2)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reposition_preview()
+
+    def set_text_silent(self, text):
+        """Update text without emitting signals and only if not focused."""
+        if self.hasFocus():
+            return
+        if self.text() == text:
+            return
+            
+        self.blockSignals(True)
+        self.setText(str(text))
+        self.blockSignals(False)
 
     def text(self): return self.toPlainText()
     def setText(self, t): 

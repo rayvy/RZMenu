@@ -2,6 +2,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from ...context import RZContextManager
 from .theme import get_current_theme
+from ...utils.debounce import RZDebouncer
 
 # --- RZColorButton ---
 class RZColorButton(QtWidgets.QPushButton):
@@ -599,12 +600,19 @@ class RZComboBox(QtWidgets.QComboBox):
         event.ignore()
 
 class RZLineEdit(QtWidgets.QLineEdit):
+    editingFinished = QtCore.Signal() # Ensure compatibility
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
         self._pattern = ""
         self._originals = []
         
+        # Debouncing support
+        self.debouncer = RZDebouncer(delay_ms=400, parent=self)
+        self.debouncer.timeout.connect(self.editingFinished.emit)
+        self.textChanged.connect(lambda: self.debouncer.trigger(lambda: None)) # Just restart timer
+
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
@@ -618,10 +626,22 @@ class RZLineEdit(QtWidgets.QLineEdit):
             QLineEdit:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
         """)
 
+    def set_text_silent(self, text):
+        """Update text without emitting signals and only if not focused."""
+        if self.hasFocus():
+            return
+        if self.text() == text:
+            return
+            
+        self.blockSignals(True)
+        self.setText(str(text))
+        self.blockSignals(False)
+
     def set_pattern(self, pattern, originals=None):
         self._pattern = pattern
         self._originals = originals or []
-        self.setText(pattern)
+        # Use silent update for pattern too
+        self.set_text_silent(pattern)
         # Visual feedback for pattern mode
         font = self.font()
         font.setItalic(bool(pattern))

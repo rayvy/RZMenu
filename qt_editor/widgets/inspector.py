@@ -1215,8 +1215,8 @@ class RZMInspectorPanel(RZEditorPanel):
                 self.name_edit.set_pattern(name_pattern, props.get('original_names'))
             else:
                 self.name_edit.clear_pattern()
-                self.name_edit.setText(props.get('name', ''))
-            self.edit_tag.setText(props.get('tag', ''))
+                self.name_edit.set_text_silent(props.get('name', ''))
+            self.edit_tag.set_text_silent(props.get('tag', ''))
             self.spin_priority.setValue(props.get('priority', 0))
             self.chk_main_window.setChecked(props.get('is_main_window') is True)
             self.chk_disable_export.setChecked(props.get('disable_export') is True)
@@ -1237,7 +1237,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_vis_mode.setCurrentText(vis_mode)
             is_cond = (vis_mode == 'CONDITIONAL')
             self.set_row_visible(self.edit_vis_cond, is_cond)
-            self.edit_vis_cond.setText(props.get('visibility_condition', ''))
+            self.edit_vis_cond.set_text_silent(props.get('visibility_condition', ''))
 
             # --- Anchor ---
             self.cb_anchor.setCurrentText(props.get('alignment') or "Mixed")
@@ -1252,8 +1252,8 @@ class RZMInspectorPanel(RZEditorPanel):
             self.stack_pos.setCurrentIndex(1 if pos_is_form else 0)
             
             if pos_is_form:
-                self.edit_pos_fx.setText(props.get('position_formula_x', ''))
-                self.edit_pos_fy.setText(props.get('position_formula_y', ''))
+                self.edit_pos_fx.set_text_silent(props.get('position_formula_x', ''))
+                self.edit_pos_fy.set_text_silent(props.get('position_formula_y', ''))
             else:
                 self.sl_x.set_value_from_backend(props.get('pos_x'))
                 self.sl_y.set_value_from_backend(props.get('pos_y'))
@@ -1263,8 +1263,8 @@ class RZMInspectorPanel(RZEditorPanel):
             self.stack_size.setCurrentIndex(1 if size_is_form else 0)
             
             if size_is_form:
-                self.edit_size_fx.setText(props.get('size_formula_x', ''))
-                self.edit_size_fy.setText(props.get('size_formula_y', ''))
+                self.edit_size_fx.set_text_silent(props.get('size_formula_x', ''))
+                self.edit_size_fy.set_text_silent(props.get('size_formula_y', ''))
             else:
                 self.sl_w.set_value_from_backend(props.get('width'))
                 self.sl_h.set_value_from_backend(props.get('height'))
@@ -1289,7 +1289,7 @@ class RZMInspectorPanel(RZEditorPanel):
             trans_is_form = props.get('transform_is_formula') is True
             self.chk_trans_formula.setChecked(trans_is_form)
             # Use toPlainText if needed or setText via helper
-            self.edit_trans_fx.setText(props.get('transform_formula', ''))
+            self.edit_trans_fx.set_text_silent(props.get('transform_formula', ''))
             self.edit_trans_fx.setVisible(trans_is_form)
 
             # --- Grid Container ---
@@ -1309,10 +1309,10 @@ class RZMInspectorPanel(RZEditorPanel):
             self.stack_color.setCurrentIndex(1 if col_is_form else 0)
             
             if col_is_form:
-                self.edit_col_r.setText(props.get('color_formula_r', ''))
-                self.edit_col_g.setText(props.get('color_formula_g', ''))
-                self.edit_col_b.setText(props.get('color_formula_b', ''))
-                self.edit_col_a.setText(props.get('color_formula_a', ''))
+                self.edit_col_r.set_text_silent(props.get('color_formula_r', ''))
+                self.edit_col_g.set_text_silent(props.get('color_formula_g', ''))
+                self.edit_col_b.set_text_silent(props.get('color_formula_b', ''))
+                self.edit_col_a.set_text_silent(props.get('color_formula_a', ''))
             else:
                 self.btn_color.set_color(props.get('color'))
             
@@ -1339,14 +1339,14 @@ class RZMInspectorPanel(RZEditorPanel):
             self.chk_vl_formula.setChecked(vl_is_form)
             # Both now always visible
             self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
-            self.edit_vl_formula.setText(props.get('value_link_formula', ''))
+            self.edit_vl_formula.set_text_silent(props.get('value_link_formula', ''))
             self.edit_vl_formula.setVisible(vl_is_form)
             
             # --- Events ---
             self.chk_hover_event.setChecked(props.get('hover_event_enabled') is True)
-            self.edit_hover_fx.setText(props.get('hover_event_formula', ''))
+            self.edit_hover_fx.set_text_silent(props.get('hover_event_formula', ''))
             self.chk_click_event.setChecked(props.get('click_event_enabled') is True)
-            self.edit_click_fx.setText(props.get('click_event_formula', ''))
+            self.edit_click_fx.set_text_silent(props.get('click_event_formula', ''))
             
             self.list_fx.update_data(props.get('fx', []))
 
@@ -1358,14 +1358,14 @@ class RZMInspectorPanel(RZEditorPanel):
             if txt_pat: self.edit_txt_id.set_pattern(txt_pat, props.get('original_text_ids'))
             else:
                 self.edit_txt_id.clear_pattern()
-                self.edit_txt_id.setText(props.get('text_id', ''))
+                self.edit_txt_id.set_text_silent(props.get('text_id', ''))
                 
             # Hover Text ID pattern
             hov_pat = props.get('hover_text_id_pattern')
             if hov_pat: self.edit_hov_txt.set_pattern(hov_pat, props.get('original_hover_text_ids'))
             else:
                 self.edit_hov_txt.clear_pattern()
-                self.edit_hov_txt.setText(props.get('hover_text_id', ''))
+                self.edit_hov_txt.set_text_silent(props.get('hover_text_id', ''))
 
             # --- Text Mode ---
             txt_mode = props.get('text_mode', 'SINGLE')

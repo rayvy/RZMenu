@@ -4,6 +4,48 @@ import re
 from ..utils.image_cache import ImageCache
 from ..utils.string_utils import find_common_pattern
 
+# High Performance Data Layer: ID-to-Index Map
+# This cache is rebuilt whenever we detect a structure change or on demand.
+ID_CACHE = {} 
+_LAST_COUNT = -1
+
+def rebuild_id_cache(force=False):
+    """Rebuilds the ID -> Index mapping for O(1) lookups."""
+    global ID_CACHE, _LAST_COUNT
+    if not bpy.context or not bpy.context.scene: return
+    
+    elements = bpy.context.scene.rzm.elements
+    curr_count = len(elements)
+    
+    if not force and curr_count == _LAST_COUNT:
+        return
+        
+    ID_CACHE = {elem.id: i for i, elem in enumerate(elements)}
+    _LAST_COUNT = curr_count
+
+def get_element_by_id(uid):
+    """Returns the Blender element object for a given ID using O(1) lookup."""
+    rebuild_id_cache()
+    idx = ID_CACHE.get(uid)
+    if idx is not None:
+        elements = bpy.context.scene.rzm.elements
+        if idx < len(elements):
+            elem = elements[idx]
+            if elem.id == uid:
+                return elem
+    
+    # Fallback to linear search if cache is stale and rebuild didn't help (rare)
+    rebuild_id_cache(force=True)
+    idx = ID_CACHE.get(uid)
+    if idx is not None:
+        elements = bpy.context.scene.rzm.elements
+        if idx < len(elements):
+            elem = elements[idx]
+            if elem.id == uid:
+                return elem
+                
+    return None
+
 def get_all_elements_list():
     results = []
     if not bpy.context or not bpy.context.scene: return results
@@ -113,10 +155,11 @@ def get_selection_details(selected_ids, active_id):
 
     if not bpy.context or not bpy.context.scene: return None
     elements = bpy.context.scene.rzm.elements
-    selection = [e for e in elements if e.id in selected_ids]
+    selection = [get_element_by_id(uid) for uid in selected_ids]
+    selection = [e for e in selection if e is not None]
     
     # Reference element for active values
-    target = next((e for e in elements if e.id == active_id), None)
+    target = get_element_by_id(active_id)
     if not target and selection:
         target = selection[0]
 
@@ -125,7 +168,7 @@ def get_selection_details(selected_ids, active_id):
         is_grid_child = False
         pid = getattr(target, "parent_id", -1)
         if pid != -1:
-            parent = next((e for e in elements if e.id == pid), None)
+            parent = get_element_by_id(pid)
             if parent and getattr(parent, "elem_class", "") == "GRID_CONTAINER":
                 is_grid_child = True
 
@@ -387,7 +430,10 @@ def get_viewport_data():
             preset_id = p_ref.preset_id
             preset_source = elem_map.get(preset_id)
             
-            if not preset_source: continue # Preset source deleted or missing
+            if not preset_source: 
+                source_bl = get_element_by_id(preset_id)
+                if not source_bl: continue
+                continue 
             
             # Create Virtual Element
             # ID Scheme: HostID * 100000 + PresetID (Simple collision avoidance)

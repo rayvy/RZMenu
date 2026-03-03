@@ -1,6 +1,7 @@
 # RZMenu/qt_editor/context/wrappers.py
 import bpy
 from typing import Optional, List, Any
+from ..core.read import get_element_by_id
 
 class RZElementWrapper:
     """
@@ -29,10 +30,7 @@ class RZElementWrapper:
         # Linear search is standard for Blender collection props; 
         # usually fast enough for UI element counts (<1000).
         # Could be optimized with a lookup map if scene.rzm.elements grows large.
-        for elem in bpy.context.scene.rzm.elements:
-            if elem.id == self._id:
-                return elem
-        return None
+        return get_element_by_id(self._id)
 
     @property
     def exists(self) -> bool:

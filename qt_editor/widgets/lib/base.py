@@ -149,6 +149,9 @@ class RZSmartSlider(QtWidgets.QWidget):
 
     def set_value_from_backend(self, val):
         """Special handler for data sync, supports None for mixed values."""
+        if self.spin.hasFocus():
+            return
+            
         self.spin.blockSignals(True)
         if val is None:
             self._is_mixed = True
