@@ -24,7 +24,7 @@ class RZDraggableTree(RZDraggableTreeWidget):
     def __init__(self):
         super().__init__()
 
-        self.setHeaderLabels(["Name", "👁", "➤"]) 
+        self.setHeaderLabels(["Name", "", ""]) 
         header = self.header()
         header.setStretchLastSection(False) 
         header.setMinimumSectionSize(20) # Allow smaller columns if needed
@@ -251,13 +251,17 @@ class RZMOutlinerPanel(RZEditorPanel):
             item.setIcon(0, icon)
 
             is_hidden = data.get('is_hidden', False)
-            item.setText(1, "❌" if is_hidden else "👁")
+            vis_icon = IconManager.get_instance().get_icon("eye" if not is_hidden else "circle_x")
+            item.setIcon(1, vis_icon)
+            item.setText(1, "") # Icon only
             item.setTextAlignment(1, QtCore.Qt.AlignCenter)
             if is_hidden:
                 item.setForeground(0, disabled_color)
 
             is_sel = data.get('is_selectable', True)
-            item.setText(2, "➤" if is_sel else "🔒")
+            sel_icon = IconManager.get_instance().get_icon("arrow_right" if is_sel else "gear") 
+            item.setIcon(2, sel_icon)
+            item.setText(2, "") # Icon only
             item.setTextAlignment(2, QtCore.Qt.AlignCenter)
             
             item_map[uid] = item

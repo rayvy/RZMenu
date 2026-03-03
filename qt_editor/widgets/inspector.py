@@ -8,12 +8,91 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.base import RZDraggableNumber, RZSmartSlider
 from .lib.inputs import RZImageComboBox, RZFormulaInput, RZCodeTextEdit
 from .lib.theme import get_current_theme
-from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox, RZDoubleSpinBox, RZAdvancedColorPanel
+from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox, RZDoubleSpinBox, RZAdvancedColorPanel, RZScrollArea
 from .panel_base import RZEditorPanel
 from .. import core
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
 from ...data.constants import FX_COMMANDS
+
+class RZInspectorAnchorBar(QtWidgets.QWidget):
+    """
+    Sticky navigation bar for the monolithic Inspector.
+    Features a sliding accent line and bi-directional sync with the scroll area.
+    """
+    clicked = QtCore.Signal(str) # Emits group name
+
+    def __init__(self, items, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(35)
+        self.layout = QtWidgets.QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 0, 10, 0)
+        self.layout.setSpacing(15)
+        
+        self.buttons = {}
+        self.items = items # List of (label, group_name)
+        
+        for label, grp_name in items:
+            btn = QtWidgets.QPushButton(label)
+            btn.setObjectName("AnchorButton")
+            btn.setFlat(True)
+            btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _, n=grp_name: self.clicked.emit(n))
+            self.layout.addWidget(btn)
+            self.buttons[grp_name] = btn
+            
+        self.layout.addStretch()
+        
+        # Sliding Underline
+        self.underline = QtWidgets.QWidget(self)
+        self.underline.setFixedHeight(2)
+        self.underline.setObjectName("AnchorUnderline")
+        self.underline.hide() # Shown on first activation
+        
+        self._anim = QtCore.QPropertyAnimation(self.underline, b"geometry")
+        self._anim.setDuration(300)
+        self._anim.setEasingCurve(QtCore.QEasingCurve.OutQuint)
+        
+        self.active_grp = None
+
+    def set_active(self, grp_name):
+        if self.active_grp == grp_name: return
+        self.active_grp = grp_name
+        
+        btn = self.buttons.get(grp_name)
+        if not btn: return
+        
+        # --- PHASE 2.6: ROLLING TABS ---
+        # Ensure the active tab is visible (scroll to it)
+        parent_scroll = self.parentWidget()
+        if isinstance(parent_scroll, QtWidgets.QScrollArea):
+             parent_scroll.ensureWidgetVisible(btn, 10, 10)
+
+        # Animate underline to button geometry
+        self.underline.show()
+        t = get_current_theme()
+        self.underline.setStyleSheet(f"background-color: {t.get('accent', '#007AFF')}; border-radius: 1px;")
+        
+        target_rect = btn.geometry()
+        target_rect.setY(self.height() - 3)
+        target_rect.setHeight(2)
+        
+        self._anim.stop()
+        self._anim.setEndValue(target_rect)
+        self._anim.start()
+        
+        # Style buttons
+        for name, b in self.buttons.items():
+            is_active = (name == grp_name)
+            col = t.get('text_bright', '#FFF') if is_active else t.get('text_dim', '#888')
+            b.setStyleSheet(f"color: {col}; font-weight: {'bold' if is_active else 'normal'}; border: none; background: transparent;")
+
+    def paintEvent(self, event):
+        # Optional: Draw separator at bottom
+        painter = QtGui.QPainter(self)
+        t = get_current_theme()
+        painter.setPen(QtGui.QColor(t.get('border', '#333')))
+        painter.drawLine(0, self.height()-1, self.width(), self.height()-1)
 
 class RZConditionalImageItem(QtWidgets.QWidget):
     """A single row in the conditional image list."""
@@ -565,57 +644,55 @@ class RZMInspectorPanel(RZEditorPanel):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.setObjectName("RZMInspectorPanel")
+        self.has_data = False
+        self._block_signals = False
+        self._is_panel_active = True
+        
+        # Performance: Throttle refresh to 60fps max or slightly lower
+        self._refresh_timer = QtCore.QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._do_refresh_data)
+        
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
         
-        self.tabs = QtWidgets.QTabWidget()
-        layout.addWidget(self.tabs)
-        
-        # --- ANCHOR NAVIGATION ---
-        self.w_nav = QtWidgets.QWidget()
-        self.w_nav.setObjectName("InspectorNavBar")
-        self.w_nav.setFixedHeight(30)
-        l_nav = QtWidgets.QHBoxLayout(self.w_nav)
-        l_nav.setContentsMargins(0, 0, 0, 0)
-        l_nav.setSpacing(2)
-        
-        nav_items = [
+        self.anchor_items = [
             ("Identity", "grp_ident"),
-            ("Presets", "grp_presets"),
-            ("Visibility", "grp_vis"),
-            ("Anchor", "grp_anchor"),
-            ("Transform", "grp_trans"),
-            ("Grid", "grp_grid"),
+            ("Layout", "grp_anchor"),
             ("Style", "grp_style"),
             ("Logic", "grp_logic"),
-            ("Events", "grp_events")
+            ("Events", "grp_events"),
+            ("Presets", "grp_presets")
         ]
         
-        for label, grp_name in nav_items:
-            btn = RZPushButton(label)
-            btn.setFixedHeight(24)
-            btn.clicked.connect(lambda _, n=grp_name: self._scroll_to_group(n))
-            l_nav.addWidget(btn)
+        self.anchor_scroll = QtWidgets.QScrollArea()
+        self.anchor_scroll.setWidgetResizable(True)
+        self.anchor_scroll.setFixedHeight(38)
+        self.anchor_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.anchor_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.anchor_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         
-        layout.insertWidget(1, self.w_nav) # Insert below tab bar (though tab bar might be hidden now)
+        self.anchor_bar = RZInspectorAnchorBar(self.anchor_items)
+        self.anchor_bar.clicked.connect(self._scroll_to_group)
+        self.anchor_scroll.setWidget(self.anchor_bar)
+        layout.addWidget(self.anchor_scroll)
 
-        # --- TAB 1: Properties ---
-        self.scroll_area = QtWidgets.QScrollArea()
+        # --- MONOLITHIC SCROLL AREA ---
+        self.scroll_area = RZScrollArea()
         self.scroll_area.setObjectName("InspectorScrollArea")
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll_sync)
         
         self.scroll_content = QtWidgets.QWidget()
         self.scroll_content.setObjectName("InspectorScrollContent")
         self.layout_props = QtWidgets.QVBoxLayout(self.scroll_content)
-        self.layout_props.setContentsMargins(0, 0, 0, 0)
-        self.layout_props.setSpacing(5)
+        self.layout_props.setContentsMargins(5, 5, 5, 5)
+        self.layout_props.setSpacing(15)
         
         self.scroll_area.setWidget(self.scroll_content)
-        self.tabs.addTab(self.scroll_area, "Properties")
+        layout.addWidget(self.scroll_area)
         
         self._init_properties_ui()
         self.layout_props.addStretch()
@@ -631,17 +708,44 @@ class RZMInspectorPanel(RZEditorPanel):
         self.table_raw.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers) 
         layout_raw.addWidget(self.table_raw)
         # self.tabs.addTab(self.tab_raw, "Raw Data")
-        
-        self.has_data = False
-        self._block_signals = False
 
     def _scroll_to_group(self, group_name):
         """Scrolls the scroll area to the target group widget."""
         target_widget = getattr(self, group_name, None)
-        if target_widget:
-            # We want to scroll to the top of this widget
-            pos = target_widget.pos().y()
-            self.scroll_area.verticalScrollBar().setValue(pos)
+        if target_widget and self.scroll_area:
+            # Anchor bar logic
+            self.anchor_bar.set_active(group_name)
+            
+            # Smooth scrolling
+            bar = self.scroll_area.verticalScrollBar()
+            y = target_widget.geometry().top()
+            
+            # Use QPropertyAnimation for smooth scroll
+            if not hasattr(self, "_scroll_anim"):
+                self._scroll_anim = QtCore.QPropertyAnimation(bar, b"value")
+                self._scroll_anim.setDuration(400)
+                self._scroll_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+            
+            self._scroll_anim.stop()
+            self._scroll_anim.setEndValue(max(0, y - 5))
+            self._scroll_anim.start()
+
+    def _on_scroll_sync(self, value):
+        """Updates Anchor bar based on current scroll position."""
+        if hasattr(self, "_scroll_anim") and self._scroll_anim.state() == QtCore.QPropertyAnimation.Running:
+            return
+
+        visible_y = value + 20
+        best_match = self.anchor_items[0][1]
+        
+        for label, grp_name in self.anchor_items:
+            w = getattr(self, grp_name, None)
+            if w and w.geometry().top() <= visible_y:
+                best_match = grp_name
+            else:
+                break
+        
+        self.anchor_bar.set_active(best_match)
 
     def set_row_visible(self, widget, visible):
         """Helper to hide/show both the widget and its label in a QFormLayout."""
@@ -669,21 +773,18 @@ class RZMInspectorPanel(RZEditorPanel):
         except: pass
     
     def refresh_data(self):
+        """Request a refresh (throttled)."""
         if not self._is_panel_active: return
+        if not self._refresh_timer.isActive():
+            self._refresh_timer.start(16) # ~60 FPS update limit
+
+    def _do_refresh_data(self):
         ctx = RZContextManager.get_instance().get_snapshot()
         details = core.get_selection_details(ctx.selected_ids, ctx.active_id)
         self.update_ui(details)
 
     def _init_properties_ui(self):
-        # --- PHASE 2.3: TABBED PROPERTY GROUPS ---
-        self.prop_tabs = QtWidgets.QTabWidget()
-        self.prop_tabs.setObjectName("InspectorSubTabs")
-        self.layout_props.addWidget(self.prop_tabs)
-
-        # 1. IDENTITY TAB
-        self.w_ident = QtWidgets.QWidget(); self.l_ident = QtWidgets.QVBoxLayout(self.w_ident)
-        self.l_ident.setContentsMargins(5, 5, 5, 5); self.l_ident.setSpacing(5)
-        self.prop_tabs.addTab(self.w_ident, "Identity")
+        # 1. IDENTITY
 
         # === GROUP: IDENTITY ===
         self.grp_ident = RZGroupBox("Identity")
@@ -695,13 +796,9 @@ class RZMInspectorPanel(RZEditorPanel):
         self.spin_priority = RZSpinBox(); self.spin_priority.setRange(-100, 100); self.spin_priority.valueChanged.connect(lambda v: self._emit_change('priority', int(v))); form_ident.addRow("Priority:", self.spin_priority)
         self.chk_main_window = RZCheckBox("Is Main Window"); self.chk_main_window.toggled.connect(lambda v: self._emit_change('is_main_window', v)); form_ident.addRow("", self.chk_main_window)
         self.chk_disable_export = RZCheckBox("Disable Export"); self.chk_disable_export.toggled.connect(lambda v: self._emit_change('disable_export', v)); form_ident.addRow("", self.chk_disable_export)
-        self.l_ident.addWidget(self.grp_ident)
-        self.l_ident.addStretch()
+        self.layout_props.addWidget(self.grp_ident)
 
-        # 2. LAYOUT TAB
-        self.w_layout = QtWidgets.QWidget(); self.l_layout = QtWidgets.QVBoxLayout(self.w_layout)
-        self.l_layout.setContentsMargins(5, 5, 5, 5); self.l_layout.setSpacing(8)
-        self.prop_tabs.addTab(self.w_layout, "Layout")
+        # 2. LAYOUT
 
         # === GROUP: ANCHOR & ALIGNMENT ===
         self.grp_anchor = RZGroupBox("Anchor & Alignment")
@@ -718,7 +815,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.cb_text_align.addItems(["LEFT", "CENTER", "RIGHT"])
         self.cb_text_align.currentTextChanged.connect(lambda t: self._emit_change('text_align', t))
         self.row_text_align = layout_anchor.addRow("Text Align:", self.cb_text_align)
-        self.l_layout.addWidget(self.grp_anchor)
+        self.layout_props.addWidget(self.grp_anchor)
 
         # === GROUP: TRANSFORM (Dual Mode) ===
         self.grp_trans = RZGroupBox("Transform")
@@ -746,8 +843,17 @@ class RZMInspectorPanel(RZEditorPanel):
         self.w_size_formulas = QtWidgets.QWidget(); l_size_f = QtWidgets.QFormLayout(self.w_size_formulas); l_size_f.setContentsMargins(0,0,0,0)
         self.edit_size_fx = RZFormulaInput(); self.edit_size_fx.editingFinished.connect(lambda: self._emit_change('size_formula_x', self.edit_size_fx.text())); l_size_f.addRow("W:", self.edit_size_fx)
         self.edit_size_fy = RZFormulaInput(); self.edit_size_fy.editingFinished.connect(lambda: self._emit_change('size_formula_y', self.edit_size_fy.text())); l_size_f.addRow("H:", self.edit_size_fy)
-        self.stack_size.addWidget(self.w_size_formulas); layout_trans.addLayout(self.stack_size)
-        self.l_layout.addWidget(self.grp_trans)
+        self.stack_size.addWidget(self.w_size_formulas); layout_trans.addWidget(RZLabel(" ")); layout_trans.addLayout(self.stack_size)
+        
+        # --- PHASE 2.6: TRANSFORM FORMULA (GLOBAL) ---
+        h_tf_head = QtWidgets.QHBoxLayout(); h_tf_head.addWidget(RZLabel("Global Transform")); h_tf_head.addStretch()
+        self.chk_trans_formula = RZCheckBox("Formula"); self.chk_trans_formula.toggled.connect(lambda v: self._emit_change('transform_is_formula', v))
+        h_tf_head.addWidget(self.chk_trans_formula); layout_trans.addLayout(h_tf_head)
+        self.edit_trans_fx = RZCodeTextEdit(); self.edit_trans_fx.setPlaceholderText("Transform(x, y, w, h)..."); self.edit_trans_fx.setMinimumHeight(60)
+        self.edit_trans_fx.editingFinished.connect(lambda: self._emit_change('transform_formula', self.edit_trans_fx.toPlainText()))
+        layout_trans.addWidget(self.edit_trans_fx)
+        
+        self.layout_props.addWidget(self.grp_trans)
 
         # === GROUP: GRID ===
         self.grp_grid = RZGroupBox("Grid Settings")
@@ -762,13 +868,9 @@ class RZMInspectorPanel(RZEditorPanel):
         self.sl_max_r = RZSmartSlider(label_text="MaxY", is_int=True); self.sl_max_r.value_changed.connect(lambda v: self._emit_change('grid_max_cells', int(v), 1))
         h_grid_mm_y.addWidget(self.sl_min_r); h_grid_mm_y.addWidget(self.sl_max_r); layout_grid.addLayout(h_grid_mm_y)
         self.cb_grid_wrap = RZComboBox(); self.cb_grid_wrap.addItems(["SCROLL", "PAGINATE"]); self.cb_grid_wrap.currentTextChanged.connect(lambda t: self._emit_change('grid_wrap_mode', t)); layout_grid.addWidget(self.cb_grid_wrap)
-        self.l_layout.addWidget(self.grp_grid)
-        self.l_layout.addStretch()
+        self.layout_props.addWidget(self.grp_grid)
 
-        # 3. STYLE TAB
-        self.w_style = QtWidgets.QWidget(); self.l_style = QtWidgets.QVBoxLayout(self.w_style)
-        self.l_style.setContentsMargins(5, 5, 5, 5); self.l_style.setSpacing(8)
-        self.prop_tabs.addTab(self.w_style, "Style")
+        # 3. STYLE
 
         # === GROUP: APPEARANCE ===
         self.grp_style = RZGroupBox("Appearance")
@@ -794,7 +896,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.cb_image = RZImageComboBox(); self.cb_image.value_changed.connect(lambda v: self._emit_change('image_id', v))
         layout_style.addWidget(RZLabel("Image:")); layout_style.addWidget(self.cb_image)
         self.list_images = RZConditionalImageList(); layout_style.addWidget(self.list_images)
-        self.l_style.addWidget(self.grp_style)
+        self.layout_props.addWidget(self.grp_style)
 
         # === GROUP: TEXT CONTENT ===
         self.grp_text = RZGroupBox("Text content")
@@ -806,20 +908,16 @@ class RZMInspectorPanel(RZEditorPanel):
         self.edit_txt_id = RZLineEdit(); self.edit_txt_id.editingFinished.connect(lambda: self._emit_change('text_id', self.edit_txt_id.text())); f_txt.addRow("Text ID:", self.edit_txt_id)
         self.edit_hov_txt = RZLineEdit(); self.edit_hov_txt.editingFinished.connect(lambda: self._emit_change('hover_text_id', self.edit_hov_txt.text())); f_txt.addRow("Hover ID:", self.edit_hov_txt)
         layout_text.addWidget(self.w_legacy_text)
-        self.l_style.addWidget(self.grp_text)
-        self.l_style.addStretch()
+        self.layout_props.addWidget(self.grp_text)
 
-        # 4. LOGIC TAB
-        self.w_logic = QtWidgets.QWidget(); self.l_logic = QtWidgets.QVBoxLayout(self.w_logic)
-        self.l_logic.setContentsMargins(5, 5, 5, 5); self.l_logic.setSpacing(8)
-        self.prop_tabs.addTab(self.w_logic, "Logic")
+        # 4. LOGIC
 
         # === GROUP: VISIBILITY ===
         self.grp_vis = RZGroupBox("Visibility")
         form_vis = QtWidgets.QFormLayout(self.grp_vis)
         self.cb_vis_mode = RZComboBox(); self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL", "HIDED"]); self.cb_vis_mode.currentTextChanged.connect(lambda t: self._emit_change('visibility_mode', t)); form_vis.addRow("Mode:", self.cb_vis_mode)
         self.edit_vis_cond = RZFormulaInput(); self.edit_vis_cond.setPlaceholderText("$var > 0"); self.edit_vis_cond.editingFinished.connect(lambda: self._emit_change('visibility_condition', self.edit_vis_cond.text())); self.row_vis_cond = form_vis.addRow("Condition:", self.edit_vis_cond)
-        self.l_logic.addWidget(self.grp_vis)
+        self.layout_props.addWidget(self.grp_vis)
 
         # === GROUP: PRESETS ===
         self.grp_presets = RZGroupBox("Presets System")
@@ -827,7 +925,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.chk_is_preset = RZCheckBox("Is Preset Element"); self.chk_is_preset.toggled.connect(lambda v: self._emit_change('is_preset', v)); layout_presets.addWidget(self.chk_is_preset)
         self.chk_preset_hide = RZCheckBox("Hide Presets (Overlay)"); self.chk_preset_hide.toggled.connect(lambda v: self._emit_change('qt_preset_hide', v)); layout_presets.addWidget(self.chk_preset_hide)
         layout_presets.addWidget(RZLabel("Applied Presets:")); self.list_presets = RZPresetList(); layout_presets.addWidget(self.list_presets)
-        self.l_logic.addWidget(self.grp_presets)
+        self.layout_props.addWidget(self.grp_presets)
 
         # === GROUP: VALUE LINKS & FX ===
         self.grp_logic = RZGroupBox("Value Links & FX")
@@ -836,7 +934,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.list_links = RZValueLinkList(); layout_logic.addWidget(self.list_links)
         self.edit_vl_formula = RZCodeTextEdit(); self.edit_vl_formula.setPlaceholderText("Link Formula..."); self.edit_vl_formula.setMinimumHeight(60); self.edit_vl_formula.editingFinished.connect(lambda: self._emit_change('value_link_formula', self.edit_vl_formula.toPlainText())); layout_logic.addWidget(self.edit_vl_formula)
         self.list_fx = RZFXList(); layout_logic.addWidget(self.list_fx)
-        self.l_logic.addWidget(self.grp_logic)
+        self.layout_props.addWidget(self.grp_logic)
 
         # === GROUP: INTERACTIONS ===
         self.grp_events = RZGroupBox("Interactions")
@@ -845,22 +943,21 @@ class RZMInspectorPanel(RZEditorPanel):
         self.edit_hover_fx = RZCodeTextEdit(); self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(60); self.edit_hover_fx.editingFinished.connect(lambda: self._emit_change('hover_event_formula', self.edit_hover_fx.toPlainText())); layout_events.addWidget(self.edit_hover_fx)
         h_clk_head = QtWidgets.QHBoxLayout(); h_clk_head.addWidget(RZLabel("Click Event")); h_clk_head.addStretch(); self.chk_click_event = RZCheckBox("Enable"); self.chk_click_event.toggled.connect(lambda v: self._emit_change('click_event_enabled', v)); h_clk_head.addWidget(self.chk_click_event); layout_events.addLayout(h_clk_head)
         self.edit_click_fx = RZCodeTextEdit(); self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(60); self.edit_click_fx.editingFinished.connect(lambda: self._emit_change('click_event_formula', self.edit_click_fx.toPlainText())); layout_events.addWidget(self.edit_click_fx)
-        self.l_logic.addWidget(self.grp_events)
+        self.layout_props.addWidget(self.grp_events)
 
         # === GROUP: BUTTON SPECIFICS ===
         self.grp_btn = RZGroupBox("Button Options")
         layout_btn = QtWidgets.QVBoxLayout(self.grp_btn)
         self.chk_no_nums = RZCheckBox("Disable Button Nums"); self.chk_no_nums.toggled.connect(lambda v: self._emit_change('disable_button_nums', v)); layout_btn.addWidget(self.chk_no_nums)
         self.chk_no_popup = RZCheckBox("Disable Button Popup"); self.chk_no_popup.toggled.connect(lambda v: self._emit_change('disable_button_popup', v)); layout_btn.addWidget(self.chk_no_popup)
-        self.l_logic.addWidget(self.grp_btn)
+        self.layout_props.addWidget(self.grp_btn)
 
         # === GROUP: EDITOR FLAGS ===
         grp_edit = RZGroupBox("Editor Flags")
         layout_edit = QtWidgets.QVBoxLayout(grp_edit)
         self.chk_hide = RZCheckBox("Is Hidden"); self.chk_hide.toggled.connect(lambda v: self._emit_change('qt_hide', v)); layout_edit.addWidget(self.chk_hide)
         self.chk_locked = RZCheckBox("Lock Transform"); self.chk_locked.toggled.connect(lambda v: self._emit_change('qt_locked_ui', v)); layout_edit.addWidget(self.chk_locked)
-        self.l_logic.addWidget(grp_edit)
-        self.l_logic.addStretch()
+        self.layout_props.addWidget(grp_edit)
 
     def _emit_change(self, key, val, sub=None):
         """Handle property changes - directly update core."""

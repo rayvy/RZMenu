@@ -55,7 +55,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # 1. TOOLBAR (HEADER)
         self.toolbar_container = RZContextAwareWidget("HEADER", self)
         self.toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_container)
-        self.toolbar_layout.setContentsMargins(12, 8, 12, 8)
+        self.toolbar_layout.setContentsMargins(12, 4, 12, 4) # Reduced vertical margin
         self.toolbar_layout.setSpacing(6)
         self.setup_toolbar() 
         self.root_layout.addWidget(self.toolbar_container)
@@ -133,16 +133,46 @@ class RZMEditorWindow(QtWidgets.QWidget):
         SIGNALS.structure_changed.emit()
 
     def apply_layout(self, layout_name):
-        data = self.layout_manager.get_layout_data(layout_name)
-        new_splitter = self.layout_manager.build_layout(data)
-        
-        if self.splitter:
-            self.root_layout.removeWidget(self.splitter)
-            self.splitter.deleteLater()
-        
-        self.splitter = new_splitter
-        self.root_layout.insertWidget(1, self.splitter)
-        QtCore.QTimer.singleShot(50, self.full_refresh)
+        """Safely switch to a new layout."""
+        try:
+            print(f"[WINDOW] Applying layout: {layout_name}")
+            data = self.layout_manager.get_layout_data(layout_name)
+            
+            # 1. Build new layout FIRST to ensure it works
+            new_splitter = self.layout_manager.build_layout(data)
+            if not new_splitter:
+                 print("[WINDOW] Failed to build layout.")
+                 return
+
+            # 2. Safely remove old splitter
+            if self.splitter:
+                # Disconnect or block signals to prevent refreshes on dying widgets
+                self.splitter.blockSignals(True)
+                for area in self._get_all_areas():
+                    panel = area.get_current_panel()
+                    if panel:
+                        panel.blockSignals(True)
+                        if hasattr(panel, 'on_deactivate'):
+                            panel.on_deactivate()
+                
+                self.root_layout.removeWidget(self.splitter)
+                self.splitter.setParent(None)
+                self.splitter.deleteLater()
+            
+            # 3. Insert new layout
+            self.splitter = new_splitter
+            self.root_layout.insertWidget(1, self.splitter)
+            
+            # 4. Trigger refresh after a safe delay
+            QtCore.QTimer.singleShot(100, self.full_refresh)
+            
+        except Exception as e:
+            import traceback
+            print(f"[CRITICAL] Error applying layout: {e}")
+            traceback.print_exc()
+            # If everything fails, try to restore a safe default
+            if layout_name != "Default":
+                self.apply_layout("Default")
 
     def save_current_layout(self):
         name, ok = QtWidgets.QInputDialog.getText(self, "Save Layout", "Layout Name:")
@@ -203,6 +233,20 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.layout_tabs.currentChanged.connect(self._on_layout_tab_changed)
         self.toolbar_layout.addWidget(self.layout_tabs)
 
+        # Move Save/Reset here
+        self.toolbar_layout.addSpacing(4)
+        btn_save = QtWidgets.QPushButton(IconManager.get_instance().get_icon("circle_+"), "")
+        btn_save.setFixedSize(28, 28)
+        btn_save.setToolTip("Save Current Layout")
+        btn_save.clicked.connect(self.save_current_layout)
+        self.toolbar_layout.addWidget(btn_save)
+
+        btn_reset = QtWidgets.QPushButton(IconManager.get_instance().get_icon("rotate"), "")
+        btn_reset.setFixedSize(28, 28)
+        btn_reset.setToolTip("Reset to Default")
+        btn_reset.clicked.connect(self.reset_layout)
+        self.toolbar_layout.addWidget(btn_reset)
+
         self.toolbar_layout.addStretch()
         
         btn_pref = add_btn("gear", "rzm.open_preferences", "Editor Preferences", special=True)
@@ -222,18 +266,6 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.footer_layout.addWidget(self.lbl_last_op)
         
         self.footer_layout.addStretch()
-        
-        btn_save = QtWidgets.QPushButton(IconManager.get_instance().get_icon("circle_+"), "")
-        btn_save.setFixedSize(24, 24)
-        btn_save.setToolTip("Save Current Layout")
-        btn_save.clicked.connect(self.save_current_layout)
-        self.footer_layout.addWidget(btn_save)
-
-        btn_reset = QtWidgets.QPushButton(IconManager.get_instance().get_icon("rotate"), "")
-        btn_reset.setFixedSize(24, 24)
-        btn_reset.setToolTip("Reset to Default")
-        btn_reset.clicked.connect(self.reset_layout)
-        self.footer_layout.addWidget(btn_reset)
 
         self.on_context_area_changed() 
 

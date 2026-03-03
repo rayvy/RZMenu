@@ -417,6 +417,30 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
     def update_style(self):
         self.apply_theme()
 
+# --- RZScrollArea (Smooth Scroll) ---
+class RZScrollArea(QtWidgets.QScrollArea):
+    """QScrollArea with smooth, interpolated physics-based scrolling."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._scroll_anim = QtCore.QPropertyAnimation(self.verticalScrollBar(), b"value")
+        self._scroll_anim.setDuration(400)
+        self._scroll_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        current_val = self.verticalScrollBar().value()
+        target_val = current_val - delta
+        
+        # Clamp
+        target_val = max(0, min(target_val, self.verticalScrollBar().maximum()))
+        
+        self._scroll_anim.stop()
+        self._scroll_anim.setStartValue(current_val)
+        self._scroll_anim.setEndValue(target_val)
+        self._scroll_anim.start()
+        event.accept()
+
 # --- New RZCheckBox ---
 class RZCheckBox(QtWidgets.QCheckBox):
     def __init__(self, text="", parent=None, checked=False):
@@ -583,6 +607,18 @@ class RZComboBox(QtWidgets.QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apply_theme()
+        # Animated popup
+        self.view().window().setWindowOpacity(0.0) # Start transparent
+        self._popup_anim = QtCore.QPropertyAnimation(self.view().window(), b"windowOpacity")
+        self._popup_anim.setDuration(200)
+        self._popup_anim.setStartValue(0.0)
+        self._popup_anim.setEndValue(1.0)
+        self._popup_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+
+    def showPopup(self):
+        super().showPopup()
+        self._popup_anim.start()
+
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""

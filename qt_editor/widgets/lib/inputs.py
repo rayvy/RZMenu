@@ -446,10 +446,60 @@ class RZCodeTextEdit(RZFormulaInput):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap) # Keep no wrap for code
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.setMinimumHeight(80) 
+        self.setMinimumHeight(60)
+        self._resizing = False
+        self._last_y = 0
+        
+        # Resize handle visual
+        self.setViewportMargins(0, 0, 0, 8) # Space for handle at bottom
+        self.setMouseTracking(True)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton and event.pos().y() > self.height() - 10:
+            self._resizing = True
+            self._last_y = event.globalPosition().y()
+            self.setCursor(QtCore.Qt.SizeVerCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resizing:
+            dy = event.globalPosition().y() - self._last_y
+            self._last_y = event.globalPosition().y()
+            new_h = max(40, self.height() + dy)
+            self.setFixedHeight(new_h)
+            event.accept()
+            return
+        
+        if event.pos().y() > self.height() - 10:
+            self.setCursor(QtCore.Qt.SizeVerCursor)
+        else:
+            self.setCursor(QtCore.Qt.IBeamCursor)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._resizing = False
+        self.unsetCursor()
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Draw small resize handle dots at bottom center
+        painter = QtGui.QPainter(self.viewport())
+        t = get_current_theme()
+        painter.setPen(QtGui.QColor(t.get('border_input', '#444')))
+        
+        r = self.viewport().rect()
+        cx = r.center().x()
+        by = r.bottom() - 4
+        
+        painter.drawPoint(cx - 4, by)
+        painter.drawPoint(cx, by)
+        painter.drawPoint(cx + 4, by)
 
     def keyPressEvent(self, event):
         # Allow Enter to insert newline, but keep other behavior (popup nav, etc)

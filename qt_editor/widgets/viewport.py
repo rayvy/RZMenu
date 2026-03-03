@@ -172,6 +172,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self._drag_velocity = QtCore.QPointF(0, 0)
         self._last_drag_pos = None
 
+        self._is_hovered_state = False
+        self._is_pressed_state = False
+        self.setAcceptHoverEvents(True)
+
         self._init_data()
         self.create_handles()
 
@@ -214,10 +218,32 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def set_selection_progress(self, progress):
         self._select_fill.set_progress(progress)
 
+    def hoverEnterEvent(self, event):
+        self._is_hovered_state = True
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self._is_hovered_state = False
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._is_pressed_state = True
+            self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._is_pressed_state = False
+        self.update()
+        super().mouseReleaseEvent(event)
+
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
             self._is_selected_state = bool(value)
-            self.set_selection_progress(1.0 if self._is_selected_state else 0.0)
+            # Liquid fill removed from default selection per user feedback
+            # self.set_selection_progress(1.0 if self._is_selected_state else 0.0)
         if change == QtWidgets.QGraphicsItem.ItemScenePositionHasChanged:
             self.update_handles_pos()
         return super().itemChange(change, value)
@@ -298,6 +324,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def set_drop_highlight(self, active):
         if self._is_drop_target != active:
             self._is_drop_target = active
+            # Liquid fill is ONLY for drop target highlights now
+            self.set_selection_progress(1.0 if active else 0.0)
             self.update()
 
     def set_handles_visible(self, visible):
@@ -480,6 +508,22 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         t = get_current_theme()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
+        # --- PHASE 2.4: MICRO-ANIMATIONS (HOVER/PRESSED) ---
+        if self._is_pressed_state:
+            # Subtle "pressed" fill
+            press_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
+            press_col.setAlpha(40)
+            painter.setBrush(press_col)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.drawRect(rect)
+        elif self._is_hovered_state and not self._is_selected_state:
+            # Hover glow/highlight
+            hover_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
+            hover_col.setAlpha(20)
+            painter.setBrush(hover_col)
+            painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_active', '#FF8C00')), 1.0, QtCore.Qt.DashLine))
+            painter.drawRect(rect)
+
         # --- PHASE 2.2: SELECTION FILL (LIQUID) ---
         if self._is_selected_state:
             select_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
@@ -996,21 +1040,29 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 new_pos = QtCore.QPointF(item_start.x() + leader_shift_x, item_start.y() + leader_shift_y)
                 item.setPos(new_pos)
 
-            # --- PHASE 2.2: FLYING PAPER PHYSICS ---
+            # --- PHASE 2.4: REFINED FLYING PAPER PHYSICS ---
             if hasattr(self, '_last_drag_pos') and self._last_drag_pos:
+                dist = (current_pos - self._last_drag_pos).manhattanLength()
                 vx = current_pos.x() - self._last_drag_pos.x()
+                
                 # Smooth velocity tracker
                 self._drag_velocity.setX(self._drag_velocity.x() * (1.0 - self._velocity_smooth) + vx * self._velocity_smooth)
                 
-                # Map velocity to tilt angle (+/- 15 degrees)
-                tilt_angle = max(-15.0, min(15.0, self._drag_velocity.x() * 0.5))
+                # Threshold check: only tilt if moving fast enough (5.0 px per frame)
+                is_fast = dist > 5.0
+                tilt_angle = max(-15.0, min(15.0, self._drag_velocity.x() * 0.5)) if is_fast else 0.0
                 
-                # Apply tilt to all selected items via the spring animation
+                # Apply tilt and hide handles if tilt is significant
                 ctx = RZContextManager.get_instance().get_snapshot()
+                handles_visible = abs(tilt_angle) < 5.0
+                
                 for uid in ctx.selected_ids:
                     it = self._items_map.get(uid)
                     if it and hasattr(it, 'set_target_tilt'):
                         it.set_target_tilt(tilt_angle)
+                        # Hide handles during large tilts to prevent Gizmo detachment
+                        if hasattr(it, 'set_handles_visible'):
+                            it.set_handles_visible(handles_visible and not it.is_locked_size)
             
             self._last_drag_pos = current_pos
         else:
@@ -1305,13 +1357,14 @@ class RZViewportView(QtWidgets.QGraphicsView):
             
         menu.exec(QtGui.QCursor.pos())
 
-    def _create_at_pos(self, class_type, scene_pos):
-        bx, by = core.to_blender_coords(scene_pos.x(), scene_pos.y())
-        parent_id = RZContextManager.get_instance().active_id
-        core.create_element(class_type, bx, by, parent_id=parent_id)
-        # Emit signal to update all panels
-        from ..core.signals import SIGNALS
-        SIGNALS.structure_changed.emit()
+    def _get_element_at(self, pos):
+        """Helper to find RZElementItem at position, searching up the hierarchy."""
+        item = self.rz_scene.itemAt(self.mapToScene(pos), QtGui.QTransform())
+        while item:
+            if isinstance(item, RZElementItem):
+                return item
+            item = item.parentItem()
+        return None
 
     def dragEnterEvent(self, event):
         mime = event.mimeData()
@@ -1331,12 +1384,11 @@ class RZViewportView(QtWidgets.QGraphicsView):
             event.acceptProposedAction()
             
             # --- Smart DnD Highlight ---
-            scene_pos = self.mapToScene(event.pos())
-            item = self.rz_scene.itemAt(scene_pos, QtGui.QTransform())
+            item = self._get_element_at(event.pos())
             
             # Update hover_id in context manager
             ctx = RZContextManager.get_instance()
-            target_uid = item.uid if isinstance(item, RZElementItem) else -1
+            target_uid = item.uid if item else -1
             ctx.set_hover_id(target_uid)
             
             # Reset previous highlight if target changed
@@ -1346,7 +1398,7 @@ class RZViewportView(QtWidgets.QGraphicsView):
                         self._last_dnd_item.set_drop_highlight(False)
             
             # Set new highlight
-            if isinstance(item, RZElementItem) and (mime.hasUrls() or mime.hasFormat("application/x-rzmenu-image-id")):
+            if item and (mime.hasUrls() or mime.hasFormat("application/x-rzmenu-image-id")):
                 item.set_drop_highlight(True)
                 self._last_dnd_item = item
             else:

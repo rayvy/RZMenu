@@ -1,0 +1,41 @@
+# RZMenu QT Editor Migration Task List
+
+- [x] Phase 1: Core Foundation & Stability
+    - [x] Implementation of `utils/debounce.py`
+    - [x] Granular Synchronization (Smart Sync) in `inspector.py`
+    - [x] High Performance Data Layer (`core/read.py`)
+    - [x] Enhanced Validation (Formula Preview)
+- [x] Phase 1.5: Viewport Performance Optimization
+    - [x] Implementation of `RZFontManager` (Font Metrics Cache)
+    - [x] LOD-based Adaptive Grid Rendering
+    - [x] Smart Snap Culling/Throttling
+- [x] Phase 2: Apple Magic & UX Refinement (Premium Overhaul)
+    - [x] Phase 2.1: Design System & Minimalist Icons
+        - [x] Update `definitions.py` with premium design tokens
+        - [x] Replace icons with minimalist alternatives
+        - [x] Update QSS generator to support new tokens/shadows
+    - [x] Phase 2.2: Animation Layer (Transitions & Physics)
+        - [x] Implement `LiquidFillEffect`
+        - [x] Implement "Paper Physics" DND in Viewport
+        - [x] Implement smooth fade-in/out transitions
+    - [x] Phase 2.3: Structural UX & Layout Overhaul
+        - [x] Implement Top-Aligned Tab Bar for Layouts
+        - [x] Redesign Inspector UI (Tabbed Properties)
+        - [x] Full removal of hardcoded colors
+    - [x] Phase 2.4: Apple Experience Refinement
+        - [x] Viewport: Refined Paper Physics & Micro-animations
+        - [x] Inspector: Monolithic Layout & Sticky Anchor Bar
+        - [x] Global: Smooth Scrolling & Animated Dropdowns
+        - [x] Polish: Header Optimization & Outliner Icons
+    - [x] Phase 2.5: Bug Fixes & Stability
+    - [/] Phase 2.6: Performance & Critical Finalization
+        - [ ] Fix Inspector AttributeError (chk_trans_formula)
+        - [ ] Optimize Scroll Performance & Refresh Throttling
+        - [ ] Fix DnD Liquid Fill (Hover Detection)
+        - [ ] Implement Rolling Tab System for Inspector Anchors
+        - [ ] Fix Textbox Resizing & Viewport Cursor
+        - [ ] Add Smooth Selection Interpolation (Variables/Assets)
+- [ ] Phase 3: Advanced Functionality & Preservation
+    - [ ] Preservation of Pattern-Based Identity
+    - [ ] Element Preservation Logic
+    - [ ] Final Verification & Cleanup
