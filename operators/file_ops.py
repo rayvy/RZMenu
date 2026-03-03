@@ -228,7 +228,7 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                     addons_data = data_to_load.get("addons", {})
                     
                     # 1. Migrate Resources
-                    if "tw_resources" in addons_data:
+                    if "tw_resources" in addons_data and not data_to_load.get("tw_resources"):
                         new_res = []
                         for old_res in addons_data["tw_resources"]:
                             new_res.append({
@@ -241,7 +241,7 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                         data_to_load["tw_resources"] = new_res
                     
                     # 2. Migrate Overrides
-                    if "tw_overrides" in addons_data:
+                    if "tw_overrides" in addons_data and not data_to_load.get("tw_overrides"):
                         new_over = []
                         for old_over in addons_data["tw_overrides"]:
                             new_over.append({
@@ -252,7 +252,7 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                         data_to_load["tw_overrides"] = new_over
                         
                     # 3. Create Migration Block
-                    if "tw_textures" in addons_data:
+                    if "tw_textures" in addons_data and not data_to_load.get("tw_blocks"):
                         migration_block = {
                             "name": "Legacy Migration",
                             "resource_name": "", # Можно оставить пустым

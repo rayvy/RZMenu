@@ -13,6 +13,9 @@ class TexResource(bpy.types.PropertyGroup):
         ('VIRTUAL', "Virtual (Canvas)", "")
     ], default='ON_DISK')
     
+    qt_tag: StringProperty(name="Tag", description="Visual tag for organization")
+    qt_favorite: BoolProperty(name="Favorite", default=False)
+    
     path: StringProperty(name="Path", subtype='FILE_PATH')
     
     # Эти параметры для VIRTUAL задаются вручную, 
@@ -35,6 +38,8 @@ class TexOverride(bpy.types.PropertyGroup):
     name: StringProperty(name="Override Name")
     hash: StringProperty(name="Hash")
     resource_name: StringProperty(name="Resource Name")
+    qt_tag: StringProperty(name="Tag", description="Visual tag for organization")
+    qt_favorite: BoolProperty(name="Favorite", default=False)
 
 # --- 2. MATERIALS (Поведение) ---
 

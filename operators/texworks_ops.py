@@ -138,6 +138,113 @@ class RZM_OT_RemoveTwMaterial(bpy.types.Operator):
         if 0 <= idx < len(coll): coll.remove(idx)
         return {'FINISHED'}
 
+# --- Automation Operators ---
+
+class RZM_OT_ClearTwResources(bpy.types.Operator):
+    """Remove all resources EXCEPT favorites."""
+    bl_idname = "rzm.clear_tw_resources"
+    bl_label = "Clear Resources (Keep Favorites)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        coll = context.scene.rzm.tw_resources
+        # Iterate backwards to remove safely
+        for i in range(len(coll) - 1, -1, -1):
+            if not coll[i].qt_favorite:
+                coll.remove(i)
+        return {'FINISHED'}
+
+class RZM_OT_ClearTwOverrides(bpy.types.Operator):
+    """Remove all overrides EXCEPT favorites."""
+    bl_idname = "rzm.clear_tw_overrides"
+    bl_label = "Clear Overrides (Keep Favorites)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        coll = context.scene.rzm.tw_overrides
+        for i in range(len(coll) - 1, -1, -1):
+            if not coll[i].qt_favorite:
+                coll.remove(i)
+        return {'FINISHED'}
+
+from bpy_extras.io_utils import ImportHelper
+import re
+
+class RZM_OT_TwResOverFill(bpy.types.Operator, ImportHelper):
+    """Auto-fill Resources and Overrides from EFMI/WWMI dump folder."""
+    bl_idname = "rzm.tw_res_over_fill"
+    bl_label = "ResOver Fill (Auto-Import)"
+    bl_description = "Select a folder containing EFMI/WWMI textures (Components-X t=HASH.dds)"
+    
+    # ImportHelper properties
+    directory: bpy.props.StringProperty(subtype='DIR_PATH')
+    
+    def execute(self, context):
+        if not os.path.exists(self.directory):
+            self.report({'ERROR'}, "Selected directory does not exist.")
+            return {'CANCELLED'}
+            
+        print(f"\n[DEBUG] TexWorks Auto-Import Started: {self.directory}")
+        rzm = context.scene.rzm
+        files = os.listdir(self.directory)
+        print(f"[DEBUG] Total files found: {len(files)}")
+        
+        # Pattern: Components-(\d+) t=([0-9a-fA-F]+)\.(dds|png|jpg)
+        pattern = re.compile(r"Components-([\d-]+)\s+t=([0-9a-fA-F]+)\.(dds|png|jpg|jpeg)", re.IGNORECASE)
+        
+        imported_count = 0
+        existing_hashes = {o.hash.lower() for o in rzm.tw_overrides}
+        existing_names = {o.name.lower() for o in rzm.tw_overrides}
+        
+        for f in files:
+            # print(f"[DEBUG] Evaluating file: {f}")
+            match = pattern.match(f)
+            if not match:
+                # print(f"[DEBUG]   -> Regex mismatch")
+                continue
+                
+            comp_idx_str, tex_hash, ext = match.groups()
+            comp_idx_str = comp_idx_str.replace('-', '.') # Unified dot separator
+            
+            # Check if hash already imported (global safety)
+            if tex_hash.lower() in existing_hashes:
+                print(f"[DEBUG] Skipping {f}: Hash {tex_hash} already present in overrides.")
+                continue
+            
+            # Unique Naming Logic
+            name_base = f"TWComponent{comp_idx_str}"
+            final_name = name_base
+            counter = 1
+            while final_name.lower() in existing_names:
+                final_name = f"{name_base}.{counter}"
+                counter += 1
+                
+            res_name = f"{final_name}_RES"
+            
+            print(f"[DEBUG] Importing: {f} -> {final_name} (Hash: {tex_hash})")
+            
+            # 1. Create Resource (Relative Path)
+            res = rzm.tw_resources.add()
+            res.name = res_name
+            res.type = 'ON_DISK'
+            res.path = f # Store only filename as requested
+            res.qt_tag = "AutoImported"
+            
+            # 2. Create Override
+            over = rzm.tw_overrides.add()
+            over.name = final_name
+            over.hash = tex_hash.lower()
+            over.resource_name = res_name
+            over.qt_tag = "AutoImported"
+            
+            existing_hashes.add(tex_hash.lower())
+            existing_names.add(final_name.lower())
+            imported_count += 1
+            
+        print(f"[DEBUG] Import finished. Added: {imported_count}\n")
+        self.report({'INFO'}, f"Auto-Import Complete: Added {imported_count} items. Check console for details.")
+        return {'FINISHED'}
+
 # --- Hierarchical Operations (Blocks -> Components -> Slots) ---
 
 class RZM_OT_AddTwBlock(bpy.types.Operator):
@@ -890,5 +997,6 @@ classes_to_register = [
     RZM_OT_SetSlotCalcRes,
     RZM_OT_CalcSplittedIslandConfig,
     RZM_OT_TwCreateEasyMask,
+    RZM_OT_ClearTwResources, RZM_OT_ClearTwOverrides, RZM_OT_TwResOverFill,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
 ]

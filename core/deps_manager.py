@@ -23,6 +23,13 @@ DEPS = [
         "is_optional": True 
     },
     {
+        "name": "Jinja2",
+        "import_name": "jinja2",
+        "pip_name": "jinja2",
+        "target_version": "3.1.2",
+        "is_optional": False
+    },
+    {
         "name": "XXMI Tools",
         "import_name": "XXMITools",
         "pip_name": None,

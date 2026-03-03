@@ -159,7 +159,21 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         self.draw_addons_settings(layout, rzm)
         self.draw_tex_works_config(layout, rzm, context)
         self.draw_special_variables(layout, rzm)
+        self.draw_ux_sandbox(layout, rzm)
         # self.draw_debug_tools(layout)
+
+    def draw_ux_sandbox(self, layout, rzm):
+        layout.separator()
+        box = layout.box()
+        box.label(text="UX Sandbox & Future Roadmap (2026):", icon='NONE')
+        row = box.row(align=True)
+        row.operator("rzm.launch_apple_demo", text="Apple UX Demo", icon='SOLO_ON')
+        
+        row = box.row(align=True)
+        row.operator("rzm.launch_gfx_test", text="Graphics Editor (Planned)", icon='IMAGE_DATA')
+        row.operator("rzm.launch_3d_test", text="3D Preview (Planned)", icon='VIEW3D')
+        
+        box.label(text="See qt_editor/TASKLIST0_UIUX_REWORK.md", icon='INFO')
 
     def draw_elements_editor(self, layout, rzm, context):
         layout.separator()
@@ -324,67 +338,158 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         main_box = layout.box()
         main_box.label(text="TexWorks Core (New Format):", icon='TEXTURE')
         
-        # --- 1. GLOBAL RESOURCES ---
-        res_box = main_box.box()
-        row = res_box.row(align=True); row.label(text="Resources:", icon='IMAGE_DATA')
-        row.operator("rzm.add_tw_resource", text="", icon='ADD')
-        row.operator("rzm.remove_tw_resource", text="", icon='REMOVE')
+        # FUTURE: 3D Preview Integration
+        # Add 'Select Body' operator to pick a Blender object as a preview target.
+        # This will allow live-checking decals on 3D geometry from the UI.
         
-        for i, res in enumerate(rzm.tw_resources):
-            r_box = res_box.box()
-            row = r_box.row(align=True)
-            row.prop(res, "name", text=f"[{i}]")
-            row.prop(res, "type", text="")
-            if res.type == 'ON_DISK':
-                row.prop(res, "path", text="")
+        # --- TABS ---
+        row = main_box.row(align=True)
+        row.prop(rzm, "tw_active_tab", expand=True)
+        
+        active_tab = rzm.tw_active_tab
+        show_tags = rzm.tw_show_tags
+        show_details = rzm.tw_show_res_details
+        
+        # Header with Show Tags/Details toggles
+        header_row = main_box.row(align=True)
+        header_row.alignment = 'RIGHT'
+        header_row.prop(rzm, "tw_show_res_details", text="Show Details", icon='INFO', toggle=True)
+        header_row.prop(rzm, "tw_show_tags", text="Show Tags", icon='HIDE_OFF' if show_tags else 'HIDE_ON', toggle=True)
+        
+        # --- 1. GLOBAL RESOURCES ---
+        if active_tab == 'RESOURCES':
+            res_box = main_box.box()
+            header = res_box.row(align=True); header.label(text="Resources:", icon='IMAGE_DATA')
+            header.operator("rzm.add_tw_resource", text="", icon='ADD')
+            header.operator("rzm.remove_tw_resource", text="", icon='REMOVE')
+            header.operator("rzm.clear_tw_resources", text="Clear All", icon='X')
             
-            row = r_box.row(align=True)
-            row.prop(res, "resolution", text="Res")
-            row.prop(res, "format", text="")
+            for i, res in enumerate(rzm.tw_resources):
+                if show_details:
+                    r_box = res_box.box()
+                    row = r_box.row(align=True)
+                    row.prop(res, "qt_favorite", text="", icon='SOLO_ON' if res.qt_favorite else 'SOLO_OFF', emboss=False)
+                    row.prop(res, "name", text=f"[{i}]")
+                    if show_tags:
+                        row.prop(res, "qt_tag", text="")
+                    
+                    # Move/Remove Ops
+                    ops = row.row(align=True)
+                    op_up = ops.operator("rzm.move_tw_item", icon='TRIA_UP', text="")
+                    op_up.collection_name = 'resources'; op_up.index = i; op_up.direction = 'UP'
+                    op_down = ops.operator("rzm.move_tw_item", icon='TRIA_DOWN', text="")
+                    op_down.collection_name = 'resources'; op_down.index = i; op_down.direction = 'DOWN'
+                    op_rem = ops.operator("rzm.remove_tw_resource", icon='X', text="")
+                    op_rem.index = i
+                    
+                    row = r_box.row(align=True)
+                    row.separator(factor=2)
+                    row.prop(res, "type", text="")
+                    if res.type == 'ON_DISK':
+                        row.prop(res, "path", text="")
+                    
+                    row = r_box.row(align=True)
+                    row.separator(factor=2)
+                    row.prop(res, "resolution", text="Res")
+                    row.prop(res, "format", text="")
+                else:
+                    # COMPACT VIEW (Single Row)
+                    row = res_box.row(align=True)
+                    row.prop(res, "qt_favorite", text="", icon='SOLO_ON' if res.qt_favorite else 'SOLO_OFF', emboss=False)
+                    row.prop(res, "name", text=f"[{i}]")
+                    row.prop(res, "type", text="")
+                    if res.type == 'ON_DISK':
+                        row.prop(res, "path", text="")
+                    
+                    if show_tags:
+                        row.prop(res, "qt_tag", text="")
+                    
+                    # Move/Remove Ops
+                    ops = row.row(align=True)
+                    op_up = ops.operator("rzm.move_tw_item", icon='TRIA_UP', text="")
+                    op_up.collection_name = 'resources'; op_up.index = i; op_up.direction = 'UP'
+                    op_down = ops.operator("rzm.move_tw_item", icon='TRIA_DOWN', text="")
+                    op_down.collection_name = 'resources'; op_down.index = i; op_down.direction = 'DOWN'
+                    op_rem = ops.operator("rzm.remove_tw_resource", icon='X', text="")
+                    op_rem.index = i
+
+                res_box.separator(factor=0.5)
 
         # --- 2. GLOBAL OVERRIDES ---
-        over_box = main_box.box()
-        row = over_box.row(align=True); row.label(text="Overrides (3DMigoto):", icon='BLANK1')
-        row.operator("rzm.add_tw_override", text="", icon='ADD')
-        row.operator("rzm.remove_tw_override", text="", icon='REMOVE')
-        
-        for i, over in enumerate(rzm.tw_overrides):
-            row = over_box.row(align=True)
-            row.prop(over, "name", text=f"[{i}]")
-            row.prop(over, "hash", text="Hash")
-            row.prop(over, "resource_name", text="Res")
+        elif active_tab == 'OVERRIDES':
+            over_box = main_box.box()
+            header = over_box.row(align=True); header.label(text="Overrides (3DMigoto):", icon='BLANK1')
+            header.operator("rzm.add_tw_override", text="", icon='ADD')
+            header.operator("rzm.remove_tw_override", text="", icon='REMOVE')
+            header.operator("rzm.clear_tw_overrides", text="Clear All", icon='X')
+            
+            over_box.operator("rzm.tw_res_over_fill", text="ResOver Fill (Auto-Import)", icon='IMPORT')
+
+            for i, over in enumerate(rzm.tw_overrides):
+                # Using a sub-box for better grouping and spacing even in single row
+                row = over_box.row(align=True)
+                row.prop(over, "qt_favorite", text="", icon='SOLO_ON' if over.qt_favorite else 'SOLO_OFF', emboss=False)
+                row.prop(over, "name", text=f"[{i}]")
+                row.prop(over, "hash", text="")
+                row.prop(over, "resource_name", text="")
+                
+                if show_tags:
+                    row.prop(over, "qt_tag", text="")
+                
+                # Move/Remove Ops
+                ops = row.row(align=True)
+                op_up = ops.operator("rzm.move_tw_item", icon='TRIA_UP', text="")
+                op_up.collection_name = 'overrides'; op_up.index = i; op_up.direction = 'UP'
+                op_down = ops.operator("rzm.move_tw_item", icon='TRIA_DOWN', text="")
+                op_down.collection_name = 'overrides'; op_down.index = i; op_down.direction = 'DOWN'
+                op_rem = ops.operator("rzm.remove_tw_override", icon='X', text="")
+                op_rem.index = i
+                
+                over_box.separator(factor=0.3)
 
         # --- 3. GLOBAL MATERIALS ---
-        mat_box = main_box.box()
-        row = mat_box.row(align=True); row.label(text="Materials (Behavior):", icon='MATERIAL')
-        row.operator("rzm.add_tw_material", text="", icon='ADD')
-        row.operator("rzm.remove_tw_material", text="", icon='REMOVE')
-        
-        for i, mat in enumerate(rzm.tw_materials):
-            m_box = mat_box.box()
-            row = m_box.row(align=True)
-            row.prop(mat, "name", text=f"[{i}]")
-            row.prop(mat, "diffuse_blend_mode", text="")
+        elif active_tab == 'MATERIALS':
+            mat_box = main_box.box()
+            header = mat_box.row(align=True); header.label(text="Materials (Behavior):", icon='MATERIAL')
+            header.operator("rzm.add_tw_material", text="", icon='ADD')
+            header.operator("rzm.remove_tw_material", text="", icon='REMOVE')
             
-            m_box.prop(mat, "parameters", text="Params (x46)")
+            for i, mat in enumerate(rzm.tw_materials):
+                m_box = mat_box.box()
+                row = m_box.row(align=True)
+                row.prop(mat, "name", text=f"[{i}]")
+                
+                # Move/Remove Ops
+                ops = row.row(align=True)
+                op_up = ops.operator("rzm.move_tw_item", icon='TRIA_UP', text="")
+                op_up.collection_name = 'materials'; op_up.index = i; op_up.direction = 'UP'
+                op_down = ops.operator("rzm.move_tw_item", icon='TRIA_DOWN', text="")
+                op_down.collection_name = 'materials'; op_down.index = i; op_down.direction = 'DOWN'
+                op_rem = ops.operator("rzm.remove_tw_material", icon='X', text="")
+                op_rem.index = i
+                
+                row = m_box.row(align=True)
+                row.prop(mat, "diffuse_blend_mode", text="")
+                m_box.prop(mat, "parameters", text="Params (x46)")
 
         # --- 4. MAIN BLOCKS ---
-        block_box = main_box.box()
-        row = block_box.row(align=True)
-        row.label(text="Blocks:", icon='NODETREE')
-        row.operator("rzm.add_tw_block", text="", icon='ADD')
-        row.operator("rzm.duplicate_tw_block", text="", icon='DUPLICATE')
-        row.operator("rzm.remove_tw_block", text="", icon='REMOVE')
-        
-        # Вкладки Блоков (Если блоков много)
-        if rzm.tw_blocks:
-            tabs = block_box.row(align=True)
-            for i, block in enumerate(rzm.tw_blocks):
-                is_active = (i == rzm.active_tw_block_index)
-                btn_text = block.name if block.name else f"B{i}"
-                # Оператор переключения активного блока
-                op = tabs.operator("rzm.set_active_block", text=btn_text, depress=is_active)
-                op.index = i
+        elif active_tab == 'BLOCKS':
+            block_box = main_box.box()
+            header = block_box.row(align=True)
+            header.label(text="Blocks:", icon='NODETREE')
+            header.operator("rzm.add_tw_block", text="", icon='ADD')
+            header.operator("rzm.duplicate_tw_block", text="", icon='DUPLICATE')
+            header.operator("rzm.remove_tw_block", text="", icon='REMOVE')
+            
+            # Вкладки Блоков (Если блоков много)
+            if rzm.tw_blocks:
+                tabs = block_box.row(align=True)
+                for i, block in enumerate(rzm.tw_blocks):
+                    is_active = (i == rzm.active_tw_block_index)
+                    btn_text = block.name if block.name else f"B{i}"
+                    # Оператор переключения активного блока
+                    op = tabs.operator("rzm.set_active_block", text=btn_text, depress=is_active)
+                    op.index = i
 
             # Отображаем только АКТИВНЫЙ блок
             b_idx = rzm.active_tw_block_index
@@ -469,6 +574,14 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                         split = c_item.split(factor=0.4)
                         split.prop(comp, "base_resource_name", text="Base Res")
                         split.prop(comp, "base_rect", text="Source")
+                        
+                        # --- TexMorph Row ---
+                        m_row = c_item.row(align=True)
+                        m_row.prop(comp, "tex_morph_enabled", text="TexMorph", icon='MOD_UVPROJECT')
+                        if comp.tex_morph_enabled:
+                            m_row.prop(comp, "tex_morph_resource_name", text="Res")
+                            m_row.prop(comp, "tex_morph_link", text="Link")
+                        
                         c_item.prop(comp, "rect", text="Atlas Rect")
 
                         # --- FX & MASKING (Component) ---

@@ -22,6 +22,7 @@ from .p_ui import (
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, 
 )
+from ..operators import custom_draw_ops
 
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
 class RZMenuProperties(bpy.types.PropertyGroup):
@@ -54,6 +55,18 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     active_tw_block_index: IntProperty()
     active_tw_resource_index: IntProperty()
     active_tw_material_index: IntProperty()
+    tw_active_tab: EnumProperty(
+        name="Tab",
+        items=[
+            ('RESOURCES', "Resources", ""),
+            ('OVERRIDES', "Overrides", ""),
+            ('MATERIALS', "Materials", ""),
+            ('BLOCKS', "Blocks", "")
+        ],
+        default='RESOURCES'
+    )
+    tw_show_tags: BoolProperty(name="Show Tags", default=True)
+    tw_show_res_details: BoolProperty(name="Show Details", default=False)
 
 classes_to_register = [
     RZMCaptureSettings, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
@@ -69,6 +82,7 @@ def register():
         bpy.utils.register_class(cls)
         
     bpy.types.Scene.rzm = PointerProperty(type=RZMenuProperties)
+    custom_draw_ops.register()
     # Регистрация scene properties
     bpy.types.Scene.rzm_active_element_index = IntProperty(name="Active Element Index")
     bpy.types.Scene.rzm_active_image_index = IntProperty(name="Active Image Index")
@@ -92,6 +106,7 @@ def unregister():
     del bpy.types.Scene.rzm_capture_settings
     del bpy.types.Scene.rzm_capture_overwrite_id
     del bpy.types.Scene.rzm
+    custom_draw_ops.unregister()
     del bpy.types.Scene.rzm_active_element_index
     del bpy.types.Scene.rzm_active_image_index
     del bpy.types.Scene.rzm_active_value_index

@@ -47,49 +47,57 @@
         {% set skip = true %}
     {% endif %}
 
-    {% if skip %}
-        ; Skipping draw of {{ obj_name }} (SkipDraw property active)
-    {% else %}
-        
-        {# 4. ОТКРЫТИЕ ТОГГЛОВ (Logic Ported from Previous Steps) #}
-        {% set active_toggles = [] %}
-        {% if real_obj %}
-            {% for key, value in real_obj.items() %}
-                {% if key.startswith('rzm.Toggle.') %}
-                    {% set toggle_name = key[11:] %}
-                    {% set toggle_indices = [] %}
-                    {# Обработка массивов и одиночных значений #}
-                    {% if value is iterable and value is not string %}
-                        {% for v in value %}{% if v == 1 %}{% set _ = toggle_indices.append(loop.index0) %}{% endif %}{% endfor %}
-                    {% elif value == 1 %}
-                        {% set _ = toggle_indices.append(1) %}
-                    {% endif %}
-                    
-                    {% if toggle_indices %}
-                        {# Сохраняем имя, чтобы потом закрыть #}
-                        {% set _ = active_toggles.append(toggle_name) %}
-                        if ${{utils.format_var(toggle_name)}} == {{ toggle_indices|join(' || $' + toggle_name + ' == ') }}
-                    {% endif %}
+    {% set active_toggles = [] %}
+    {% if real_obj %}
+        {% for key, value in real_obj.items() %}
+            {% if key.startswith('rzm.Toggle.') %}
+                {% set toggle_name = key[11:] %}
+                {% set toggle_indices = [] %}
+                {# Обработка массивов и одиночных значений #}
+                {% if value is iterable and value is not string %}
+                    {% for v in value %}{% if v == 1 %}{% set _ = toggle_indices.append(loop.index0) %}{% endif %}{% endfor %}
+                {% elif value == 1 %}
+                    {% set _ = toggle_indices.append(1) %}
                 {% endif %}
-            {% endfor %}
-        {% endif %}
+                
+                {% if toggle_indices %}
+                    {# Сохраняем имя, чтобы потом закрыть #}
+                    {% set _ = active_toggles.append(toggle_name) %}
+                    if ${{utils.format_var(toggle_name)}} == {{ toggle_indices|join(' || $' + toggle_name + ' == ') }}
+                {% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
 
-        {# 5. КОМАНДА ОТРИСОВКИ #}
-        {% if draw_mode == 'instanced' %}
+    {# 5. КОМАНДА ОТРИСОВКИ #}
+        {% if skip %}
+            ;DrawSkip
+            ;drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE
+        {% elif draw_mode == 'instanced' %}
             drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE
         {% else %}
             drawindexed = {{ idx_count }}, {{ idx_offset }}, 0
         {% endif %}
 
-        {# 6. CUSTOM SHADERS (XXMI Logic) #}
-        {# Ищем свойства CustomDrawX и генерируем run = CustomShaderX #}
-        {% if real_obj %}
-            {% for key, value in real_obj.items() %}
-                {% if key.startswith('CustomDraw') %}
-                    run = CustomShader{{ key|replace('CustomDraw', '') }}
+    {# 6. CUSTOM SHADERS (XXMI Logic) #}
+    {# Ищем свойства CustomDraw.X и генерируем run = CustomShaderX с пробросом переменных #}
+    {% if real_obj %}
+        {# CD_draw_type: 4 for Endfield, 2 for others #}
+        {% set cd_draw_type = 4 if scene.rzm.game.selection == 'ArknightsEndfield' else 2 %}
+        
+        {% for key, value in real_obj.items() %}
+            {% if key.startswith('CustomDraw.') %}
+                {% set cd_name = key[11:] %}
+                    
+            $CD_INDEX_COUNT = {{ idx_count }}
+            $CD_INSTANCE_COUNT = INSTANCE_COUNT
+            $CD_FIRST_INDEX = {{ idx_offset }}
+            $CD_FIRST_VERTEX = 0
+            $CD_FIRST_INSTANCE = FIRST_INSTANCE
+            $CD_draw_type = {{ cd_draw_type }}
+            run = CustomShader.rzm.CustomDraw.{{ cd_name }}
                 {% endif %}
             {% endfor %}
-        {% endif %}
 
         {# 7. ЗАКРЫТИЕ ТОГГЛОВ #}
         {% for t in active_toggles %}

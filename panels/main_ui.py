@@ -137,27 +137,15 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         self.draw_captures_preview_ui(context, layout)
 
 
-class VIEW3D_PT_RZMObjectPanel(bpy.types.Panel):
-    bl_label = "RZ Object Properties"
-    bl_idname = "VIEW3D_PT_rzm_object_panel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'RZ Constructor'
-    bl_parent_id = "VIEW3D_PT_rz_constructor_panel"
-    bl_order = 1
-
-    def draw(self, context):
-        # FIX IMPORT: helpers -> core.utils
+    def draw_object_properties(self, context, layout):
         from ..core.utils import get_toggle_slot_occupancy, find_toggle_def
         
-        layout = self.layout
         target_obj = context.active_object
         if not target_obj:
             layout.label(text="Select an object to see its properties.", icon='INFO')
             return
 
-        # ... (Код ниже оставляем как есть, логика не менялась) ...
-        # (Просто убедись, что закрываешь скобки и отступы верно)
+        # --- TOGGLES ---
         box = layout.box()
         row = box.row(align=True)
         row.label(text="RZ-Toggles", icon='CHECKBOX_HLT')
@@ -167,61 +155,150 @@ class VIEW3D_PT_RZMObjectPanel(bpy.types.Panel):
 
         if not toggle_keys:
             box.label(text="No toggles assigned.", icon='INFO')
-            return
+        else:
+            for key in toggle_keys:
+                value = target_obj.get(key)
+                if value is None: continue
+                
+                base_name = key.replace("rzm.Toggle.", "", 1)
+                sub_box = box.box()
+                
+                header = sub_box.row(align=True)
+                toggle_def = find_toggle_def(context, base_name)
+                
+                if toggle_def:
+                    icon_exp = 'TRIA_DOWN' if toggle_def.show_occupancy else 'TRIA_RIGHT'
+                    header.prop(toggle_def, "show_occupancy", text="", icon=icon_exp, emboss=False)
+                
+                header.label(text=base_name, icon='OUTLINER_OB_MESH')
+                op_sel_all = header.operator("rzm.select_objects_with_toggle", text="", icon='SELECT_SET')
+                op_sel_all.toggle_name = base_name
+                op_rem = header.operator("rzm.remove_object_toggle", text="", icon='X', emboss=False)
+                op_rem.toggle_name = key
 
-        for key in toggle_keys:
-            value = target_obj.get(key)
-            if value is None: continue
-            
-            base_name = key.replace("rzm.Toggle.", "", 1)
-            sub_box = box.box()
-            
-            header = sub_box.row(align=True)
-            toggle_def = find_toggle_def(context, base_name)
-            
-            if toggle_def:
-                icon_exp = 'TRIA_DOWN' if toggle_def.show_occupancy else 'TRIA_RIGHT'
-                header.prop(toggle_def, "show_occupancy", text="", icon=icon_exp, emboss=False)
-            
-            header.label(text=base_name, icon='OUTLINER_OB_MESH')
-            op_sel_all = header.operator("rzm.select_objects_with_toggle", text="", icon='SELECT_SET')
-            op_sel_all.toggle_name = base_name
-            op_rem = header.operator("rzm.remove_object_toggle", text="", icon='X', emboss=False)
-            op_rem.toggle_name = key
+                bits_row = sub_box.row(align=True)
+                try:
+                    bits_list = list(value)
+                except:
+                    bits_list = []
 
-            bits_row = sub_box.row(align=True)
-            try:
-                bits_list = list(value)
-            except:
-                bits_list = []
+                for i, bit in enumerate(bits_list):
+                    icon = 'CHECKBOX_HLT' if bit else 'CHECKBOX_DEHLT'
+                    op_bit = bits_row.operator("rzm.toggle_object_bit", text="", icon=icon, emboss=False)
+                    op_bit.toggle_name = key
+                    op_bit.bit_index = i
+                
+                if toggle_def and toggle_def.show_occupancy:
+                    occupancy = get_toggle_slot_occupancy(context, base_name)
+                    info_col = sub_box.column(align=True)
+                    info_col.separator()
+                    if not any(occupancy):
+                        info_col.label(text="All other slots free", icon='INFO')
+                    else:
+                        for i in range(len(bits_list)):
+                            slot_row = info_col.row(align=True)
+                            slot_row.alignment = 'LEFT'
+                            if i in occupancy:
+                                op_sel_slot = slot_row.operator("rzm.select_occupying_objects", text="", icon='RESTRICT_SELECT_ON')
+                                op_sel_slot.toggle_name = base_name
+                                op_sel_slot.slot_index = i
+                                slot_row.label(text=f"Slot {i+1}:", icon='CHECKBOX_HLT')
+                                names = ", ".join(occupancy[i])
+                                if len(names) > 30: names = names[:27] + "..."
+                                slot_row.label(text=names)
+                            else:
+                                slot_row.label(text="", icon='BLANK1')
+                                slot_row.label(text=f"Slot {i+1}: <Free>", icon='CHECKBOX_DEHLT')
 
-            for i, bit in enumerate(bits_list):
-                icon = 'CHECKBOX_HLT' if bit else 'CHECKBOX_DEHLT'
-                op_bit = bits_row.operator("rzm.toggle_object_bit", text="", icon=icon, emboss=False)
-                op_bit.toggle_name = key
-                op_bit.bit_index = i
-            
-            if toggle_def and toggle_def.show_occupancy:
-                occupancy = get_toggle_slot_occupancy(context, base_name)
-                info_col = sub_box.column(align=True)
-                info_col.separator()
-                if not any(occupancy):
-                    info_col.label(text="All other slots free", icon='INFO')
-                else:
-                    for i in range(len(bits_list)):
-                        slot_row = info_col.row(align=True)
-                        slot_row.alignment = 'LEFT'
-                        if i in occupancy:
-                            op_sel_slot = slot_row.operator("rzm.select_occupying_objects", text="", icon='RESTRICT_SELECT_ON')
-                            op_sel_slot.toggle_name = base_name
-                            op_sel_slot.slot_index = i
-                            slot_row.label(text=f"Slot {i+1}:", icon='CHECKBOX_HLT')
-                            names = ", ".join(occupancy[i])
-                            if len(names) > 30: names = names[:27] + "..."
-                            slot_row.label(text=names)
-                        else:
-                            slot_row.label(text="", icon='BLANK1')
-                            slot_row.label(text=f"Slot {i+1}: <Free>", icon='CHECKBOX_DEHLT')
+        # --- CUSTOM DRAW ---
+        box = layout.box()
+        row = box.row(align=True)
+        row.label(text="Custom Draw", icon='BRUSH_DATA')
+        row.menu("RZM_MT_add_custom_draw_menu", text="Add", icon="ADD")
+        
+        # Skip Draw Toggle
+        skip_draw = target_obj.get("SkipDraw", False)
+        icon = 'CHECKBOX_HLT' if skip_draw else 'CHECKBOX_DEHLT'
+        box.operator("rzm.toggle_skip_draw", text="Skip Draw", icon=icon)
+        
+        # List of active Custom Draws
+        custom_draw_keys = sorted([key for key in target_obj.keys() if key.startswith("CustomDraw.")])
+        if custom_draw_keys:
+            col = box.column(align=True)
+            for key in custom_draw_keys:
+                r = col.row(align=True)
+                r.label(text=key.replace("CustomDraw.", ""), icon='DOT')
+                op = r.operator("rzm.remove_custom_draw", text="", icon='X', emboss=False)
+                op.prop_name = key
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        rzm = scene.rzm
+
+        game_box = layout.box()
+        row = game_box.row()
+        row.label(text="Target Game:", icon='COLOR_RED') 
+        # Отрисовка выпадающего списка (EnumProperty)
+        # text="" скрывает дублирующее название слева, оставляя только сам список
+        row.prop(rzm.game, "selection", text="")
+
+        file_box = layout.box()
+        row = file_box.row(align=True)
+        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
+        # --- БЛОК: Управление файлами ---
+        file_box = layout.box()
+        row = file_box.row(align=True)
+        row.operator("rzm.save_template", text="Save .rzm", icon='FILE_TICK')
+        row.operator("rzm.load_template", text="Load .rzm", icon='FILE_FOLDER')
+        
+        # --- БЛОК: Файлы (Полный бэкап) ---
+        box = layout.box()
+        box.label(text="Full Scene Backup (.rzm)", icon='FILE_BLEND')
+        row = box.row(align=True)
+        row.operator("rzm.save_template", text="Save Scene")
+        row.operator("rzm.load_template", text="Load Scene")
+        row.operator("rzm.reset_scene", text="", icon='TRASH')
+
+        # --- НОВЫЙ БЛОК: Шаблоны ---
+        box = layout.box()
+        box.label(text="Partial Templates (.rzmt)", icon='LIBRARY_DATA_DIRECT')
+        row = box.row(align=True)
+        # Экспортирует выбранный элемент
+        row.operator("rzm.export_partial_template", text="Export Selected", icon='EXPORT')
+        # Импортирует
+        row.operator("rzm.import_partial_template", text="Import Template", icon='IMPORT')
+
+        # History кнопки удалены (используй Ctrl+Z)
+        history_row = file_box.row(align=True)
+        history_row.operator("rzm.reset_scene", text="Reset Scene", icon='TRASH')
+        
+        layout.separator()
+
+        # --- properties объекта (Тут баг исправлен - Custom Draw теперь ниже) ---
+        self.draw_object_properties(context, layout)
+        
+        layout.separator()
+        
+        # --- Блок режима редактора ---
+        mode_box = layout.box()
+        mode_box.label(text="Editor Mode:")
+        row = mode_box.row(align=True)
+        row.prop(scene, "rzm_editor_mode", expand=True)
+
+        if scene.rzm_editor_mode == 'LIGHT':
+            layout.separator()
+            light_tools_box = layout.box()
+            light_tools_box.label(text="Quick Actions:")
+            light_tools_box.operator("rzm.auto_capture", text="Auto-Capture Icons", icon='AUTO')
+        
+        if scene.rzm_editor_mode == 'PRO':
+            mode_box.prop(scene, "rzm_show_debug_panel", text="Show Debug Panel", toggle=True, icon='GHOST_ENABLED')
+            layout.separator()
+            self.draw_capture_pro_ui(context, layout)
+        
+        self.draw_captures_preview_ui(context, layout)
+
 
 # ... (Остальные панели без изменений) ...
 class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
@@ -272,9 +349,19 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         if hasattr(bpy.ops.rzm, "initialize_mod"):
             sub_box.operator("rzm.initialize_mod", text="Initialize Mod", icon='MOD_BUILD')
 
-        # --- TexWorks Tools ---
+        # --- Emulator Tools ---
         col.separator()
-        col.label(text="TexWorks Tools:", icon='TEXTURE')
+        col.label(text="Emulator Tools:", icon='RECORD_ON')
+        emu_box = col.box()
+        split = emu_box.split(factor=0.7)
+        split.prop(settings, "emu_width", text="W")
+        split.prop(settings, "emu_height", text="H")
+        emu_box.prop(settings, "emu_fullscreen", text="Fullscreen")
+        
+        row = emu_box.row(align=True)
+        row.operator("rzm.emulator_export", text="Export to Emulator", icon='EXPORT')
+        row.operator("rzm.launch_test_polygon", text="Launch Emulator", icon='PLAY')
+        
         tw_box = col.box()
         tw_box.operator("rzm.tw_export_hierarchy", text="Export Hierarchy", icon='FILE_FOLDER')
         tw_box.operator("rzm.tw_debug_sync", text="Debug Sync", icon='CONSOLE')
@@ -282,6 +369,5 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
 classes_to_register = [ 
     RZM_MT_AssignToggleMenu, 
     VIEW3D_PT_RZConstructorPanel, 
-    VIEW3D_PT_RZMObjectPanel,
     VIEW3D_PT_RZM_ExportManager
 ]

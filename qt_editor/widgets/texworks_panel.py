@@ -58,6 +58,10 @@ class TexWorksManager(QtWidgets.QWidget):
         if 0 <= index < len(self.tabs):
             widget = self.tabs[index][1]
             widget.update_ui()
+            
+    # FUTURE: Integrate Live 3D Viewport (PySide6 Qt3D/Vulkan)
+    # This will allow dragging decals directly on a model proxy fetched from Blender.
+    # See TASKLIST0.md for details.
 
     def on_activate(self):
         self.refresh_current()

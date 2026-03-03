@@ -438,6 +438,103 @@ if $inputMode == 0
         endif
     endif
 endif
+
+[CustomShader.rzm.CustomDraw.XRAY.ENHANCED]
+cull = front
+alpha_to_coverage = false
+depth_bias = 0
+depth_func = greater
+depth_write_mask = zero
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+
+; --- МАГИЯ СТЕНСИЛА ПРОТИВ ТРЕУГОЛЬНИКОВ ---
+stencil_enable = true
+stencil_ref = 1
+stencil_read_mask = 0xff
+stencil_write_mask = 0xff
+if $CD_draw_type == 2
+    drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+elif $CD_draw_type == 4
+    drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+endif
+
+[CustomShader.rzm.CustomDraw.XRAY]
+cull = none
+alpha_to_coverage = false 
+depth_bias = 0
+slope_scaled_depth_bias = 0.0
+depth_func = greater 
+depth_write_mask = zero
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+if $CD_draw_type == 2
+    drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+elif $CD_draw_type == 4
+    drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+endif
+run = CustomShader.rzm.CustomDraw.XRAY.PASS2
+[CustomShader.rzm.CustomDraw.XRAY.PASS2]
+depth_func = less_equal 
+depth_write_mask = zero 
+if $CD_draw_type == 2
+    drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+elif $CD_draw_type == 4
+    drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+endif
+
+[CustomShader.rzm.CustomDraw.XRAY.FRONT]
+cull = none
+alpha_to_coverage = false 
+depth_bias = 0
+slope_scaled_depth_bias = 0.0
+depth_func = less_equal
+depth_write_mask = zero
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+if $CD_draw_type == 2
+    drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+elif $CD_draw_type == 4
+    drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+endif
+
+[CustomShader.rzm.CustomDraw.XRAY.BACK]
+cull = none
+alpha_to_coverage = false 
+depth_bias = 0
+slope_scaled_depth_bias = 0.0
+depth_func = less_equal
+depth_write_mask = zero
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+if $CD_draw_type == 2
+    drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+elif $CD_draw_type == 4
+    drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+endif
+
+[CustomShader.rzm.CustomDraw.XRAY.ENDFIELD]
+depth_bias = 500
+slope_scaled_depth_bias = 1.0
+cull = back
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+depth_func = less_equal
+alpha_to_coverage = true
+if $CD_draw_type == 2
+drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+elif $CD_draw_type == 4
+drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+endif
+
+[CustomShader.rzm.CustomDraw.FRAMETRACE]
+depth_bias = 500
+slope_scaled_depth_bias = 1.0
+cull = back
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+depth_func = less_equal
+alpha_to_coverage = true
+if $CD_draw_type == 2
+drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+elif $CD_draw_type == 4
+drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+endif
+
 {%endmacro%}
 
 {%macro baseCompute(mod_file,scene)%}
@@ -1043,6 +1140,8 @@ global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
 {% endif %}
 {% endfor %}
 [Present]
+run = CommandListBaseDataCompute
+[CommandListBaseDataCompute]
 local $sppeeedyy = 0.00125
 if $dt+$sppeeedyy < $sppeeedyy
 {% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}

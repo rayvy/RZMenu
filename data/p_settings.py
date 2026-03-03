@@ -24,8 +24,11 @@ class RZMGameSettings(bpy.types.PropertyGroup):
             
             # Гриффоны (EFMI)
             ('ArknightsEndfield', "Arknights: Endfield", "ArknightsEndfield"),
+
+            # Тестирование
+            ('EMULATOR', "Emulator (No Model)", "EMULATOR"),
         ],
-        default='GenshinImpact',
+        default='EMULATOR',
         update=update_rzm_game_name
     )
 
@@ -84,6 +87,10 @@ class RZMExportSettings(bpy.types.PropertyGroup):
         default=False,
         description="ВНИМАНИЕ: Перезапишет скрипты (ini/py) в целевой папке"
     )
+    # --- Эмулятор ---
+    emu_width: IntProperty(name="Emulator Width", default=1280, min=640)
+    emu_height: IntProperty(name="Emulator Height", default=720, min=360)
+    emu_fullscreen: BoolProperty(name="Fullscreen Mode", default=False)
 
 class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debugger_info: BoolProperty(name="DebuggerInfo", default=False)
