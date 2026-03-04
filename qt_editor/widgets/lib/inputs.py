@@ -18,7 +18,60 @@ class RZImageComboBox(QtWidgets.QComboBox):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.apply_theme()
+        
+        from .widgets import RZStaggeredDelegate # Local import to avoid circular if any
+        self._delegate = RZStaggeredDelegate(self)
+        self.setItemDelegate(self._delegate)
+        
+        self._popup_anim = QtCore.QPropertyAnimation(self, b"popup_progress")
+        self._popup_anim.setDuration(400)
+        self._popup_anim.setEasingCurve(QtCore.QEasingCurve.Linear)
+
         self.currentIndexChanged.connect(self._on_index_changed)
+        self.setIconSize(QtCore.QSize(20, 20))
+        self.setMinimumHeight(24)
+
+    @QtCore.Property(float)
+    def popup_progress(self):
+        return self._delegate.progress
+        
+    @popup_progress.setter
+    def popup_progress(self, val):
+        self._progress = val
+        self._delegate.progress = val
+        self.update()
+        # Only set opacity if window exists and is currently being animated
+        win = self.view().window()
+        if win and win.isVisible():
+            # More aggressive opacity ramp
+            win.setWindowOpacity(min(1.0, val * 3))
+            if val > 0.9:
+                 win.setWindowOpacity(1.0)
+
+    def showPopup(self):
+        count = self.count()
+        total_duration = 200
+        if count > 0:
+            self._delegate.stagger_delay = 5.0 / max(1, count + 2)
+            self._delegate.item_fade_speed = 0.5
+
+        self._popup_anim.stop()
+        self._popup_anim.setDuration(total_duration)
+        self._popup_anim.setStartValue(0.0)
+        self._popup_anim.setEndValue(1.0)
+        
+        # Ensure the popup viewport is ready
+        super().showPopup()
+        
+        popup = self.view().window()
+        if popup:
+            popup.setWindowOpacity(0.01) # Start almost invisible but NOT zero to avoid some Qt issues
+            popup.show()
+            
+        self._popup_anim.start()
+
+    def wheelEvent(self, event):
+        event.ignore()
 
     def apply_theme(self):
         theme = get_current_theme()
@@ -224,9 +277,11 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         self._pattern = ""
         self._originals = []
         
+        from ...utils.debounce import RZDebouncer
         # Debouncing support
         self.debouncer = RZDebouncer(delay_ms=400, parent=self)
         self.debouncer.timeout.connect(self.editingFinished.emit)
+        self.textChanged.connect(lambda: self.debouncer.trigger(lambda: None))
         # Real-time preview integration
         self.preview_label = QtWidgets.QLabel(self)
         self.preview_label.setStyleSheet("color: #888; background: transparent; padding: 2px;")
@@ -242,7 +297,7 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
     @hover_progress.setter
     def hover_progress(self, val):
         self._hover_progress = val
-        self.viewport().update()
+        self.update() # Use main update instead of viewport
 
     def enterEvent(self, event):
         self._hover_anim.stop()
@@ -258,24 +313,28 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         self._hover_anim.start()
         super().leaveEvent(event)
 
+    def wheelEvent(self, event):
+        event.ignore()
+
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self._hover_progress > 0:
+        # Use hasFocus() or another check to prevent 'static' rings
+        if self._hover_progress > 0.01:
             painter = QtGui.QPainter(self.viewport())
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
             theme = get_current_theme()
             accent = QtGui.QColor(theme.get('accent', '#5298D4'))
-            accent.setAlpha(int(255 * self._hover_progress))
+            accent.setAlpha(int(180 * self._hover_progress)) 
             
-            # Adjusted rect for the viewport
             rect = self.viewport().rect().adjusted(1, 1, -1, -1)
             path = QtGui.QPainterPath()
-            path.addRoundedRect(rect, 3, 3)
+            path.addRoundedRect(rect, 4, 4) 
             
-            pen = QtGui.QPen(accent, 1.2)
+            # Pulse the thickness slightly?
+            pen = QtGui.QPen(accent, 1.5 + (0.5 * self._hover_progress))
             painter.setPen(pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
             painter.drawPath(path)
+            painter.end()
 
     def _on_formula_changed(self):
         # Trigger both debounced commit AND debounced preview update
@@ -336,12 +395,15 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
             QPlainTextEdit {{
                 background-color: {theme.get('bg_input', '#252930')};
                 border: 1px solid {theme.get('border_input', '#4A505A')};
-                border-radius: 3px;
-                padding: 3px;
+                border-radius: 6px;
+                padding: 4px 8px;
                 color: {theme.get('text_main', '#E0E2E4')};
                 font-family: Consolas, Monospace;
             }}
-            QPlainTextEdit:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
+            QPlainTextEdit:focus {{ 
+                border: 1px solid {theme.get('accent', '#5298D4')};
+                background-color: {theme.get('bg_panel', '#2C313A')};
+            }}
         """)
         if hasattr(self, 'highlighter'):
             self.highlighter.update_theme()

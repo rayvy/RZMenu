@@ -57,179 +57,166 @@ class RZColorButton(QtWidgets.QPushButton):
             self.colorChanged.emit([c.redF(), c.greenF(), c.blueF(), c.alphaF()])
 
 # --- Advanced Color Panel ---
-class RZAdvancedColorPanel(QtWidgets.QWidget):
-    """
-    Advanced Color Panel: HEX, HSV, Alpha and Palette controls.
-    Designed for inline use in the Inspector.
-    """
-    colorChanged = QtCore.Signal(list) # [r, g, b, a] floats
+# --- Advanced Color Components ---
+class RZColorWheel(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(145, 145)
+        self.h = 0.0
+        self.s = 0.0
+        self._dragging = False
+        self.setCursor(QtCore.Qt.CrossCursor)
 
-    # --- Внутренний класс: Цветовой круг (Hue/Saturation) ---
-    class ColorWheel(QtWidgets.QWidget):
-        def __init__(self, parent=None):
-            super().__init__(parent)
-            self.setMinimumSize(145, 145) # Increased by 45% (from 100)
-            self.h = 0.0
-            self.s = 0.0
-            self._dragging = False
-            self.setCursor(QtCore.Qt.CrossCursor)
+    def set_hs(self, h, s):
+        self.h = h
+        self.s = s
+        self.update()
 
-        def set_hs(self, h, s):
-            self.h = h
-            self.s = s
-            self.update()
+    def mousePressEvent(self, event):
+        self._update_from_mouse(event.pos())
+        self._dragging = True
 
-        def mousePressEvent(self, event):
+    def mouseMoveEvent(self, event):
+        if self._dragging:
             self._update_from_mouse(event.pos())
-            self._dragging = True
 
-        def mouseMoveEvent(self, event):
-            if self._dragging:
-                self._update_from_mouse(event.pos())
+    def mouseReleaseEvent(self, event):
+        self._dragging = False
+        if hasattr(self.parent(), '_on_release'):
+            self.parent()._on_release()
 
-        def mouseReleaseEvent(self, event):
-            self._dragging = False
+    def _update_from_mouse(self, pos):
+        center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        dx = pos.x() - center.x()
+        dy = pos.y() - center.y()
+        import math
+        angle = math.atan2(dy, dx)
+        hue = math.degrees(angle)
+        if hue < 0: hue += 360
+        dist = math.sqrt(dx*dx + dy*dy)
+        radius = min(self.width(), self.height()) / 2
+        sat = min(1.0, dist / radius) if radius > 0 else 0
+        self.h = hue
+        self.s = sat * 255.0
+        self.update()
+        if hasattr(self.parent(), '_on_wheel_interact'):
+            self.parent()._on_wheel_interact(self.h, self.s)
 
-        def _update_from_mouse(self, pos):
-            # Вычисляем центр и радиус
-            center = QtCore.QPointF(self.width() / 2, self.height() / 2)
-            dx = pos.x() - center.x()
-            dy = pos.y() - center.y()
-            
-            # Угол -> Hue
-            import math
-            angle = math.atan2(dy, dx)
-            hue = math.degrees(angle)
-            if hue < 0: hue += 360
-            # Корректировка, чтобы 0 был справа или сверху (зависит от QConicalGradient)
-            # В Qt 0 градусов - это 3 часа. В HSV обычно 0 - красный.
-            # QConicalGradient начинает с 3 часов против часовой стрелки? Проверим отрисовку.
-            # Оставим стандартную математику, подгоним отрисовку под нее.
-            
-            # Дистанция -> Saturation
-            dist = math.sqrt(dx*dx + dy*dy)
-            radius = min(self.width(), self.height()) / 2
-            sat = min(1.0, dist / radius) if radius > 0 else 0
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect = self.rect()
+        radius = min(rect.width(), rect.height()) / 2 - 2
+        center = QtCore.QPointF(rect.width() / 2, rect.height() / 2)
+        conical = QtGui.QConicalGradient(center, 0)
+        conical.setColorAt(0.0, QtGui.QColor.fromHsvF(0.0, 1, 1))
+        conical.setColorAt(1.0/6, QtGui.QColor.fromHsvF(1.0/6, 1, 1))
+        conical.setColorAt(2.0/6, QtGui.QColor.fromHsvF(2.0/6, 1, 1))
+        conical.setColorAt(3.0/6, QtGui.QColor.fromHsvF(0.5, 1, 1))
+        conical.setColorAt(4.0/6, QtGui.QColor.fromHsvF(4.0/6, 1, 1))
+        conical.setColorAt(5.0/6, QtGui.QColor.fromHsvF(5.0/6, 1, 1))
+        conical.setColorAt(1.0, QtGui.QColor.fromHsvF(1.0, 1, 1))
+        painter.setBrush(QtGui.QBrush(conical))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawEllipse(center, radius, radius)
+        radial = QtGui.QRadialGradient(center, radius)
+        radial.setColorAt(0.0, QtGui.QColor(255, 255, 255, 255))
+        radial.setColorAt(1.0, QtGui.QColor(255, 255, 255, 0))
+        painter.setBrush(QtGui.QBrush(radial))
+        painter.drawEllipse(center, radius, radius)
+        import math
+        angle_rad = math.radians(self.h)
+        sat_factor = self.s / 255.0
+        dist = sat_factor * radius
+        marker_x = center.x() + math.cos(angle_rad) * dist
+        marker_y = center.y() + math.sin(angle_rad) * dist
+        painter.setPen(QtGui.QPen(QtCore.Qt.black, 2))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawEllipse(QtCore.QPointF(marker_x, marker_y), 5, 5)
+        painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+        painter.drawEllipse(QtCore.QPointF(marker_x, marker_y), 5, 5)
 
-            self.h = hue
-            self.s = sat * 255.0 # храним как 0-255 для совместимости с QColor
-            self.update()
-            
-            # Вызов коллбэка родителя (так как это вложенный класс)
-            if self.parent():
-                self.parent()._on_wheel_interact(self.h, self.s)
+class RZValueBar(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(24)
+        self.setMinimumHeight(100)
+        self.v = 255
+        self.current_hue = 0
+        self.current_sat = 255
+        self._dragging = False
+        self.setCursor(QtCore.Qt.ArrowCursor)
 
-        def paintEvent(self, event):
-            painter = QtGui.QPainter(self)
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    def set_hsv(self, h, s, v):
+        self.current_hue = h
+        self.current_sat = s
+        self.v = v
+        self.update()
 
-            rect = self.rect()
-            radius = min(rect.width(), rect.height()) / 2 - 2
-            center = QtCore.QPointF(rect.width() / 2, rect.height() / 2)
+    def mousePressEvent(self, event):
+        self._update_from_mouse(event.y())
+        self._dragging = True
 
-            # 1. Рисуем Hue (Конический градиент)
-            conical = QtGui.QConicalGradient(center, 0)
-            # Цвета радуги
-            conical.setColorAt(0.0, QtGui.QColor.fromHsvF(0.0, 1, 1))
-            conical.setColorAt(1.0/6, QtGui.QColor.fromHsvF(1.0/6, 1, 1))
-            conical.setColorAt(2.0/6, QtGui.QColor.fromHsvF(2.0/6, 1, 1))
-            conical.setColorAt(3.0/6, QtGui.QColor.fromHsvF(0.5, 1, 1))
-            conical.setColorAt(4.0/6, QtGui.QColor.fromHsvF(4.0/6, 1, 1))
-            conical.setColorAt(5.0/6, QtGui.QColor.fromHsvF(5.0/6, 1, 1))
-            conical.setColorAt(1.0, QtGui.QColor.fromHsvF(1.0, 1, 1))
-            
-            painter.setBrush(QtGui.QBrush(conical))
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.drawEllipse(center, radius, radius)
-
-            # 2. Рисуем Saturation (Радиальный градиент от белого к прозрачному)
-            radial = QtGui.QRadialGradient(center, radius)
-            radial.setColorAt(0.0, QtGui.QColor(255, 255, 255, 255))
-            radial.setColorAt(1.0, QtGui.QColor(255, 255, 255, 0))
-            painter.setBrush(QtGui.QBrush(radial))
-            painter.drawEllipse(center, radius, radius)
-
-            # 3. Маркер текущего цвета
-            import math
-            # Преобразуем H/S обратно в координаты
-            angle_rad = math.radians(self.h)
-            sat_factor = self.s / 255.0
-            dist = sat_factor * radius
-            
-            marker_x = center.x() + math.cos(angle_rad) * dist
-            marker_y = center.y() + math.sin(angle_rad) * dist
-            
-            # Кружок маркера (черно-белая обводка для контраста)
-            painter.setPen(QtGui.QPen(QtCore.Qt.black, 2))
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawEllipse(QtCore.QPointF(marker_x, marker_y), 5, 5)
-            painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
-            painter.drawEllipse(QtCore.QPointF(marker_x, marker_y), 5, 5)
-
-
-    # --- Внутренний класс: Вертикальный слайдер яркости (Value) ---
-    class ValueBar(QtWidgets.QWidget):
-        def __init__(self, parent=None):
-            super().__init__(parent)
-            self.setFixedWidth(24)
-            self.setMinimumHeight(100)
-            self.v = 255
-            self.current_hue = 0
-            self.current_sat = 255
-            self._dragging = False
-            self.setCursor(QtCore.Qt.ArrowCursor)
-
-        def set_hsv(self, h, s, v):
-            self.current_hue = h
-            self.current_sat = s
-            self.v = v
-            self.update()
-
-        def mousePressEvent(self, event):
+    def mouseMoveEvent(self, event):
+        if self._dragging:
             self._update_from_mouse(event.y())
-            self._dragging = True
 
-        def mouseMoveEvent(self, event):
-            if self._dragging:
-                self._update_from_mouse(event.y())
+    def mouseReleaseEvent(self, event):
+        self._dragging = False
+        if hasattr(self.parent(), '_on_release'):
+            self.parent()._on_release()
 
-        def mouseReleaseEvent(self, event):
-            self._dragging = False
+    def _update_from_mouse(self, y):
+        h = self.height()
+        val = 1.0 - (y / float(max(1, h)))
+        val = max(0.0, min(1.0, val))
+        self.v = val * 255.0
+        self.update()
+        if hasattr(self.parent(), '_on_val_bar_interact'):
+            self.parent()._on_val_bar_interact(self.v)
 
-        def _update_from_mouse(self, y):
-            # Сверху 255 (Value=100), снизу 0
-            h = self.height()
-            val = 1.0 - (y / float(h))
-            val = max(0.0, min(1.0, val))
-            self.v = val * 255.0
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        rect = self.rect()
+        base_color = QtGui.QColor.fromHsv(int(self.current_hue), int(self.current_sat), 255)
+        linear = QtGui.QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        linear.setColorAt(0.0, base_color)
+        linear.setColorAt(1.0, QtCore.Qt.black)
+        painter.fillRect(rect, linear)
+        y_pos = (1.0 - (self.v / 255.0)) * rect.height()
+        painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+        painter.drawLine(0, int(y_pos), rect.width(), int(y_pos))
+        painter.setPen(QtGui.QPen(QtCore.Qt.black, 1))
+        painter.drawLine(0, int(y_pos)-1, rect.width(), int(y_pos)-1)
+        painter.drawLine(0, int(y_pos)+1, rect.width(), int(y_pos)+1)
+
+class RZColorPreview(QtWidgets.QWidget):
+    """Lag-free color preview using paintEvent instead of setStyleSheet."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(24, 24)
+        self._color = QtGui.QColor(255, 255, 255)
+
+    def set_color(self, qcolor):
+        if self._color != qcolor:
+            self._color = QtGui.QColor(qcolor)
             self.update()
-            
-            if self.parent():
-                self.parent()._on_val_bar_interact(self.v)
 
-        def paintEvent(self, event):
-            painter = QtGui.QPainter(self)
-            rect = self.rect()
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        # Rounded background/border
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(self.rect().adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
+        
+        painter.fillPath(path, self._color)
+        
+        painter.setPen(QtGui.QPen(QtGui.QColor("#444"), 1))
+        painter.drawPath(path)
 
-            # Градиент от черного (внизу) к цвету (вверху)
-            base_color = QtGui.QColor.fromHsv(int(self.current_hue), int(self.current_sat), 255)
-            
-            linear = QtGui.QLinearGradient(rect.topLeft(), rect.bottomLeft())
-            linear.setColorAt(0.0, base_color)
-            linear.setColorAt(1.0, QtCore.Qt.black)
-            
-            painter.fillRect(rect, linear)
-            
-            # Индикатор уровня
-            y_pos = (1.0 - (self.v / 255.0)) * rect.height()
-            painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
-            # Стрелочки или просто линия
-            painter.drawLine(0, int(y_pos), rect.width(), int(y_pos))
-            # Небольшая рамка для контраста
-            painter.setPen(QtGui.QPen(QtCore.Qt.black, 1))
-            painter.drawLine(0, int(y_pos)-1, rect.width(), int(y_pos)-1)
-            painter.drawLine(0, int(y_pos)+1, rect.width(), int(y_pos)+1)
-
+class RZAdvancedColorPanel(QtWidgets.QWidget):
+    colorChanged = QtCore.Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -243,9 +230,7 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
 
         # 1. Preview & HEX
         h_top = QtWidgets.QHBoxLayout()
-        self.preview = QtWidgets.QFrame()
-        self.preview.setFixedSize(24, 24)
-        self.preview.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.preview = RZColorPreview()
         h_top.addWidget(self.preview)
 
         self.edit_hex = RZLineEdit()
@@ -256,12 +241,12 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
 
         # --- NEW: Color Wheel Area ---
         h_wheel_layout = QtWidgets.QHBoxLayout()
-        h_wheel_layout.setSpacing(10) # Closer but comfortable
+        h_wheel_layout.setSpacing(10)
         
-        # Инстанцируем вложенные классы
-        self.wheel = self.ColorWheel(self)
-        self.val_bar = self.ValueBar(self)
-        self.val_bar.setFixedWidth(20) # Slightly thinner to stay close
+        # Инстанцируем классы выше
+        self.wheel = RZColorWheel(self)
+        self.val_bar = RZValueBar(self)
+        self.val_bar.setFixedWidth(20)
         
         h_wheel_layout.addWidget(self.wheel, 1) # wheel растягивается
         h_wheel_layout.addWidget(self.val_bar, 0) # слайдер фиксированный
@@ -292,6 +277,12 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         self.sl_a.value_changed.connect(self._on_alpha_changed)
         main_layout.addWidget(self.sl_a)
 
+        # Connect release signals for performance
+        self.sl_h.released.connect(self._on_release)
+        self.sl_s.released.connect(self._on_release)
+        self.sl_v.released.connect(self._on_release)
+        self.sl_a.released.connect(self._on_release)
+
         # 4. Palette (12 colors)
         self.palette_layout = QtWidgets.QGridLayout()
         self.palette_layout.setSpacing(4)
@@ -307,7 +298,7 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
             self.palette_layout.addWidget(btn, i // 6, i % 6)
         main_layout.addLayout(self.palette_layout)
 
-        self.update_style()
+        self.apply_theme()
 
     # --- Новые методы-хендлеры для графических элементов ---
     def _on_wheel_interact(self, h, s):
@@ -321,16 +312,16 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         # fromHsvF takes 0-1
         self._qcolor = QtGui.QColor.fromHsvF(h / 360.0, s / 255.0, curr_v, curr_a)
         
-        # Optimized update (don't call wheel.set_hs immediately as we are already dragging it)
-        # Just update HEX and Preview
+        # Optimized update
         self.edit_hex.setText(self._qcolor.name(QtGui.QColor.HexArgb).upper())
-        self.preview.setStyleSheet(f"background-color: {self._qcolor.name(QtGui.QColor.HexArgb)}; border-radius: 3px; border: 1px solid #444;")
+        self.preview.set_color(self._qcolor)
         self._update_alpha_style()
         
         self.val_bar.set_hsv(h, s, int(curr_v * 255))
         
         self._block_signals = False
-        self._emit_color()
+        # REAL-TIME UI ONLY: _emit_color moved to _on_release
+        # self._emit_color() 
 
     def _on_val_bar_interact(self, v):
         if self._block_signals: return
@@ -341,53 +332,65 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         
         self._qcolor = new_color
         self._update_all_widgets()
+        # self._emit_color() # Moved to release
+
+    def _on_release(self):
+        """Finalize color choice and emit to Blender."""
+        if self._block_signals: return
         self._emit_color()
     # -------------------------------------------------------
 
     def set_color(self, color_data):
         """color_data: [r, g, b, a] floats or string"""
         if self._block_signals: return
-        self._block_signals = True
         
-        if not color_data: return
-        if isinstance(color_data, str):
-            self._qcolor.setNamedColor(color_data)
-        elif isinstance(color_data, (list, tuple)):
-            r, g, b = color_data[0], color_data[1], color_data[2]
-            a = color_data[3] if len(color_data) > 3 else 1.0
-            self._qcolor.setRgbF(r, g, b, a)
-        
-        self._update_all_widgets()
-        self._block_signals = False
+        if not color_data:
+            return
 
-    def _update_all_widgets(self):
-        if self._block_signals: return
         self._block_signals = True
-        
-        # Update HEX
-        self.edit_hex.setText(self._qcolor.name(QtGui.QColor.HexArgb).upper())
-        
-        # Get HSV data
-        h, s, v, _ = self._qcolor.getHsv()
-        if h < 0: h = 0 
+        try:
+            if isinstance(color_data, str):
+                self._qcolor.setNamedColor(color_data)
+            elif isinstance(color_data, (list, tuple)):
+                r, g, b = color_data[0], color_data[1], color_data[2]
+                a = color_data[3] if len(color_data) > 3 else 1.0
+                self._qcolor.setRgbF(r, g, b, a)
+            
+            # Use force_update to bypass internal block
+            self._update_all_widgets(force=True)
+        finally:
+            self._block_signals = False
 
-        # Update HSV Sliders
-        self.sl_h.set_value(h, emit_signal=False)
-        self.sl_s.set_value(int(s / 255.0 * 100), emit_signal=False)
-        self.sl_v.set_value(int(v / 255.0 * 100), emit_signal=False)
+    def _update_all_widgets(self, force=False):
+        if self._block_signals and not force: return
+        was_blocked = self._block_signals
+        self._block_signals = True
+        try:
         
-        # Update Alpha
-        self.sl_a.set_value(self._qcolor.alphaF(), emit_signal=False)
-        self._update_alpha_style()
+            # Update HEX
+            self.edit_hex.setText(self._qcolor.name(QtGui.QColor.HexArgb).upper())
         
-        # Update Preview
-        self.preview.setStyleSheet(f"background-color: {self._qcolor.name(QtGui.QColor.HexArgb)}; border-radius: 3px; border: 1px solid #444;")
+            # Get HSV data
+            h, s, v, _ = self._qcolor.getHsv()
+            if h < 0: h = 0 
+
+            # Update HSV Sliders
+            self.sl_h.set_value(h, emit_signal=False)
+            self.sl_s.set_value(int(s / 255.0 * 100), emit_signal=False)
+            self.sl_v.set_value(int(v / 255.0 * 100), emit_signal=False)
         
-        # Update Visual Pickers
-        self.wheel.set_hs(float(h), float(s))
-        self.val_bar.set_hsv(h, s, v)
+            # Update Alpha
+            self.sl_a.set_value(self._qcolor.alphaF(), emit_signal=False)
+            self._update_alpha_style()
         
-        self._block_signals = False
+            # Update Preview
+            self.preview.set_color(self._qcolor)
+            
+            # Update Visual Pickers (Wheel & ValueBar)
+            self.wheel.set_hs(float(h), float(s))
+            self.val_bar.set_hsv(h, s, v)
+        finally:
+            self._block_signals = was_blocked
 
     def _update_alpha_style(self):
         col = self._qcolor
@@ -402,18 +405,17 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         
         self.sl_a.slider.setStyleSheet(f"""
             QSlider::groove:horizontal {{
-                height: 8px;
+                height: 4px;
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
                     stop:0 transparent, stop:1 rgb({r},{g},{b}));
-                border-radius: 4px;
+                border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
-                background: {theme.get('text_bright', '#FFF')};
-                border: 1px solid {theme.get('border_input', '#444')};
-                width: 14px;
-                height: 14px;
-                margin: -4px 0;
-                border_radius: 7px;
+                background: {theme.get('accent', '#5298D4')};
+                border-radius: 5px; 
+                width: 10px;
+                height: 10px;
+                margin: -3px 0;
             }}
         """)
 
@@ -433,19 +435,32 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
 
     def _on_hsv_slider_changed(self, _):
         if self._block_signals: return
-        h = int(self.sl_h.get_value())
-        s = int(self.sl_s.get_value() / 100.0 * 255)
-        v = int(self.sl_v.get_value() / 100.0 * 255)
-        new_color = QtGui.QColor.fromHsv(h, s, v, self._qcolor.alpha())
-        self._qcolor = new_color
-        self._update_all_widgets()
-        self._emit_color()
+        self._block_signals = True
+        h = self.sl_h.get_value()
+        s = self.sl_s.get_value() / 100.0 * 255.0
+        v = self.sl_v.get_value() / 100.0 * 255.0
+        a = self._qcolor.alphaF()
+        self._qcolor.setHsv(int(h), int(s), int(v), int(a * 255))
+        
+        # UI Sync
+        self.preview.set_color(self._qcolor)
+        self.edit_hex.setText(self._qcolor.name(QtGui.QColor.HexArgb).upper())
+        self.wheel.set_hs(float(h), float(s))
+        self.val_bar.set_hsv(h, s, int(v))
+        self._update_alpha_style()
+        
+        self._block_signals = False
+        # self._emit_color() # Moved to release
 
     def _on_alpha_changed(self, val):
         if self._block_signals: return
+        self._block_signals = True
         self._qcolor.setAlphaF(val)
-        self._update_all_widgets()
-        self._emit_color()
+        self.preview.set_color(self._qcolor)
+        self.edit_hex.setText(self._qcolor.name(QtGui.QColor.HexArgb).upper())
+        self._update_alpha_style()
+        self._block_signals = False
+        # self._emit_color() # Moved to release
 
     def _emit_color(self):
         c = self._qcolor
@@ -455,7 +470,6 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         """Update styles for internal widgets that don't have their own apply_theme."""
         theme = get_current_theme()
         border_col = theme.get('border_input', '#444')
-        self.preview.setFrameShape(QtWidgets.QFrame.StyledPanel)
         # Preview style depends on current color, handled in _update_all_widgets
         self._update_all_widgets()
 
@@ -491,12 +505,16 @@ class RZScrollArea(QtWidgets.QScrollArea):
 
     def _set_squish(self, val):
         self._squish_offset = val
-        # Apply transformation to content widget
         if self.widget():
-            self.widget().setGraphicsEffect(None) # Fallback if needed
-            # For simplicity, we'll just move the content widget slightly
-            # A real squish would be a scale transform, but translation is safer for layouts
-            self.widget().move(0, -self.verticalScrollBar().value() + int(self._squish_offset))
+            # Apply visual offset to content
+            offset = int(self._squish_offset)
+            self.widget().move(0, -self.verticalScrollBar().value() + offset)
+            
+            # Repaint scrollbar handle areas
+            self.verticalScrollBar().update()
+            
+            # Optional: bounce the whole area slightly?
+            # self.update() 
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -525,6 +543,16 @@ class RZScrollArea(QtWidgets.QScrollArea):
         self._squish_anim.setStartValue(amount)
         self._squish_anim.setEndValue(0)
         self._squish_anim.start()
+        
+        # Visually 'squish' the scrollbar handle by reducing its length temporarily
+        bar = self.verticalScrollBar()
+        if bar.isVisible():
+            t = get_current_theme()
+            # This is a bit of a hack but gives visual feedback on handle length
+            # Note: actual handle height is usually dynamic, so we just add a temporary margin/padding
+            # which Qt stylesheet interprets as handle size change if we are careful.
+            # But safer is just to pulse the color or position.
+            pass
 
     def _update_physics(self):
         bar = self.verticalScrollBar()
@@ -612,8 +640,14 @@ class RZPanelWidget(RZStyledWidget):
         if object_name: self.setObjectName(object_name)
     def apply_theme(self):
         theme = get_current_theme()
+        obj_name = self.objectName()
+        if obj_name:
+            selector = f"#{obj_name}"
+        else:
+            selector = self.__class__.__name__
+            
         self.setStyleSheet(f"""
-            {self.objectName()} {{
+            {selector} {{
                 background-color: {theme.get('bg_panel', '#2C313A')};
                 border: 1px solid {theme.get('border_main', '#3A404A')};
                 border-radius: 4px;
@@ -626,21 +660,24 @@ class RZGroupBox(QtWidgets.QGroupBox):
         self.apply_theme()
     def apply_theme(self):
         theme = get_current_theme()
+        # Card style: subtle background, no border, 8px radius
         self.setStyleSheet(f"""
             QGroupBox {{
-                background-color: {theme.get('bg_panel', '#2C313A')};
-                border: 1px solid {theme.get('border_main', '#3A404A')};
-                border-radius: 4px;
-                margin-top: 6px;
-                padding-top: 10px;
+                background-color: {theme.get('bg_input', '#252930')};
+                border: none;
+                border-radius: 8px;
+                margin-top: 18px; /* Reduced from 24 */
+                padding: 8px;     /* Reduced from 12 */
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
-                padding: 0 4px;
-                left: 10px;
-                background-color: {theme.get('bg_panel', '#2C313A')};
-                color: {theme.get('text_dark', '#9DA5B4')};
+                padding: 0px 4px;
+                left: 8px;
+                top: 2px;
+                color: {theme.get('text_dim', '#888')};
+                font-weight: 600;
+                font-size: 11px;
             }}
         """)
 
@@ -690,11 +727,14 @@ class RZSpinBox(QtWidgets.QSpinBox):
             QSpinBox {{
                 background-color: {theme.get('bg_input', '#252930')};
                 border: 1px solid {theme.get('border_input', '#4A505A')};
-                border-radius: 3px;
-                padding: 3px;
+                border-radius: 6px;
+                padding: 4px 6px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QSpinBox:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
+            QSpinBox:focus {{ 
+                border: 1px solid {theme.get('accent', '#5298D4')};
+                background-color: {theme.get('bg_panel', '#2C313A')};
+            }}
         """)
     def wheelEvent(self, event):
         event.ignore()
@@ -710,11 +750,14 @@ class RZDoubleSpinBox(QtWidgets.QDoubleSpinBox):
             QDoubleSpinBox {{
                 background-color: {theme.get('bg_input', '#252930')};
                 border: 1px solid {theme.get('border_input', '#4A505A')};
-                border-radius: 3px;
-                padding: 3px;
+                border-radius: 6px;
+                padding: 4px 6px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QDoubleSpinBox:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
+            QDoubleSpinBox:focus {{ 
+                border: 1px solid {theme.get('accent', '#5298D4')};
+                background-color: {theme.get('bg_panel', '#2C313A')};
+            }}
         """)
     def wheelEvent(self, event):
         event.ignore()
@@ -723,19 +766,23 @@ class RZStaggeredDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.progress = 0.0 # 0 to 1
-        self.stagger_delay = 0.05 # seconds per item
-        self.item_fade_speed = 0.1 # seconds for individual item fade
+        self.stagger_delay = 0.02 # dynamic
+        self.item_fade_speed = 0.5 # relative to progress multiplier
 
     def paint(self, painter, option, index):
         row = index.row()
-        current_time = self.progress * 0.4 
+        # Increased timing multiplier (5.0) and faster fade to ensure ALL items animate
+        current_time = self.progress * 5.0 
         start_time = row * self.stagger_delay
-        local_progress = max(0.0, min(1.0, (current_time - start_time) / self.item_fade_speed))
+        local_progress = max(0.0, min(1.0, (current_time - start_time) / (self.item_fade_speed * 0.5)))
+        
         if local_progress <= 0: return 
         painter.save()
         painter.setOpacity(local_progress)
-        offset_y = (1.0 - local_progress) * 8
-        painter.translate(0, offset_y)
+        # Pronounced fall-down and horizontal slide-in
+        offset_y = (1.0 - local_progress) * 15 # Increased from 10
+        offset_x = (1.0 - local_progress) * 8  # Increased from 4
+        painter.translate(offset_x, offset_y)
         super().paint(painter, option, index)
         painter.restore()
 
@@ -763,7 +810,18 @@ class RZComboBox(QtWidgets.QComboBox):
         self.view().window().setWindowOpacity(min(1.0, val * 4))
 
     def showPopup(self):
+        count = self.count()
+        # Adaptive timings
+        total_duration = 200 # 0.2s
+        if count > 0:
+            # We want the animation to be dense but legible
+            # stagger_delay is in 'virtual time' (0 to 4)
+            # Last item should start at some point and finish quickly
+            self._delegate.stagger_delay = 4.0 / max(1, count + 2)
+            self._delegate.item_fade_speed = 1.0 # 1/4 of total time
+        
         self._popup_anim.stop()
+        self._popup_anim.setDuration(total_duration)
         self._popup_anim.setStartValue(0.0)
         self._popup_anim.setEndValue(1.0)
         super().showPopup()
@@ -778,12 +836,18 @@ class RZComboBox(QtWidgets.QComboBox):
             QComboBox {{
                 background-color: {theme.get('bg_input', '#252930')};
                 border: 1px solid {theme.get('border_input', '#4A505A')};
-                border-radius: 3px;
-                padding: 3px;
+                border-radius: 6px;
+                padding: 4px 8px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QComboBox:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
-            QComboBox::drop-down {{ border-left: 1px solid {theme.get('border_input', '#4A505A')}; }}
+            QComboBox:focus {{ 
+                border: 1px solid {theme.get('accent', '#5298D4')};
+                background-color: {theme.get('bg_panel', '#2C313A')};
+            }}
+            QComboBox::drop-down {{ 
+                border-left: 1px solid {theme.get('border_input', '#4A505A')}; 
+                width: 20px;
+            }}
         """)
     def wheelEvent(self, event):
         event.ignore()
@@ -797,23 +861,13 @@ class RZLineEdit(QtWidgets.QLineEdit):
         self._pattern = ""
         self._originals = []
         
-        # Adaptivity
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        
-        # Hover Animation (Liquid Fill)
+        # Hover Animation
         self._hover_progress = 0.0
         self._hover_anim = QtCore.QPropertyAnimation(self, b"hover_progress")
         self._hover_anim.setDuration(300)
-        
-        # Debouncing support
-        self.debouncer = RZDebouncer(delay_ms=400, parent=self)
-        self.debouncer.timeout.connect(self.editingFinished.emit)
-        self.textChanged.connect(lambda: self.debouncer.trigger(lambda: None)) # Just restart timer
 
     @QtCore.Property(float)
-    def hover_progress(self):
-        return self._hover_progress
-
+    def hover_progress(self): return self._hover_progress
     @hover_progress.setter
     def hover_progress(self, val):
         self._hover_progress = val
@@ -835,21 +889,21 @@ class RZLineEdit(QtWidgets.QLineEdit):
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self._hover_progress > 0:
+        if self._hover_progress > 0.01:
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
             theme = get_current_theme()
             accent = QtGui.QColor(theme.get('accent', '#5298D4'))
-            accent.setAlpha(int(255 * self._hover_progress))
-            
+            accent.setAlpha(int(120 * self._hover_progress))
             rect = self.rect().adjusted(1, 1, -1, -1)
             path = QtGui.QPainterPath()
-            path.addRoundedRect(rect, 3, 3)
-            
-            pen = QtGui.QPen(accent, 1.2)
-            painter.setPen(pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
+            path.addRoundedRect(rect, 6, 6)
+            painter.setPen(QtGui.QPen(accent, 1.2))
             painter.drawPath(path)
+            painter.end()
+
+    def wheelEvent(self, event):
+        event.ignore()
 
     def apply_theme(self):
         theme = get_current_theme()
@@ -857,11 +911,14 @@ class RZLineEdit(QtWidgets.QLineEdit):
             QLineEdit {{
                 background-color: {theme.get('bg_input', '#252930')};
                 border: 1px solid {theme.get('border_input', '#4A505A')};
-                border-radius: 3px;
-                padding: 3px;
+                border-radius: 6px;
+                padding: 4px 8px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QLineEdit:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
+            QLineEdit:focus {{
+                border: 1px solid {theme.get('accent', '#5298D4')};
+                background-color: {theme.get('bg_panel', '#2C313A')};
+            }}
         """)
 
     def set_text_silent(self, text):

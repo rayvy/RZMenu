@@ -23,17 +23,17 @@ class RZAreaHeader(QtWidgets.QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("RZAreaHeader")
-        self.setFixedHeight(32) # Increased height for premium feel
+        self.setFixedHeight(20) # Increased height for premium feel
         
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(8, 0, 8, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setSpacing(2)
         
         # Panel type selector
         self.combo_type = QtWidgets.QComboBox()
         self.combo_type.setObjectName("AreaTypeSelector")
         self.combo_type.setMinimumWidth(120)
-        self.combo_type.setFixedHeight(22)
+        self.combo_type.setFixedHeight(16)
         self._populate_panel_types()
         self.combo_type.currentIndexChanged.connect(self._on_type_changed)
         layout.addWidget(self.combo_type)
@@ -44,8 +44,8 @@ class RZAreaHeader(QtWidgets.QFrame):
         im = IconManager.get_instance()
         self.btn_menu = QtWidgets.QPushButton(im.get_icon("circle_3dots"), "")
         self.btn_menu.setObjectName("AreaMenuButton")
-        self.btn_menu.setFixedSize(24, 24)
-        self.btn_menu.setIconSize(QtCore.QSize(16, 16))
+        self.btn_menu.setFixedSize(12, 12)
+        self.btn_menu.setIconSize(QtCore.QSize(12, 12))
         self.btn_menu.setToolTip("Area Options")
         self.btn_menu.clicked.connect(self._show_area_menu)
         layout.addWidget(self.btn_menu)

@@ -54,6 +54,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # 1. TOOLBAR (HEADER)
         self.toolbar_container = RZContextAwareWidget("HEADER", self)
+        self.toolbar_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_container)
         self.toolbar_layout.setContentsMargins(12, 4, 12, 4) # Reduced vertical margin
         self.toolbar_layout.setSpacing(6)
@@ -62,6 +63,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # 2. FOOTER
         self.footer_container = RZContextAwareWidget("FOOTER", self)
+        self.footer_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
         self.footer_layout.setContentsMargins(12, 4, 12, 4)
         self.setup_footer() 
@@ -161,7 +163,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
             
             # 3. Insert new layout
             self.splitter = new_splitter
-            self.root_layout.insertWidget(1, self.splitter)
+            self.root_layout.insertWidget(1, self.splitter, stretch=1)
             
             # 4. Trigger refresh after a safe delay
             QtCore.QTimer.singleShot(100, self.full_refresh)

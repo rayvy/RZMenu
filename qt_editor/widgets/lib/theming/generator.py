@@ -226,7 +226,6 @@ def generate_qss(t: dict) -> str:
         border-bottom: 1px solid {border_main};
         color: {t.get('text_dark', '#999')};
         font-weight: bold;
-        text-transform: uppercase;
         font-size: 8pt;
     }}
     QTableWidget, QTreeWidget {{

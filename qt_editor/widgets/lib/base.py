@@ -9,9 +9,11 @@ class RZSmartSlider(QtWidgets.QWidget):
     """
     value_changed = QtCore.Signal(float)
     math_requested = QtCore.Signal(str) # Emits e.g., "+=10"
+    released = QtCore.Signal()          # Emits on mouse release/editing finish
 
     def __init__(self, value=0.0, is_int=True, parent=None, label_text="Value", show_slider=True):
         super().__init__(parent)
+        self.setSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Preferred)
         self.is_int = is_int
         self.show_slider = show_slider
         self._value = int(value) if is_int else float(value)
@@ -50,30 +52,41 @@ class RZSmartSlider(QtWidgets.QWidget):
         # 3.5 REAL SLIDER (Requested for Alpha and visual improvement)
         self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.slider.setMinimumWidth(40)
+        self.slider.setFixedHeight(20) # Match spinbox height roughly
         if self.is_int:
-            self.slider.setRange(0, 100) # Default range, can be adjusted
+            self.slider.setRange(0, 100) 
         else:
             self.slider.setRange(0, 100)
         
         self._sync_slider_to_value()
         self.slider.valueChanged.connect(self._on_slider_changed)
-        layout.addWidget(self.slider, 1) # Give it stretch
+        
+        if self.show_slider:
+            layout.addWidget(self.slider, 1) # Give it stretch
+        
+        # REMOVED: self.spin.setFixedWidth(50) - Let it expand as requested!
+        self.spin.setSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Preferred)
+        self.spin.setMinimumWidth(80) # Ensure it's never too small
+        layout.addWidget(self.spin)
         
         if not self.show_slider:
-            self.slider.hide()
-
-        # Setup Math/Mixed handling on the internal LineEdit
-        self.spin.lineEdit().installEventFilter(self)
-        self.spin.lineEdit().returnPressed.connect(self._handle_manual_entry)
-        
-        self.spin.setFixedWidth(50) # Keep spinbox compact now that we have a slider
-        layout.addWidget(self.spin)
+             # Force the spinbox to take all available space if no slider
+             layout.setStretch(layout.indexOf(self.spin), 1)
 
         # 4. Button [+]
         self.btn_plus = QtWidgets.QPushButton("+")
         self.btn_plus.setFixedSize(16, 20)
         self.btn_plus.clicked.connect(self._increment)
         layout.addWidget(self.btn_plus)
+
+        # Connect release signals
+        self.slider.sliderReleased.connect(self.released.emit)
+        self.spin.editingFinished.connect(self.released.emit)
+        self.label.released.connect(self.released.emit)
+
+        # Better interaction feel
+        self.slider.setMouseTracking(True)
+        self.slider.installEventFilter(self)
 
         self.apply_theme()
 
@@ -84,6 +97,25 @@ class RZSmartSlider(QtWidgets.QWidget):
                     self.spin.lineEdit().clear()
             elif event.type() == QtCore.QEvent.FocusOut:
                 self._handle_manual_entry()
+        
+        elif obj == self.slider:
+            if event.type() == QtCore.QEvent.MouseButtonPress:
+                if event.button() == QtCore.Qt.MiddleButton:
+                    event.ignore()
+                    return True
+                if event.button() == QtCore.Qt.LeftButton:
+                    # Click to jump (interpolation feel)
+                    opt = QtWidgets.QStyleOptionSlider()
+                    self.slider.initStyleOption(opt)
+                    sr = self.slider.style().subControlRect(QtWidgets.QStyle.CC_Slider, opt, QtWidgets.QStyle.SC_SliderGroove, self.slider)
+                    if sr.contains(event.pos()):
+                        new_val = QtWidgets.QStyle.sliderValueFromPosition(self.slider.minimum(), self.slider.maximum(), event.pos().x(), sr.width())
+                        self.slider.setValue(new_val)
+                        # We don't return True here so the standard logic can also kick in for dragging
+            elif event.type() == QtCore.QEvent.Wheel:
+                # Ignore wheel on slider as requested
+                event.ignore()
+                return True
         return super().eventFilter(obj, event)
 
     def _handle_manual_entry(self):
@@ -231,6 +263,7 @@ class _RZSmartDoubleSpinBox(QtWidgets.QDoubleSpinBox):
 class _RZDragLabel(QtWidgets.QLabel):
     """Helper label that emits drag deltas"""
     drag_delta = QtCore.Signal(int)
+    released = QtCore.Signal()
 
     def __init__(self, text=""):
         super().__init__(text)
@@ -248,6 +281,8 @@ class _RZDragLabel(QtWidgets.QLabel):
         if event.button() == QtCore.Qt.LeftButton:
             self._dragging = True
             self._drag_start_x = event.globalPos().x()
+        else:
+            event.ignore()
 
     def mouseMoveEvent(self, event):
         if self._dragging:
@@ -257,7 +292,9 @@ class _RZDragLabel(QtWidgets.QLabel):
             self.drag_delta.emit(delta)
 
     def mouseReleaseEvent(self, event):
-        self._dragging = False
+        if self._dragging:
+            self._dragging = False
+            self.released.emit()
 
 # Alias for backward compatibility
 # Старый код, ожидающий RZDraggableNumber(value=0, is_int=True), будет работать,
