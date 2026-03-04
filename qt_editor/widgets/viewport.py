@@ -1366,6 +1366,14 @@ class RZViewportView(QtWidgets.QGraphicsView):
             item = item.parentItem()
         return None
 
+    def _create_at_pos(self, class_type, scene_pos):
+        bx, by = core.to_blender_coords(scene_pos.x(), scene_pos.y())
+        parent_id = RZContextManager.get_instance().active_id
+        core.create_element(class_type, bx, by, parent_id=parent_id)
+        # Emit signal to update all panels
+        from ..core.signals import SIGNALS
+        SIGNALS.structure_changed.emit()
+
     def dragEnterEvent(self, event):
         mime = event.mimeData()
         # Проверяем ВСЕ поддерживаемые типы
