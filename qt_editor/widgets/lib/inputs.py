@@ -200,6 +200,11 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setTabChangesFocus(True)
         
+        # Hover Animation
+        self._hover_progress = 0.0
+        self._hover_anim = QtCore.QPropertyAnimation(self, b"hover_progress")
+        self._hover_anim.setDuration(300)
+        
         # Popup setup
         self.popup = QtWidgets.QListWidget()
         self.popup.setWindowFlags(QtCore.Qt.ToolTip | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
@@ -229,6 +234,48 @@ class RZFormulaInput(QtWidgets.QPlainTextEdit):
         self.preview_label.hide()
         
         self.textChanged.connect(self._on_formula_changed)
+
+    @QtCore.Property(float)
+    def hover_progress(self):
+        return self._hover_progress
+
+    @hover_progress.setter
+    def hover_progress(self, val):
+        self._hover_progress = val
+        self.viewport().update()
+
+    def enterEvent(self, event):
+        self._hover_anim.stop()
+        self._hover_anim.setEndValue(1.0)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._hover_anim.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover_anim.stop()
+        self._hover_anim.setEndValue(0.0)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
+        self._hover_anim.start()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._hover_progress > 0:
+            painter = QtGui.QPainter(self.viewport())
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            theme = get_current_theme()
+            accent = QtGui.QColor(theme.get('accent', '#5298D4'))
+            accent.setAlpha(int(255 * self._hover_progress))
+            
+            # Adjusted rect for the viewport
+            rect = self.viewport().rect().adjusted(1, 1, -1, -1)
+            path = QtGui.QPainterPath()
+            path.addRoundedRect(rect, 3, 3)
+            
+            pen = QtGui.QPen(accent, 1.2)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawPath(path)
 
     def _on_formula_changed(self):
         # Trigger both debounced commit AND debounced preview update

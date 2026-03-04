@@ -68,7 +68,7 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
     class ColorWheel(QtWidgets.QWidget):
         def __init__(self, parent=None):
             super().__init__(parent)
-            self.setMinimumSize(100, 100)
+            self.setMinimumSize(145, 145) # Increased by 45% (from 100)
             self.h = 0.0
             self.s = 0.0
             self._dragging = False
@@ -256,11 +256,12 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
 
         # --- NEW: Color Wheel Area ---
         h_wheel_layout = QtWidgets.QHBoxLayout()
-        h_wheel_layout.setSpacing(6)
+        h_wheel_layout.setSpacing(10) # Closer but comfortable
         
         # Инстанцируем вложенные классы
         self.wheel = self.ColorWheel(self)
         self.val_bar = self.ValueBar(self)
+        self.val_bar.setFixedWidth(20) # Slightly thinner to stay close
         
         h_wheel_layout.addWidget(self.wheel, 1) # wheel растягивается
         h_wheel_layout.addWidget(self.val_bar, 0) # слайдер фиксированный
@@ -311,13 +312,24 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
     # --- Новые методы-хендлеры для графических элементов ---
     def _on_wheel_interact(self, h, s):
         if self._block_signals: return
-        # Обновляем цвет на основе нового H и S, сохраняя старый V и Alpha
-        curr_v = self._qcolor.value()
-        curr_a = self._qcolor.alpha()
-        new_color = QtGui.QColor.fromHsvF(h / 360.0, s / 255.0, curr_v / 255.0, curr_a / 255.0) # hsvF is 0-1
+        self._block_signals = True
         
-        self._qcolor = new_color
-        self._update_all_widgets()
+        # Keep current V and Alpha
+        curr_v = self._qcolor.valueF()
+        curr_a = self._qcolor.alphaF()
+        
+        # fromHsvF takes 0-1
+        self._qcolor = QtGui.QColor.fromHsvF(h / 360.0, s / 255.0, curr_v, curr_a)
+        
+        # Optimized update (don't call wheel.set_hs immediately as we are already dragging it)
+        # Just update HEX and Preview
+        self.edit_hex.setText(self._qcolor.name(QtGui.QColor.HexArgb).upper())
+        self.preview.setStyleSheet(f"background-color: {self._qcolor.name(QtGui.QColor.HexArgb)}; border-radius: 3px; border: 1px solid #444;")
+        self._update_alpha_style()
+        
+        self.val_bar.set_hsv(h, s, int(curr_v * 255))
+        
+        self._block_signals = False
         self._emit_color()
 
     def _on_val_bar_interact(self, v):
@@ -349,12 +361,15 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         self._block_signals = False
 
     def _update_all_widgets(self):
+        if self._block_signals: return
+        self._block_signals = True
+        
         # Update HEX
         self.edit_hex.setText(self._qcolor.name(QtGui.QColor.HexArgb).upper())
         
         # Get HSV data
         h, s, v, _ = self._qcolor.getHsv()
-        if h < 0: h = 0 # Undefined hue for black/white
+        if h < 0: h = 0 
 
         # Update HSV Sliders
         self.sl_h.set_value(h, emit_signal=False)
@@ -363,14 +378,44 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         
         # Update Alpha
         self.sl_a.set_value(self._qcolor.alphaF(), emit_signal=False)
+        self._update_alpha_style()
         
         # Update Preview
-        self.preview.setStyleSheet(f"background-color: {self._qcolor.name(QtGui.QColor.HexArgb)}; border-radius: 3px;")
-
-        # --- Update Visual Pickers ---
-        # Обновляем круг и бар, не вызывая сигналов (они просто перерисуются)
+        self.preview.setStyleSheet(f"background-color: {self._qcolor.name(QtGui.QColor.HexArgb)}; border-radius: 3px; border: 1px solid #444;")
+        
+        # Update Visual Pickers
         self.wheel.set_hs(float(h), float(s))
         self.val_bar.set_hsv(h, s, v)
+        
+        self._block_signals = False
+
+    def _update_alpha_style(self):
+        col = self._qcolor
+        r, g, b = col.red(), col.green(), col.blue()
+        theme = get_current_theme()
+        
+        # Only update if colors changed to avoid lag
+        style_key = f"a_slider_{r}_{g}_{b}"
+        if getattr(self, "_last_alpha_style", "") == style_key:
+            return
+        self._last_alpha_style = style_key
+        
+        self.sl_a.slider.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                height: 8px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 transparent, stop:1 rgb({r},{g},{b}));
+                border-radius: 4px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {theme.get('text_bright', '#FFF')};
+                border: 1px solid {theme.get('border_input', '#444')};
+                width: 14px;
+                height: 14px;
+                margin: -4px 0;
+                border_radius: 7px;
+            }}
+        """)
 
     def _on_hex_edited(self):
         if self._block_signals: return
@@ -419,27 +464,96 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
 
 # --- RZScrollArea (Smooth Scroll) ---
 class RZScrollArea(QtWidgets.QScrollArea):
-    """QScrollArea with smooth, interpolated physics-based scrolling."""
+    """
+    QScrollArea with physics-based smooth scrolling and "squish" edge animation.
+    Uses distance-dependent interpolation + fixed speed base.
+    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self._scroll_anim = QtCore.QPropertyAnimation(self.verticalScrollBar(), b"value")
-        self._scroll_anim.setDuration(400)
-        self._scroll_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self.verticalScrollBar().setSingleStep(20)
         
+        self._target_y = 0
+        self._current_y = 0
+        self._velocity = 0
+        
+        # Interpolation timer
+        self._timer = QtCore.QTimer(self)
+        self._timer.timeout.connect(self._update_physics)
+        self._timer.setInterval(10) # 100 FPS
+        
+        # Squish state
+        self._squish_offset = 0
+        self._squish_anim = QtCore.QVariantAnimation(self)
+        self._squish_anim.setDuration(300)
+        self._squish_anim.setEasingCurve(QtCore.QEasingCurve.OutElastic)
+        self._squish_anim.valueChanged.connect(self._set_squish)
+
+    def _set_squish(self, val):
+        self._squish_offset = val
+        # Apply transformation to content widget
+        if self.widget():
+            self.widget().setGraphicsEffect(None) # Fallback if needed
+            # For simplicity, we'll just move the content widget slightly
+            # A real squish would be a scale transform, but translation is safer for layouts
+            self.widget().move(0, -self.verticalScrollBar().value() + int(self._squish_offset))
+
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
-        current_val = self.verticalScrollBar().value()
-        target_val = current_val - delta
+        bar = self.verticalScrollBar()
         
-        # Clamp
-        target_val = max(0, min(target_val, self.verticalScrollBar().maximum()))
+        if not self._timer.isActive():
+            self._current_y = float(bar.value())
+            self._target_y = self._current_y
+            
+        self._target_y -= delta
         
-        self._scroll_anim.stop()
-        self._scroll_anim.setStartValue(current_val)
-        self._scroll_anim.setEndValue(target_val)
-        self._scroll_anim.start()
+        # Boundary Check for Squish
+        if self._target_y < -50:
+            self._target_y = -50
+            self._trigger_squish(15) # Squish down
+        elif self._target_y > bar.maximum() + 50:
+            self._target_y = bar.maximum() + 50
+            self._trigger_squish(-15) # Squish up
+            
+        self._timer.start()
         event.accept()
+
+    def _trigger_squish(self, amount):
+        if self._squish_anim.state() == QtCore.QVariantAnimation.Running:
+            return
+        self._squish_anim.setStartValue(amount)
+        self._squish_anim.setEndValue(0)
+        self._squish_anim.start()
+
+    def _update_physics(self):
+        bar = self.verticalScrollBar()
+        diff = self._target_y - self._current_y
+        
+        if abs(diff) < 0.5:
+            self._current_y = self._target_y
+            bar.setValue(int(self._current_y))
+            self._timer.stop()
+            return
+            
+        # Physics: speed = (distance * factor) + fixed_speed
+        step = (diff * 0.15) + (2.0 if diff > 0 else -2.0)
+        
+        # Limit step
+        if abs(step) > abs(diff):
+            step = diff
+            
+        self._current_y += step
+        
+        # Clamp to bounds (with a bit of bounce room for visual)
+        clamped_y = max(0, min(int(self._current_y), bar.maximum()))
+        bar.setValue(clamped_y)
+        
+        # If we reached the actual scroll bounds but target is beyond, handle it
+        if (self._current_y <= 0 and self._target_y < 0) or \
+           (self._current_y >= bar.maximum() and self._target_y > bar.maximum()):
+            # We are in the "squish" zone
+            pass
 
 # --- New RZCheckBox ---
 class RZCheckBox(QtWidgets.QCheckBox):
@@ -568,6 +682,7 @@ class RZLabel(QtWidgets.QLabel):
 class RZSpinBox(QtWidgets.QSpinBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.apply_theme()
     def apply_theme(self):
         theme = get_current_theme()
@@ -587,6 +702,7 @@ class RZSpinBox(QtWidgets.QSpinBox):
 class RZDoubleSpinBox(QtWidgets.QDoubleSpinBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.apply_theme()
     def apply_theme(self):
         theme = get_current_theme()
@@ -603,21 +719,58 @@ class RZDoubleSpinBox(QtWidgets.QDoubleSpinBox):
     def wheelEvent(self, event):
         event.ignore()
 
+class RZStaggeredDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.progress = 0.0 # 0 to 1
+        self.stagger_delay = 0.05 # seconds per item
+        self.item_fade_speed = 0.1 # seconds for individual item fade
+
+    def paint(self, painter, option, index):
+        row = index.row()
+        current_time = self.progress * 0.4 
+        start_time = row * self.stagger_delay
+        local_progress = max(0.0, min(1.0, (current_time - start_time) / self.item_fade_speed))
+        if local_progress <= 0: return 
+        painter.save()
+        painter.setOpacity(local_progress)
+        offset_y = (1.0 - local_progress) * 8
+        painter.translate(0, offset_y)
+        super().paint(painter, option, index)
+        painter.restore()
+
 class RZComboBox(QtWidgets.QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.apply_theme()
-        # Animated popup
-        self.view().window().setWindowOpacity(0.0) # Start transparent
-        self._popup_anim = QtCore.QPropertyAnimation(self.view().window(), b"windowOpacity")
-        self._popup_anim.setDuration(200)
-        self._popup_anim.setStartValue(0.0)
-        self._popup_anim.setEndValue(1.0)
-        self._popup_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        
+        self._delegate = RZStaggeredDelegate(self)
+        self.setItemDelegate(self._delegate)
+        
+        self._popup_anim = QtCore.QPropertyAnimation(self, b"popup_progress")
+        self._popup_anim.setDuration(400) 
+        self._popup_anim.setEasingCurve(QtCore.QEasingCurve.Linear)
+
+    @QtCore.Property(float)
+    def popup_progress(self):
+        return self._delegate.progress
+        
+    @popup_progress.setter
+    def popup_progress(self, val):
+        self._delegate.progress = val
+        self.view().viewport().update()
+        self.view().window().setWindowOpacity(min(1.0, val * 4))
 
     def showPopup(self):
+        self._popup_anim.stop()
+        self._popup_anim.setStartValue(0.0)
+        self._popup_anim.setEndValue(1.0)
         super().showPopup()
         self._popup_anim.start()
+
+    def hidePopup(self):
+        super().hidePopup()
 
     def apply_theme(self):
         theme = get_current_theme()
@@ -644,10 +797,59 @@ class RZLineEdit(QtWidgets.QLineEdit):
         self._pattern = ""
         self._originals = []
         
+        # Adaptivity
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        
+        # Hover Animation (Liquid Fill)
+        self._hover_progress = 0.0
+        self._hover_anim = QtCore.QPropertyAnimation(self, b"hover_progress")
+        self._hover_anim.setDuration(300)
+        
         # Debouncing support
         self.debouncer = RZDebouncer(delay_ms=400, parent=self)
         self.debouncer.timeout.connect(self.editingFinished.emit)
         self.textChanged.connect(lambda: self.debouncer.trigger(lambda: None)) # Just restart timer
+
+    @QtCore.Property(float)
+    def hover_progress(self):
+        return self._hover_progress
+
+    @hover_progress.setter
+    def hover_progress(self, val):
+        self._hover_progress = val
+        self.update()
+
+    def enterEvent(self, event):
+        self._hover_anim.stop()
+        self._hover_anim.setEndValue(1.0)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._hover_anim.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover_anim.stop()
+        self._hover_anim.setEndValue(0.0)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
+        self._hover_anim.start()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._hover_progress > 0:
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            theme = get_current_theme()
+            accent = QtGui.QColor(theme.get('accent', '#5298D4'))
+            accent.setAlpha(int(255 * self._hover_progress))
+            
+            rect = self.rect().adjusted(1, 1, -1, -1)
+            path = QtGui.QPainterPath()
+            path.addRoundedRect(rect, 3, 3)
+            
+            pen = QtGui.QPen(accent, 1.2)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawPath(path)
 
     def apply_theme(self):
         theme = get_current_theme()

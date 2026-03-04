@@ -10,9 +10,10 @@ class RZSmartSlider(QtWidgets.QWidget):
     value_changed = QtCore.Signal(float)
     math_requested = QtCore.Signal(str) # Emits e.g., "+=10"
 
-    def __init__(self, value=0.0, is_int=True, parent=None, label_text="Value"):
+    def __init__(self, value=0.0, is_int=True, parent=None, label_text="Value", show_slider=True):
         super().__init__(parent)
         self.is_int = is_int
+        self.show_slider = show_slider
         self._value = int(value) if is_int else float(value)
         self._step = 1 if is_int else 0.1
         self._is_mixed = False
@@ -46,11 +47,26 @@ class RZSmartSlider(QtWidgets.QWidget):
         self.spin.setValue(self._value)
         self.spin.valueChanged.connect(self._on_spin_changed)
         
+        # 3.5 REAL SLIDER (Requested for Alpha and visual improvement)
+        self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.slider.setMinimumWidth(40)
+        if self.is_int:
+            self.slider.setRange(0, 100) # Default range, can be adjusted
+        else:
+            self.slider.setRange(0, 100)
+        
+        self._sync_slider_to_value()
+        self.slider.valueChanged.connect(self._on_slider_changed)
+        layout.addWidget(self.slider, 1) # Give it stretch
+        
+        if not self.show_slider:
+            self.slider.hide()
+
         # Setup Math/Mixed handling on the internal LineEdit
         self.spin.lineEdit().installEventFilter(self)
         self.spin.lineEdit().returnPressed.connect(self._handle_manual_entry)
         
-        self.spin.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.spin.setFixedWidth(50) # Keep spinbox compact now that we have a slider
         layout.addWidget(self.spin)
 
         # 4. Button [+]
@@ -114,6 +130,16 @@ class RZSmartSlider(QtWidgets.QWidget):
             QAbstractSpinBox:focus {{ border: 1px solid {accent}; }}
         """
         self.spin.setStyleSheet(spin_style)
+        
+        slider_style = f"""
+            QSlider::groove:horizontal {{
+                height: 4px; background: {bg_btn}; border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                background: {accent}; border-radius: 5px; width: 10px; height: 10px; margin: -3px 0;
+            }}
+        """
+        self.slider.setStyleSheet(slider_style)
         self.label.apply_theme()
 
     def _on_spin_changed(self, val):
@@ -144,8 +170,23 @@ class RZSmartSlider(QtWidgets.QWidget):
         self.spin.setValue(val)
         self.spin.blockSignals(False)
         self._value = val
+        self._sync_slider_to_value()
         if emit_signal:
             self.value_changed.emit(float(self._value))
+
+    def _sync_slider_to_value(self):
+        self.slider.blockSignals(True)
+        if self.is_int:
+            self.slider.setValue(int(self._value))
+        else:
+            self.slider.setValue(int(self._value * 100))
+        self.slider.blockSignals(False)
+
+    def _on_slider_changed(self, val):
+        if self.is_int:
+            self.set_value(val)
+        else:
+            self.set_value(val / 100.0)
 
     def set_value_from_backend(self, val):
         """Special handler for data sync, supports None for mixed values."""
