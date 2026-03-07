@@ -79,18 +79,9 @@ class RZImageComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
         event.ignore()
 
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {theme.get('bg_input', '#252930')};
-                border: none;
-                border-radius: 3px;
-                padding: 3px;
-                color: {theme.get('text_main', '#E0E2E4')};
-            }}
-            QComboBox:focus {{ background-color: {theme.get('bg_panel', '#2C313A')}; }}
-            QComboBox::drop-down {{ border-left: 1px solid {theme.get('border_input', '#4A505A')}; }}
-        """)
+        pass
+        # theme = get_current_theme()
+        # QSS handles this now.
 
     def update_items(self, images_list):
         self.blockSignals(True)
@@ -156,63 +147,87 @@ class RZImageComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
             pass
 
 
-class RZFormulaHighlighter(QtGui.QSyntaxHighlighter):
-    """Highlights variables starting with $ in soft red."""
+# ==========================================
+# БАЗОВЫЕ КЛАССЫ И ПОДСВЕТКА СИНТАКСИСА
+# ==========================================
+
+class RZBaseHighlighter(QtGui.QSyntaxHighlighter):
+    """Базовый класс для хайлайтеров (DRY)"""
     def __init__(self, document):
         super().__init__(document)
+        self.formats = {}
         self.update_theme()
         
+    def _make_format(self, color_hex, bold=False, italic=False):
+        fmt = QtGui.QTextCharFormat()
+        fmt.setForeground(QtGui.QColor(color_hex))
+        if bold: fmt.setFontWeight(QtGui.QFont.Bold)
+        if italic: fmt.setFontItalic(True)
+        return fmt
+
+    def update_theme(self):
+        # Переопределяется в потомках
+        pass
+
+
+class RZFormulaHighlighter(RZBaseHighlighter):
+    """Highlights variables starting with $ in soft red."""
     def update_theme(self):
         theme = get_current_theme()
-        self.format_var = QtGui.QTextCharFormat()
-        color = QtGui.QColor(theme.get('text_variable', '#E06C75')) 
-        self.format_var.setForeground(color)
-        self.format_var.setFontWeight(QtGui.QFont.Bold)
+        self.formats['var'] = self._make_format(theme.get('text_variable', '#E06C75'), bold=True)
 
     def highlightBlock(self, text):
-        expression = r'[\$@#][a-zA-Z0-9_]+'
-        for match in re.finditer(expression, text):
+        for match in re.finditer(r'[\$@#][a-zA-Z0-9_]+', text):
             start, end = match.span()
-            self.setFormat(start, end - start, self.format_var)
+            self.setFormat(start, end - start, self.formats['var'])
 
 
-class RZIniHighlighter(QtGui.QSyntaxHighlighter):
+class RZIniHighlighter(RZBaseHighlighter):
     """Highlights INI / 3DMigoto syntax."""
-    def __init__(self, document):
-        super().__init__(document)
-        self.update_theme()
-        
     def update_theme(self):
         theme = get_current_theme()
-        self.fmt_section = QtGui.QTextCharFormat()
-        self.fmt_section.setForeground(QtGui.QColor(theme.get('accent', '#5298D4')))
-        self.fmt_section.setFontWeight(QtGui.QFont.Bold)
-        
-        self.fmt_key = QtGui.QTextCharFormat()
-        self.fmt_key.setForeground(QtGui.QColor(theme.get('text_keyword', '#D19A66')))
-        
-        self.fmt_comment = QtGui.QTextCharFormat()
-        self.fmt_comment.setForeground(QtGui.QColor(theme.get('text_dim', '#5C6370')))
-        self.fmt_comment.setFontItalic(True)
-        
-        self.fmt_var = QtGui.QTextCharFormat()
-        self.fmt_var.setForeground(QtGui.QColor(theme.get('text_variable', '#E06C75')))
+        self.formats['section'] = self._make_format(theme.get('accent', '#5298D4'), bold=True)
+        self.formats['key'] = self._make_format(theme.get('text_keyword', '#D19A66'))
+        self.formats['comment'] = self._make_format(theme.get('text_dim', '#5C6370'), italic=True)
+        self.formats['var'] = self._make_format(theme.get('text_variable', '#E06C75'))
 
     def highlightBlock(self, text):
         for match in re.finditer(r'^\[.*?\]', text):
-            self.setFormat(match.start(), match.end() - match.start(), self.fmt_section)
+            self.setFormat(match.start(), match.end() - match.start(), self.formats['section'])
         for match in re.finditer(r'^[^=;\n]+(?==)', text):
-             self.setFormat(match.start(), match.end() - match.start(), self.fmt_key)
+             self.setFormat(match.start(), match.end() - match.start(), self.formats['key'])
         for match in re.finditer(r'[\$@#][a-zA-Z0-9_]+', text):
-            self.setFormat(match.start(), match.end() - match.start(), self.fmt_var)
+            self.setFormat(match.start(), match.end() - match.start(), self.formats['var'])
         for match in re.finditer(r';.*', text):
-            self.setFormat(match.start(), match.end() - match.start(), self.fmt_comment)
+            self.setFormat(match.start(), match.end() - match.start(), self.formats['comment'])
 
+
+class RZModInfoHighlighter(RZBaseHighlighter):
+    """
+    Highlighter for Mod Info. 
+    Tags like {{character_name}} are highlighted.
+    """
+    def update_theme(self):
+        theme = get_current_theme()
+        accent = theme.get('accent', '#5298D4')
+        self.formats['tag'] = self._make_format(accent, bold=True)
+        self.formats['replaced'] = self._make_format(accent, bold=True)
+
+    def highlightBlock(self, text):
+        for match in re.finditer(r'\x01(.*?)\x02', text):
+            self.setFormat(match.start(), match.end() - match.start(), self.formats['replaced'])
+        for match in re.finditer(r'\{\{.*?\}\}', text):
+            self.setFormat(match.start(), match.end() - match.start(), self.formats['tag'])
+
+
+# ==========================================
+# БАЗОВЫЙ ТЕКСТОВЫЙ ВИДЖЕТ (ТЕПЕРЬ С АВТОКОМПЛИТОМ И КРАСНЫМ КРУЖКОМ)
+# ==========================================
 
 class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
     """
     Hidden base class. Handles standard popup base config, 
-    focus management, and core text accessors.
+    focus management, core text accessors, and AutoComplete.
     """
     editingFinished = QtCore.Signal()
 
@@ -220,6 +235,11 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self._init_visuals()
         self._is_multiline = False
+        
+        # Переменные для автокомплита (переопределяются в дочерних классах)
+        self._ac_pattern = None       
+        self._ac_provider = None      
+        self._ac_suffix = ""          
         
         self.popup = QtWidgets.QListWidget()
         self.popup.setWindowFlags(QtCore.Qt.ToolTip | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
@@ -239,24 +259,32 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
 
     def paintEvent(self, event):
         super().paintEvent(event)
+        
+        # 1. РИСУЕМ КРАСНЫЙ КРУЖОК НА VIEWPORT ПОВЕРХ ТЕКСТА
+        vp_painter = QtGui.QPainter(self.viewport())
+        vp_painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        vp_painter.setBrush(QtGui.QColor(255, 0, 0))
+        vp_painter.setPen(QtCore.Qt.NoPen)
+        # Координаты X, Y, Ширина, Высота
+        vp_painter.drawEllipse(5, 5, 8, 8) 
+        vp_painter.end()
+        
+        # 2. РИСУЕМ РАМКИ И ТОЧКИ ДЛЯ РЕСАЙЗА НА САМОМ ВИДЖЕТЕ
         painter = QtGui.QPainter(self)
         self._draw_visual_border(painter)
         self._draw_resizer_dots(painter)
         painter.end()
 
     def mousePressEvent(self, event):
-        if self._handle_visual_mouse_press(event):
-            return
+        if self._handle_visual_mouse_press(event): return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._handle_visual_mouse_move(event):
-            return
+        if self._handle_visual_mouse_move(event): return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if self._handle_visual_mouse_release(event):
-            return
+        if self._handle_visual_mouse_release(event): return
         super().mouseReleaseEvent(event)
 
     def set_text_silent(self, text):
@@ -282,25 +310,10 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.setTextCursor(cursor)
 
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QPlainTextEdit {{
-                background-color: {theme.get('bg_input', '#252930')};
-                border: none;
-                border-radius: 6px;
-                padding: 4px 8px;
-                color: {theme.get('text_main', '#E0E2E4')};
-                font-family: Consolas, Monospace;
-            }}
-            QPlainTextEdit:focus {{ 
-                border: 1px solid {theme.get('accent', '#5298D4')};
-                background-color: {theme.get('bg_panel', '#2C313A')};
-            }}
-        """)
+        # Main QPlainTextEdit styling handled by generator.py
         if hasattr(self, 'highlighter') and self.highlighter:
             self.highlighter.update_theme()
             self.highlighter.rehighlight()
-            
         self._apply_popup_theme()
 
     def _apply_popup_theme(self):
@@ -323,10 +336,65 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
             event.ignore()
         else:
             super().wheelEvent(event)
-            
-    def _complete_selection(self, item):
-        pass 
 
+    # --- ЕДИНАЯ ЛОГИКА АВТОКОМПЛИТА (DRY) ---
+    def _check_autocomplete(self):
+        if not self._ac_pattern or not self._ac_provider:
+            return
+            
+        text = self.toPlainText()
+        cursor_pos = self.cursorPosition()
+        left_text = text[:cursor_pos]
+        
+        match = re.search(self._ac_pattern, left_text)
+        if match:
+            token = match.group(0) 
+            self._show_suggestions(token)
+        else:
+            self.popup.hide()
+
+    def _show_suggestions(self, token):
+        all_items = self._ac_provider()
+        filtered = [v for v in all_items if v.lower().startswith(token.lower())]
+        
+        if not filtered:
+            self.popup.hide()
+            return
+
+        self.popup.clear()
+        self.popup.addItems(filtered)
+        self.popup.setCurrentRow(0)
+        
+        rect = self.cursorRect()
+        global_pos = self.mapToGlobal(rect.bottomLeft())
+        self.popup.move(global_pos.x(), global_pos.y() + 5)
+        self.popup.setFixedSize(250, min(150, len(filtered) * 25 + 5))
+        self.popup.show()
+
+    def _complete_selection(self, item):
+        if not item or not self._ac_pattern: return
+        completion = item.text() + self._ac_suffix
+        
+        text = self.toPlainText()
+        cursor_pos = self.cursorPosition()
+        left_text = text[:cursor_pos]
+        
+        match = re.search(self._ac_pattern, left_text)
+        if match:
+            start, end = match.span()
+            prefix = left_text[:start]
+            suffix = text[cursor_pos:]
+            
+            new_text = prefix + completion + suffix
+            self.setPlainText(new_text)
+            self.setCursorPosition(len(prefix) + len(completion))
+            
+        self.popup.hide()
+
+
+# ==========================================
+# ДОЧЕРНИЕ КЛАССЫ (ТОЛЬКО ИХ УНИКАЛЬНАЯ ЛОГИКА)
+# ==========================================
 
 class RZFormulaInput(_RZBaseTextEdit):
     """
@@ -339,8 +407,13 @@ class RZFormulaInput(_RZBaseTextEdit):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setTabChangesFocus(True)
         
+        # --- Настройки автокомплита для формул ---
+        self._ac_pattern = r'[\$@#]([a-zA-Z0-9_]*)$'
+        self._ac_provider = core_read.get_variable_suggestions
+        self._ac_suffix = ""
+        # -----------------------------------------
+
         self.highlighter = RZFormulaHighlighter(self.document())
-        self.highlighter.update_theme()
 
         self.debouncer = RZDebouncer(delay_ms=400, parent=self)
         self.debouncer.timeout.connect(self.editingFinished.emit)
@@ -356,11 +429,11 @@ class RZFormulaInput(_RZBaseTextEdit):
     def apply_theme(self):
         super().apply_theme()
         self._pattern = ""
-        self._originals =[]
+        self._originals = []
 
     def set_pattern(self, pattern, originals=None):
         self._pattern = pattern
-        self._originals = originals or[]
+        self._originals = originals or []
         self.setText(pattern)
         font = self.font()
         font.setItalic(bool(pattern))
@@ -371,7 +444,7 @@ class RZFormulaInput(_RZBaseTextEdit):
 
     def clear_pattern(self):
         self._pattern = ""
-        self._originals =[]
+        self._originals = []
         font = self.font()
         font.setItalic(False)
         self.setFont(font)
@@ -436,55 +509,6 @@ class RZFormulaInput(_RZBaseTextEdit):
         self.editingFinished.emit()
         super().focusOutEvent(event)
 
-    def _check_autocomplete(self):
-        text = self.text()
-        cursor_pos = self.cursorPosition()
-        left_text = text[:cursor_pos]
-        
-        match = re.search(r'[\$@#]([a-zA-Z0-9_]*)$', left_text)
-        if match:
-            token = match.group(0) 
-            self._show_suggestions(token)
-        else:
-            self.popup.hide()
-
-    def _show_suggestions(self, token):
-        all_vars = core_read.get_variable_suggestions()
-        filtered =[v for v in all_vars if v.lower().startswith(token.lower())]
-        if not filtered:
-            self.popup.hide()
-            return
-
-        self.popup.clear()
-        self.popup.addItems(filtered)
-        self.popup.setCurrentRow(0)
-        
-        rect = self.cursorRect()
-        global_pos = self.mapToGlobal(rect.bottomLeft())
-        self.popup.move(global_pos.x(), global_pos.y() + 5)
-        self.popup.setFixedSize(250, min(150, len(filtered) * 25 + 5))
-        self.popup.show()
-
-    def _complete_selection(self, item):
-        if not item: return
-        completion = item.text()
-        
-        text = self.text()
-        cursor_pos = self.cursorPosition()
-        left_text = text[:cursor_pos]
-        
-        match = re.search(r'[\$@#]([a-zA-Z0-9_]*)$', left_text)
-        if match:
-            start, end = match.span()
-            prefix = left_text[:start]
-            suffix = text[cursor_pos:]
-            
-            new_text = prefix + completion + suffix
-            self.setText(new_text)
-            self.setCursorPosition(len(prefix) + len(completion))
-            
-        self.popup.hide()
-
 
 class RZCodeTextEdit(RZFormulaInput):
     """
@@ -510,33 +534,6 @@ class RZCodeTextEdit(RZFormulaInput):
             self.highlighter = None
 
 
-class RZModInfoHighlighter(QtGui.QSyntaxHighlighter):
-    """
-    Highlighter for Mod Info. 
-    Tags like {{character_name}} are highlighted.
-    """
-    def __init__(self, document):
-        super().__init__(document)
-        self.update_theme()
-        
-    def update_theme(self):
-        theme = get_current_theme()
-        self.fmt_tag = QtGui.QTextCharFormat()
-        self.fmt_tag.setForeground(QtGui.QColor(theme.get('accent', '#5298D4')))
-        self.fmt_tag.setFontWeight(QtGui.QFont.Bold)
-
-        self.fmt_replaced = QtGui.QTextCharFormat()
-        accent = QtGui.QColor(theme.get('accent', '#5298D4'))
-        self.fmt_replaced.setForeground(accent)
-        self.fmt_replaced.setFontWeight(QtGui.QFont.Bold)
-
-    def highlightBlock(self, text):
-        for match in re.finditer(r'\x01(.*?)\x02', text):
-            self.setFormat(match.start(), match.end() - match.start(), self.fmt_replaced)
-        for match in re.finditer(r'\{\{.*?\}\}', text):
-            self.setFormat(match.start(), match.end() - match.start(), self.fmt_tag)
-
-
 class RZModInfoTextEdit(RZCodeTextEdit):
     """
     Specialized editor for Mod Info with {{ }} autocomplete 
@@ -552,6 +549,12 @@ class RZModInfoTextEdit(RZCodeTextEdit):
         self._max_res_h = 680
         self.setMinimumHeight(120)
         self.setMaximumHeight(680)
+
+        # --- Настройки автокомплита для Mod Info ---
+        self._ac_pattern = r'\{\{([a-zA-Z0-9_]*)$'
+        self._ac_provider = core_read.get_metadata_suggestions
+        self._ac_suffix = "}}"
+        # -------------------------------------------
 
         self.highlighter = RZModInfoHighlighter(self.document())
         self.textChanged.connect(self._on_text_changed_internal)
@@ -605,54 +608,7 @@ class RZModInfoTextEdit(RZCodeTextEdit):
         self.blockSignals(False)
 
     def _check_autocomplete(self):
+        # Если находимся в режиме превью - автокомплит не нужен, 
+        # иначе используем логику из базового класса.
         if self._is_preview: return
-        
-        text = self.toPlainText()
-        cursor_pos = self.cursorPosition()
-        left_text = text[:cursor_pos]
-        
-        match = re.search(r'\{\{([a-zA-Z0-9_]*)$', left_text)
-        
-        if match:
-            token = match.group(0) 
-            self._show_suggestions(token)
-        else:
-            self.popup.hide()
-
-    def _show_suggestions(self, token):
-        all_tags = core_read.get_metadata_suggestions()
-        filtered =[v for v in all_tags if v.lower().startswith(token.lower())]
-        
-        if not filtered:
-            self.popup.hide()
-            return
-
-        self.popup.clear()
-        self.popup.addItems(filtered)
-        self.popup.setCurrentRow(0)
-        
-        rect = self.cursorRect()
-        global_pos = self.mapToGlobal(rect.bottomLeft())
-        self.popup.move(global_pos.x(), global_pos.y() + 5)
-        self.popup.setFixedSize(250, min(150, len(filtered) * 25 + 5))
-        self.popup.show()
-
-    def _complete_selection(self, item):
-        if not item: return
-        completion = item.text() + "}}" 
-        
-        text = self.toPlainText()
-        cursor_pos = self.cursorPosition()
-        left_text = text[:cursor_pos]
-        
-        match = re.search(r'\{\{([a-zA-Z0-9_]*)$', left_text)
-        if match:
-            start, end = match.span()
-            prefix = left_text[:start]
-            suffix = text[cursor_pos:]
-            
-            new_text = prefix + completion + suffix
-            self.setPlainText(new_text)
-            self.setCursorPosition(len(prefix) + len(completion))
-            
-        self.popup.hide()
+        super()._check_autocomplete()

@@ -107,6 +107,54 @@ class RZInspectorAnchorBar(QtWidgets.QWidget):
         painter.setPen(QtGui.QColor(t.get('border', '#333')))
         painter.drawLine(0, self.height()-1, self.width(), self.height()-1)
 
+class RZListEditor(QtWidgets.QWidget):
+    """
+    Generic base for list-like editors in the Inspector.
+    Handles layout, 'Add' button, and reconciliation logic.
+    """
+    def __init__(self, add_label="+ Add Item", parent=None):
+        super().__init__(parent)
+        self._block = False
+        
+        self.layout_main = QtWidgets.QVBoxLayout(self)
+        self.layout_main.setContentsMargins(0, 0, 0, 0)
+        self.layout_main.setSpacing(2)
+        
+        self.layout_items = QtWidgets.QVBoxLayout()
+        self.layout_items.setSpacing(2)
+        self.layout_main.addLayout(self.layout_items)
+        
+        self.btn_add = RZPushButton(add_label)
+        self.btn_add.clicked.connect(self.add_item)
+        self.layout_main.addWidget(self.btn_add)
+
+    def clear_items(self):
+        while self.layout_items.count():
+            item = self.layout_items.takeAt(0)
+            w = item.widget()
+            if w: w.deleteLater()
+
+    def add_item(self):
+        """Override in subclass."""
+        pass
+
+    def remove_item(self, index):
+        """Override in subclass."""
+        pass
+
+    def item_changed(self, index, *args, **kwargs):
+        """Override in subclass."""
+        pass
+
+    def update_ui_list(self, data_list, widget_factory):
+        self._block = True
+        self.clear_items()
+        for i, data in enumerate(data_list):
+            widget = widget_factory(i, data)
+            if widget:
+                self.layout_items.addWidget(widget)
+        self._block = False
+
 class RZConditionalImageItem(QtWidgets.QWidget):
     """A single row in the conditional image list."""
     def __init__(self, index, data, images, parent=None):
@@ -147,42 +195,19 @@ class RZConditionalImageItem(QtWidgets.QWidget):
     def set_cond_visible(self, visible):
         self.edit_cond.setVisible(visible)
 
-class RZConditionalImageList(QtWidgets.QWidget):
+class RZConditionalImageList(RZListEditor):
     """A list-like widget to manage ConditionalImage collection."""
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.layout_main = QtWidgets.QVBoxLayout(self)
-        self.layout_main.setContentsMargins(0, 0, 0, 0)
-        self.layout_main.setSpacing(2)
-        
-        self.layout_items = QtWidgets.QVBoxLayout()
-        self.layout_items.setSpacing(2)
-        self.layout_main.addLayout(self.layout_items)
-        
-        self.btn_add = RZPushButton("+ Add Image")
-        self.btn_add.clicked.connect(self.add_item)
-        self.layout_main.addWidget(self.btn_add)
-        
-        self.items_data = []
+        super().__init__("+ Add Image", parent)
         self.image_mode = 'SINGLE'
-        self._block = False
 
     def update_data(self, data_list, available_images, mode):
-        self._block = True
-        self.items_data = data_list
         self.image_mode = mode
-        
-        # Clear
-        while self.layout_items.count():
-            w = self.layout_items.takeAt(0).widget()
-            if w: w.deleteLater()
-            
-        for i, data in enumerate(data_list):
+        def factory(i, data):
             item_w = RZConditionalImageItem(i, data, available_images, self)
             item_w.set_cond_visible(mode == 'CONDITIONAL_LIST')
-            self.layout_items.addWidget(item_w)
-        
-        self._block = False
+            return item_w
+        self.update_ui_list(data_list, factory)
 
     def add_item(self):
         if self._block: return
@@ -243,42 +268,19 @@ class RZConditionalTextItem(QtWidgets.QWidget):
     def set_cond_visible(self, visible):
         self.edit_cond.setVisible(visible)
 
-class RZConditionalTextList(QtWidgets.QWidget):
+class RZConditionalTextList(RZListEditor):
     """A list-like widget to manage ConditionalText collection."""
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.layout_main = QtWidgets.QVBoxLayout(self)
-        self.layout_main.setContentsMargins(0, 0, 0, 0)
-        self.layout_main.setSpacing(2)
-        
-        self.layout_items = QtWidgets.QVBoxLayout()
-        self.layout_items.setSpacing(2)
-        self.layout_main.addLayout(self.layout_items)
-        
-        self.btn_add = RZPushButton("+ Add Text")
-        self.btn_add.clicked.connect(self.add_item)
-        self.layout_main.addWidget(self.btn_add)
-        
-        self.items_data = []
+        super().__init__("+ Add Text", parent)
         self.text_mode = 'SINGLE'
-        self._block = False
 
     def update_data(self, data_list, mode):
-        self._block = True
-        self.items_data = data_list
         self.text_mode = mode
-        
-        # Clear
-        while self.layout_items.count():
-            w = self.layout_items.takeAt(0).widget()
-            if w: w.deleteLater()
-            
-        for i, data in enumerate(data_list):
+        def factory(i, data):
             item_w = RZConditionalTextItem(i, data, self)
             item_w.set_cond_visible(mode == 'CONDITIONAL_LIST')
-            self.layout_items.addWidget(item_w)
-        
-        self._block = False
+            return item_w
+        self.update_ui_list(data_list, factory)
 
     def add_item(self):
         if self._block: return
@@ -373,37 +375,15 @@ class RZValueLinkItem(QtWidgets.QWidget):
     def _on_delete(self):
         self.parent_list.remove_item(self.index)
 
-class RZValueLinkList(QtWidgets.QWidget):
+class RZValueLinkList(RZListEditor):
     """A list-like widget to manage ValueLink collection."""
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.layout_main = QtWidgets.QVBoxLayout(self)
-        self.layout_main.setContentsMargins(0, 0, 0, 0)
-        self.layout_main.setSpacing(2)
-        
-        self.layout_items = QtWidgets.QVBoxLayout()
-        self.layout_items.setSpacing(5)
-        self.layout_main.addLayout(self.layout_items)
-        
-        self.btn_add = RZPushButton("+ Add Link")
-        self.btn_add.clicked.connect(self.add_item)
-        self.layout_main.addWidget(self.btn_add)
-        
-        self._block = False
+        super().__init__("+ Add Link", parent)
 
     def update_data(self, data_list, is_slider):
-        self._block = True
-        
-        # Simple reconciliation
-        while self.layout_items.count():
-            w = self.layout_items.takeAt(0).widget()
-            if w: w.deleteLater()
-            
-        for i, data in enumerate(data_list):
-            item_w = RZValueLinkItem(i, data, is_slider, self)
-            self.layout_items.addWidget(item_w)
-        
-        self._block = False
+        def factory(i, data):
+            return RZValueLinkItem(i, data, is_slider, self)
+        self.update_ui_list(data_list, factory)
 
     def add_item(self):
         if self._block: return
@@ -425,14 +405,12 @@ class RZValueLinkList(QtWidgets.QWidget):
             if len(ctx.selected_ids) > 1 and isinstance(value, str) and "..." in value:
                 print(f"[VL_LIST] Blocking standard VL update at index {index} because it contains '...'")
                 return
-            print(f"[VL_LIST] Standard update VL index {index}, field '{field}': {value}")
             core.props.update_value_link(ctx.selected_ids, index, field, value)
 
     def item_pattern_changed(self, index, field, new_pattern, originals=None):
         if self._block: return
         ctx = RZContextManager.get_instance().get_snapshot()
         if ctx.selected_ids:
-            print(f"[VL_LIST] Pattern update VL index {index}, field '{field}'. Originals: {len(originals) if originals else 'None'}")
             core.props.update_value_link_multi_pattern(ctx.selected_ids, index, field, new_pattern, originals)
 
 
@@ -483,34 +461,15 @@ class RZFXItem(QtWidgets.QWidget):
     def _on_delete(self):
         self.parent_list.remove_item(self.index)
 
-class RZFXList(QtWidgets.QWidget):
+class RZFXList(RZListEditor):
     """A list-like widget to manage FX collection."""
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.layout_main = QtWidgets.QVBoxLayout(self)
-        self.layout_main.setContentsMargins(0, 0, 0, 0)
-        self.layout_main.setSpacing(2)
-        
-        self.layout_items = QtWidgets.QVBoxLayout()
-        self.layout_items.setSpacing(2)
-        self.layout_main.addLayout(self.layout_items)
-        
-        self.btn_add = RZPushButton("+ Add Effect")
-        self.btn_add.clicked.connect(self.add_item)
-        self.layout_main.addWidget(self.btn_add)
-        
-        self._block = False
+        super().__init__("+ Add Effect", parent)
 
     def update_data(self, data_list):
-        self._block = True
-        while self.layout_items.count():
-            w = self.layout_items.takeAt(0).widget()
-            if w: w.deleteLater()
-            
-        for i, val in enumerate(data_list):
-            item_w = RZFXItem(i, val, self)
-            self.layout_items.addWidget(item_w)
-        self._block = False
+        def factory(i, val):
+            return RZFXItem(i, val, self)
+        self.update_ui_list(data_list, factory)
 
     def add_item(self):
         if self._block: return
@@ -573,46 +532,27 @@ class RZPresetItem(QtWidgets.QWidget):
     def _on_delete(self):
         self.parent_list.remove_item(self.index)
 
-class RZPresetList(QtWidgets.QWidget):
+class RZPresetList(RZListEditor):
     """A list-like widget to manage Preset IDs."""
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.layout_main = QtWidgets.QVBoxLayout(self)
-        self.layout_main.setContentsMargins(0, 0, 0, 0)
-        self.layout_main.setSpacing(2)
-        
-        self.layout_items = QtWidgets.QVBoxLayout()
-        self.layout_items.setSpacing(2)
-        self.layout_main.addLayout(self.layout_items)
-        
+        super().__init__("+ Add Preset", parent)
+        # Re-arrange btn_add into a QHBoxLayout with a ComboBox
+        self.layout_main.removeWidget(self.btn_add)
         h_add = QtWidgets.QHBoxLayout()
         self.cb_add_preset = RZComboBox()
         h_add.addWidget(self.cb_add_preset, 1)
-        
-        self.btn_add = RZPushButton("+ Add Preset")
-        self.btn_add.clicked.connect(self.add_item)
         h_add.addWidget(self.btn_add)
         self.layout_main.addLayout(h_add)
-        
-        self._block = False
 
     def update_data(self, preset_list):
-        # preset_list is expected to be list of IDs or dicts?
-        # In read.py we might need to parse the CollectionProperty of presets.
-        # Let's assume passed data is list of integer IDs
-        self._block = True
-        
-        while self.layout_items.count():
-            w = self.layout_items.takeAt(0).widget()
-            if w: w.deleteLater()
-            
         elements = core.read.get_all_elements_list()
         name_map = {e['id']: e['name'] for e in elements}
             
-        for i, pid in enumerate(preset_list):
+        def factory(i, pid):
             name = name_map.get(pid, "Unknown")
-            item_w = RZPresetItem(i, pid, name, self)
-            self.layout_items.addWidget(item_w)
+            return RZPresetItem(i, pid, name, self)
+            
+        self.update_ui_list(preset_list, factory)
         
         # Update dropdown with available preset elements
         self.cb_add_preset.blockSignals(True)
@@ -621,8 +561,6 @@ class RZPresetList(QtWidgets.QWidget):
         for e in preset_elements:
             self.cb_add_preset.addItem(f"{e['name']} (ID: {e['id']})", e['id'])
         self.cb_add_preset.blockSignals(False)
-        
-        self._block = False
 
     def add_item(self):
         if self._block: return
@@ -786,10 +724,10 @@ class RZMInspectorPanel(RZEditorPanel):
             SIGNALS.data_changed.disconnect(self.refresh_data)
             SIGNALS.transform_changed.disconnect(self.refresh_data)
         except: pass
-    
+
     def refresh_data(self):
         """Request a refresh (throttled)."""
-        if not self._is_panel_active: return
+        if not hasattr(self, '_is_panel_active') or not self._is_panel_active: return
         if not self._refresh_timer.isActive():
             self._refresh_timer.start(16) # ~60 FPS update limit
 
@@ -810,87 +748,131 @@ class RZMInspectorPanel(RZEditorPanel):
         self._last_details = details
         
         self.update_ui(details)
+    
+    def _add_row(self, layout, label, widget, field_name=None, signal=None):
+        """Helper to add a property row and optionally connect its change signal."""
+        if isinstance(layout, QtWidgets.QFormLayout):
+            layout.addRow(label, widget)
+        else:
+            h = QtWidgets.QHBoxLayout()
+            if label:
+                h.addWidget(RZLabel(label))
+            h.addWidget(widget)
+            if not label:
+                h.addStretch()
+            layout.addLayout(h)
+        
+        if field_name:
+            if signal is None:
+                if isinstance(widget, (RZSpinBox, RZDoubleSpinBox)): signal = 'valueChanged'
+                elif isinstance(widget, RZComboBox): signal = 'currentTextChanged'
+                elif isinstance(widget, RZCheckBox): signal = 'toggled'
+                else: signal = 'editingFinished'
+            
+            sig = getattr(widget, signal, None)
+            if sig:
+                if signal == 'valueChanged': sig.connect(lambda v: self._emit_change(field_name, v))
+                elif signal == 'currentTextChanged': sig.connect(lambda t: self._emit_change(field_name, t))
+                elif signal == 'toggled': sig.connect(lambda v: self._emit_change(field_name, v))
+                else:
+                    def _on_finish():
+                        val = widget.text() if hasattr(widget, 'text') else (widget.toPlainText() if hasattr(widget, 'toPlainText') else None)
+                        self._emit_change(field_name, val)
+                    sig.connect(_on_finish)
+        return widget
 
     def _init_properties_ui(self):
-        # 1. IDENTITY
-        try:
-            # === GROUP: IDENTITY ===
-            self.grp_ident = RZGroupBox("Identity")
-            form_ident = QtWidgets.QFormLayout(self.grp_ident)
-            self.spin_id = RZSpinBox(); self.spin_id.setRange(0, 99999); self.spin_id.editingFinished.connect(self._on_id_changed); form_ident.addRow("ID:", self.spin_id)
-            self.name_edit = RZLineEdit(); self.name_edit.editingFinished.connect(lambda: self._emit_change('element_name', self.name_edit.text())); form_ident.addRow("Name:", self.name_edit)
-            self.edit_tag = RZLineEdit(); self.edit_tag.editingFinished.connect(lambda: self._emit_change('tag', self.edit_tag.text())); form_ident.addRow("Tag:", self.edit_tag)
-            self.cb_class = RZComboBox(); self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"]); self.cb_class.currentTextChanged.connect(lambda t: self._emit_change('class_type', t)); form_ident.addRow("Class:", self.cb_class)
-            self.spin_priority = RZSpinBox(); self.spin_priority.setRange(-100, 100); self.spin_priority.valueChanged.connect(lambda v: self._emit_change('priority', int(v))); form_ident.addRow("Priority:", self.spin_priority)
-            self.chk_main_window = RZCheckBox("Is Main Window"); self.chk_main_window.toggled.connect(lambda v: self._emit_change('is_main_window', v)); form_ident.addRow("", self.chk_main_window)
-            self.chk_disable_export = RZCheckBox("Disable Export"); self.chk_disable_export.toggled.connect(lambda v: self._emit_change('disable_export', v)); form_ident.addRow("", self.chk_disable_export)
-            form_ident.setSpacing(6)
-            self.layout_props.addWidget(self.grp_ident)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Identity: {e}")
+        self._init_identity_ui()
+        self._init_visibility_ui()
+        self._init_presets_ui()
+        self._init_layout_ui()
+        self._init_transform_ui()
+        self._init_grid_ui()
+        self._init_style_ui()
+        self._init_text_ui()
+        self._init_logic_ui()
+        self._init_events_ui()
+        self._init_button_ui()
+        self._init_flags_ui()
 
-        # === GROUP: VISIBILITY (MOVED UP) ===
+    def _init_identity_ui(self):
+        try:
+            self.grp_ident = RZGroupBox("Identity")
+            layout = QtWidgets.QFormLayout(self.grp_ident)
+            layout.setSpacing(6)
+            self.spin_id = self._add_row(layout, "ID:", RZSpinBox())
+            self.spin_id.setRange(0, 99999)
+            self.spin_id.editingFinished.connect(self._on_id_changed)
+            
+            self.name_edit = self._add_row(layout, "Name:", RZLineEdit(), 'element_name')
+            self.edit_tag = self._add_row(layout, "Tag:", RZLineEdit(), 'tag')
+            
+            self.cb_class = self._add_row(layout, "Class:", RZComboBox(), 'class_type')
+            self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
+            
+            self.spin_priority = self._add_row(layout, "Priority:", RZSpinBox(), 'priority')
+            self.spin_priority.setRange(-100, 100)
+            
+            self.chk_main_window = self._add_row(layout, "", RZCheckBox("Is Main Window"), 'is_main_window')
+            self.chk_disable_export = self._add_row(layout, "", RZCheckBox("Disable Export"), 'disable_export')
+            
+            self.layout_props.addWidget(self.grp_ident)
+        except Exception as e: print(f"[INSPECTOR] Error Identity: {e}")
+
+    def _init_visibility_ui(self):
         try:
             self.grp_vis = RZGroupBox("Visibility")
-            form_vis = QtWidgets.QFormLayout(self.grp_vis)
-            form_vis.setSpacing(6)
-            self.cb_vis_mode = RZComboBox(); self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL", "HIDED"]); self.cb_vis_mode.currentTextChanged.connect(lambda t: self._emit_change('visibility_mode', t)); form_vis.addRow("Mode:", self.cb_vis_mode)
-            self.edit_vis_cond = RZFormulaInput(); self.edit_vis_cond.setPlaceholderText("$var > 0"); self.edit_vis_cond.editingFinished.connect(lambda: self._emit_change('visibility_condition', self.edit_vis_cond.text())); self.row_vis_cond = form_vis.addRow("Condition:", self.edit_vis_cond)
+            layout = QtWidgets.QFormLayout(self.grp_vis)
+            layout.setSpacing(6)
+            self.cb_vis_mode = self._add_row(layout, "Mode:", RZComboBox(), 'visibility_mode')
+            self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL", "HIDED"])
+            
+            self.edit_vis_cond = RZFormulaInput()
+            self.edit_vis_cond.setPlaceholderText("$var > 0")
+            self._add_row(layout, "Condition:", self.edit_vis_cond, 'visibility_condition')
+            
             self.layout_props.addWidget(self.grp_vis)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Visibility: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Visibility: {e}")
 
-        # === GROUP: PRESETS (MOVED UP) ===
+    def _init_presets_ui(self):
         try:
             self.grp_presets = RZGroupBox("Presets System")
-            layout_presets = QtWidgets.QVBoxLayout(self.grp_presets)
-            layout_presets.setSpacing(6)
-            self.chk_is_preset = RZCheckBox("Is Preset Element"); self.chk_is_preset.toggled.connect(lambda v: self._emit_change('is_preset', v)); layout_presets.addWidget(self.chk_is_preset)
-            self.chk_preset_hide = RZCheckBox("Hide Presets (Overlay)"); self.chk_preset_hide.toggled.connect(lambda v: self._emit_change('qt_preset_hide', v)); layout_presets.addWidget(self.chk_preset_hide)
-            layout_presets.addWidget(RZLabel("Applied Presets:")); self.list_presets = RZPresetList(); layout_presets.addWidget(self.list_presets)
+            layout = QtWidgets.QVBoxLayout(self.grp_presets)
+            layout.setSpacing(6)
+            self.chk_is_preset = self._add_row(layout, "", RZCheckBox("Is Preset Element"), 'is_preset')
+            self.chk_preset_hide = self._add_row(layout, "", RZCheckBox("Hide Presets (Overlay)"), 'qt_preset_hide')
+            layout.addWidget(RZLabel("Applied Presets:"))
+            self.list_presets = RZPresetList()
+            layout.addWidget(self.list_presets)
             self.layout_props.addWidget(self.grp_presets)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Presets: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Presets: {e}")
 
-        # 2. LAYOUT
+    def _init_layout_ui(self):
         try:
-            # === GROUP: ANCHOR & ALIGNMENT ===
             self.grp_anchor = RZGroupBox("Anchor & Alignment")
-            layout_anchor = QtWidgets.QFormLayout(self.grp_anchor)
-            layout_anchor.setSpacing(6)
-            self.cb_anchor = RZComboBox()
-            self.cb_anchor.addItems([
-                "BOTTOM_LEFT", "BOTTOM_CENTER", "BOTTOM_RIGHT", 
-                "CENTER_LEFT", "CENTER", "CENTER_RIGHT", 
-                "TOP_LEFT", "TOP_CENTER", "TOP_RIGHT"
-            ])
-            self.cb_anchor.currentTextChanged.connect(lambda t: self._emit_change('alignment', t))
-            layout_anchor.addRow("Anchor:", self.cb_anchor)
-            self.cb_text_align = RZComboBox()
+            layout = QtWidgets.QFormLayout(self.grp_anchor)
+            layout.setSpacing(6)
+            self.cb_anchor = self._add_row(layout, "Anchor:", RZComboBox(), 'alignment')
+            self.cb_anchor.addItems(["BOTTOM_LEFT", "BOTTOM_CENTER", "BOTTOM_RIGHT", "CENTER_LEFT", "CENTER", "CENTER_RIGHT", "TOP_LEFT", "TOP_CENTER", "TOP_RIGHT"])
+            
+            self.cb_text_align = self._add_row(layout, "Text Align:", RZComboBox(), 'text_align')
             self.cb_text_align.addItems(["LEFT", "CENTER", "RIGHT"])
-            self.cb_text_align.currentTextChanged.connect(lambda t: self._emit_change('text_align', t))
-            layout_anchor.setSpacing(6)
-            self.row_text_align = layout_anchor.addRow("Text Align:", self.cb_text_align)
+            
             self.layout_props.addWidget(self.grp_anchor)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Layout: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Layout: {e}")
 
-        # === GROUP: TRANSFORM (Dual Mode) ===
-        # === GROUP: TRANSFORM (Dual Mode) ===
+    def _init_transform_ui(self):
         try:
             self.grp_trans = RZGroupBox("Transform")
-            self.grp_trans.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            
             layout_trans = QtWidgets.QVBoxLayout(self.grp_trans)
-            layout_trans.setSpacing(4) # Сделал отступы компактнее (было 6)
+            layout_trans.setSpacing(4)
             layout_trans.setContentsMargins(6, 6, 6, 6)
 
             # --- POSITION ---
             h_pos_head = QtWidgets.QHBoxLayout()
             h_pos_head.addWidget(RZLabel("Position"))
             h_pos_head.addStretch()
-            self.chk_pos_formula = RZCheckBox("Formula")
-            h_pos_head.addWidget(self.chk_pos_formula)
+            self.chk_pos_formula = self._add_row(h_pos_head, "", RZCheckBox("Formula"), 'position_is_formula')
             layout_trans.addLayout(h_pos_head)
 
             self.stack_pos = QtWidgets.QStackedLayout()
@@ -898,59 +880,26 @@ class RZMInspectorPanel(RZEditorPanel):
             
             self.w_pos_sliders = QtWidgets.QWidget()
             l_pos_sl = QtWidgets.QVBoxLayout(self.w_pos_sliders)
-            l_pos_sl.setContentsMargins(0, 0, 0, 0)
-            l_pos_sl.setSpacing(4)
-            self.sl_x = RZSmartSlider(label_text="X", is_int=True, show_slider=False)
-            self.sl_y = RZSmartSlider(label_text="Y", is_int=True, show_slider=False)
-            
-            # ENSURE EXPANSION: Let spinboxes take all space
-            self.sl_x.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            self.sl_y.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            
-            self.sl_x.value_changed.connect(lambda v: self._emit_change('pos_x', int(v)))
-            self.sl_y.value_changed.connect(lambda v: self._emit_change('pos_y', int(v)))
+            l_pos_sl.setContentsMargins(0, 0, 0, 0); l_pos_sl.setSpacing(4)
+            self.sl_x = self._add_row(l_pos_sl, "X", RZSmartSlider(is_int=True, show_slider=False), 'pos_x', 'value_changed')
+            self.sl_y = self._add_row(l_pos_sl, "Y", RZSmartSlider(is_int=True, show_slider=False), 'pos_y', 'value_changed')
             self.sl_x.math_requested.connect(lambda op: self._emit_math('pos_x', op))
             self.sl_y.math_requested.connect(lambda op: self._emit_math('pos_y', op))
-            l_pos_sl.addWidget(self.sl_x)
-            l_pos_sl.addWidget(self.sl_y)
             self.stack_pos.addWidget(self.w_pos_sliders)
 
             self.w_pos_formulas = QtWidgets.QWidget()
             l_pos_f = QtWidgets.QVBoxLayout(self.w_pos_formulas)
-            l_pos_f.setContentsMargins(0, 0, 0, 0)
-            l_pos_f.setSpacing(4)
-            
-            # Use QHBoxLayout with labels for side-by-side or just use RZSmartSlider's own logic?
-            # RZFormulaInput should stretch! 
-            h_pos_fx = QtWidgets.QHBoxLayout()
-            h_pos_fx.addWidget(RZLabel("X:"))
-            self.edit_pos_fx = RZFormulaInput()
-            self.edit_pos_fx.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            h_pos_fx.addWidget(self.edit_pos_fx)
-            l_pos_f.addLayout(h_pos_fx)
-            
-            h_pos_fy = QtWidgets.QHBoxLayout()
-            h_pos_fy.addWidget(RZLabel("Y:"))
-            self.edit_pos_fy = RZFormulaInput()
-            self.edit_pos_fy.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            h_pos_fy.addWidget(self.edit_pos_fy)
-            l_pos_f.addLayout(h_pos_fy)
-            
-            self.edit_pos_fx.editingFinished.connect(lambda: self._emit_change('position_formula_x', self.edit_pos_fx.text()))
-            self.edit_pos_fy.editingFinished.connect(lambda: self._emit_change('position_formula_y', self.edit_pos_fy.text()))
+            l_pos_f.setContentsMargins(0, 0, 0, 0); l_pos_f.setSpacing(4)
+            self.edit_pos_fx = self._add_row(l_pos_f, "X:", RZFormulaInput(), 'position_formula_x')
+            self.edit_pos_fy = self._add_row(l_pos_f, "Y:", RZFormulaInput(), 'position_formula_y')
             self.stack_pos.addWidget(self.w_pos_formulas)
-
-            def toggle_pos(is_formula):
-                self._emit_change('position_is_formula', is_formula)
-                self.stack_pos.setCurrentIndex(1 if is_formula else 0)
-            self.chk_pos_formula.toggled.connect(toggle_pos)
+            self.chk_pos_formula.toggled.connect(lambda v: self.stack_pos.setCurrentIndex(1 if v else 0))
 
             # --- SIZE ---
             h_size_head = QtWidgets.QHBoxLayout()
             h_size_head.addWidget(RZLabel("Size"))
             h_size_head.addStretch()
-            self.chk_size_formula = RZCheckBox("Formula")
-            h_size_head.addWidget(self.chk_size_formula)
+            self.chk_size_formula = self._add_row(h_size_head, "", RZCheckBox("Formula"), 'size_is_formula')
             layout_trans.addLayout(h_size_head)
 
             self.stack_size = QtWidgets.QStackedLayout()
@@ -958,210 +907,167 @@ class RZMInspectorPanel(RZEditorPanel):
 
             self.w_size_sliders = QtWidgets.QWidget()
             l_size_sl = QtWidgets.QVBoxLayout(self.w_size_sliders)
-            l_size_sl.setContentsMargins(0, 0, 0, 0)
-            l_size_sl.setSpacing(4)
-            self.sl_w = RZSmartSlider(label_text="W", is_int=True, show_slider=False)
-            self.sl_h = RZSmartSlider(label_text="H", is_int=True, show_slider=False)
-            
-            self.sl_w.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            self.sl_h.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            
-            self.sl_w.value_changed.connect(lambda v: self._emit_change('width', int(v)))
-            self.sl_h.value_changed.connect(lambda v: self._emit_change('height', int(v)))
+            l_size_sl.setContentsMargins(0, 0, 0, 0); l_size_sl.setSpacing(4)
+            self.sl_w = self._add_row(l_size_sl, "W", RZSmartSlider(is_int=True, show_slider=False), 'width', 'value_changed')
+            self.sl_h = self._add_row(l_size_sl, "H", RZSmartSlider(is_int=True, show_slider=False), 'height', 'value_changed')
             self.sl_w.math_requested.connect(lambda op: self._emit_math('width', op))
             self.sl_h.math_requested.connect(lambda op: self._emit_math('height', op))
-            l_size_sl.addWidget(self.sl_w)
-            l_size_sl.addWidget(self.sl_h)
             self.stack_size.addWidget(self.w_size_sliders)
 
             self.w_size_formulas = QtWidgets.QWidget()
             l_size_f = QtWidgets.QVBoxLayout(self.w_size_formulas)
-            l_size_f.setContentsMargins(0, 0, 0, 0)
-            l_size_f.setSpacing(4)
-            
-            h_size_fw = QtWidgets.QHBoxLayout()
-            h_size_fw.addWidget(RZLabel("W:"))
-            self.edit_size_fx = RZFormulaInput()
-            self.edit_size_fx.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            h_size_fw.addWidget(self.edit_size_fx)
-            l_size_f.addLayout(h_size_fw)
-            
-            h_size_fh = QtWidgets.QHBoxLayout()
-            h_size_fh.addWidget(RZLabel("H:"))
-            self.edit_size_fy = RZFormulaInput()
-            self.edit_size_fy.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            h_size_fh.addWidget(self.edit_size_fy)
-            l_size_f.addLayout(h_size_fh)
-            
-            self.edit_size_fx.editingFinished.connect(lambda: self._emit_change('size_formula_x', self.edit_size_fx.text()))
-            self.edit_size_fy.editingFinished.connect(lambda: self._emit_change('size_formula_y', self.edit_size_fy.text()))
+            l_size_f.setContentsMargins(0, 0, 0, 0); l_size_f.setSpacing(4)
+            self.edit_size_fx = self._add_row(l_size_f, "W:", RZFormulaInput(), 'size_formula_x')
+            self.edit_size_fy = self._add_row(l_size_f, "H:", RZFormulaInput(), 'size_formula_y')
             self.stack_size.addWidget(self.w_size_formulas)
+            self.chk_size_formula.toggled.connect(lambda v: self.stack_size.setCurrentIndex(1 if v else 0))
 
-            def toggle_size(is_formula):
-                self._emit_change('size_is_formula', is_formula)
-                self.stack_size.setCurrentIndex(1 if is_formula else 0)
-            self.chk_size_formula.toggled.connect(toggle_size)
-            
             # --- GLOBAL TRANSFORM ---
             h_tf_head = QtWidgets.QHBoxLayout()
             h_tf_head.addWidget(RZLabel("Global Transform"))
             h_tf_head.addStretch()
-            self.chk_trans_formula = RZCheckBox("Formula")
-            h_tf_head.addWidget(self.chk_trans_formula)
+            self.chk_trans_formula = self._add_row(h_tf_head, "", RZCheckBox("Formula"), 'transform_is_formula')
             layout_trans.addLayout(h_tf_head)
-            
-            self.edit_trans_fx = RZCodeTextEdit()
+            self.edit_trans_fx = self._add_row(layout_trans, "", RZCodeTextEdit(), 'transform_formula')
             self.edit_trans_fx.setPlaceholderText("Transform(x, y, w, h)...")
-            self.edit_trans_fx.setMinimumHeight(40) # Было 60, поджал до 40
-            self.edit_trans_fx.setMaximumHeight(80) # Не даем раздуться
-            self.edit_trans_fx.editingFinished.connect(lambda: self._emit_change('transform_formula', self.edit_trans_fx.toPlainText()))
-            layout_trans.addWidget(self.edit_trans_fx)
-            
-            # Скрываем текстовое поле Global Transform, если галочка не стоит
-            self.edit_trans_fx.setVisible(False)
-            def toggle_global_tf(is_formula):
-                self._emit_change('transform_is_formula', is_formula)
-                self.edit_trans_fx.setVisible(is_formula)
-            self.chk_trans_formula.toggled.connect(toggle_global_tf)
-            
-            self.layout_props.addWidget(self.grp_trans)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Transform: {e}")
+            self.edit_trans_fx.setMinimumHeight(40); self.edit_trans_fx.setMaximumHeight(80)
+            self.chk_trans_formula.toggled.connect(self.edit_trans_fx.setVisible)
 
-        # === GROUP: GRID ===
+            self.layout_props.addWidget(self.grp_trans)
+        except Exception as e: print(f"[INSPECTOR] Error Transform: {e}")
+
+    def _init_grid_ui(self):
         try:
             self.grp_grid = RZGroupBox("Grid Settings")
-            layout_grid = QtWidgets.QVBoxLayout(self.grp_grid)
-            layout_grid.setSpacing(6)
-            self.sl_cell = RZSmartSlider(label_text="Cell Size", is_int=True); self.sl_cell.value_changed.connect(lambda v: self._emit_change('grid_cell_size', int(v))); layout_grid.addWidget(self.sl_cell)
-            h_grid_mm = QtWidgets.QHBoxLayout()
-            self.sl_min_c = RZSmartSlider(label_text="MinX", is_int=True); self.sl_min_c.value_changed.connect(lambda v: self._emit_change('grid_min_cells', int(v), 0))
-            self.sl_max_c = RZSmartSlider(label_text="MaxX", is_int=True); self.sl_max_c.value_changed.connect(lambda v: self._emit_change('grid_max_cells', int(v), 0))
-            h_grid_mm.addWidget(self.sl_min_c); h_grid_mm.addWidget(self.sl_max_c); layout_grid.addLayout(h_grid_mm)
-            h_grid_mm_y = QtWidgets.QHBoxLayout()
-            self.sl_min_r = RZSmartSlider(label_text="MinY", is_int=True); self.sl_min_r.value_changed.connect(lambda v: self._emit_change('grid_min_cells', int(v), 1))
-            self.sl_max_r = RZSmartSlider(label_text="MaxY", is_int=True); self.sl_max_r.value_changed.connect(lambda v: self._emit_change('grid_max_cells', int(v), 1))
-            h_grid_mm_y.addWidget(self.sl_min_r); h_grid_mm_y.addWidget(self.sl_max_r); layout_grid.addLayout(h_grid_mm_y)
-            self.cb_grid_wrap = RZComboBox(); self.cb_grid_wrap.addItems(["SCROLL", "PAGINATE"]); self.cb_grid_wrap.currentTextChanged.connect(lambda t: self._emit_change('grid_wrap_mode', t)); layout_grid.addWidget(self.cb_grid_wrap)
+            layout = QtWidgets.QVBoxLayout(self.grp_grid)
+            layout.setSpacing(6)
+            self.sl_cell = self._add_row(layout, "Cell Size", RZSmartSlider(is_int=True), 'grid_cell_size', 'value_changed')
+            h_x = QtWidgets.QHBoxLayout()
+            self.sl_min_c = self._add_row(h_x, "MinX", RZSmartSlider(is_int=True), None); self.sl_min_c.value_changed.connect(lambda v: self._emit_change('grid_min_cells', int(v), 0))
+            self.sl_max_c = self._add_row(h_x, "MaxX", RZSmartSlider(is_int=True), None); self.sl_max_c.value_changed.connect(lambda v: self._emit_change('grid_max_cells', int(v), 0))
+            layout.addLayout(h_x)
+            h_y = QtWidgets.QHBoxLayout()
+            self.sl_min_r = self._add_row(h_y, "MinY", RZSmartSlider(is_int=True), None); self.sl_min_r.value_changed.connect(lambda v: self._emit_change('grid_min_cells', int(v), 1))
+            self.sl_max_r = self._add_row(h_y, "MaxY", RZSmartSlider(is_int=True), None); self.sl_max_r.value_changed.connect(lambda v: self._emit_change('grid_max_cells', int(v), 1))
+            layout.addLayout(h_y)
+            self.cb_grid_wrap = self._add_row(layout, "Wrap:", RZComboBox(), 'grid_wrap_mode')
+            self.cb_grid_wrap.addItems(["SCROLL", "PAGINATE"])
             self.layout_props.addWidget(self.grp_grid)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Grid: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Grid: {e}")
 
-        # 3. STYLE
+    def _init_style_ui(self):
         try:
-            # === GROUP: APPEARANCE ===
             self.grp_style = RZGroupBox("Appearance")
-            layout_style = QtWidgets.QVBoxLayout(self.grp_style)
-            layout_style.setSpacing(6)
+            layout = QtWidgets.QVBoxLayout(self.grp_style)
+            layout.setSpacing(6)
+            
             h_col = QtWidgets.QHBoxLayout(); h_col.addWidget(RZLabel("Color:")); h_col.addStretch()
-            self.chk_color_formula = RZCheckBox("Formula"); self.chk_color_formula.toggled.connect(lambda v: self._emit_change('color_is_formula', v))
-            h_col.addWidget(self.chk_color_formula); layout_style.addLayout(h_col)
+            self.chk_color_formula = self._add_row(h_col, "", RZCheckBox("Formula"), 'color_is_formula')
+            layout.addLayout(h_col)
+            
             self.stack_color = QtWidgets.QStackedLayout()
-            self.btn_color = RZAdvancedColorPanel(); self.btn_color.colorChanged.connect(lambda c: self._emit_change('color', c))
+            self.btn_color = self._add_row(None, None, RZAdvancedColorPanel(), 'color', 'colorChanged')
             self.stack_color.addWidget(self.btn_color)
+            
             self.w_color_formulas = QtWidgets.QWidget(); l_col_f = QtWidgets.QVBoxLayout(self.w_color_formulas); l_col_f.setContentsMargins(0, 0, 0, 0); l_col_f.setSpacing(2)
             for chan in ['r','g','b','a']:
-                h = QtWidgets.QHBoxLayout(); h.addWidget(RZLabel(f"{chan.upper()}:"))
-                edit = RZFormulaInput(); edit.setPlaceholderText(f"{chan} formula...")
+                edit = self._add_row(l_col_f, f"{chan.upper()}:", RZFormulaInput(), f'color_formula_{chan}')
                 setattr(self, f"edit_col_{chan}", edit)
-                edit.editingFinished.connect(lambda k=f"color_formula_{chan}", e=edit: self._emit_change(k, e.text()))
-                h.addWidget(edit); l_col_f.addLayout(h)
-            self.stack_color.addWidget(self.w_color_formulas); layout_style.addLayout(self.stack_color)
+            self.stack_color.addWidget(self.w_color_formulas)
+            layout.addLayout(self.stack_color)
+            self.chk_color_formula.toggled.connect(lambda v: self.stack_color.setCurrentIndex(1 if v else 0))
             
-            self.cb_img_mode = RZComboBox(); self.cb_img_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"]); self.cb_img_mode.currentTextChanged.connect(lambda t: self._emit_change('image_mode', t))
-            layout_style.addWidget(RZLabel("Image Mode:")); layout_style.addWidget(self.cb_img_mode)
-            self.cb_blend_mode = RZComboBox(); self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR_HUE"]); self.cb_blend_mode.currentTextChanged.connect(lambda t: self._emit_change('image_blending_mode', t))
-            layout_style.addWidget(RZLabel("Blend Mode:")); layout_style.addWidget(self.cb_blend_mode)
+            self.cb_img_mode = self._add_row(layout, "Image Mode:", RZComboBox(), 'image_mode')
+            self.cb_img_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
             
-            self.lbl_image = RZLabel("Image:")
-            self.cb_image = RZImageComboBox(); self.cb_image.value_changed.connect(lambda v: self._emit_change('image_id', v))
-            layout_style.addWidget(self.lbl_image); layout_style.addWidget(self.cb_image)
+            self.cb_blend_mode = self._add_row(layout, "Blend Mode:", RZComboBox(), 'image_blending_mode')
+            self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR_HUE"])
             
-            # === GROUP: TILE SETTINGS ===
+            self.cb_image = self._add_row(layout, "Image:", RZImageComboBox(), 'image_id', 'value_changed')
+            
             self.grp_tile = RZGroupBox("Tile Settings")
-            layout_tile = QtWidgets.QFormLayout(self.grp_tile)
-            self.tile_uv_x = RZSpinBox(); self.tile_uv_x.setRange(0, 100); self.tile_uv_x.valueChanged.connect(lambda v: self._emit_change('tile_uv_x', int(v)))
-            self.tile_uv_y = RZSpinBox(); self.tile_uv_y.setRange(0, 100); self.tile_uv_y.valueChanged.connect(lambda v: self._emit_change('tile_uv_y', int(v)))
-            layout_tile.addRow("UV X:", self.tile_uv_x)
-            layout_tile.addRow("UV Y:", self.tile_uv_y)
-            layout_tile.setSpacing(6)
-            layout_style.addWidget(self.grp_tile)
-            self.list_images = RZConditionalImageList(); layout_style.addWidget(self.list_images)
+            f_tile = QtWidgets.QFormLayout(self.grp_tile); f_tile.setSpacing(6)
+            self.tile_uv_x = self._add_row(f_tile, "UV X:", RZSpinBox(), 'tile_uv_x')
+            self.tile_uv_y = self._add_row(f_tile, "UV Y:", RZSpinBox(), 'tile_uv_y')
+            layout.addWidget(self.grp_tile)
+            
+            self.list_images = RZConditionalImageList()
+            layout.addWidget(self.list_images)
             self.layout_props.addWidget(self.grp_style)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Style: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Style: {e}")
 
-        # === GROUP: TEXT CONTENT ===
+    def _init_text_ui(self):
         try:
             self.grp_text = RZGroupBox("Text content")
-            layout_text = QtWidgets.QVBoxLayout(self.grp_text)
-            layout_text.setSpacing(6)
-            self.cb_text_mode = RZComboBox(); self.cb_text_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"]); self.cb_text_mode.currentTextChanged.connect(lambda t: self._emit_change('text_mode', t))
-            layout_text.addWidget(RZLabel("Text Mode:")); layout_text.addWidget(self.cb_text_mode)
-            self.list_texts = RZConditionalTextList(); layout_text.addWidget(self.list_texts)
+            layout = QtWidgets.QVBoxLayout(self.grp_text)
+            layout.setSpacing(6)
+            self.cb_text_mode = self._add_row(layout, "Text Mode:", RZComboBox(), 'text_mode')
+            self.cb_text_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
+            
+            self.list_texts = RZConditionalTextList()
+            layout.addWidget(self.list_texts)
+            
             self.w_legacy_text = QtWidgets.QWidget(); f_txt = QtWidgets.QFormLayout(self.w_legacy_text); f_txt.setContentsMargins(0, 0, 0, 0); f_txt.setSpacing(5)
-            self.edit_txt_id = RZLineEdit(); self.edit_txt_id.editingFinished.connect(lambda: self._emit_change('text_id', self.edit_txt_id.text())); f_txt.addRow("Text ID:", self.edit_txt_id)
-            self.edit_hov_txt = RZLineEdit(); self.edit_hov_txt.editingFinished.connect(lambda: self._emit_change('hover_text_id', self.edit_hov_txt.text())); f_txt.addRow("Hover ID:", self.edit_hov_txt)
-            layout_text.addWidget(self.w_legacy_text)
+            self.edit_txt_id = self._add_row(f_txt, "Text ID:", RZLineEdit(), 'text_id')
+            self.edit_hov_txt = self._add_row(f_txt, "Hover ID:", RZLineEdit(), 'hover_text_id')
+            layout.addWidget(self.w_legacy_text)
             self.layout_props.addWidget(self.grp_text)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Text: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Text: {e}")
 
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Text: {e}")
-
-        # === GROUP: VALUE LINKS & FX ===
+    def _init_logic_ui(self):
         try:
             self.grp_logic = RZGroupBox("Value Links & FX")
-            layout_logic = QtWidgets.QVBoxLayout(self.grp_logic)
-            layout_logic.setSpacing(6)
-            self.chk_vl_formula = RZCheckBox("Formula Mode"); self.chk_vl_formula.toggled.connect(lambda v: self._emit_change('value_link_is_formula', v)); layout_logic.addWidget(self.chk_vl_formula)
-            self.list_links = RZValueLinkList(); layout_logic.addWidget(self.list_links)
-            self.edit_vl_formula = RZCodeTextEdit(); self.edit_vl_formula.setPlaceholderText("Link Formula..."); self.edit_vl_formula.setMinimumHeight(60); self.edit_vl_formula.editingFinished.connect(lambda: self._emit_change('value_link_formula', self.edit_vl_formula.toPlainText())); layout_logic.addWidget(self.edit_vl_formula)
-            self.list_fx = RZFXList(); layout_logic.addWidget(self.list_fx)
+            layout = QtWidgets.QVBoxLayout(self.grp_logic)
+            layout.setSpacing(6)
+            self.chk_vl_formula = self._add_row(layout, "", RZCheckBox("Formula Mode"), 'value_link_is_formula')
+            self.list_links = RZValueLinkList()
+            layout.addWidget(self.list_links)
+            self.edit_vl_formula = self._add_row(layout, "", RZCodeTextEdit(), 'value_link_formula')
+            self.edit_vl_formula.setPlaceholderText("Link Formula..."); self.edit_vl_formula.setMinimumHeight(60)
+            self.list_fx = RZFXList()
+            layout.addWidget(self.list_fx)
             self.layout_props.addWidget(self.grp_logic)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Logic: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Logic: {e}")
 
-        # === GROUP: INTERACTIONS ===
+    def _init_events_ui(self):
         try:
             self.grp_events = RZGroupBox("Interactions")
-            layout_events = QtWidgets.QVBoxLayout(self.grp_events)
-            layout_events.setSpacing(6)
-            h_hov_head = QtWidgets.QHBoxLayout(); h_hov_head.addWidget(RZLabel("Hover Event")); h_hov_head.addStretch(); self.chk_hover_event = RZCheckBox("Enable"); self.chk_hover_event.toggled.connect(lambda v: self._emit_change('hover_event_enabled', v)); h_hov_head.addWidget(self.chk_hover_event); layout_events.addLayout(h_hov_head)
-            self.edit_hover_fx = RZCodeTextEdit(); self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(40); self.edit_hover_fx.editingFinished.connect(lambda: self._emit_change('hover_event_formula', self.edit_hover_fx.toPlainText())); layout_events.addWidget(self.edit_hover_fx)
-            h_clk_head = QtWidgets.QHBoxLayout(); h_clk_head.addWidget(RZLabel("Click Event")); h_clk_head.addStretch(); self.chk_click_event = RZCheckBox("Enable"); self.chk_click_event.toggled.connect(lambda v: self._emit_change('click_event_enabled', v)); h_clk_head.addWidget(self.chk_click_event); layout_events.addLayout(h_clk_head)
-            self.edit_click_fx = RZCodeTextEdit(); self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(40); self.edit_click_fx.editingFinished.connect(lambda: self._emit_change('click_event_formula', self.edit_click_fx.toPlainText())); layout_events.addWidget(self.edit_click_fx)
+            layout = QtWidgets.QVBoxLayout(self.grp_events)
+            layout.setSpacing(6)
+            h_hov = QtWidgets.QHBoxLayout(); h_hov.addWidget(RZLabel("Hover Event")); h_hov.addStretch()
+            self.chk_hover_event = self._add_row(h_hov, "", RZCheckBox("Enable"), 'hover_event_enabled')
+            layout.addLayout(h_hov)
+            self.edit_hover_fx = self._add_row(layout, "", RZCodeTextEdit(), 'hover_event_formula')
+            self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(40)
+            self.chk_hover_event.toggled.connect(self.edit_hover_fx.setVisible)
             
-            # Simple visibility toggles
-            def toggle_hov(v): self.edit_hover_fx.setVisible(v)
-            def toggle_clk(v): self.edit_click_fx.setVisible(v)
-            self.chk_hover_event.toggled.connect(toggle_hov)
-            self.chk_click_event.toggled.connect(toggle_clk)
+            h_clk = QtWidgets.QHBoxLayout(); h_clk.addWidget(RZLabel("Click Event")); h_clk.addStretch()
+            self.chk_click_event = self._add_row(h_clk, "", RZCheckBox("Enable"), 'click_event_enabled')
+            layout.addLayout(h_clk)
+            self.edit_click_fx = self._add_row(layout, "", RZCodeTextEdit(), 'click_event_formula')
+            self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(40)
+            self.chk_click_event.toggled.connect(self.edit_click_fx.setVisible)
             
             self.layout_props.addWidget(self.grp_events)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Events: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Events: {e}")
 
-        # === GROUP: BUTTON SPECIFICS ===
+    def _init_button_ui(self):
         try:
             self.grp_btn = RZGroupBox("Button Options")
-            layout_btn = QtWidgets.QVBoxLayout(self.grp_btn)
-            self.chk_no_nums = RZCheckBox("Disable Button Nums"); self.chk_no_nums.toggled.connect(lambda v: self._emit_change('disable_button_nums', v)); layout_btn.addWidget(self.chk_no_nums)
-            self.chk_no_popup = RZCheckBox("Disable Button Popup"); self.chk_no_popup.toggled.connect(lambda v: self._emit_change('disable_button_popup', v)); layout_btn.addWidget(self.chk_no_popup)
+            layout = QtWidgets.QVBoxLayout(self.grp_btn)
+            self.chk_no_nums = self._add_row(layout, "", RZCheckBox("Disable Button Nums"), 'disable_button_nums')
+            self.chk_no_popup = self._add_row(layout, "", RZCheckBox("Disable Button Popup"), 'disable_button_popup')
             self.layout_props.addWidget(self.grp_btn)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Buttons: {e}")
+        except Exception as e: print(f"[INSPECTOR] Error Buttons: {e}")
 
-        # === GROUP: EDITOR FLAGS ===
+    def _init_flags_ui(self):
         try:
-            grp_edit = RZGroupBox("Editor Flags")
-            layout_edit = QtWidgets.QVBoxLayout(grp_edit)
-            self.chk_hide = RZCheckBox("Is Hidden"); self.chk_hide.toggled.connect(lambda v: self._emit_change('qt_hide', v)); layout_edit.addWidget(self.chk_hide)
-            self.chk_locked = RZCheckBox("Lock Transform"); self.chk_locked.toggled.connect(lambda v: self._emit_change('qt_locked_ui', v)); layout_edit.addWidget(self.chk_locked)
-            self.layout_props.addWidget(grp_edit)
-        except Exception as e:
-            print(f"[INSPECTOR] Error init Flags: {e}")
+            self.grp_flags = RZGroupBox("Editor Flags")
+            layout = QtWidgets.QVBoxLayout(self.grp_flags)
+            self.chk_hide = self._add_row(layout, "", RZCheckBox("Is Hidden"), 'qt_hide')
+            self.chk_locked = self._add_row(layout, "", RZCheckBox("Lock Transform"), 'qt_locked_ui')
+            self.layout_props.addWidget(self.grp_flags)
+        except Exception as e: print(f"[INSPECTOR] Error Flags: {e}")
 
     def _emit_change(self, key, val, sub=None):
         """Handle property changes - directly update core."""

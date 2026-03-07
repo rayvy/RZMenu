@@ -178,46 +178,82 @@ def generate_qss(t: dict) -> str:
     }}
 
     /* --- INPUTS & CONTROLS --- */
-    QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
+    QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit,
+    RZLineEdit, RZSpinBox, RZDoubleSpinBox, RZComboBox, 
+    _RZSmartSpinBox, _RZSmartDoubleSpinBox, _RZBaseTextEdit,
+    RZFormulaInput, RZCodeTextEdit, RZModInfoTextEdit {{
         background-color: {t.get('bg_input', '#252930')};
-        border: 1px solid {t.get('border_input', '#444')};
-        border-radius: {r_sm};
-        padding: 6px;
-        color: {t.get('text_main', '#EEE')};
+        border: 1px solid {t.get('border_input', '#4A505A')};
+        border-radius: 6px;
+        padding: 4px 8px;
+        color: {t.get('text_main', '#E0E2E4')};
     }}
-    QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{
+
+    QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus {{
+        background-color: {t.get('bg_panel', '#2C313A')};
         border: 1px solid {accent};
-        background-color: rgba(255, 255, 255, 5);
     }}
+
     QComboBox::drop-down {{
-        border-left: 1px solid {t.get('border_input', '#444')};
+        border-left: 1px solid {t.get('border_input', '#4A505A')};
+        width: 20px;
     }}
-    
-    QPushButton {{
-        background-color: {t.get('bg_header', '#3A404A')};
-        color: {t.get('text_main', '#EEE')};
-        border: 1px solid {t.get('border_input', '#444')};
-        border-radius: {r_sm};
-        padding: 8px 16px;
-        font-weight: 500;
+
+    /* --- CHECKBOX --- */
+    QCheckBox, RZCheckBox {{
+        color: {t.get('text_main', '#E0E2E4')};
+        spacing: 5px;
     }}
-    QPushButton:hover {{
+    QCheckBox::indicator, RZCheckBox::indicator {{
+        width: 14px;
+        height: 14px;
+        border-radius: 2px;
+        border: 1px solid {t.get('border_input', '#4A505A')};
+        background-color: {t.get('bg_input', '#252930')};
+    }}
+    QCheckBox::indicator:checked, RZCheckBox::indicator:checked {{
         background-color: {accent};
-        color: {t.get('accent_text', '#FFF')};
+        border: 1px solid {accent};
+    }}
+    QCheckBox::indicator:hover, RZCheckBox::indicator:hover {{
         border: 1px solid {accent_hover};
     }}
-    QPushButton:pressed {{
+
+    /* --- PUSH BUTTONS --- */
+    QPushButton, RZPushButton, RZColorButton {{
+        background-color: {t.get('bg_header', '#3A404A')};
+        color: {t.get('text_main', '#E0E2E4')};
+        border: 1px solid {t.get('border_input', '#3A404A')};
+        border-radius: 4px;
+        padding: 6px 12px;
+    }}
+    QPushButton:hover, RZPushButton:hover {{
         background-color: {accent_hover};
-        padding-top: 9px; padding-bottom: 7px;
+        color: {t.get('accent_text', '#FFFFFF')};
     }}
-    QPushButton:disabled {{
-        color: {t.get('text_disabled', '#666')};
-        background-color: {t.get('bg_input', '#222')};
+    QPushButton:focus, RZPushButton:focus {{
+        background-color: {t.get('bg_panel', '#2C313A')};
+        border: 1.5px solid {accent};
     }}
-    
-    #BtnSpecial {{ border: none; color: {t.get('text_dark', '#999')}; }}
-    #BtnWarning {{ background-color: {t.get('error', '#FF5555')}; color: {t.get('text_bright', '#FFF')}; }}
-    
+    QPushButton:pressed, RZPushButton:pressed {{
+        background-color: {accent};
+    }}
+    QPushButton:disabled, RZPushButton:disabled {{
+        color: {t.get('text_disabled', '#6A717C')};
+        background-color: {t.get('bg_input', '#252930')};
+    }}
+
+    /* --- LABELS --- */
+    QLabel, RZLabel {{
+        color: {t.get('text_main', '#E0E2E4')};
+    }}
+
+    /* --- SCROLL AREAS --- */
+    QScrollArea, RZScrollArea {{
+        background-color: transparent;
+        border: none;
+    }}
+
     /* Tables & Trees (Minimalist) */
     QHeaderView::section {{
         background-color: transparent;

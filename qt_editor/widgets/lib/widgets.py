@@ -42,18 +42,10 @@ class RZColorButton(RZVisualInputMixin, QtWidgets.QPushButton):
         theme = get_current_theme()
         text_bright = theme.get('text_bright', '#FFFFFF')
         text_main = theme.get('text_main', '#000000')
-        border_col = theme.get('border_input', '#444')
         contrast_color = text_main if luminance > 128 else text_bright
-        bg_style = f"rgba({r},{g},{b},{a})"
-        self.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {bg_style};
-                color: {contrast_color};
-                border: 1px solid {border_col};
-                border-radius: 3px;
-                padding: 4px 8px;
-            }}
-        """)
+        
+        # Only set color-specific properties, others handled by QSS
+        self.setStyleSheet(f"background-color: rgba({r},{g},{b},{a}); color: {contrast_color};")
 
     def _pick_color(self):
         dialog = QtWidgets.QColorDialog(self._qcolor, self)
@@ -664,42 +656,16 @@ class RZCheckBox(RZVisualInputMixin, QtWidgets.QCheckBox):
         painter.end()
         
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QCheckBox {{
-                color: {theme.get('text_main', '#E0E2E4')};
-                spacing: 5px;
-            }}
-            QCheckBox::indicator {{
-                width: 14px;
-                height: 14px;
-                border-radius: 2px;
-                border: 1px solid {theme.get('border_input', '#4A505A')};
-                background-color: {theme.get('bg_input', '#252930')};
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {theme.get('accent', '#5298D4')};
-                border: 1px solid {theme.get('accent', '#5298D4')};
-                image: url(:/icons/check.png); /* Fallback or procedural check */
-            }}
-            QCheckBox::indicator:hover {{
-                border: 1px solid {theme.get('accent_hover', '#6AACDE')};
-            }}
-        """)
+        pass
 
 # --- Existing Widgets ---
 
-class RZContextAwareWidget(QtWidgets.QWidget):
+from .base import RZBaseWidget
+
+class RZContextAwareWidget(RZBaseWidget):
     def __init__(self, area_name, parent=None):
-        super().__init__(parent)
-        self.area_name = area_name
+        super().__init__(parent, area_name)
         self.setObjectName(f"RZContextWidget_{area_name}")
-    def enterEvent(self, event):
-        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0, 0), area=self.area_name)
-        super().enterEvent(event)
-    def leaveEvent(self, event):
-        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0, 0), area="NONE")
-        super().leaveEvent(event)
 
 class RZStyledWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -712,47 +678,14 @@ class RZPanelWidget(RZStyledWidget):
         super().__init__(parent)
         if object_name: self.setObjectName(object_name)
     def apply_theme(self):
-        theme = get_current_theme()
-        obj_name = self.objectName()
-        if obj_name:
-            selector = f"#{obj_name}"
-        else:
-            selector = self.__class__.__name__
-            
-        self.setStyleSheet(f"""
-            {selector} {{
-                background-color: {theme.get('bg_panel', '#2C313A')};
-                border: 1px solid {theme.get('border_main', '#3A404A')};
-                border-radius: 4px;
-            }}
-        """)
+        pass
 
 class RZGroupBox(QtWidgets.QGroupBox):
     def __init__(self, title="", parent=None):
         super().__init__(title, parent)
         self.apply_theme()
     def apply_theme(self):
-        theme = get_current_theme()
-        # Card style: subtle background, no border, 8px radius
-        self.setStyleSheet(f"""
-            QGroupBox {{
-                background-color: {theme.get('bg_input', '#252930')};
-                border: none;
-                border-radius: 8px;
-                margin-top: 18px; /* Reduced from 24 */
-                padding: 8px;     /* Reduced from 12 */
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0px 4px;
-                left: 8px;
-                top: 2px;
-                color: {theme.get('text_dim', '#888')};
-                font-weight: 600;
-                font-size: 11px;
-            }}
-        """)
+        pass
 
 class RZPushButton(RZVisualInputMixin, QtWidgets.QPushButton):
     def __init__(self, text="", parent=None):
@@ -766,38 +699,14 @@ class RZPushButton(RZVisualInputMixin, QtWidgets.QPushButton):
         self._draw_visual_border(painter)
         painter.end()
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {theme.get('bg_header', '#3A404A')};
-                color: {theme.get('text_main', '#E0E2E4')};
-                border: none;
-                border-radius: 3px;
-                padding: 4px 10px;
-            }}
-            QPushButton:hover {{
-                background-color: {theme.get('accent_hover', '#6AACDE')};
-                color: {theme.get('accent_text', '#FFFFFF')};
-            }}
-            QPushButton:focus {{
-                background-color: {theme.get('bg_panel', '#2C313A')};
-            }}
-            QPushButton:pressed {{
-                background-color: {theme.get('accent', '#5298D4')};
-            }}
-            QPushButton:disabled {{
-                color: {theme.get('text_disabled', '#6A717C')};
-                background-color: {theme.get('bg_input', '#252930')};
-            }}
-        """)
+        pass
 
 class RZLabel(QtWidgets.QLabel):
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.apply_theme()
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"color: {theme.get('text_main', '#E0E2E4')};")
+        pass
 
 class RZSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
     def __init__(self, parent=None):
@@ -812,19 +721,7 @@ class RZSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
         self._draw_visual_border(painter)
         painter.end()
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {theme.get('bg_input', '#252930')};
-                border: none;
-                border-radius: 6px;
-                padding: 4px 6px;
-                color: {theme.get('text_main', '#E0E2E4')};
-            }}
-            QSpinBox:focus {{ 
-                background-color: {theme.get('bg_panel', '#2C313A')};
-            }}
-        """)
+        pass
     def wheelEvent(self, event):
         event.ignore()
 
@@ -843,19 +740,7 @@ class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.apply_theme()
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QDoubleSpinBox {{
-                background-color: {theme.get('bg_input', '#252930')};
-                border: none;
-                border-radius: 6px;
-                padding: 4px 6px;
-                color: {theme.get('text_main', '#E0E2E4')};
-            }}
-            QDoubleSpinBox:focus {{ 
-                background-color: {theme.get('bg_panel', '#2C313A')};
-            }}
-        """)
+        pass
     def wheelEvent(self, event):
         event.ignore()
 
@@ -934,23 +819,7 @@ class RZComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
         painter.end()
 
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {theme.get('bg_input', '#252930')};
-                border: none;
-                border-radius: 6px;
-                padding: 4px 8px;
-                color: {theme.get('text_main', '#E0E2E4')};
-            }}
-            QComboBox:focus {{ 
-                background-color: {theme.get('bg_panel', '#2C313A')};
-            }}
-            QComboBox::drop-down {{ 
-                border-left: 1px solid {theme.get('border_input', '#4A505A')}; 
-                width: 20px;
-            }}
-        """)
+        pass
     def wheelEvent(self, event):
         event.ignore()
 
@@ -974,19 +843,7 @@ class RZLineEdit(RZVisualInputMixin, QtWidgets.QLineEdit):
         event.ignore()
 
     def apply_theme(self):
-        theme = get_current_theme()
-        self.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {theme.get('bg_input', '#252930')};
-                border: none;
-                border-radius: 6px;
-                padding: 4px 8px;
-                color: {theme.get('text_main', '#E0E2E4')};
-            }}
-            QLineEdit:focus {{
-                background-color: {theme.get('bg_panel', '#2C313A')};
-            }}
-        """)
+        pass
 
     def set_text_silent(self, text):
         """Update text without emitting signals and only if not focused."""

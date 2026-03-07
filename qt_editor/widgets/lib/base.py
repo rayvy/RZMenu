@@ -169,6 +169,29 @@ class RZVisualInputMixin:
             return True
         return False
 
+class RZBaseWidget(QtWidgets.QWidget):
+    """
+    Base class for all RZ widgets.
+    Automatically handles ContextManager updates for the area it's in.
+    """
+    def __init__(self, parent=None, area_name="NONE"):
+        super().__init__(parent)
+        self.area_name = area_name
+        
+    def enterEvent(self, event):
+        from ...context import RZContextManager
+        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0, 0), area=self.area_name)
+        super().enterEvent(event)
+        
+    def leaveEvent(self, event):
+        from ...context import RZContextManager
+        RZContextManager.get_instance().update_input(QtGui.QCursor.pos(), (0, 0), area="NONE")
+        super().leaveEvent(event)
+
+    def apply_theme(self):
+        """Should be overridden if needed, but generic QSS usually handles it."""
+        pass
+
 class RZSmartSlider(QtWidgets.QWidget):
     """
     Smart Slider: Label (drag) + Spinbox + +/- Buttons.
