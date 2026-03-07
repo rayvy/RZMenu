@@ -1142,7 +1142,6 @@ global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
 [Present]
 run = CommandListBaseDataCompute
 [CommandListBaseDataCompute]
-local $sppeeedyy = 0.00125
 if $dt+$sppeeedyy < $sppeeedyy
 {% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
     {% if shape.anim_condition %}
@@ -1305,9 +1304,7 @@ global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
     endif
     {% endif %}
     {% endfor %}
-
-    ; --- Расчет частот (Freq) для анимаций ---
-    local $sppeeedyy = 0.00125
+    
     if $dt + $sppeeedyy < $sppeeedyy
         {% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
         ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * $sppeeedyy
