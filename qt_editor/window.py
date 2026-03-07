@@ -31,7 +31,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("RZMEditorWindow")
-        self.setWindowTitle("RZMenu Editor (Apple Magic)")
+        self.setWindowTitle("RZMenu Editor (Pizdec edition)")
+        icon_path = "rayvich.ico"
+        self.setWindowIcon(QtGui.QIcon(icon_path))
         self.resize(1100, 650)
 
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
@@ -56,8 +58,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.toolbar_container = RZContextAwareWidget("HEADER", self)
         self.toolbar_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_container)
-        self.toolbar_layout.setContentsMargins(12, 4, 12, 4) # Reduced vertical margin
-        self.toolbar_layout.setSpacing(6)
+        self.toolbar_layout.setContentsMargins(4, 4, 4, 4) # Reduced vertical margin
+        self.toolbar_layout.setSpacing(2)
         self.setup_toolbar() 
         self.root_layout.addWidget(self.toolbar_container)
         
@@ -65,7 +67,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.footer_container = RZContextAwareWidget("FOOTER", self)
         self.footer_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
-        self.footer_layout.setContentsMargins(12, 4, 12, 4)
+        self.footer_layout.setContentsMargins(4, 4, 4, 4)
         self.setup_footer() 
         self.root_layout.addWidget(self.footer_container)
 

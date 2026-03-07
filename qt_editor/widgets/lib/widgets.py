@@ -477,44 +477,105 @@ class RZAdvancedColorPanel(QtWidgets.QWidget):
         self.apply_theme()
 
 # --- RZScrollArea (Smooth Scroll) ---
+class SquishyScrollBar(QtWidgets.QScrollBar):
+    """Кастомный скроллбар, который умеет визуально 'сжиматься'"""
+    def __init__(self, parent=None):
+        super().__init__(QtCore.Qt.Vertical, parent)
+        self._squish_margin_top = 0
+        self._squish_margin_bottom = 0
+
+    def set_squish(self, offset):
+        # offset > 0 значит тянем вниз (сжимается низ)
+        # offset < 0 значит тянем вверх (сжимается верх)
+        if offset > 0:
+            self._squish_margin_bottom = offset
+            self._squish_margin_top = 0
+        elif offset < 0:
+            self._squish_margin_top = abs(offset)
+            self._squish_margin_bottom = 0
+        else:
+            self._squish_margin_top = 0
+            self._squish_margin_bottom = 0
+        self.update() # Перерисовываем скроллбар
+
+    def paintEvent(self, event):
+        # Отрисовываем стандартный скроллбар
+        super().paintEvent(event)
+        
+        # Поверх стандартного поведения делаем визуальный хак:
+        # Если есть squish, мы закрашиваем концы ползунка цветом фона, 
+        # создавая иллюзию его сжатия.
+        if self._squish_margin_top > 0 or self._squish_margin_bottom > 0:
+            painter = QtGui.QPainter(self)
+            opt = QtWidgets.QStyleOptionSlider()
+            self.initStyleOption(opt)
+            
+            # Получаем геометрию самого ползунка (handle)
+            handle_rect = self.style().subControlRect(
+                QtWidgets.QStyle.CC_ScrollBar, opt, 
+                QtWidgets.QStyle.SC_ScrollBarSlider, self
+            )
+            
+            # Цвет фона скроллбара (чтобы "откусить" часть ползунка)
+            # Замените на цвет вашего интерфейса, если он отличается
+            bg_color = self.palette().color(QtGui.QPalette.Window)
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(bg_color)
+            
+            # Отрезаем низ
+            if self._squish_margin_bottom > 0:
+                cut_rect = QtCore.QRect(
+                    handle_rect.left(), 
+                    handle_rect.bottom() - int(self._squish_margin_bottom) + 1,
+                    handle_rect.width(), 
+                    int(self._squish_margin_bottom)
+                )
+                painter.drawRect(cut_rect)
+                
+            # Отрезаем верх
+            if self._squish_margin_top > 0:
+                cut_rect = QtCore.QRect(
+                    handle_rect.left(), 
+                    handle_rect.top(),
+                    handle_rect.width(), 
+                    int(self._squish_margin_top)
+                )
+                painter.drawRect(cut_rect)
+
+
 class RZScrollArea(QtWidgets.QScrollArea):
-    """
-    QScrollArea with physics-based smooth scrolling and "squish" edge animation.
-    Uses distance-dependent interpolation + fixed speed base.
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        
+        # Устанавливаем наш кастомный скроллбар
+        self.setVerticalScrollBar(SquishyScrollBar(self))
         self.verticalScrollBar().setSingleStep(20)
         
         self._target_y = 0
         self._current_y = 0
-        self._velocity = 0
         
-        # Interpolation timer
+        # Таймер
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._update_physics)
         self._timer.setInterval(10) # 100 FPS
         
-        # Squish state
+        # Анимация сжатия (Squish)
         self._squish_offset = 0
         self._squish_anim = QtCore.QVariantAnimation(self)
-        self._squish_anim.setDuration(300)
-        self._squish_anim.setEasingCurve(QtCore.QEasingCurve.OutElastic)
+        self._squish_anim.setDuration(250) # Сделали чуть быстрее для динамики
+        self._squish_anim.setEasingCurve(QtCore.QEasingCurve.OutQuad) # Более естественный отскок
         self._squish_anim.valueChanged.connect(self._set_squish)
 
     def _set_squish(self, val):
         self._squish_offset = val
         if self.widget():
-            # Apply visual offset to content
+            # 1. Двигаем сам контент
             offset = int(self._squish_offset)
             self.widget().move(0, -self.verticalScrollBar().value() + offset)
             
-            # Repaint scrollbar handle areas
-            self.verticalScrollBar().update()
-            
-            # Optional: bounce the whole area slightly?
-            # self.update() 
+            # 2. Передаем значение в скроллбар, чтобы он визуально сжался
+            self.verticalScrollBar().set_squish(offset)
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -524,15 +585,19 @@ class RZScrollArea(QtWidgets.QScrollArea):
             self._current_y = float(bar.value())
             self._target_y = self._current_y
             
-        self._target_y -= delta
+        # Умножаем delta на коэффициент, чтобы скролл был более длинным за один "щелчок" колеса
+        scroll_multiplier = 1.5 
+        self._target_y -= (delta * scroll_multiplier)
         
-        # Boundary Check for Squish
-        if self._target_y < -50:
-            self._target_y = -50
-            self._trigger_squish(15) # Squish down
-        elif self._target_y > bar.maximum() + 50:
-            self._target_y = bar.maximum() + 50
-            self._trigger_squish(-15) # Squish up
+        # Проверка границ для эффекта Squish
+        squish_max_distance = 120 # Максимальная сила сжатия
+        
+        if self._target_y < -squish_max_distance:
+            self._target_y = -squish_max_distance
+            self._trigger_squish(50) # Сжимаем вверх
+        elif self._target_y > bar.maximum() + squish_max_distance:
+            self._target_y = bar.maximum() + squish_max_distance
+            self._trigger_squish(-50) # Сжимаем вниз
             
         self._timer.start()
         event.accept()
@@ -543,16 +608,6 @@ class RZScrollArea(QtWidgets.QScrollArea):
         self._squish_anim.setStartValue(amount)
         self._squish_anim.setEndValue(0)
         self._squish_anim.start()
-        
-        # Visually 'squish' the scrollbar handle by reducing its length temporarily
-        bar = self.verticalScrollBar()
-        if bar.isVisible():
-            t = get_current_theme()
-            # This is a bit of a hack but gives visual feedback on handle length
-            # Note: actual handle height is usually dynamic, so we just add a temporary margin/padding
-            # which Qt stylesheet interprets as handle size change if we are careful.
-            # But safer is just to pulse the color or position.
-            pass
 
     def _update_physics(self):
         bar = self.verticalScrollBar()
@@ -564,24 +619,24 @@ class RZScrollArea(QtWidgets.QScrollArea):
             self._timer.stop()
             return
             
-        # Physics: speed = (distance * factor) + fixed_speed
-        step = (diff * 0.15) + (2.0 if diff > 0 else -2.0)
+        # ИСПРАВЛЕННАЯ ФИЗИКА:
+        # Множитель 0.35 дает быструю, но плавную интерполяцию. 
+        # Убрана странная константа +2.0, добавлена минимальная скорость (min_speed).
+        step = diff * 0.35 
         
-        # Limit step
-        if abs(step) > abs(diff):
-            step = diff
+        # Гарантируем, что ползунок не будет бесконечно медленно ползти в конце
+        if step > 0 and step < 1.0: step = 1.0
+        elif step < 0 and step > -1.0: step = -1.0
             
         self._current_y += step
         
-        # Clamp to bounds (with a bit of bounce room for visual)
+        # Защита от переполнения
         clamped_y = max(0, min(int(self._current_y), bar.maximum()))
         bar.setValue(clamped_y)
         
-        # If we reached the actual scroll bounds but target is beyond, handle it
-        if (self._current_y <= 0 and self._target_y < 0) or \
-           (self._current_y >= bar.maximum() and self._target_y > bar.maximum()):
-            # We are in the "squish" zone
-            pass
+        # Обновляем позицию виджета во время скролла
+        if self.widget() and not self._squish_anim.state() == QtCore.QVariantAnimation.Running:
+             self.widget().move(0, -clamped_y)
 
 # --- New RZCheckBox ---
 class RZCheckBox(QtWidgets.QCheckBox):
