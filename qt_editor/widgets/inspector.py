@@ -1294,22 +1294,22 @@ class RZMInspectorPanel(RZEditorPanel):
             self.stack_pos.setCurrentIndex(1 if pos_is_form else 0)
             
             if pos_is_form:
-                self.edit_pos_fx.set_text_silent(props.get('position_formula_x', ''))
-                self.edit_pos_fy.set_text_silent(props.get('position_formula_y', ''))
+                if hasattr(self, 'edit_pos_fx'): self.edit_pos_fx.set_text_silent(props.get('position_formula_x', ''))
+                if hasattr(self, 'edit_pos_fy'): self.edit_pos_fy.set_text_silent(props.get('position_formula_y', ''))
             else:
-                self.sl_x.set_value_from_backend(props.get('pos_x'))
-                self.sl_y.set_value_from_backend(props.get('pos_y'))
+                if hasattr(self, 'sl_x'): self.sl_x.set_value_from_backend(props.get('pos_x'))
+                if hasattr(self, 'sl_y'): self.sl_y.set_value_from_backend(props.get('pos_y'))
 
             size_is_form = props.get('size_is_formula') is True
             self.chk_size_formula.setChecked(size_is_form)
             self.stack_size.setCurrentIndex(1 if size_is_form else 0)
             
             if size_is_form:
-                self.edit_size_fx.set_text_silent(props.get('size_formula_x', ''))
-                self.edit_size_fy.set_text_silent(props.get('size_formula_y', ''))
+                if hasattr(self, 'edit_size_fx'): self.edit_size_fx.set_text_silent(props.get('size_formula_x', ''))
+                if hasattr(self, 'edit_size_fy'): self.edit_size_fy.set_text_silent(props.get('size_formula_y', ''))
             else:
-                self.sl_w.set_value_from_backend(props.get('width'))
-                self.sl_h.set_value_from_backend(props.get('height'))
+                if hasattr(self, 'sl_w'): self.sl_w.set_value_from_backend(props.get('width'))
+                if hasattr(self, 'sl_h'): self.sl_h.set_value_from_backend(props.get('height'))
             
             # Locking Logic
             is_locked_pos = props.get('is_locked_pos', False)
@@ -1331,8 +1331,9 @@ class RZMInspectorPanel(RZEditorPanel):
             trans_is_form = props.get('transform_is_formula') is True
             self.chk_trans_formula.setChecked(trans_is_form)
             # Use toPlainText if needed or setText via helper
-            self.edit_trans_fx.set_text_silent(props.get('transform_formula', ''))
-            self.edit_trans_fx.setVisible(trans_is_form)
+            if hasattr(self, 'edit_trans_fx'):
+                self.edit_trans_fx.set_text_silent(props.get('transform_formula', ''))
+                self.edit_trans_fx.setVisible(trans_is_form)
 
             # --- Appearance ---
             class_type = props.get('class_type', 'CONTAINER')

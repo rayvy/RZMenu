@@ -6,14 +6,21 @@ from ...utils.debounce import RZDebouncer
 from .base import RZVisualInputMixin
 
 # --- RZColorButton ---
-class RZColorButton(QtWidgets.QPushButton):
+class RZColorButton(RZVisualInputMixin, QtWidgets.QPushButton):
     colorChanged = QtCore.Signal(list)
 
     def __init__(self, text=""):
         super().__init__(text)
+        self._init_visuals()
         self._qcolor = QtGui.QColor(255, 255, 255)
         self.clicked.connect(self._pick_color)
         self.update_style()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
 
     def set_color(self, color_data):
         if not color_data: return
@@ -640,11 +647,21 @@ class RZScrollArea(QtWidgets.QScrollArea):
              self.widget().move(0, -clamped_y)
 
 # --- New RZCheckBox ---
-class RZCheckBox(QtWidgets.QCheckBox):
+class RZCheckBox(RZVisualInputMixin, QtWidgets.QCheckBox):
     def __init__(self, text="", parent=None, checked=False):
         super().__init__(text, parent)
+        self._init_visuals()
+        self._draw_border_enabled = False # Checkbox only wants indicator styling
         self.setChecked(checked)
         self.apply_theme()
+        
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        # For checkbox, we draw a smaller glow around the indicator if possible, 
+        # or just the standard border if it's a full-width widget.
+        self._draw_visual_border(painter)
+        painter.end()
         
     def apply_theme(self):
         theme = get_current_theme()
@@ -737,23 +754,33 @@ class RZGroupBox(QtWidgets.QGroupBox):
             }}
         """)
 
-class RZPushButton(QtWidgets.QPushButton):
+class RZPushButton(RZVisualInputMixin, QtWidgets.QPushButton):
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
+        self._init_visuals()
         self.apply_theme()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: {theme.get('bg_header', '#3A404A')};
                 color: {theme.get('text_main', '#E0E2E4')};
-                border: 1px solid {theme.get('border_input', '#4A505A')};
+                border: none;
                 border-radius: 3px;
                 padding: 4px 10px;
             }}
             QPushButton:hover {{
                 background-color: {theme.get('accent_hover', '#6AACDE')};
                 color: {theme.get('accent_text', '#FFFFFF')};
+            }}
+            QPushButton:focus {{
+                background-color: {theme.get('bg_panel', '#2C313A')};
             }}
             QPushButton:pressed {{
                 background-color: {theme.get('accent', '#5298D4')};
@@ -772,32 +799,47 @@ class RZLabel(QtWidgets.QLabel):
         theme = get_current_theme()
         self.setStyleSheet(f"color: {theme.get('text_main', '#E0E2E4')};")
 
-class RZSpinBox(QtWidgets.QSpinBox):
+class RZSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._init_visuals()
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.apply_theme()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
             QSpinBox {{
                 background-color: {theme.get('bg_input', '#252930')};
-                border: 1px solid {theme.get('border_input', '#4A505A')};
+                border: none;
                 border-radius: 6px;
                 padding: 4px 6px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
             QSpinBox:focus {{ 
-                border: 1px solid {theme.get('accent', '#5298D4')};
                 background-color: {theme.get('bg_panel', '#2C313A')};
             }}
         """)
     def wheelEvent(self, event):
         event.ignore()
 
-class RZDoubleSpinBox(QtWidgets.QDoubleSpinBox):
+class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._init_visuals()
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.apply_theme()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.apply_theme()
     def apply_theme(self):
@@ -805,13 +847,12 @@ class RZDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         self.setStyleSheet(f"""
             QDoubleSpinBox {{
                 background-color: {theme.get('bg_input', '#252930')};
-                border: 1px solid {theme.get('border_input', '#4A505A')};
+                border: none;
                 border-radius: 6px;
                 padding: 4px 6px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
             QDoubleSpinBox:focus {{ 
-                border: 1px solid {theme.get('accent', '#5298D4')};
                 background-color: {theme.get('bg_panel', '#2C313A')};
             }}
         """)
@@ -842,9 +883,10 @@ class RZStaggeredDelegate(QtWidgets.QStyledItemDelegate):
         super().paint(painter, option, index)
         painter.restore()
 
-class RZComboBox(QtWidgets.QComboBox):
+class RZComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._init_visuals()
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.apply_theme()
         
@@ -885,21 +927,23 @@ class RZComboBox(QtWidgets.QComboBox):
         super().showPopup()
         self._popup_anim.start()
 
-    def hidePopup(self):
-        super().hidePopup()
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
 
     def apply_theme(self):
         theme = get_current_theme()
         self.setStyleSheet(f"""
             QComboBox {{
                 background-color: {theme.get('bg_input', '#252930')};
-                border: 1px solid {theme.get('border_input', '#4A505A')};
+                border: none;
                 border-radius: 6px;
                 padding: 4px 8px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
             QComboBox:focus {{ 
-                border: 1px solid {theme.get('accent', '#5298D4')};
                 background-color: {theme.get('bg_panel', '#2C313A')};
             }}
             QComboBox::drop-down {{ 
@@ -910,7 +954,7 @@ class RZComboBox(QtWidgets.QComboBox):
     def wheelEvent(self, event):
         event.ignore()
 
-class RZLineEdit(QtWidgets.QLineEdit, RZVisualInputMixin):
+class RZLineEdit(RZVisualInputMixin, QtWidgets.QLineEdit):
     editingFinished = QtCore.Signal() 
 
     def __init__(self, parent=None):
@@ -934,13 +978,12 @@ class RZLineEdit(QtWidgets.QLineEdit, RZVisualInputMixin):
         self.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {theme.get('bg_input', '#252930')};
-                border: 1px solid {theme.get('border_input', '#4A505A')};
+                border: none;
                 border-radius: 6px;
                 padding: 4px 8px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
             QLineEdit:focus {{
-                border: 1px solid {theme.get('accent', '#5298D4')};
                 background-color: {theme.get('bg_panel', '#2C313A')};
             }}
         """)

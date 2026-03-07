@@ -9,7 +9,7 @@ from ...core import blender_bridge
 from ...utils.debounce import RZDebouncer
 from ...utils.evaluation import get_formula_preview
 
-class RZImageComboBox(QtWidgets.QComboBox):
+class RZImageComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
     """
     ComboBox for image selection with drag-and-drop support.
     """
@@ -17,6 +17,7 @@ class RZImageComboBox(QtWidgets.QComboBox):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._init_visuals()
         self.setAcceptDrops(True)
         self.apply_theme()
         
@@ -68,6 +69,12 @@ class RZImageComboBox(QtWidgets.QComboBox):
             
         self._popup_anim.start()
 
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
+
     def wheelEvent(self, event):
         event.ignore()
 
@@ -76,12 +83,12 @@ class RZImageComboBox(QtWidgets.QComboBox):
         self.setStyleSheet(f"""
             QComboBox {{
                 background-color: {theme.get('bg_input', '#252930')};
-                border: 1px solid {theme.get('border_input', '#4A505A')};
+                border: none;
                 border-radius: 3px;
                 padding: 3px;
                 color: {theme.get('text_main', '#E0E2E4')};
             }}
-            QComboBox:focus {{ border: 1px solid {theme.get('accent', '#5298D4')}; }}
+            QComboBox:focus {{ background-color: {theme.get('bg_panel', '#2C313A')}; }}
             QComboBox::drop-down {{ border-left: 1px solid {theme.get('border_input', '#4A505A')}; }}
         """)
 
@@ -202,7 +209,7 @@ class RZIniHighlighter(QtGui.QSyntaxHighlighter):
             self.setFormat(match.start(), match.end() - match.start(), self.fmt_comment)
 
 
-class _RZBaseTextEdit(QtWidgets.QPlainTextEdit, RZVisualInputMixin):
+class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
     """
     Hidden base class. Handles standard popup base config, 
     focus management, and core text accessors.
@@ -279,7 +286,7 @@ class _RZBaseTextEdit(QtWidgets.QPlainTextEdit, RZVisualInputMixin):
         self.setStyleSheet(f"""
             QPlainTextEdit {{
                 background-color: {theme.get('bg_input', '#252930')};
-                border: 1px solid {theme.get('border_input', '#4A505A')};
+                border: none;
                 border-radius: 6px;
                 padding: 4px 8px;
                 color: {theme.get('text_main', '#E0E2E4')};

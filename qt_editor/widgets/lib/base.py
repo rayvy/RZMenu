@@ -8,10 +8,15 @@ class RZVisualInputMixin:
     and optional resizing logic to input widgets (QLineEdit & QPlainTextEdit).
     """
     def _init_visuals(self):
-        # Hover Animation
+        # Feature Toggles
+        self._draw_border_enabled = True
+        self._draw_glow_enabled = True
+        self._is_active = False # Pressed state
+        
+        # Hover Animation (Fast/Snappy)
         self._hover_progress = 0.0
         self._hover_anim = QtCore.QPropertyAnimation(self, b"hover_progress")
-        self._hover_anim.setDuration(250)
+        self._hover_anim.setDuration(150) # Faster (Apple-like)
         
         # Resizing flags
         self._is_resizable = False
@@ -32,44 +37,83 @@ class RZVisualInputMixin:
     def enterEvent(self, event):
         self._hover_anim.stop()
         self._hover_anim.setEndValue(1.0)
-        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.OutQuint) # Snappy
         self._hover_anim.start()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self._hover_anim.stop()
+        if self._hover_anim.state() == QtCore.QPropertyAnimation.Running:
+            self._hover_anim.stop()
         self._hover_anim.setEndValue(0.0)
-        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.InQuint) # Smooth exit
         self._hover_anim.start()
         super().leaveEvent(event)
 
+    def focusInEvent(self, event):
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self.update()
+        super().focusOutEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._is_active = True
+            self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._is_active = False
+        self.update()
+        super().mouseReleaseEvent(event)
+
     def _draw_visual_border(self, painter):
-        """Standardized drawing for hover and focus borders."""
-        if not hasattr(self, 'rect'): return
+        """Standardized drawing for base, hover, active, and focus borders."""
+        if not self.isVisible() or not self._draw_border_enabled: return
         
-        # Рисуем "тестовый маркер" в правом верхнем углу, если мышь наведена
-        if self._hover_progress > 0.01:
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            
-            # 1. Цвет маркера — ярко-оранжевый/красный
-            marker_color = QtGui.QColor("#FF4500")
-            marker_color.setAlpha(int(255 * self._hover_progress))
-            painter.setBrush(marker_color)
-            painter.setPen(QtCore.Qt.NoPen)
-            
-            # 2. Рисуем кружок в углу (x, y, width, height)
-            # Сдвигаем внутрь на 5 пикселей от правого края
-            r = self.rect()
-            circle_size = 8 * self._hover_progress
-            painter.drawEllipse(r.right() - 15, 5, circle_size, circle_size)
-            
-            # --- Оставляем и старую логику рамки, но сделаем её ЖИРНОЙ ---
-            accent = QtGui.QColor("#FF0000")
-            accent.setAlpha(int(160 * self._hover_progress))
-            pen = QtGui.QPen(accent, 3.0) # 3 пикселя — это очень жирно
+        r = self.rect()
+        theme = get_current_theme()
+        accent = QtGui.QColor(theme.get('accent', '#5298D4'))
+        acc_hover = QtGui.QColor(theme.get('accent_hover', '#6AACDE'))
+        border_col = QtGui.QColor(theme.get('border_input', '#4A505A'))
+        
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        # 0. State: ACTIVE (Pressed) - Highest Priority
+        if self._is_active:
+             # Stronger, more saturated border for active interaction
+             pen = QtGui.QPen(accent, 2.0)
+             painter.setPen(pen)
+             painter.setBrush(QtCore.Qt.NoBrush)
+             painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 4, 4)
+             return
+
+        # 1. State: FOCUS (Solid Accent)
+        if self.hasFocus():
+            pen = QtGui.QPen(accent, 1.5)
             painter.setPen(pen)
             painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawRoundedRect(r.adjusted(2, 2, -2, -2), 4, 4)
+            painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 4, 4)
+            return
+
+        # 2. State: HOVER (Smooth Glow)
+        if self._draw_glow_enabled and self._hover_progress > 0.01:
+            # Draw subtle breathing border using accent_hover
+            glow_color = QtGui.QColor(acc_hover)
+            glow_color.setAlpha(int(155 * self._hover_progress))
+            
+            pen = QtGui.QPen(glow_color, 1.2 + (0.5 * self._hover_progress))
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 4, 4)
+            return
+
+        # 3. State: BASE (Standard Border)
+        pen = QtGui.QPen(border_col, 1)
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.NoBrush)
+        painter.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3)
 
     def _draw_resizer_dots(self, painter):
         """Optional resizer visual for multi-line editors."""
@@ -80,8 +124,11 @@ class RZVisualInputMixin:
         by = r.bottom() - 4
         
         theme = get_current_theme()
-        painter.setPen(QtGui.QPen(QtGui.QColor(theme.get('border_input', '#4A505A')), 1.5))
-        
+        col = QtGui.QColor(theme.get('border_input', '#4A505A'))
+        if self._hover_progress > 0.5:
+            col = QtGui.QColor(theme.get('accent', '#5298D4'))
+            
+        painter.setPen(QtGui.QPen(col, 1.5))
         painter.drawPoint(cx - 4, by)
         painter.drawPoint(cx, by)
         painter.drawPoint(cx + 4, by)
@@ -260,6 +307,7 @@ class RZSmartSlider(QtWidgets.QWidget):
         # Base colors
         bg_btn = t.get('bg_header', '#3A404A')
         bg_input = t.get('bg_input', '#252930')
+        bg_panel = t.get('bg_panel', '#2C313A')
         border = t.get('border_input', '#4A505A')
         text = t.get('text_main', '#E0E2E4')
         accent = t.get('accent', '#5298D4')
@@ -277,9 +325,9 @@ class RZSmartSlider(QtWidgets.QWidget):
         spin_style = f"""
             QAbstractSpinBox {{
                 background: {bg_input}; color: {text};
-                border: 1px solid {border}; border-radius: 2px;
+                border: none; border-radius: 2px;
             }}
-            QAbstractSpinBox:focus {{ border: 1px solid {accent}; }}
+            QAbstractSpinBox:focus {{ background: {bg_panel}; }}
         """
         self.spin.setStyleSheet(spin_style)
         
@@ -361,20 +409,40 @@ class RZSmartSlider(QtWidgets.QWidget):
 
 # --- Helper Internal Classes ---
 
-class _RZSmartSpinBox(QtWidgets.QSpinBox):
+class _RZSmartSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_visuals()
+
     def validate(self, text, pos):
         if text == "--" or any(text.startswith(op) for op in ["+=", "-=", "*=", "/="]):
             return QtGui.QValidator.Acceptable, text, pos
         return super().validate(text, pos)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
 
     def wheelEvent(self, event):
         event.ignore()
 
-class _RZSmartDoubleSpinBox(QtWidgets.QDoubleSpinBox):
+class _RZSmartDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_visuals()
+
     def validate(self, text, pos):
         if text == "--" or any(text.startswith(op) for op in ["+=", "-=", "*=", "/="]):
             return QtGui.QValidator.Acceptable, text, pos
         return super().validate(text, pos)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
 
     def wheelEvent(self, event):
         event.ignore()
