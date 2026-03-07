@@ -215,10 +215,15 @@ class ValuesTab(BaseListTab):
             if abs(self.inp_vecs[i].value() - val.vector_value[i]) > 0.0001:
                 self.inp_vecs[i].setValue(val.vector_value[i])
         
-        # Visibility
-        self.inp_val_int.setVisible(val.value_type == 'INT')
-        self.inp_val_float.setVisible(val.value_type == 'FLOAT')
-        self.inp_val_vector_widget.setVisible(val.value_type == 'VECTOR')
+        # Visibility (Smart hide for Form Layout)
+        def set_row_visible(widget, visible):
+            label = self.props_layout.labelForField(widget)
+            if label: label.setVisible(visible)
+            widget.setVisible(visible)
+
+        set_row_visible(self.inp_val_int, val.value_type == 'INT')
+        set_row_visible(self.inp_val_float, val.value_type == 'FLOAT')
+        set_row_visible(self.inp_val_vector_widget, val.value_type == 'VECTOR')
         
         self.is_updating_ui = False
 

@@ -211,6 +211,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
     def _on_tilt_changed(self, angle):
         self.setRotation(angle)
+        self.update_handles_pos()
         
     def set_target_tilt(self, angle):
         self._tilt_spring.set_target(angle)
@@ -383,6 +384,26 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             abs_top += dy
         elif h_type in (RZHandleItem.BOTTOM, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT):
             abs_bottom += dy
+
+        # Calculate current dimensions for logic below
+        new_w = abs_right - abs_left
+        new_h = abs_bottom - abs_top
+
+        # --- Alt Modifier: Aspect Ratio Preservation ---
+        if modifiers & QtCore.Qt.AltModifier:
+            is_diag = h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT)
+            if is_diag and self._aspect_ratio > 0:
+                # Constrain height based on width and initial aspect ratio
+                new_h = new_w / self._aspect_ratio
+                # Adjust bottom/top based on handle type to maintain the logic
+                if h_type in (RZHandleItem.TOP, RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT):
+                    abs_top = abs_bottom - new_h
+                else:
+                    abs_bottom = abs_top + new_h
+            else:
+                # For non-diagonal handles, maybe we don't force it? 
+                # User usually expects diagonal for aspect ratio.
+                pass
 
         # --- SMART SNAP & GRID SNAP LOGIC ---
         # We need to decide whether to snap specific edges
@@ -1147,6 +1168,14 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                     item.cleanup_handles()
                 self.removeItem(item)
             if uid in self._items_map: del self._items_map[uid]
+
+        # GHOST GIZMO SAFETY: Cleanup any handles that lost their targets
+        all_scene_items = self.items()
+        for it in all_scene_items:
+            if hasattr(it, 'target_item'):
+                t_item = getattr(it, 'target_item', None)
+                if not t_item or not shiboken6.isValid(t_item) or t_item.uid not in incoming_ids:
+                    self.removeItem(it)
 
     def _update_items_state(self, elements_data, resolved_layout, selected_ids, active_id):
         for data in elements_data:

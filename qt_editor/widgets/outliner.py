@@ -251,7 +251,8 @@ class RZMOutlinerPanel(RZEditorPanel):
             item.setIcon(0, icon)
 
             is_hidden = data.get('is_hidden', False)
-            vis_icon = IconManager.get_instance().get_icon("eye" if not is_hidden else "circle_x")
+            vis_icon = IconManager.get_instance().get_icon("eye" if not is_hidden else "circle_x", 
+                                                         fallback_sp=QtWidgets.QStyle.StandardPixmap.SP_TitleBarContextHelpButton if is_hidden else QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton)
             item.setIcon(1, vis_icon)
             item.setText(1, "") # Icon only
             item.setTextAlignment(1, QtCore.Qt.AlignCenter)
@@ -259,7 +260,8 @@ class RZMOutlinerPanel(RZEditorPanel):
                 item.setForeground(0, disabled_color)
 
             is_sel = data.get('is_selectable', True)
-            sel_icon = IconManager.get_instance().get_icon("arrow_right" if is_sel else "gear") 
+            sel_icon = IconManager.get_instance().get_icon("arrow_right" if is_sel else "lock",
+                                                         fallback_sp=QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton if is_sel else QtWidgets.QStyle.StandardPixmap.SP_DialogCloseButton) 
             item.setIcon(2, sel_icon)
             item.setText(2, "") # Icon only
             item.setTextAlignment(2, QtCore.Qt.AlignCenter)

@@ -351,22 +351,34 @@ class RZTemplateEngine:
         return new_id
 
     def inject_vars(self, deps):
+        # Rayvich: Improved injection with logging for troubleshooting
         for d in deps.get("values", []):
             name = d.get("value_name")
             if not any(v.value_name == name for v in self.rzm.rzm_values):
                 dict_to_rzm(d, self.rzm.rzm_values.add())
+            else:
+                print(f"[RZM] Skip Value Import: '{name}' already exists in scene.")
+                
         for d in deps.get("toggles", []):
             name = d.get("toggle_name")
             if not any(t.toggle_name == name for t in self.rzm.toggle_definitions):
                 dict_to_rzm(d, self.rzm.toggle_definitions.add())
+            else:
+                print(f"[RZM] Skip Toggle Import: '{name}' already exists in scene.")
+                
         for d in deps.get("shapes", []):
             name = d.get("shape_name")
             if not any(s.shape_name == name for s in self.rzm.shapes):
                 dict_to_rzm(d, self.rzm.shapes.add())
+            else:
+                print(f"[RZM] Skip Shape Import: '{name}' already exists in scene.")
+                
         for d in deps.get("conditions", []):
             name = d.get("condition_name")
             if not any(c.condition_name == name for c in self.rzm.conditions):
                 dict_to_rzm(d, self.rzm.conditions.add())
+            else:
+                print(f"[RZM] Skip Condition Import: '{name}' already exists in scene.")
 
     def create_elements(self, data, img_remap, root_parent_id, offset):
         max_id = max({e.id for e in self.rzm.elements} or {0})

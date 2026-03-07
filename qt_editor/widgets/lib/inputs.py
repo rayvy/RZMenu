@@ -567,7 +567,8 @@ class RZCodeTextEdit(RZFormulaInput):
         self.setMouseTracking(True)
 
     def mousePressEvent(self, event):
-        if event.button() == QtCore.Qt.LeftButton and event.pos().y() > self.height() - 10:
+        # Rayvich: Increased hit area to 15px for easier grabbing
+        if event.button() == QtCore.Qt.LeftButton and event.pos().y() > self.height() - 15:
             self._resizing = True
             self._last_y = event.globalPosition().y()
             self.setCursor(QtCore.Qt.SizeVerCursor)
@@ -579,12 +580,13 @@ class RZCodeTextEdit(RZFormulaInput):
         if self._resizing:
             dy = event.globalPosition().y() - self._last_y
             self._last_y = event.globalPosition().y()
+            # USE setMinimumHeight to allow layout to expand but keep the user-dragged min size
             new_h = max(40, self.height() + dy)
-            self.setFixedHeight(new_h)
+            self.setMinimumHeight(new_h)
             event.accept()
             return
         
-        if event.pos().y() > self.height() - 10:
+        if event.pos().y() > self.height() - 15:
             self.setCursor(QtCore.Qt.SizeVerCursor)
         else:
             self.setCursor(QtCore.Qt.IBeamCursor)
@@ -694,6 +696,25 @@ class RZModInfoTextEdit(RZCodeTextEdit):
         self._is_preview = False
         self.highlighter = RZModInfoHighlighter(self.document())
         self.textChanged.connect(self._on_text_changed_internal)
+        
+        # Rayvich: Request for specific Mod Info height constraints
+        self.setMinimumHeight(120)
+        self.setMaximumHeight(680)
+
+    def mouseMoveEvent(self, event):
+        # Rayvich: Respect maximumHeight if set
+        if self._resizing:
+            dy = event.globalPosition().y() - self._last_y
+            self._last_y = event.globalPosition().y()
+            
+            new_h = self.height() + dy
+            # Snap to bounds
+            new_h = max(self.minimumHeight(), min(new_h, self.maximumHeight()))
+            
+            self.setMinimumHeight(new_h)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
         
     def _on_text_changed_internal(self):
         # Only update raw text if we are NOT in preview mode
