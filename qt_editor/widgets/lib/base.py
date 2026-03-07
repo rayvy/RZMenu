@@ -2,6 +2,126 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from .theme import get_current_theme
 
+class RZVisualInputMixin:
+    """
+    Mixin to provide consistent hover animations, focused accents,
+    and optional resizing logic to input widgets (QLineEdit & QPlainTextEdit).
+    """
+    def _init_visuals(self):
+        # Hover Animation
+        self._hover_progress = 0.0
+        self._hover_anim = QtCore.QPropertyAnimation(self, b"hover_progress")
+        self._hover_anim.setDuration(250)
+        
+        # Resizing flags
+        self._is_resizable = False
+        self._resizing = False
+        self._last_y = 0
+        self._min_res_h = 24
+        self._max_res_h = 16777215
+
+    @QtCore.Property(float)
+    def hover_progress(self):
+        return self._hover_progress
+
+    @hover_progress.setter
+    def hover_progress(self, val):
+        self._hover_progress = val
+        self.update()
+
+    def enterEvent(self, event):
+        self._hover_anim.stop()
+        self._hover_anim.setEndValue(1.0)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._hover_anim.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hover_anim.stop()
+        self._hover_anim.setEndValue(0.0)
+        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
+        self._hover_anim.start()
+        super().leaveEvent(event)
+
+    def _draw_visual_border(self, painter):
+        """Standardized drawing for hover and focus borders."""
+        if not hasattr(self, 'rect'): return
+        
+        # Рисуем "тестовый маркер" в правом верхнем углу, если мышь наведена
+        if self._hover_progress > 0.01:
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            
+            # 1. Цвет маркера — ярко-оранжевый/красный
+            marker_color = QtGui.QColor("#FF4500")
+            marker_color.setAlpha(int(255 * self._hover_progress))
+            painter.setBrush(marker_color)
+            painter.setPen(QtCore.Qt.NoPen)
+            
+            # 2. Рисуем кружок в углу (x, y, width, height)
+            # Сдвигаем внутрь на 5 пикселей от правого края
+            r = self.rect()
+            circle_size = 8 * self._hover_progress
+            painter.drawEllipse(r.right() - 15, 5, circle_size, circle_size)
+            
+            # --- Оставляем и старую логику рамки, но сделаем её ЖИРНОЙ ---
+            accent = QtGui.QColor("#FF0000")
+            accent.setAlpha(int(160 * self._hover_progress))
+            pen = QtGui.QPen(accent, 3.0) # 3 пикселя — это очень жирно
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawRoundedRect(r.adjusted(2, 2, -2, -2), 4, 4)
+
+    def _draw_resizer_dots(self, painter):
+        """Optional resizer visual for multi-line editors."""
+        if not self._is_resizable: return
+        
+        r = self.rect()
+        cx = r.center().x()
+        by = r.bottom() - 4
+        
+        theme = get_current_theme()
+        painter.setPen(QtGui.QPen(QtGui.QColor(theme.get('border_input', '#4A505A')), 1.5))
+        
+        painter.drawPoint(cx - 4, by)
+        painter.drawPoint(cx, by)
+        painter.drawPoint(cx + 4, by)
+
+    def _handle_visual_mouse_press(self, event):
+        if self._is_resizable:
+            if event.button() == QtCore.Qt.LeftButton and event.pos().y() > self.height() - 15:
+                self._resizing = True
+                self._last_y = event.globalPosition().y()
+                self.setCursor(QtCore.Qt.SizeVerCursor)
+                event.accept()
+                return True
+        return False
+
+    def _handle_visual_mouse_move(self, event):
+        if self._resizing:
+            current_y = event.globalPosition().y()
+            dy = current_y - self._last_y
+            self._last_y = current_y
+            
+            new_h = max(self._min_res_h, min(self.height() + dy, self._max_res_h))
+            self.setMinimumHeight(new_h)
+            event.accept()
+            return True
+            
+        if self._is_resizable:
+            if event.pos().y() > self.height() - 15:
+                self.setCursor(QtCore.Qt.SizeVerCursor)
+            else:
+                self.setCursor(QtCore.Qt.IBeamCursor if isinstance(self, (QtWidgets.QLineEdit, QtWidgets.QPlainTextEdit)) else QtCore.Qt.ArrowCursor)
+        return False
+
+    def _handle_visual_mouse_release(self, event):
+        if self._resizing:
+            self._resizing = False
+            self.unsetCursor()
+            event.accept()
+            return True
+        return False
+
 class RZSmartSlider(QtWidgets.QWidget):
     """
     Smart Slider: Label (drag) + Spinbox + +/- Buttons.

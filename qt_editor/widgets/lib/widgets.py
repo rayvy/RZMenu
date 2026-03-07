@@ -3,6 +3,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from ...context import RZContextManager
 from .theme import get_current_theme
 from ...utils.debounce import RZDebouncer
+from .base import RZVisualInputMixin
 
 # --- RZColorButton ---
 class RZColorButton(QtWidgets.QPushButton):
@@ -861,7 +862,9 @@ class RZComboBox(QtWidgets.QComboBox):
     @popup_progress.setter
     def popup_progress(self, val):
         self._delegate.progress = val
-        self.view().viewport().update()
+        # Rayvich: FIXED "gray emptiness" bug for standard ComboBoxes too
+        if self.view() and self.view().viewport():
+            self.view().viewport().update()
         self.view().window().setWindowOpacity(min(1.0, val * 4))
 
     def showPopup(self):
@@ -907,55 +910,21 @@ class RZComboBox(QtWidgets.QComboBox):
     def wheelEvent(self, event):
         event.ignore()
 
-class RZLineEdit(QtWidgets.QLineEdit):
-    editingFinished = QtCore.Signal() # Ensure compatibility
+class RZLineEdit(QtWidgets.QLineEdit, RZVisualInputMixin):
+    editingFinished = QtCore.Signal() 
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._init_visuals()
         self.apply_theme()
         self._pattern = ""
         self._originals = []
-        
-        # Hover Animation
-        self._hover_progress = 0.0
-        self._hover_anim = QtCore.QPropertyAnimation(self, b"hover_progress")
-        self._hover_anim.setDuration(300)
-
-    @QtCore.Property(float)
-    def hover_progress(self): return self._hover_progress
-    @hover_progress.setter
-    def hover_progress(self, val):
-        self._hover_progress = val
-        self.update()
-
-    def enterEvent(self, event):
-        self._hover_anim.stop()
-        self._hover_anim.setEndValue(1.0)
-        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
-        self._hover_anim.start()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hover_anim.stop()
-        self._hover_anim.setEndValue(0.0)
-        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
-        self._hover_anim.start()
-        super().leaveEvent(event)
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self._hover_progress > 0.01:
-            painter = QtGui.QPainter(self)
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            theme = get_current_theme()
-            accent = QtGui.QColor(theme.get('accent', '#5298D4'))
-            accent.setAlpha(int(120 * self._hover_progress))
-            rect = self.rect().adjusted(1, 1, -1, -1)
-            path = QtGui.QPainterPath()
-            path.addRoundedRect(rect, 6, 6)
-            painter.setPen(QtGui.QPen(accent, 1.2))
-            painter.drawPath(path)
-            painter.end()
+        painter = QtGui.QPainter(self)
+        self._draw_visual_border(painter)
+        painter.end()
 
     def wheelEvent(self, event):
         event.ignore()
