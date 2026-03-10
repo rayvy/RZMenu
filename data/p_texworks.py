@@ -45,7 +45,9 @@ class TexOverride(bpy.types.PropertyGroup):
 
 class TexWorksMaterial(bpy.types.PropertyGroup):
     name: StringProperty(name="Material Name", default="NewMaterial")
+    material: PointerProperty(type=bpy.types.Material)
     # x46 parameters in shader
+
     parameters: FloatVectorProperty(name="Parameters (x46)", size=4, default=(0.0, 0.0, 0.0, 1.0))
     
     diffuse_blend_mode: EnumProperty(

@@ -569,7 +569,7 @@ class RZCodeTextEdit(RZFormulaInput):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         
         self.setMinimumHeight(72)
-        self.setMaximumHeight(16777215)
+        self.setMaximumHeight(680) 
         self.setMouseTracking(True)
 
     def set_highlighter(self, highlighter_class):

@@ -5,6 +5,12 @@ from .export_manager import get_target_path
 
 # --- ОПЕРАТОРЫ ДЛЯ TEXWORKS ---
 
+def trigger_refresh():
+    try:
+        from ..qt_editor.core.signals import SIGNALS
+        SIGNALS.structure_changed.emit()
+    except Exception: pass
+
 class RZM_OT_UpdateTwItem(bpy.types.Operator):
     """Generic operator to update property of a TexWorks collection item."""
     bl_idname = "rzm.update_tw_item"
@@ -60,8 +66,13 @@ class RZM_OT_UpdateTwItem(bpy.types.Operator):
                 prop_name, idx_str = final_prop[:-1].split("[")
                 v_idx = int(idx_str)
                 vector = getattr(target, prop_name)
-                # Попробуем float для универсальности, потом в int если надо
-                vector[v_idx] = float(self.value_str)
+                # Ensure we handle both int and float vectors safely
+                val_float = float(self.value_str)
+                try:
+                    vector[v_idx] = int(val_float)
+                except TypeError:
+                    vector[v_idx] = val_float
+
             elif hasattr(target, final_prop):
                 prop_type = type(getattr(target, final_prop))
                 if prop_type == bool:
@@ -87,6 +98,7 @@ class RZM_OT_AddTwResource(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.tw_resources.add()
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwResource(bpy.types.Operator):
@@ -98,6 +110,7 @@ class RZM_OT_RemoveTwResource(bpy.types.Operator):
         coll = context.scene.rzm.tw_resources
         idx = self.index if self.index >= 0 else len(coll) - 1
         if 0 <= idx < len(coll): coll.remove(idx)
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_AddTwOverride(bpy.types.Operator):
@@ -106,6 +119,7 @@ class RZM_OT_AddTwOverride(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.tw_overrides.add()
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwOverride(bpy.types.Operator):
@@ -117,6 +131,7 @@ class RZM_OT_RemoveTwOverride(bpy.types.Operator):
         coll = context.scene.rzm.tw_overrides
         idx = self.index if self.index >= 0 else len(coll) - 1
         if 0 <= idx < len(coll): coll.remove(idx)
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_AddTwMaterial(bpy.types.Operator):
@@ -125,6 +140,7 @@ class RZM_OT_AddTwMaterial(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
         context.scene.rzm.tw_materials.add()
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_RemoveTwMaterial(bpy.types.Operator):
@@ -136,7 +152,33 @@ class RZM_OT_RemoveTwMaterial(bpy.types.Operator):
         coll = context.scene.rzm.tw_materials
         idx = self.index if self.index >= 0 else len(coll) - 1
         if 0 <= idx < len(coll): coll.remove(idx)
+        trigger_refresh()
         return {'FINISHED'}
+
+class RZM_OT_TwSelectMaterial(bpy.types.Operator):
+    """Triggers blender search for material and assigns to tw_materials."""
+    bl_idname = "rzm.tw_select_material"
+    bl_label = "Select TexWorks Material"
+    bl_property = "material_name"
+    
+    index: bpy.props.IntProperty()
+    material_name: bpy.props.EnumProperty(
+        name="Material",
+        items=lambda self, context: [(m.name, m.name, "") for m in bpy.data.materials if not m.is_grease_pencil]
+    )
+    
+    def execute(self, context):
+        rzm = context.scene.rzm
+        mat = bpy.data.materials.get(self.material_name)
+        if mat and 0 <= self.index < len(rzm.tw_materials):
+            rzm.tw_materials[self.index].material = mat
+        trigger_refresh()
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.invoke_search_popup(self)
+        return {'RUNNING_MODAL'}
+
 
 # --- Automation Operators ---
 
@@ -152,6 +194,7 @@ class RZM_OT_ClearTwResources(bpy.types.Operator):
         for i in range(len(coll) - 1, -1, -1):
             if not coll[i].qt_favorite:
                 coll.remove(i)
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_ClearTwOverrides(bpy.types.Operator):
@@ -165,6 +208,7 @@ class RZM_OT_ClearTwOverrides(bpy.types.Operator):
         for i in range(len(coll) - 1, -1, -1):
             if not coll[i].qt_favorite:
                 coll.remove(i)
+        trigger_refresh()
         return {'FINISHED'}
 
 from bpy_extras.io_utils import ImportHelper
@@ -988,7 +1032,8 @@ classes_to_register = [
     RZM_OT_UpdateTwItem,
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
     RZM_OT_AddTwOverride, RZM_OT_RemoveTwOverride,
-    RZM_OT_AddTwMaterial, RZM_OT_RemoveTwMaterial,
+    RZM_OT_AddTwMaterial, RZM_OT_RemoveTwMaterial, RZM_OT_TwSelectMaterial,
+
     RZM_OT_AddTwBlock, RZM_OT_RemoveTwBlock, RZM_OT_DuplicateTwBlock, RZM_OT_SetActiveBlock,
     RZM_OT_AddTwComponent, RZM_OT_RemoveTwComponent, RZM_OT_SetActiveComponent,
     RZM_OT_AddTwSlot, RZM_OT_RemoveTwSlot, RZM_OT_SetActiveSlot,
