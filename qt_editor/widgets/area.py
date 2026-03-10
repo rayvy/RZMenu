@@ -23,17 +23,17 @@ class RZAreaHeader(QtWidgets.QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("RZAreaHeader")
-        self.setFixedHeight(20) # Increased height for premium feel
+        self.setFixedHeight(22) # Slim height
         
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(2, 0, 2, 0)
-        layout.setSpacing(2)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(4)
         
         # Panel type selector
         self.combo_type = QtWidgets.QComboBox()
         self.combo_type.setObjectName("AreaTypeSelector")
-        self.combo_type.setMinimumWidth(120)
-        self.combo_type.setFixedHeight(16)
+        self.combo_type.setMinimumWidth(80)
+        self.combo_type.setFixedHeight(18)
         self._populate_panel_types()
         self.combo_type.currentIndexChanged.connect(self._on_type_changed)
         layout.addWidget(self.combo_type)
@@ -44,13 +44,26 @@ class RZAreaHeader(QtWidgets.QFrame):
         im = IconManager.get_instance()
         self.btn_menu = QtWidgets.QPushButton(im.get_icon("circle_3dots"), "")
         self.btn_menu.setObjectName("AreaMenuButton")
-        self.btn_menu.setFixedSize(12, 12)
+        self.btn_menu.setFixedSize(14, 14)
         self.btn_menu.setIconSize(QtCore.QSize(12, 12))
         self.btn_menu.setToolTip("Area Options")
         self.btn_menu.clicked.connect(self._show_area_menu)
         layout.addWidget(self.btn_menu)
         
+        # Opacity Effect for Stealth UI
+        self._opacity = QtWidgets.QGraphicsOpacityEffect(self)
+        self._opacity.setOpacity(0.4) # Very subtle by default
+        self.setGraphicsEffect(self._opacity)
+        
         self.apply_theme()
+
+    def enterEvent(self, event):
+        self._opacity.setOpacity(1.0)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._opacity.setOpacity(0.4)
+        super().leaveEvent(event)
     
     def _populate_panel_types(self):
         self.combo_type.blockSignals(True)
@@ -102,21 +115,28 @@ class RZAreaHeader(QtWidgets.QFrame):
             }}
             #AreaTypeSelector {{
                 border-radius: {r_sm};
-                font-weight: bold;
-                font-size: 10px;
+                font-weight: 600;
+                font-size: 9px;
                 background-color: transparent;
-                border: 1px solid transparent;
+                border: none;
+                color: {theme.get('text_dim', '#888')};
             }}
             #AreaTypeSelector:hover {{
-                background-color: rgba(255, 255, 255, 10);
+                color: {theme.get('text_main', '#EEE')};
+            }}
+            #AreaTypeSelector::drop-down {{
+                border: none;
+                width: 0px;
             }}
             #AreaMenuButton {{
                 background-color: transparent;
                 border: none;
                 border-radius: {r_sm};
+                opacity: 0.6;
             }}
             #AreaMenuButton:hover {{
                 background-color: rgba(255, 255, 255, 20);
+                opacity: 1.0;
             }}
         """)
 
@@ -272,7 +292,7 @@ class RZAreaWidget(RZPanelWidget):
             #RZAreaWidget {{
                 background-color: {theme.get('bg_panel', '#2C313A')};
                 border: 1px solid {theme.get('border_main', '#3A404A')};
-                border-radius: {r_md};
+                border-radius: 4px;
             }}
             #RZAreaContent {{ background-color: transparent; }}
         """)

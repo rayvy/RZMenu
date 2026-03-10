@@ -364,25 +364,22 @@ class RZValueLinkItem(RZInspectorItem):
     """A single row in the value link list."""
     def __init__(self, index, data, is_slider, parent=None):
         super().__init__(index, parent, parent=parent)
-        
-        # We need a vertical layout for ValueLink because of the ranges
-        # but we use the base content_layout for the top name part.
-        # So we clear the base layout and rebuild vertically or just inject.
-        # Actually, let's keep it simple: RZInspectorItem handles h1 (content + actions).
-        # We just need to add the ranges BELOW the content.
-        
+
+        # RZInspectorItem already has horizontal layout_main (row 1: Name + Actions)
+        # We just add a second row to self.outer_layout (QVBoxLayout)
+
         self.edit_name = RZFormulaInput()
         self.edit_name.setPlaceholderText("Link ($Var, @Toggle, #Shape)...")
         self.edit_name.setText(data.get('value_name', ''))
         self.edit_name.editingFinished.connect(self._on_name_changed)
         self.add_widget(self.edit_name, 1)
-        
+
         # Ranges for Sliders (Second row)
         self.w_ranges = QtWidgets.QWidget()
         l_range = QtWidgets.QHBoxLayout(self.w_ranges)
         l_range.setContentsMargins(10, 0, 0, 0)
         l_range.setSpacing(5)
-        
+
         l_range.addWidget(RZLabel("Min:"))
         self.spin_min = RZDoubleSpinBox()
         self.spin_min.setRange(-10000, 10000)
@@ -390,7 +387,7 @@ class RZValueLinkItem(RZInspectorItem):
         self.spin_min.setValue(data.get('value_min', 0.0))
         self.spin_min.valueChanged.connect(self._on_min_changed)
         l_range.addWidget(self.spin_min)
-        
+
         l_range.addWidget(RZLabel("Max:"))
         self.spin_max = RZDoubleSpinBox()
         self.spin_max.setRange(-10000, 10000)
@@ -398,20 +395,9 @@ class RZValueLinkItem(RZInspectorItem):
         self.spin_max.setValue(data.get('value_max', 1.0))
         self.spin_max.valueChanged.connect(self._on_max_changed)
         l_range.addWidget(self.spin_max)
-        
-        # Wrap everything in a vertical layout because RZInspectorItem is QHBoxLayout
-        # We'll hijack the main layout or just add the w_ranges to a new container.
-        # Better: Change self.layout() to QV if we want to be clean.
-        # For now, let's just use the fact that layout_main is QH and maybe it's fine 
-        # but ValueLink really needs two rows.
-        
-        # RE-INJECT: Change top-level layout to vertical
-        QtWidgets.QWidget().setLayout(self.layout_main) # Orphan the old layout
-        v_main = QtWidgets.QVBoxLayout(self)
-        v_main.setContentsMargins(0, 0, 0, 0)
-        v_main.setSpacing(2)
-        v_main.addLayout(self.layout_main) # The standard row (Name + Action)
-        v_main.addWidget(self.w_ranges)
+
+        # Simply add to the outer layout which is QVBoxLayout
+        self.outer_layout.addWidget(self.w_ranges)
         
         # Sync pattern
         self.update_data(data)
@@ -808,8 +794,14 @@ class RZMInspectorPanel(RZEditorPanel):
         self._last_details = details
         
         self._block_signals = True
-        self.update_ui(details)
-        self._block_signals = False
+        try:
+            self.update_ui(details)
+        except Exception as e:
+            print(f"[INSPECTOR] Error in update_ui: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self._block_signals = False
     
     def _add_row(self, layout, label, widget, field_name=None, signal=None):
         """Helper to add a property row and optionally connect its change signal."""
@@ -1225,7 +1217,8 @@ class RZMInspectorPanel(RZEditorPanel):
         core.perform_math_operation(list(ctx.selected_ids), key, op_str)
 
     def update_ui(self, props):
-        self._block_signals = True
+        """Refreshes all UI widgets with data from the props dictionary."""
+        # Note: self._block_signals is handled in _do_refresh_data
         
         if props and props.get('exists'):
             # DEBUG: Trace where 0 0 0 0 comes from
@@ -1237,54 +1230,58 @@ class RZMInspectorPanel(RZEditorPanel):
             
             # --- Identity ---
             is_single = not props.get('is_multi')
-            self.spin_id.setEnabled(is_single)
-            if is_single:
-                self.spin_id.setValue(props.get('id', 0))
-            else:
-                self.spin_id.setSpecialValueText("Multiple")
-                self.spin_id.setValue(0)
+            if hasattr(self, 'spin_id'):
+                self.spin_id.setEnabled(is_single)
+                if is_single:
+                    self.spin_id.setValue(props.get('id', 0))
+                else:
+                    self.spin_id.setSpecialValueText("Multiple")
+                    self.spin_id.setValue(0)
             
             # Pattern mode for Name
             name_pattern = props.get('name_pattern')
-            if name_pattern:
-                self.name_edit.set_pattern(name_pattern, props.get('original_names'))
-            else:
-                self.name_edit.clear_pattern()
-                self.name_edit.set_text_silent(props.get('name', ''))
-            self.edit_tag.set_text_silent(props.get('tag', ''))
-            self.spin_priority.setValue(props.get('priority', 0))
-            self.chk_main_window.setChecked(props.get('is_main_window') is True)
-            self.chk_disable_export.setChecked(props.get('disable_export') is True)
+            if hasattr(self, 'name_edit'):
+                if name_pattern:
+                    self.name_edit.set_pattern(name_pattern, props.get('original_names'))
+                else:
+                    self.name_edit.clear_pattern()
+                    self.name_edit.set_text_silent(props.get('name', ''))
+            
+            if hasattr(self, 'edit_tag'): self.edit_tag.set_text_silent(props.get('tag', ''))
+            if hasattr(self, 'spin_priority'): self.spin_priority.setValue(props.get('priority', 0))
+            if hasattr(self, 'chk_main_window'): self.chk_main_window.setChecked(props.get('is_main_window') is True)
+            if hasattr(self, 'chk_disable_export'): self.chk_disable_export.setChecked(props.get('disable_export') is True)
 
             class_type = props.get('class_type')
-            if class_type: self.cb_class.setCurrentText(class_type)
-            else: self.cb_class.setCurrentText("Mixed")
+            if hasattr(self, 'cb_class'):
+                if class_type: self.cb_class.setCurrentText(class_type)
+                else: self.cb_class.setCurrentText("Mixed")
 
             # --- Presets ---
-            self.chk_is_preset.setChecked(props.get('is_preset') is True)
-            self.chk_preset_hide.setChecked(props.get('qt_preset_hide') is True)
-            # Extract preset list from props. 
-            # Using 'preset_ids' key.
-            self.list_presets.update_data(props.get('preset_ids', [])) # Expecting list of IDs
+            if hasattr(self, 'chk_is_preset'): self.chk_is_preset.setChecked(props.get('is_preset') is True)
+            if hasattr(self, 'chk_preset_hide'): self.chk_preset_hide.setChecked(props.get('qt_preset_hide') is True)
+            if hasattr(self, 'list_presets'): self.list_presets.update_data(props.get('preset_ids', []))
 
             # --- Visibility ---
             vis_mode = props.get('visibility_mode', 'ALWAYS')
-            self.cb_vis_mode.setCurrentText(vis_mode)
+            if hasattr(self, 'cb_vis_mode'): self.cb_vis_mode.setCurrentText(vis_mode)
             is_cond = (vis_mode == 'CONDITIONAL')
-            self.set_row_visible(self.edit_vis_cond, is_cond)
-            self.edit_vis_cond.set_text_silent(props.get('visibility_condition', ''))
+            if hasattr(self, 'edit_vis_cond'):
+                self.set_row_visible(self.edit_vis_cond, is_cond)
+                self.edit_vis_cond.set_text_silent(props.get('visibility_condition', ''))
 
             # --- Anchor ---
-            self.cb_anchor.setCurrentText(props.get('alignment') or "Mixed")
+            if hasattr(self, 'cb_anchor'): self.cb_anchor.setCurrentText(props.get('alignment') or "Mixed")
             
             has_text = class_type in ["TEXT", "BUTTON"] or class_type is None
-            self.set_row_visible(self.cb_text_align, has_text)
-            self.cb_text_align.setCurrentText(props.get('text_align') or "Mixed")
+            if hasattr(self, 'cb_text_align'):
+                self.set_row_visible(self.cb_text_align, has_text)
+                self.cb_text_align.setCurrentText(props.get('text_align') or "Mixed")
 
             # --- Transform (Formula Switching) ---
             pos_is_form = props.get('position_is_formula') is True
-            self.chk_pos_formula.setChecked(pos_is_form)
-            self.stack_pos.setCurrentIndex(1 if pos_is_form else 0)
+            if hasattr(self, 'chk_pos_formula'): self.chk_pos_formula.setChecked(pos_is_form)
+            if hasattr(self, 'stack_pos'): self.stack_pos.setCurrentIndex(1 if pos_is_form else 0)
             
             if pos_is_form:
                 if hasattr(self, 'edit_pos_fx'): self.edit_pos_fx.set_text_silent(props.get('position_formula_x', ''))
@@ -1294,8 +1291,8 @@ class RZMInspectorPanel(RZEditorPanel):
                 if hasattr(self, 'sl_y'): self.sl_y.set_value_from_backend(props.get('pos_y'))
 
             size_is_form = props.get('size_is_formula') is True
-            self.chk_size_formula.setChecked(size_is_form)
-            self.stack_size.setCurrentIndex(1 if size_is_form else 0)
+            if hasattr(self, 'chk_size_formula'): self.chk_size_formula.setChecked(size_is_form)
+            if hasattr(self, 'stack_size'): self.stack_size.setCurrentIndex(1 if size_is_form else 0)
             
             if size_is_form:
                 if hasattr(self, 'edit_size_fx'): self.edit_size_fx.set_text_silent(props.get('size_formula_x', ''))
@@ -1312,141 +1309,147 @@ class RZMInspectorPanel(RZEditorPanel):
             can_edit_pos = (is_locked_pos is not True) and (not is_grid_child)
             can_edit_size = (is_locked_size is not True)
             
-            self.sl_x.setEnabled(can_edit_pos)
-            self.sl_y.setEnabled(can_edit_pos)
-            self.edit_pos_fx.setEnabled(can_edit_pos)
-            self.edit_pos_fy.setEnabled(can_edit_pos)
+            if hasattr(self, 'sl_x'): self.sl_x.setEnabled(can_edit_pos)
+            if hasattr(self, 'sl_y'): self.sl_y.setEnabled(can_edit_pos)
+            if hasattr(self, 'edit_pos_fx'): self.edit_pos_fx.setEnabled(can_edit_pos)
+            if hasattr(self, 'edit_pos_fy'): self.edit_pos_fy.setEnabled(can_edit_pos)
             
-            self.sl_w.setEnabled(can_edit_size)
-            self.sl_h.setEnabled(can_edit_size)
+            if hasattr(self, 'sl_w') and hasattr(self, 'sl_h'):
+                self.sl_w.setEnabled(can_edit_size)
+                self.sl_h.setEnabled(can_edit_size)
 
             # --- Transform Formula ---
             trans_is_form = props.get('transform_is_formula') is True
-            self.chk_trans_formula.setChecked(trans_is_form)
-            # Use toPlainText if needed or setText via helper
+            if hasattr(self, 'chk_trans_formula'):
+                self.chk_trans_formula.setChecked(trans_is_form)
+            
             if hasattr(self, 'edit_trans_fx'):
                 self.edit_trans_fx.set_text_silent(props.get('transform_formula', ''))
                 self.edit_trans_fx.setVisible(trans_is_form)
 
             # --- Appearance ---
-            class_type = props.get('class_type', 'CONTAINER')
-            self.cb_class.setCurrentText(class_type)
+            if hasattr(self, 'cb_class'):
+                self.cb_class.setCurrentText(class_type or 'CONTAINER')
             
             # --- Grid Container ---
             is_grid = (class_type == "GRID_CONTAINER")
-            self.grp_grid.setVisible(is_grid)
-            self.grp_tile.setVisible(is_grid)
+            if hasattr(self, 'grp_grid'): self.grp_grid.setVisible(is_grid)
+            if hasattr(self, 'grp_tile'): self.grp_tile.setVisible(is_grid)
             
             if is_grid:
-                self.sl_cell.set_value_from_backend(props.get('grid_cell_size'))
-                self.sl_min_c.set_value_from_backend(props.get('grid_min_cells_x'))
-                self.sl_min_r.set_value_from_backend(props.get('grid_min_cells_y'))
-                self.sl_max_c.set_value_from_backend(props.get('grid_max_cells_x'))
-                self.sl_max_r.set_value_from_backend(props.get('grid_max_cells_y'))
-                self.cb_grid_wrap.setCurrentText(props.get('grid_wrap_mode', 'SCROLL'))
-                self.tile_uv_x.setValue(props.get('tile_uv_x', 0))
-                self.tile_uv_y.setValue(props.get('tile_uv_y', 0))
+                if hasattr(self, 'sl_cell'): self.sl_cell.set_value_from_backend(props.get('grid_cell_size'))
+                if hasattr(self, 'sl_min_c'): self.sl_min_c.set_value_from_backend(props.get('grid_min_cells_x'))
+                if hasattr(self, 'sl_min_r'): self.sl_min_r.set_value_from_backend(props.get('grid_min_cells_y'))
+                if hasattr(self, 'sl_max_c'): self.sl_max_c.set_value_from_backend(props.get('grid_max_cells_x'))
+                if hasattr(self, 'sl_max_r'): self.sl_max_r.set_value_from_backend(props.get('grid_max_cells_y'))
+                if hasattr(self, 'cb_grid_wrap'): self.cb_grid_wrap.setCurrentText(props.get('grid_wrap_mode', 'SCROLL'))
+                if hasattr(self, 'tile_uv_x'): self.tile_uv_x.setValue(props.get('tile_uv_x', 0))
+                if hasattr(self, 'tile_uv_y'): self.tile_uv_y.setValue(props.get('tile_uv_y', 0))
 
             # --- Color ---
             col_is_form = props.get('color_is_formula') is True
-            self.chk_color_formula.setChecked(col_is_form)
-            self.stack_color.setCurrentIndex(1 if col_is_form else 0)
+            if hasattr(self, 'chk_color_formula'): self.chk_color_formula.setChecked(col_is_form)
+            if hasattr(self, 'stack_color'): self.stack_color.setCurrentIndex(1 if col_is_form else 0)
             
             if col_is_form:
-                self.edit_col_r.set_text_silent(props.get('color_formula_r', ''))
-                self.edit_col_g.set_text_silent(props.get('color_formula_g', ''))
-                self.edit_col_b.set_text_silent(props.get('color_formula_b', ''))
-                self.edit_col_a.set_text_silent(props.get('color_formula_a', ''))
+                if hasattr(self, 'edit_col_r'): self.edit_col_r.set_text_silent(props.get('color_formula_r', ''))
+                if hasattr(self, 'edit_col_g'): self.edit_col_g.set_text_silent(props.get('color_formula_g', ''))
+                if hasattr(self, 'edit_col_b'): self.edit_col_b.set_text_silent(props.get('color_formula_b', ''))
+                if hasattr(self, 'edit_col_a'): self.edit_col_a.set_text_silent(props.get('color_formula_a', ''))
             else:
-                self.btn_color.set_color(props.get('color'))
+                if hasattr(self, 'btn_color'): self.btn_color.set_color(props.get('color'))
             
             # --- Image ---
             img_mode = props.get('image_mode', 'SINGLE')
-            self.cb_img_mode.setCurrentText(img_mode)
-            self.cb_blend_mode.setCurrentText(props.get('image_blending_mode', 'NONE'))
+            if hasattr(self, 'cb_img_mode'): self.cb_img_mode.setCurrentText(img_mode)
+            if hasattr(self, 'cb_blend_mode'): self.cb_blend_mode.setCurrentText(props.get('image_blending_mode', 'NONE'))
             
             is_img_single = (img_mode == 'SINGLE')
-            self.set_row_visible(self.cb_image, is_img_single)
-            self.list_images.setVisible(not is_img_single)
+            if hasattr(self, 'cb_image'): self.set_row_visible(self.cb_image, is_img_single)
+            if hasattr(self, 'list_images'): self.list_images.setVisible(not is_img_single)
             
             all_images = core.read.get_available_images()
             if is_img_single:
-                self.cb_image.update_items(all_images)
-                self.cb_image.set_value(props.get('image_id', -1))
+                if hasattr(self, 'cb_image'):
+                    self.cb_image.update_items(all_images)
+                    self.cb_image.set_value(props.get('image_id', -1))
             else:
-                self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
+                if hasattr(self, 'list_images'):
+                    self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
             
             # --- Text ---
             txt_mode = props.get('text_mode', 'SINGLE')
-            self.cb_text_mode.setCurrentText(txt_mode)
+            if hasattr(self, 'cb_text_mode'): self.cb_text_mode.setCurrentText(txt_mode)
             is_txt_single = (txt_mode == 'SINGLE')
             
-            self.w_legacy_text.setVisible(is_txt_single)
-            self.list_texts.setVisible(not is_txt_single)
+            if hasattr(self, 'w_legacy_text'): self.w_legacy_text.setVisible(is_txt_single)
+            if hasattr(self, 'list_texts'): self.list_texts.setVisible(not is_txt_single)
             
             if is_txt_single:
-                # Text ID pattern
                 txt_pat = props.get('text_id_pattern')
-                if txt_pat: self.edit_txt_id.set_pattern(txt_pat, props.get('original_text_ids'))
-                else:
-                    self.edit_txt_id.clear_pattern()
-                    self.edit_txt_id.set_text_silent(props.get('text_id', ''))
-                    
-                # Hover Text ID pattern
+                if hasattr(self, 'edit_txt_id'):
+                    if txt_pat: self.edit_txt_id.set_pattern(txt_pat, props.get('original_text_ids'))
+                    else:
+                        self.edit_txt_id.clear_pattern()
+                        self.edit_txt_id.set_text_silent(props.get('text_id', ''))
+                        
                 hov_pat = props.get('hover_text_id_pattern')
-                if hov_pat: self.edit_hov_txt.set_pattern(hov_pat, props.get('original_hover_text_ids'))
-                else:
-                    self.edit_hov_txt.clear_pattern()
-                    self.edit_hov_txt.set_text_silent(props.get('hover_text_id', ''))
+                if hasattr(self, 'edit_hov_txt'):
+                    if hov_pat: self.edit_hov_txt.set_pattern(hov_pat, props.get('original_hover_text_ids'))
+                    else:
+                        self.edit_hov_txt.clear_pattern()
+                        self.edit_hov_txt.set_text_silent(props.get('hover_text_id', ''))
             else:
-                self.list_texts.update_data(props.get('conditional_texts', []), txt_mode)
+                if hasattr(self, 'list_texts'): self.list_texts.update_data(props.get('conditional_texts', []), txt_mode)
 
             # --- Logic ---
             vl_is_form = props.get('value_link_is_formula') is True
-            self.chk_vl_formula.setChecked(vl_is_form)
-            self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
-            self.edit_vl_formula.set_text_silent(props.get('value_link_formula', ''))
-            self.edit_vl_formula.setVisible(vl_is_form)
+            if hasattr(self, 'chk_vl_formula'): self.chk_vl_formula.setChecked(vl_is_form)
+            if hasattr(self, 'list_links'): self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
+            if hasattr(self, 'edit_vl_formula'):
+                self.edit_vl_formula.set_text_silent(props.get('value_link_formula', ''))
+                self.edit_vl_formula.setVisible(vl_is_form)
             
             # --- Events ---
-            self.chk_hover_event.setChecked(props.get('hover_event_enabled') is True)
-            self.edit_hover_fx.set_text_silent(props.get('hover_event_formula', ''))
-            self.edit_hover_fx.setVisible(self.chk_hover_event.isChecked())
+            if hasattr(self, 'chk_hover_event'): self.chk_hover_event.setChecked(props.get('hover_event_enabled') is True)
+            if hasattr(self, 'edit_hover_fx'):
+                self.edit_hover_fx.set_text_silent(props.get('hover_event_formula', ''))
+                self.edit_hover_fx.setVisible(hasattr(self, 'chk_hover_event') and self.chk_hover_event.isChecked())
             
-            self.chk_click_event.setChecked(props.get('click_event_enabled') is True)
-            self.edit_click_fx.set_text_silent(props.get('click_event_formula', ''))
-            self.edit_click_fx.setVisible(self.chk_click_event.isChecked())
-            self.list_fx.update_data(props.get('fx', []))
+            if hasattr(self, 'chk_click_event'): self.chk_click_event.setChecked(props.get('click_event_enabled') is True)
+            if hasattr(self, 'edit_click_fx'):
+                self.edit_click_fx.set_text_silent(props.get('click_event_formula', ''))
+                self.edit_click_fx.setVisible(hasattr(self, 'chk_click_event') and self.chk_click_event.isChecked())
             
-            self.list_fx.update_data(props.get('fx', []))
+            if hasattr(self, 'list_fx'): self.list_fx.update_data(props.get('fx', []))
 
             # --- Button Specifics ---
             is_btn = (class_type == "BUTTON")
-            self.grp_btn.setVisible(is_btn)
+            if hasattr(self, 'grp_btn'): self.grp_btn.setVisible(is_btn)
             if is_btn:
-                self.chk_no_nums.setChecked(props.get('disable_button_nums') is True)
-                self.chk_no_popup.setChecked(props.get('disable_button_popup') is True)
+                if hasattr(self, 'chk_no_nums'): self.chk_no_nums.setChecked(props.get('disable_button_nums') is True)
+                if hasattr(self, 'chk_no_popup'): self.chk_no_popup.setChecked(props.get('disable_button_popup') is True)
 
             # --- Flags ---
-            self.chk_hide.setChecked(props.get('qt_hide') is True or props.get('is_hidden') is True)
-            self.chk_locked.setChecked(props.get('qt_locked_ui') is True or props.get('is_locked_pos') is True or props.get('is_locked_size') is True)
+            if hasattr(self, 'chk_hide'): self.chk_hide.setChecked(props.get('qt_hide') is True or props.get('is_hidden') is True)
+            if hasattr(self, 'chk_locked'): self.chk_locked.setChecked(props.get('qt_locked_ui') is True or props.get('is_locked_pos') is True or props.get('is_locked_size') is True)
             
             # --- Raw Data Table ---
-            self.table_raw.setRowCount(0)
-            sorted_keys = sorted(props.keys())
-            self.table_raw.setRowCount(len(sorted_keys))
-            for r, key in enumerate(sorted_keys):
-                val = str(props[key])
-                self.table_raw.setItem(r, 0, QtWidgets.QTableWidgetItem(key))
-                self.table_raw.setItem(r, 1, QtWidgets.QTableWidgetItem(val))
+            if hasattr(self, 'table_raw'):
+                self.table_raw.setRowCount(0)
+                sorted_keys = sorted(props.keys())
+                self.table_raw.setRowCount(len(sorted_keys))
+                for r, key in enumerate(sorted_keys):
+                    val = str(props[key])
+                    self.table_raw.setItem(r, 0, QtWidgets.QTableWidgetItem(key))
+                    self.table_raw.setItem(r, 1, QtWidgets.QTableWidgetItem(val))
 
         else:
             self.has_data = False
-            self.scroll_content.setEnabled(False)
-            self.tab_raw.setEnabled(False)
-            self.spin_id.setSpecialValueText("None")
-            self.spin_id.setValue(0)
-            self.name_edit.clear()
+            if hasattr(self, 'scroll_content'): self.scroll_content.setEnabled(False)
+            if hasattr(self, 'table_raw'): self.table_raw.setRowCount(0)
+            if hasattr(self, 'anchor_scroll'): self.anchor_scroll.setEnabled(False)
+            if hasattr(self, 'name_edit'): self.name_edit.clear()
 
         self._block_signals = False
 

@@ -124,13 +124,32 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
                     changed = True
                 except: pass
             elif bl_idx is not None:
-                if raw_val[bl_idx] != value:
-                    raw_val[bl_idx] = value
+                curr_val = raw_val[bl_idx]
+                target_val = value
+
+                # Auto-cast for array elements
+                if isinstance(curr_val, int) and not isinstance(curr_val, bool):
+                     try: target_val = int(value)
+                     except: pass
+
+                if curr_val != target_val:
+                    raw_val[bl_idx] = target_val
                     setattr(elem, bl_prop, raw_val)
                     changed = True
             else:
-                if raw_val != value:
-                    setattr(elem, bl_prop, value)
+                raw_val = getattr(elem, bl_prop)
+                
+                # Auto-cast for specialized types
+                target_val = value
+                
+                # Check if it's an Int type property in Blender
+                # We can detect this if raw_val is int or if the property is known to be int
+                if isinstance(raw_val, int) and not isinstance(raw_val, bool):
+                    try: target_val = int(value)
+                    except: pass
+
+                if raw_val != target_val:
+                    setattr(elem, bl_prop, target_val)
                     changed = True
 
         if changed:

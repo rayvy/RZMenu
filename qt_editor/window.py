@@ -51,23 +51,26 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         # --- UI LAYOUT ---
         self.root_layout = QtWidgets.QVBoxLayout(self) 
-        self.root_layout.setContentsMargins(10, 10, 10, 10)
-        self.root_layout.setSpacing(8)
+        self.root_layout.setContentsMargins(2, 2, 2, 2)
+        self.root_layout.setSpacing(2)
         
         # 1. TOOLBAR (HEADER)
         self.toolbar_container = RZContextAwareWidget("HEADER", self)
         self.toolbar_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.toolbar_container.setFixedHeight(28) # +4px polish
         self.toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_container)
-        self.toolbar_layout.setContentsMargins(4, 4, 4, 4) # Reduced vertical margin
-        self.toolbar_layout.setSpacing(2)
+        self.toolbar_layout.setContentsMargins(4, 0, 4, 0) # No vertical margin
+        self.toolbar_layout.setSpacing(4)
         self.setup_toolbar() 
         self.root_layout.addWidget(self.toolbar_container)
         
         # 2. FOOTER
         self.footer_container = RZContextAwareWidget("FOOTER", self)
         self.footer_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.footer_container.setFixedHeight(18) # Minimal height
         self.footer_layout = QtWidgets.QHBoxLayout(self.footer_container)
-        self.footer_layout.setContentsMargins(4, 4, 4, 4)
+        self.footer_layout.setContentsMargins(8, 0, 4, 0)
+        self.footer_layout.setSpacing(8)
         self.setup_footer() 
         self.root_layout.addWidget(self.footer_container)
 
@@ -208,12 +211,32 @@ class RZMEditorWindow(QtWidgets.QWidget):
         self.apply_layout(name)
         set_config_value("system", "last_layout", name)
 
+    def _show_layout_tabs_menu(self, pos):
+        index = self.layout_tabs.tabAt(pos)
+        if index < 0: return
+        
+        layout_name = self.layout_tabs.tabText(index)
+        if layout_name == "Default": return # Cannot delete default
+
+        menu = QtWidgets.QMenu(self)
+        act_del = menu.addAction(IconManager.get_instance().get_icon("circle_x"), f"Delete Layout '{layout_name}'")
+        act_del.triggered.connect(lambda: self._delete_layout(layout_name))
+        menu.exec(self.layout_tabs.mapToGlobal(pos))
+
+    def _delete_layout(self, name):
+        if self.layout_manager.delete_layout(name):
+            # Switch to default if we deleted active one
+            if self.layout_tabs.tabText(self.layout_tabs.currentIndex()) == name:
+                self.reset_layout()
+            else:
+                self._update_layout_tabs()
+
     def setup_toolbar(self):
         def add_btn(icon_name, op_id, tooltip=None, special=False):
             icon = IconManager.get_instance().get_icon(icon_name)
             btn = QtWidgets.QPushButton(icon, "")
-            btn.setFixedSize(36, 36)
-            btn.setIconSize(QtCore.QSize(22, 22))
+            btn.setFixedSize(24, 24) # Reduced from 36
+            btn.setIconSize(QtCore.QSize(14, 14)) # Reduced icons
             if tooltip: btn.setToolTip(tooltip)
             if special: btn.setObjectName("BtnSpecial")
             self.toolbar_layout.addWidget(btn)
@@ -232,21 +255,26 @@ class RZMEditorWindow(QtWidgets.QWidget):
         # --- LAYOUT TABS (TOP ALIGNED) ---
         self.layout_tabs = QtWidgets.QTabBar()
         self.layout_tabs.setObjectName("LayoutTabBar")
+        self.layout_tabs.setFixedHeight(26) # Match polished header
         self.layout_tabs.setExpanding(False)
         self.layout_tabs.setDrawBase(False)
+        self.layout_tabs.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.layout_tabs.customContextMenuRequested.connect(self._show_layout_tabs_menu)
         self.layout_tabs.currentChanged.connect(self._on_layout_tab_changed)
         self.toolbar_layout.addWidget(self.layout_tabs)
 
         # Move Save/Reset here
         self.toolbar_layout.addSpacing(4)
         btn_save = QtWidgets.QPushButton(IconManager.get_instance().get_icon("circle_+"), "")
-        btn_save.setFixedSize(28, 28)
+        btn_save.setFixedSize(20, 20)
+        btn_save.setIconSize(QtCore.QSize(12, 12))
         btn_save.setToolTip("Save Current Layout")
         btn_save.clicked.connect(self.save_current_layout)
         self.toolbar_layout.addWidget(btn_save)
 
         btn_reset = QtWidgets.QPushButton(IconManager.get_instance().get_icon("rotate"), "")
-        btn_reset.setFixedSize(28, 28)
+        btn_reset.setFixedSize(20, 20)
+        btn_reset.setIconSize(QtCore.QSize(12, 12))
         btn_reset.setToolTip("Reset to Default")
         btn_reset.clicked.connect(self.reset_layout)
         self.toolbar_layout.addWidget(btn_reset)
@@ -258,15 +286,17 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
     def setup_footer(self):
         self.lbl_context = QtWidgets.QLabel("Context: NONE")
+        self.lbl_context.setStyleSheet("font-size: 9px;")
         self.footer_layout.addWidget(self.lbl_context)
         
         sep = QtWidgets.QLabel("|")
         sep.setObjectName("FooterSeparator")
-        sep.setStyleSheet("color: #444;")
+        sep.setStyleSheet("color: #444; font-size: 9px;")
         self.footer_layout.addWidget(sep)
         
         self.lbl_last_op = QtWidgets.QLabel("Last Op: None")
         self.lbl_last_op.setObjectName("FooterLastOp")
+        self.lbl_last_op.setStyleSheet("font-size: 9px;")
         self.footer_layout.addWidget(self.lbl_last_op)
         
         self.footer_layout.addStretch()

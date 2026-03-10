@@ -144,3 +144,11 @@ class LayoutManager:
                     json.dump(self.user_layouts, f, indent=4)
             except Exception as e:
                 print(f"Error saving layouts: {e}")
+
+    def delete_layout(self, name: str) -> bool:
+        """Delete a named layout."""
+        if name in self.user_layouts:
+            del self.user_layouts[name]
+            self._save_to_disk()
+            return True
+        return False

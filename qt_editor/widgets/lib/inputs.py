@@ -248,7 +248,7 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.popup.hide()
         
         # ВАЖНО: Достаточные отступы для фокус-ринга и бордера
-        self.setViewportMargins(3, 3, 3, 3)
+        self.setViewportMargins(1, 1, 1, 1)
         
         # Слушаем viewport, чтобы ловить клики и наведения мыши
         self.viewport().installEventFilter(self)
@@ -449,7 +449,8 @@ class RZFormulaInput(_RZBaseTextEdit):
         self._is_multiline = False 
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setMaximumHeight(30)
+        self.setMinimumHeight(36)
+        self.setMaximumHeight(72)
         self.setTabChangesFocus(True)
         
         # --- Настройки автокомплита для формул ---
@@ -567,7 +568,7 @@ class RZCodeTextEdit(RZFormulaInput):
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         
-        self.setMinimumHeight(60)
+        self.setMinimumHeight(72)
         self.setMaximumHeight(16777215)
         self.setMouseTracking(True)
 

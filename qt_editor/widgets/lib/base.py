@@ -423,11 +423,15 @@ class RZSmartSlider(QtWidgets.QWidget):
         self.set_value(self._value + change)
 
     def _increment(self):
-        if self._is_mixed: return
+        if self._is_mixed:
+            self.math_requested.emit(f"+={self._step}")
+            return
         self.set_value(self._value + self._step)
 
     def _decrement(self):
-        if self._is_mixed: return
+        if self._is_mixed:
+            self.math_requested.emit(f"-={self._step}")
+            return
         self.set_value(self._value - self._step)
 
     def set_value(self, val, emit_signal=True):

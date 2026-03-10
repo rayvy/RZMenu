@@ -99,7 +99,7 @@ def generate_qss(t: dict) -> str:
         background-color: {bg_root_col};
         color: {t.get('text_main', '#E0E2E4')};
         font-family: 'Segoe UI', system-ui, sans-serif; 
-        font-size: 10pt;
+        font-size: 9pt;
     }}
     
     /* --- MAIN WINDOW --- */
@@ -108,19 +108,17 @@ def generate_qss(t: dict) -> str:
     #RZContextWidget_HEADER {{
         background-color: {t.get('bg_header_main', '#1A1D23')};
         border-bottom: 1px solid {border_main};
-        min-height: 48px;
     }}
 
     #RZContextWidget_FOOTER {{
         background-color: {t.get('bg_footer_main', '#1A1D23')};
         border-top: 1px solid {border_main};
-        min-height: 28px;
     }}
 
     #RZAreaHeader {{
         background-color: {t.get('bg_area_header', '#333842')};
         border-bottom: 1px solid {border_main};
-        padding: 4px 10px;
+        padding: 0px 4px;
     }}
 
     /* --- PANELS (Apple-Style Glassy Containers) --- */
@@ -163,7 +161,7 @@ def generate_qss(t: dict) -> str:
     QTabBar::tab {{
         background: transparent;
         color: {t.get('text_dark', '#999')};
-        padding: 10px 20px;
+        padding: 4px 12px;
         margin-right: 4px;
         border-bottom: 2px solid transparent;
     }}
