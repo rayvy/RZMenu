@@ -69,51 +69,32 @@ class RZVisualInputMixin:
         super().mouseReleaseEvent(event)
 
     def _draw_visual_border(self, painter):
-        """Standardized drawing for base, hover, active, and focus borders."""
         if not self.isVisible() or not self._draw_border_enabled: return
-        
-        r = self.rect()
-        theme = get_current_theme()
-        accent = QtGui.QColor(theme.get('accent', '#5298D4'))
-        acc_hover = QtGui.QColor(theme.get('accent_hover', '#6AACDE'))
-        border_col = QtGui.QColor(theme.get('border_input', '#4A505A'))
-        
+        r = self.rect() 
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
-        # 0. State: ACTIVE (Pressed) - Highest Priority
-        if self._is_active:
-             # Stronger, more saturated border for active interaction
-             pen = QtGui.QPen(accent, 2.0)
-             painter.setPen(pen)
-             painter.setBrush(QtCore.Qt.NoBrush)
-             painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 4, 4)
-             return
+        # --- ТЕСТОВЫЙ КРАСНЫЙ КРУГ (появляется только при наведении) ---
 
-        # 1. State: FOCUS (Solid Accent)
-        if self.hasFocus():
-            pen = QtGui.QPen(accent, 1.5)
-            painter.setPen(pen)
-            painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 4, 4)
-            return
+        painter.setBrush(QtGui.QColor("red"))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawEllipse(r.right() - 15, 5, 8, 8)
+        # -----------------------------------------------------------
 
-        # 2. State: HOVER (Smooth Glow)
+        # Устанавливаем красный цвет для всего
+        color = QtGui.QColor("red")
+        
         if self._draw_glow_enabled and self._hover_progress > 0.01:
-            # Draw subtle breathing border using accent_hover
-            glow_color = QtGui.QColor(acc_hover)
-            glow_color.setAlpha(int(155 * self._hover_progress))
-            
-            pen = QtGui.QPen(glow_color, 1.2 + (0.5 * self._hover_progress))
+            pen = QtGui.QPen(color, 2.0)
             painter.setPen(pen)
             painter.setBrush(QtCore.Qt.NoBrush)
-            painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 4, 4)
-            return
+            painter.drawRoundedRect(r.adjusted(2, 2, -2, -2), 4, 4)
 
-        # 3. State: BASE (Standard Border)
-        pen = QtGui.QPen(border_col, 1)
-        painter.setPen(pen)
-        painter.setBrush(QtCore.Qt.NoBrush)
-        painter.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3)
+
+            # State: BASE (Стандартный цвет)
+            pen = QtGui.QPen(QtGui.QColor("#4A505A"), 1)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3)
 
     def _draw_resizer_dots(self, painter):
         """Optional resizer visual for multi-line editors."""

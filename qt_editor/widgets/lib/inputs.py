@@ -219,9 +219,8 @@ class RZModInfoHighlighter(RZBaseHighlighter):
         for match in re.finditer(r'\{\{.*?\}\}', text):
             self.setFormat(match.start(), match.end() - match.start(), self.formats['tag'])
 
-
 # ==========================================
-# БАЗОВЫЙ ТЕКСТОВЫЙ ВИДЖЕТ (ТЕПЕРЬ С АВТОКОМПЛИТОМ И КРАСНЫМ КРУЖКОМ)
+# БАЗОВЫЙ ТЕКСТОВЫЙ ВИДЖЕТ (ИСПРАВЛЕННЫЙ)
 # ==========================================
 
 class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
@@ -233,10 +232,10 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._init_visuals()
+        self._init_visuals() 
         self._is_multiline = False
         
-        # Переменные для автокомплита (переопределяются в дочерних классах)
+        # Переменные для автокомплита
         self._ac_pattern = None       
         self._ac_provider = None      
         self._ac_suffix = ""          
@@ -248,44 +247,40 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.popup.installEventFilter(self)
         self.popup.hide()
         
+        # ВАЖНО: Увеличили отступы до 4px! 
+        # Теперь текстовая зона гарантированно не касается эффектов свечения бордера.
+        self.setViewportMargins(1, 1, 1, 1)
+        
+        # Слушаем viewport, чтобы ловить клики и наведения мыши
+        self.viewport().installEventFilter(self)
+        
         self.popup.itemClicked.connect(self._complete_selection)
         self.apply_theme()
 
     def eventFilter(self, obj, event):
+        # Обработка автокомплита
         if obj == self.popup and event.type() == QtCore.QEvent.MouseButtonPress:
             self._complete_selection(self.popup.currentItem())
             return True
+            
+        # Синхронизация состояний Mixin'а с текстовой зоной (viewport)
+        if obj == self.viewport():
+            # Если событие связано с движением мыши — принудительно обновляем виджет
+            if event.type() in (QtCore.QEvent.Enter, QtCore.QEvent.Leave, QtCore.QEvent.MouseMove):
+                self.update() # Это заставит перерисовать бордеры немедленно!
+            
+            if event.type() == QtCore.QEvent.Enter:
+                self.enterEvent(event)
+            elif event.type() == QtCore.QEvent.Leave:
+                self.leaveEvent(event)
+            elif event.type() == QtCore.QEvent.MouseButtonPress:
+                self._is_active = True
+                self.update()
+            elif event.type() == QtCore.QEvent.MouseButtonRelease:
+                self._is_active = False
+                self.update()
+        
         return super().eventFilter(obj, event)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        
-        # 1. РИСУЕМ КРАСНЫЙ КРУЖОК НА VIEWPORT ПОВЕРХ ТЕКСТА
-        vp_painter = QtGui.QPainter(self.viewport())
-        vp_painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        vp_painter.setBrush(QtGui.QColor(255, 0, 0))
-        vp_painter.setPen(QtCore.Qt.NoPen)
-        # Координаты X, Y, Ширина, Высота
-        vp_painter.drawEllipse(5, 5, 8, 8) 
-        vp_painter.end()
-        
-        # 2. РИСУЕМ РАМКИ И ТОЧКИ ДЛЯ РЕСАЙЗА НА САМОМ ВИДЖЕТЕ
-        painter = QtGui.QPainter(self)
-        self._draw_visual_border(painter)
-        self._draw_resizer_dots(painter)
-        painter.end()
-
-    def mousePressEvent(self, event):
-        if self._handle_visual_mouse_press(event): return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if self._handle_visual_mouse_move(event): return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if self._handle_visual_mouse_release(event): return
-        super().mouseReleaseEvent(event)
 
     def set_text_silent(self, text):
         if self.hasFocus(): return
@@ -310,7 +305,29 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.setTextCursor(cursor)
 
     def apply_theme(self):
-        # Main QPlainTextEdit styling handled by generator.py
+        theme = get_current_theme()
+        bg_color = theme.get('bg_input', '#252930')
+        text_color = theme.get('text_main', '#E0E2E4')
+        
+        # 1. Сбрасываем QSS для основного виджета
+        self.setStyleSheet("")
+        
+        # 2. Используем нативную палитру Qt для основного виджета
+        pal = self.palette()
+        pal.setColor(QtGui.QPalette.Base, QtGui.QColor(bg_color))
+        pal.setColor(QtGui.QPalette.Text, QtGui.QColor(text_color))
+        self.setPalette(pal)
+        
+        # ПАТЧ: Делаем фон дочернего viewport полностью прозрачным!
+        # Теперь он физически не сможет перекрыть бордеры основного виджета
+        vp_pal = self.viewport().palette()
+        vp_pal.setColor(QtGui.QPalette.Base, QtCore.Qt.transparent)
+        self.viewport().setPalette(vp_pal)
+        self.viewport().setAutoFillBackground(False)
+        
+        # 3. Отключаем стандартную "вдавленную" 3D-рамку Qt
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        
         if hasattr(self, 'highlighter') and self.highlighter:
             self.highlighter.update_theme()
             self.highlighter.rehighlight()
@@ -331,13 +348,44 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
             }}
         """)
 
+    # --------------------------------------------------------
+    # МАГИЯ ЗДЕСЬ: Перехватываем системное событие отрисовки
+    # внешнего виджета в обход QPlainTextEdit::paintEvent
+    # --------------------------------------------------------
+    def event(self, event):
+        if event.type() == QtCore.QEvent.Paint:
+            try:
+                # Теперь мы легально открываем пейнтер на внешнем виджете
+                painter = QtGui.QPainter(self)
+                if painter.isActive():
+                    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+                    
+                    theme = get_current_theme()
+                    bg_color = QtGui.QColor(theme.get('bg_input', '#252930'))
+                    
+                    # Ручная заливка фона. Заливаем всю площадь (включая margin)
+                    painter.setBrush(bg_color)
+                    painter.setPen(QtCore.Qt.NoPen)
+                    painter.drawRoundedRect(self.rect(), 3, 3)
+                    
+                    # Отрисовка бордеров и тестового КРАСНОГО КРУГА из MixIn
+                    self._draw_visual_border(painter)
+                painter.end()
+            except Exception:
+                pass
+            
+            # Возвращаем True, блокируя стандартную (и неработающую в этом случае) 
+            # отрисовку QFrame, но текст внутри viewport'а продолжит рисоваться как надо!
+            return True
+            
+        return super().event(event)
+
     def wheelEvent(self, event):
         if not self._is_multiline:
             event.ignore()
         else:
             super().wheelEvent(event)
 
-    # --- ЕДИНАЯ ЛОГИКА АВТОКОМПЛИТА (DRY) ---
     def _check_autocomplete(self):
         if not self._ac_pattern or not self._ac_provider:
             return
@@ -355,7 +403,7 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
 
     def _show_suggestions(self, token):
         all_items = self._ac_provider()
-        filtered = [v for v in all_items if v.lower().startswith(token.lower())]
+        filtered =[v for v in all_items if v.lower().startswith(token.lower())]
         
         if not filtered:
             self.popup.hide()
@@ -366,7 +414,7 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.popup.setCurrentRow(0)
         
         rect = self.cursorRect()
-        global_pos = self.mapToGlobal(rect.bottomLeft())
+        global_pos = self.viewport().mapToGlobal(rect.bottomLeft())
         self.popup.move(global_pos.x(), global_pos.y() + 5)
         self.popup.setFixedSize(250, min(150, len(filtered) * 25 + 5))
         self.popup.show()
@@ -391,7 +439,6 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
             
         self.popup.hide()
 
-
 # ==========================================
 # ДОЧЕРНИЕ КЛАССЫ (ТОЛЬКО ИХ УНИКАЛЬНАЯ ЛОГИКА)
 # ==========================================
@@ -404,14 +451,15 @@ class RZFormulaInput(_RZBaseTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._is_multiline = False 
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setMaximumHeight(30)
         self.setTabChangesFocus(True)
         
         # --- Настройки автокомплита для формул ---
         self._ac_pattern = r'[\$@#]([a-zA-Z0-9_]*)$'
         self._ac_provider = core_read.get_variable_suggestions
         self._ac_suffix = ""
-        # -----------------------------------------
 
         self.highlighter = RZFormulaHighlighter(self.document())
 
@@ -518,11 +566,13 @@ class RZCodeTextEdit(RZFormulaInput):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._is_multiline = True 
-        self._is_resizable = True
+        
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        
         self.setMinimumHeight(60)
+        self.setMaximumHeight(16777215)
         self.setMouseTracking(True)
 
     def set_highlighter(self, highlighter_class):
@@ -544,17 +594,12 @@ class RZModInfoTextEdit(RZCodeTextEdit):
         self._raw_text = ""
         self._is_preview = False
         
-        self._is_resizable = True
-        self._min_res_h = 120
-        self._max_res_h = 680
         self.setMinimumHeight(120)
         self.setMaximumHeight(680)
 
-        # --- Настройки автокомплита для Mod Info ---
         self._ac_pattern = r'\{\{([a-zA-Z0-9_]*)$'
         self._ac_provider = core_read.get_metadata_suggestions
         self._ac_suffix = "}}"
-        # -------------------------------------------
 
         self.highlighter = RZModInfoHighlighter(self.document())
         self.textChanged.connect(self._on_text_changed_internal)
@@ -586,11 +631,9 @@ class RZModInfoTextEdit(RZCodeTextEdit):
         self.setPlainText(preview_text)
         self.blockSignals(False)
         
-        # Safely calls editingFinished logic hiding the popup through the parent
         super().focusOutEvent(event)
 
     def text(self):
-        # Always safe, preventing debouncer desync
         return self._raw_text if self._is_preview else self.toPlainText()
 
     def set_text_safe(self, t):
@@ -608,7 +651,5 @@ class RZModInfoTextEdit(RZCodeTextEdit):
         self.blockSignals(False)
 
     def _check_autocomplete(self):
-        # Если находимся в режиме превью - автокомплит не нужен, 
-        # иначе используем логику из базового класса.
         if self._is_preview: return
         super()._check_autocomplete()
