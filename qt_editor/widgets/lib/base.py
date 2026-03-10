@@ -13,16 +13,22 @@ class RZVisualInputMixin:
         self._draw_glow_enabled = True
         self._is_active = False # Pressed state
         
-        # Press Animation (Apple-like Pulse)
+        # 1. Focus Animation (Subtle blue glow)
+        self._focus_progress = 0.0
+        self._focus_anim = QtCore.QPropertyAnimation(self, b"focus_progress")
+        self._focus_anim.setDuration(200)
+        self._focus_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+
+        # 2. Press Animation (Apple-like Pulse/Shrink)
         self._press_progress = 0.0
         self._press_anim = QtCore.QPropertyAnimation(self, b"press_progress")
-        self._press_anim.setDuration(150)
+        self._press_anim.setDuration(120)
         self._press_anim.setEasingCurve(QtCore.QEasingCurve.OutQuad)
 
-        # Hover Animation (Fast/Snappy)
+        # 3. Hover Animation (Fluid and Snappy)
         self._hover_progress = 0.0
         self._hover_anim = QtCore.QPropertyAnimation(self, b"hover_progress")
-        self._hover_anim.setDuration(250) # Balanced duration
+        self._hover_anim.setDuration(220)
         self._hover_anim.setEasingCurve(QtCore.QEasingCurve.OutQuint)
         
         # Resizing flags
@@ -39,6 +45,15 @@ class RZVisualInputMixin:
     @hover_progress.setter
     def hover_progress(self, val):
         self._hover_progress = val
+        self.update()
+
+    @QtCore.Property(float)
+    def focus_progress(self):
+        return self._focus_progress
+
+    @focus_progress.setter
+    def focus_progress(self, val):
+        self._focus_progress = val
         self.update()
 
     @QtCore.Property(float)
@@ -63,11 +78,15 @@ class RZVisualInputMixin:
         super().leaveEvent(event)
 
     def focusInEvent(self, event):
-        self.update()
+        self._focus_anim.stop()
+        self._focus_anim.setEndValue(1.0)
+        self._focus_anim.start()
         super().focusInEvent(event)
 
     def focusOutEvent(self, event):
-        self.update()
+        self._focus_anim.stop()
+        self._focus_anim.setEndValue(0.0)
+        self._focus_anim.start()
         super().focusOutEvent(event)
 
     def mousePressEvent(self, event):
@@ -96,33 +115,49 @@ class RZVisualInputMixin:
         base_border_color = QtGui.QColor(theme.get('border_input', '#4A505A'))
         accent_color = QtGui.QColor(theme.get('accent', '#5298D4'))
         
-        # 1. Base Border (Always visible, subtle)
-        pen = QtGui.QPen(base_border_color, 1.0)
+        # 1. Draw Subtle Focus/Hover background glow (inner fill)
+        if self._focus_progress > 0.01 or self._hover_progress > 0.01:
+            glow_alpha = int((self._focus_progress * 15) + (self._hover_progress * 10))
+            if glow_alpha > 0:
+                glow_bg = QtGui.QColor(accent_color)
+                glow_bg.setAlpha(glow_alpha)
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(glow_bg)
+                painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 3, 3)
+
+        # 2. Base Border
+        border_col = base_border_color
+        if self._focus_progress > 0.01:
+            # Transition border color to accent on focus
+            border_col = QtGui.QColor(
+                int(base_border_color.red() + (accent_color.red() - base_border_color.red()) * self._focus_progress),
+                int(base_border_color.green() + (accent_color.green() - base_border_color.green()) * self._focus_progress),
+                int(base_border_color.blue() + (accent_color.blue() - base_border_color.blue()) * self._focus_progress)
+            )
+
+        pen = QtGui.QPen(border_col, 1.0)
         painter.setPen(pen)
         painter.setBrush(QtCore.Qt.NoBrush)
         painter.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), 3, 3)
 
-        # 2. Hover/Focus/Pressed Shadow/Glow Effect
-        is_focused = self.hasFocus()
-        
-        # Combine focus and hover for the glow intensity
-        glow_alpha = int(max(self._hover_progress, 1.0 if is_focused else 0.0) * 180)
-        if self._is_active: 
-            glow_alpha = 255 # Full intensity on press
+        # 3. Outer Focus Accent (Glow Ring)
+        if (self._draw_glow_enabled and self._focus_progress > 0.01) or self._press_progress > 0.01:
+            focus_alpha = int(self._focus_progress * 100)
+            if self._is_active: 
+                focus_alpha = 180 
 
-        if (self._draw_glow_enabled and glow_alpha > 0) or self._press_progress > 0.01:
             glow_color = QtGui.QColor(accent_color)
-            glow_color.setAlpha(glow_alpha)
+            glow_color.setAlpha(focus_alpha)
             
-            # Press pulse effect: expand the border slightly
-            press_expand = self._press_progress * 1.0 
+            # Press pulse effect
+            press_expand = self._press_progress * 1.2
             
-            pen = QtGui.QPen(glow_color, 1.5 + press_expand)
+            pen = QtGui.QPen(glow_color, 1.2 + press_expand)
             painter.setPen(pen)
             
-            # Adjust rect based on expansion
-            glow_rect = r.adjusted(1.5 - press_expand, 1.5 - press_expand, -1.5 + press_expand, -1.5 + press_expand)
-            painter.drawRoundedRect(glow_rect, 3.5, 3.5)
+            # Apple-style focus ring is slightly outside the border
+            glow_rect = r.adjusted(-0.5 - press_expand, -0.5 - press_expand, 0.5 + press_expand, 0.5 + press_expand)
+            painter.drawRoundedRect(glow_rect, 4, 4)
 
     def _draw_resizer_dots(self, painter):
         """Optional resizer visual for multi-line editors."""

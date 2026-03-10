@@ -247,8 +247,8 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.popup.installEventFilter(self)
         self.popup.hide()
         
-        # ВАЖНО: Увеличили отступы до 2px для бордера.
-        self.setViewportMargins(2, 2, 2, 2)
+        # ВАЖНО: Достаточные отступы для фокус-ринга и бордера
+        self.setViewportMargins(3, 3, 3, 3)
         
         # Слушаем viewport, чтобы ловить клики и наведения мыши
         self.viewport().installEventFilter(self)

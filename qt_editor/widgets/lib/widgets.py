@@ -737,8 +737,7 @@ class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
         painter = QtGui.QPainter(self)
         self._draw_visual_border(painter)
         painter.end()
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.apply_theme()
+
     def apply_theme(self):
         pass
     def wheelEvent(self, event):

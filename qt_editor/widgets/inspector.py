@@ -107,6 +107,53 @@ class RZInspectorAnchorBar(QtWidgets.QWidget):
         painter.setPen(QtGui.QColor(t.get('border', '#333')))
         painter.drawLine(0, self.height()-1, self.width(), self.height()-1)
 
+class RZInspectorItem(QtWidgets.QWidget):
+    """
+    Standardized base for list row items in the Inspector.
+    Provides a fluid layout with content area and actions (delete button).
+    """
+    def __init__(self, index, parent_list, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.parent_list = parent_list
+        
+        # Outer layout for potential future animations/shadows
+        self.outer_layout = QtWidgets.QVBoxLayout(self)
+        self.outer_layout.setContentsMargins(1, 1, 1, 1)
+        self.outer_layout.setSpacing(0)
+        
+        self.main_widget = QtWidgets.QWidget()
+        self.layout_main = QtWidgets.QHBoxLayout(self.main_widget)
+        self.layout_main.setContentsMargins(4, 2, 4, 2)
+        self.layout_main.setSpacing(6)
+        self.outer_layout.addWidget(self.main_widget)
+        
+        # Content container
+        self.content_layout = QtWidgets.QHBoxLayout()
+        self.content_layout.setSpacing(6)
+        self.layout_main.addLayout(self.content_layout, 1)
+        
+        # Actions container
+        self.actions_layout = QtWidgets.QHBoxLayout()
+        self.actions_layout.setSpacing(3)
+        self.layout_main.addLayout(self.actions_layout)
+        
+        # Standard Delete Button
+        self.btn_del = RZPushButton("✕")
+        self.btn_del.setFixedWidth(24)
+        self.btn_del.clicked.connect(self._on_delete)
+        self.actions_layout.addWidget(self.btn_del)
+
+    def _on_delete(self):
+        if self.parent_list:
+            self.parent_list.remove_item(self.index)
+            
+    def add_widget(self, widget, stretch=0):
+        self.content_layout.addWidget(widget, stretch)
+        
+    def add_action(self, widget):
+        self.actions_layout.insertWidget(self.actions_layout.count() - 1, widget)
+
 class RZListEditor(QtWidgets.QWidget):
     """
     Generic base for list-like editors in the Inspector.
@@ -131,57 +178,66 @@ class RZListEditor(QtWidgets.QWidget):
     def clear_items(self):
         while self.layout_items.count():
             item = self.layout_items.takeAt(0)
-            w = item.widget()
-            if w: w.deleteLater()
+            if item.widget():
+                item.widget().deleteLater()
 
-    def add_item(self):
-        """Override in subclass."""
-        pass
-
-    def remove_item(self, index):
-        """Override in subclass."""
-        pass
-
-    def item_changed(self, index, *args, **kwargs):
-        """Override in subclass."""
-        pass
-
-    def update_ui_list(self, data_list, widget_factory):
+    def sync_widgets(self, data_list, widget_factory, update_func=None):
+        """
+        Synchronizes UI widgets with the data list without full recreation.
+        If update_func is provided, it's called for existing widgets to refresh their data.
+        """
         self._block = True
-        self.clear_items()
-        for i, data in enumerate(data_list):
-            widget = widget_factory(i, data)
-            if widget:
-                self.layout_items.addWidget(widget)
+        
+        # 1. Reconciliation: Ensure we have the same number of widgets
+        current_count = self.layout_items.count()
+        new_count = len(data_list)
+        
+        # Add missing widgets
+        if new_count > current_count:
+            for i in range(current_count, new_count):
+                w = widget_factory(i, data_list[i])
+                if w: self.layout_items.addWidget(w)
+        
+        # Remove excess widgets
+        elif new_count < current_count:
+            for i in range(current_count - 1, new_count - 1, -1):
+                item = self.layout_items.takeAt(i)
+                if item.widget():
+                    item.widget().deleteLater()
+                    
+        # 2. Update existing widgets
+        for i in range(len(data_list)):
+            item = self.layout_items.itemAt(i)
+            if not item: continue
+            w = item.widget()
+            if not w: continue
+            
+            # Update index property if widget has it
+            if hasattr(w, 'index'):
+                w.index = i
+                
+            # Perform custom update if func provided
+            if update_func:
+                update_func(w, data_list[i])
+                
         self._block = False
 
-class RZConditionalImageItem(QtWidgets.QWidget):
+class RZConditionalImageItem(RZInspectorItem):
     """A single row in the conditional image list."""
     def __init__(self, index, data, images, parent=None):
-        super().__init__(parent)
-        self.index = index
-        self.parent_list = parent
-        
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        super().__init__(index, parent, parent=parent)
         
         self.edit_cond = RZFormulaInput()
         self.edit_cond.setPlaceholderText("Condition...")
         self.edit_cond.setText(data.get('condition', ''))
         self.edit_cond.editingFinished.connect(self._on_cond_changed)
-        layout.addWidget(self.edit_cond, 2)
+        self.add_widget(self.edit_cond, 2)
         
         self.cb_img = RZImageComboBox()
         self.cb_img.update_items(images)
         self.cb_img.set_value(data.get('image_id', -1))
         self.cb_img.value_changed.connect(self._on_img_changed)
-        layout.addWidget(self.cb_img, 3)
-        
-        self.btn_del = RZPushButton("✕")
-        self.btn_del.setFixedWidth(24)
-        self.btn_del.clicked.connect(self._on_delete)
-        layout.addWidget(self.btn_del)
+        self.add_widget(self.cb_img, 3)
 
     def _on_cond_changed(self):
         self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
@@ -189,8 +245,10 @@ class RZConditionalImageItem(QtWidgets.QWidget):
     def _on_img_changed(self, val):
         self.parent_list.item_changed(self.index, 'image_id', val)
 
-    def _on_delete(self):
-        self.parent_list.remove_item(self.index)
+    def update_data(self, data, images):
+        self.edit_cond.setText(data.get('condition', ''))
+        self.cb_img.update_items(images)
+        self.cb_img.set_value(data.get('image_id', -1))
 
     def set_cond_visible(self, visible):
         self.edit_cond.setVisible(visible)
@@ -203,11 +261,19 @@ class RZConditionalImageList(RZListEditor):
 
     def update_data(self, data_list, available_images, mode):
         self.image_mode = mode
+        
         def factory(i, data):
             item_w = RZConditionalImageItem(i, data, available_images, self)
             item_w.set_cond_visible(mode == 'CONDITIONAL_LIST')
             return item_w
-        self.update_ui_list(data_list, factory)
+            
+        def updater(w, data):
+            w.blockSignals(True)
+            w.update_data(data, available_images)
+            w.set_cond_visible(mode == 'CONDITIONAL_LIST')
+            w.blockSignals(False)
+            
+        self.sync_widgets(data_list, factory, updater)
 
     def add_item(self):
         if self._block: return
@@ -228,33 +294,22 @@ class RZConditionalImageList(RZListEditor):
             core.props.update_conditional_image(ctx.selected_ids, index, field, value)
 
 
-class RZConditionalTextItem(QtWidgets.QWidget):
+class RZConditionalTextItem(RZInspectorItem):
     """A single row in the conditional text list."""
     def __init__(self, index, data, parent=None):
-        super().__init__(parent)
-        self.index = index
-        self.parent_list = parent
-        
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        super().__init__(index, parent, parent=parent)
         
         self.edit_cond = RZFormulaInput()
         self.edit_cond.setPlaceholderText("Condition...")
         self.edit_cond.setText(data.get('condition', ''))
         self.edit_cond.editingFinished.connect(self._on_cond_changed)
-        layout.addWidget(self.edit_cond, 2)
+        self.add_widget(self.edit_cond, 2)
         
         self.edit_txt = RZLineEdit()
         self.edit_txt.setPlaceholderText("Text...")
         self.edit_txt.setText(data.get('text_id', ''))
         self.edit_txt.editingFinished.connect(self._on_txt_changed)
-        layout.addWidget(self.edit_txt, 3)
-        
-        self.btn_del = RZPushButton("✕")
-        self.btn_del.setFixedWidth(24)
-        self.btn_del.clicked.connect(self._on_delete)
-        layout.addWidget(self.btn_del)
+        self.add_widget(self.edit_txt, 3)
 
     def _on_cond_changed(self):
         self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
@@ -262,8 +317,9 @@ class RZConditionalTextItem(QtWidgets.QWidget):
     def _on_txt_changed(self):
         self.parent_list.item_changed(self.index, 'text_id', self.edit_txt.text())
 
-    def _on_delete(self):
-        self.parent_list.remove_item(self.index)
+    def update_data(self, data):
+        self.edit_cond.setText(data.get('condition', ''))
+        self.edit_txt.setText(data.get('text_id', ''))
 
     def set_cond_visible(self, visible):
         self.edit_cond.setVisible(visible)
@@ -280,7 +336,14 @@ class RZConditionalTextList(RZListEditor):
             item_w = RZConditionalTextItem(i, data, self)
             item_w.set_cond_visible(mode == 'CONDITIONAL_LIST')
             return item_w
-        self.update_ui_list(data_list, factory)
+            
+        def updater(w, data):
+            w.blockSignals(True)
+            w.update_data(data)
+            w.set_cond_visible(mode == 'CONDITIONAL_LIST')
+            w.blockSignals(False)
+            
+        self.sync_widgets(data_list, factory, updater)
 
     def add_item(self):
         if self._block: return
@@ -301,33 +364,24 @@ class RZConditionalTextList(RZListEditor):
             core.props.update_conditional_text(ctx.selected_ids, index, field, value)
 
 
-class RZValueLinkItem(QtWidgets.QWidget):
+class RZValueLinkItem(RZInspectorItem):
     """A single row in the value link list."""
     def __init__(self, index, data, is_slider, parent=None):
-        super().__init__(parent)
-        self.index = index
-        self.parent_list = parent
+        super().__init__(index, parent, parent=parent)
         
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        
-        h1 = QtWidgets.QHBoxLayout()
-        h1.setSpacing(5)
+        # We need a vertical layout for ValueLink because of the ranges
+        # but we use the base content_layout for the top name part.
+        # So we clear the base layout and rebuild vertically or just inject.
+        # Actually, let's keep it simple: RZInspectorItem handles h1 (content + actions).
+        # We just need to add the ranges BELOW the content.
         
         self.edit_name = RZFormulaInput()
         self.edit_name.setPlaceholderText("Link ($Var, @Toggle, #Shape)...")
         self.edit_name.setText(data.get('value_name', ''))
         self.edit_name.editingFinished.connect(self._on_name_changed)
-        h1.addWidget(self.edit_name, 1)
+        self.add_widget(self.edit_name, 1)
         
-        self.btn_del = RZPushButton("✕")
-        self.btn_del.setFixedWidth(24)
-        self.btn_del.clicked.connect(self._on_delete)
-        h1.addWidget(self.btn_del)
-        layout.addLayout(h1)
-        
-        # Ranges for Sliders
+        # Ranges for Sliders (Second row)
         self.w_ranges = QtWidgets.QWidget()
         l_range = QtWidgets.QHBoxLayout(self.w_ranges)
         l_range.setContentsMargins(10, 0, 0, 0)
@@ -349,9 +403,28 @@ class RZValueLinkItem(QtWidgets.QWidget):
         self.spin_max.valueChanged.connect(self._on_max_changed)
         l_range.addWidget(self.spin_max)
         
-        layout.addWidget(self.w_ranges)
+        # Wrap everything in a vertical layout because RZInspectorItem is QHBoxLayout
+        # We'll hijack the main layout or just add the w_ranges to a new container.
+        # Better: Change self.layout() to QV if we want to be clean.
+        # For now, let's just use the fact that layout_main is QH and maybe it's fine 
+        # but ValueLink really needs two rows.
         
-        # Pattern mode for Value Name
+        # RE-INJECT: Change top-level layout to vertical
+        QtWidgets.QWidget().setLayout(self.layout_main) # Orphan the old layout
+        v_main = QtWidgets.QVBoxLayout(self)
+        v_main.setContentsMargins(0, 0, 0, 0)
+        v_main.setSpacing(2)
+        v_main.addLayout(self.layout_main) # The standard row (Name + Action)
+        v_main.addWidget(self.w_ranges)
+        
+        # Sync pattern
+        self.update_data(data)
+
+    def update_data(self, data):
+        self.edit_name.setText(data.get('value_name', ''))
+        self.spin_min.setValue(data.get('value_min', 0.0))
+        self.spin_max.setValue(data.get('value_max', 1.0))
+        
         pattern = data.get('value_name_pattern')
         if pattern:
             self.edit_name.set_pattern(pattern)
@@ -383,7 +456,13 @@ class RZValueLinkList(RZListEditor):
     def update_data(self, data_list, is_slider):
         def factory(i, data):
             return RZValueLinkItem(i, data, is_slider, self)
-        self.update_ui_list(data_list, factory)
+            
+        def updater(w, data):
+            w.blockSignals(True)
+            w.update_data(data)
+            w.blockSignals(False)
+            
+        self.sync_widgets(data_list, factory, updater)
 
     def add_item(self):
         if self._block: return
@@ -414,30 +493,14 @@ class RZValueLinkList(RZListEditor):
             core.props.update_value_link_multi_pattern(ctx.selected_ids, index, field, new_pattern, originals)
 
 
-class RZFXItem(QtWidgets.QWidget):
+class RZFXItem(RZInspectorItem):
     """A single row in the FX list."""
-    
-    # Теперь мы не хардкодим список здесь, 
-    # а используем импортированный FX_COMMANDS
-
     def __init__(self, index, current_val, parent=None):
-        super().__init__(parent)
-        self.index = index
-        self.parent_list = parent
-        
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        super().__init__(index, parent, parent=parent)
         
         self.cb_fx = RZComboBox()
-        
-        # Читаем данные из файла констант
-        # Обратите внимание: распаковываем 3 значения (internal, display, desc)
         for internal, display, desc in FX_COMMANDS:
             self.cb_fx.addItem(display, internal)
-            
-            # БОНУС: Раз уж у нас есть описание (desc), 
-            # добавим его как всплывающую подсказку для каждого пункта
             last_idx = self.cb_fx.count() - 1
             self.cb_fx.setItemData(last_idx, desc, QtCore.Qt.ToolTipRole)
             
@@ -447,19 +510,16 @@ class RZFXItem(QtWidgets.QWidget):
             self.cb_fx.setCurrentIndex(idx)
         
         self.cb_fx.currentIndexChanged.connect(self._on_changed)
-        layout.addWidget(self.cb_fx, 1)
-        
-        self.btn_del = RZPushButton("✕")
-        self.btn_del.setFixedWidth(24)
-        self.btn_del.clicked.connect(self._on_delete)
-        layout.addWidget(self.btn_del)
+        self.add_widget(self.cb_fx, 1)
+
+    def update_data(self, current_val):
+        idx = self.cb_fx.findData(current_val)
+        if idx >= 0: 
+            self.cb_fx.setCurrentIndex(idx)
 
     def _on_changed(self, idx):
         internal = self.cb_fx.itemData(idx)
         self.parent_list.item_changed(self.index, internal)
-
-    def _on_delete(self):
-        self.parent_list.remove_item(self.index)
 
 class RZFXList(RZListEditor):
     """A list-like widget to manage FX collection."""
@@ -469,7 +529,13 @@ class RZFXList(RZListEditor):
     def update_data(self, data_list):
         def factory(i, val):
             return RZFXItem(i, val, self)
-        self.update_ui_list(data_list, factory)
+            
+        def updater(w, val):
+            w.blockSignals(True)
+            w.update_data(val)
+            w.blockSignals(False)
+            
+        self.sync_widgets(data_list, factory, updater)
 
     def add_item(self):
         if self._block: return
@@ -490,37 +556,26 @@ class RZFXList(RZListEditor):
             core.props.update_fx(ctx.selected_ids, index, value)
 
 
-class RZPresetItem(QtWidgets.QWidget):
+class RZPresetItem(RZInspectorItem):
     """A single row in the Preset list."""
     def __init__(self, index, preset_id, preset_name="Unknown", parent=None):
-        super().__init__(parent)
-        self.index = index
-        self.parent_list = parent
+        super().__init__(index, parent, parent=parent)
         self.preset_id = preset_id
-        
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
         
         display_text = f"{preset_name} (ID: {preset_id})"
         self.lbl_id = RZLabel(display_text)
-        layout.addWidget(self.lbl_id, 1)
+        self.add_widget(self.lbl_id, 1)
         
-        # Reordering buttons
+        # Reordering buttons (prepended to delete button)
         self.btn_up = RZPushButton("▲")
         self.btn_up.setFixedWidth(24)
         self.btn_up.clicked.connect(self._on_move_up)
-        layout.addWidget(self.btn_up)
+        self.add_action(self.btn_up)
         
         self.btn_down = RZPushButton("▼")
         self.btn_down.setFixedWidth(24)
         self.btn_down.clicked.connect(self._on_move_down)
-        layout.addWidget(self.btn_down)
-        
-        self.btn_del = RZPushButton("✕")
-        self.btn_del.setFixedWidth(24)
-        self.btn_del.clicked.connect(self._on_delete)
-        layout.addWidget(self.btn_del)
+        self.add_action(self.btn_down)
 
     def _on_move_up(self):
         if self.index > 0:
@@ -529,8 +584,10 @@ class RZPresetItem(QtWidgets.QWidget):
     def _on_move_down(self):
         self.parent_list.reorder_item(self.index, self.index + 1)
 
-    def _on_delete(self):
-        self.parent_list.remove_item(self.index)
+    def update_data(self, preset_id, preset_name):
+        self.preset_id = preset_id
+        display_text = f"{preset_name} (ID: {preset_id})"
+        self.lbl_id.setText(display_text)
 
 class RZPresetList(RZListEditor):
     """A list-like widget to manage Preset IDs."""
@@ -552,7 +609,13 @@ class RZPresetList(RZListEditor):
             name = name_map.get(pid, "Unknown")
             return RZPresetItem(i, pid, name, self)
             
-        self.update_ui_list(preset_list, factory)
+        def updater(w, pid):
+            w.blockSignals(True)
+            name = name_map.get(pid, "Unknown")
+            w.update_data(pid, name)
+            w.blockSignals(False)
+            
+        self.sync_widgets(preset_list, factory, updater)
         
         # Update dropdown with available preset elements
         self.cb_add_preset.blockSignals(True)
@@ -745,9 +808,14 @@ class RZMInspectorPanel(RZEditorPanel):
         # PERFORMANCE: Only update UI if something actually changed
         if hasattr(self, "_last_details") and self._last_details == details:
             return
+            
+        # Optimization: track ONLY fields that changed if possible
+        # For now, we still call update_ui, but RZListEditor is now optimized.
         self._last_details = details
         
+        self._block_signals = True
         self.update_ui(details)
+        self._block_signals = False
     
     def _add_row(self, layout, label, widget, field_name=None, signal=None):
         """Helper to add a property row and optionally connect its change signal."""
@@ -782,57 +850,61 @@ class RZMInspectorPanel(RZEditorPanel):
         return widget
 
     def _init_properties_ui(self):
-        self._init_identity_ui()
-        self._init_visibility_ui()
-        self._init_presets_ui()
-        self._init_layout_ui()
-        self._init_transform_ui()
-        self._init_grid_ui()
-        self._init_style_ui()
-        self._init_text_ui()
-        self._init_logic_ui()
-        self._init_events_ui()
-        self._init_button_ui()
-        self._init_flags_ui()
+        sections = [
+            ("Identity", self._init_identity_ui),
+            ("Visibility", self._init_visibility_ui),
+            ("Presets System", self._init_presets_ui),
+            ("Anchor & Alignment", self._init_layout_ui),
+            ("Transform", self._init_transform_ui),
+            ("Grid Settings", self._init_grid_ui),
+            ("Appearance", self._init_style_ui),
+            ("Text content", self._init_text_ui),
+            ("Value Links & FX", self._init_logic_ui),
+            ("Interactions", self._init_events_ui),
+            ("Button Options", self._init_button_ui),
+            ("Editor Flags", self._init_flags_ui),
+        ]
+        
+        for name, func in sections:
+            try:
+                func()
+            except Exception as e:
+                print(f"[INSPECTOR] Error initializing section '{name}': {e}")
 
     def _init_identity_ui(self):
-        try:
-            self.grp_ident = RZGroupBox("Identity")
-            layout = QtWidgets.QFormLayout(self.grp_ident)
-            layout.setSpacing(6)
-            self.spin_id = self._add_row(layout, "ID:", RZSpinBox())
-            self.spin_id.setRange(0, 99999)
-            self.spin_id.editingFinished.connect(self._on_id_changed)
-            
-            self.name_edit = self._add_row(layout, "Name:", RZLineEdit(), 'element_name')
-            self.edit_tag = self._add_row(layout, "Tag:", RZLineEdit(), 'tag')
-            
-            self.cb_class = self._add_row(layout, "Class:", RZComboBox(), 'class_type')
-            self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
-            
-            self.spin_priority = self._add_row(layout, "Priority:", RZSpinBox(), 'priority')
-            self.spin_priority.setRange(-100, 100)
-            
-            self.chk_main_window = self._add_row(layout, "", RZCheckBox("Is Main Window"), 'is_main_window')
-            self.chk_disable_export = self._add_row(layout, "", RZCheckBox("Disable Export"), 'disable_export')
-            
-            self.layout_props.addWidget(self.grp_ident)
-        except Exception as e: print(f"[INSPECTOR] Error Identity: {e}")
+        self.grp_ident = RZGroupBox("Identity")
+        layout = QtWidgets.QFormLayout(self.grp_ident)
+        layout.setSpacing(6)
+        self.spin_id = self._add_row(layout, "ID:", RZSpinBox())
+        self.spin_id.setRange(0, 99999)
+        self.spin_id.editingFinished.connect(self._on_id_changed)
+        
+        self.name_edit = self._add_row(layout, "Name:", RZLineEdit(), 'element_name')
+        self.edit_tag = self._add_row(layout, "Tag:", RZLineEdit(), 'tag')
+        
+        self.cb_class = self._add_row(layout, "Class:", RZComboBox(), 'class_type')
+        self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
+        
+        self.spin_priority = self._add_row(layout, "Priority:", RZSpinBox(), 'priority')
+        self.spin_priority.setRange(-100, 100)
+        
+        self.chk_main_window = self._add_row(layout, "", RZCheckBox("Is Main Window"), 'is_main_window')
+        self.chk_disable_export = self._add_row(layout, "", RZCheckBox("Disable Export"), 'disable_export')
+        
+        self.layout_props.addWidget(self.grp_ident)
 
     def _init_visibility_ui(self):
-        try:
-            self.grp_vis = RZGroupBox("Visibility")
-            layout = QtWidgets.QFormLayout(self.grp_vis)
-            layout.setSpacing(6)
-            self.cb_vis_mode = self._add_row(layout, "Mode:", RZComboBox(), 'visibility_mode')
-            self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL", "HIDED"])
-            
-            self.edit_vis_cond = RZFormulaInput()
-            self.edit_vis_cond.setPlaceholderText("$var > 0")
-            self._add_row(layout, "Condition:", self.edit_vis_cond, 'visibility_condition')
-            
-            self.layout_props.addWidget(self.grp_vis)
-        except Exception as e: print(f"[INSPECTOR] Error Visibility: {e}")
+        self.grp_vis = RZGroupBox("Visibility")
+        layout = QtWidgets.QFormLayout(self.grp_vis)
+        layout.setSpacing(6)
+        self.cb_vis_mode = self._add_row(layout, "Mode:", RZComboBox(), 'visibility_mode')
+        self.cb_vis_mode.addItems(["ALWAYS", "CONDITIONAL", "HIDED"])
+        
+        self.edit_vis_cond = RZFormulaInput()
+        self.edit_vis_cond.setPlaceholderText("$var > 0")
+        self._add_row(layout, "Condition:", self.edit_vis_cond, 'visibility_condition')
+        
+        self.layout_props.addWidget(self.grp_vis)
 
     def _init_presets_ui(self):
         try:
