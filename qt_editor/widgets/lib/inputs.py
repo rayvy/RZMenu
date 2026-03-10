@@ -247,9 +247,8 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.popup.installEventFilter(self)
         self.popup.hide()
         
-        # ВАЖНО: Увеличили отступы до 4px! 
-        # Теперь текстовая зона гарантированно не касается эффектов свечения бордера.
-        self.setViewportMargins(1, 1, 1, 1)
+        # ВАЖНО: Увеличили отступы до 2px для бордера.
+        self.setViewportMargins(2, 2, 2, 2)
         
         # Слушаем viewport, чтобы ловить клики и наведения мыши
         self.viewport().installEventFilter(self)
@@ -319,10 +318,7 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
         self.setPalette(pal)
         
         # ПАТЧ: Делаем фон дочернего viewport полностью прозрачным!
-        # Теперь он физически не сможет перекрыть бордеры основного виджета
-        vp_pal = self.viewport().palette()
-        vp_pal.setColor(QtGui.QPalette.Base, QtCore.Qt.transparent)
-        self.viewport().setPalette(vp_pal)
+        self.viewport().setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.viewport().setAutoFillBackground(False)
         
         # 3. Отключаем стандартную "вдавленную" 3D-рамку Qt
@@ -368,7 +364,7 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
                     painter.setPen(QtCore.Qt.NoPen)
                     painter.drawRoundedRect(self.rect(), 3, 3)
                     
-                    # Отрисовка бордеров и тестового КРАСНОГО КРУГА из MixIn
+                    # Отрисовка бордеров из MixIn
                     self._draw_visual_border(painter)
                 painter.end()
             except Exception:
