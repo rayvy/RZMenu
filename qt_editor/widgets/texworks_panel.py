@@ -37,7 +37,7 @@ class RZTabRow(QtWidgets.QWidget):
         
         for i, name in enumerate(names):
             name = name if name else f"Item {i}"
-            btn = QtWidgets.QPushButton(name)
+            btn = QtWidgets.QPushButton(name, self)
             btn.setCheckable(True)
             btn.setChecked(i == active_idx)
             btn.setMinimumHeight(24)
@@ -329,7 +329,7 @@ class TexWorksDetailView(QtWidgets.QWidget):
         self.setStyleSheet(f"background-color: {t.get('bg_dark', '#1E2127')};")
 
     def add_section(self, title, icon=None):
-        box = RZGroupBox(title)
+        box = RZGroupBox(title, self)
         box.setStyleSheet("QGroupBox { border: 1px solid #3E4451; border-radius: 4px; margin-top: 10px; padding-top: 10px; font-weight: bold; color: #BBB; } QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }")
         l = QtWidgets.QVBoxLayout(box); l.setContentsMargins(8, 15, 8, 8); l.setSpacing(4)
         self.layout.insertWidget(self.layout.count() - 1, box)
@@ -385,18 +385,24 @@ class TexWorksMainTab(QtWidgets.QWidget):
         # Clean details (except stretch)
         while self.details.layout.count() > 1:
             it = self.details.layout.takeAt(0)
-            if it.widget():
-                it.widget().hide()
-                it.widget().setParent(None)
-                it.widget().deleteLater()
-            elif it.layout():
-                while it.layout().count():
-                    sit = it.layout().takeAt(0)
-                    if sit.widget():
-                        sit.widget().hide()
-                        sit.widget().setParent(None)
-                        sit.widget().deleteLater()
-                it.layout().deleteLater()
+            if not it: continue
+            
+            w = it.widget()
+            if w:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+            
+            lay = it.layout()
+            if lay:
+                while lay.count():
+                    sit = lay.takeAt(0)
+                    if sit and sit.widget():
+                        sw = sit.widget()
+                        sw.hide()
+                        sw.setParent(None)
+                        sw.deleteLater()
+                lay.deleteLater()
             
         b_idx = rzm.active_tw_block_index
         self.w_comps.setVisible(b_idx >= 0 and len(rzm.tw_blocks) > 0)
