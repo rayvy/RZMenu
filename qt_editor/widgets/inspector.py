@@ -94,10 +94,6 @@ class RZInspectorAnchorBar(QtWidgets.QWidget):
         event.ignore()
 
     def leaveEvent(self, event):
-        self._hover_anim.stop()
-        self._hover_anim.setEndValue(0.0)
-        self._hover_anim.setEasingCurve(QtCore.QEasingCurve.InCubic)
-        self._hover_anim.start()
         super().leaveEvent(event)
 
     def paintEvent(self, event):
@@ -764,16 +760,14 @@ class RZMInspectorPanel(RZEditorPanel):
         self.anchor_bar.set_active(best_match)
 
     def set_row_visible(self, widget, visible):
-        """Helper to hide/show both the widget and its label in a QFormLayout."""
-        layout = None
-        # Try to find which form layout contains this widget
-        p = widget.parentWidget()
-        if p and p.layout():
-            layout = p.layout()
-        
-        if isinstance(layout, QtWidgets.QFormLayout):
-            label = layout.labelForField(widget)
-            if label: label.setVisible(visible)
+        """Helper to hide/show both the widget and its label."""
+        if hasattr(widget, '_lbl_buddy'):
+            widget._lbl_buddy.setVisible(visible)
+        else:
+            p = widget.parentWidget()
+            if p and p.layout() and isinstance(p.layout(), QtWidgets.QFormLayout):
+                label = p.layout().labelForField(widget)
+                if label: label.setVisible(visible)
         widget.setVisible(visible)
 
     def _connect_signals(self):
@@ -819,32 +813,53 @@ class RZMInspectorPanel(RZEditorPanel):
     
     def _add_row(self, layout, label, widget, field_name=None, signal=None):
         """Helper to add a property row and optionally connect its change signal."""
+        lbl_w = None
         if isinstance(layout, QtWidgets.QFormLayout):
-            layout.addRow(label, widget)
+            lbl_w = RZLabel(label) if isinstance(label, str) else label
+            layout.addRow(lbl_w, widget)
         else:
             h = QtWidgets.QHBoxLayout()
             if label:
-                h.addWidget(RZLabel(label))
+                lbl_w = RZLabel(label) if isinstance(label, str) else label
+                h.addWidget(lbl_w)
             h.addWidget(widget)
             if not label:
                 h.addStretch()
-            layout.addLayout(h)
+            if hasattr(layout, 'addLayout'):
+                layout.addLayout(h)
+            elif hasattr(layout, 'addWidget'):
+                # Handle layout as a widget or just append to layout
+                dummy = QtWidgets.QWidget()
+                dummy.setLayout(h)
+                layout.addWidget(dummy)
         
+        # Store label reference for easy visibility toggling
+        if lbl_w:
+            widget._lbl_buddy = lbl_w
+
         if field_name:
             if signal is None:
-                if isinstance(widget, (RZSpinBox, RZDoubleSpinBox)): signal = 'valueChanged'
+                if hasattr(widget, 'value_changed'): signal = 'value_changed'
+                elif hasattr(widget, 'valueChanged'): signal = 'valueChanged'
+                elif hasattr(widget, 'colorChanged'): signal = 'colorChanged'
                 elif isinstance(widget, RZComboBox): signal = 'currentTextChanged'
                 elif isinstance(widget, RZCheckBox): signal = 'toggled'
                 else: signal = 'editingFinished'
             
             sig = getattr(widget, signal, None)
             if sig:
-                if signal == 'valueChanged': sig.connect(lambda v: self._emit_change(field_name, v))
-                elif signal == 'currentTextChanged': sig.connect(lambda t: self._emit_change(field_name, t))
-                elif signal == 'toggled': sig.connect(lambda v: self._emit_change(field_name, v))
+                if signal in ['valueChanged', 'value_changed', 'colorChanged']: 
+                    sig.connect(lambda v: self._emit_change(field_name, v))
+                elif signal == 'currentTextChanged': 
+                    sig.connect(lambda t: self._emit_change(field_name, t))
+                elif signal == 'toggled': 
+                    sig.connect(lambda v: self._emit_change(field_name, v))
                 else:
                     def _on_finish():
-                        val = widget.text() if hasattr(widget, 'text') else (widget.toPlainText() if hasattr(widget, 'toPlainText') else None)
+                        val = None
+                        if hasattr(widget, 'text'): val = widget.text()
+                        elif hasattr(widget, 'toPlainText'): val = widget.toPlainText()
+                        elif hasattr(widget, 'value'): val = widget.value()
                         self._emit_change(field_name, val)
                     sig.connect(_on_finish)
         return widget
@@ -1351,8 +1366,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_blend_mode.setCurrentText(props.get('image_blending_mode', 'NONE'))
             
             is_img_single = (img_mode == 'SINGLE')
-            self.lbl_image.setVisible(is_img_single)
-            self.cb_image.setVisible(is_img_single)
+            self.set_row_visible(self.cb_image, is_img_single)
             self.list_images.setVisible(not is_img_single)
             
             all_images = core.read.get_available_images()
@@ -1414,8 +1428,8 @@ class RZMInspectorPanel(RZEditorPanel):
                 self.chk_no_popup.setChecked(props.get('disable_button_popup') is True)
 
             # --- Flags ---
-            self.chk_hide.setChecked(props.get('is_hidden') is True)
-            self.chk_locked.setChecked(props.get('is_locked_pos') is True or props.get('is_locked_size') is True)
+            self.chk_hide.setChecked(props.get('qt_hide') is True or props.get('is_hidden') is True)
+            self.chk_locked.setChecked(props.get('qt_locked_ui') is True or props.get('is_locked_pos') is True or props.get('is_locked_size') is True)
             
             # --- Raw Data Table ---
             self.table_raw.setRowCount(0)
