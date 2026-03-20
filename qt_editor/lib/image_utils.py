@@ -177,26 +177,89 @@ def get_placeholder_pixmap(ptype, size=128, format_id=None):
     painter.end()
     return pix
 
-def get_total_block_preview(block, size=256):
-    """Composites backdrop and components into one preview."""
+def get_total_block_preview(layers, canvas_res=(2048, 2048), size=256):
+    """
+    Composites multiple layers into one preview.
+    layers: list of {"rect": (x,y,w,h), "path": str, "is_decal": bool, "opacity": float}
+    """
     pix = QtGui.QPixmap(size, size)
-    pix.fill(QtCore.Qt.black)
+    pix.fill(QtCore.Qt.transparent)
     painter = QtGui.QPainter(pix)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+    
+    # Fill background with a dark mesh-like pattern or just dark gray
+    painter.fillRect(0, 0, size, size, QtGui.QColor(25, 27, 32))
+    
+    cw, ch = canvas_res
+    if cw <= 0: cw = 2048
+    if ch <= 0: ch = 2048
+    
+    scale_x = size / cw
+    scale_y = size / ch
+    
+    for layer in layers:
+        rx, ry, rw, rh = layer.get("rect", (0, 0, cw, ch))
+        path = layer.get("path", "")
+        opacity = layer.get("opacity", 1.0)
+        
+        # Scale to preview size
+        px = rx * scale_x
+        py = (ch - ry - rh) * scale_y # Flip Y for preview
+        pw = rw * scale_x
+        ph = rh * scale_y
+        
+        painter.setOpacity(opacity)
+        
+        if path:
+            # Try to get from cache or load tiny version
+            # Note: For atlas preview, we use a slightly larger thumb if possible
+            img_data = load_texture_data(path, max_size=128)
+            l_pix = img_data.get("pixmap")
+            if l_pix:
+                painter.drawPixmap(QtCore.QRectF(px, py, pw, ph), l_pix, QtCore.QRectF(l_pix.rect()))
+            else:
+                painter.fillRect(QtCore.QRectF(px, py, pw, ph), QtGui.QColor(60, 60, 70, 100))
+        else:
+            # Schematic rect
+            color = QtGui.QColor(80, 120, 200, 100) if not layer.get("is_decal") else QtGui.QColor(200, 100, 100, 100)
+            painter.fillRect(QtCore.QRectF(px, py, pw, ph), color)
+            
+        # Draw border
+        painter.setOpacity(1.0)
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 40), 1))
+        painter.drawRect(QtCore.QRectF(px, py, pw, ph))
+
+    painter.end()
+    return pix
+
+def collect_block_preview_data(block):
+    """
+    Safely extracts layout data from a Blender Block object for the previewer.
+    Must be called from main thread.
+    """
+    data = {
+        "res": (2048, 2048), # Default
+        "layers": []
+    }
     
     # 1. Backdrop
     if block.backdrop_enabled:
-        b_pix = load_texture_to_pixmap(get_resource_path(block.backdrop_resource_name), size)
-        if b_pix: painter.drawPixmap(0, 0, b_pix)
+        path = get_resource_path(block.backdrop_resource_name)
+        data["layers"].append({"rect": list(block.backdrop_rect), "path": path, "is_decal": False, "opacity": 1.0})
     
-    # 2. Components
+    # 2. Components & Slots
     for comp in block.components:
-        c_pix = load_texture_to_pixmap(get_resource_path(comp.base_resource_name), size)
-        if c_pix:
-            painter.setOpacity(0.7)
-            painter.drawPixmap(0, 0, c_pix)
+        comp_path = get_resource_path(comp.base_resource_name)
+        data["layers"].append({"rect": list(comp.rect), "path": comp_path, "is_decal": False, "opacity": 0.8})
+        
+        for slot in comp.slots:
+            if not slot.active: continue
+            # Slots currently don't have a direct resource linked in the property group,
+            # they seem to be UV regions for decals.
+            data["layers"].append({"rect": list(slot.rect), "path": "", "is_decal": True, "opacity": 0.9})
             
-    painter.end()
-    return pix
+    return data
 
 def resolve_path(path):
     """Tries to locate a file on disk using multiple strategies and the registry."""

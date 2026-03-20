@@ -100,6 +100,21 @@ class ComboBoxFix(RZComboBox):
         self.view().setMinimumWidth(150)
         self.view().setStyleSheet("QListView { max-height: 300px; }")
 
+class AtlasPreviewWidget(QtWidgets.QWidget):
+    def __init__(self, size=384, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 0, 0, 0)
+        self.lbl = RZLabel(); self.lbl.setAlignment(QtCore.Qt.AlignCenter)
+        self.lbl.setStyleSheet("background: #000; border: 1px solid #333; border-radius: 4px;")
+        self.layout.addWidget(self.lbl)
+
+    def update_block(self, block):
+        if not block: return
+        data = image_utils.collect_block_preview_data(block)
+        pix = image_utils.get_total_block_preview(data["layers"], data["res"], size=self.width())
+        self.lbl.setPixmap(pix)
+
 class ResourcePreviewWidget(QtWidgets.QWidget):
     """Small thumbnail of a registered resource."""
     fileDropped = QtCore.Signal(str)
@@ -126,13 +141,26 @@ class ResourcePreviewWidget(QtWidgets.QWidget):
             self.lbl.setPixmap(image_utils.get_placeholder_pixmap("EMPTY", self.width()))
             return
             
+        rzm = bpy.context.scene.rzm
+        res = next((r for r in rzm.tw_resources if r.name == name), None)
+        
+        if res and res.type == 'VIRTUAL':
+            # Try to find a block that outputs to this resource
+            block = next((b for b in rzm.tw_blocks if b.resource_name == name), None)
+            if block:
+                data = image_utils.collect_block_preview_data(block)
+                pix = image_utils.get_total_block_preview(data["layers"], data["res"], size=self.width())
+                self.lbl.setPixmap(pix)
+                return
+            else:
+                pix = image_utils.get_placeholder_pixmap("VIRTUAL", self.width(), format_id=res.format)
+                self.lbl.setPixmap(pix)
+                return
+
         path = image_utils.get_resource_path(name)
         if path:
             self.update_from_path(path)
         else:
-            # Maybe it's a direct path or it doesn't exist? 
-            # For Overrides, if it's not a resource name, we might not show anything
-            # or we can try to treat it as a path if it looks like one.
             self.lbl.setPixmap(image_utils.get_placeholder_pixmap("EMPTY", self.width()))
 
     def update_from_path(self, path):
@@ -324,27 +352,28 @@ class TexWorksResourceItem(QtWidgets.QWidget):
 
         # Header Row
         row = QtWidgets.QHBoxLayout(); self.layout.addLayout(row)
+        row.setSpacing(6)
         
         self.pre = ResourcePreviewWidget(42, self)
         self.pre.fileDropped.connect(self._on_file_dropped)
         row.addWidget(self.pre)
         
         im = IconManager.get_instance()
-        self.btn_fav = RZPushButton(""); self.btn_fav.setFixedWidth(24); row.addWidget(self.btn_fav)
+        self.btn_fav = RZPushButton(""); self.btn_fav.setFixedSize(24, 24); row.addWidget(self.btn_fav)
         self.btn_fav.setIcon(im.get_icon("star", QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton))
         self.btn_fav.clicked.connect(self._toggle_fav)
         
-        self.edit_name = RZLineEdit(); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 2)
+        self.edit_name = RZLineEdit(); self.edit_name.setPlaceholderText("Name"); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 1)
         self.edit_name.editingFinished.connect(self._on_changed)
         
-        self.cb_type = ComboBoxFix(); self.cb_type.addItems(["EMPTY", "ON_DISK", "VIRTUAL"]); row.addWidget(self.cb_type, 1)
+        self.cb_type = ComboBoxFix(); self.cb_type.addItems(["EMPTY", "ON_DISK", "VIRTUAL"]); self.cb_type.setFixedWidth(85); row.addWidget(self.cb_type)
         self.cb_type.setCurrentText(data.type); self.cb_type.currentTextChanged.connect(self._on_changed)
         
-        self.edit_tag = RZLineEdit(); self.edit_tag.setPlaceholderText("Tag"); self.edit_tag.setFixedWidth(60); row.addWidget(self.edit_tag)
+        self.edit_tag = RZLineEdit(); self.edit_tag.setPlaceholderText("Tag"); self.edit_tag.setFixedWidth(70); row.addWidget(self.edit_tag)
         self.edit_tag.setText(data.qt_tag); self.edit_tag.editingFinished.connect(self._on_changed)
 
         # Action Buttons
-        self.btn_del = RZPushButton(""); self.btn_del.setFixedWidth(24); row.addWidget(self.btn_del)
+        self.btn_del = RZPushButton(""); self.btn_del.setFixedSize(24, 24); row.addWidget(self.btn_del)
         self.btn_del.setIcon(im.get_icon("circle_x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton))
         self.btn_del.clicked.connect(lambda: self.parent_list.remove_item(self.index))
 
@@ -457,28 +486,28 @@ class TexWorksOverrideItem(QtWidgets.QWidget):
     def __init__(self, index, data, parent_list):
         super().__init__()
         self.index = index; self.parent_list = parent_list
-        row = QtWidgets.QHBoxLayout(self); row.setContentsMargins(5, 2, 5, 2); row.setSpacing(4)
+        row = QtWidgets.QHBoxLayout(self); row.setContentsMargins(5, 2, 5, 2); row.setSpacing(6)
         
         self.pre = ResourcePreviewWidget(42, self)
         row.addWidget(self.pre)
         
         im = IconManager.get_instance()
         self.btn_fav = RZPushButton("")
-        self.btn_fav.setFixedWidth(24); row.addWidget(self.btn_fav)
+        self.btn_fav.setFixedSize(24, 24); row.addWidget(self.btn_fav)
         self.btn_fav.setIcon(im.get_icon("star", QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton))
         self.btn_fav.clicked.connect(self._toggle_fav)
         
-        self.edit_name = RZLineEdit(); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 1)
+        self.edit_name = RZLineEdit(); self.edit_name.setPlaceholderText("Name"); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 1)
         self.edit_name.editingFinished.connect(self._on_changed)
         
-        self.edit_hash = RZLineEdit(); self.edit_hash.setPlaceholderText("Hash"); self.edit_hash.setText(data.hash); row.addWidget(self.edit_hash, 1)
+        self.edit_hash = RZLineEdit(); self.edit_hash.setPlaceholderText("Hash"); self.edit_hash.setText(data.hash); self.edit_hash.setFixedWidth(85); row.addWidget(self.edit_hash)
         self.edit_hash.editingFinished.connect(self._on_changed)
         
-        self.edit_res = RZLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); row.addWidget(self.edit_res, 1)
+        self.edit_res = RZLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); self.edit_res.setFixedWidth(120); row.addWidget(self.edit_res)
         self.edit_res.editingFinished.connect(self._on_changed)
         self.edit_res.textChanged.connect(self._on_res_typing)
         
-        self.btn_del = RZPushButton(""); self.btn_del.setFixedWidth(24); row.addWidget(self.btn_del)
+        self.btn_del = RZPushButton(""); self.btn_del.setFixedSize(24, 24); row.addWidget(self.btn_del)
         self.btn_del.setIcon(im.get_icon("circle_x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton))
         self.btn_del.clicked.connect(lambda: self.parent_list.remove_item(self.index))
         
@@ -689,7 +718,13 @@ class TexWorksMainTab(QtWidgets.QWidget):
             else:
                 self._draw_block_details(block, b_idx)
 
+    def _draw_block_preview(self, block):
+        l = self.details.add_section("Atlas Preview")
+        pre = AtlasPreviewWidget(size=300); l.addWidget(pre)
+        pre.update_block(block)
+
     def _draw_block_details(self, block, b_idx):
+        self._draw_block_preview(block)
         l = self.details.add_section("Block Settings")
         
         row = QtWidgets.QHBoxLayout(); l.addLayout(row)
