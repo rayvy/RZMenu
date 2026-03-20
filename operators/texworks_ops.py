@@ -88,6 +88,7 @@ class RZM_OT_UpdateTwItem(bpy.types.Operator):
             print(f"UpdateTwItem Error: {e}")
             return {'CANCELLED'}
             
+        trigger_refresh()
         return {'FINISHED'}
 
 # --- Базовые операции (Add/Remove) ---

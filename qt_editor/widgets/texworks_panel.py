@@ -103,7 +103,7 @@ class ComboBoxFix(RZComboBox):
 class AtlasPreviewWidget(QtWidgets.QWidget):
     def __init__(self, size=384, parent=None):
         super().__init__(parent)
-        self.setFixedSize(size, size)
+        self.setFixedSize(size, size); self._size = size
         self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 0, 0, 0)
         self.lbl = RZLabel(); self.lbl.setAlignment(QtCore.Qt.AlignCenter)
         self.lbl.setStyleSheet("background: #000; border: 1px solid #333; border-radius: 4px;")
@@ -112,8 +112,10 @@ class AtlasPreviewWidget(QtWidgets.QWidget):
     def update_block(self, block):
         if not block: return
         data = image_utils.collect_block_preview_data(block)
-        pix = image_utils.get_total_block_preview(data["layers"], data["res"], size=self.width())
-        self.lbl.setPixmap(pix)
+        image_utils.AsyncImageLoader.get_instance().load_atlas_async(data["layers"], data["res"], self._size, self.lbl.setPixmap)
+
+    def update_with_layers(self, layers, res):
+        image_utils.AsyncImageLoader.get_instance().load_atlas_async(layers, res, self._size, self.lbl.setPixmap)
 
 class ResourcePreviewWidget(QtWidgets.QWidget):
     """Small thumbnail of a registered resource."""
@@ -710,6 +712,8 @@ class TexWorksMainTab(QtWidgets.QWidget):
                 comp = block.components[c_idx]
                 self.tab_slots.sync_items([s.name for s in comp.slots], comp.active_slot_index)
                 
+                self._draw_comp_preview(comp)
+                
                 s_idx = comp.active_slot_index
                 if 0 <= s_idx < len(comp.slots):
                     self._draw_slot_details(comp.slots[s_idx], b_idx, c_idx, s_idx)
@@ -717,14 +721,45 @@ class TexWorksMainTab(QtWidgets.QWidget):
                     self._draw_comp_details(comp, b_idx, c_idx)
             else:
                 self._draw_block_details(block, b_idx)
+            
+            self._draw_block_preview(block)
 
     def _draw_block_preview(self, block):
-        l = self.details.add_section("Atlas Preview")
+        l = self.details.add_section("Atlas Preview (Block: " + block.name + ")")
         pre = AtlasPreviewWidget(size=300); l.addWidget(pre)
         pre.update_block(block)
 
+    def _draw_comp_preview(self, comp):
+        l = self.details.add_section("Component Preview: " + comp.name)
+        # We can build a layer list for just this component
+        comp_path = image_utils.get_resource_path(comp.base_resource_name)
+        layers = [{"rect": [0, 0, comp.rect[2], comp.rect[3]], "path": comp_path, "opacity": 0.8}]
+        for slot in comp.slots:
+            if not slot.active: continue
+            layers.append({"rect": list(slot.rect), "path": "", "is_decal": True, "opacity": 0.9, "parent_comp_rect": list(comp.rect)})
+        
+        # We need to scale these to a "local" 0.0-1.0 space for the component
+        local_layers = []
+        cw, ch = comp.rect[2], comp.rect[3]
+        if cw <= 0: cw = 1024
+        if ch <= 0: ch = 1024
+        
+        for lyr in layers:
+            rect = lyr["rect"]
+            # If it's a decal in world space, we must offset it by component's origin
+            if lyr.get("is_decal"):
+                ox, oy = comp.rect[0], comp.rect[1]
+                local_rect = [rect[0]-ox, rect[1]-oy, rect[2], rect[3]]
+                local_layers.append({"rect": local_rect, "path": "", "is_decal": True, "opacity": 0.9})
+            else:
+                local_layers.append(lyr)
+
+        pre = AtlasPreviewWidget(size=256)
+        pre.update_with_layers(local_layers, (cw, ch))
+        l.addWidget(pre)
+
     def _draw_block_details(self, block, b_idx):
-        self._draw_block_preview(block)
+        # Already have block preview drawn globally in update_ui
         l = self.details.add_section("Block Settings")
         
         row = QtWidgets.QHBoxLayout(); l.addLayout(row)

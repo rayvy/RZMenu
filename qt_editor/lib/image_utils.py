@@ -205,7 +205,7 @@ def get_total_block_preview(layers, canvas_res=(2048, 2048), size=256):
         
         # Scale to preview size
         px = rx * scale_x
-        py = (ch - ry - rh) * scale_y # Flip Y for preview
+        py = ry * scale_y  # 0,0 is Top-Left, no flip needed now
         pw = rw * scale_x
         ph = rh * scale_y
         
@@ -238,8 +238,17 @@ def collect_block_preview_data(block):
     Safely extracts layout data from a Blender Block object for the previewer.
     Must be called from main thread.
     """
+    rzm = bpy.context.scene.rzm
+    res_name = block.resource_name
+    canvas_res = (2048, 2048)
+    
+    # Try to find the output resource to get its resolution
+    out_res = next((r for r in rzm.tw_resources if r.name == res_name), None)
+    if out_res:
+        canvas_res = (out_res.resolution[0], out_res.resolution[1])
+    
     data = {
-        "res": (2048, 2048), # Default
+        "res": canvas_res,
         "layers": []
     }
     
@@ -252,6 +261,10 @@ def collect_block_preview_data(block):
     for comp in block.components:
         comp_path = get_resource_path(comp.base_resource_name)
         data["layers"].append({"rect": list(comp.rect), "path": comp_path, "is_decal": False, "opacity": 0.8})
+        
+        if comp.tex_morph_enabled:
+            morph_path = get_resource_path(comp.tex_morph_resource_name)
+            data["layers"].append({"rect": list(comp.rect), "path": morph_path, "is_decal": False, "opacity": 0.4}) # Blend
         
         for slot in comp.slots:
             if not slot.active: continue
@@ -299,6 +312,32 @@ def get_resource_path(resource_name):
         return resolve_path(res.path)
     return ""
 
+class AtlasWorker(QtCore.QRunnable):
+    class Signals(QtCore.QObject):
+        finished = QtCore.Signal(QtGui.QPixmap)
+
+    def __init__(self, layers, canvas_res, size):
+        super().__init__()
+        self.layers = layers
+        self.canvas_res = canvas_res
+        self.size = size
+        self.signals = self.Signals()
+
+    def run(self):
+        try:
+            # We need the lock because get_total_block_preview calls load_texture_data
+            _blender_lock.lock()
+            try:
+                pix = get_total_block_preview(self.layers, self.canvas_res, self.size)
+            finally:
+                _blender_lock.unlock()
+            self.signals.finished.emit(pix)
+        except Exception as e:
+            print(f"[AtlasWorker] Error: {e}")
+            empty = QtGui.QPixmap(self.size, self.size)
+            empty.fill(QtCore.Qt.black)
+            self.signals.finished.emit(empty)
+
 class ThumbnailWorker(QtCore.QRunnable):
     class Signals(QtCore.QObject):
         finished = QtCore.Signal(dict)
@@ -340,12 +379,18 @@ class AsyncImageLoader(QtCore.QObject):
         """Loads a texture in background and calls callback(data)."""
         # 1. Check Cache first
         resolved = resolve_path(path)
-        if resolved in _thumbnail_cache:
+        if resolved and resolved in _thumbnail_cache:
             callback(_thumbnail_cache[resolved])
             return
 
         # 2. Start Background Task
         worker = ThumbnailWorker(resolved, max_size)
+        worker.signals.finished.connect(callback)
+        self.pool.start(worker)
+
+    def load_atlas_async(self, layers, canvas_res, size, callback):
+        """Renders an atlas in background and calls callback(pixmap)."""
+        worker = AtlasWorker(layers, canvas_res, size)
         worker.signals.finished.connect(callback)
         self.pool.start(worker)
 
