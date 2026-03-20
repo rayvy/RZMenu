@@ -8,6 +8,9 @@ from .lib.widgets import RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZSpinBo
 from .lib.theme import get_current_theme
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
+import os
+from ..lib import image_utils
+from ..utils.icons import IconManager
 
 # --- UTILS & CORE WIDGETS ---
 
@@ -97,6 +100,217 @@ class ComboBoxFix(RZComboBox):
         self.view().setMinimumWidth(150)
         self.view().setStyleSheet("QListView { max-height: 300px; }")
 
+class ResourcePreviewWidget(QtWidgets.QWidget):
+    """Small thumbnail of a registered resource."""
+    fileDropped = QtCore.Signal(str)
+
+    def __init__(self, size=64, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.lbl = RZLabel()
+        self.lbl.setAlignment(QtCore.Qt.AlignCenter)
+        self.lbl.setStyleSheet("background: #000; border: 1px solid #333; border-radius: 2px;")
+        self.layout.addWidget(self.lbl)
+        self.setAcceptDrops(True)
+        self._current_request_path = ""
+        
+    def update_resource(self, resource_name):
+        """Standard update via resource name (looks up in Blender)."""
+        self.update_resource_by_name(resource_name)
+
+    def update_resource_by_name(self, name):
+        """Looks up resource path by name and triggers async load."""
+        if not name:
+            self.lbl.setPixmap(image_utils.get_placeholder_pixmap("EMPTY", self.width()))
+            return
+            
+        path = image_utils.get_resource_path(name)
+        if path:
+            self.update_from_path(path)
+        else:
+            # Maybe it's a direct path or it doesn't exist? 
+            # For Overrides, if it's not a resource name, we might not show anything
+            # or we can try to treat it as a path if it looks like one.
+            self.lbl.setPixmap(image_utils.get_placeholder_pixmap("EMPTY", self.width()))
+
+    def update_from_path(self, path):
+        """Asynchronously updates preview from a raw path string."""
+        if not path:
+            self.lbl.setPixmap(image_utils.get_placeholder_pixmap("EMPTY", self.width()))
+            return
+            
+        self._current_request_path = path
+        # Show a "Loading" hint if it's not already cached
+        resolved = image_utils.resolve_path(path)
+        if resolved not in image_utils._thumbnail_cache:
+            self.lbl.setText("...") # Loading indicator
+            
+        image_utils.AsyncImageLoader.get_instance().load_async(
+            path, self.width(), self._on_thumbnail_ready
+        )
+
+    def _on_thumbnail_ready(self, data):
+        # Only update if this is still the path we want
+        # Note: data might contain 'path' if we added it to ThumbnailWorker
+        # For now, we trust the callback order or add a check
+        if data.get("pixmap"):
+            self.lbl.setPixmap(data["pixmap"])
+            self.lbl.setText("") # Clear "..."
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls(): event.acceptProposedAction()
+        else: super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if urls:
+            path = urls[0].toLocalFile()
+            self.fileDropped.emit(path)
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
+class ResourcePathLineEdit(RZLineEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setAcceptDrops(True)
+        
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls(): event.acceptProposedAction()
+        else: super().dragEnterEvent(event)
+        
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if urls:
+            path = urls[0].toLocalFile()
+            mod_base = image_utils.get_mod_base_path()
+            if mod_base and path.startswith(mod_base):
+                rel_path = os.path.relpath(path, mod_base)
+                if rel_path.startswith(f"Textures{os.sep}"):
+                    rel_path = os.path.relpath(path, os.path.join(mod_base, "Textures"))
+                path = rel_path.replace(os.sep, '/')
+            self.setText(path)
+            self.editingFinished.emit()
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
+class TexturePreviewItem(QtWidgets.QWidget):
+    def __init__(self, filepath, parent=None):
+        super().__init__(parent)
+        self.filepath = filepath
+        self.setFixedHeight(100)
+        l = QtWidgets.QHBoxLayout(self); l.setContentsMargins(5, 5, 5, 5); l.setSpacing(10)
+        
+        self.lbl_preview = RZLabel()
+        self.lbl_preview.setFixedSize(90, 90)
+        self.lbl_preview.setStyleSheet("border: 1px solid #333; background: #000; border-radius: 4px;")
+        l.addWidget(self.lbl_preview)
+        
+        inf_l = QtWidgets.QVBoxLayout(); l.addLayout(inf_l)
+        name = os.path.basename(filepath)
+        fmt = image_utils.get_dds_format(filepath)
+        
+        self.lbl_name = RZLabel(f"<b>{name}</b>"); self.lbl_name.setStyleSheet("font-size: 13px; color: white;")
+        self.lbl_fmt = RZLabel(f"Format: {fmt} | Color: Unknown"); self.lbl_fmt.setStyleSheet("color: #888; font-size: 11px;")
+        lbl_path = RZLabel(filepath); lbl_path.setStyleSheet("font-size: 10px; color: #555;")
+        
+        inf_l.addWidget(self.lbl_name); inf_l.addWidget(self.lbl_fmt); inf_l.addWidget(lbl_path); inf_l.addStretch()
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+
+    def set_preview_data(self, data):
+        if data and data.get("pixmap"): 
+            self.lbl_preview.setPixmap(data["pixmap"])
+            self.lbl_preview.setAlignment(QtCore.Qt.AlignCenter)
+        else:
+            self.lbl_preview.setText("E")
+        if data and data.get("colorspace"):
+            current_fmt = self.lbl_fmt.text().split("|")[0].strip()
+            self.lbl_fmt.setText(f"{current_fmt} | Color: {data['colorspace']}")
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self.drag_start_position = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & QtCore.Qt.LeftButton): return
+        if (event.position().toPoint() - self.drag_start_position).manhattanLength() < QtWidgets.QApplication.startDragDistance(): return
+        
+        drag = QtGui.QDrag(self)
+        mime_data = QtCore.QMimeData()
+        mime_data.setUrls([QtCore.QUrl.fromLocalFile(self.filepath)])
+        drag.setMimeData(mime_data)
+        
+        pixmap = self.lbl_preview.pixmap()
+        if pixmap: drag.setPixmap(pixmap.scaled(64, 64, QtCore.Qt.KeepAspectRatio))
+        drag.exec_(QtCore.Qt.CopyAction)
+
+class ScanWorker(QtCore.QThread):
+    finished = QtCore.Signal(list)
+    def __init__(self, path, subfolder, recursive=False):
+        super().__init__()
+        self.path = path; self.subfolder = subfolder; self.recursive = recursive
+    def run(self):
+        files = image_utils.scan_textures(self.path, self.subfolder, self.recursive)
+        self.finished.emit(files)
+
+# --- TABS: REGISTRY ---
+
+class RZImageRegistryWidget(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 5, 0, 0)
+        
+        tools = QtWidgets.QHBoxLayout()
+        self.btn_scan_tex = RZPushButton("🔄 Scan Textures Folder")
+        self.btn_scan_tex.clicked.connect(lambda: self.start_scan("Textures", False))
+        tools.addWidget(self.btn_scan_tex)
+        
+        self.btn_scan_all = RZPushButton("🔄 Scan All (Recursive)")
+        self.btn_scan_all.clicked.connect(lambda: self.start_scan("", True))
+        tools.addWidget(self.btn_scan_all)
+        self.layout.addLayout(tools)
+        
+        self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll, 1)
+        self.container = QtWidgets.QWidget()
+        self.c_layout = QtWidgets.QVBoxLayout(self.container)
+        self.c_layout.setContentsMargins(0, 0, 0, 0); self.c_layout.setSpacing(2); self.c_layout.addStretch()
+        
+        self.scroll.setWidget(self.container); self.scroll.setWidgetResizable(True)
+        self.pending_files = []; self._load_timer = QtCore.QTimer(); self._load_timer.timeout.connect(self._load_next_batch)
+
+    def start_scan(self, subfolder, recursive):
+        path = image_utils.get_mod_base_path()
+        if not path: return
+        self.btn_scan_tex.setEnabled(False); self.btn_scan_all.setEnabled(False)
+        
+        while self.c_layout.count() > 1:
+            it = self.c_layout.takeAt(0); it.widget().deleteLater() if it.widget() else None
+            
+        self.worker = ScanWorker(path, subfolder, recursive)
+        self.worker.finished.connect(self.on_scan_finished)
+        self.worker.start()
+
+    def on_scan_finished(self, files):
+        self.btn_scan_tex.setEnabled(True); self.btn_scan_all.setEnabled(True)
+        self.pending_files = files
+        self._load_timer.start(50)
+
+    def _load_next_batch(self):
+        if not self.pending_files: self._load_timer.stop(); return
+        
+        for _ in range(4): # 4 items per tick
+            if not self.pending_files: break
+            f = self.pending_files.pop(0)
+            item = TexturePreviewItem(f, self)
+            self.c_layout.insertWidget(self.c_layout.count() - 1, item)
+            
+            image_utils.AsyncImageLoader.get_instance().load_async(f, 90, item.set_preview_data)
+
 # --- TABS: RESOURCES ---
 
 class TexWorksResourceItem(QtWidgets.QWidget):
@@ -111,7 +325,13 @@ class TexWorksResourceItem(QtWidgets.QWidget):
         # Header Row
         row = QtWidgets.QHBoxLayout(); self.layout.addLayout(row)
         
+        self.pre = ResourcePreviewWidget(42, self)
+        self.pre.fileDropped.connect(self._on_file_dropped)
+        row.addWidget(self.pre)
+        
+        im = IconManager.get_instance()
         self.btn_fav = RZPushButton(""); self.btn_fav.setFixedWidth(24); row.addWidget(self.btn_fav)
+        self.btn_fav.setIcon(im.get_icon("star", QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton))
         self.btn_fav.clicked.connect(self._toggle_fav)
         
         self.edit_name = RZLineEdit(); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 2)
@@ -123,16 +343,21 @@ class TexWorksResourceItem(QtWidgets.QWidget):
         self.edit_tag = RZLineEdit(); self.edit_tag.setPlaceholderText("Tag"); self.edit_tag.setFixedWidth(60); row.addWidget(self.edit_tag)
         self.edit_tag.setText(data.qt_tag); self.edit_tag.editingFinished.connect(self._on_changed)
 
-        self.btn_del = RZPushButton("✕"); self.btn_del.setFixedWidth(24); row.addWidget(self.btn_del)
+        # Action Buttons
+        self.btn_del = RZPushButton(""); self.btn_del.setFixedWidth(24); row.addWidget(self.btn_del)
+        self.btn_del.setIcon(im.get_icon("circle_x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton))
         self.btn_del.clicked.connect(lambda: self.parent_list.remove_item(self.index))
 
         # Details Area
         self.w_details = QtWidgets.QWidget(); self.l_details = QtWidgets.QFormLayout(self.w_details)
-        self.l_details.setContentsMargins(30, 0, 10, 4); self.l_details.setSpacing(2)
-        self.layout.addWidget(self.w_details)
+        self.l_details.setContentsMargins(30, 0, 10, 4); self.l_details.setSpacing(2); self.layout.addWidget(self.w_details)
         
-        self.edit_path = RZLineEdit(); self.l_details.addRow("Path:", self.edit_path)
+        path_lay = QtWidgets.QHBoxLayout()
+        self.edit_path = ResourcePathLineEdit()
+        path_lay.addWidget(self.edit_path)
+        self.l_details.addRow("Path:", path_lay)
         self.edit_path.editingFinished.connect(self._on_changed)
+        self.edit_path.textChanged.connect(self._on_path_typing)
         
         self.sp_res = QtWidgets.QWidget(); lr = QtWidgets.QHBoxLayout(self.sp_res); lr.setContentsMargins(0,0,0,0)
         self.sp_x = RZSpinBox(); self.sp_y = RZSpinBox(); [s.setRange(1, 16384) for s in [self.sp_x, self.sp_y]]
@@ -153,11 +378,27 @@ class TexWorksResourceItem(QtWidgets.QWidget):
         props = {"name": self.edit_name.text(), "type": self.cb_type.currentText(), "path": self.edit_path.text(), "resolution[0]": str(self.sp_x.value()), "resolution[1]": str(self.sp_y.value()), "format": self.cb_fmt.currentText(), "qt_tag": self.edit_tag.text()}
         for k, v in props.items(): bpy.ops.rzm.update_tw_item(collection_name="resources", index=self.index, prop_name=k, value_str=v)
 
+    def _on_path_typing(self):
+        """Immediate preview update on typing (fixes lag)."""
+        self.pre.update_from_path(self.edit_path.text())
+
+    def _on_file_dropped(self, f):
+        mod_base = image_utils.get_mod_base_path()
+        path = f
+        if mod_base and path.startswith(mod_base):
+            rel_path = os.path.relpath(path, mod_base)
+            if rel_path.startswith(f"Textures{os.sep}"):
+                rel_path = os.path.relpath(path, os.path.join(mod_base, "Textures"))
+            path = rel_path.replace(os.sep, '/')
+        self.edit_path.setText(path)
+        self._on_changed()
+
     def update_data(self, data):
         self.blockSignals(True)
         self.edit_name.setText(data.name)
         self.cb_type.setCurrentText(data.type)
         self.edit_path.setText(data.path)
+        self.pre.update_resource(data.name)
         self.sp_x.setValue(data.resolution[0])
         self.sp_y.setValue(data.resolution[1])
         self.cb_fmt.setCurrentText(data.format)
@@ -165,7 +406,6 @@ class TexWorksResourceItem(QtWidgets.QWidget):
         self.blockSignals(False)
         
         # UI State
-        self.btn_fav.setText("★" if data.qt_favorite else "☆")
         self.btn_fav.setProperty("active", data.qt_favorite)
         self.btn_fav.setStyleSheet(f"color: {'#FFD700' if data.qt_favorite else '#888'};")
         
@@ -173,12 +413,13 @@ class TexWorksResourceItem(QtWidgets.QWidget):
         self.sp_res.setVisible(data.type == 'VIRTUAL')
         self.cb_fmt.setVisible(data.type == 'VIRTUAL')
         self.w_details.setVisible(self.parent_list.show_details and data.type != 'EMPTY')
+        self.pre.setVisible(self.parent_list.show_previews)
 
 
 class TexWorksResourcesTab(QtWidgets.QWidget):
     def __init__(self, parent=None):
-        super().__init__(parent); self._block = False; self.show_details = False
-        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 0, 0, 0)
+        super().__init__(parent); self._block = False; self.show_details = False; self.show_previews = True
+        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(5, 5, 5, 5)
         
         # Tools row
         tools = QtWidgets.QHBoxLayout(); self.layout.addLayout(tools)
@@ -187,13 +428,15 @@ class TexWorksResourcesTab(QtWidgets.QWidget):
         btn_clear = RZPushButton("Clear"); btn_clear.clicked.connect(lambda: bpy.ops.rzm.clear_tw_resources())
         tools.addWidget(btn_clear)
         self.chk_details = RZCheckBox("Show Details"); self.chk_details.toggled.connect(self._toggle_details); tools.addWidget(self.chk_details)
+        self.chk_preview = RZCheckBox("Show Preview"); self.chk_preview.setChecked(True); self.chk_preview.toggled.connect(self._toggle_previews); tools.addWidget(self.chk_preview)
         
         self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll)
         self.scroll_content = QtWidgets.QWidget(); self.scroll.setWidget(self.scroll_content); self.scroll.setWidgetResizable(True)
-        self.list_layout = QtWidgets.QVBoxLayout(self.scroll_content); self.list_layout.setSpacing(2); self.list_layout.setContentsMargins(0, 0, 0, 0)
+        self.list_layout = QtWidgets.QVBoxLayout(self.scroll_content); self.list_layout.setSpacing(4); self.list_layout.setContentsMargins(0, 0, 0, 0)
         self.list_layout.addStretch()
 
     def _toggle_details(self, val): self.show_details = val; self.update_ui()
+    def _toggle_previews(self, val): self.show_previews = val; self.update_ui()
     
     def update_ui(self):
         self._block = True
@@ -216,22 +459,39 @@ class TexWorksOverrideItem(QtWidgets.QWidget):
         self.index = index; self.parent_list = parent_list
         row = QtWidgets.QHBoxLayout(self); row.setContentsMargins(5, 2, 5, 2); row.setSpacing(4)
         
-        self.btn_fav = RZPushButton("★" if data.qt_favorite else "☆")
+        self.pre = ResourcePreviewWidget(42, self)
+        row.addWidget(self.pre)
+        
+        im = IconManager.get_instance()
+        self.btn_fav = RZPushButton("")
         self.btn_fav.setFixedWidth(24); row.addWidget(self.btn_fav)
-        self.btn_fav.setProperty("active", data.qt_favorite)
+        self.btn_fav.setIcon(im.get_icon("star", QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton))
         self.btn_fav.clicked.connect(self._toggle_fav)
         
         self.edit_name = RZLineEdit(); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 1)
         self.edit_name.editingFinished.connect(self._on_changed)
         
-        self.edit_hash = RZLineEdit(); self.edit_hash.setText(data.hash); row.addWidget(self.edit_hash, 1)
+        self.edit_hash = RZLineEdit(); self.edit_hash.setPlaceholderText("Hash"); self.edit_hash.setText(data.hash); row.addWidget(self.edit_hash, 1)
         self.edit_hash.editingFinished.connect(self._on_changed)
         
-        self.edit_res = RZLineEdit(); self.edit_res.setText(data.resource_name); row.addWidget(self.edit_res, 1)
+        self.edit_res = RZLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); row.addWidget(self.edit_res, 1)
         self.edit_res.editingFinished.connect(self._on_changed)
+        self.edit_res.textChanged.connect(self._on_res_typing)
         
-        self.btn_del = RZPushButton("✕"); self.btn_del.setFixedWidth(24); row.addWidget(self.btn_del)
+        self.btn_del = RZPushButton(""); self.btn_del.setFixedWidth(24); row.addWidget(self.btn_del)
+        self.btn_del.setIcon(im.get_icon("circle_x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton))
         self.btn_del.clicked.connect(lambda: self.parent_list.remove_item(self.index))
+        
+        self.update_data(data)
+
+    def update_data(self, data):
+        self.btn_fav.setProperty("active", data.qt_favorite)
+        self.btn_fav.setStyleSheet(f"color: {'#FFD700' if data.qt_favorite else '#888'};")
+        self.pre.setVisible(self.parent_list.show_previews)
+        self.pre.update_resource_by_name(data.resource_name)
+
+    def _on_res_typing(self):
+        self.pre.update_resource_by_name(self.edit_res.text())
 
     def _toggle_fav(self):
         bpy.ops.rzm.update_tw_item(collection_name="overrides", index=self.index, prop_name="qt_favorite", value_str=str(not self.btn_fav.property("active")))
@@ -243,17 +503,21 @@ class TexWorksOverrideItem(QtWidgets.QWidget):
 
 class TexWorksOverridesTab(QtWidgets.QWidget):
     def __init__(self, parent=None):
-        super().__init__(parent); self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 0, 0, 0)
+        super().__init__(parent); self.show_previews = True
+        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(5, 5, 5, 5)
         tools = QtWidgets.QHBoxLayout(); self.layout.addLayout(tools)
         btn_add = RZPushButton("+ Add Override"); btn_add.clicked.connect(lambda: bpy.ops.rzm.add_tw_override())
         tools.addWidget(btn_add)
         btn_auto = RZPushButton("Auto-Import"); btn_auto.clicked.connect(lambda: bpy.ops.rzm.tw_res_over_fill('INVOKE_DEFAULT'))
         tools.addWidget(btn_auto)
+        self.chk_preview = RZCheckBox("Show Preview"); self.chk_preview.setChecked(True); self.chk_preview.toggled.connect(self._toggle_previews); tools.addWidget(self.chk_preview)
         
         self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll)
         self.scroll_content = QtWidgets.QWidget(); self.scroll.setWidget(self.scroll_content); self.scroll.setWidgetResizable(True)
-        self.list_layout = QtWidgets.QVBoxLayout(self.scroll_content); self.list_layout.setSpacing(2); self.list_layout.setContentsMargins(0, 0, 0, 0)
+        self.list_layout = QtWidgets.QVBoxLayout(self.scroll_content); self.list_layout.setSpacing(4); self.list_layout.setContentsMargins(0, 0, 0, 0)
         self.list_layout.addStretch()
+
+    def _toggle_previews(self, val): self.show_previews = val; self.update_ui()
 
     def update_ui(self):
         while self.list_layout.count() > 1: # Keep stretch
@@ -554,11 +818,11 @@ class TexWorksMainTab(QtWidgets.QWidget):
 class TexWorksManager(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent); self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 0, 0, 0); self.layout.setSpacing(0)
-        self.tabs_info = [("Main", "tab_main"), ("Resources", "tab_res"), ("Overrides", "tab_over"), ("Materials", "tab_mat")]
+        self.tabs_info = [("Main", "tab_main"), ("Resources", "tab_res"), ("Overrides", "tab_over"), ("Materials", "tab_mat"), ("Registry", "tab_reg")]
         self.anchor_bar = RZTexWorksAnchorBar(self.tabs_info); self.anchor_bar.clicked.connect(self._on_tab_clicked); self.layout.addWidget(self.anchor_bar)
         self.stack = QtWidgets.QStackedWidget(); self.layout.addWidget(self.stack)
-        self.tab_widgets = {"tab_main": TexWorksMainTab(), "tab_res": TexWorksResourcesTab(), "tab_over": TexWorksOverridesTab(), "tab_mat": TexWorksMaterialsTab()}
-        for tab_id in ["tab_main", "tab_res", "tab_over", "tab_mat"]: self.stack.addWidget(self.tab_widgets[tab_id])
+        self.tab_widgets = {"tab_main": TexWorksMainTab(), "tab_res": TexWorksResourcesTab(), "tab_over": TexWorksOverridesTab(), "tab_mat": TexWorksMaterialsTab(), "tab_reg": RZImageRegistryWidget()}
+        for tab_id in ["tab_main", "tab_res", "tab_over", "tab_mat", "tab_reg"]: self.stack.addWidget(self.tab_widgets[tab_id])
         self.anchor_bar.set_active("tab_main"); self.stack.setCurrentWidget(self.tab_widgets["tab_main"])
         SIGNALS.structure_changed.connect(self.refresh_current)
 

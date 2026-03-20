@@ -240,6 +240,9 @@ class RZM_OT_TwResOverFill(bpy.types.Operator, ImportHelper):
         existing_hashes = {o.hash.lower() for o in rzm.tw_overrides}
         existing_names = {o.name.lower() for o in rzm.tw_overrides}
         
+        folder_name = os.path.basename(self.directory.rstrip(os.sep))
+        mod_base = get_target_path(context)
+        
         for f in files:
             # print(f"[DEBUG] Evaluating file: {f}")
             match = pattern.match(f)
@@ -267,19 +270,29 @@ class RZM_OT_TwResOverFill(bpy.types.Operator, ImportHelper):
             
             print(f"[DEBUG] Importing: {f} -> {final_name} (Hash: {tex_hash})")
             
+            # Calculate path relative to mod root if possible
+            abs_f_path = os.path.join(self.directory, f)
+            store_path = f # Default fallback
+            if mod_base and abs_f_path.startswith(mod_base):
+                store_path = os.path.relpath(abs_f_path, mod_base)
+                # If it's in Textures subfolder, strip that for shorter display as per common usage
+                if store_path.startswith(f"Textures{os.sep}"):
+                    store_path = os.path.relpath(abs_f_path, os.path.join(mod_base, "Textures"))
+                store_path = store_path.replace(os.sep, '/')
+
             # 1. Create Resource (Relative Path)
             res = rzm.tw_resources.add()
             res.name = res_name
             res.type = 'ON_DISK'
-            res.path = f # Store only filename as requested
-            res.qt_tag = "AutoImported"
+            res.path = store_path
+            res.qt_tag = folder_name
             
             # 2. Create Override
             over = rzm.tw_overrides.add()
             over.name = final_name
             over.hash = tex_hash.lower()
             over.resource_name = res_name
-            over.qt_tag = "AutoImported"
+            over.qt_tag = folder_name
             
             existing_hashes.add(tex_hash.lower())
             existing_names.add(final_name.lower())
