@@ -24,6 +24,7 @@ class RZTabRow(QtWidgets.QWidget):
         self.buttons = []
         
     def sync_items(self, names, active_idx):
+        self._active_idx = active_idx
         while self.layout.count():
             it = self.layout.takeAt(0)
             if it.widget():
@@ -46,10 +47,24 @@ class RZTabRow(QtWidgets.QWidget):
             style = f"background: {accent if is_active else '#444'}; color: {'white' if is_active else '#999'}; font-weight: {'bold' if is_active else 'normal'}; border-radius: 4px; border: none; padding: 0 10px;"
             btn.setStyleSheet(style)
             
-            btn.clicked.connect(partial(self.clicked.emit, i))
+            btn.clicked.connect(partial(self._on_btn_clicked, i))
             self.layout.addWidget(btn)
             self.buttons.append(btn)
         self.layout.addStretch()
+
+    def _on_btn_clicked(self, idx):
+        self._active_idx = idx
+        t = get_current_theme()
+        accent = t.get('accent', '#5298D4')
+        for i, btn in enumerate(self.buttons):
+            is_active = (i == idx)
+            btn.setChecked(is_active)
+            style = f"background: {accent if is_active else '#444'}; color: {'white' if is_active else '#999'}; font-weight: {'bold' if is_active else 'normal'}; border-radius: 4px; border: none; padding: 0 10px;"
+            btn.setStyleSheet(style)
+        self.clicked.emit(idx)
+
+    def get_active_index(self):
+        return getattr(self, "_active_idx", 0)
 
 class ScanWorker(QtCore.QThread):
     finished = QtCore.Signal(list)

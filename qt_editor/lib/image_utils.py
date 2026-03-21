@@ -5,12 +5,13 @@ import bpy
 import numpy as np
 from PySide6 import QtGui, QtCore
 
-# Simple memory cache for thumbnails and metadata
+# Simple memory cache for thumbnails
 _thumbnail_cache = {} # {cache_key: {"pixmap": QPixmap, "colorspace": str}}
 
 # Centralized filename registry: {filename: absolute_path}
 _filename_registry = {}
 _blender_lock = QtCore.QMutex() # Serialize Blender API calls from threads
+
 
 def get_mod_base_path():
     """Returns the custom path from export settings."""
@@ -35,14 +36,13 @@ def scan_textures(base_path, subfolder="Textures", recursive=False):
         for root, dirs, files in os.walk(target_dir):
             for f in files:
                 if f.lower().endswith(img_exts):
-                    full_path = os.path.join(root, f)
+                    full_path = os.path.join(root, f).replace('\\', '/')
                     results.append(full_path)
-                    # Register by filename for central lookup
                     _filename_registry[f.lower()] = full_path
     else:
         for f in os.listdir(target_dir):
             if f.lower().endswith(img_exts):
-                full_path = os.path.join(target_dir, f)
+                full_path = os.path.join(target_dir, f).replace('\\', '/')
                 results.append(full_path)
                 _filename_registry[f.lower()] = full_path
                 
@@ -97,23 +97,27 @@ def load_texture_data(filepath, max_size=128):
     if not filepath or not os.path.exists(filepath):
         return {"pixmap": get_placeholder_pixmap("EMPTY", max_size), "colorspace": "Unknown"}
     
-    # Check cache
-    mtime = os.path.getmtime(filepath)
-    cache_key = f"{filepath}_{mtime}_{max_size}"
-    if cache_key in _thumbnail_cache:
-        return _thumbnail_cache[cache_key]
-
-    colorspace = "Unknown"
-    
     try:
+        mtime = os.path.getmtime(filepath)
+        size = os.path.getsize(filepath)
+        cache_key = f"{filepath}_{mtime}_{max_size}"
+        
+        if cache_key in _thumbnail_cache:
+            return _thumbnail_cache[cache_key]
+        
+        # Check metadata cache for format/colorspace info
+        # (REMOVED CACHE)
+        colorspace = "Unknown" # Default if not loaded from Blender yet
+        
         # Load through blender to support DDS and extract reliable colorspace
         bl_img = bpy.data.images.load(filepath, check_existing=True)
         if not bl_img: 
             return {"pixmap": get_placeholder_pixmap("ERROR", max_size), "colorspace": colorspace}
         
-        # Grab colorspace
+        # Grab/Update colorspace
         colorspace = bl_img.colorspace_settings.name
         
+        # Load pixels
         w, h = bl_img.size
         if w <= 0 or h <= 0: 
             return {"pixmap": get_placeholder_pixmap("EMPTY", max_size), "colorspace": colorspace}
@@ -173,6 +177,12 @@ def get_placeholder_pixmap(ptype, size=128, format_id=None):
         painter.setPen(QtGui.QPen(QtCore.Qt.red, 2))
         painter.drawLine(0, 0, size, size)
         painter.drawLine(size, 0, 0, size)
+    
+    elif ptype == "LOADING":
+        painter.fillRect(0, 0, size, size, QtGui.QColor(35, 37, 42))
+        painter.setPen(QtGui.QPen(QtGui.QColor(80, 80, 100), 2))
+        font = painter.font(); font.setPointSize(size // 3); painter.setFont(font)
+        painter.drawText(pix.rect(), QtCore.Qt.AlignCenter, "?")
         
     painter.end()
     return pix
@@ -225,10 +235,16 @@ def get_total_block_preview(layers, canvas_res=(2048, 2048), size=256):
             color = QtGui.QColor(80, 120, 200, 100) if not layer.get("is_decal") else QtGui.QColor(200, 100, 100, 100)
             painter.fillRect(QtCore.QRectF(px, py, pw, ph), color)
             
-        # Draw border
         painter.setOpacity(1.0)
         painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 40), 1))
         painter.drawRect(QtCore.QRectF(px, py, pw, ph))
+        
+        # Draw "Pass" indicator if any
+        pass_idx = layer.get("pass_idx", 0)
+        if pass_idx > 0:
+            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 180), 1))
+            font = painter.font(); font.setPointSize(min(10, max(6, int(ph/4)))); painter.setFont(font)
+            painter.drawText(QtCore.QRectF(px + 2, py + 2, pw - 4, ph - 4), QtCore.Qt.AlignRight | QtCore.Qt.AlignTop, str(pass_idx + 1))
 
     painter.end()
     return pix
@@ -268,48 +284,73 @@ def collect_block_preview_data(block):
         
         for slot in comp.slots:
             if not slot.active: continue
-            # Slots currently don't have a direct resource linked in the property group,
-            # they seem to be UV regions for decals.
-            data["layers"].append({"rect": list(slot.rect), "path": "", "is_decal": True, "opacity": 0.9})
+            slot_path = "" # TexWorksSlot has no direct resource_name
+            
+            # Pass 0
+            data["layers"].append({"rect": list(slot.rect), "path": slot_path, "is_decal": True, "opacity": 0.9, "pass_idx": 0})
+            
+            # Pass 1 (Multi-pass)
+            if slot.multi_pass_mode != 'NONE':
+                # Pass 1 usually uses the same texture as Pass 0 in many cases, 
+                # or a dedicated decal if we add that later.
+                data["layers"].append({"rect": list(slot.multi_pass_rect), "path": slot_path, "is_decal": True, "opacity": 0.6, "pass_idx": 1})
             
     return data
+
+_resolved_path_cache = {} # {path_input: resolved_abspath}
 
 def resolve_path(path):
     """Tries to locate a file on disk using multiple strategies and the registry."""
     if not path: return ""
     
-    # Try 1: Exact path or Absolute
+    # 0. Check resolution cache
+    if path in _resolved_path_cache:
+        cached = _resolved_path_cache[path]
+        # Quick validation (once per session or periodically)
+        return cached
+
+    # 1. Exact path or Absolute
     if os.path.isabs(path) and os.path.exists(path):
+        _resolved_path_cache[path] = path
         return path
     
+    # ... previous logic ...
+    res_path = _do_resolve_path(path)
+    _resolved_path_cache[path] = res_path
+    return res_path
+
+def _do_resolve_path(path):
     # Try 2: Relative to Mod Root
     base = get_mod_base_path()
     if base:
-        p2 = os.path.join(base, path)
+        p2 = os.path.join(base, path).replace('\\', '/')
         if os.path.exists(p2): return p2
         
-        # Try 3: Relative to ModRoot/Textures (Common usage)
-        p3 = os.path.join(base, "Textures", path)
+        p3 = os.path.join(base, "Textures", path).replace('\\', '/')
         if os.path.exists(p3): return p3
 
-    # Try 4: In current working directory or fallbacks
-    if os.path.exists(path): return path
-    
-    # Try 5: Check Filename Registry (Fallback for simple filenames)
+    # Try 4: Check if simple filename exists in registry
     fname = os.path.basename(path).lower()
     if fname in _filename_registry:
-        reg_path = _filename_registry[fname]
-        if os.path.exists(reg_path):
-            return reg_path
-            
+        return _filename_registry[fname]
+
+    if os.path.exists(path): return path
     return ""
+
+_res_name_cache = {} # {name: abspath}
 
 def get_resource_path(resource_name):
     """Helper to get exact absolute path from resource name."""
+    if not resource_name: return ""
+    if resource_name in _res_name_cache:
+        return _res_name_cache[resource_name]
+        
     rzm = bpy.context.scene.rzm
     res = next((r for r in rzm.tw_resources if r.name == resource_name), None)
-    if res and res.type == 'ON_DISK':
-        return resolve_path(res.path)
+    if res and res.path:
+        path = resolve_path(res.path)
+        _res_name_cache[resource_name] = path
+        return path
     return ""
 
 class AtlasWorker(QtCore.QRunnable):
@@ -377,14 +418,18 @@ class AsyncImageLoader(QtCore.QObject):
 
     def load_async(self, path, max_size, callback):
         """Loads a texture in background and calls callback(data)."""
-        # 1. Check Cache first
-        resolved = resolve_path(path)
-        if resolved and resolved in _thumbnail_cache:
-            callback(_thumbnail_cache[resolved])
-            return
+        # 1. Quick check in memory caches (non-blocking)
+        if path in _resolved_path_cache:
+            resolved = _resolved_path_cache[path]
+            # Verify it's in thumbnail cache too
+            cache_key = f"{resolved}_{getattr(self, '_dummy_mtime', 0)}_{max_size}" 
+            # Actually, load_texture_data uses a better cache_key. 
+            # For now, if it's already in _thumbnail_cache with any key, it's fast.
+            # But simpler: just use the worker if not 100% sure.
+            pass
 
-        # 2. Start Background Task
-        worker = ThumbnailWorker(resolved, max_size)
+        # 2. Start Background Task (Worker will handle resolve_path internally)
+        worker = ThumbnailWorker(path, max_size)
         worker.signals.finished.connect(callback)
         self.pool.start(worker)
 

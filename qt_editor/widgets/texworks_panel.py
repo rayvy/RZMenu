@@ -128,10 +128,23 @@ class ResourcePreviewWidget(QtWidgets.QWidget):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.lbl = RZLabel()
         self.lbl.setAlignment(QtCore.Qt.AlignCenter)
-        self.lbl.setStyleSheet("background: #000; border: 1px solid #333; border-radius: 2px;")
+        self.lbl.setStyleSheet("background: #333; border: 1px solid #444; border-radius: 4px;")
         self.layout.addWidget(self.lbl)
         self.setAcceptDrops(True)
         self._current_request_path = ""
+        self._current_resource_name = ""
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton and self._current_resource_name:
+            drag = QtGui.QDrag(self)
+            mime = QtCore.QMimeData()
+            mime.setText(self._current_resource_name)
+            drag.setMimeData(mime)
+            pix = self.lbl.pixmap()
+            if pix:
+                drag.setPixmap(pix.scaled(48, 48, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+            drag.exec_(QtCore.Qt.CopyAction)
         
     def update_resource(self, resource_name):
         """Standard update via resource name (looks up in Blender)."""
@@ -139,6 +152,7 @@ class ResourcePreviewWidget(QtWidgets.QWidget):
 
     def update_resource_by_name(self, name):
         """Looks up resource path by name and triggers async load."""
+        self._current_resource_name = name
         if not name:
             self.lbl.setPixmap(image_utils.get_placeholder_pixmap("EMPTY", self.width()))
             return
@@ -172,10 +186,9 @@ class ResourcePreviewWidget(QtWidgets.QWidget):
             return
             
         self._current_request_path = path
-        # Show a "Loading" hint if it's not already cached
-        resolved = image_utils.resolve_path(path)
-        if resolved not in image_utils._thumbnail_cache:
-            self.lbl.setText("...") # Loading indicator
+        # Check memory cache only. NO resolve_path here (it hits disk).
+        # We use a placeholder and let the worker handle resolution.
+        self.lbl.setPixmap(image_utils.get_placeholder_pixmap("LOADING", self.width()))
             
         image_utils.AsyncImageLoader.get_instance().load_async(
             path, self.width(), self._on_thumbnail_ready
@@ -187,7 +200,6 @@ class ResourcePreviewWidget(QtWidgets.QWidget):
         # For now, we trust the callback order or add a check
         if data.get("pixmap"):
             self.lbl.setPixmap(data["pixmap"])
-            self.lbl.setText("") # Clear "..."
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls(): event.acceptProposedAction()
@@ -226,6 +238,57 @@ class ResourcePathLineEdit(RZLineEdit):
             event.acceptProposedAction()
         else:
             super().dropEvent(event)
+
+class RZResourceLineEdit(RZLineEdit):
+    """LineEdit that supports drag-drop and autocomplete of resources."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setPlaceholderText("Resource Name or DragnDrop...")
+        
+        self.completer = QtWidgets.QCompleter(self)
+        self.completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        self.completer.setFilterMode(QtCore.Qt.MatchContains)
+        self.setCompleter(self.completer)
+        self._update_completer()
+
+    def _update_completer(self):
+        # We need all resource names from rzm
+        names = []
+        try:
+            rzm = bpy.context.scene.rzm
+            names = [res.name for res in rzm.tw_resources]
+        except: pass
+        
+        model = QtCore.QStringListModel(names)
+        self.completer.setModel(model)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        txt = event.mimeData().text()
+        # If it's a full path, let's see if it's already in registry or find its basename if possible
+        # Actually, let's just use the basename of the file as an attempt if it's a path
+        if os.path.isabs(txt):
+            name = os.path.splitext(os.path.basename(txt))[0]
+            # Check if this name exists in our resources
+            rzm = bpy.context.scene.rzm
+            res = next((r for r in rzm.tw_resources if r.name == name or r.path == txt), None)
+            if res:
+                self.setText(res.name)
+            else:
+                self.setText(name)
+        else:
+            self.setText(txt)
+            
+        self.editingFinished.emit()
+        event.acceptProposedAction()
+
+    def focusInEvent(self, event):
+        self._update_completer()
+        super().focusInEvent(event)
 
 class TexturePreviewItem(QtWidgets.QWidget):
     def __init__(self, filepath, parent=None):
@@ -294,15 +357,17 @@ class RZImageRegistryWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(0, 5, 0, 0)
+        self._current_cat_idx = 0
         
         tools = QtWidgets.QHBoxLayout()
-        self.btn_scan_tex = RZPushButton("🔄 Scan Textures Folder")
-        self.btn_scan_tex.clicked.connect(lambda: self.start_scan("Textures", False))
-        tools.addWidget(self.btn_scan_tex)
+        self.tabs = RZTabRow(); self.tabs.setFixedHeight(28)
+        self.tabs.sync_items(["Textures", "TexWorks"], 0)
+        self.tabs.clicked.connect(self._on_category_changed)
+        tools.addWidget(self.tabs, 1)
         
-        self.btn_scan_all = RZPushButton("🔄 Scan All (Recursive)")
-        self.btn_scan_all.clicked.connect(lambda: self.start_scan("", True))
-        tools.addWidget(self.btn_scan_all)
+        self.btn_refresh = RZPushButton("🔄 Refresh")
+        self.btn_refresh.clicked.connect(self.refresh)
+        tools.addWidget(self.btn_refresh)
         self.layout.addLayout(tools)
         
         self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll, 1)
@@ -312,11 +377,23 @@ class RZImageRegistryWidget(QtWidgets.QWidget):
         
         self.scroll.setWidget(self.container); self.scroll.setWidgetResizable(True)
         self.pending_files = []; self._load_timer = QtCore.QTimer(); self._load_timer.timeout.connect(self._load_next_batch)
+        
+        # Initial scan
+        QtCore.QTimer.singleShot(100, self.refresh)
+
+    def _on_category_changed(self, idx):
+        self._current_cat_idx = idx
+        self.tabs.sync_items(["Textures", "TexWorks"], idx)
+        self.refresh()
+
+    def refresh(self):
+        cat = ["Textures", "TexWorks"][getattr(self, "_current_cat_idx", 0)]
+        self.start_scan(cat, True)
 
     def start_scan(self, subfolder, recursive):
         path = image_utils.get_mod_base_path()
         if not path: return
-        self.btn_scan_tex.setEnabled(False); self.btn_scan_all.setEnabled(False)
+        self.btn_refresh.setEnabled(False)
         
         while self.c_layout.count() > 1:
             it = self.c_layout.takeAt(0); it.widget().deleteLater() if it.widget() else None
@@ -326,14 +403,14 @@ class RZImageRegistryWidget(QtWidgets.QWidget):
         self.worker.start()
 
     def on_scan_finished(self, files):
-        self.btn_scan_tex.setEnabled(True); self.btn_scan_all.setEnabled(True)
+        self.btn_refresh.setEnabled(True)
         self.pending_files = files
-        self._load_timer.start(50)
+        self._load_timer.start(30)
 
     def _load_next_batch(self):
         if not self.pending_files: self._load_timer.stop(); return
         
-        for _ in range(4): # 4 items per tick
+        for _ in range(6): # batch size
             if not self.pending_files: break
             f = self.pending_files.pop(0)
             item = TexturePreviewItem(f, self)
@@ -472,12 +549,31 @@ class TexWorksResourcesTab(QtWidgets.QWidget):
     def update_ui(self):
         self._block = True
         rzm = bpy.context.scene.rzm
-        while self.list_layout.count() > 1: # Keep stretch
-            item = self.list_layout.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-        for i, res in enumerate(rzm.tw_resources):
-            w = TexWorksResourceItem(i, res, self)
+        
+        # Ensure we have a _widgets list
+        if not hasattr(self, "_widgets"):
+            self._widgets = []
+            
+        # 1. Ajust widget count
+        count = len(rzm.tw_resources)
+        while len(self._widgets) > count:
+            w = self._widgets.pop()
+            self.list_layout.removeWidget(w)
+            w.hide(); w.setParent(None); w.deleteLater()
+            
+        while len(self._widgets) < count:
+            new_idx = len(self._widgets)
+            # Create placeholder data for now, will be updated below
+            w = TexWorksResourceItem(new_idx, rzm.tw_resources[new_idx], self)
             self.list_layout.insertWidget(self.list_layout.count() - 1, w)
+            self._widgets.append(w)
+            
+        # 2. Update existing widgets
+        for i, res in enumerate(rzm.tw_resources):
+            w = self._widgets[i]
+            w.index = i
+            w.update_data(res)
+            
         self._block = False
 
     def remove_item(self, idx): bpy.ops.rzm.remove_tw_resource(index=idx); self.update_ui()
@@ -505,7 +601,7 @@ class TexWorksOverrideItem(QtWidgets.QWidget):
         self.edit_hash = RZLineEdit(); self.edit_hash.setPlaceholderText("Hash"); self.edit_hash.setText(data.hash); self.edit_hash.setFixedWidth(85); row.addWidget(self.edit_hash)
         self.edit_hash.editingFinished.connect(self._on_changed)
         
-        self.edit_res = RZLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); self.edit_res.setFixedWidth(120); row.addWidget(self.edit_res)
+        self.edit_res = RZResourceLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); self.edit_res.setFixedWidth(120); row.addWidget(self.edit_res)
         self.edit_res.editingFinished.connect(self._on_changed)
         self.edit_res.textChanged.connect(self._on_res_typing)
         
@@ -551,13 +647,26 @@ class TexWorksOverridesTab(QtWidgets.QWidget):
     def _toggle_previews(self, val): self.show_previews = val; self.update_ui()
 
     def update_ui(self):
-        while self.list_layout.count() > 1: # Keep stretch
-            it = self.list_layout.takeAt(0)
-            if it.widget(): it.widget().deleteLater()
         rzm = bpy.context.scene.rzm
-        for i, over in enumerate(rzm.tw_overrides):
-            w = TexWorksOverrideItem(i, over, self)
+        if not hasattr(self, "_widgets"):
+            self._widgets = []
+            
+        count = len(rzm.tw_overrides)
+        while len(self._widgets) > count:
+            w = self._widgets.pop()
+            self.list_layout.removeWidget(w)
+            w.hide(); w.setParent(None); w.deleteLater()
+            
+        while len(self._widgets) < count:
+            new_idx = len(self._widgets)
+            w = TexWorksOverrideItem(new_idx, rzm.tw_overrides[new_idx], self)
             self.list_layout.insertWidget(self.list_layout.count() - 1, w)
+            self._widgets.append(w)
+            
+        for i, over in enumerate(rzm.tw_overrides):
+            w = self._widgets[i]
+            w.index = i
+            w.update_data(over)
 
     def remove_item(self, idx): bpy.ops.rzm.remove_tw_override(index=idx); self.update_ui()
 
@@ -658,6 +767,16 @@ class TexWorksMainTab(QtWidgets.QWidget):
         self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll, 1)
         self.details = TexWorksDetailView(); self.scroll.setWidget(self.details); self.scroll.setWidgetResizable(True)
         
+        # SIDE-BY-SIDE PREVIEWS at the bottom
+        self.p_wrap = QtWidgets.QWidget(); self.layout.addWidget(self.p_wrap)
+        self.p_layout = QtWidgets.QHBoxLayout(self.p_wrap); self.p_layout.setContentsMargins(5, 5, 5, 5); self.p_layout.setSpacing(10)
+        
+        self.blk_box = RZGroupBox("Atlas (Block Output)", self); l1 = QtWidgets.QVBoxLayout(self.blk_box)
+        self.blk_pre = AtlasPreviewWidget(size=250, parent=self); l1.addWidget(self.blk_pre); self.p_layout.addWidget(self.blk_box)
+        
+        self.cmp_box = RZGroupBox("Selected Component Preview", self); l2 = QtWidgets.QVBoxLayout(self.cmp_box)
+        self.cmp_pre = AtlasPreviewWidget(size=250, parent=self); l2.addWidget(self.cmp_pre); self.p_layout.addWidget(self.cmp_box)
+        
         # Tab signals
         self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
         self.tab_comps.clicked.connect(lambda i: self._set_active("comp", i))
@@ -684,9 +803,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
             
             w = it.widget()
             if w:
-                w.hide()
-                w.setParent(None)
-                w.deleteLater()
+                w.hide(); w.setParent(None); w.deleteLater()
             
             lay = it.layout()
             if lay:
@@ -694,11 +811,9 @@ class TexWorksMainTab(QtWidgets.QWidget):
                     sit = lay.takeAt(0)
                     if sit and sit.widget():
                         sw = sit.widget()
-                        sw.hide()
-                        sw.setParent(None)
-                        sw.deleteLater()
+                        sw.hide(); sw.setParent(None); sw.deleteLater()
                 lay.deleteLater()
-            
+        
         b_idx = rzm.active_tw_block_index
         self.w_comps.setVisible(b_idx >= 0 and len(rzm.tw_blocks) > 0)
         if 0 <= b_idx < len(rzm.tw_blocks):
@@ -712,7 +827,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
                 comp = block.components[c_idx]
                 self.tab_slots.sync_items([s.name for s in comp.slots], comp.active_slot_index)
                 
-                self._draw_comp_preview(comp)
+                self._update_comp_preview(comp)
                 
                 s_idx = comp.active_slot_index
                 if 0 <= s_idx < len(comp.slots):
@@ -721,42 +836,47 @@ class TexWorksMainTab(QtWidgets.QWidget):
                     self._draw_comp_details(comp, b_idx, c_idx)
             else:
                 self._draw_block_details(block, b_idx)
+                self.cmp_pre.hide()
             
-            self._draw_block_preview(block)
+            self._update_block_preview(block)
+        else:
+            self.blk_pre.hide()
+            self.cmp_pre.hide()
 
-    def _draw_block_preview(self, block):
-        l = self.details.add_section("Atlas Preview (Block: " + block.name + ")")
-        pre = AtlasPreviewWidget(size=300); l.addWidget(pre)
-        pre.update_block(block)
+    def _update_block_preview(self, block):
+        blk_data = image_utils.collect_block_preview_data(block)
+        self.blk_pre.update_with_layers(blk_data["layers"], blk_data["res"])
+        self.blk_pre.show()
 
-    def _draw_comp_preview(self, comp):
-        l = self.details.add_section("Component Preview: " + comp.name)
-        # We can build a layer list for just this component
+    def _update_comp_preview(self, comp):
+        # Build local layer list for just this component
         comp_path = image_utils.get_resource_path(comp.base_resource_name)
         layers = [{"rect": [0, 0, comp.rect[2], comp.rect[3]], "path": comp_path, "opacity": 0.8}]
         for slot in comp.slots:
             if not slot.active: continue
-            layers.append({"rect": list(slot.rect), "path": "", "is_decal": True, "opacity": 0.9, "parent_comp_rect": list(comp.rect)})
+            slot_path = "" # TexWorksSlot has no resource_name
+            layers.append({"rect": list(slot.rect), "path": slot_path, "is_decal": True, "opacity": 0.9, "parent_comp_rect": list(comp.rect)})
         
-        # We need to scale these to a "local" 0.0-1.0 space for the component
-        local_layers = []
         cw, ch = comp.rect[2], comp.rect[3]
         if cw <= 0: cw = 1024
         if ch <= 0: ch = 1024
         
+        local_layers = []
         for lyr in layers:
             rect = lyr["rect"]
-            # If it's a decal in world space, we must offset it by component's origin
             if lyr.get("is_decal"):
                 ox, oy = comp.rect[0], comp.rect[1]
                 local_rect = [rect[0]-ox, rect[1]-oy, rect[2], rect[3]]
-                local_layers.append({"rect": local_rect, "path": "", "is_decal": True, "opacity": 0.9})
+                local_layers.append({"rect": local_rect, "path": lyr["path"], "is_decal": True, "opacity": 0.9})
             else:
                 local_layers.append(lyr)
 
-        pre = AtlasPreviewWidget(size=256)
-        pre.update_with_layers(local_layers, (cw, ch))
-        l.addWidget(pre)
+        self.cmp_pre.update_with_layers(local_layers, (cw, ch))
+        # Find a place in details if we want it embedded, or just show it persistent
+        # Actually, let's keep it embedded by adding it ONCE
+        if not self.cmp_pre.parent():
+             self.layout.insertWidget(self.layout.indexOf(self.scroll), self.cmp_pre)
+        self.cmp_pre.show()
 
     def _draw_block_details(self, block, b_idx):
         # Already have block preview drawn globally in update_ui
@@ -769,7 +889,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
         
         row = QtWidgets.QHBoxLayout(); l.addLayout(row)
         row.addWidget(RZLabel("Output Atlas:"))
-        e_res = RZLineEdit(); e_res.setText(block.resource_name); row.addWidget(e_res, 1)
+        e_res = RZResourceLineEdit(); e_res.setText(block.resource_name); row.addWidget(e_res, 1)
         e_res.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "resource_name", -1, -1, e_res.text()))
 
         l_sh = self.details.add_section("Shader Config")
@@ -782,12 +902,25 @@ class TexWorksMainTab(QtWidgets.QWidget):
         chk_back = RZCheckBox("Enable Backdrop"); chk_back.setChecked(block.backdrop_enabled); l_back.addWidget(chk_back)
         chk_back.toggled.connect(lambda v: self._item_changed("blocks", b_idx, "backdrop_enabled", -1, -1, str(v)))
         
+        if block.backdrop_enabled:
+            row_b = QtWidgets.QHBoxLayout(); l_back.addLayout(row_b)
+            row_b.addWidget(RZLabel("Resource:"))
+            e_b_res = RZResourceLineEdit(); e_b_res.setText(block.backdrop_resource_name); row_b.addWidget(e_b_res, 1)
+            e_b_res.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "backdrop_resource_name", -1, -1, e_b_res.text()))
+            
+            row_rect = QtWidgets.QHBoxLayout(); l_back.addLayout(row_rect)
+            row_rect.addWidget(RZLabel("Rect:"))
+            for i in range(4):
+                sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(block.backdrop_rect[i])
+                sp.valueChanged.connect(partial(self._item_changed, "blocks", b_idx, f"backdrop_rect[{i}]", -1, -1))
+                row_rect.addWidget(sp)
+        
     def _draw_comp_details(self, comp, b_idx, c_idx):
         l = self.details.add_section("Component: " + comp.name)
         
         row = QtWidgets.QHBoxLayout(); l.addLayout(row)
         row.addWidget(RZLabel("Base Res:"))
-        e_base = RZLineEdit(); e_base.setText(comp.base_resource_name); row.addWidget(e_base, 1)
+        e_base = RZResourceLineEdit(); e_base.setText(comp.base_resource_name); row.addWidget(e_base, 1)
         e_base.editingFinished.connect(lambda: self._item_changed("components", c_idx, "base_resource_name", b_idx, -1, e_base.text()))
         
         # Atlas Rect
@@ -797,6 +930,14 @@ class TexWorksMainTab(QtWidgets.QWidget):
             sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(comp.rect[i])
             sp.valueChanged.connect(partial(self._item_changed, "components", c_idx, f"rect[{i}]", b_idx, -1))
             row.addWidget(sp)
+            
+        # TexMorph
+        row_m = QtWidgets.QHBoxLayout(); l.addLayout(row_m)
+        chk_m = RZCheckBox("TexMorph"); chk_m.setChecked(comp.tex_morph_enabled); row_m.addWidget(chk_m)
+        chk_m.toggled.connect(lambda v: self._item_changed("components", c_idx, "tex_morph_enabled", b_idx, -1, str(v)))
+        if comp.tex_morph_enabled:
+            e_m_res = RZResourceLineEdit(); e_m_res.setText(comp.tex_morph_resource_name); row_m.addWidget(e_m_res, 1)
+            e_m_res.editingFinished.connect(lambda: self._item_changed("components", c_idx, "tex_morph_resource_name", b_idx, -1, e_m_res.text()))
 
         # Masking & HSV
         l_fx = self.details.add_section("Effects & Masking")
@@ -894,13 +1035,22 @@ class TexWorksManager(QtWidgets.QWidget):
         self.tab_widgets = {"tab_main": TexWorksMainTab(), "tab_res": TexWorksResourcesTab(), "tab_over": TexWorksOverridesTab(), "tab_mat": TexWorksMaterialsTab(), "tab_reg": RZImageRegistryWidget()}
         for tab_id in ["tab_main", "tab_res", "tab_over", "tab_mat", "tab_reg"]: self.stack.addWidget(self.tab_widgets[tab_id])
         self.anchor_bar.set_active("tab_main"); self.stack.setCurrentWidget(self.tab_widgets["tab_main"])
+        
+        # Debounce timer for updates
+        self._refresh_timer = QtCore.QTimer(); self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._do_refresh)
         SIGNALS.structure_changed.connect(self.refresh_current)
 
     def _on_tab_clicked(self, tab_id): self.anchor_bar.set_active(tab_id); self.stack.setCurrentWidget(self.tab_widgets[tab_id]); self.refresh_current()
+    
     def refresh_current(self):
+        self._refresh_timer.start(100) # 100ms debounce
+        
+    def _do_refresh(self):
         w = self.stack.currentWidget()
         if hasattr(w, 'update_ui'): w.update_ui()
-    def on_activate(self): self.refresh_current()
+        
+    def on_activate(self): self._do_refresh()
 
 class RZMTexWorksPanel(RZEditorPanel):
     PANEL_ID = "TEXWORKS"; PANEL_NAME = "TexWorks"; PANEL_ICON = "image"
