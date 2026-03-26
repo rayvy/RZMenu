@@ -18,3 +18,5 @@ __pycache__/
 # Можно также игнорировать скрытые системные файлы редакторов
 .DS_Store
 Thumbs.db
+
+/user_data/user_config.json

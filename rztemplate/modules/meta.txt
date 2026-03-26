@@ -1,0 +1,83 @@
+{# --- SMART PARSER & REPLACER v5.1 (WITH 3DMIGOTO COMMENTS) --- #}
+
+{%- macro parse_and_replace_tags(text, scene) -%}
+    {%- if text -%}
+        {# 1. Блок ПОДГОТОВЛЕННЫХ ПЕРЕМЕННЫХ (Контекст).
+              Ключи пишем в нижнем регистре без пробелов для бронебойности. #}
+        {%- set ctx = {
+            'charactername': scene.rzm.meta_data.character_name,
+            'outfitname': scene.rzm.meta_data.outfit_name,
+            'versionnum': scene.rzm.meta_data.version_num,
+            'patreontier': scene.rzm.meta_data.patreon_tier | replace('_', ' '),
+            'description': scene.rzm.meta_data.description,
+            'menukeybind': scene.rzm.meta_data.menu_keybind,
+            'requirements': scene.rzm.meta_data.requirements,
+            'authorname': scene.rzm.meta_data.author_name,
+            'communityrespect': scene.rzm.meta_data.community_respect,
+            'modname': scene.rzm.export_settings.mod_name,
+            'gamename': scene.rzm.game.name,
+            'credits': scene.rzm.meta_data.credits_list | map(attribute='name') | join(', '),
+            'features': scene.rzm.meta_data.features_list | map(attribute='text') | join(', ')
+        } -%}
+        
+        {# 2. Нарезаем текст #}
+        {%- set parts = text.split('{{') -%}
+        {%- set state = {'output': parts[0]} -%}
+        
+        {%- if parts | length > 1 -%}
+            {%- for part in parts -%}
+                {%- if loop.index0 > 0 -%}
+                    {%- if '}}' in part -%}
+                        {%- set subparts = part.split('}}', 1) -%}
+                        {%- set inner_tag = subparts[0] -%}
+                        {%- set remainder = subparts[1] if subparts | length > 1 else '' -%}
+
+                        {# Зачищаем тег от пробелов, подчеркиваний и вопросов #}
+                        {%- set clean_var = inner_tag | lower | replace(' ', '') | replace('_', '') | replace('?', '') -%}
+
+                        {# Инициализируем замену исходным тегом #}
+                        {%- set replace = {'val': '{{' ~ inner_tag ~ '}}'} -%}
+
+                        {# --- ЛОГИКА ЗАМЕНЫ ЧЕРЕЗ СЛОВАРЬ --- #}
+                        {%- if clean_var in ctx -%}
+                            {# Берем значение. Если оно пустое/None, ставим заглушку, чтобы было видно результат! #}
+                            {%- set final_val = ctx[clean_var] | default('[EMPTY_' ~ clean_var | upper ~ ']', true) | string -%}
+                            {%- if replace.update({'val': final_val}) -%}{%- endif -%}
+                        {%- endif -%}
+
+                        {# Склеиваем стейт #}
+                        {%- if state.update({'output': state.output ~ replace.val ~ remainder}) -%}{%- endif -%}
+                    {%- else -%}
+                        {%- if state.update({'output': state.output ~ '{{' ~ part}) -%}{%- endif -%}
+                    {%- endif -%}
+                {%- endif -%}
+            {%- endfor -%}
+        {%- endif -%}
+
+        {# 3. Построчно добавляем комментарии 3Dmigoto (;) #}
+        {%- set lines = state.output.split('\n') -%}
+        {%- for line in lines -%}
+            ;{{ line | replace('\r', '') }}
+            {%- if not loop.last %}{{ '\n' }}{% endif -%}
+        {%- endfor -%}
+    {%- endif -%}
+{%- endmacro -%}
+
+
+{# --- MAIN GENERATOR --- #}
+
+{% macro mod_info_generate(mod_file, scene) %}
+{% if scene.rzm and scene.rzm.config.mod_info %}
+;RZMenu 3.6.1 (Universal Engine)
+;Target Game: {{ scene.rzm.game.name }}
+
+; change key parametr if you want to swap key from {{scene.rzm.meta_data.menu_keybind}} to which you want
+[KeyMenu]
+condition = $active == 1
+key = no_modifiers {{scene.rzm.meta_data.menu_keybind}}
+type = cycle
+$menu = 0,1
+
+{{ parse_and_replace_tags(scene.rzm.config.mod_info, scene) }}
+{% endif %}
+{% endmacro %}
