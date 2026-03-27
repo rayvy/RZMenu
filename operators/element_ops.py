@@ -301,6 +301,109 @@ class RZM_OT_UpdateElementID(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class RZM_OT_DistributeElements(bpy.types.Operator):
+    """Distributes 3+ elements evenly between the first and last element."""
+    bl_idname = "rzm.distribute_elements"
+    bl_label = "Distribute UI Elements"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    target_ids: bpy.props.StringProperty() # Comma-separated IDs
+    mode: bpy.props.EnumProperty(
+        items=(
+            ('X_ORIGIN', 'X Origin', 'Distribute by X center/origin'),
+            ('Y_ORIGIN', 'Y Origin', 'Distribute by Y center/origin'),
+            ('AUTO_ORIGIN', 'Auto Origin', 'Linear distribution between endpoints'),
+            ('X_GAP', 'X Gap', 'Distribute by horizontal gaps'),
+            ('Y_GAP', 'Y Gap', 'Distribute by vertical gaps'),
+            ('AUTO_GAP', 'Auto Gap', 'Dominant axis gap distribution'),
+        ),
+        default='Y_ORIGIN'
+    )
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        all_elements = rzm.elements
+        
+        # 1. Parse IDs and get elements
+        try:
+            ids = [int(i.strip()) for i in self.target_ids.split(",") if i.strip()]
+        except:
+            self.report({'ERROR'}, "Invalid target IDs")
+            return {'CANCELLED'}
+            
+        selection = [e for e in all_elements if e.id in ids]
+        if len(selection) < 3:
+            self.report({'WARNING'}, "Distribute requires at least 3 elements.")
+            return {'CANCELLED'}
+
+        # 2. Determine Axis and Sort
+        def get_distribute_axis():
+            if "AUTO" in self.mode:
+                min_x = min(e.position[0] for e in selection)
+                max_x = max(e.position[0] for e in selection)
+                min_y = min(e.position[1] for e in selection)
+                max_y = max(e.position[1] for e in selection)
+                return "X" if (max_x - min_x) > (max_y - min_y) else "Y"
+            return "X" if "X" in self.mode else "Y"
+
+        axis = get_distribute_axis()
+        # For Y, typically we sort from top to bottom (descending Y)
+        # For X, from left to right (ascending X)
+        if axis == "Y":
+            selection.sort(key=lambda e: e.position[1], reverse=True)
+        else:
+            selection.sort(key=lambda e: e.position[0])
+
+        e_first = selection[0]
+        e_last = selection[-1]
+        n = len(selection)
+
+        # 3. Apply Distribution Logic
+        if "ORIGIN" in self.mode:
+            if self.mode == "AUTO_ORIGIN":
+                # Linear interpolation between endpoints for BOTH X and Y
+                start_p = (e_first.position[0], e_first.position[1])
+                end_p = (e_last.position[0], e_last.position[1])
+                for i in range(1, n - 1):
+                    t = i / (n - 1)
+                    selection[i].position[0] = int(start_p[0] + (end_p[0] - start_p[0]) * t)
+                    selection[i].position[1] = int(start_p[1] + (end_p[1] - start_p[1]) * t)
+            elif axis == "X":
+                start_x = e_first.position[0]
+                total_w = e_last.position[0] - start_x
+                for i in range(1, n - 1):
+                    selection[i].position[0] = int(start_x + (total_w * i / (n - 1)))
+            else: # axis == "Y"
+                start_y = e_first.position[1]
+                total_h = e_last.position[1] - start_y
+                for i in range(1, n - 1):
+                    selection[i].position[1] = int(start_y + (total_h * i / (n - 1)))
+
+        else: # GAP Mode
+            # Dominant axis for AUTO_GAP is already determined
+            if axis == "X":
+                # Left-to-right sorting
+                total_range = e_last.position[0] - (e_first.position[0] + e_first.size[0])
+                sum_mid_w = sum(selection[i].size[0] for i in range(1, n - 1))
+                avg_gap = (total_range - sum_mid_w) / (n - 1)
+                
+                curr_x = e_first.position[0] + e_first.size[0] + avg_gap
+                for i in range(1, n - 1):
+                    selection[i].position[0] = int(curr_x)
+                    curr_x += selection[i].size[0] + avg_gap
+            else: # axis == "Y"
+                # Top-to-bottom sorting (Y is top edge, Y-size[1] is bottom edge)
+                total_range = (e_first.position[1] - e_first.size[1]) - e_last.position[1]
+                sum_mid_h = sum(selection[i].size[1] for i in range(1, n - 1))
+                avg_gap = (total_range - sum_mid_h) / (n - 1)
+                
+                curr_y = e_first.position[1] - e_first.size[1] - avg_gap
+                for i in range(1, n - 1):
+                    selection[i].position[1] = int(curr_y)
+                    curr_y -= selection[i].size[1] + avg_gap
+
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_AddElement,
     RZM_OT_RemoveElement,
@@ -309,5 +412,6 @@ classes_to_register = [
     RZM_OT_MoveElementUp,
     RZM_OT_MoveElementDown,
     RZM_OT_SetElementPosition,
-    RZM_OT_UpdateElementID
+    RZM_OT_UpdateElementID,
+    RZM_OT_DistributeElements
 ]

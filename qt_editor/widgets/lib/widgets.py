@@ -728,21 +728,19 @@ class RZSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
     def validate(self, input_text, pos):
         # Allow digits, arithmetic operators, parentheses, and spaces for formulas
         import re
-        if re.fullmatch(r"[0-9.+\-*/() ]*", input_text):
-            return (QtGui.QValidator.State.Intermediate, input_text, pos)
-        return (QtGui.QValidator.State.Invalid, input_text, pos)
+        if re.fullmatch(r"[0-9.+\-*/()%^ ]*", input_text):
+            return QtGui.QValidator.State.Acceptable, input_text, pos
+        return super().validate(input_text, pos)
 
     def valueFromText(self, text):
         try:
             from ...utils.evaluation import safe_eval
-            # If the user types a calculation, evaluate it
             val = safe_eval(text)
             if isinstance(val, (int, float)):
                 return int(round(val))
         except Exception:
-            # On calculation error (like 1/0), stay at current value
-            return self.value()
-        return super().valueFromText(text)
+            pass
+        return self.value() # Revert on failure
 
 class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
     def __init__(self, parent=None):
@@ -763,9 +761,9 @@ class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
         event.ignore()
 
     def validate(self, input_text, pos):
-        # Allow digits, arithmetic operators, parentheses, and spaces for formulas
+        # Allow digits, arithmetic operators (+-*/%^**), parentheses, and spaces for formulas
         import re
-        if re.fullmatch(r"[0-9.+\-*/() ]*", input_text):
+        if re.fullmatch(r"[0-9.+\-*/()%^ ]*", input_text):
             return (QtGui.QValidator.State.Intermediate, input_text, pos)
         return (QtGui.QValidator.State.Invalid, input_text, pos)
 

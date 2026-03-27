@@ -52,7 +52,7 @@ class IntegrationManager:
 
     @classmethod
     @bpy.app.handlers.persistent
-    def on_undo_redo(cls, scene):
+    def on_undo_redo(cls, scene, *args):
         """
         Force update on Undo/Redo.
         """

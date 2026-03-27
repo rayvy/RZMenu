@@ -1623,6 +1623,47 @@ class RZViewportView(QtWidgets.QGraphicsView):
             btn.setToolTip(tip)
             btn.clicked.connect(lambda checked=False, m=mode: run_align(m))
             layout.addWidget(btn)
+
+        # Distribute (Relax) Toolbar
+        def run_distribute(mode):
+            ctx = RZContextManager.get_instance().get_snapshot()
+            if len(ctx.selected_ids) >= 3:
+                core.distribute_elements(list(ctx.selected_ids), mode)
+            else:
+                # Optional: Show status message? RZMenu usually has a logger
+                pass
+
+        layout.addSpacing(4)
+        v_line2 = QtWidgets.QFrame(); v_line2.setFrameShape(QtWidgets.QFrame.VLine); v_line2.setStyleSheet("color: rgba(255,255,255,20)"); layout.addWidget(v_line2)
+        layout.addSpacing(4)
+
+        # Origin Relax
+        dist_origin = [
+            ("↦↤", "X_ORIGIN", "Relax X (Origin)"),
+            ("↥↧", "Y_ORIGIN", "Relax Y (Origin)"),
+            ("⛕", "AUTO_ORIGIN", "Relax Auto (Linear)")
+        ]
+        for icon, mode, tip in dist_origin:
+            btn = QtWidgets.QPushButton(icon)
+            btn.setToolTip(tip)
+            btn.clicked.connect(lambda checked=False, m=mode: run_distribute(m))
+            layout.addWidget(btn)
+
+        layout.addSpacing(4)
+        v_line3 = QtWidgets.QFrame(); v_line3.setFrameShape(QtWidgets.QFrame.VLine); v_line3.setStyleSheet("color: rgba(255,255,255,20)"); layout.addWidget(v_line3)
+        layout.addSpacing(4)
+
+        # Gap Relax
+        dist_gap = [
+            ("┫┣", "X_GAP", "Relax X (Gaps)"),
+            ("┳┻", "Y_GAP", "Relax Y (Gaps)"),
+            ("⚄", "AUTO_GAP", "Relax Auto (Gaps)")
+        ]
+        for icon, mode, tip in dist_gap:
+            btn = QtWidgets.QPushButton(icon)
+            btn.setToolTip(tip)
+            btn.clicked.connect(lambda checked=False, m=mode: run_distribute(m))
+            layout.addWidget(btn)
         
         self.overlay_container.adjustSize()
 

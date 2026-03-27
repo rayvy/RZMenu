@@ -28,9 +28,13 @@ def safe_eval(expr, context=None):
     if context is None: context = {}
     
     # Sanitize: only allow numbers, operators, dots, underscores, and alphanumeric names
-    # Also allow $, @, # for our variables
-    if not re.match(r'^[a-zA-Z0-9_\.\s\+\-\*\/\(\)\,\$@#]+$', str(expr)):
-        return "Invalid Characters"
+    # Also allow $, @, # for our variables, and ^, % for math
+    cleaned_expr = str(expr).strip()
+    if not cleaned_expr: return None
+    
+    if not re.match(r'^[a-zA-Z0-9_\.\s\+\-\*\/\(\)\,\$@#%^]+$', cleaned_expr):
+        logger.warning(f"safe_eval: Invalid characters in expression: {cleaned_expr}")
+        return None
 
     try:
         # Create a restricted environment
@@ -44,12 +48,11 @@ def safe_eval(expr, context=None):
             safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', str(k))
             eval_locals[safe_k] = v
             
-        # We need to replace our special prefixes with something eval-friendly 
-        # or just hope the context mapping handles them (if keys were allowed).
-        # Actually, Python variables can't start with $, @, #.
-        # We must preprocess the expression.
-        
         processed_expr = str(expr)
+        
+        # Power Alias: Replace ^ with ** (common for math users)
+        processed_expr = processed_expr.replace('^', '**')
+        
         # Sort keys by length DESC to avoid partial replacement (e.g. $var1 vs $var)
         sorted_keys = sorted(context.keys(), key=len, reverse=True)
         for k in sorted_keys:
@@ -60,9 +63,11 @@ def safe_eval(expr, context=None):
             processed_expr = re.sub(pattern, safe_k, processed_expr)
 
         result = eval(processed_expr, eval_globals, eval_locals)
+        # print(f"safe_eval result: {result} type: {type(result)}") # Debug
         return result
     except Exception as e:
-        return f"Error: {str(e)}"
+        logger.error(f"safe_eval: Error evaluating '{expr}': {e}")
+        return None
 
 def get_formula_preview(expr, active_element_data=None):
     """

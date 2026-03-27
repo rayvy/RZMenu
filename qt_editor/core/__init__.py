@@ -33,7 +33,8 @@ from .transform import (
     set_element_position,
     set_multiple_element_positions,
     update_element_pos,
-    align_elements
+    align_elements,
+    distribute_elements
 )
 
 from .structure import (

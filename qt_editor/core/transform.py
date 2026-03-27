@@ -163,3 +163,22 @@ def align_elements(target_ids, mode):
         signals.SIGNALS.data_changed.emit()
     finally:
         signals.IS_UPDATING_FROM_QT = False
+
+def distribute_elements(target_ids, mode):
+    """
+    Distribute elements using the Blender operator.
+    Modes: X_ORIGIN, Y_ORIGIN, AUTO_ORIGIN, X_GAP, Y_GAP, AUTO_GAP
+    """
+    if not target_ids or len(target_ids) < 3:
+        return
+
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        # Operator takes comma-separated string
+        ids_str = ",".join(map(str, target_ids))
+        bpy.ops.rzm.distribute_elements(target_ids=ids_str, mode=mode)
+        
+        signals.SIGNALS.transform_changed.emit()
+        signals.SIGNALS.data_changed.emit()
+    finally:
+        signals.IS_UPDATING_FROM_QT = False

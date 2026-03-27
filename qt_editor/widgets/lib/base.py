@@ -1,5 +1,9 @@
 # RZMenu/qt_editor/widgets/base.py
 from PySide6 import QtWidgets, QtCore, QtGui
+import logging
+
+logger = logging.getLogger(__name__)
+
 from .theme import get_current_theme
 
 class RZVisualInputMixin:
@@ -321,6 +325,7 @@ class RZSmartSlider(QtWidgets.QWidget):
         # Better interaction feel
         self.slider.setMouseTracking(True)
         self.slider.installEventFilter(self)
+        self.spin.lineEdit().installEventFilter(self)
 
         self.apply_theme()
 
@@ -359,13 +364,19 @@ class RZSmartSlider(QtWidgets.QWidget):
                 self.spin.lineEdit().setText("--")
             return
 
-        # Check for math operators
+        # Check for relative math operators (+=, -=, *=, /=)
         if any(text.startswith(op) for op in ["+=", "-=", "*=", "/="]):
             self.math_requested.emit(text)
             return
 
-        # Regular numeric entry handled by spinbox default logic 
-        # (Spinbox will auto-parse it on focus out or returnPressed)
+        # For absolute arithmetic (e.g. 500 - 100), force evaluate it now
+        # so the SpinBox value is updated before focus is lost.
+        if any(op in text for op in "+-*/%^"):
+            val = self.spin.valueFromText(text)
+            self.spin.blockSignals(True)
+            self.spin.setValue(val)
+            self.spin.blockSignals(False)
+            self.value_changed.emit(float(val))
 
     def apply_theme(self):
         """Apply theme colors to all child widgets."""
@@ -486,9 +497,22 @@ class _RZSmartSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
         self._init_visuals()
 
     def validate(self, text, pos):
-        if text == "--" or any(text.startswith(op) for op in ["+=", "-=", "*=", "/="]):
-            return QtGui.QValidator.Acceptable, text, pos
+        import re
+        # Return Acceptable for math expressions to ensure commitment on focus loss
+        if text == "--" or re.fullmatch(r"[0-9.+\-*/()%^= ]*", text):
+            return QtGui.QValidator.State.Acceptable, text, pos
         return super().validate(text, pos)
+
+    def valueFromText(self, text):
+        if text == "--": return self.value()
+        try:
+            from ...utils.evaluation import safe_eval
+            val = safe_eval(text)
+            if isinstance(val, (int, float)):
+                return int(round(val))
+        except Exception:
+            pass
+        return self.value() # Revert on failure
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -505,9 +529,22 @@ class _RZSmartDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
         self._init_visuals()
 
     def validate(self, text, pos):
-        if text == "--" or any(text.startswith(op) for op in ["+=", "-=", "*=", "/="]):
-            return QtGui.QValidator.Acceptable, text, pos
+        import re
+        # Return Acceptable for math expressions to ensure commitment on focus loss
+        if text == "--" or re.fullmatch(r"[0-9.+\-*/()%^= ]*", text):
+            return QtGui.QValidator.State.Acceptable, text, pos
         return super().validate(text, pos)
+
+    def valueFromText(self, text):
+        if text == "--": return self.value()
+        try:
+            from ...utils.evaluation import safe_eval
+            val = safe_eval(text)
+            if isinstance(val, (int, float)):
+                return float(val)
+        except Exception:
+            pass
+        return self.value() # Revert on failure
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -556,6 +593,4 @@ class _RZDragLabel(QtWidgets.QLabel):
             self.released.emit()
 
 # Alias for backward compatibility
-# Старый код, ожидающий RZDraggableNumber(value=0, is_int=True), будет работать,
-# так как аргументы конструктора RZSmartSlider совпадают.
 RZDraggableNumber = RZSmartSlider
