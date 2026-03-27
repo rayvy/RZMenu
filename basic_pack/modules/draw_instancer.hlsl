@@ -10,6 +10,7 @@ Buffer<float4>    PosSizeBuffer : register(t100);
 Buffer<float4>    ColorBuffer : register(t101);
 Buffer<float4>    TileDataBuffer : register(t102); 
 Buffer<uint>      TextPoolBuffer : register(t103);
+Buffer<float4>    MirrorBuffer : register(t105);
 Buffer<float4>    ClippingBuffer : register(t109);
 Buffer<float4>    DrawParamsBuffer : register(t110);
 
@@ -77,6 +78,7 @@ struct VertexOutput {
     float  animType : TEXCOORD6;
     float  fxType : TEXCOORD7;
     float4 extraData : TEXCOORD8; 
+    float    mirrorMode : TEXCOORD9;
 };
 
 struct CharMetrics {
@@ -220,6 +222,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     output.color = ColorBuffer[iID];
     output.clipRect = ClippingBuffer[iID];
     output.extraData.x = TileDataBuffer[iID].x;
+    output.mirrorMode = (int)MirrorBuffer[iID].x;
 
     float2 pos = PosSizeBuffer[iID].xy;
     float2 size = PosSizeBuffer[iID].zw;
@@ -301,11 +304,21 @@ float4 main(VertexOutput input) : SV_Target0 {
         rawTexture = float4(0, 0, 0, 0); 
     } 
     else if (input.drawMode != MODE_SOLID && !isBlurBg) {
-        float2 uv = input.atlasRect.xy + input.contentUV * input.atlasRect.zw;
         if (input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
+            float2 uv = input.atlasRect.xy + input.contentUV * input.atlasRect.zw;
             rawTexture = AtlasFont.Sample(LinearSampler, uv);
         } else {
-            rawTexture = AtlasIcons.Sample(LinearSampler, float2(uv.x, 1.0 - uv.y));
+            float2 finalUV = input.contentUV;
+            
+            // Надежное извлечение режима зеркалирования (спасает от потери точности)
+            int mMode = (int)round(input.mirrorMode); 
+            
+            if (mMode == 1 || mMode == 3) finalUV.x = 1.0 - finalUV.x;
+            if (mMode == 2 || mMode == 3) finalUV.y = 1.0 - finalUV.y;
+            
+            // Используем новое имя переменной (uvSample), чтобы не было конфликтов
+            float2 uvSample = input.atlasRect.xy + finalUV * input.atlasRect.zw;
+            rawTexture = AtlasIcons.Sample(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y));
         }
     }
 
@@ -385,11 +398,23 @@ float4 main(VertexOutput input) : SV_Target0 {
          float2 uvSz = input.atlasRect.zw;
          float a = 0;
          float2 offs[4] = { float2(px.x,0), float2(-px.x,0), float2(0,px.y), float2(0,-px.y) };
+         
+         int mMode = (int)round(input.mirrorMode);
+
          [unroll]
          for(int k=0; k<4; k++) {
              float2 cUV = input.contentUV + offs[k];
              if(cUV.x>0 && cUV.x<1 && cUV.y>0 && cUV.y<1) {
-                 float2 fUV = uvBase + cUV * uvSz;
+                 
+                 // ПРИМЕНЯЕМ ЗЕРКАЛИРОВАНИЕ ДЛЯ ОБВОДКИ
+                 float2 outlineUV = cUV;
+                 if (input.drawMode != MODE_TEXT && input.drawMode != MODE_NUMBER) {
+                     if (mMode == 1 || mMode == 3) outlineUV.x = 1.0 - outlineUV.x;
+                     if (mMode == 2 || mMode == 3) outlineUV.y = 1.0 - outlineUV.y;
+                 }
+
+                 float2 fUV = uvBase + outlineUV * uvSz;
+                 
                  if(input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) 
                      a += AtlasFont.Sample(LinearSampler, fUV).r;
                  else 

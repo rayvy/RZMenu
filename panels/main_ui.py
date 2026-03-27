@@ -84,6 +84,8 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         # Отрисовка выпадающего списка (EnumProperty)
         # text="" скрывает дублирующее название слева, оставляя только сам список
         row.prop(rzm.game, "selection", text="")
+        row = game_box.row()
+        row.prop(rzm.addons, "pre_render_blur", text="UI Blur")
 
         file_box = layout.box()
         row = file_box.row(align=True)
@@ -242,6 +244,8 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         # Отрисовка выпадающего списка (EnumProperty)
         # text="" скрывает дублирующее название слева, оставляя только сам список
         row.prop(rzm.game, "selection", text="")
+        row = game_box.row()
+        row.prop(rzm.addons, "pre_render_blur", text="UI Blur")
 
         file_box = layout.box()
         row = file_box.row(align=True)

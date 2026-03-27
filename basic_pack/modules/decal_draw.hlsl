@@ -36,8 +36,9 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID) {
     }
 
     float fRotation = ConfigBuffer[4];
-    bool mirror = ConfigBuffer[6] > 0.5f;
-    bool flip = ConfigBuffer[7] > 0.5f;
+    int mirrorMode = (int)IniParams[108].x;
+    bool mirror = mirrorMode == 1 || mirrorMode == 3;
+    bool flip   = mirrorMode == 2 || mirrorMode == 3;
 
     float2 uv = (float2(localCoord) + 0.5f) / DecalSize;
     if (abs(fRotation) > 89.0f && abs(fRotation) < 91.0f) uv = float2(uv.y, 1.0f - uv.x);

@@ -113,6 +113,16 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     dtoggle_compute: BoolProperty(name="DToggleCompute", default=False)
     rtoggle_compute: BoolProperty(name="RToggleCompute", default=False)
     frame_trace: BoolProperty(name="FrameTrace", default=False)
+    pre_render_blur: EnumProperty(
+        name="Pre-render Blur",
+        items=[
+            ('X0', "Off", ""),
+            ('X1', "x1", ""),
+            ('X2', "x2", ""),
+            ('X4', "x4", ""),
+        ],
+        default='X2'
+    )
     
     # Custom Debug Variables
     debug_var_0: StringProperty(name="Debug Var 0", default="")

@@ -301,6 +301,8 @@ Local $current_sizeY
     {# --- DEBUG END --- #}
 
     {# --- Часть 1: ВСЕГДА отрисовываем базовый image_id, если он указан. --- #}
+    $flipX = {{ 1 if element.flip_x else 0 }}
+    $flipY = {{ 1 if element.flip_y else 0 }}
     {% if safe_img_mode == 0 and element.image_id is defined and element.image_id != -1 %}
         {% if parent_class_name == 'GRID_CONTAINER' and class_name == 'BUTTON'%}
         $drawType = 0

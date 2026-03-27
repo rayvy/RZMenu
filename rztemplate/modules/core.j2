@@ -636,7 +636,17 @@ y110 = y110
 z110 = 0
 w110 = $drawType
 y111 = 768 + $di_count
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
 dispatch = 1, 1, 1
+x105 = 0
 $di_count = $di_count + 1
 
 [CustomShaderRCI2D_SLIDER]
@@ -689,7 +699,17 @@ z110 = 0
 w110 = 90
 y111 = $di_count
 
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
 dispatch = 1, 1, 1
+x105 = 0
 $di_count = $di_count + 1
 run = CommandListCoreFXRenderSliderNumbers
 
@@ -744,7 +764,17 @@ z110 = 0
 w110 = 90
 y111 = $di_count
 
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
 dispatch = 1, 1, 1
+x105 = 0
 $di_count = $di_count + 1
 run = CommandListCoreFXRenderSliderText
 run = CommandListCoreFXRenderSliderNumbers
@@ -778,6 +808,15 @@ x101 = $colorR
 y101 = $colorG
 z101 = $colorB
 w101 = $colorA
+if $flipX == 1 && $flipY == 1
+x105 = 3 
+elif $flipX == 1
+x105 = 1
+elif $flipY == 1
+x105 = 2
+else
+x105 = 0
+endif
 x102 = $texPosX
 y102 = $texPosY
 z102 = $texSizeX
@@ -792,7 +831,17 @@ z110 = 0
 w110 = $drawType
 y111 = $di_count
 
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
 dispatch = 1, 1, 1
+x105 = 0
 $di_count = $di_count + 1
 
 [CustomShaderRCI2D_HOVERTEXT]
@@ -827,7 +876,17 @@ y110 = 0
 z110 = 0
 w110 = 0
 y111 = 510
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
 dispatch = 1, 1, 1
+x105 = 0
 $di_count = $di_count + 1
 
 z99 = $ScreenW
@@ -853,7 +912,17 @@ y110 = 0
 z110 = 0
 w110 = 3
 y111 = 511
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
 dispatch = 1, 1, 1
+x105 = 0
 $di_count = $di_count + 1
 
 [CustomShaderRCI2D]
@@ -861,8 +930,10 @@ cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
 cs-u3 = ResourceBuffer103
+cs-u5 = ResourceBuffer105
 cs-u6 = ResourceBuffer109
 cs-u7 = ResourceBuffer110
+
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -916,7 +987,17 @@ z110 = 0
 w110 = $drawType
 y111 = $di_count
 
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
 dispatch = 1, 1, 1
+x105 = 0
 $di_count = $di_count + 1
 
 x110 = 0
@@ -929,8 +1010,10 @@ vs-t100 = ref ResourceBuffer100
 vs-t101 = ref ResourceBuffer101
 vs-t102 = ref ResourceBuffer102
 vs-t103 = ref ResourceBuffer103
+vs-t105 = ref ResourceBuffer105
 vs-t109 = ref ResourceBuffer109
 vs-t110 = ref ResourceBuffer110
+
 w98 = time % 1
 x99 = $cursorX / $ScreenW
 y99 = $cursorY / $ScreenH
@@ -945,18 +1028,20 @@ clear = ResourceBuffer100
 clear = ResourceBuffer101
 clear = ResourceBuffer102
 clear = ResourceBuffer103
+clear = ResourceBuffer105
 clear = ResourceBuffer109
 clear = ResourceBuffer110
 
+
 [CustomShaderDI2D.PASS0.BLUR]
-if $ui_graphics_blur == 1
+{% if scene.rzm.addons.pre_render_blur == 'X1' %}
 x101 = 3
 run = CustomShaderDI2D.PASS0.BLUR.X1
-elif $ui_graphics_blur == 2
+{% elif scene.rzm.addons.pre_render_blur == 'X2' %}
 x101 = 3
 run = CustomShaderDI2D.PASS0.BLUR.X1
 run = CustomShaderDI2D.PASS0.BLUR.X2
-elif $ui_graphics_blur == 3
+{% elif scene.rzm.addons.pre_render_blur == 'X4' %}
 x101 = 12
 run = CustomShaderDI2D.PASS0.BLUR.X1
 x101 = 8
@@ -965,9 +1050,9 @@ x101 = 3
 run = CustomShaderDI2D.PASS0.BLUR.X1.75
 run = CustomShaderDI2D.PASS0.BLUR.X1.85
 run = CustomShaderDI2D.PASS0.BLUR.X2
-else
+{% else %}
 ps-t90 = bb
-endif
+{% endif %}
 
 [CustomShaderDI2D.PASS0.BLUR.X1]
 ps-t92 = bb
@@ -979,13 +1064,13 @@ cull = none
 topology = triangle_list
 o0 = set_viewport no_view_cache ResourceBB
 Draw = 6,0
-if $ui_graphics_blur == 2
+{% if scene.rzm.addons.pre_render_blur == 'X2' %}
 ps-t91 = copy o0
-elif $ui_graphics_blur == 3
+{% elif scene.rzm.addons.pre_render_blur == 'X4' %}
 ps-t93 = copy o0
-else
+{% else %}
 ps-t90 = copy o0
-endif
+{% endif %}
 [CustomShaderDI2D.PASS0.BLUR.X1.5]
 ps-t92 = ps-t93
 vs = /modules/draw_instancer_pass_0_blur_bb.hlsl
@@ -1057,6 +1142,10 @@ array = 1024
 type = Buffer
 array = 1024
 format = R8_UINT
+[ResourceBuffer105]
+type = RWBuffer
+format = R32G32B32A32_FLOAT
+array = 1024
 [ResourceBuffer109]
 type = RWBuffer
 format = R32G32B32A32_FLOAT
@@ -1065,6 +1154,7 @@ array = 1024
 type = RWBuffer
 format = R32G32B32A32_FLOAT
 array = 1024
+
 
 [Constants]
 global $debugTexShow = 0
