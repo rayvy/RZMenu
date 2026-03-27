@@ -82,4 +82,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     qt_test_value_bool: BoolProperty(name="QT Bool Value", default=False)
     disable_button_nums: BoolProperty(name="Disable Button Nums", default=False)
     disable_button_popup: BoolProperty(name="Disable Button Popup", default=False)
+    disable_slider_nums: BoolProperty(name="Disable Slider Nums", default=False)
+    disable_slider_blur: BoolProperty(name="Disable Slider Blur", default=False)
+    disable_slider_prebuild_render: BoolProperty(name="Force Standard Render", default=False)
     disable_export: BoolProperty(name="Disable Export", description="If active, this element will not be exported to templates", default=False)

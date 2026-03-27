@@ -317,6 +317,9 @@ def get_selection_details(selected_ids, active_id):
             # Button Specifics
             "disable_button_nums": get_uniform("disable_button_nums", default=False),
             "disable_button_popup": get_uniform("disable_button_popup", default=False),
+            "disable_slider_nums": get_uniform("disable_slider_nums", default=False),
+            "disable_slider_blur": get_uniform("disable_slider_blur", default=False),
+            "disable_slider_prebuild_render": get_uniform("disable_slider_prebuild_render", default=False),
 
             # Editor Flags
             "is_hidden": get_uniform("qt_hide"),

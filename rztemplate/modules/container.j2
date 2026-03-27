@@ -74,7 +74,11 @@ Local $current_sizeY
     {{generate_interactions(element, parent_element)}}
     {%if class_name == 'SLIDER'%}
         {{ handle_slider_logic(element, parent_element, mod_file,scene) }}
-            {% if element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
+            $slider_node_disable_nums = {{ 1 if element.disable_slider_nums else 0 }}
+            $slider_node_disable_blur = {{ 1 if element.disable_slider_blur else 0 }}
+            {% if element.disable_slider_prebuild_render %}
+            run = CustomShaderRCI2D
+            {% elif element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
             {{ generate_text(element) }}
             run = CustomShaderRCI2D_SLIDER.TEXT
             {% else %}

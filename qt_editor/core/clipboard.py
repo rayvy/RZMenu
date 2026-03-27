@@ -77,6 +77,9 @@ def copy_elements(target_ids):
                 
                 "disable_button_nums": elem.disable_button_nums,
                 "disable_button_popup": elem.disable_button_popup,
+                "disable_slider_nums": getattr(elem, "disable_slider_nums", False),
+                "disable_slider_blur": getattr(elem, "disable_slider_blur", False),
+                "disable_slider_prebuild_render": getattr(elem, "disable_slider_prebuild_render", False),
                 
                 "hover_event_enabled": elem.hover_event_enabled,
                 "hover_event_formula": elem.hover_event_formula,
@@ -206,6 +209,9 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             
             new_elem.disable_button_nums = item.get("disable_button_nums", False)
             new_elem.disable_button_popup = item.get("disable_button_popup", False)
+            new_elem.disable_slider_nums = item.get("disable_slider_nums", False)
+            new_elem.disable_slider_blur = item.get("disable_slider_blur", False)
+            new_elem.disable_slider_prebuild_render = item.get("disable_slider_prebuild_render", False)
             
             new_elem.hover_event_enabled = item.get("hover_event_enabled", False)
             new_elem.hover_event_formula = item.get("hover_event_formula", "")

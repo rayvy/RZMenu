@@ -696,7 +696,11 @@ w109 = $scissorW
 x110 = x110
 y110 = y110
 z110 = 0
+if $slider_node_disable_blur == 0
 w110 = 90
+else
+w110 = 0
+endif
 y111 = $di_count
 
 if $flipX == 1 && $flipY == 1
@@ -711,7 +715,9 @@ endif
 dispatch = 1, 1, 1
 x105 = 0
 $di_count = $di_count + 1
+if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
+endif
 
 
 [CustomShaderRCI2D_SLIDER.TEXT]
@@ -761,7 +767,11 @@ w109 = $scissorW
 x110 = x110
 y110 = y110
 z110 = 0
-w110 = 90
+if $slider_node_disable_blur == 0
+    w110 = 90
+else
+    w110 = 0
+endif
 y111 = $di_count
 
 if $flipX == 1 && $flipY == 1
@@ -777,7 +787,9 @@ dispatch = 1, 1, 1
 x105 = 0
 $di_count = $di_count + 1
 run = CommandListCoreFXRenderSliderText
+if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
+endif
 
 [CustomShaderRCI2D_TEXT_LEFT]
 $texSizeX = 0

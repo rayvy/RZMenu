@@ -285,6 +285,13 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             behavior_box.prop(item, "disable_button_nums")
             behavior_box.prop(item, "disable_button_popup")
 
+        if item.elem_class == 'SLIDER':
+            behavior_box = sub.box()
+            behavior_box.label(text="Slider Behavior:")
+            behavior_box.prop(item, "disable_slider_nums")
+            behavior_box.prop(item, "disable_slider_blur")
+            behavior_box.prop(item, "disable_slider_prebuild_render")
+
     def draw_collection_ui(self, layout, item, name, prop_name):
         box = layout.box()
         row = box.row()

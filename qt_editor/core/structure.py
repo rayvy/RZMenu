@@ -227,6 +227,9 @@ def duplicate_elements(target_ids, offset=20):
             # Button Specifics
             new_elem.disable_button_nums = src.disable_button_nums
             new_elem.disable_button_popup = src.disable_button_popup
+            new_elem.disable_slider_nums = getattr(src, "disable_slider_nums", False)
+            new_elem.disable_slider_blur = getattr(src, "disable_slider_blur", False)
+            new_elem.disable_slider_prebuild_render = getattr(src, "disable_slider_prebuild_render", False)
             
             # Events
             new_elem.hover_event_enabled = src.hover_event_enabled

@@ -72,6 +72,9 @@ PROP_MAP = {
     "tile_size": ("tile_size", None, 'D'),
     "disable_button_nums": ("disable_button_nums", None, 'D'),
     "disable_button_popup": ("disable_button_popup", None, 'D'),
+    "disable_slider_nums": ("disable_slider_nums", None, 'D'),
+    "disable_slider_blur": ("disable_slider_blur", None, 'D'),
+    "disable_slider_prebuild_render": ("disable_slider_prebuild_render", None, 'D'),
     "text_mode": ("text_mode", None, 'D'),
     
     # Events

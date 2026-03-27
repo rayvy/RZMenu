@@ -868,7 +868,7 @@ class RZMInspectorPanel(RZEditorPanel):
             ("Text content", self._init_text_ui),
             ("Value Links & FX", self._init_logic_ui),
             ("Interactions", self._init_events_ui),
-            ("Button Options", self._init_button_ui),
+            ("Special Options", self._init_special_ui),
             ("Editor Flags", self._init_flags_ui),
         ]
         
@@ -1136,14 +1136,19 @@ class RZMInspectorPanel(RZEditorPanel):
             self.layout_props.addWidget(self.grp_events)
         except Exception as e: print(f"[INSPECTOR] Error Events: {e}")
 
-    def _init_button_ui(self):
+    def _init_special_ui(self):
         try:
-            self.grp_btn = RZGroupBox("Button Options")
-            layout = QtWidgets.QVBoxLayout(self.grp_btn)
+            self.grp_special = RZGroupBox("Special Options")
+            layout = QtWidgets.QVBoxLayout(self.grp_special)
             self.chk_no_nums = self._add_row(layout, "", RZCheckBox("Disable Button Nums"), 'disable_button_nums')
             self.chk_no_popup = self._add_row(layout, "", RZCheckBox("Disable Button Popup"), 'disable_button_popup')
-            self.layout_props.addWidget(self.grp_btn)
-        except Exception as e: print(f"[INSPECTOR] Error Buttons: {e}")
+            
+            self.chk_no_slider_nums = self._add_row(layout, "", RZCheckBox("Disable Slider Nums"), 'disable_slider_nums')
+            self.chk_no_slider_blur = self._add_row(layout, "", RZCheckBox("Disable Slider Blur"), 'disable_slider_blur')
+            self.chk_force_std = self._add_row(layout, "", RZCheckBox("Force Standard Render"), 'disable_slider_prebuild_render')
+            
+            self.layout_props.addWidget(self.grp_special)
+        except Exception as e: print(f"[INSPECTOR] Error Special UI: {e}")
 
     def _init_flags_ui(self):
         try:
@@ -1439,12 +1444,26 @@ class RZMInspectorPanel(RZEditorPanel):
             
             if hasattr(self, 'list_fx'): self.list_fx.update_data(props.get('fx', []))
 
-            # --- Button Specifics ---
+            # --- Special Options (Button/Slider) ---
             is_btn = (class_type == "BUTTON")
-            if hasattr(self, 'grp_btn'): self.grp_btn.setVisible(is_btn)
+            is_slider = (class_type == "SLIDER")
+            if hasattr(self, 'grp_special'): self.grp_special.setVisible(is_btn or is_slider)
+            
+            if hasattr(self, 'chk_no_nums'): self.set_row_visible(self.chk_no_nums, is_btn)
+            if hasattr(self, 'chk_no_popup'): self.set_row_visible(self.chk_no_popup, is_btn)
+            
+            if hasattr(self, 'chk_no_slider_nums'): self.set_row_visible(self.chk_no_slider_nums, is_slider)
+            if hasattr(self, 'chk_no_slider_blur'): self.set_row_visible(self.chk_no_slider_blur, is_slider)
+            if hasattr(self, 'chk_force_std'): self.set_row_visible(self.chk_force_std, is_slider)
+
             if is_btn:
                 if hasattr(self, 'chk_no_nums'): self.chk_no_nums.setChecked(props.get('disable_button_nums') is True)
                 if hasattr(self, 'chk_no_popup'): self.chk_no_popup.setChecked(props.get('disable_button_popup') is True)
+            
+            if is_slider:
+                if hasattr(self, 'chk_no_slider_nums'): self.chk_no_slider_nums.setChecked(props.get('disable_slider_nums') is True)
+                if hasattr(self, 'chk_no_slider_blur'): self.chk_no_slider_blur.setChecked(props.get('disable_slider_blur') is True)
+                if hasattr(self, 'chk_force_std'): self.chk_force_std.setChecked(props.get('disable_slider_prebuild_render') is True)
 
             # --- Flags ---
             if hasattr(self, 'chk_hide'): self.chk_hide.setChecked(props.get('qt_hide') is True or props.get('is_hidden') is True)
