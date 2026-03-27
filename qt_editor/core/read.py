@@ -59,7 +59,9 @@ def get_all_elements_list():
             "qt_priority": getattr(elem, "qt_priority", 0),
             "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),
-            "is_preset": getattr(elem, "is_preset", False)
+            "is_preset": getattr(elem, "is_preset", False),
+            "is_tab_container": getattr(elem, "is_tab_container", False),
+            "page_color": list(getattr(elem, "page_color", (0.5, 0.5, 0.5, 1.0)))
         })
     return results
 
@@ -205,6 +207,8 @@ def get_selection_details(selected_ids, active_id):
             "tag": get_uniform("tag", default=""),
             "priority": get_uniform("priority", default=0),
             "is_main_window": get_uniform("is_main_window", default=False),
+            "is_tab_container": get_uniform("is_tab_container", default=False),
+            "page_color": list(get_uniform("page_color") or (0.5, 0.5, 0.5, 1.0)),
             "disable_export": get_uniform("disable_export", default=False),
 
             
@@ -262,6 +266,9 @@ def get_selection_details(selected_ids, active_id):
             # Images
             "image_mode": get_uniform("image_mode", default="SINGLE"),
             "image_id": get_uniform("image_id", default=-1),
+            "hover_image_id": get_uniform("hover_image_id", default=-1),
+            "flip_x": get_uniform("flip_x", default=False),
+            "flip_y": get_uniform("flip_y", default=False),
             "image_blending_mode": get_uniform("image_blending_mode", default='NONE'),
             "tile_uv_x": get_uniform("tile_uv", 0),
             "tile_uv_y": get_uniform("tile_uv", 1),
@@ -370,6 +377,9 @@ def get_viewport_data():
 
             # Visuals
             "image_id": getattr(elem, "image_id", -1),
+            "hover_image_id": getattr(elem, "hover_image_id", -1),
+            "flip_x": getattr(elem, "flip_x", False),
+            "flip_y": getattr(elem, "flip_y", False),
             "image_blending_mode": getattr(elem, "image_blending_mode", 'NONE'),
             "text_id": getattr(elem, "text_id", ""),
             "color": color_list,
@@ -389,6 +399,8 @@ def get_viewport_data():
             "value_link_is_formula": getattr(elem, "value_link_is_formula", False),
             "value_link_formula": getattr(elem, "value_link_formula", ""),
 
+            "is_tab_container": getattr(elem, "is_tab_container", False),
+            "page_color": list(getattr(elem, "page_color", [0.5, 0.5, 0.5, 1.0])),
             "qt_preset_hide": getattr(elem, "qt_preset_hide", False),
             
             # Grid props

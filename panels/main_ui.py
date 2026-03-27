@@ -336,6 +336,9 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
                 box.label(text="Target does not exist", icon='INFO')
         else:
             box.label(text="No path set", icon='ERROR')
+        
+        box.prop(settings, "icc_profile")
+        
         layout.separator()
         if hasattr(bpy.ops.rzm, "export_atlas"):
             row = layout.row()

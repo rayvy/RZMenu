@@ -68,6 +68,7 @@ class BaseListTab(QtWidgets.QWidget):
         # List
         self.list_widget = QtWidgets.QListWidget()
         self.list_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.list_widget.itemChanged.connect(self.on_item_changed)
         self.layout.addWidget(self.list_widget)
         
         # Controls (Add/Remove)
@@ -101,6 +102,9 @@ class BaseListTab(QtWidgets.QWidget):
 
     def on_selection_changed(self, current, previous):
         self.update_properties()
+        
+    def on_item_changed(self, item):
+        pass # To be overridden
 
     def sync_list_items(self, data_list, name_func):
         """
@@ -119,6 +123,7 @@ class BaseListTab(QtWidgets.QWidget):
         for i, item_data in enumerate(data_list):
             item_widget = self.list_widget.item(i)
             new_name = name_func(item_data)
+            item_widget.setFlags(item_widget.flags() | QtCore.Qt.ItemIsEditable)
             if item_widget.text() != new_name:
                 item_widget.setText(new_name)
                 
@@ -232,8 +237,16 @@ class ValuesTab(BaseListTab):
         row = self.list_widget.currentRow()
         bpy.ops.rzm.update_value(index=row, prop_name="value_name", val_str=self.inp_name.text())
         
-        # Local visual update to feel responsive (revert if needed on refresh)
+        self.is_updating_ui = True
         self.list_widget.item(row).setText(self.inp_name.text())
+        self.is_updating_ui = False
+
+    def on_item_changed(self, item):
+        if self.is_updating_ui: return
+        row = self.list_widget.row(item)
+        if row >= 0:
+            bpy.ops.rzm.update_value(index=row, prop_name="value_name", val_str=item.text())
+            self.inp_name.setText(item.text())
 
     def synch_type(self, txt):
         if self.is_updating_ui: return
@@ -316,7 +329,16 @@ class TogglesTab(BaseListTab):
         if self.is_updating_ui: return
         row = self.list_widget.currentRow()
         bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_name", val_str=self.inp_name.text())
+        self.is_updating_ui = True
         self.list_widget.item(row).setText(self.inp_name.text())
+        self.is_updating_ui = False
+
+    def on_item_changed(self, item):
+        if self.is_updating_ui: return
+        row = self.list_widget.row(item)
+        if row >= 0:
+            bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_name", val_str=item.text())
+            self.inp_name.setText(item.text())
 
     def synch_len(self, v):
         if self.is_updating_ui: return
@@ -435,7 +457,16 @@ class ShapesTab(BaseListTab):
         if self.is_updating_ui: return
         row = self.list_widget.currentRow()
         bpy.ops.rzm.update_shape(shape_index=row, prop_name="shape_name", val_str=self.inp_name.text())
+        self.is_updating_ui = True
         self.list_widget.item(row).setText(self.inp_name.text())
+        self.is_updating_ui = False
+
+    def on_item_changed(self, item):
+        if self.is_updating_ui: return
+        row = self.list_widget.row(item)
+        if row >= 0:
+            bpy.ops.rzm.update_shape(shape_index=row, prop_name="shape_name", val_str=item.text())
+            self.inp_name.setText(item.text())
 
     def synch_type(self, t):
         if self.is_updating_ui: return

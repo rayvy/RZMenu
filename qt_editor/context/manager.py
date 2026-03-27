@@ -25,6 +25,7 @@ class RZContextManager:
         
         self._current_state: RZInteractionState = RZInteractionState.IDLE
         self._hover_area: str = "NONE"
+        self._isolated_tab_id: int = -1  # NEW: For outliner/viewport isolation
         
         self._mouse_screen_pos: QPoint = QPoint(0, 0)
         self._mouse_scene_pos: Tuple[float, float] = (0.0, 0.0)
@@ -37,6 +38,9 @@ class RZContextManager:
     
     @property
     def selected_ids(self) -> Set[int]: return self._selected_ids
+    
+    @property
+    def isolated_tab_id(self) -> int: return self._isolated_tab_id
 
     @classmethod
     def get_instance(cls) -> 'RZContextManager':
@@ -59,6 +63,11 @@ class RZContextManager:
 
     def set_hover_id(self, uid: int):
         self._hover_id = uid
+
+    def set_isolated_tab_id(self, uid: int):
+        if self._isolated_tab_id != uid:
+            self._isolated_tab_id = uid
+            SIGNALS.isolation_changed.emit(uid)
 
     def update_input(self, screen_pos: QPoint, scene_pos: Tuple[float, float], area: str = "NONE"):
         self._mouse_screen_pos = screen_pos

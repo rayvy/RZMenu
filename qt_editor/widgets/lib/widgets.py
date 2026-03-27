@@ -725,6 +725,25 @@ class RZSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
     def wheelEvent(self, event):
         event.ignore()
 
+    def validate(self, input_text, pos):
+        # Allow digits, arithmetic operators, parentheses, and spaces for formulas
+        import re
+        if re.fullmatch(r"[0-9.+\-*/() ]*", input_text):
+            return (QtGui.QValidator.State.Intermediate, input_text, pos)
+        return (QtGui.QValidator.State.Invalid, input_text, pos)
+
+    def valueFromText(self, text):
+        try:
+            from ...utils.evaluation import safe_eval
+            # If the user types a calculation, evaluate it
+            val = safe_eval(text)
+            if isinstance(val, (int, float)):
+                return int(round(val))
+        except Exception:
+            # On calculation error (like 1/0), stay at current value
+            return self.value()
+        return super().valueFromText(text)
+
 class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -742,6 +761,25 @@ class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
         pass
     def wheelEvent(self, event):
         event.ignore()
+
+    def validate(self, input_text, pos):
+        # Allow digits, arithmetic operators, parentheses, and spaces for formulas
+        import re
+        if re.fullmatch(r"[0-9.+\-*/() ]*", input_text):
+            return (QtGui.QValidator.State.Intermediate, input_text, pos)
+        return (QtGui.QValidator.State.Invalid, input_text, pos)
+
+    def valueFromText(self, text):
+        try:
+            from ...utils.evaluation import safe_eval
+            # If the user types a calculation, evaluate it
+            val = safe_eval(text)
+            if isinstance(val, (int, float)):
+                return float(val)
+        except Exception:
+            # On calculation error (like 1/0), stay at current value
+            return self.value()
+        return super().valueFromText(text)
 
 class RZStaggeredDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent=None):

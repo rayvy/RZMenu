@@ -1063,6 +1063,12 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR_HUE"])
             
             self.cb_image = self._add_row(layout, "Image:", RZImageComboBox(), 'image_id', 'value_changed')
+            self.cb_hover_image = self._add_row(layout, "Hover Image:", RZImageComboBox(), 'hover_image_id', 'value_changed')
+            
+            h_flip = QtWidgets.QHBoxLayout()
+            self.chk_flip_x = self._add_row(h_flip, "", RZCheckBox("Flip X"), 'flip_x')
+            self.chk_flip_y = self._add_row(h_flip, "", RZCheckBox("Flip Y"), 'flip_y')
+            layout.addLayout(h_flip)
             
             self.grp_tile = RZGroupBox("Tile Settings")
             f_tile = QtWidgets.QFormLayout(self.grp_tile); f_tile.setSpacing(6)
@@ -1145,6 +1151,9 @@ class RZMInspectorPanel(RZEditorPanel):
             layout = QtWidgets.QVBoxLayout(self.grp_flags)
             self.chk_hide = self._add_row(layout, "", RZCheckBox("Is Hidden"), 'qt_hide')
             self.chk_locked = self._add_row(layout, "", RZCheckBox("Lock Transform"), 'qt_locked_ui')
+            self.chk_tab = self._add_row(layout, "", RZCheckBox("Is Page (Isolation Root)"), 'is_tab_container')
+            self.btn_page_color = self._add_row(layout, "Page Tab Color:", RZColorButton(), 'page_color', 'colorChanged')
+            self.chk_tab.toggled.connect(self.btn_page_color.setVisible)
             self.layout_props.addWidget(self.grp_flags)
         except Exception as e: print(f"[INSPECTOR] Error Flags: {e}")
 
@@ -1366,13 +1375,20 @@ class RZMInspectorPanel(RZEditorPanel):
             
             is_img_single = (img_mode == 'SINGLE')
             if hasattr(self, 'cb_image'): self.set_row_visible(self.cb_image, is_img_single)
+            if hasattr(self, 'cb_hover_image'): self.set_row_visible(self.cb_hover_image, is_img_single)
             if hasattr(self, 'list_images'): self.list_images.setVisible(not is_img_single)
+            
+            if hasattr(self, 'chk_flip_x'): self.chk_flip_x.setChecked(props.get('flip_x') is True)
+            if hasattr(self, 'chk_flip_y'): self.chk_flip_y.setChecked(props.get('flip_y') is True)
             
             all_images = core.read.get_available_images()
             if is_img_single:
                 if hasattr(self, 'cb_image'):
                     self.cb_image.update_items(all_images)
                     self.cb_image.set_value(props.get('image_id', -1))
+                if hasattr(self, 'cb_hover_image'):
+                    self.cb_hover_image.update_items(all_images)
+                    self.cb_hover_image.set_value(props.get('hover_image_id', -1))
             else:
                 if hasattr(self, 'list_images'):
                     self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
@@ -1433,6 +1449,13 @@ class RZMInspectorPanel(RZEditorPanel):
             # --- Flags ---
             if hasattr(self, 'chk_hide'): self.chk_hide.setChecked(props.get('qt_hide') is True or props.get('is_hidden') is True)
             if hasattr(self, 'chk_locked'): self.chk_locked.setChecked(props.get('qt_locked_ui') is True or props.get('is_locked_pos') is True or props.get('is_locked_size') is True)
+            if hasattr(self, 'chk_tab'): 
+                self.chk_tab.setChecked(props.get('is_tab_container') is True)
+                self.set_row_visible(self.chk_tab, True) # Visible for all as per user request
+            
+            if hasattr(self, 'btn_page_color'):
+                self.btn_page_color.set_color(props.get('page_color'))
+                self.set_row_visible(self.btn_page_color, props.get('is_tab_container') is True)
             
             # --- Raw Data Table ---
             if hasattr(self, 'table_raw'):

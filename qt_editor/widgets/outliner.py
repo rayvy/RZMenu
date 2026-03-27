@@ -55,8 +55,22 @@ class RZDraggableTree(RZDraggableTreeWidget):
             # For column 0, call parent handler
             super()._on_item_clicked(item, column)
 
-    # REMOVED broken dropEvent override. 
-    # Base class RZDraggableTreeWidget provides correct dropEvent implementation.
+    def dropEvent(self, event):
+        mime = event.mimeData()
+        if mime.hasFormat("application/x-rzmenu-image-id"):
+            data = mime.data("application/x-rzmenu-image-id")
+            try:
+                image_id = int(data.data().decode('utf-8'))
+                target_item = self.itemAt(event.pos())
+                if target_item:
+                    target_uid = target_item.data(0, QtCore.Qt.UserRole)
+                    core.update_property_multi([target_uid], "image_id", image_id)
+                event.accept()
+                return
+            except ValueError:
+                pass
+                
+        super().dropEvent(event)
 
 
 class RZMOutlinerPanel(RZEditorPanel):
@@ -83,10 +97,13 @@ class RZMOutlinerPanel(RZEditorPanel):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.tree = RZDraggableTree()
+
+        self.tree = RZDraggableTree()
         
         # Internal tree signals -> panel handlers
         self.tree.items_reordered.connect(self._on_items_reordered)
         self.tree.itemSelectionChanged.connect(self._on_qt_selection_changed)
+        self.tree.itemChanged.connect(self._on_tree_item_changed)
         self.tree.toggle_hide_signal.connect(self._on_toggle_hide)
         self.tree.toggle_selectable_signal.connect(self._on_toggle_selectable)
 
@@ -99,10 +116,12 @@ class RZMOutlinerPanel(RZEditorPanel):
         SIGNALS.structure_changed.connect(self.refresh_data)
         SIGNALS.selection_changed.connect(self.sync_selection)
         SIGNALS.data_changed.connect(self.refresh_data)
+        SIGNALS.isolation_changed.connect(self.refresh_data)
     
     def _disconnect_signals(self):
         """Disconnect from core signals to prevent calls to deleted objects."""
         try:
+            from ..core.signals import SIGNALS
             SIGNALS.structure_changed.disconnect(self.refresh_data)
         except (RuntimeError, TypeError):
             pass
@@ -140,6 +159,7 @@ class RZMOutlinerPanel(RZEditorPanel):
         # We use a singleShot to apply it after visual layout is ready.
         QtCore.QTimer.singleShot(0, lambda: scroll_bar.setValue(old_scroll))
     
+
     def sync_selection(self):
         """Sync tree selection with context manager."""
         if not self._is_panel_active:
@@ -161,6 +181,13 @@ class RZMOutlinerPanel(RZEditorPanel):
         # Trigger global updates
         SIGNALS.structure_changed.emit()
         SIGNALS.transform_changed.emit()
+    
+    def _on_tree_item_changed(self, item, column):
+        if self._block_signals: return
+        if column == 0:
+            uid = item.data(0, QtCore.Qt.UserRole)
+            new_name = item.text(0)
+            core.update_property_multi([uid], "element_name", new_name)
     
     def _on_toggle_hide(self, uid):
         """Handle visibility toggle via action manager."""
@@ -225,6 +252,11 @@ class RZMOutlinerPanel(RZEditorPanel):
         # Blender data might not be sorted, so we do it here for visual order
         elements_list = sorted(elements_list, key=lambda x: x.get('qt_priority', 0))
 
+        # --- TAB ISOLATOR - VIEWPORT CONTROL ONLY (Logic removed from Outliner) ---
+        # We no longer filter 'elements_list' here, so the tree shows everything.
+        # ---------------------------------------------
+        # -------------------------------
+
         item_map = {}
         theme = get_current_theme()
         disabled_color = QtGui.QColor(theme.get('text_disabled', '#999999'))
@@ -234,6 +266,7 @@ class RZMOutlinerPanel(RZEditorPanel):
             uid = data['id']
             item.setText(0, data.get('name', 'Unnamed'))
             item.setData(0, QtCore.Qt.UserRole, uid)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
             
             ctype = data.get('class_type', 'CONTAINER')
             
@@ -246,6 +279,16 @@ class RZMOutlinerPanel(RZEditorPanel):
                 "GRID_CONTAINER": ("grid", QtWidgets.QStyle.StandardPixmap.SP_FileDialogDetailedView),
             }
             
+            # Page Indication Highlight
+            if data.get('is_tab_container'):
+                col = data.get('page_color', [0.5, 0.5, 0.5, 1.0])
+                qcol = QtGui.QColor.fromRgbF(col[0], col[1], col[2], 1.0)
+                item.setForeground(0, qcol)
+                # Bold for Page roots
+                font = item.font(0)
+                font.setBold(True)
+                item.setFont(0, font)
+
             name, sp = icon_map.get(ctype, ("file", QtWidgets.QStyle.StandardPixmap.SP_FileIcon))
             icon = IconManager.get_instance().get_icon(name, fallback_sp=sp)
             item.setIcon(0, icon)

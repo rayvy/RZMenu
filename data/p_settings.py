@@ -91,6 +91,17 @@ class RZMExportSettings(bpy.types.PropertyGroup):
     emu_width: IntProperty(name="Emulator Width", default=1280, min=640)
     emu_height: IntProperty(name="Emulator Height", default=720, min=360)
     emu_fullscreen: BoolProperty(name="Fullscreen Mode", default=False)
+    
+    # --- Atlas ---
+    icc_profile: EnumProperty(
+        name="ICC Profile",
+        description="Select the color profile for the exported Atlas",
+        items=[
+            ('SRGB', "sRGB", "Standard RGB (sRGB)"),
+            ('LINEAR', "Linear", "Linear RGB (No Profile)"),
+        ],
+        default='SRGB'
+    )
 
 class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debugger_info: BoolProperty(name="DebuggerInfo", default=False)

@@ -5,11 +5,8 @@ import struct
 import zlib
 from pathlib import Path
 
-# --- НАСТРОЙКИ ПРОФИЛЯ (ХАРДКОД) ---
-# Выбери здесь режим: 'SRGB' или 'LINEAR'
 # 'SRGB'   -> Добавляет чанк sRGB и gAMA (стандарт для Paint.NET/Web, цвета "как есть")
 # 'LINEAR' -> Добавляет только gAMA 1.0 (говорит софту, что это линейное пространство)
-ATLAS_ICC_PROFILE = 'LINEAR'
 
 class PackerNode:
     # ... (класс PackerNode остается без изменений) ...
@@ -94,10 +91,10 @@ def apply_gamma_correction(atlas_pixels, width, height):
     # === ГЛАВНАЯ МАГИЯ ===
     # Paint.NET использует простую гамму 2.2 (gAMA 45455)
     # Формула: Color_New = Color_Old ^ (1 / 2.2)
-    # rgb_corrected = np.power(rgb, 1.0 / 2.2)
+    rgb_corrected = np.power(rgb, 1.0 / 2.2)
     
     # Собираем обратно
-    # buffer[:, :, :3] = rgb_corrected
+    buffer[:, :, :3] = rgb_corrected
     
     return buffer.flatten()
 
@@ -147,12 +144,12 @@ def create_png_chunk(type_bytes, data_bytes):
     crc = zlib.crc32(type_bytes + data_bytes) & 0xffffffff
     return struct.pack('>I', length) + type_bytes + data_bytes + struct.pack('>I', crc)
 
-def inject_metadata_profile(filepath):
+def inject_metadata_profile(filepath, profile='LINEAR'):
     """
     Вставляет метаданные (sRGB или gAMA) в зависимости от выбранного профиля.
     НЕ МЕНЯЕТ ПИКСЕЛИ. Работает с бинарным файлом.
     """
-    profile = ATLAS_ICC_PROFILE.upper()
+    profile = profile.upper()
     print(f"DEBUG INJECTION: Injecting metadata for profile: {profile}")
 
     try:
@@ -209,11 +206,11 @@ def inject_metadata_profile(filepath):
     except Exception as e:
         print(f"Injection Failed: {e}")
 
-def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: dict):
+def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: dict, profile='LINEAR'):
     if not image_dict or atlas_w == 0 or atlas_h == 0:
         return np.array([])
         
-    print(f"DEBUG EXPORT: Creating {atlas_w}x{atlas_h} pixel buffer.")
+    print(f"DEBUG EXPORT: Creating {atlas_w}x{atlas_h} pixel buffer. Profile: {profile}")
     atlas_pixels = np.zeros((atlas_h, atlas_w, 4), dtype=np.float32)
 
     for name, img in image_dict.items():
@@ -224,12 +221,17 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
         
         if len(img.pixels) > 0:
             try:
+                # Blender pixels are in bottom-up order, but our packer/numpy expects top-down
+                # Actually create_atlas_pixels seems to assume top-down y
                 img_pixels = np.array(img.pixels[:]).reshape((h, w, 4))
                 atlas_pixels[y:y+h, x:x+w] = img_pixels
             except:
                 pass
     
-    # ПРИМЕНЯЕМ ГАММУ СРАЗУ ПОСЛЕ СБОРКИ (ОРИГИНАЛЬНЫЙ ВЫЗОВ)
-    atlas_pixels_flat = apply_gamma_correction(atlas_pixels, atlas_w, atlas_h)
+    # ПРИМЕНЯЕМ ГАММУ СРАЗУ ПОСЛЕ СБОРКИ, если выбран SRGB
+    if profile.upper() == 'SRGB':
+        atlas_pixels_flat = apply_gamma_correction(atlas_pixels, atlas_w, atlas_h)
+    else:
+        atlas_pixels_flat = atlas_pixels.flatten()
     
     return atlas_pixels_flat

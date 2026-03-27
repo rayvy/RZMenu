@@ -240,6 +240,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.update()
         super().mouseReleaseEvent(event)
 
+    def set_drop_highlight(self, active):
+        if self._is_drop_target != active:
+            self._is_drop_target = active
+            self.update()
+
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
             self._is_selected_state = bool(value)
@@ -478,9 +483,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
     # Обновили сигнатуру: добавлен аргумент text_id, text_align и order
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE'):
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
+        self.flip_x, self.flip_y = flip_x, flip_y
         self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
         self.text_id = text_id if text_id is not None else "TEST" # Сохраняем text_id
@@ -661,12 +667,20 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             # print(f"[VIEWPORT] Element {self.name} (ID: {self.uid}), image_id: {self.image_id}")
             # print(f"[VIEWPORT] Rect: {rect}, Size: {rect.width()}x{rect.height()}")
             if pix:
-                # print(f"[VIEWPORT] Pixmap exists: {pix.width()}x{pix.height()}, isNull: {pix.isNull()}")
                 if not pix.isNull():
-                    # print(f"[VIEWPORT] Drawing pixmap...")
+                    painter.save()
+                    if getattr(self, "flip_x", False) or getattr(self, "flip_y", False):
+                        sx = -1 if getattr(self, "flip_x", False) else 1
+                        sy = -1 if getattr(self, "flip_y", False) else 1
+                        cx = rect.x() + rect.width() / 2.0
+                        cy = rect.y() + rect.height() / 2.0
+                        painter.translate(cx, cy)
+                        painter.scale(sx, sy)
+                        painter.translate(-cx, -cy)
+                    
                     painter.drawPixmap(rect.toRect(), pix)
+                    painter.restore()
                     has_image = True
-                    # print(f"[VIEWPORT] Pixmap drawn successfully")
                 else:
                     pass
                     # print(f"[VIEWPORT] Pixmap is null, skipping draw")
@@ -1207,7 +1221,9 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 pos_is_formula=data.get('pos_is_formula', False),
                 size_is_formula=data.get('size_is_formula', False),
                 order=data.get('order', 0),
-                image_blending_mode=data.get('image_blending_mode', 'NONE')
+                image_blending_mode=data.get('image_blending_mode', 'NONE'),
+                flip_x=data.get('flip_x', False),
+                flip_y=data.get('flip_y', False)
             )
             
             item.setVisible(not data.get('is_hidden', False))
@@ -1387,17 +1403,50 @@ class RZViewportView(QtWidgets.QGraphicsView):
         menu.exec(QtGui.QCursor.pos())
 
     def _get_element_at(self, pos):
-        """Helper to find RZElementItem at position, searching up the hierarchy."""
-        item = self.rz_scene.itemAt(self.mapToScene(pos), QtGui.QTransform())
-        while item:
-            if isinstance(item, RZElementItem):
-                return item
-            item = item.parentItem()
+        """Find the most appropriate RZElementItem at position, prioritizing nested content items."""
+        scene_pos = self.mapToScene(pos)
+        items = self.rz_scene.items(scene_pos)
+        
+        # 1. Look for non-container elements first (Content)
+        for q_item in items:
+            it = q_item
+            while it:
+                if isinstance(it, RZElementItem):
+                    if it.elem_type not in ["CONTAINER", "GRID_CONTAINER", "ANCHOR"]:
+                        return it
+                    break # Found an RZElementItem but it's a structural container, check next hit
+                it = it.parentItem()
+        
+        # 2. Fallback to the top-most RZElementItem regardless of type
+        for q_item in items:
+            it = q_item
+            while it:
+                if isinstance(it, RZElementItem):
+                    return it
+                it = it.parentItem()
+                    
         return None
 
     def _create_at_pos(self, class_type, scene_pos):
         bx, by = core.to_blender_coords(scene_pos.x(), scene_pos.y())
-        parent_id = RZContextManager.get_instance().active_id
+        
+        # Determine parent: 
+        # 1. Start with currently active element (if any)
+        ctx = RZContextManager.get_instance().get_snapshot()
+        parent_id = ctx.active_id
+        
+        # 2. If clicking on empty space but in isolation mode, the isolated Page is the parent
+        view_pos = self.mapFromScene(scene_pos)
+        hovered_item = self._get_element_at(view_pos)
+        
+        if not hovered_item:
+            isolated_id = RZContextManager.get_instance().isolated_tab_id
+            if isolated_id != -1:
+                parent_id = isolated_id
+        else:
+            # If clicked ON an item, that item is the parent (Hierarchy-based)
+            parent_id = hovered_item.uid
+            
         core.create_element(class_type, bx, by, parent_id=parent_id)
         # Emit signal to update all panels
         from ..core.signals import SIGNALS
@@ -1457,8 +1506,11 @@ class RZViewportView(QtWidgets.QGraphicsView):
         try:
             mime = event.mimeData()
             scene_pos = self.mapToScene(event.pos())
-            bx = int(scene_pos.x())
-            by = int(scene_pos.y())
+            
+            bx_qt = scene_pos.x()
+            by_qt = scene_pos.y()
+            bx_bl, by_bl = core.to_blender_coords(bx_qt, by_qt)
+            bx, by = int(bx_bl), int(by_bl)
             
             # Get target item from context
             ctx = RZContextManager.get_instance()
@@ -1512,7 +1564,7 @@ class RZViewportView(QtWidgets.QGraphicsView):
                         img_id, _ = core.import_image_from_path(path)
                         if img_id is not None:
                             if target_uid >= 0 and offset_counter == 0:
-                                core.update_property_multi(target_uid, {"image_id": img_id})
+                                core.update_property_multi([target_uid], "image_id", img_id)
                             else:
                                 core.create_element_with_image(img_id, bx + offset_counter, by - offset_counter)
                             offset_counter += 20
@@ -1574,11 +1626,58 @@ class RZViewportView(QtWidgets.QGraphicsView):
         
         self.overlay_container.adjustSize()
 
+        # --- ISOLATION TABS (LEFT OVERLAY) ---
+        self.iso_container = QtWidgets.QFrame(self)
+        self.iso_container.setObjectName("IsolationOverlay")
+        self.iso_container.setStyleSheet("""
+            #IsolationOverlay {
+                background-color: rgba(30, 30, 30, 180);
+                border: 1px solid rgba(255, 255, 255, 30);
+                border-radius: 4px;
+            }
+        """)
+        iso_layout = QtWidgets.QHBoxLayout(self.iso_container)
+        iso_layout.setContentsMargins(2, 2, 2, 2)
+        
+        self.iso_tab_bar = QtWidgets.QTabBar()
+        self.iso_tab_bar.setDocumentMode(True)
+        self.iso_tab_bar.setDrawBase(False)
+        self.iso_tab_bar.setStyleSheet("""
+            QTabBar::tab {
+                background: transparent;
+                color: #888;
+                padding: 4px 10px;
+                border-radius: 3px;
+            }
+            QTabBar::tab:selected {
+                background: rgba(255, 255, 255, 15);
+                color: #FFF;
+            }
+            QTabBar::tab:hover {
+                background: rgba(255, 255, 255, 8);
+            }
+        """)
+        self.iso_tab_bar.currentChanged.connect(self._on_iso_tab_changed)
+        iso_layout.addWidget(self.iso_tab_bar)
+        
+        self.iso_container.adjustSize()
+
+    def _on_iso_tab_changed(self, index):
+        if not hasattr(self, 'iso_tab_bar'): return
+        uid = self.iso_tab_bar.tabData(index)
+        if uid is None: uid = -1
+        RZContextManager.get_instance().set_isolated_tab_id(uid)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Position overlay at top right
         margin = 10
-        self.overlay_container.move(self.width() - self.overlay_container.width() - margin, margin)
+        # Position overlay at top right (Settings/Alignment)
+        if hasattr(self, 'overlay_container'):
+            self.overlay_container.move(self.width() - self.overlay_container.width() - margin, margin)
+        
+        # Position isolation at top left
+        if hasattr(self, 'iso_container'):
+            self.iso_container.move(margin, margin)
 
     def show_settings_menu(self):
         menu = QtWidgets.QMenu(self)
@@ -1812,6 +1911,7 @@ class RZViewportPanel(RZEditorPanel):
         SIGNALS.transform_changed.connect(self.refresh_data)
         SIGNALS.selection_changed.connect(self._on_global_selection_changed)
         SIGNALS.data_changed.connect(self.refresh_data)
+        SIGNALS.isolation_changed.connect(self.refresh_data)
     
     def _disconnect_signals(self):
         """Disconnect from core signals to prevent calls to deleted objects."""
@@ -1831,6 +1931,10 @@ class RZViewportPanel(RZEditorPanel):
             SIGNALS.data_changed.disconnect(self.refresh_data)
         except (RuntimeError, TypeError):
             pass
+        try:
+            SIGNALS.isolation_changed.disconnect(self.refresh_data)
+        except (RuntimeError, TypeError):
+            pass
     
     def refresh_data(self):
         """Fetch and display current viewport data from core."""
@@ -1841,6 +1945,60 @@ class RZViewportPanel(RZEditorPanel):
             return
         data = core.get_viewport_data()
         ctx = RZContextManager.get_instance().get_snapshot()
+
+        # VIEWPORT TAB ISOLATION FILTERING
+        active_tab_uid = RZContextManager.get_instance().isolated_tab_id
+        
+        # Update Viewport Tab Bar (Overlay)
+        if hasattr(self.view, 'iso_tab_bar'):
+            tab_bar = self.view.iso_tab_bar
+            # Block signals during update to avoid recursion
+            tab_bar.blockSignals(True)
+            
+            # Fetch tab containers from all data
+            tab_containers = [e for e in data if e.get('is_tab_container')]
+            
+            # Rebuild tabs (Fixing 'clear' crash by using loop)
+            while tab_bar.count() > 0:
+                tab_bar.removeTab(0)
+            
+            # Always add "ALL"
+            tab_bar.addTab("ALL")
+            tab_bar.setTabData(0, -1)
+            
+            current_idx = 0
+            for i, tc in enumerate(tab_containers):
+                tab_bar.addTab(tc['name'])
+                tab_bar.setTabData(i + 1, tc['id'])
+                
+                # Apply Page Color to tab text
+                col = tc.get('page_color', [0.5, 0.5, 0.5, 1.0])
+                qcol = QtGui.QColor.fromRgbF(col[0], col[1], col[2], 1.0)
+                tab_bar.setTabTextColor(i + 1, qcol)
+                
+                if tc['id'] == active_tab_uid:
+                    current_idx = i + 1
+            
+            tab_bar.setCurrentIndex(current_idx)
+            tab_bar.blockSignals(False)
+            self.view.iso_container.adjustSize()
+
+        if active_tab_uid != -1:
+            descendants = set([active_tab_uid])
+            parent_map = {}
+            for e in data:
+                parent_map.setdefault(e.get('parent_id', -1), []).append(e['id'])
+                
+            def gather_descendants(pid):
+                for child_id in parent_map.get(pid, []):
+                    descendants.add(child_id)
+                    gather_descendants(child_id)
+                    
+            gather_descendants(active_tab_uid)
+            
+            # Remove anything not in descendants
+            data = [e for e in data if e['id'] in descendants]
+
         self.view.rz_scene.update_scene(data, ctx.selected_ids, ctx.active_id)
     
     def _on_global_selection_changed(self):

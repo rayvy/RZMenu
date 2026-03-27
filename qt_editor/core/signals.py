@@ -11,6 +11,8 @@ class RZSignalManager(QObject):
     # Context/Hover Area changed
     context_updated = Signal()
 
+    isolation_changed = Signal(int)  # NEW: Emits tab_id when isolation changes
+
     # NEW: Config/Theme changed
     # Отправляет ключ изменившейся секции (например, "appearance")
     config_changed = Signal(str) 

@@ -189,8 +189,14 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             for img in rzm.images if any(img.uv_size)
         }
 
-        # 1. Генерируем пиксели С УЧЕТОМ ГАММЫ
-        atlas_pixels = create_atlas_pixels(images_to_render, atlas_w, atlas_h, uv_data)
+        # 1. Генерируем пиксели С УЧЕТОМ ГАММЫ (если SRGB)
+        atlas_pixels = create_atlas_pixels(
+            images_to_render, 
+            atlas_w, 
+            atlas_h, 
+            uv_data, 
+            profile=export_settings.icc_profile
+        )
 
         if atlas_pixels.size > 0:
             temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
@@ -205,7 +211,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             bpy.data.images.remove(temp_image)
             
             #inject_paintnet_metadata(final_filepath)
-            inject_metadata_profile(final_filepath)
+            inject_metadata_profile(final_filepath, profile=export_settings.icc_profile)
             
             self.report({'INFO'}, f"Atlas exported: {final_filepath}")
         else:
