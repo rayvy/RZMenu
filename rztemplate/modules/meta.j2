@@ -67,14 +67,14 @@
 {# --- MAIN GENERATOR --- #}
 
 {% macro mod_info_generate(mod_file, scene) %}
-{% if scene.rzm and scene.rzm.config.mod_info %}
+{% if scene.rzm %}
 ;RZMenu 3.6.1 (Universal Engine)
 ;Target Game: {{ scene.rzm.game.name }}
 
 ; change key parametr if you want to swap key from {{scene.rzm.meta_data.menu_keybind}} to which you want
 [KeyMenu]
 condition = $active == 1
-key = no_modifiers {{scene.rzm.meta_data.menu_keybind}}
+key = no_modifiers {{scene.rzm.meta_data.menu_keybind | default('/')}}
 type = cycle
 $menu = 0,1
 
