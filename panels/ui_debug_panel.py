@@ -316,7 +316,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         col = box.column(align=True)
         col.prop(rzm.config, "canvas_size")
         col.prop(rzm, "export_texture_slots")
-        col.prop(rzm, "export_orfix_slots")
         col.prop(rzm, "export_toggle_swap_mode")
 
     def draw_addons_settings(self, layout, rzm):

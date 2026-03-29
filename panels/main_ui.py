@@ -18,6 +18,16 @@ class RZM_MT_AssignToggleMenu(bpy.types.Menu):
             op = layout.operator("rzm.assign_object_toggle", text=name)
             op.toggle_name = name
 
+class RZM_MT_AssignTexSlotMenu(bpy.types.Menu):
+    bl_label = "Assign TexSlot"
+    bl_idname = "RZM_MT_assign_tex_slot_menu"
+    def draw(self, context):
+        layout = self.layout
+        slots = ["Diffuse", "LightMap", "NormalMap", "MaterialMap", "ExtraMap"]
+        for s in slots:
+            op = layout.operator("rzm.assign_object_tex_slot", text=s)
+            op.slot_name = s
+
 class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     bl_label = "RZ Constructor"
     bl_idname = "VIEW3D_PT_rz_constructor_panel"
@@ -73,70 +83,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 op = info_row.operator("rzm.remove_image", text="", icon='TRASH', emboss=False)
                 op.image_id_to_remove = rzm_image.id
 
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        rzm = scene.rzm
 
-        game_box = layout.box()
-        row = game_box.row()
-        row.label(text="Target Game:", icon='COLOR_RED') 
-        # Отрисовка выпадающего списка (EnumProperty)
-        # text="" скрывает дублирующее название слева, оставляя только сам список
-        row.prop(rzm.game, "selection", text="")
-        row = game_box.row()
-        row.prop(rzm.addons, "pre_render_blur", text="UI Blur")
+    # --- UI DRAWING ---
 
-        file_box = layout.box()
-        row = file_box.row(align=True)
-        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
-        # --- БЛОК: Управление файлами ---
-        file_box = layout.box()
-        row = file_box.row(align=True)
-        row.operator("rzm.save_template", text="Save .rzm", icon='FILE_TICK')
-        row.operator("rzm.load_template", text="Load .rzm", icon='FILE_FOLDER')
-        
-        # --- БЛОК: Файлы (Полный бэкап) ---
-        box = layout.box()
-        box.label(text="Full Scene Backup (.rzm)", icon='FILE_BLEND')
-        row = box.row(align=True)
-        row.operator("rzm.save_template", text="Save Scene")
-        row.operator("rzm.load_template", text="Load Scene")
-        row.operator("rzm.reset_scene", text="", icon='TRASH')
-
-        # --- НОВЫЙ БЛОК: Шаблоны ---
-        box = layout.box()
-        box.label(text="Partial Templates (.rzmt)", icon='LIBRARY_DATA_DIRECT')
-        row = box.row(align=True)
-        # Экспортирует выбранный элемент
-        row.operator("rzm.export_partial_template", text="Export Selected", icon='EXPORT')
-        # Импортирует
-        row.operator("rzm.import_partial_template", text="Import Template", icon='IMPORT')
-
-        # History кнопки удалены (используй Ctrl+Z)
-        history_row = file_box.row(align=True)
-        history_row.operator("rzm.reset_scene", text="Reset Scene", icon='TRASH')
-        
-        layout.separator()
-        
-        # --- Блок режима редактора ---
-        mode_box = layout.box()
-        mode_box.label(text="Editor Mode:")
-        row = mode_box.row(align=True)
-        row.prop(scene, "rzm_editor_mode", expand=True)
-
-        if scene.rzm_editor_mode == 'LIGHT':
-            layout.separator()
-            light_tools_box = layout.box()
-            light_tools_box.label(text="Quick Actions:")
-            light_tools_box.operator("rzm.auto_capture", text="Auto-Capture Icons", icon='AUTO')
-        
-        if scene.rzm_editor_mode == 'PRO':
-            mode_box.prop(scene, "rzm_show_debug_panel", text="Show Debug Panel", toggle=True, icon='GHOST_ENABLED')
-            layout.separator()
-            self.draw_capture_pro_ui(context, layout)
-        
-        self.draw_captures_preview_ui(context, layout)
 
 
     def draw_object_properties(self, context, layout):
@@ -211,6 +160,30 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                             else:
                                 slot_row.label(text="", icon='BLANK1')
                                 slot_row.label(text=f"Slot {i+1}: <Free>", icon='CHECKBOX_DEHLT')
+
+        # --- TEXSLOTS ---
+        box = layout.box()
+        row = box.row(align=True)
+        row.label(text="RZ-TexSlots", icon='TEXTURE_DATA')
+        row.menu("RZM_MT_assign_tex_slot_menu", text="Assign", icon="ADD")
+
+        tex_keys = sorted([key for key in target_obj.keys() if key.startswith("rzm.TexSlot.")])
+        if not tex_keys:
+            box.label(text="No texture slots assigned.", icon='INFO')
+        else:
+            for key in tex_keys:
+                display_name = key.replace("rzm.TexSlot.", "")
+                row = box.row(align=True)
+                
+                # Используем split для четкого разделения имени и поля ввода
+                split = row.split(factor=0.3)
+                split.label(text=display_name, icon='IMAGE_DATA')
+                
+                # Поле ввода и кнопка удаления в одной группе
+                sub = split.row(align=True)
+                sub.prop(target_obj, f'["{key}"]', text="")
+                op_rem = sub.operator("rzm.remove_object_tex_slot", text="", icon='X', emboss=False)
+                op_rem.prop_key = key
 
         # --- CUSTOM DRAW ---
         box = layout.box()
@@ -375,6 +348,7 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
 
 classes_to_register = [ 
     RZM_MT_AssignToggleMenu, 
+    RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel, 
     VIEW3D_PT_RZM_ExportManager
 ]

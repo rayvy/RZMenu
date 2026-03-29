@@ -635,8 +635,10 @@ class TexWorksOverridesTab(QtWidgets.QWidget):
         tools = QtWidgets.QHBoxLayout(); self.layout.addLayout(tools)
         btn_add = RZPushButton("+ Add Override"); btn_add.clicked.connect(lambda: bpy.ops.rzm.add_tw_override())
         tools.addWidget(btn_add)
-        btn_auto = RZPushButton("Auto-Import"); btn_auto.clicked.connect(lambda: bpy.ops.rzm.tw_res_over_fill('INVOKE_DEFAULT'))
+        btn_auto = RZPushButton("Auto-Import")
+        btn_auto.clicked.connect(self._on_auto_import_clicked)
         tools.addWidget(btn_auto)
+
         self.chk_preview = RZCheckBox("Show Preview"); self.chk_preview.setChecked(True); self.chk_preview.toggled.connect(self._toggle_previews); tools.addWidget(self.chk_preview)
         
         self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll)
@@ -645,6 +647,20 @@ class TexWorksOverridesTab(QtWidgets.QWidget):
         self.list_layout.addStretch()
 
     def _toggle_previews(self, val): self.show_previews = val; self.update_ui()
+
+    def _on_auto_import_clicked(self):
+        # Use native Qt dialog to avoid switching to Blender window
+        root = image_utils.get_mod_base_path()
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Dump Folder", root)
+        if path:
+            # We call the operator with the directory property explicitly
+            # This triggers the new context-aware logic in operators/texworks_ops.py
+            bpy.ops.rzm.tw_res_over_fill(directory=path)
+            # Re-sync local UI
+            self.update_ui()
+            # Also notify other widgets
+            SIGNALS.structure_changed.emit()
+
 
     def update_ui(self):
         rzm = bpy.context.scene.rzm

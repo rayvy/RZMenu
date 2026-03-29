@@ -112,10 +112,18 @@ class GeneralTab(BaseConfigTab):
         self.chk_morph = RZCheckBox("Shape Morph")
         self.chk_morph.toggled.connect(lambda v: self.on_addon_toggled("shape_morph", v))
         l_addons.addWidget(self.chk_morph)
+
+        # --- Textures ---
+        l_textures = self.add_section("Textures")
         
         self.chk_tex = RZCheckBox("TexWorks")
         self.chk_tex.toggled.connect(lambda v: self.on_addon_toggled("tex_works", v))
-        l_addons.addWidget(self.chk_tex)
+        l_textures.addWidget(self.chk_tex)
+        
+        self.chk_texture_slots = RZCheckBox("Export Texture Slots")
+        self.chk_texture_slots.toggled.connect(self.on_texture_slots_toggled)
+        l_textures.addWidget(self.chk_texture_slots)
+
         
         self.scroll_layout.addStretch()
 
@@ -144,11 +152,15 @@ class GeneralTab(BaseConfigTab):
         if self.chk_morph.isChecked() != addons.shape_morph:
             self.chk_morph.setChecked(addons.shape_morph)
             
+        if self.chk_facetexworkspreseted.isChecked() != addons.facetexworkspreseted:
+            self.chk_facetexworkspreseted.setChecked(addons.facetexworkspreseted)
+            
         if self.chk_tex.isChecked() != addons.tex_works:
             self.chk_tex.setChecked(addons.tex_works)
             
-        if self.chk_facetexworkspreseted.isChecked() != addons.facetexworkspreseted:
-            self.chk_facetexworkspreseted.setChecked(addons.facetexworkspreseted)
+        if self.chk_texture_slots.isChecked() != rzm.export_texture_slots:
+            self.chk_texture_slots.setChecked(rzm.export_texture_slots)
+
         
         self._block = False
 
@@ -163,6 +175,11 @@ class GeneralTab(BaseConfigTab):
     def on_addon_toggled(self, key, val):
         if self._block: return
         self._call_op("update_addon_setting", prop_name=key, val_bool=val)
+
+    def on_texture_slots_toggled(self, val):
+        if self._block: return
+        self._call_op("update_export_setting", prop_name="export_texture_slots", val_bool=val, use_bool=True)
+
 
 
 

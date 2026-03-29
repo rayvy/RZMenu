@@ -11,6 +11,10 @@ def trigger_refresh():
         SIGNALS.structure_changed.emit()
     except Exception: pass
 
+# --- OPERATORS ---
+
+
+
 class RZM_OT_UpdateTwItem(bpy.types.Operator):
     """Generic operator to update property of a TexWorks collection item."""
     bl_idname = "rzm.update_tw_item"
@@ -213,95 +217,37 @@ class RZM_OT_ClearTwOverrides(bpy.types.Operator):
         return {'FINISHED'}
 
 from bpy_extras.io_utils import ImportHelper
-import re
 
 class RZM_OT_TwResOverFill(bpy.types.Operator, ImportHelper):
-    """Auto-fill Resources and Overrides from EFMI/WWMI dump folder."""
+
+    """Auto-fill Resources and Overrides from dump folder (Context-aware)."""
     bl_idname = "rzm.tw_res_over_fill"
     bl_label = "ResOver Fill (Auto-Import)"
-    bl_description = "Select a folder containing EFMI/WWMI textures (Components-X t=HASH.dds)"
+    bl_description = "Select a folder containing dump textures or hash.json"
     
     # ImportHelper properties
     directory: bpy.props.StringProperty(subtype='DIR_PATH')
     
     def execute(self, context):
+        from ..utils.texworks_importer import import_from_folder
+        
         if not os.path.exists(self.directory):
             self.report({'ERROR'}, "Selected directory does not exist.")
             return {'CANCELLED'}
             
-        print(f"\n[DEBUG] TexWorks Auto-Import Started: {self.directory}")
-        rzm = context.scene.rzm
-        files = os.listdir(self.directory)
-        print(f"[DEBUG] Total files found: {len(files)}")
-        
-        # Pattern: Components-(\d+) t=([0-9a-fA-F]+)\.(dds|png|jpg)
-        pattern = re.compile(r"Components-([\d-]+)\s+t=([0-9a-fA-F]+)\.(dds|png|jpg|jpeg)", re.IGNORECASE)
-        
-        imported_count = 0
-        existing_hashes = {o.hash.lower() for o in rzm.tw_overrides}
-        existing_names = {o.name.lower() for o in rzm.tw_overrides}
-        
-        folder_name = os.path.basename(self.directory.rstrip(os.sep))
-        mod_base = get_target_path(context)
-        
-        for f in files:
-            # print(f"[DEBUG] Evaluating file: {f}")
-            match = pattern.match(f)
-            if not match:
-                # print(f"[DEBUG]   -> Regex mismatch")
-                continue
-                
-            comp_idx_str, tex_hash, ext = match.groups()
-            comp_idx_str = comp_idx_str.replace('-', '.') # Unified dot separator
-            
-            # Check if hash already imported (global safety)
-            if tex_hash.lower() in existing_hashes:
-                print(f"[DEBUG] Skipping {f}: Hash {tex_hash} already present in overrides.")
-                continue
-            
-            # Unique Naming Logic
-            name_base = f"TWComponent{comp_idx_str}"
-            final_name = name_base
-            counter = 1
-            while final_name.lower() in existing_names:
-                final_name = f"{name_base}.{counter}"
-                counter += 1
-                
-            res_name = f"{final_name}_RES"
-            
-            print(f"[DEBUG] Importing: {f} -> {final_name} (Hash: {tex_hash})")
-            
-            # Calculate path relative to mod root if possible
-            abs_f_path = os.path.join(self.directory, f)
-            store_path = f # Default fallback
-            if mod_base and abs_f_path.startswith(mod_base):
-                store_path = os.path.relpath(abs_f_path, mod_base)
-                # If it's in Textures subfolder, strip that for shorter display as per common usage
-                if store_path.startswith(f"Textures{os.sep}"):
-                    store_path = os.path.relpath(abs_f_path, os.path.join(mod_base, "Textures"))
-                store_path = store_path.replace(os.sep, '/')
+        print(f"\n[DEBUG] TexWorks Auto-Import Operator Triggered: {self.directory}")
 
-            # 1. Create Resource (Relative Path)
-            res = rzm.tw_resources.add()
-            res.name = res_name
-            res.type = 'ON_DISK'
-            res.path = store_path
-            res.qt_tag = folder_name
-            
-            # 2. Create Override
-            over = rzm.tw_overrides.add()
-            over.name = final_name
-            over.hash = tex_hash.lower()
-            over.resource_name = res_name
-            over.qt_tag = folder_name
-            
-            existing_hashes.add(tex_hash.lower())
-            existing_names.add(final_name.lower())
-            imported_count += 1
-            
-        print(f"[DEBUG] Import finished. Added: {imported_count}\n")
-        self.report({'INFO'}, f"Auto-Import Complete: Added {imported_count} items. Check console for details.")
-        return {'FINISHED'}
+        
+        count, msg = import_from_folder(context, self.directory)
+        
+        if count > 0:
+            self.report({'INFO'}, f"Auto-Import Complete: {msg}")
+            trigger_refresh()
+            return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, f"Import skipped: {msg}")
+            return {'CANCELLED'}
+
 
 # --- Hierarchical Operations (Blocks -> Components -> Slots) ---
 
@@ -449,7 +395,6 @@ class RZM_OT_RemoveTwDecalLayer(bpy.types.Operator):
         if 0 <= idx < len(coll): coll.remove(idx)
         return {'FINISHED'}
 
-from ..utils.texworks_calc import calculate_slot_config, calculate_seamless_split_config
 
 class RZM_OT_SetActiveBlock(bpy.types.Operator):
     bl_idname = "rzm.set_active_block"
@@ -666,6 +611,8 @@ class RZM_OT_TwCreateEasyMask(bpy.types.Operator):
         import numpy as np
         import gpu
         from gpu_extras.batch import batch_for_shader
+        from ..utils.texworks_calc import calculate_slot_config
+
 
         rzm = context.scene.rzm
         try:
@@ -935,6 +882,7 @@ class RZM_OT_CalcSlotConfig(bpy.types.Operator):
     target_pass: bpy.props.IntProperty(default=0) # 0 = Pass 0, 1 = Pass 1
 
     def execute(self, context):
+        from ..utils.texworks_calc import calculate_slot_config
         rzm = context.scene.rzm
         try:
             slot = rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index]
@@ -1001,6 +949,7 @@ class RZM_OT_CalcSplittedIslandConfig(bpy.types.Operator):
     slot_index: bpy.props.IntProperty()
 
     def execute(self, context):
+        from ..utils.texworks_calc import calculate_seamless_split_config
         rzm = context.scene.rzm
         try:
             slot = rzm.tw_blocks[self.block_index].components[self.comp_index].slots[self.slot_index]
