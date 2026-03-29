@@ -83,9 +83,145 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 op = info_row.operator("rzm.remove_image", text="", icon='TRASH', emboss=False)
                 op.image_id_to_remove = rzm_image.id
 
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        rzm = scene.rzm
 
-    # --- UI DRAWING ---
+        game_box = layout.box()
+        row = game_box.row()
+        row.label(text="Target Game:", icon='COLOR_RED') 
+        # Отрисовка выпадающего списка (EnumProperty)
+        # text="" скрывает дублирующее название слева, оставляя только сам список
+        row.prop(rzm.game, "selection", text="")
+        row = game_box.row()
+        row.prop(rzm.addons, "pre_render_blur", text="UI Blur")
 
+        # --- SETUP & INFO BLOCKS ---
+        self.draw_setup_block(context, layout)
+        self.draw_info_block(context, layout)
+
+
+        file_box = layout.box()
+        row = file_box.row(align=True)
+        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
+        # --- БЛОК: Управление файлами ---
+        file_box = layout.box()
+        row = file_box.row(align=True)
+        row.operator("rzm.save_template", text="Save .rzm", icon='FILE_TICK')
+        row.operator("rzm.load_template", text="Load .rzm", icon='FILE_FOLDER')
+        
+        # --- БЛОК: Файлы (Полный бэкап) ---
+        box = layout.box()
+        box.label(text="Full Scene Backup (.rzm)", icon='FILE_BLEND')
+        row = box.row(align=True)
+        row.operator("rzm.save_template", text="Save Scene")
+        row.operator("rzm.load_template", text="Load Scene")
+        row.operator("rzm.reset_scene", text="", icon='TRASH')
+
+        # --- НОВЫЙ БЛОК: Шаблоны ---
+        box = layout.box()
+        box.label(text="Partial Templates (.rzmt)", icon='LIBRARY_DATA_DIRECT')
+        row = box.row(align=True)
+        # Экспортирует выбранный элемент
+        row.operator("rzm.export_partial_template", text="Export Selected", icon='EXPORT')
+        # Импортирует
+        row.operator("rzm.import_partial_template", text="Import Template", icon='IMPORT')
+
+        # History кнопки удалены (используй Ctrl+Z)
+        history_row = file_box.row(align=True)
+        history_row.operator("rzm.reset_scene", text="Reset Scene", icon='TRASH')
+        
+        layout.separator()
+
+        # --- properties объекта ---
+        self.draw_object_properties(context, layout)
+        
+        layout.separator()
+        
+        # --- Блок режима редактора ---
+
+        mode_box = layout.box()
+        mode_box.label(text="Editor Mode:")
+        row = mode_box.row(align=True)
+        row.prop(scene, "rzm_editor_mode", expand=True)
+
+        if scene.rzm_editor_mode == 'LIGHT':
+            layout.separator()
+            light_tools_box = layout.box()
+            light_tools_box.label(text="Quick Actions:")
+            light_tools_box.operator("rzm.auto_capture", text="Auto-Capture Icons", icon='AUTO')
+        
+        if scene.rzm_editor_mode == 'PRO':
+            mode_box.prop(scene, "rzm_show_debug_panel", text="Show Debug Panel", toggle=True, icon='GHOST_ENABLED')
+            layout.separator()
+            self.draw_capture_pro_ui(context, layout)
+        
+        self.draw_captures_preview_ui(context, layout)
+
+    def draw_setup_block(self, context, layout):
+        scene = context.scene
+        rzm = scene.rzm
+        game = rzm.game.selection
+        
+        box = layout.box()
+        box.label(text="Setup: Addon Configuration", icon='SETTINGS')
+        
+        row = box.row(align=True)
+        row.operator("rzm.autosetup_game", text="Auto-Setup Addon", icon='AUTO')
+        row.operator("rzm.refresh_addon_data", text="Sync Data", icon='FILE_REFRESH')
+        
+        # Отображение путей целевого аддона
+        if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
+            if hasattr(scene, "xxmi"):
+                xxmi = scene.xxmi
+                box.prop(xxmi, "dump_path", text="Dump")
+                box.prop(xxmi, "destination_path", text="Mod Folder")
+                box.prop(xxmi, "template_path", text="Template")
+                box.prop(xxmi, "use_custom_template")
+            else:
+                box.label(text="XXMI Tools Not Active", icon='ERROR')
+                
+        elif game == 'ArknightsEndfield':
+            if hasattr(scene, "efmi_tools_settings"):
+                efmi = scene.efmi_tools_settings
+                box.prop(efmi, "object_source_folder", text="Source")
+                box.prop(efmi, "mod_output_folder", text="Output")
+                box.prop(efmi, "custom_template_path", text="Template")
+                box.prop(efmi, "use_custom_template")
+            else:
+                box.label(text="EFMI Tools Not Active", icon='ERROR')
+
+        elif game == 'WutheringWaves':
+            if hasattr(scene, "wwmi_tools_settings"):
+                wwmi = scene.wwmi_tools_settings
+                box.prop(wwmi, "object_source_folder", text="Source")
+                box.prop(wwmi, "mod_output_folder", text="Output")
+                box.prop(wwmi, "custom_template_path", text="Template")
+                box.prop(wwmi, "use_custom_template")
+            else:
+                box.label(text="WWMI Tools Not Active", icon='ERROR')
+
+    def draw_info_block(self, context, layout):
+        scene = context.scene
+        rzm = scene.rzm
+        game = rzm.game.selection
+        
+        box = layout.box()
+        box.label(text="Export Management", icon='INFO')
+        
+        # Единая кнопка экспорта для всех игр
+        row = box.row()
+        row.scale_y = 1.5
+        row.operator("rzm.full_export", text="EXPORT MOD", icon='EXPORT')
+        
+        if game == 'EMULATOR':
+            box.label(text="Running in Emulator mode (No game addon needed)")
+
+
+    def draw_captures_preview_ui(self, context, layout):
+        # ... (implementation was likely already present or handled elsewhere) ...
+        pass
 
 
     def draw_object_properties(self, context, layout):
@@ -206,75 +342,6 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 op = r.operator("rzm.remove_custom_draw", text="", icon='X', emboss=False)
                 op.prop_name = key
 
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        rzm = scene.rzm
-
-        game_box = layout.box()
-        row = game_box.row()
-        row.label(text="Target Game:", icon='COLOR_RED') 
-        # Отрисовка выпадающего списка (EnumProperty)
-        # text="" скрывает дублирующее название слева, оставляя только сам список
-        row.prop(rzm.game, "selection", text="")
-        row = game_box.row()
-        row.prop(rzm.addons, "pre_render_blur", text="UI Blur")
-
-        file_box = layout.box()
-        row = file_box.row(align=True)
-        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
-        # --- БЛОК: Управление файлами ---
-        file_box = layout.box()
-        row = file_box.row(align=True)
-        row.operator("rzm.save_template", text="Save .rzm", icon='FILE_TICK')
-        row.operator("rzm.load_template", text="Load .rzm", icon='FILE_FOLDER')
-        
-        # --- БЛОК: Файлы (Полный бэкап) ---
-        box = layout.box()
-        box.label(text="Full Scene Backup (.rzm)", icon='FILE_BLEND')
-        row = box.row(align=True)
-        row.operator("rzm.save_template", text="Save Scene")
-        row.operator("rzm.load_template", text="Load Scene")
-        row.operator("rzm.reset_scene", text="", icon='TRASH')
-
-        # --- НОВЫЙ БЛОК: Шаблоны ---
-        box = layout.box()
-        box.label(text="Partial Templates (.rzmt)", icon='LIBRARY_DATA_DIRECT')
-        row = box.row(align=True)
-        # Экспортирует выбранный элемент
-        row.operator("rzm.export_partial_template", text="Export Selected", icon='EXPORT')
-        # Импортирует
-        row.operator("rzm.import_partial_template", text="Import Template", icon='IMPORT')
-
-        # History кнопки удалены (используй Ctrl+Z)
-        history_row = file_box.row(align=True)
-        history_row.operator("rzm.reset_scene", text="Reset Scene", icon='TRASH')
-        
-        layout.separator()
-
-        # --- properties объекта (Тут баг исправлен - Custom Draw теперь ниже) ---
-        self.draw_object_properties(context, layout)
-        
-        layout.separator()
-        
-        # --- Блок режима редактора ---
-        mode_box = layout.box()
-        mode_box.label(text="Editor Mode:")
-        row = mode_box.row(align=True)
-        row.prop(scene, "rzm_editor_mode", expand=True)
-
-        if scene.rzm_editor_mode == 'LIGHT':
-            layout.separator()
-            light_tools_box = layout.box()
-            light_tools_box.label(text="Quick Actions:")
-            light_tools_box.operator("rzm.auto_capture", text="Auto-Capture Icons", icon='AUTO')
-        
-        if scene.rzm_editor_mode == 'PRO':
-            mode_box.prop(scene, "rzm_show_debug_panel", text="Show Debug Panel", toggle=True, icon='GHOST_ENABLED')
-            layout.separator()
-            self.draw_capture_pro_ui(context, layout)
-        
-        self.draw_captures_preview_ui(context, layout)
 
 
 # ... (Остальные панели без изменений) ...

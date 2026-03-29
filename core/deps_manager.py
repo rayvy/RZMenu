@@ -35,7 +35,22 @@ DEPS = [
         "pip_name": None,
         "target_version": "1.6.3",
         "is_optional": True
+    },
+    {
+        "name": "EFMI Tools",
+        "import_name": "EFMI-Tools",
+        "pip_name": None,
+        "target_version": "0.20.0",
+        "is_optional": True
+    },
+    {
+        "name": "WWMI Tools",
+        "import_name": "WWMI-Tools",
+        "pip_name": None,
+        "target_version": "0.99.0",
+        "is_optional": True
     }
+
 ]
 
 _installing = False

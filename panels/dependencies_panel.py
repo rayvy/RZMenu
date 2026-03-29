@@ -15,7 +15,13 @@ class RZ_PT_DependenciesPanel(bpy.types.Panel):
         rzm = context.scene.rzm
         wm = context.window_manager
         
+        # --- Блок описания технологий ---
+        info_box = layout.box()
+        info_box.label(text="Template System: Jinja2", icon='TEXT')
+        info_box.label(text="Uses .j2 templates for unified multi-game export.", icon='INFO')
+        
         # Кнопка обновления всегда доступна
+
         row = layout.row()
         row.operator("rzm.check_dependencies", text="Check Status", icon='FILE_REFRESH')
         row.operator("rzm.debug_list_addons", text="Debug Addons", icon='INFO')
