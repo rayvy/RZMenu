@@ -343,7 +343,7 @@ if $initFrame > 1 && $ModInitialised != 1
 {% if scene.rzm %}
     {% if scene.rzm.addons.tex_works == 1 %}
     run = CommandListTexWorks
-    run = CommandListAddonsFaceTexWorks
+    ;run = CommandListAddonsFaceTexWorks
     {% endif %}
 {% endif %}
     $ModInitialised = 1
@@ -1176,21 +1176,21 @@ type = hold
 $debugTexShow = 1
 post $debugTexShow = 0
 {% if scene.rzm.addons.tex_works == 1 %}
-    [Present]
-    if $debugTexShow
-    ResourceTex = copy ResourceAtlasDiffuse
-    run = CustomShaderDebugShowTexture
-    endif
-    [ResourceTex]
-    [CustomShaderDebugShowTexture]
-    ps-t50 = ResourceTex
-    vs = /modules/texworks/simple_draw.hlsl
-    ps = /modules/texworks/simple_draw.hlsl
-    run = BuiltInCommandListUnbindAllRenderTargets
-    blend = ADD SRC_ALPHA INV_SRC_ALPHA
-    topology = triangle_strip
-    o0 = set_viewport bb
-    draw = 4, 0
+    ;[Present]
+    ;if $debugTexShow
+    ;ResourceTex = copy ResourceAtlasDiffuse
+    ;run = CustomShaderDebugShowTexture
+    ;endif
+    ;[ResourceTex]
+    ;[CustomShaderDebugShowTexture]
+    ;ps-t50 = ResourceTex
+    ;vs = /modules/texworks/simple_draw.hlsl
+    ;ps = /modules/texworks/simple_draw.hlsl
+    ;run = BuiltInCommandListUnbindAllRenderTargets
+    ;blend = ADD SRC_ALPHA INV_SRC_ALPHA
+    ;topology = triangle_strip
+    ;o0 = set_viewport bb
+    ;draw = 4, 0
 {% endif %}
 {%endmacro%}
 

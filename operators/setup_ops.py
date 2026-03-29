@@ -83,6 +83,12 @@ class RZM_OT_FullExport(bpy.types.Operator):
         rzm = context.scene.rzm
         game = rzm.game.selection
         
+        # 0. Auto-Setup Game Settings
+        try:
+            bpy.ops.rzm.autosetup_game()
+        except Exception as e:
+            self.report({'WARNING'}, f"Auto-Setup failed: {e}")
+            
         # 1. Export Atlas
         try:
             bpy.ops.rzm.export_atlas()

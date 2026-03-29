@@ -88,76 +88,67 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         scene = context.scene
         rzm = scene.rzm
 
+        # 1. LAUNCH QT EDITOR (Now at the top)
+        row = layout.row(align=True)
+        row.scale_y = 1.2
+        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
+
+        layout.separator()
+
+        # 2. TARGET GAME SELECTION
         game_box = layout.box()
         row = game_box.row()
         row.label(text="Target Game:", icon='COLOR_RED') 
-        # Отрисовка выпадающего списка (EnumProperty)
-        # text="" скрывает дублирующее название слева, оставляя только сам список
         row.prop(rzm.game, "selection", text="")
-        row = game_box.row()
-        row.prop(rzm.addons, "pre_render_blur", text="UI Blur")
 
-        # --- SETUP & INFO BLOCKS ---
+        # 3. SETUP & INFO BLOCKS
         self.draw_setup_block(context, layout)
         self.draw_info_block(context, layout)
 
-
-        file_box = layout.box()
-        row = file_box.row(align=True)
-        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
-        # --- БЛОК: Управление файлами ---
-        file_box = layout.box()
-        row = file_box.row(align=True)
-        row.operator("rzm.save_template", text="Save .rzm", icon='FILE_TICK')
-        row.operator("rzm.load_template", text="Load .rzm", icon='FILE_FOLDER')
-        
-        # --- БЛОК: Файлы (Полный бэкап) ---
-        box = layout.box()
-        box.label(text="Full Scene Backup (.rzm)", icon='FILE_BLEND')
-        row = box.row(align=True)
-        row.operator("rzm.save_template", text="Save Scene")
-        row.operator("rzm.load_template", text="Load Scene")
-        row.operator("rzm.reset_scene", text="", icon='TRASH')
-
-        # --- НОВЫЙ БЛОК: Шаблоны ---
-        box = layout.box()
-        box.label(text="Partial Templates (.rzmt)", icon='LIBRARY_DATA_DIRECT')
-        row = box.row(align=True)
-        # Экспортирует выбранный элемент
-        row.operator("rzm.export_partial_template", text="Export Selected", icon='EXPORT')
-        # Импортирует
-        row.operator("rzm.import_partial_template", text="Import Template", icon='IMPORT')
-
-        # History кнопки удалены (используй Ctrl+Z)
-        history_row = file_box.row(align=True)
-        history_row.operator("rzm.reset_scene", text="Reset Scene", icon='TRASH')
-        
         layout.separator()
 
-        # --- properties объекта ---
+        # 4. CAPTURE TOOLS (Collapsible)
+        cap_box = layout.box()
+        row = cap_box.row()
+        icon = 'TRIA_DOWN' if scene.rzm_show_capture_tools else 'TRIA_RIGHT'
+        row.prop(scene, "rzm_show_capture_tools", text="CAPTURE TOOLS", icon=icon, emboss=False)
+        
+        if scene.rzm_show_capture_tools:
+            self.draw_capture_pro_ui(context, cap_box)
+            # Auto Capture
+            cap_box.operator("rzm.auto_capture", text="Auto-Capture Icons", icon='AUTO')
+
+        layout.separator()
+
+        # 5. OBJECT PROPERTIES
         self.draw_object_properties(context, layout)
         
         layout.separator()
-        
-        # --- Блок режима редактора ---
 
+        # 6. EDITOR MODE
         mode_box = layout.box()
         mode_box.label(text="Editor Mode:")
         row = mode_box.row(align=True)
         row.prop(scene, "rzm_editor_mode", expand=True)
 
-        if scene.rzm_editor_mode == 'LIGHT':
-            layout.separator()
-            light_tools_box = layout.box()
-            light_tools_box.label(text="Quick Actions:")
-            light_tools_box.operator("rzm.auto_capture", text="Auto-Capture Icons", icon='AUTO')
-        
         if scene.rzm_editor_mode == 'PRO':
             mode_box.prop(scene, "rzm_show_debug_panel", text="Show Debug Panel", toggle=True, icon='GHOST_ENABLED')
-            layout.separator()
-            self.draw_capture_pro_ui(context, layout)
-        
+
+        layout.separator()
+
+        # 7. CAPTURES PREVIEW
         self.draw_captures_preview_ui(context, layout)
+        
+        # 8. FILE MANAGEMENT (At the very bottom)
+        # We will add it after any children panels are drawn? No, Blender puts children after.
+        # But we can put a divider here.
+        layout.separator()
+        file_box = layout.box()
+        file_box.label(text="Project Files (.rzm)", icon='FILE_BLEND')
+        row = file_box.row(align=True)
+        row.operator("rzm.save_template", text="Save Scene")
+        row.operator("rzm.load_template", text="Load Scene")
+        row.operator("rzm.reset_scene", text="", icon='TRASH')
 
     def draw_setup_block(self, context, layout):
         scene = context.scene
@@ -213,7 +204,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         # Единая кнопка экспорта для всех игр
         row = box.row()
         row.scale_y = 1.5
-        row.operator("rzm.full_export", text="EXPORT MOD", icon='EXPORT')
+        row.operator("rzm.full_export", text="Export Mod (with auto-setup)", icon='EXPORT')
         
         if game == 'EMULATOR':
             box.label(text="Running in Emulator mode (No game addon needed)")
@@ -365,6 +356,10 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         box.label(text="Target Settings:", icon='FILE_FOLDER')
         box.prop(settings, "mod_name")
         box.prop(settings, "use_xxmi_path")
+        
+        # UI Blur move to here
+        box.prop(rzm.addons, "pre_render_blur", text="UI Blur")
+
         final_path = ""
         if settings.use_xxmi_path:
              if hasattr(context.scene, 'xxmi') and hasattr(context.scene.xxmi, 'destination_path'):
@@ -396,22 +391,10 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         if hasattr(bpy.ops.rzm, "initialize_mod"):
             sub_box.operator("rzm.initialize_mod", text="Initialize Mod", icon='MOD_BUILD')
 
-        # --- Emulator Tools ---
-        col.separator()
-        col.label(text="Emulator Tools:", icon='RECORD_ON')
-        emu_box = col.box()
-        split = emu_box.split(factor=0.7)
-        split.prop(settings, "emu_width", text="W")
-        split.prop(settings, "emu_height", text="H")
-        emu_box.prop(settings, "emu_fullscreen", text="Fullscreen")
-        
-        row = emu_box.row(align=True)
-        row.operator("rzm.emulator_export", text="Export to Emulator", icon='EXPORT')
-        row.operator("rzm.launch_test_polygon", text="Launch Emulator", icon='PLAY')
-        
         tw_box = col.box()
         tw_box.operator("rzm.tw_export_hierarchy", text="Export Hierarchy", icon='FILE_FOLDER')
         tw_box.operator("rzm.tw_debug_sync", text="Debug Sync", icon='CONSOLE')
+
 
 classes_to_register = [ 
     RZM_MT_AssignToggleMenu, 

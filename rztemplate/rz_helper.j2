@@ -71,12 +71,24 @@
         {% for key, value in real_obj.items() %}
             {% if key.startswith('rzm.TexSlot.') %}
                 {% set slot_name = key[12:] %}
-            Resource\ZZMI\{{ slot_name }} = ref {{ value }}
+                {% set safe_val = value | string %}
+                
+                {# Сэйф-механизм: срезаем Resource или Resource\, если юзер вписал их в начало #}
+                {% if safe_val.startswith('Resource\\') %}
+                    {% set safe_val = safe_val[9:] %}
+                {% elif safe_val.startswith('Resource') %}
+                    {% set safe_val = safe_val[8:] %}
+                {% endif %}
+                
+            Resource\ZZMI\{{ slot_name }} = ref Resource{{ safe_val }}
                 {% set _ = found_textures.append(1) %}
             {% endif %}
         {% endfor %}
     {% endif %}
-
+    {# Если в массиве есть хотя бы один элемент, значит текстуры были #}
+    {% if found_textures %}
+        run = CommandList\ZZMI\SetTextures
+    {% endif %}
     {# 5. КОМАНДА ОТРИСОВКИ #}
         {% if skip %}
             ;DrawSkip
@@ -85,12 +97,6 @@
             drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE
         {% else %}
             drawindexed = {{ idx_count }}, {{ idx_offset }}, 0
-        {% endif %}
-
-    {# 5.5. ВЫЗОВ КОМАНДЫ SETTEXTURES #}
-        {# Если в массиве есть хотя бы один элемент, значит текстуры были #}
-        {% if found_textures %}
-            run = CommandList\ZZMI\SetTextures
         {% endif %}
 
     {# 6. CUSTOM SHADERS (XXMI Logic) #}

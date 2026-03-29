@@ -92,6 +92,7 @@ def register():
     bpy.types.Scene.rzm_capture_settings = PointerProperty(type=RZMCaptureSettings)
     bpy.types.Scene.rzm_capture_overwrite_id = IntProperty(name="Overwrite ID", default=-1)
     bpy.types.Scene.rzm_show_captures_preview = BoolProperty(name="Show Captures Preview", default=True)
+    bpy.types.Scene.rzm_show_capture_tools = BoolProperty(name="Show Capture Tools", default=False)
     
     bpy.types.WindowManager.rzm_context_atlas_index = IntProperty(default=-1)
     bpy.types.WindowManager.rzm_dependency_install_status = StringProperty()
@@ -100,6 +101,7 @@ def unregister():
     del bpy.types.WindowManager.rzm_dependency_install_status
     del bpy.types.WindowManager.rzm_context_atlas_index
     del bpy.types.Scene.rzm_show_captures_preview
+    del bpy.types.Scene.rzm_show_capture_tools
     del bpy.types.Scene.rzm_editor_mode
     del bpy.types.Scene.rzm_show_debug_panel
     del bpy.types.Scene.rzm_capture_settings

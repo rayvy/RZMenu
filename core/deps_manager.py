@@ -20,14 +20,14 @@ DEPS = [
         "import_name": "PySide6",
         "pip_name": "PySide6",
         "target_version": "6.10.1", 
-        "is_optional": True 
+        "is_optional": False
     },
     {
         "name": "Jinja2",
         "import_name": "jinja2",
         "pip_name": "jinja2",
         "target_version": "3.1.2",
-        "is_optional": False
+        "is_optional": True
     },
     {
         "name": "XXMI Tools",
@@ -40,14 +40,14 @@ DEPS = [
         "name": "EFMI Tools",
         "import_name": "EFMI-Tools",
         "pip_name": None,
-        "target_version": "0.20.0",
+        "target_version": "0.2.0",
         "is_optional": True
     },
     {
         "name": "WWMI Tools",
         "import_name": "WWMI-Tools",
         "pip_name": None,
-        "target_version": "0.99.0",
+        "target_version": "1.3.0",
         "is_optional": True
     }
 
