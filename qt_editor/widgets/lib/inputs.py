@@ -31,7 +31,7 @@ class RZImageComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
 
         self.currentIndexChanged.connect(self._on_index_changed)
         self.setIconSize(QtCore.QSize(20, 20))
-        self.setMinimumHeight(24)
+        self.setMinimumHeight(30)
 
     @QtCore.Property(float)
     def popup_progress(self):
@@ -449,7 +449,7 @@ class RZFormulaInput(_RZBaseTextEdit):
         self._is_multiline = False 
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setMinimumHeight(36)
+        self.setMinimumHeight(42)
         self.setMaximumHeight(72)
         self.setTabChangesFocus(True)
         
@@ -568,7 +568,7 @@ class RZCodeTextEdit(RZFormulaInput):
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         
-        self.setMinimumHeight(72)
+        self.setMinimumHeight(78)
         self.setMaximumHeight(680) 
         self.setMouseTracking(True)
 
@@ -591,7 +591,7 @@ class RZModInfoTextEdit(RZCodeTextEdit):
         self._raw_text = ""
         self._is_preview = False
         
-        self.setMinimumHeight(120)
+        self.setMinimumHeight(126)
         self.setMaximumHeight(680)
 
         self._ac_pattern = r'\{\{([a-zA-Z0-9_]*)$'

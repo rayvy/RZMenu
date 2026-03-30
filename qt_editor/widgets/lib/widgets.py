@@ -713,6 +713,7 @@ class RZSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
         super().__init__(parent)
         self._init_visuals()
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.setMinimumHeight(30)
         self.apply_theme()
 
     def paintEvent(self, event):
@@ -747,6 +748,7 @@ class RZDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
         super().__init__(parent)
         self._init_visuals()
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.setMinimumHeight(30)
         self.apply_theme()
 
     def paintEvent(self, event):
@@ -808,6 +810,7 @@ class RZComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
         super().__init__(parent)
         self._init_visuals()
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.setMinimumHeight(30)
         self.apply_theme()
         
         self._delegate = RZStaggeredDelegate(self)
@@ -864,6 +867,7 @@ class RZLineEdit(RZVisualInputMixin, QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_visuals()
+        self.setMinimumHeight(30)
         self.apply_theme()
         self._pattern = ""
         self._originals = []

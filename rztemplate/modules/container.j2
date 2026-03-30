@@ -3,8 +3,13 @@
 
 {%macro base(element,parent_element,mod_file,scene)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
+{% if not element.is_preset %}
 $id = {{ element.id }}
+{% endif %}
 local $LocalVisibility
+{% if not element.is_preset %}
+local $ValueX24Interpolated
+{% endif %}
 $LocalVisibility = 0
 $scissorX = 0
 $scissorY = 0
@@ -106,6 +111,9 @@ Local $current_sizeY
     $P_SX = $SizeX
     $P_SY = $SizeY
     ;Presets
+    {% if not element.is_preset %}
+    x24 = $ValueX24Interpolated
+    {% endif %}
     {{generate_presets(element,mod_file,scene)}}
     ;Childs
     {{generate_child(element,mod_file,scene)}}
@@ -398,7 +406,9 @@ Local $current_sizeY
 
 {%macro generate_child(element,mod_file,scene)%}
     {% for child in scene.rzm.elements %}
-        {% if child.parent_id == element.id and not child.is_preset and not child.disable_export %}
+        {# Я пока что временно убрал ограничение на то что пресеты не умеют запускать чайлд элементы #}
+        {#% if child.parent_id == element.id and not child.is_preset and not child.disable_export %#}
+        {% if child.parent_id == element.id and not child.disable_export %}
 
             $PositionX = $P_PX
             $PositionY = $P_PY
@@ -463,6 +473,9 @@ Local $current_sizeY
         {% set target_var = utils.format_var(first_link.value_name) %}
         {% set target_var_is_toggle = 0 %}
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
+        {% if not element.is_preset %}
+        $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * 0.069
+        {% endif %}
 
         {# Отображение цифрового значения на кнопке #}
         {% if not element.disable_button_nums %}

@@ -1365,13 +1365,16 @@ class RZMInspectorPanel(RZEditorPanel):
             is_locked_size = props.get('is_locked_size', False)
             is_grid_child = props.get('is_grid_child', False)
             
-            can_edit_pos = (is_locked_pos is not True) and (not is_grid_child)
+            # Formulas ignore the 'locked' flag per user request, allowing logic editing 
+            # while protecting against accidental viewport drags.
+            can_edit_pos_formula = True 
+            can_edit_pos_manual = (is_locked_pos is not True) and (not is_grid_child)
             can_edit_size = (is_locked_size is not True)
             
-            if hasattr(self, 'sl_x'): self.sl_x.setEnabled(can_edit_pos)
-            if hasattr(self, 'sl_y'): self.sl_y.setEnabled(can_edit_pos)
-            if hasattr(self, 'edit_pos_fx'): self.edit_pos_fx.setEnabled(can_edit_pos)
-            if hasattr(self, 'edit_pos_fy'): self.edit_pos_fy.setEnabled(can_edit_pos)
+            if hasattr(self, 'sl_x'): self.sl_x.setEnabled(can_edit_pos_manual)
+            if hasattr(self, 'sl_y'): self.sl_y.setEnabled(can_edit_pos_manual)
+            if hasattr(self, 'edit_pos_fx'): self.edit_pos_fx.setEnabled(can_edit_pos_formula)
+            if hasattr(self, 'edit_pos_fy'): self.edit_pos_fy.setEnabled(can_edit_pos_formula)
             
             if hasattr(self, 'sl_w') and hasattr(self, 'sl_h'):
                 self.sl_w.setEnabled(can_edit_size)
