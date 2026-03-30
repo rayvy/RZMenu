@@ -111,7 +111,7 @@ Local $current_sizeY
     $P_SX = $SizeX
     $P_SY = $SizeY
     ;Presets
-    {% if not element.is_preset %}
+    {% if not element.is_preset and element.value_link %}
     x24 = $ValueX24Interpolated
     {% endif %}
     {{generate_presets(element,mod_file,scene)}}
@@ -474,7 +474,7 @@ Local $current_sizeY
         {% set target_var_is_toggle = 0 %}
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
         {% if not element.is_preset %}
-        $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * 0.069
+        $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dt + 0.069)
         {% endif %}
 
         {# Отображение цифрового значения на кнопке #}
