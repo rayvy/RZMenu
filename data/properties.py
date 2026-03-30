@@ -20,7 +20,7 @@ from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, ConditionalText, RZFontSlotSettings
 )
 from .p_settings import (
-    RZMenuConfig, DependencyStatus, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, 
+    RZMenuConfig, DependencyStatus, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, 
 )
 from ..operators import custom_draw_ops
 
@@ -74,7 +74,7 @@ classes_to_register = [
     ValueLinkProperty, RZPresetReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
     TexResource, TexOverride, TexWorksMaterial, 
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
-    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings, RZMenuProperties, 
+    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings, RZM_AddonPreferences, RZMenuProperties, 
 ]
 
 def register():

@@ -110,6 +110,7 @@ class RZAssetListWidget(QtWidgets.QListWidget):
 
     def dragEnterEvent(self, event):
         # Принимаем файлы из системы или внутренние типы
+        print(f"[AssetBrowser] dragEnter: hasUrls={event.mimeData().hasUrls()}, formats={event.mimeData().formats()}")
         if (event.mimeData().hasUrls() or 
             event.mimeData().hasFormat("application/x-rzmenu-image-id") or
             event.mimeData().hasFormat("application/x-rzmenu-template")):
@@ -130,6 +131,7 @@ class RZAssetListWidget(QtWidgets.QListWidget):
         Обработка падения объекта В Ассет Браузер.
         Цель: Сохранить (копировать) файл или импортировать картинку.
         """
+        print(f"[AssetBrowser] dropEvent started")
         # 1. Файлы из системы (Внешний D&D)
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
@@ -143,6 +145,7 @@ class RZAssetListWidget(QtWidgets.QListWidget):
                 
                 ext = os.path.splitext(path)[1].lower()
                 filename = os.path.basename(path)
+                print(f"[AssetBrowser] dropEvent: Processing '{filename}' (Ext: {ext})")
                 
                 # А) Если кинули ШАБЛОН -> Копируем в base_templates
                 if ext == '.rzmt':
@@ -155,12 +158,17 @@ class RZAssetListWidget(QtWidgets.QListWidget):
                         print(f"[AssetBrowser] Failed to copy template: {e}")
 
                 # Б) Если кинули КАРТИНКУ -> Импортируем в Blend (как раньше)
-                elif ext in ['.png', '.jpg', '.jpeg', '.tga', '.bmp']:
+                elif ext in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp']:
+                    print(f"[AssetBrowser] Calling core.import_image_from_path for {path}")
+                    from .. import core
                     core.import_image_from_path(path)
                     files_processed = True
+                else:
+                    print(f"[AssetBrowser] Unsupported file type: {ext}")
             
             if files_processed:
                 # Обновляем интерфейс (сигнал заставит панель перерисоваться)
+                print("[AssetBrowser] Files processed, emitting structure_changed")
                 SIGNALS.structure_changed.emit()
                 
             event.acceptProposedAction()

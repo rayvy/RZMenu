@@ -104,7 +104,7 @@ def import_asset_from_dialog():
     # 1. Выбор файлов
     files, _ = QtWidgets.QFileDialog.getOpenFileNames(
         None, "Select Assets", "", 
-        "All Assets (*.png *.jpg *.jpeg *.tga *.bmp *.rzmt);;Images (*.png *.jpg *.jpeg *.tga *.bmp);;Templates (*.rzmt)"
+        "All Assets (*.png *.jpg *.jpeg *.tga *.bmp *.dds *.rzmt);;Images (*.png *.jpg *.jpeg *.tga *.bmp *.dds);;Templates (*.rzmt)"
     )
     
     if not files: return
@@ -130,9 +130,10 @@ def import_asset_from_dialog():
                 print(f"[Bridge] Error copying template: {e}")
 
         # B. IMAGE -> IMPORT
-        elif ext in ['.png', '.jpg', '.jpeg', '.tga', '.bmp']:
+        elif ext in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp']:
             if hasattr(bpy.ops.rzm, "add_image"):
                 try:
+                    print(f"[Bridge] Importing IMAGE: {path}")
                     bpy.ops.rzm.add_image(filepath=path)
                     has_changes = True
                 except Exception as e:

@@ -13,41 +13,73 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
-        addon_dir = os.path.dirname(os.path.dirname(__file__))
-        assets_dir = os.path.join(addon_dir, 'base_icons')
+        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+        print(f"[IconsDebug] Addon Name: {addon_name}")
+        prefs = context.preferences.addons.get(addon_name)
+        if prefs:
+            prefs = prefs.preferences
+            print(f"[IconsDebug] Found Prefs: {prefs}")
+        else:
+            print(f"[IconsDebug] WARNING: Could not find addon preferences for {addon_name}")
         
-        if not os.path.exists(assets_dir):
-            self.report({'WARNING'}, f"'base_icons' folder not found at: {assets_dir}")
-            return {'CANCELLED'}
+        addon_dir = os.path.dirname(os.path.dirname(__file__))
+        base_dir = os.path.join(addon_dir, 'base_icons')
+        custom_dir = getattr(prefs, "custom_asset_library", "")
+        
+        print(f"[IconsDebug] Base Dir: {base_dir} (Exists: {os.path.exists(base_dir)})")
+        print(f"[IconsDebug] Custom Dir: '{custom_dir}' (Exists: {os.path.exists(custom_dir) if custom_dir else 'N/A'})")
+        
+        scan_dirs = []
+        if os.path.exists(base_dir):
+            scan_dirs.append(base_dir)
+        if custom_dir and os.path.isdir(custom_dir):
+            scan_dirs.append(custom_dir)
             
-        print(f"DEBUG BASE ICONS: Scanning folder: {assets_dir}")
+        print(f"[IconsDebug] Final Scan Dirs: {scan_dirs}")
+            
         rzm_images = context.scene.rzm.images
         existing_base_ids = {img.id for img in rzm_images if img.source_type == 'BASE'}
         
         loaded_count = 0
-        for filename in os.listdir(assets_dir):
-            base_name, ext = os.path.splitext(filename)
-            ext = ext.lower()
+        for assets_dir in scan_dirs:
+            print(f"[IconsDebug] --- Scanning: {assets_dir} ---")
+            for filename in os.listdir(assets_dir):
+                base_name, ext = os.path.splitext(filename)
+                ext = ext.lower()
 
-            if ext not in ['.png', '.jpg', '.jpeg', '.dds']:
-                continue
-
-            parsed_id = -1
-            display_name = base_name
-
-            if base_name.startswith('9') and len(base_name) >= 4 and base_name[:4].isdigit():
-                parsed_id = int(base_name[:4])
-                if '_' in base_name:
-                    display_name = base_name.split('_', 1)[1]
-                else:
-                    display_name = ""
-
-            if parsed_id != -1:
-                if parsed_id in existing_base_ids:
+                if ext not in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp']:
                     continue
                 
-                if ext == '.dds':
-                    print(f"INFO: DDS support is in development. Skipping '{filename}'.")
+                print(f"[IconsDebug] Detected File: {filename}")
+
+                parsed_id = -1
+                display_name = base_name
+
+                # Try to extract 9xxx prefix
+                if base_name.startswith('9') and len(base_name) >= 4 and base_name[:4].isdigit():
+                    try:
+                        parsed_id = int(base_name[:4])
+                        if '_' in base_name:
+                            display_name = base_name.split('_', 1)[1]
+                        else:
+                            display_name = ""
+                    except ValueError:
+                        parsed_id = -1
+
+                # If no prefix, we still load it!
+                if parsed_id == -1:
+                    # Check if an image with this name is already in the library to avoid duplicates
+                    if any(img.display_name == display_name for img in rzm_images if img.source_type == 'BASE'):
+                        print(f"[IconsDebug] Skipping '{filename}': Display name already exists.")
+                        continue
+                    
+                    # Generate a new ID
+                    from ..core.utils import get_next_image_id
+                    parsed_id = get_next_image_id(rzm_images)
+                    print(f"[IconsDebug] Auto-generated ID {parsed_id} for '{display_name}'")
+
+                if parsed_id in existing_base_ids:
+                    print(f"[IconsDebug] Skipping '{filename}': ID {parsed_id} already loaded.")
                     continue
                 
                 try:
@@ -61,15 +93,12 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
                     new_item.image_pointer = bl_image
                     new_item.source_type = 'BASE'
                     loaded_count += 1
+                    existing_base_ids.add(parsed_id)
+                    print(f"[IconsDebug] Successfully loaded: {filename} as ID {parsed_id}")
                 except Exception as e:
-                    print(f"WARNING: Failed to load base asset '{filename}': {e}")
-            else:
-                print(f"DEBUG BASE ICONS: Skipping '{filename}' (does not match '9xxx_name' pattern).")
+                    print(f"[IconsDebug] Error loading icon {filename}: {e}")
 
-        self.report({'INFO'}, f"Loaded {loaded_count} new base icons.")
-        if loaded_count > 0: # This line was missing an indented block. Added pass to fix.
-            pass
-            
+        self.report({'INFO'}, f"Loaded {loaded_count} icons from {len(scan_dirs)} source(s).")
         return {'FINISHED'}
 
 class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
@@ -226,7 +255,7 @@ class RZM_OT_AddImage(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
-    filter_glob: bpy.props.StringProperty(default="*.png;*.jpg;*.jpeg;*.tga;*.bmp", options={'HIDDEN'})
+    filter_glob: bpy.props.StringProperty(default="*.png;*.jpg;*.jpeg;*.dds;*.tga;*.bmp", options={'HIDDEN'})
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)

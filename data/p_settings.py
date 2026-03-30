@@ -238,3 +238,19 @@ class RZMMetaDataSettings(bpy.types.PropertyGroup):
     # Список фичей (Features: Body Engineering, Dirty Work и тд)
     features_list: CollectionProperty(type=RZMFeatureItem)
     features_list_index: IntProperty(default=0)
+
+class RZM_AddonPreferences(bpy.types.AddonPreferences):
+    bl_idname = __package__.split(".")[0] if "." in __package__ else __package__
+
+    custom_asset_library: StringProperty(
+        name="Custom Asset Library",
+        description="Path to a custom directory containing icons (.png, .dds, etc.)",
+        subtype='DIR_PATH',
+        default=""
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        column = layout.column()
+        column.prop(self, "custom_asset_library")
+        column.label(text="Icons from this folder will be loaded alongside base_icons.", icon='INFO')
