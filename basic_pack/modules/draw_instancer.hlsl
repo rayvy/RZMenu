@@ -15,7 +15,10 @@ Buffer<float4>    ClippingBuffer : register(t109);
 Buffer<float4>    DrawParamsBuffer : register(t110);
 
 Texture2D<float4> AtlasIcons : register(t80);
-Texture2D<float4> AtlasFont : register(t82);
+Texture2D<float4> AtlasFont0 : register(t82);
+Texture2D<float4> AtlasFont1 : register(t83);
+Texture2D<float4> AtlasFont2 : register(t84);
+Texture2D<float4> AtlasFont3 : register(t85);
 Texture2D<float4> TexBlurMap : register(t89);
 Texture2D<float4> TexBackbuffer : register(t90);
 SamplerState      LinearSampler : register(s0);
@@ -85,16 +88,33 @@ struct CharMetrics {
     float advance; float glyphW; float glyphH; float offX; float offY;
 };
 
-CharMetrics FetchCharMetrics(uint c) {
+CharMetrics FetchCharMetrics(uint c, uint fontSlot) {
     CharMetrics m = (CharMetrics)0;
     if (c < 32 || c >= 127) c = 32;
-    uint w, h; AtlasFont.GetDimensions(w, h);
+    uint w = 0, h = 0; 
+    
+    if (fontSlot == 1) AtlasFont1.GetDimensions(w, h);
+    else if (fontSlot == 2) AtlasFont2.GetDimensions(w, h);
+    else if (fontSlot == 3) AtlasFont3.GetDimensions(w, h);
+    else AtlasFont0.GetDimensions(w, h);
+
+    if (w == 0 || h == 0) return m;
+
     float cs = (float)(w / FONT_GRID_SIZE);
     uint idx = c - 32;
     uint metaH = h / (uint)cs - 6; 
     uint metaY = (h / (uint)cs - metaH) * (uint)cs;
-    float4 d1 = AtlasFont.Load(int3(idx % w, metaY + (idx/w)*2, 0));
-    float4 d2 = AtlasFont.Load(int3(idx % w, metaY + (idx/w)*2 + 1, 0));
+    
+    int3 p1 = int3(idx % w, metaY + (idx/w)*2, 0);
+    int3 p2 = int3(idx % w, metaY + (idx/w)*2 + 1, 0);
+    float4 d1 = float4(0,0,0,0);
+    float4 d2 = float4(0,0,0,0);
+    
+    if (fontSlot == 1) { d1 = AtlasFont1.Load(p1); d2 = AtlasFont1.Load(p2); }
+    else if (fontSlot == 2) { d1 = AtlasFont2.Load(p1); d2 = AtlasFont2.Load(p2); }
+    else if (fontSlot == 3) { d1 = AtlasFont3.Load(p1); d2 = AtlasFont3.Load(p2); }
+    else { d1 = AtlasFont0.Load(p1); d2 = AtlasFont0.Load(p2); }
+    
     m.advance = d1.r*2*cs; m.glyphW = d1.g*2*cs; m.offX = (d1.b*2-1)*cs; m.offY = (d1.a*2-1)*cs; m.glyphH = d2.r*2*cs;
     return m;
 }
@@ -119,7 +139,7 @@ void ParseNumber(float val, int prec, inout uint buf[MAX_CHARS], inout uint cnt)
 
 // --- VERTEX SHADER ---
 
-float4 ComputeLayout(int mode, uint vID, float4 tile, inout float2 pos, inout float2 size) {
+float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float2 pos, inout float2 size) {
     if (mode == MODE_TEXT || mode == MODE_NUMBER) {
         uint chars[MAX_CHARS]; uint count = 0;
         if (mode == MODE_TEXT) {
@@ -127,15 +147,21 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, inout float2 pos, inout fl
             for(uint i=0; i<count; ++i) chars[i] = TextPoolBuffer[off+i];
         } else ParseNumber(tile.x, clamp((int)tile.y,0,9), chars, count);
 
-        uint w, h; AtlasFont.GetDimensions(w, h);
-        float cs = (float)(w/16);
+        uint w = 0, h = 0; 
+        if (fontSlot == 1) AtlasFont1.GetDimensions(w, h);
+        else if (fontSlot == 2) AtlasFont2.GetDimensions(w, h);
+        else if (fontSlot == 3) AtlasFont3.GetDimensions(w, h);
+        else AtlasFont0.GetDimensions(w, h);
+        
+        float cs = 1.0;
+        if (w > 0) cs = (float)(w/16);
         float scale = (size.y * ScreenRes.y) / cs;
         
         float totalW = 0, firstOff = 0;
         if (count > 0) {
-            firstOff = FetchCharMetrics(chars[0]).offX;
-            for(uint k=0; k<count-1; ++k) totalW += FetchCharMetrics(chars[k]).advance;
-            CharMetrics last = FetchCharMetrics(chars[count-1]);
+            firstOff = FetchCharMetrics(chars[0], fontSlot).offX;
+            for(uint k=0; k<count-1; ++k) totalW += FetchCharMetrics(chars[k], fontSlot).advance;
+            CharMetrics last = FetchCharMetrics(chars[count-1], fontSlot);
             totalW += last.offX + last.glyphW - firstOff;
         }
 
@@ -163,9 +189,9 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, inout float2 pos, inout fl
         uint code = (idx < count) ? chars[idx] : ' ';
         
         float curX = 0;
-        for(uint i=0; i<idx; ++i) curX += FetchCharMetrics(chars[i]).advance;
-        CharMetrics m = FetchCharMetrics(code);
-        CharMetrics ref = FetchCharMetrics('A');
+        for(uint i=0; i<idx; ++i) curX += FetchCharMetrics(chars[i], fontSlot).advance;
+        CharMetrics m = FetchCharMetrics(code, fontSlot);
+        CharMetrics ref = FetchCharMetrics('A', fontSlot);
         
         float baseAdj = (ref.offY + ref.glyphH + (128.0/7.5) - (m.offY + m.glyphH));
         pos.y = basePos.y + (baseAdj / ScreenRes.y) * scale;
@@ -222,6 +248,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     output.color = ColorBuffer[iID];
     output.clipRect = ClippingBuffer[iID];
     output.extraData.x = TileDataBuffer[iID].x;
+    output.extraData.y = MirrorBuffer[iID].y; // fontSlot passed through G channel
     output.mirrorMode = (int)MirrorBuffer[iID].x;
 
     float2 pos = PosSizeBuffer[iID].xy;
@@ -246,7 +273,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     else if (lID == 2) quadUv = float2(0,1);
     else quadUv = float2(1,0);
 
-    output.atlasRect = ComputeLayout(output.drawMode, vID, TileDataBuffer[iID], pos, size);
+    output.atlasRect = ComputeLayout(output.drawMode, vID, TileDataBuffer[iID], (uint)output.extraData.y, pos, size);
 
     bool allowExpand = (output.drawMode < MODE_BLUR_BG_START && output.drawMode != MODE_MASKED_BLUR);
     float2 expandVec = allowExpand ? (EXPAND_PX / ScreenRes) : float2(0,0);
@@ -306,7 +333,11 @@ float4 main(VertexOutput input) : SV_Target0 {
     else if (input.drawMode != MODE_SOLID && !isBlurBg) {
         if (input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
             float2 uv = input.atlasRect.xy + input.contentUV * input.atlasRect.zw;
-            rawTexture = AtlasFont.Sample(LinearSampler, uv);
+            uint fontSlot = (uint)input.extraData.y;
+            if (fontSlot == 1) rawTexture = AtlasFont1.Sample(LinearSampler, uv);
+            else if (fontSlot == 2) rawTexture = AtlasFont2.Sample(LinearSampler, uv);
+            else if (fontSlot == 3) rawTexture = AtlasFont3.Sample(LinearSampler, uv);
+            else rawTexture = AtlasFont0.Sample(LinearSampler, uv);
         } else {
             float2 finalUV = input.contentUV;
             
@@ -415,8 +446,13 @@ float4 main(VertexOutput input) : SV_Target0 {
 
                  float2 fUV = uvBase + outlineUV * uvSz;
                  
-                 if(input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) 
-                     a += AtlasFont.Sample(LinearSampler, fUV).r;
+                 if(input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
+                     uint fontSlot = (uint)input.extraData.y;
+                     if (fontSlot == 1) a += AtlasFont1.Sample(LinearSampler, fUV).r;
+                     else if (fontSlot == 2) a += AtlasFont2.Sample(LinearSampler, fUV).r;
+                     else if (fontSlot == 3) a += AtlasFont3.Sample(LinearSampler, fUV).r;
+                     else a += AtlasFont0.Sample(LinearSampler, fUV).r;
+                 }
                  else 
                      a += AtlasIcons.Sample(LinearSampler, float2(fUV.x, 1.0-fUV.y)).a;
              }

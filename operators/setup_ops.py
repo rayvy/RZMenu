@@ -96,8 +96,12 @@ class RZM_OT_FullExport(bpy.types.Operator):
             self.report({'ERROR'}, f"Atlas export failed: {e}")
             return {'CANCELLED'}
         
-        # 2. Font Maker (Future placeholder)
-        # bpy.ops.rzm.font_maker()
+        # 2. Font Maker (Export Fonts)
+        try:
+            bpy.ops.rzm.export_fonts()
+        except Exception as e:
+            self.report({'ERROR'}, f"Font export failed: {e}")
+            return {'CANCELLED'}
         
         # 3. Target Game Export
         if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:

@@ -17,7 +17,7 @@ from .p_texworks import (
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock
 )
 from .p_ui import (
-    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, ConditionalText
+    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, ConditionalText, RZFontSlotSettings
 )
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, 
@@ -44,6 +44,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     conditions: CollectionProperty(type=RZMCondition)
     shapes: CollectionProperty(type=RZMShape)
     dependency_statuses: CollectionProperty(type=DependencyStatus)
+    fonts: CollectionProperty(type=RZFontSlotSettings)
 
     # --- TexWorks Core ---
     tw_resources: CollectionProperty(type=TexResource)
@@ -70,7 +71,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
 classes_to_register = [
     RZMCaptureSettings, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
-    ValueLinkProperty, RZPresetReference, ConditionalText, RZMenuElement, 
+    ValueLinkProperty, RZPresetReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
     TexResource, TexOverride, TexWorksMaterial, 
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
     RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings, RZMenuProperties, 

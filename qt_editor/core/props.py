@@ -59,6 +59,7 @@ PROP_MAP = {
     "page_color": ("page_color", None, 'D'),
     "visibility_mode": ("visibility_mode", None, 'D'),
     "visibility_condition": ("visibility_condition", None, 'D'),
+    "font_slot": ("font_slot", None, 'D'),
     "text_id": ("text_id", None, 'D'),
     "hover_text_id": ("hover_text_id", None, 'D'),
     "text_align": ("text_align", None, 'D'),

@@ -20,6 +20,7 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define IN_TILE_DATA   IniParams[102]
 #define IN_FX_PARAMS   IniParams[104]
 #define IN_MIRROR_MODE IniParams[105].x
+#define IN_FONT_SLOT   IniParams[105].y
 #define IN_CLIP_RECT   IniParams[109].xyzw
 #define IN_FN_TYPE     IniParams[110].x
 #define IN_FX_TYPE     IniParams[110].y
@@ -34,7 +35,7 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
     ColorDataBuffer[BUFFER_INDEX]   = IN_COLOR;
     FxParamsBuffer[BUFFER_INDEX]    = IN_FX_PARAMS;
     TileDataBuffer[BUFFER_INDEX]    = IN_TILE_DATA;
-    MirrorDataBuffer[BUFFER_INDEX]  = float4(IN_MIRROR_MODE, 0, 0, 0);
+    MirrorDataBuffer[BUFFER_INDEX]  = float4(IN_MIRROR_MODE, IN_FONT_SLOT, 0, 0);
     // Проверяем, нужно ли вообще применять клиппинг (если не 0,0,0,0)
     if (any(IN_CLIP_RECT))
     {

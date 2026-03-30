@@ -118,11 +118,50 @@ class RZM_OT_UpdateMetadataSetting(bpy.types.Operator):
             return {'FINISHED'}
         return {'CANCELLED'}
 
+class RZM_OT_UpdateFontSetting(bpy.types.Operator):
+    bl_idname = "rzm.update_font_setting"
+    bl_label = "Update Font Config"
+    bl_options = {'UNDO'}
+    
+    slot_index: bpy.props.IntProperty(default=0)
+    prop_name: bpy.props.StringProperty()
+    val_str: bpy.props.StringProperty()
+    val_float: bpy.props.FloatProperty()
+    val_int: bpy.props.IntProperty()
+    val_bool: bpy.props.BoolProperty(default=False)
+    use_float: bpy.props.BoolProperty(default=False)
+    use_int: bpy.props.BoolProperty(default=False)
+    use_bool: bpy.props.BoolProperty(default=False)
+
+    def execute(self, context):
+        if len(context.scene.rzm.fonts) == 0:
+            for i in range(4):
+                context.scene.rzm.fonts.add()
+        
+        fonts = context.scene.rzm.fonts
+        if 0 <= self.slot_index < len(fonts):
+            slot = fonts[self.slot_index]
+            if hasattr(slot, self.prop_name):
+                if self.use_float:
+                    setattr(slot, self.prop_name, self.val_float)
+                elif self.use_int:
+                    setattr(slot, self.prop_name, self.val_int)
+                elif self.use_bool:
+                    setattr(slot, self.prop_name, self.val_bool)
+                else:
+                    setattr(slot, self.prop_name, self.val_str)
+                    
+                from ..qt_editor.core.signals import SIGNALS
+                SIGNALS.data_changed.emit()
+                return {'FINISHED'}
+        return {'CANCELLED'}
+
 classes_to_register = [
     RZM_OT_UpdateConfigSetting,
     RZM_OT_UpdateExportSetting,
     RZM_OT_UpdateAddonSetting,
     RZM_OT_UpdateMetadataSetting,
+    RZM_OT_UpdateFontSetting,
 ]
 
 def register():

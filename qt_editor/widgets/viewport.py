@@ -28,7 +28,7 @@ class RZFontManager:
     _instance = None
 
     def __init__(self):
-        self._metrics_cache = {} # font_family -> RZFontAtlasMetrics
+        self._metrics_cache = {} # (font_family, cell_size) -> RZFontAtlasMetrics
 
     @classmethod
     def instance(cls):
@@ -36,10 +36,34 @@ class RZFontManager:
             cls._instance = cls()
         return cls._instance
 
-    def get_metrics_for_family(self, font_family):
-        if font_family not in self._metrics_cache:
-            self._metrics_cache[font_family] = RZFontAtlasMetrics(font_family)
-        return self._metrics_cache[font_family]
+    def get_metrics(self, font_slot=0):
+        import bpy
+        font_family = "Arial"
+        cell_size = 128
+        density = 0.88
+        
+        if bpy.context and hasattr(bpy.context, 'scene') and hasattr(bpy.context.scene, 'rzm'):
+            fonts = bpy.context.scene.rzm.fonts
+            if 0 <= font_slot < len(fonts):
+                slot = fonts[font_slot]
+                cell_size = slot.cell_size
+                density = slot.density
+                font_index = getattr(slot, 'font_index', 0)
+                
+                if slot.font_source == 'CUSTOM' and slot.custom_path:
+                    font_path = bpy.path.abspath(slot.custom_path)
+                    if os.path.exists(font_path):
+                        font_family = font_path
+                else:
+                    # Default mode
+                    font_family = "Arial"
+                    font_index = 0
+
+        cache_key = (font_family, cell_size, font_index)
+        if cache_key not in self._metrics_cache:
+            self._metrics_cache[cache_key] = RZFontAtlasMetrics(font_family, cell_size)
+        
+        return self._metrics_cache[cache_key], density
 
 class RZFontAtlasMetrics:
     """
@@ -47,12 +71,18 @@ class RZFontAtlasMetrics:
     The constants here align with the user's font generation script:
     FONT_SIZE = 128, ATLAS_BASE_CELL_SIZE = 16, ATLAS_SCALE = 8 -> 128
     """
-    def __init__(self, font_family):
+    def __init__(self, font_family, cell_size):
         self.font = QtGui.QFont(font_family)
-        # We need the metrics for the base font size used in the atlas
-        self.font.setPixelSize(128)
+        if os.path.exists(font_family):
+            font_id = QtGui.QFontDatabase.addApplicationFont(font_family)
+            if font_id != -1:
+                families = QtGui.QFontDatabase.applicationFontFamilies(font_id)
+                if families:
+                    self.font = QtGui.QFont(families[0])
+            
+        self.font.setPixelSize(cell_size)
         self.f_metrics = QtGui.QFontMetricsF(self.font)
-        self.cell_size = 128.0
+        self.cell_size = float(cell_size)
         self._glyph_cache = {}
 
     def get(self, char):
@@ -483,7 +513,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
     # Обновили сигнатуру: добавлен аргумент text_id, text_align и order
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False):
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.flip_x, self.flip_y = flip_x, flip_y
@@ -491,6 +521,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.text_content = text_content if text_content else self.name
         self.text_id = text_id if text_id is not None else "TEST" # Сохраняем text_id
         self.text_align = text_align
+        self.font_slot = font_slot
         self.order = order  # Сохраняем порядок в массиве для Z-index
         self.alignment = alignment
         self.custom_color = color
@@ -564,8 +595,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             if not text: return
 
             # 1. Init Metrics & Font
-            font_family = self._custom_font_family if self._custom_font_family else "Arial"
-            metrics = RZFontManager.instance().get_metrics_for_family(font_family)
+            metrics, density = RZFontManager.instance().get_metrics(self.font_slot)
             chars = list(text)[:32]
 
             # 2. Scale Calculation (HEIGHT BASED)
@@ -623,31 +653,36 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             # But since we will scale X by (base_scale * squeeze), we apply shift in local space
             
             painter.translate(rect.left(), rect.top())
-            painter.scale(base_scale * squeeze, base_scale)
+            painter.scale(base_scale * squeeze * density, base_scale * density)
+            
+            # Translate inside the matrix to account for cell centering
+            painter.translate(
+                metrics.cell_size * (1.0 - density) * 0.5,
+                metrics.cell_size * (1.0 - density) * 0.5
+            )
             
             # Font setup (use the large 128px font from metrics)
             painter.setFont(metrics.font)
 
             cur_x_128 = 0.0
-            ref_a = metrics.get('A') # Reference for baseline alignment
+            # Baseline is consistently at 75% of cell size (matches pen_y in exporter)
+            baseline_y = metrics.cell_size * 0.75 
             
             # Draw Loop
             for char in chars:
                 m = metrics.get(char)
                 
-                # Y Position Calculation (Shader match)
-                # Shader: baseAdj = (ref.offY + ref.glyphH + (128.0/7.5) - (m.offY + m.glyphH))
-                # The constant 17.066 comes from 128.0 / 7.5
-                base_adj = (ref_a.offY + ref_a.glyphH + 17.0666 - (m.offY + m.glyphH))
-                
                 # Coordinates in 128px space
                 # X: Current cursor - Alignment Shift + Char Offset
                 draw_x = cur_x_128 - shift_128 + m.offX
-                draw_y = base_adj 
+                
+                # Y: Align top of glyph to (baseline + offY)
+                # Since offY is negative from baseline to top-edge of glyph
+                draw_y = baseline_y + m.offY
                 
                 # Draw
                 target_rect = QtCore.QRectF(draw_x, draw_y, m.glyphW, m.glyphH)
-                painter.drawText(target_rect, QtCore.Qt.AlignCenter | QtCore.Qt.TextDontClip, char)
+                painter.drawText(target_rect, QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft | QtCore.Qt.TextDontClip, char)
                 
                 cur_x_128 += m.advance
 
@@ -1216,6 +1251,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 data.get('alignment', 'BOTTOM_LEFT'),
                 text_id=data.get('text_id', ''),
                 text_align=data.get('text_align', 'LEFT'),
+                font_slot=data.get('font_slot', 0),
                 color=data.get('color', None),
                 grid_props=grid_props,
                 pos_is_formula=data.get('pos_is_formula', False),

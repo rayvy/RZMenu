@@ -91,8 +91,17 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         # 1. LAUNCH QT EDITOR (Now at the top)
         row = layout.row(align=True)
         row.scale_y = 1.2
-        row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
-
+        
+        # Safety Check for PySide6
+        try:
+            import PySide6
+            row.operator("rzm.launch_qt_editor", text="LAUNCH", icon='EXPORT')
+        except ImportError:
+            error_box = layout.box()
+            error_box.alert = True
+            error_box.label(text="Something got wrong or PySide6 is not installed,", icon='ERROR')
+            error_box.label(text="install or re-check dependencies in 'RZ Dependencies' panel.")
+            
         layout.separator()
 
         # 2. TARGET GAME SELECTION

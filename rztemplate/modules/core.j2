@@ -829,6 +829,7 @@ x105 = 2
 else
 x105 = 0
 endif
+y105 = $fontSlot
 x102 = $texPosX
 y102 = $texPosY
 z102 = $texSizeX
@@ -933,6 +934,7 @@ elif $flipY == 1
 else
     x105 = 0
 endif
+y105 = $fontSlot
 dispatch = 1, 1, 1
 x105 = 0
 $di_count = $di_count + 1
@@ -1032,8 +1034,14 @@ y99 = $cursorY / $ScreenH
 z99 = $ScreenW
 w99 = $ScreenH
 ps-t80 = ResourceIcons
-vs-t82 = ResourceFont
-ps-t82 = ResourceFont
+vs-t82 = ResourceFont0
+ps-t82 = ResourceFont0
+vs-t83 = ResourceFont1
+ps-t83 = ResourceFont1
+vs-t84 = ResourceFont2
+ps-t84 = ResourceFont2
+vs-t85 = ResourceFont3
+ps-t85 = ResourceFont3
 run = CustomShaderDI2D.PASS0.BLUR
 run = CustomShaderDI2D.PASS.MAIN
 clear = ResourceBuffer100
@@ -1198,8 +1206,14 @@ post $debugTexShow = 0
 ;MenuIcons
 [ResourceIcons]
 filename = .\res\icons.png
-[ResourceFont]
-filename = .\res\font_atlas.png
+[ResourceFont0]
+filename = .\res\font_atlas_0.png
+[ResourceFont1]
+filename = .\res\font_atlas_1.png
+[ResourceFont2]
+filename = .\res\font_atlas_2.png
+[ResourceFont3]
+filename = .\res\font_atlas_3.png
 [ResourceModNameText]
 filename = .\res\mod_name.png
 {% endmacro %}

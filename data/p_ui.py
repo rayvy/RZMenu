@@ -10,6 +10,26 @@ from .p_logic import ValueLinkProperty, AssignedToggle
 class FXProperty(bpy.types.PropertyGroup): value: EnumProperty(name="Effect", items=FX_COMMANDS)
 class FNProperty(bpy.types.PropertyGroup): function_name: EnumProperty(name="Function", items=FN_COMMANDS)
 
+class RZFontSlotSettings(bpy.types.PropertyGroup):
+    font_source: EnumProperty(
+        name="Font Source",
+        items=[
+            ('DEFAULT', "Windows Arial (Default)", ""),
+            ('CUSTOM', "Custom / System Search", ""),
+            # Legacy keys (for compatibility with old .blend files)
+            ('ARIAL', "Arial (Legacy)", ""),
+            ('CONSOLAS', "Consolas (Legacy)", ""),
+            ('SEGOE', "Segoe UI (Legacy)", ""),
+            ('SYSTEM', "System (Legacy)", "")
+        ],
+        default='DEFAULT'
+    )
+    custom_path: StringProperty(name="Font Path", subtype='FILE_PATH', description="Path to .ttf, .otf, or .ttc file")
+    font_style_name: StringProperty(name="Font Style", default="Regular", description="Style variant (e.g. 'Bold', 'Condensed Light', 'Italic')")
+    font_index: IntProperty(name="Font Index", default=0, min=0, max=99, description="Font index within .ttc collections (0 = first font)")
+    cell_size: IntProperty(name="Cell Size", min=16, max=256, default=32)
+    density: FloatProperty(name="Density", min=0.1, max=1.0, default=0.88)
+
 class CustomProperty(bpy.types.PropertyGroup):
     key: StringProperty(name="Key"); value_type: EnumProperty(name="Type", items=[('STRING', "String", ""), ('INT', "Integer", ""), ('FLOAT', "Float", "")], default='STRING')
     string_value: StringProperty(name="String Value"); int_value: IntProperty(name="Int Value"); float_value: FloatProperty(name="Float Value")
@@ -86,3 +106,4 @@ class RZMenuElement(bpy.types.PropertyGroup):
     disable_slider_blur: BoolProperty(name="Disable Slider Blur", default=False)
     disable_slider_prebuild_render: BoolProperty(name="Force Standard Render", default=False)
     disable_export: BoolProperty(name="Disable Export", description="If active, this element will not be exported to templates", default=False)
+    font_slot: IntProperty(name="Font Slot", min=0, max=3, default=0, description="Which font configuration slot to use (0-3)")

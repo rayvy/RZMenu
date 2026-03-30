@@ -10,6 +10,7 @@ $scissorX = 0
 $scissorY = 0
 $scissorZ = 0
 $scissorW = 0
+$fontSlot = {{ element.font_slot | default(0) }}
 {% if element.visibility_mode == 'CONDITIONAL' %}
 if {{element.visibility_condition}}
     $LocalVisibility = 1

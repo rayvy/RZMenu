@@ -23,13 +23,6 @@ DEPS = [
         "is_optional": False
     },
     {
-        "name": "Jinja2",
-        "import_name": "jinja2",
-        "pip_name": "jinja2",
-        "target_version": "3.1.2",
-        "is_optional": True
-    },
-    {
         "name": "XXMI Tools",
         "import_name": "XXMITools",
         "pip_name": None,
@@ -49,6 +42,13 @@ DEPS = [
         "pip_name": None,
         "target_version": "1.3.0",
         "is_optional": True
+    },
+    {
+        "name": "Pillow (PIL)",
+        "import_name": "PIL",
+        "pip_name": "Pillow",
+        "target_version": "12.1.1",
+        "is_optional": False
     }
 
 ]

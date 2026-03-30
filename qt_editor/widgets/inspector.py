@@ -14,6 +14,46 @@ from .. import core
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
 from ...data.constants import FX_COMMANDS
+import bpy
+import os
+
+class RZFontSlotComboBox(RZComboBox):
+    """
+    ComboBox for selecting font slots (0-3).
+    Displays slot number and the name of the font assigned to it.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(30)
+        
+    def refresh_slots(self):
+        self.blockSignals(True)
+        self.clear()
+        
+        fonts = []
+        if bpy.context and hasattr(bpy.context.scene, "rzm"):
+            fonts = bpy.context.scene.rzm.fonts
+            
+        from ...utils.font_utils import find_by_path
+        for i in range(4):
+            label = "Empty"
+            if i < len(fonts):
+                slot = fonts[i]
+                if slot.font_source in ('DEFAULT', 'ARIAL', 'CONSOLAS', 'SEGOE'):
+                    label = "Windows Arial"
+                elif slot.custom_path:
+                    result = find_by_path(slot.custom_path)
+                    if result:
+                        family, style, _ = result
+                        label = family if style == "Regular" else f"{family} - {style}"
+                    else:
+                        label = os.path.basename(slot.custom_path) or "Custom"
+                else:
+                    label = "Not Set"
+            
+            self.addItem(f"Slot {i+1}: {label}", i)
+        
+        self.blockSignals(False)
 
 class RZInspectorAnchorBar(QtWidgets.QWidget):
     """
@@ -842,6 +882,8 @@ class RZMInspectorPanel(RZEditorPanel):
             if sig:
                 if signal in ['valueChanged', 'value_changed', 'colorChanged']: 
                     sig.connect(lambda v: self._emit_change(field_name, v))
+                elif signal == 'currentIndexChanged':
+                    sig.connect(lambda i: self._emit_change(field_name, i))
                 elif signal == 'currentTextChanged': 
                     sig.connect(lambda t: self._emit_change(field_name, t))
                 elif signal == 'toggled': 
@@ -1086,6 +1128,9 @@ class RZMInspectorPanel(RZEditorPanel):
             self.grp_text = RZGroupBox("Text content")
             layout = QtWidgets.QVBoxLayout(self.grp_text)
             layout.setSpacing(6)
+            
+            self.cb_font_slot = self._add_row(layout, "Font Slot:", RZFontSlotComboBox(), 'font_slot', 'currentIndexChanged')
+            
             self.cb_text_mode = self._add_row(layout, "Text Mode:", RZComboBox(), 'text_mode')
             self.cb_text_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
             
@@ -1399,6 +1444,11 @@ class RZMInspectorPanel(RZEditorPanel):
                     self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
             
             # --- Text ---
+            if hasattr(self, 'cb_font_slot'):
+                self.cb_font_slot.refresh_slots()
+                idx = props.get('font_slot', 0)
+                self.cb_font_slot.setCurrentIndex(idx)
+                
             txt_mode = props.get('text_mode', 'SINGLE')
             if hasattr(self, 'cb_text_mode'): self.cb_text_mode.setCurrentText(txt_mode)
             is_txt_single = (txt_mode == 'SINGLE')
