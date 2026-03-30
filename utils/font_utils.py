@@ -122,6 +122,8 @@ def _build_registry_windows() -> dict:
     raw.update(_read_registry_key(winreg.HKEY_CURRENT_USER, _REGISTRY_FONT_SUBKEY))
 
     registry = {}
+    # Track files already handled via registry
+    handled_files = set()
     # For .ttc files we need to track per-file counter to assign indices
     ttc_file_counter: dict = {}  # {lower_abs_path: next_index}
 
@@ -133,6 +135,8 @@ def _build_registry_windows() -> dict:
         abs_path = _resolve_abs_path(filename)
         if not abs_path:
             continue
+        
+        handled_files.add(abs_path.lower())
 
         display_clean = _strip_type_suffix(disp_name)
         family, style = _split_family_style(display_clean)
@@ -145,9 +149,35 @@ def _build_registry_windows() -> dict:
 
         if family not in registry:
             registry[family] = {}
-        # Don't overwrite an existing style entry (HKCU already takes priority via raw update)
         if style not in registry[family]:
             registry[family][style] = (abs_path, index)
+
+    # --- File System Fallback ---
+    # Find fonts that are in the folder but NOT in the registry (e.g. system variable fonts)
+    search_dirs = [
+        os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts'),
+        os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Windows', 'Fonts'),
+    ]
+    for d in search_dirs:
+        if not os.path.isdir(d): continue
+        try:
+            for f in os.listdir(d):
+                ext = os.path.splitext(f.lower())[1]
+                if ext not in _SUPPORTED_EXTENSIONS: continue
+                full_path = os.path.join(d, f)
+                if full_path.lower() in handled_files: continue
+                
+                # Use filename as family name
+                name_no_ext = os.path.splitext(f)[0].replace('-', ' ').replace('_', ' ')
+                family, style = _split_family_style(name_no_ext)
+                
+                if family not in registry:
+                    registry[family] = {}
+                if style not in registry[family]:
+                    registry[family][style] = (full_path, 0)
+                    print(f"[FontsDebug] File Fallback: '{f}' -> Fam: '{family}', Style: '{style}'")
+        except OSError:
+            continue
 
     return registry
 

@@ -31,6 +31,26 @@ class AsyncFontLoader(QtCore.QThread):
             from ...utils.font_utils import build_font_registry, reset_registry
             reset_registry()  # Ensure fresh scan (handles addon reloads)
             registry = build_font_registry()
+            
+            # --- Variable Font Support (Qt Enrichment) ---
+            # For each family, ask Qt if there are styles we missed (e.g. named instances in variable fonts)
+            try:
+                db = QtGui.QFontDatabase()
+                for family in list(registry.keys()):
+                    styles = registry[family]
+                    if "Regular" not in styles:
+                        continue
+                    
+                    path, index = styles["Regular"]
+                    # Ask Qt for styles of this specific family
+                    available_styles = db.styles(family)
+                    for s in available_styles:
+                        if s not in styles:
+                            # Map the new style to the same file (Variable Font behavior)
+                            styles[s] = (path, index)
+            except Exception as e:
+                print(f"[FontsDebug] Qt Enrichment failed: {e}")
+
             AsyncFontLoader._cache = registry
             self.fonts_loaded.emit(registry)
         except Exception as e:
@@ -662,6 +682,7 @@ class FontsTab(BaseConfigTab):
         """Resolve (family, style) → (path, index) and save to slot."""
         from ...utils.font_utils import get_font_entry
         path, index = get_font_entry(family, style)
+        print(f"[FontsDebug] Apply Family Style: Slot {slot_idx+1}, Fam: {family}, Style: {style} -> Path: {path}, Index: {index}")
         if not path:
             # Fallback: on-demand scan
             from ...utils.font_utils import find_system_font

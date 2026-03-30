@@ -102,10 +102,31 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
         
         font_size = int(cell_size * density)
         try:
-            font = ImageFont.truetype(font_path, font_size, index=font_index)
+            # --- Variable Font Support (Pillow 9.1.0+) ---
+            variations = {}
+            style_lower = slot.font_style_name.lower()
+            
+            # Common Weight Mapping
+            if "thin" in style_lower: variations['wght'] = 100
+            elif "extra light" in style_lower: variations['wght'] = 200
+            elif "light" in style_lower: variations['wght'] = 300
+            elif "medium" in style_lower: variations['wght'] = 500
+            elif "semibold" in style_lower: variations['wght'] = 600
+            elif "bold" in style_lower: variations['wght'] = 700
+            elif "extrabold" in style_lower: variations['wght'] = 800
+            elif "black" in style_lower: variations['wght'] = 900
+            
+            # Slant/Italic
+            if "italic" in style_lower or "oblique" in style_lower:
+                variations['ital'] = 1.0
+            
+            font = ImageFont.truetype(font_path, font_size, index=font_index, variations=variations)
         except Exception:
-            # Fallback: index 0 (some fonts reject non-zero index)
-            font = ImageFont.truetype(font_path, font_size, index=0)
+            # Fallback for older Pillow or non-variable fonts
+            try:
+                font = ImageFont.truetype(font_path, font_size, index=font_index)
+            except Exception:
+                font = ImageFont.truetype(font_path, font_size, index=0)
 
         pen_x = int(cell_size * 0.1)
         pen_y = int(cell_size * 0.75)

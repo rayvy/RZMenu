@@ -49,6 +49,7 @@ class RZFontManager:
                 cell_size = slot.cell_size
                 density = slot.density
                 font_index = getattr(slot, 'font_index', 0)
+                font_style = getattr(slot, 'font_style_name', "Regular")
                 
                 if slot.font_source == 'CUSTOM' and slot.custom_path:
                     font_path = bpy.path.abspath(slot.custom_path)
@@ -58,10 +59,11 @@ class RZFontManager:
                     # Default mode
                     font_family = "Arial"
                     font_index = 0
+                    font_style = "Regular"
 
-        cache_key = (font_family, cell_size, font_index)
+        cache_key = (font_family, font_style, cell_size, font_index)
         if cache_key not in self._metrics_cache:
-            self._metrics_cache[cache_key] = RZFontAtlasMetrics(font_family, cell_size)
+            self._metrics_cache[cache_key] = RZFontAtlasMetrics(font_family, cell_size, font_style)
         
         return self._metrics_cache[cache_key], density
 
@@ -71,18 +73,30 @@ class RZFontAtlasMetrics:
     The constants here align with the user's font generation script:
     FONT_SIZE = 128, ATLAS_BASE_CELL_SIZE = 16, ATLAS_SCALE = 8 -> 128
     """
-    def __init__(self, font_family, cell_size):
+    def __init__(self, font_family, cell_size, style_name="Regular"):
         self.font = QtGui.QFont(font_family)
         if os.path.exists(font_family):
             font_id = QtGui.QFontDatabase.addApplicationFont(font_family)
             if font_id != -1:
                 families = QtGui.QFontDatabase.applicationFontFamilies(font_id)
                 if families:
+                    # QFontDatabase::styles(family) returns names like "Bold", "Italic"
+                    db = QtGui.QFontDatabase()
+                    available_styles = db.styles(families[0])
+                    
                     self.font = QtGui.QFont(families[0])
+                    if style_name in available_styles:
+                        # This is the most reliable way to set a specific style by name in Qt
+                        self.font.setStyleName(style_name)
+                    else:
+                        # Fallback to basic style matching
+                        if "bold" in style_name.lower(): self.font.setBold(True)
+                        if "italic" in style_name.lower(): self.font.setItalic(True)
             
         self.font.setPixelSize(cell_size)
         self.f_metrics = QtGui.QFontMetricsF(self.font)
         self.cell_size = float(cell_size)
+        print(f"[ViewportDebug] Created Metrics: Fam={font_family}, Style={style_name}, Size={cell_size}, RealFam={self.font.family()}, RealStyle={self.font.styleName()}")
         self._glyph_cache = {}
 
     def get(self, char):
