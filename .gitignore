@@ -15,9 +15,5 @@ __pycache__/
 *.rar
 *.zip
 
-# Можно также игнорировать скрытые системные файлы редакторов
-.DS_Store
-Thumbs.db
-
 /user_data/
 /basic_pack/Textures/
