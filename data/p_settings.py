@@ -66,6 +66,40 @@ class DependencyStatus(bpy.types.PropertyGroup):
     is_optional: BoolProperty(name="Is Optional")
     install_progress: FloatProperty(name="Install Progress", subtype='PERCENTAGE', min=0, max=100, default=0.0)
 
+class RZMCustomScript(bpy.types.PropertyGroup):
+    """Holds a single custom script path and its status."""
+    path: StringProperty(
+        name="Path",
+        description="Path to the script (.py) or executable (.exe)",
+        subtype='FILE_PATH'
+    )
+    enabled: BoolProperty(
+        name="Enabled",
+        description="Include this script in the export process",
+        default=True
+    )
+    args: StringProperty(
+        name="Arguments",
+        description="Custom CLI arguments for the script (space separated)",
+        default=""
+    )
+    auto_input: BoolProperty(
+        name="Auto Input",
+        description="Automatically send Enter (\\n), Space, and '123' to stdin to bypass prompts",
+        default=True
+    )
+    use_timeout: BoolProperty(
+        name="Use Timeout",
+        description="Force-kill the script if it takes longer than the specified limit",
+        default=True
+    )
+    timeout: IntProperty(
+        name="Timeout (s)",
+        description="Execution limit in seconds before the script is killed",
+        default=1337,
+        min=1
+    )
+
 class RZMExportSettings(bpy.types.PropertyGroup):
     mod_name: StringProperty(
         name="Mod Name", 
@@ -87,6 +121,15 @@ class RZMExportSettings(bpy.types.PropertyGroup):
         default=False,
         description="ВНИМАНИЕ: Перезапишет скрипты (ini/py) в целевой папке"
     )
+
+    # --- Custom Scripts ---
+    show_custom_scripts: BoolProperty(
+        name="Show Custom Scripts",
+        default=False,
+        description="Show management list for custom post-export scripts"
+    )
+    custom_scripts: CollectionProperty(type=RZMCustomScript)
+    custom_scripts_index: IntProperty(default=0)
     # --- Эмулятор ---
     emu_width: IntProperty(name="Emulator Width", default=1280, min=640)
     emu_height: IntProperty(name="Emulator Height", default=720, min=360)

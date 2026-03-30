@@ -206,6 +206,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         scene = context.scene
         rzm = scene.rzm
         game = rzm.game.selection
+        settings = rzm.export_settings
         
         box = layout.box()
         box.label(text="Export Management", icon='INFO')
@@ -215,6 +216,46 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         row.scale_y = 1.5
         row.operator("rzm.full_export", text="Export Mod (with auto-setup)", icon='EXPORT')
         
+        # --- Custom Scripts Management ---
+        script_box = box.column(align=True)
+        row = script_box.row(align=True)
+        icon = 'TRIA_DOWN' if settings.show_custom_scripts else 'TRIA_RIGHT'
+        row.prop(settings, "show_custom_scripts", text="POST-EXPORT SCRIPTS", icon=icon, toggle=True, emboss=False)
+        
+        if settings.show_custom_scripts:
+            # List of scripts
+            row = script_box.row()
+            row.template_list("RZM_UL_CustomScriptList", "", settings, "custom_scripts", settings, "custom_scripts_index", rows=3)
+            
+            # Side buttons
+            col = row.column(align=True)
+            col.operator("rzm.add_custom_script", text="", icon='ADD')
+            col.operator("rzm.remove_custom_script", text="", icon='REMOVE').index = settings.custom_scripts_index
+            col.separator()
+            op_up = col.operator("rzm.move_custom_script", text="", icon='TRIA_UP')
+            op_up.index = settings.custom_scripts_index
+            op_up.direction = 'UP'
+            op_down = col.operator("rzm.move_custom_script", text="", icon='TRIA_DOWN')
+            op_down.index = settings.custom_scripts_index
+            op_down.direction = 'DOWN'
+            
+            # Details for active script
+            if settings.custom_scripts and settings.custom_scripts_index >= 0:
+                try:
+                    active_script = settings.custom_scripts[settings.custom_scripts_index]
+                    script_box.prop(active_script, "path", text="")
+                    
+                    details = script_box.column(align=True)
+                    details.prop(active_script, "args", icon='CONSOLE')
+                    
+                    row = details.row(align=True)
+                    row.prop(active_script, "auto_input", toggle=True)
+                    row.prop(active_script, "use_timeout", toggle=True)
+                    if active_script.use_timeout:
+                        row.prop(active_script, "timeout", text="sec")
+                except IndexError:
+                    pass
+
         if game == 'EMULATOR':
             box.label(text="Running in Emulator mode (No game addon needed)")
 
@@ -405,7 +446,19 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         tw_box.operator("rzm.tw_debug_sync", text="Debug Sync", icon='CONSOLE')
 
 
+class RZM_UL_CustomScriptList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.prop(item, "enabled", text="")
+            name = os.path.basename(item.path) if item.path else "New Script"
+            row.label(text=name, icon='FILE_SCRIPT')
+        elif self.layout_type in {'GRID'}:
+            layout.alignment = 'CENTER'
+            layout.label(text="", icon='FILE_SCRIPT')
+
 classes_to_register = [ 
+    RZM_UL_CustomScriptList,
     RZM_MT_AssignToggleMenu, 
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel, 
