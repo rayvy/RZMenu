@@ -263,17 +263,22 @@ class RZConditionalImageItem(RZInspectorItem):
     def __init__(self, index, data, images, parent=None):
         super().__init__(index, parent, parent=parent)
         
+        # Use a vertical layout for content to give fields full width
+        self.v_content = QtWidgets.QVBoxLayout()
+        self.v_content.setSpacing(2)
+        self.content_layout.addLayout(self.v_content)
+        
         self.edit_cond = RZFormulaInput()
-        self.edit_cond.setPlaceholderText("Condition...")
+        self.edit_cond.setPlaceholderText("Condition (e.g. $var == 1)...")
         self.edit_cond.setText(data.get('condition', ''))
         self.edit_cond.editingFinished.connect(self._on_cond_changed)
-        self.add_widget(self.edit_cond, 2)
+        self.v_content.addWidget(self.edit_cond)
         
         self.cb_img = RZImageComboBox()
         self.cb_img.update_items(images)
         self.cb_img.set_value(data.get('image_id', -1))
         self.cb_img.value_changed.connect(self._on_img_changed)
-        self.add_widget(self.cb_img, 3)
+        self.v_content.addWidget(self.cb_img)
 
     def _on_cond_changed(self):
         self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
@@ -335,17 +340,22 @@ class RZConditionalTextItem(RZInspectorItem):
     def __init__(self, index, data, parent=None):
         super().__init__(index, parent, parent=parent)
         
+        # Use a vertical layout for content to give fields full width
+        self.v_content = QtWidgets.QVBoxLayout()
+        self.v_content.setSpacing(2)
+        self.content_layout.addLayout(self.v_content)
+
         self.edit_cond = RZFormulaInput()
-        self.edit_cond.setPlaceholderText("Condition...")
+        self.edit_cond.setPlaceholderText("Condition (e.g. $var == 1)...")
         self.edit_cond.setText(data.get('condition', ''))
         self.edit_cond.editingFinished.connect(self._on_cond_changed)
-        self.add_widget(self.edit_cond, 2)
+        self.v_content.addWidget(self.edit_cond)
         
         self.edit_txt = RZLineEdit()
-        self.edit_txt.setPlaceholderText("Text...")
+        self.edit_txt.setPlaceholderText("Text ID...")
         self.edit_txt.setText(data.get('text_id', ''))
         self.edit_txt.editingFinished.connect(self._on_txt_changed)
-        self.add_widget(self.edit_txt, 3)
+        self.v_content.addWidget(self.edit_txt)
 
     def _on_cond_changed(self):
         self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
@@ -855,7 +865,8 @@ class RZMInspectorPanel(RZEditorPanel):
                 lbl_w = RZLabel(label) if isinstance(label, str) else label
                 h.addWidget(lbl_w)
             h.addWidget(widget)
-            if not label:
+            # Only add stretch if it's NOT a full-width code editor or list
+            if not label and not isinstance(widget, (RZCodeTextEdit, RZListEditor)):
                 h.addStretch()
             if hasattr(layout, 'addLayout'):
                 layout.addLayout(h)
@@ -874,7 +885,7 @@ class RZMInspectorPanel(RZEditorPanel):
                 if hasattr(widget, 'value_changed'): signal = 'value_changed'
                 elif hasattr(widget, 'valueChanged'): signal = 'valueChanged'
                 elif hasattr(widget, 'colorChanged'): signal = 'colorChanged'
-                elif isinstance(widget, RZComboBox): signal = 'currentTextChanged'
+                elif isinstance(widget, (RZComboBox, RZImageComboBox)): signal = 'currentTextChanged'
                 elif isinstance(widget, RZCheckBox): signal = 'toggled'
                 else: signal = 'editingFinished'
             
@@ -1051,7 +1062,7 @@ class RZMInspectorPanel(RZEditorPanel):
             layout_trans.addLayout(h_tf_head)
             self.edit_trans_fx = self._add_row(layout_trans, "", RZCodeTextEdit(), 'transform_formula')
             self.edit_trans_fx.setPlaceholderText("Transform(x, y, w, h)...")
-            self.edit_trans_fx.setMinimumHeight(40); self.edit_trans_fx.setMaximumHeight(80)
+            self.edit_trans_fx.setMinimumHeight(120); self.edit_trans_fx.setMaximumHeight(400)
             self.chk_trans_formula.toggled.connect(self.edit_trans_fx.setVisible)
 
             self.layout_props.addWidget(self.grp_trans)
@@ -1093,6 +1104,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.w_color_formulas = QtWidgets.QWidget(); l_col_f = QtWidgets.QVBoxLayout(self.w_color_formulas); l_col_f.setContentsMargins(0, 0, 0, 0); l_col_f.setSpacing(2)
             for chan in ['r','g','b','a']:
                 edit = self._add_row(l_col_f, f"{chan.upper()}:", RZFormulaInput(), f'color_formula_{chan}')
+                edit.setFixedHeight(30) # Compressed per user request
                 setattr(self, f"edit_col_{chan}", edit)
             self.stack_color.addWidget(self.w_color_formulas)
             layout.addLayout(self.stack_color)
@@ -1153,7 +1165,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.list_links = RZValueLinkList()
             layout.addWidget(self.list_links)
             self.edit_vl_formula = self._add_row(layout, "", RZCodeTextEdit(), 'value_link_formula')
-            self.edit_vl_formula.setPlaceholderText("Link Formula..."); self.edit_vl_formula.setMinimumHeight(60)
+            self.edit_vl_formula.setPlaceholderText("Link Formula..."); self.edit_vl_formula.setMinimumHeight(140)
             self.list_fx = RZFXList()
             layout.addWidget(self.list_fx)
             self.layout_props.addWidget(self.grp_logic)
@@ -1168,14 +1180,14 @@ class RZMInspectorPanel(RZEditorPanel):
             self.chk_hover_event = self._add_row(h_hov, "", RZCheckBox("Enable"), 'hover_event_enabled')
             layout.addLayout(h_hov)
             self.edit_hover_fx = self._add_row(layout, "", RZCodeTextEdit(), 'hover_event_formula')
-            self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(40)
+            self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(120)
             self.chk_hover_event.toggled.connect(self.edit_hover_fx.setVisible)
             
             h_clk = QtWidgets.QHBoxLayout(); h_clk.addWidget(RZLabel("Click Event")); h_clk.addStretch()
             self.chk_click_event = self._add_row(h_clk, "", RZCheckBox("Enable"), 'click_event_enabled')
             layout.addLayout(h_clk)
             self.edit_click_fx = self._add_row(layout, "", RZCodeTextEdit(), 'click_event_formula')
-            self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(40)
+            self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(120)
             self.chk_click_event.toggled.connect(self.edit_click_fx.setVisible)
             
             self.layout_props.addWidget(self.grp_events)
