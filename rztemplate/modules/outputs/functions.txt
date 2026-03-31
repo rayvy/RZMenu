@@ -158,6 +158,10 @@ y110 = 8
 ;Rotate
 x110 = 1
 
+[CommandListShaderPreset11]
+;BlurMask
+y110 = 9000
+
 {{ButtonNumbers()}}
 {{mouseInteraction()}}
 {% endmacro %}

@@ -12,6 +12,7 @@ FX_COMMANDS = [
     ('CommandListShaderPreset8', "ShaderPreset-Metallic SHINE", "ShaderPres"),
     ('CommandListShaderPreset9', "ShaderPreset-Metallic Sticker ROTATED", "ShaderPres"),
     ('CommandListShaderPreset10', "ShaderPreset-Rotate", "ShaderPres"),
+    ('CommandListShaderPreset11', "ShaderPreset-BlurMask", "ShaderPres"),
     
 ]
 
