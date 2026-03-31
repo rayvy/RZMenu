@@ -46,12 +46,16 @@ class RZFontManager:
             fonts = bpy.context.scene.rzm.fonts
             if 0 <= font_slot < len(fonts):
                 slot = fonts[font_slot]
-                cell_size = slot.cell_size
-                density = slot.density
+                # Defensive fallback for older projects that might have 0 or None properties
+                slot_cs = getattr(slot, 'cell_size', 128)
+                slot_den = getattr(slot, 'density', 0.88)
+                cell_size = slot_cs if slot_cs and slot_cs > 0 else 128
+                density = slot_den if slot_den and slot_den > 0 else 0.88
+                
                 font_index = getattr(slot, 'font_index', 0)
                 font_style = getattr(slot, 'font_style_name', "Regular")
                 
-                if slot.font_source == 'CUSTOM' and slot.custom_path:
+                if getattr(slot, 'font_source', 'DEFAULT') == 'CUSTOM' and getattr(slot, 'custom_path', ''):
                     font_path = bpy.path.abspath(slot.custom_path)
                     if os.path.exists(font_path):
                         font_family = font_path
@@ -576,6 +580,14 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.update() 
     
     def paint(self, painter, option, widget):
+        try:
+            self._do_paint(painter, option, widget)
+        except Exception as e:
+            import traceback
+            print(f"[RZElementItem.paint] Crash prevented! Access violation avoided: {e}")
+            traceback.print_exc()
+
+    def _do_paint(self, painter, option, widget):
         rect = self.rect()
         t = get_current_theme()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
@@ -615,7 +627,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             # 2. Scale Calculation (HEIGHT BASED)
             # Shader: scale = (size.y * ScreenRes.y) / cs;
             # Qt: rect.height() is already (size.y * ScreenRes.y) in pixels
-            base_scale = rect.height() / metrics.cell_size
+            safe_cs = metrics.cell_size if metrics.cell_size > 0 else 1.0
+            base_scale = rect.height() / safe_cs
 
             # 3. Calculate Raw Content Width (in 128px space)
             total_w = 0.0
