@@ -1114,7 +1114,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_img_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
             
             self.cb_blend_mode = self._add_row(layout, "Blend Mode:", RZComboBox(), 'image_blending_mode')
-            self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR_HUE"])
+            self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR"])
             
             self.cb_image = self._add_row(layout, "Image:", RZImageComboBox(), 'image_id', 'value_changed')
             self.cb_hover_image = self._add_row(layout, "Hover Image:", RZImageComboBox(), 'hover_image_id', 'value_changed')

@@ -498,8 +498,7 @@ class _RZSmartSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
 
     def validate(self, text, pos):
         import re
-        # Return Acceptable for math expressions to ensure commitment on focus loss
-        if text == "--" or re.fullmatch(r"[0-9.+\-*/()%^= ]*", text):
+        if text == "--" or re.fullmatch(r"[0-9.,+\-*/()%^= ]*", text):
             return QtGui.QValidator.State.Acceptable, text, pos
         return super().validate(text, pos)
 
@@ -507,7 +506,8 @@ class _RZSmartSpinBox(RZVisualInputMixin, QtWidgets.QSpinBox):
         if text == "--": return self.value()
         try:
             from ...utils.evaluation import safe_eval
-            val = safe_eval(text)
+            eval_text = text.replace(',', '.')
+            val = safe_eval(eval_text)
             if isinstance(val, (int, float)):
                 return int(round(val))
         except Exception:
@@ -530,8 +530,7 @@ class _RZSmartDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
 
     def validate(self, text, pos):
         import re
-        # Return Acceptable for math expressions to ensure commitment on focus loss
-        if text == "--" or re.fullmatch(r"[0-9.+\-*/()%^= ]*", text):
+        if text == "--" or re.fullmatch(r"[0-9.,+\-*/()%^= ]*", text):
             return QtGui.QValidator.State.Acceptable, text, pos
         return super().validate(text, pos)
 
@@ -539,7 +538,8 @@ class _RZSmartDoubleSpinBox(RZVisualInputMixin, QtWidgets.QDoubleSpinBox):
         if text == "--": return self.value()
         try:
             from ...utils.evaluation import safe_eval
-            val = safe_eval(text)
+            eval_text = text.replace(',', '.')
+            val = safe_eval(eval_text)
             if isinstance(val, (int, float)):
                 return float(val)
         except Exception:
