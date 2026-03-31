@@ -113,12 +113,15 @@ Local $current_sizeY
     $P_SX = $SizeX
     $P_SY = $SizeY
     local $hoverInterpolate
+    local $clickInterpolate
     if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
     $hoverInterpolate = $hoverInterpolate + (1 - $hoverInterpolate) * ($dt + 0.0069)
     else
     $hoverInterpolate = $hoverInterpolate + (0 - $hoverInterpolate) * ($dt + 0.0069)
     endif
+    $clickInterpolate = $clickInterpolate + (0 - $clickInterpolate) * ($dt + 0.0069)
     w23 = $hoverInterpolate
+    z23 = $clickInterpolate
     ;Underlayer Presets
     {{generate_underlayer_presets(element,mod_file,scene)}}
 
