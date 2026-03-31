@@ -62,6 +62,8 @@ def copy_elements(target_ids):
                 "is_preset": getattr(elem, "is_preset", False),
                 "qt_preset_hide": getattr(elem, "qt_preset_hide", False),
                 "preset_ids": [p.preset_id for p in elem.preset_ids] if hasattr(elem, "preset_ids") else [],
+                "underlayer_preset_ids": [p.preset_id for p in elem.underlayer_preset_ids] if hasattr(elem, "underlayer_preset_ids") else [],
+
                 
                 "visibility_mode": elem.visibility_mode,
                 "visibility_condition": elem.visibility_condition,
@@ -225,6 +227,11 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
                 for pid in item["preset_ids"]:
                     new_p = new_elem.preset_ids.add()
                     new_p.preset_id = pid
+            if "underlayer_preset_ids" in item:
+                for pid in item["underlayer_preset_ids"]:
+                    new_p = new_elem.underlayer_preset_ids.add()
+                    new_p.preset_id = pid
+
             for ci in item.get("conditional_images", []):
                 new_ci = new_elem.conditional_images.add()
                 new_ci.condition = ci["condition"]

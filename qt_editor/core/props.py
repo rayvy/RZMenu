@@ -430,6 +430,58 @@ def reorder_preset_id(target_ids, old_index, new_index):
             blender_bridge.safe_undo_push("RZM: Reorder Presets")
             signals.SIGNALS.data_changed.emit()
 
+def add_underlayer_preset_id(target_ids, preset_id):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "underlayer_preset_ids"):
+                # Check if already exists
+                exists = False
+                for p in elem.underlayer_preset_ids:
+                    if p.preset_id == preset_id:
+                        exists = True
+                        break
+                if not exists:
+                    new_p = elem.underlayer_preset_ids.add()
+                    new_p.preset_id = preset_id
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Underlayer Preset")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_underlayer_preset_id(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "underlayer_preset_ids") and index < len(elem.underlayer_preset_ids):
+                elem.underlayer_preset_ids.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Underlayer Preset")
+            signals.SIGNALS.data_changed.emit()
+
+def reorder_underlayer_preset_id(target_ids, old_index, new_index):
+    if not target_ids or old_index < 0 or new_index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "underlayer_preset_ids"):
+                if old_index < len(elem.underlayer_preset_ids) and new_index < len(elem.underlayer_preset_ids):
+                    elem.underlayer_preset_ids.move(old_index, new_index)
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Reorder Underlayer Presets")
+            signals.SIGNALS.data_changed.emit()
+
+
 def perform_math_operation(target_ids, prop_name, op_str, sub_index=None):
     if not target_ids: return
 

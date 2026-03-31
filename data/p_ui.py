@@ -92,6 +92,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     toggles: CollectionProperty(type=AssignedToggle)
     fx: CollectionProperty(type=FXProperty); fn: CollectionProperty(type=FNProperty); properties: CollectionProperty(type=CustomProperty)
     preset_ids: CollectionProperty(type=RZPresetReference)
+    underlayer_preset_ids: CollectionProperty(type=RZPresetReference)
     qt_hide: BoolProperty(name="Hide in QT Editor", default=False)
     qt_preset_hide: BoolProperty(name="Hide Presets in Editor", default=False)
     qt_lock_pos: BoolProperty(name="Lock Position QT Editor", default=False)

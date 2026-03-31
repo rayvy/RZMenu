@@ -27,7 +27,9 @@ endif
 {% endif %}
 if $LocalVisibility
 $drawType = 0
+{% if not element.is_preset %}
 w33 = 0
+{% endif %}
 x110 = 0
 y110 = 0
 local $LocalHoverTimer
@@ -110,6 +112,16 @@ Local $current_sizeY
     $P_PY = $PositionY
     $P_SX = $SizeX
     $P_SY = $SizeY
+    local $hoverInterpolate
+    if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
+    $hoverInterpolate = $hoverInterpolate + (1 - $hoverInterpolate) * ($dt + 0.0069)
+    else
+    $hoverInterpolate = $hoverInterpolate + (0 - $hoverInterpolate) * ($dt + 0.0069)
+    endif
+    w23 = $hoverInterpolate
+    ;Underlayer Presets
+    {{generate_underlayer_presets(element,mod_file,scene)}}
+
     ;Presets
     {% if not element.is_preset and element.value_link %}
     x24 = $ValueX24Interpolated
@@ -135,6 +147,17 @@ Local $current_sizeY
         {% endif %}
     {% endfor %}
 {%endmacro%}
+
+{%macro generate_underlayer_presets(element, mod_file, scene)%}
+    {% for ref in element.underlayer_preset_ids %}
+    ;Underlayer: {{ref.preset_id}}
+        {% set preset_item = scene.rzm.elements | selectattr('id', 'equalto', ref.preset_id) | first %}
+        {% if preset_item %}
+            run = CommandListElement{{preset_item.element_name}}
+        {% endif %}
+    {% endfor %}
+{%endmacro%}
+
 
 {# OTHER STUFF#}
 {%macro generate_position_and_size(element,parent_element,mod_file,scene)%}
@@ -474,7 +497,7 @@ Local $current_sizeY
         {% set target_var_is_toggle = 0 %}
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
         {% if not element.is_preset %}
-        $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dt + 0.069)
+        $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dt + 0.0069)
         {% endif %}
 
         {# Отображение цифрового значения на кнопке #}

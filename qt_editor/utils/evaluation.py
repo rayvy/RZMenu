@@ -58,15 +58,29 @@ def safe_eval(expr, context=None):
         for k in sorted_keys:
             safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', str(k))
             # Use regex to match only full variable names (avoid matching $v in $v1)
-            # Escape k for regex
             pattern = re.escape(k) + r'(?![a-zA-Z0-9_])'
             processed_expr = re.sub(pattern, safe_k, processed_expr)
 
-        result = eval(processed_expr, eval_globals, eval_locals)
-        # print(f"safe_eval result: {result} type: {type(result)}") # Debug
-        return result
+        # RECURSIVE NAME RESOLUTION:
+        # If eval fails because of NameError, we inject that name as 0.0 and retry.
+        while True:
+            try:
+                result = eval(processed_expr, eval_globals, eval_locals)
+                return result
+            except NameError as ne:
+                # Extract the undefined name from the error message
+                # NameError: name 'w23' is not defined
+                missing_name = str(ne).split("'")[1]
+                if missing_name in eval_locals: # Prevent infinite loop
+                    raise ne
+                eval_locals[missing_name] = 0.0
+                # Continue loop to try again
+            except Exception as e:
+                # Other errors (syntax, zero division etc) just return None
+                logger.error(f"safe_eval: Error evaluating '{expr}': {e}")
+                return None
     except Exception as e:
-        logger.error(f"safe_eval: Error evaluating '{expr}': {e}")
+        logger.error(f"safe_eval: Unexpected critical error: {e}")
         return None
 
 def get_formula_preview(expr, active_element_data=None):

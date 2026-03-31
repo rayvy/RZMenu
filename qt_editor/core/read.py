@@ -337,7 +337,11 @@ def get_selection_details(selected_ids, active_id):
             "preset_ids": [
                 p.preset_id for p in target.preset_ids
             ] if target and hasattr(target, "preset_ids") else [],
+            "underlayer_preset_ids": [
+                p.preset_id for p in target.underlayer_preset_ids
+            ] if target and hasattr(target, "underlayer_preset_ids") else [],
         }
+
         return data
     return None
 
@@ -442,8 +446,34 @@ def get_viewport_data():
             
         if not hasattr(host_elem, "preset_ids"): continue # Safety if property not added yet
         
-        # Iterate presets assigned to this element
+        # Iterate underlayers assigned to this element (UNDERNEATH)
+        if hasattr(host_elem, "underlayer_preset_ids"):
+            for p_ref in host_elem.underlayer_preset_ids:
+                preset_id = p_ref.preset_id
+                preset_source = elem_map.get(preset_id)
+                if not preset_source: continue
+                
+                virtual_id = host_item['id'] * 100000 + preset_id + 50000 # Offset to avoid collision with standard presets
+                v_item = preset_source.copy()
+                v_item['id'] = virtual_id
+                v_item['parent_id'] = host_item['id']
+                v_item['name'] = f"{host_item['name']}::Underlayer_{preset_source['name']}"
+                v_item['is_selectable'] = False
+                v_item['is_underlayer'] = True # FLAG FOR VIEWPORT
+                
+                if not v_item['pos_is_formula']:
+                    v_item['pos_x'] = 0
+                    v_item['pos_y'] = 0
+                if not v_item['size_is_formula']:
+                    v_item['width'] = host_item['width']
+                    v_item['height'] = host_item['height']
+                
+                v_item['is_hidden'] = False 
+                virtual_elements.append(v_item)
+
+        # Iterate standard presets assigned to this element
         for p_ref in host_elem.preset_ids:
+
             preset_id = p_ref.preset_id
             preset_source = elem_map.get(preset_id)
             

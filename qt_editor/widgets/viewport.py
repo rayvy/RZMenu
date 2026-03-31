@@ -533,7 +533,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
     # Обновили сигнатуру: добавлен аргумент text_id, text_align и order
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False):
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.flip_x, self.flip_y = flip_x, flip_y
@@ -546,6 +546,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.alignment = alignment
         self.custom_color = color
         self.image_blending_mode = image_blending_mode
+        self.is_underlayer = is_underlayer
+
+        # UNDERLAYER STACKING: Render behind host
+        if is_underlayer:
+            self.setFlag(QtWidgets.QGraphicsItem.ItemStacksBehindParent, True)
+        else:
+            self.setFlag(QtWidgets.QGraphicsItem.ItemStacksBehindParent, False)
         
         if grid_props:
             self.grid_padding = grid_props.get('padding', 0)
@@ -1288,8 +1295,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 order=data.get('order', 0),
                 image_blending_mode=data.get('image_blending_mode', 'NONE'),
                 flip_x=data.get('flip_x', False),
-                flip_y=data.get('flip_y', False)
+                flip_y=data.get('flip_y', False),
+                is_underlayer=data.get('is_underlayer', False)
             )
+
             
             item.setVisible(not data.get('is_hidden', False))
             item.set_visual_state(uid in selected_ids, uid == active_id)
@@ -2102,8 +2111,14 @@ class RZViewportPanel(RZEditorPanel):
                     
             gather_descendants(active_tab_uid)
             
-            # Remove anything not in descendants
-            data = [e for e in data if e['id'] in descendants]
+            # Remove anything not in descendants and force root visibility
+            new_data = []
+            for e in data:
+                if e['id'] in descendants:
+                    if e['id'] == active_tab_uid:
+                        e['is_hidden'] = False # Force root to be visible
+                    new_data.append(e)
+            data = new_data
 
         self.view.rz_scene.update_scene(data, ctx.selected_ids, ctx.active_id)
     

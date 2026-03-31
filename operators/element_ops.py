@@ -137,6 +137,12 @@ class RZM_OT_DuplicateElement(bpy.types.Operator):
             new_sub = new_elem.preset_ids.add()
             new_sub.preset_id = sub_item.preset_id
 
+        # Underlayer Presets
+        for sub_item in source_elem.underlayer_preset_ids:
+            new_sub = new_elem.underlayer_preset_ids.add()
+            new_sub.preset_id = sub_item.preset_id
+
+
         new_elem.id = get_next_available_id(elements)
         new_elem.element_name = f"{source_elem.element_name}_Copy"
         

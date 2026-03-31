@@ -172,8 +172,22 @@ class FormulaEvaluator:
             # 2. Remove '$', '@', '#' signs
             clean_expr = expr_lower.replace('$', '').replace('@', '').replace('#', '')
 
-            # 3. Eval
-            res = eval(clean_expr, {"__builtins__": {}}, context)
-            return float(res)
+            # 3. Eval with recursive resolution for unknown names
+            while True:
+                try:
+                    res = eval(clean_expr, {"__builtins__": {}}, context)
+                    return float(res)
+                except NameError as ne:
+                    # e.g. name 'w23' is not defined
+                    parts = str(ne).split("'")
+                    if len(parts) >= 2:
+                        missing_name = parts[1]
+                        if missing_name in context: 
+                            raise ne
+                        context[missing_name] = 0.0
+                        continue
+                    raise ne
+                except Exception:
+                    return default_val
         except Exception:
             return default_val

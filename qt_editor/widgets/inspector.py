@@ -677,6 +677,61 @@ class RZPresetList(RZListEditor):
         if ctx.selected_ids:
             core.props.remove_preset_id(ctx.selected_ids, index)
 
+class RZUnderlayerPresetList(RZListEditor):
+    """A list-like widget to manage Underlayer Preset IDs."""
+    def __init__(self, parent=None):
+        super().__init__("+ Add Underlayer", parent)
+        self.layout_main.removeWidget(self.btn_add)
+        h_add = QtWidgets.QHBoxLayout()
+        self.cb_add_preset = RZComboBox()
+        h_add.addWidget(self.cb_add_preset, 1)
+        h_add.addWidget(self.btn_add)
+        self.layout_main.addLayout(h_add)
+
+    def update_data(self, preset_list):
+        elements = core.read.get_all_elements_list()
+        name_map = {e['id']: e['name'] for e in elements}
+            
+        def factory(i, pid):
+            name = name_map.get(pid, "Unknown")
+            return RZPresetItem(i, pid, name, self)
+            
+        def updater(w, pid):
+            w.blockSignals(True)
+            name = name_map.get(pid, "Unknown")
+            w.update_data(pid, name)
+            w.blockSignals(False)
+            
+        self.sync_widgets(preset_list, factory, updater)
+        
+        # Update dropdown with available preset elements
+        self.cb_add_preset.blockSignals(True)
+        self.cb_add_preset.clear()
+        preset_elements = [e for e in elements if e.get('is_preset', False)]
+        for e in preset_elements:
+            self.cb_add_preset.addItem(f"{e['name']} (ID: {e['id']})", e['id'])
+        self.cb_add_preset.blockSignals(False)
+
+    def add_item(self):
+        if self._block: return
+        pid = self.cb_add_preset.currentData()
+        if pid is None: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.add_underlayer_preset_id(ctx.selected_ids, pid)
+
+    def reorder_item(self, old_index, new_index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.reorder_underlayer_preset_id(ctx.selected_ids, old_index, new_index)
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.remove_underlayer_preset_id(ctx.selected_ids, index)
+
 
 class RZMInspectorPanel(RZEditorPanel):
     """
@@ -976,7 +1031,11 @@ class RZMInspectorPanel(RZEditorPanel):
             layout.addWidget(RZLabel("Applied Presets:"))
             self.list_presets = RZPresetList()
             layout.addWidget(self.list_presets)
+            layout.addWidget(RZLabel("Applied Underlayer Presets:"))
+            self.list_underlayers = RZUnderlayerPresetList()
+            layout.addWidget(self.list_underlayers)
             self.layout_props.addWidget(self.grp_presets)
+
         except Exception as e: print(f"[INSPECTOR] Error Presets: {e}")
 
     def _init_layout_ui(self):
@@ -1332,6 +1391,8 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'chk_is_preset'): self.chk_is_preset.setChecked(props.get('is_preset') is True)
             if hasattr(self, 'chk_preset_hide'): self.chk_preset_hide.setChecked(props.get('qt_preset_hide') is True)
             if hasattr(self, 'list_presets'): self.list_presets.update_data(props.get('preset_ids', []))
+            if hasattr(self, 'list_underlayers'): self.list_underlayers.update_data(props.get('underlayer_preset_ids', []))
+
 
             # --- Visibility ---
             vis_mode = props.get('visibility_mode', 'ALWAYS')

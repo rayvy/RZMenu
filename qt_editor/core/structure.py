@@ -243,6 +243,12 @@ def duplicate_elements(target_ids, offset=20):
                     new_p = new_elem.preset_ids.add()
                     new_p.preset_id = p.preset_id
 
+            if hasattr(src, "underlayer_preset_ids"):
+                for p in src.underlayer_preset_ids:
+                    new_p = new_elem.underlayer_preset_ids.add()
+                    new_p.preset_id = p.preset_id
+
+
             for ci in src.conditional_images:
                 new_ci = new_elem.conditional_images.add()
                 new_ci.condition = ci.condition
