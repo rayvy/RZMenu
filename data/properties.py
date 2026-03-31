@@ -17,7 +17,7 @@ from .p_texworks import (
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock
 )
 from .p_ui import (
-    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, ConditionalText, RZFontSlotSettings
+    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings
 )
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, 
@@ -71,7 +71,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
 classes_to_register = [
     RZMCaptureSettings, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
-    ValueLinkProperty, RZPresetReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
+    ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
     TexResource, TexOverride, TexWorksMaterial, 
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
     RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings, RZM_AddonPreferences, RZMenuProperties, 

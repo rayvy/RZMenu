@@ -92,16 +92,16 @@
 
 {%- macro format_var(input_string) -%}
     {%- if input_string -%}
-        {{- input_string.lstrip('$@#%') -}}
+        {{- input_string.lstrip('$@#') -}}
     {%- endif -%}
 {%- endmacro -%}
 
 {%- macro get_var_name(name, scene, auto_x=true) -%}
     {%- if not name -%}{%- else -%}
-        {%- set base = name.lstrip('$@#%') -%}
+        {%- set base = name.lstrip('$@#') -%}
         {%- set found = {'type': 'FLOAT'} -%}
         {%- if scene.rzm and scene.rzm.rzm_values -%}
-            {%- for v in scene.rzm.rzm_values if v.value_name.lstrip('$@#%') == base -%}
+            {%- for v in scene.rzm.rzm_values if v.value_name.lstrip('$@#') == base -%}
                 {%- if found.update({'type': v.value_type}) -%}{%- endif -%}
             {%- endfor -%}
         {%- endif -%}

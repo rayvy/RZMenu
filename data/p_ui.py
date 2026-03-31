@@ -37,6 +37,9 @@ class CustomProperty(bpy.types.PropertyGroup):
 class RZPresetReference(bpy.types.PropertyGroup):
     preset_id: IntProperty(name="Preset ID")
 
+class RZHelperReference(bpy.types.PropertyGroup):
+    helper_id: IntProperty(name="Helper ID")
+
 class ConditionalText(bpy.types.PropertyGroup):
     text_id: StringProperty(name="Text", default="New Text")
     condition: StringProperty(name="Condition", description="Condition to show this text (e.g. $var > 0)")
@@ -44,6 +47,13 @@ class ConditionalText(bpy.types.PropertyGroup):
 class RZMenuElement(bpy.types.PropertyGroup):
     element_name: StringProperty(name="Name"); id: IntProperty(name="Unique ID"); parent_id: IntProperty(name="Parent ID", default=-1)
     is_preset: BoolProperty(name="Is Preset", default=False)
+    is_helper: BoolProperty(name="Is Helper", default=False, description="Marks this element as a helper (functional supplement, not just visual). Helpers are exported as full elements with offset IDs and support ~ParentValue substitution")
+    is_template_prefab: BoolProperty(name="Is Template Prefab", default=False, description="Marks this element as a template prefab for menu auto-generation")
+    template_prefab: EnumProperty(name="Prefab Type", items=[
+        ('MAIN_BLOCK', "Main Block", "Root container prefab for the main menu block"),
+        ('PAGE_BLOCK', "Page Block", "Container prefab for a page/tab block"),
+        ('BUTTONS', "Buttons", "Prefab for a button group or single button"),
+    ], default='MAIN_BLOCK')
     priority: IntProperty(name="Priority", default=0); tag: StringProperty(name="Tag")
     qt_priority: IntProperty(name="QT Priority", default=0)
     elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", "")], default='CONTAINER')
@@ -93,6 +103,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     fx: CollectionProperty(type=FXProperty); fn: CollectionProperty(type=FNProperty); properties: CollectionProperty(type=CustomProperty)
     preset_ids: CollectionProperty(type=RZPresetReference)
     underlayer_preset_ids: CollectionProperty(type=RZPresetReference)
+    helper_ids: CollectionProperty(type=RZHelperReference)
     qt_hide: BoolProperty(name="Hide in QT Editor", default=False)
     qt_preset_hide: BoolProperty(name="Hide Presets in Editor", default=False)
     qt_lock_pos: BoolProperty(name="Lock Position QT Editor", default=False)

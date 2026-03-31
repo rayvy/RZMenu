@@ -732,6 +732,61 @@ class RZUnderlayerPresetList(RZListEditor):
         if ctx.selected_ids:
             core.props.remove_underlayer_preset_id(ctx.selected_ids, index)
 
+class RZHelperList(RZListEditor):
+    """A list-like widget to manage Helper IDs (analogous to RZPresetList)."""
+    def __init__(self, parent=None):
+        super().__init__("+ Add Helper", parent)
+        self.layout_main.removeWidget(self.btn_add)
+        h_add = QtWidgets.QHBoxLayout()
+        self.cb_add_helper = RZComboBox()
+        h_add.addWidget(self.cb_add_helper, 1)
+        h_add.addWidget(self.btn_add)
+        self.layout_main.addLayout(h_add)
+
+    def update_data(self, helper_list):
+        elements = core.read.get_all_elements_list()
+        name_map = {e['id']: e['name'] for e in elements}
+
+        def factory(i, hid):
+            name = name_map.get(hid, "Unknown")
+            return RZPresetItem(i, hid, name, self)
+
+        def updater(w, hid):
+            w.blockSignals(True)
+            name = name_map.get(hid, "Unknown")
+            w.update_data(hid, name)
+            w.blockSignals(False)
+
+        self.sync_widgets(helper_list, factory, updater)
+
+        # Update dropdown with available helper elements
+        self.cb_add_helper.blockSignals(True)
+        self.cb_add_helper.clear()
+        helper_elements = [e for e in elements if e.get('is_helper', False)]
+        for e in helper_elements:
+            self.cb_add_helper.addItem(f"{e['name']} (ID: {e['id']})", e['id'])
+        self.cb_add_helper.blockSignals(False)
+
+    def add_item(self):
+        if self._block: return
+        hid = self.cb_add_helper.currentData()
+        if hid is None: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.add_helper_id(ctx.selected_ids, hid)
+
+    def reorder_item(self, old_index, new_index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.reorder_helper_id(ctx.selected_ids, old_index, new_index)
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.remove_helper_id(ctx.selected_ids, index)
+
 
 class RZMInspectorPanel(RZEditorPanel):
     """
@@ -1023,17 +1078,42 @@ class RZMInspectorPanel(RZEditorPanel):
 
     def _init_presets_ui(self):
         try:
-            self.grp_presets = RZGroupBox("Presets System")
+            self.grp_presets = RZGroupBox("Presets & Helpers")
             layout = QtWidgets.QVBoxLayout(self.grp_presets)
             layout.setSpacing(6)
-            self.chk_is_preset = self._add_row(layout, "", RZCheckBox("Is Preset Element"), 'is_preset')
-            self.chk_preset_hide = self._add_row(layout, "", RZCheckBox("Hide Presets (Overlay)"), 'qt_preset_hide')
+
+            # --- Is Preset / Is Helper (identity flags) ---
+            h_flags = QtWidgets.QHBoxLayout()
+            self.chk_is_preset = self._add_row(h_flags, "", RZCheckBox("Is Preset"), 'is_preset')
+            self.chk_is_helper = self._add_row(h_flags, "", RZCheckBox("Is Helper"), 'is_helper')
+            layout.addLayout(h_flags)
+
+            self.chk_preset_hide = self._add_row(layout, "", RZCheckBox("Hide Presets/Helpers (Overlay)"), 'qt_preset_hide')
+
+            # --- Template Prefab ---
+            self.grp_template_prefab = RZGroupBox("Template Prefab")
+            f_prefab = QtWidgets.QFormLayout(self.grp_template_prefab)
+            f_prefab.setSpacing(4)
+            self.chk_is_template_prefab = self._add_row(f_prefab, "", RZCheckBox("Is Template Prefab"), 'is_template_prefab')
+            self.cb_template_prefab = self._add_row(f_prefab, "Type:", RZComboBox(), 'template_prefab')
+            self.cb_template_prefab.addItems(["MAIN_BLOCK", "PAGE_BLOCK", "BUTTONS"])
+            self.chk_is_template_prefab.toggled.connect(self.cb_template_prefab.setVisible)
+            self.grp_template_prefab.setVisible(False)  # Hidden until is_template_prefab is enabled
+            layout.addWidget(self.grp_template_prefab)
+
+            # --- Applied Presets ---
             layout.addWidget(RZLabel("Applied Presets:"))
             self.list_presets = RZPresetList()
             layout.addWidget(self.list_presets)
             layout.addWidget(RZLabel("Applied Underlayer Presets:"))
             self.list_underlayers = RZUnderlayerPresetList()
             layout.addWidget(self.list_underlayers)
+
+            # --- Applied Helpers ---
+            layout.addWidget(RZLabel("Applied Helpers:"))
+            self.list_helpers = RZHelperList()
+            layout.addWidget(self.list_helpers)
+
             self.layout_props.addWidget(self.grp_presets)
 
         except Exception as e: print(f"[INSPECTOR] Error Presets: {e}")
@@ -1397,10 +1477,20 @@ class RZMInspectorPanel(RZEditorPanel):
 
             # --- Presets ---
             if hasattr(self, 'chk_is_preset'): self.chk_is_preset.setChecked(props.get('is_preset') is True)
+            if hasattr(self, 'chk_is_helper'): self.chk_is_helper.setChecked(props.get('is_helper') is True)
             if hasattr(self, 'chk_preset_hide'): self.chk_preset_hide.setChecked(props.get('qt_preset_hide') is True)
             if hasattr(self, 'list_presets'): self.list_presets.update_data(props.get('preset_ids', []))
             if hasattr(self, 'list_underlayers'): self.list_underlayers.update_data(props.get('underlayer_preset_ids', []))
+            if hasattr(self, 'list_helpers'): self.list_helpers.update_data(props.get('helper_ids', []))
 
+            # Template Prefab
+            if hasattr(self, 'chk_is_template_prefab'):
+                self.chk_is_template_prefab.setChecked(props.get('is_template_prefab') is True)
+            if hasattr(self, 'cb_template_prefab'):
+                tp = props.get('template_prefab', 'MAIN_BLOCK')
+                self.cb_template_prefab.setCurrentText(tp or 'MAIN_BLOCK')
+            if hasattr(self, 'grp_template_prefab'):
+                self.grp_template_prefab.setVisible(props.get('is_template_prefab') is True)
 
             # --- Visibility ---
             vis_mode = props.get('visibility_mode', 'ALWAYS')

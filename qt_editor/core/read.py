@@ -60,6 +60,8 @@ def get_all_elements_list():
             "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),
             "is_preset": getattr(elem, "is_preset", False),
+            "is_helper": getattr(elem, "is_helper", False),
+            "is_template_prefab": getattr(elem, "is_template_prefab", False),
             "is_tab_container": getattr(elem, "is_tab_container", False),
             "page_color": list(getattr(elem, "page_color", (0.5, 0.5, 0.5, 1.0)))
         })
@@ -102,6 +104,9 @@ def get_variable_suggestions():
     for shape in rzm.shapes:
         if shape.shape_name:
             suggestions.append(f"{shape.shape_name}") # Shape names usually have # prefix based on description
+
+    # 5. System variables (~)
+    suggestions.append("~ParentValue")
 
     return sorted(suggestions)
 
@@ -340,6 +345,16 @@ def get_selection_details(selected_ids, active_id):
             "underlayer_preset_ids": [
                 p.preset_id for p in target.underlayer_preset_ids
             ] if target and hasattr(target, "underlayer_preset_ids") else [],
+
+            # Helpers
+            "is_helper": get_uniform("is_helper", default=False),
+            "helper_ids": [
+                h.helper_id for h in target.helper_ids
+            ] if target and hasattr(target, "helper_ids") else [],
+
+            # Template Prefab
+            "is_template_prefab": get_uniform("is_template_prefab", default=False),
+            "template_prefab": get_uniform("template_prefab", default="MAIN_BLOCK"),
         }
 
         return data
@@ -411,6 +426,8 @@ def get_viewport_data():
             "is_tab_container": getattr(elem, "is_tab_container", False),
             "page_color": list(getattr(elem, "page_color", [0.5, 0.5, 0.5, 1.0])),
             "qt_preset_hide": getattr(elem, "qt_preset_hide", False),
+            "is_helper": getattr(elem, "is_helper", False),
+            "is_template_prefab": getattr(elem, "is_template_prefab", False),
             
             # Grid props
             "grid_cell_size": getattr(elem, "grid_cell_size", 50),
@@ -555,7 +572,91 @@ def get_viewport_data():
             v_item['is_hidden'] = False 
             
             virtual_elements.append(v_item)
-            
+
+            # --- PRESET CHILDREN: Full recursive subtree rendering ---
+            # Build a map of parent_id -> list of children from the base 'results'
+            def collect_preset_children_recursive(source_elem_id, virtual_parent_id, depth=0):
+                """Recursively collect virtual copies of all descendants of source_elem_id."""
+                if depth > 20: return  # Hard safety limit
+                for child_item in results:
+                    if child_item['parent_id'] == source_elem_id:
+                        # Give child a deterministic virtual ID:
+                        # Use a prime-based hash to minimize collisions in deep trees
+                        child_virtual_id = virtual_parent_id * 1000 + child_item['id'] % 1000
+                        child_v = child_item.copy()
+                        child_v['id'] = child_virtual_id
+                        child_v['parent_id'] = virtual_parent_id
+                        child_v['is_selectable'] = False
+                        child_v['is_locked_pos'] = False
+                        child_v['is_locked_size'] = False
+                        child_v['is_hidden'] = False
+                        child_v['name'] = f"{host_item['name']}::{child_item['name']}"
+                        virtual_elements.append(child_v)
+                        # Recurse into this child's children
+                        collect_preset_children_recursive(child_item['id'], child_virtual_id, depth + 1)
+
+            collect_preset_children_recursive(preset_id, virtual_id)
+
+    # --- HELPER LOGIC: Virtual element injection (same as presets, but flagged as helper) ---
+    for host_item in results:
+        host_elem = bpy.context.scene.rzm.elements[host_item['order']]
+
+        if getattr(host_elem, "is_preset", False) or getattr(host_elem, "is_helper", False):
+            continue
+
+        if getattr(host_elem, "qt_preset_hide", False):
+            continue
+
+        if not hasattr(host_elem, "helper_ids"): continue
+
+        for h_ref in host_elem.helper_ids:
+            helper_id = h_ref.helper_id
+            helper_source = elem_map.get(helper_id)
+            if not helper_source:
+                continue
+
+            # Helper virtual ID scheme: offset +70000 from preset scheme to avoid collision
+            virtual_id = host_item['id'] * 100000 + helper_id + 70000
+
+            h_item = helper_source.copy()
+            h_item['id'] = virtual_id
+            h_item['parent_id'] = host_item['id']
+            h_item['name'] = f"{host_item['name']}::Helper_{helper_source['name']}"
+            h_item['is_selectable'] = False
+            h_item['is_locked_pos'] = False
+            h_item['is_locked_size'] = False
+            h_item['is_hidden'] = False
+            h_item['is_helper_instance'] = True  # Flag for future exporter use
+
+            if not h_item['pos_is_formula']:
+                h_item['pos_x'] = 0
+                h_item['pos_y'] = 0
+            if not h_item['size_is_formula']:
+                h_item['width'] = host_item['width']
+                h_item['height'] = host_item['height']
+
+            virtual_elements.append(h_item)
+
+            # Recursive children for helpers (same logic as presets)
+            def collect_helper_children_recursive(source_elem_id, virtual_parent_id, depth=0):
+                if depth > 20: return
+                for child_item in results:
+                    if child_item['parent_id'] == source_elem_id:
+                        child_virtual_id = virtual_parent_id * 1000 + child_item['id'] % 1000
+                        child_v = child_item.copy()
+                        child_v['id'] = child_virtual_id
+                        child_v['parent_id'] = virtual_parent_id
+                        child_v['is_selectable'] = False
+                        child_v['is_locked_pos'] = False
+                        child_v['is_locked_size'] = False
+                        child_v['is_hidden'] = False
+                        child_v['name'] = f"{host_item['name']}::HChild_{child_item['name']}"
+                        child_v['is_helper_instance'] = True
+                        virtual_elements.append(child_v)
+                        collect_helper_children_recursive(child_item['id'], child_virtual_id, depth + 1)
+
+            collect_helper_children_recursive(helper_id, virtual_id)
+
     results.extend(virtual_elements)
 
     return results

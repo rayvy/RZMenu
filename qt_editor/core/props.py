@@ -27,6 +27,11 @@ PROP_MAP = {
     # Presets
     "is_preset": ("is_preset", None, 'T'),
     "qt_preset_hide": ("qt_preset_hide", None, 'T'),
+    # Helpers
+    "is_helper": ("is_helper", None, 'T'),
+    # Template Prefab
+    "is_template_prefab": ("is_template_prefab", None, 'D'),
+    "template_prefab": ("template_prefab", None, 'D'),
     # Flags
     "qt_hide": ("qt_hide", None, 'S'),
     "is_hidden": ("qt_hide", None, 'S'), # Alias
@@ -479,6 +484,58 @@ def reorder_underlayer_preset_id(target_ids, old_index, new_index):
         
         if changed:
             blender_bridge.safe_undo_push("RZM: Reorder Underlayer Presets")
+            signals.SIGNALS.data_changed.emit()
+
+
+# ─── HELPER IDs ──────────────────────────────────────────────────────────────
+
+def add_helper_id(target_ids, helper_id):
+    """Add a helper reference to the target elements."""
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "helper_ids"):
+                exists = any(h.helper_id == helper_id for h in elem.helper_ids)
+                if not exists:
+                    new_h = elem.helper_ids.add()
+                    new_h.helper_id = helper_id
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Helper")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_helper_id(target_ids, index):
+    """Remove a helper reference by index from the target elements."""
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "helper_ids") and index < len(elem.helper_ids):
+                elem.helper_ids.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Helper")
+            signals.SIGNALS.data_changed.emit()
+
+def reorder_helper_id(target_ids, old_index, new_index):
+    """Reorder helper references in the target elements."""
+    if not target_ids or old_index < 0 or new_index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and hasattr(elem, "helper_ids"):
+                if old_index < len(elem.helper_ids) and new_index < len(elem.helper_ids):
+                    elem.helper_ids.move(old_index, new_index)
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Reorder Helpers")
             signals.SIGNALS.data_changed.emit()
 
 
