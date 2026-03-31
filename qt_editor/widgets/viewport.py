@@ -41,6 +41,8 @@ class RZFontManager:
         font_family = "Arial"
         cell_size = 128
         density = 0.88
+        font_index = 0
+        font_style = "Regular"
         
         if bpy.context and hasattr(bpy.context, 'scene') and hasattr(bpy.context.scene, 'rzm'):
             fonts = bpy.context.scene.rzm.fonts
