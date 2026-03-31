@@ -591,6 +591,8 @@ if $inputMode == 0
 $hoveredID = -1
 endif
 $dt = time - $ts
+$dtCustom = time - $ts
+$dtCustom = $dtCustom * {{ scene.rzm.config.custom_interpolation_speed | default (16.0) }}
 $ts = time
 {%endmacro%}
 

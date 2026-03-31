@@ -44,6 +44,7 @@ class RZMenuConfig(bpy.types.PropertyGroup):
     pre_snippet: StringProperty(name="Pre Snippet", default="")
     post_snippet: StringProperty(name="Post Snippet", default="")
     mod_info: StringProperty(name="Mod Info", default="", description="Custom mod metadata for meta.j2")
+    custom_interpolation_speed: FloatProperty(name="Interpolation Speed", default=16.0, min=0.001, max=100.0)
 
 
 class DependencyStatus(bpy.types.PropertyGroup):

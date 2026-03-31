@@ -169,10 +169,18 @@ class GeneralTab(BaseConfigTab):
         self.spin_h = RZSpinBox()
         self.spin_h.setRange(0, 8192)
         self.spin_h.valueChanged.connect(lambda v: self.on_canvas_changed(1, v))
-        h_canvas.addWidget(self.spin_w)
-        h_canvas.addWidget(RZLabel("x"))
         h_canvas.addWidget(self.spin_h)
         l_proj.addLayout(h_canvas)
+
+        # Interpolation Speed
+        h_interp = QtWidgets.QHBoxLayout()
+        h_interp.addWidget(RZLabel("Interpolation Speed:"))
+        self.spin_interp = RZDoubleSpinBox()
+        self.spin_interp.setRange(0.1, 100.0)
+        self.spin_interp.setSingleStep(0.1)
+        self.spin_interp.valueChanged.connect(self.on_interpolation_changed)
+        h_interp.addWidget(self.spin_interp)
+        l_proj.addLayout(h_interp)
 
         # --- Addons ---
         l_addons = self.add_section("Addons")
@@ -221,6 +229,9 @@ class GeneralTab(BaseConfigTab):
             
         if self.spin_h.value() != rzm.config.canvas_size[1]:
             self.spin_h.setValue(rzm.config.canvas_size[1])
+            
+        if self.spin_interp.value() != rzm.config.custom_interpolation_speed:
+            self.spin_interp.setValue(rzm.config.custom_interpolation_speed)
         
         addons = rzm.addons
         if self.chk_debug.isChecked() != addons.debugger_info:
@@ -247,6 +258,13 @@ class GeneralTab(BaseConfigTab):
     def on_mod_name_changed(self):
         if self._block: return
         self._call_op("update_export_setting", prop_name="mod_name", val_str=self.inp_mod_name.text(), use_bool=False)
+
+    def on_interpolation_changed(self, value):
+        if self._block: return
+        try:
+            bpy.context.scene.rzm.config.custom_interpolation_speed = value
+        except Exception as e:
+            print(f"Error setting interpolation speed: {e}")
 
     def on_canvas_changed(self, idx, val):
         if self._block: return

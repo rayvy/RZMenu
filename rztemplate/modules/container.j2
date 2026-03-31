@@ -11,6 +11,8 @@ local $LocalVisibility
 local $ValueX24Interpolated
 {% endif %}
 $LocalVisibility = 0
+local $hoverInterpolate
+local $clickInterpolate
 $scissorX = 0
 $scissorY = 0
 $scissorZ = 0
@@ -65,6 +67,8 @@ Local $current_sizeY
     {% else %}
         {{generate_position_and_size(element,parent_element,mod_file,scene)}}
     {% endif %}
+    ;Underlayer Presets
+    {{generate_underlayer_presets(element,mod_file,scene)}}
     {%if element.color%}{{generate_color(element)}}{%endif%}
     {%if element.fn%}{{generate_fn(element)}}{%endif%}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
@@ -112,19 +116,16 @@ Local $current_sizeY
     $P_PY = $PositionY
     $P_SX = $SizeX
     $P_SY = $SizeY
-    local $hoverInterpolate
-    local $clickInterpolate
-    if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
-    $hoverInterpolate = $hoverInterpolate + (1 - $hoverInterpolate) * ($dt + 0.0069)
-    else
-    $hoverInterpolate = $hoverInterpolate + (0 - $hoverInterpolate) * ($dt + 0.0069)
-    endif
-    $clickInterpolate = $clickInterpolate + (0 - $clickInterpolate) * ($dt + 0.0069)
+    {% if not element.is_preset%}
     w23 = $hoverInterpolate
     z23 = $clickInterpolate
-    ;Underlayer Presets
-    {{generate_underlayer_presets(element,mod_file,scene)}}
-
+    {% endif %}
+    if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
+    $hoverInterpolate = $hoverInterpolate + (1 - $hoverInterpolate) * ($dtCustom + 0.0069)
+    else
+    $hoverInterpolate = $hoverInterpolate + (0 - $hoverInterpolate) * ($dtCustom + 0.0069)
+    endif
+    $clickInterpolate = $clickInterpolate + (0 - $clickInterpolate) * ($dtCustom + 0.0069)
     ;Presets
     {% if not element.is_preset and element.value_link %}
     x24 = $ValueX24Interpolated
@@ -269,6 +270,7 @@ Local $current_sizeY
         {# Выполняется при клике #}
         if $id == $clickTriggerID
         {{ element.click_event_formula }}
+        $clickInterpolate = 1
         endif
         {% endif %}
     {% endif %}
@@ -500,7 +502,7 @@ Local $current_sizeY
         {% set target_var_is_toggle = 0 %}
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
         {% if not element.is_preset %}
-        $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dt + 0.0069)
+        $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dtCustom + 0.0069)
         {% endif %}
 
         {# Отображение цифрового значения на кнопке #}
@@ -538,7 +540,7 @@ Local $current_sizeY
             {% if element.value_link_is_formula %}
                 {{ element.value_link_formula }}
             {% endif %}
-
+            $clickInterpolate = 1
         endif
     
         {# Логика вызова попапа #}
@@ -564,6 +566,7 @@ Local $current_sizeY
             {% if element.value_link_is_formula %}
                 {{ element.value_link_formula }}
             {% endif %}
+            $clickInterpolate = 1
         endif
     {% endif %}
 

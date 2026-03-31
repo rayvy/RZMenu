@@ -921,7 +921,7 @@ class RZMInspectorPanel(RZEditorPanel):
                 h.addWidget(lbl_w)
             h.addWidget(widget)
             # Only add stretch if it's NOT a full-width code editor or list
-            if not label and not isinstance(widget, (RZCodeTextEdit, RZListEditor)):
+            if not label and not isinstance(widget, (RZCodeTextEdit, RZListEditor, RZFormulaInput)):
                 h.addStretch()
             if hasattr(layout, 'addLayout'):
                 layout.addLayout(h)
@@ -1080,9 +1080,13 @@ class RZMInspectorPanel(RZEditorPanel):
 
             self.w_pos_formulas = QtWidgets.QWidget()
             l_pos_f = QtWidgets.QVBoxLayout(self.w_pos_formulas)
-            l_pos_f.setContentsMargins(0, 0, 0, 0); l_pos_f.setSpacing(4)
-            self.edit_pos_fx = self._add_row(l_pos_f, "X:", RZFormulaInput(), 'position_formula_x')
-            self.edit_pos_fy = self._add_row(l_pos_f, "Y:", RZFormulaInput(), 'position_formula_y')
+            l_pos_f.setContentsMargins(0, 0, 0, 0); l_pos_f.setSpacing(2)
+            l_pos_f.addWidget(RZLabel("X Formula:"))
+            self.edit_pos_fx = self._add_row(l_pos_f, "", RZFormulaInput(), 'position_formula_x')
+            self.edit_pos_fx.setMinimumHeight(92) # Increased height
+            l_pos_f.addWidget(RZLabel("Y Formula:"))
+            self.edit_pos_fy = self._add_row(l_pos_f, "", RZFormulaInput(), 'position_formula_y')
+            self.edit_pos_fy.setMinimumHeight(92) # Increased height
             self.stack_pos.addWidget(self.w_pos_formulas)
             self.chk_pos_formula.toggled.connect(lambda v: self.stack_pos.setCurrentIndex(1 if v else 0))
 
@@ -1107,9 +1111,13 @@ class RZMInspectorPanel(RZEditorPanel):
 
             self.w_size_formulas = QtWidgets.QWidget()
             l_size_f = QtWidgets.QVBoxLayout(self.w_size_formulas)
-            l_size_f.setContentsMargins(0, 0, 0, 0); l_size_f.setSpacing(4)
-            self.edit_size_fx = self._add_row(l_size_f, "W:", RZFormulaInput(), 'size_formula_x')
-            self.edit_size_fy = self._add_row(l_size_f, "H:", RZFormulaInput(), 'size_formula_y')
+            l_size_f.setContentsMargins(0, 0, 0, 0); l_size_f.setSpacing(2)
+            l_size_f.addWidget(RZLabel("Width Formula:"))
+            self.edit_size_fx = self._add_row(l_size_f, "", RZFormulaInput(), 'size_formula_x')
+            self.edit_size_fx.setMinimumHeight(60) # Increased height
+            l_size_f.addWidget(RZLabel("Height Formula:"))
+            self.edit_size_fy = self._add_row(l_size_f, "", RZFormulaInput(), 'size_formula_y')
+            self.edit_size_fy.setMinimumHeight(60) # Increased height
             self.stack_size.addWidget(self.w_size_formulas)
             self.chk_size_formula.toggled.connect(lambda v: self.stack_size.setCurrentIndex(1 if v else 0))
 

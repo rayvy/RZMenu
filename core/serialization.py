@@ -381,14 +381,37 @@ class RZTemplateEngine:
                 print(f"[RZM] Skip Condition Import: '{name}' already exists in scene.")
 
     def create_elements(self, data, img_remap, root_parent_id, offset):
-        max_id = max({e.id for e in self.rzm.elements} or {0})
-        id_map = {}
+        """
+        Смарт-импорт элементов с сохранением оригинальных ID, если они свободны.
+        При конфликте находит ближайший свободный ID.
+        """
+        existing_ids = {e.id for e in self.rzm.elements}
+        id_map = {} # KEY = Old ID (int) -> Value = New ID (int)
         elements_data = data.get("elements", [])
         
-        for idx, el in enumerate(elements_data):
-            old = el.get("_temp_original_id")
-            new = max_id + 1 + idx
-            if old is not None: id_map[old] = new
+        # --- ФАЗА 1: Определение маппинга ID ---
+        # Сначала резервируем те, что точно свободны
+        for el in elements_data:
+            old_id = el.get("_temp_original_id")
+            if old_id is None: continue
+            
+            if old_id not in existing_ids and old_id not in id_map.values():
+                id_map[old_id] = old_id
+        
+        # Для остальных (конфликтных) ищем замену
+        next_id = 1
+        for el in elements_data:
+            old_id = el.get("_temp_original_id")
+            if old_id is None or old_id in id_map: continue
+            
+            while next_id in existing_ids or next_id in id_map.values():
+                next_id += 1
+            
+            id_map[old_id] = next_id
+            next_id += 1
+
+        # Ремаппинг ссылок на картинки в данных элементов перед созданием
+        for el in elements_data:
             if "image_id" in el and el["image_id"] in img_remap:
                 el["image_id"] = img_remap[el["image_id"]]
             if "conditional_images" in el:
@@ -398,19 +421,28 @@ class RZTemplateEngine:
 
         origin = data.get("offset_origin", [0, 0])
 
+        # --- ФАЗА 2: Создание элементов ---
         for el_data in elements_data:
             new_el = self.rzm.elements.add()
             old_temp_id = el_data.get("_temp_original_id")
-            new_el.id = id_map.get(old_temp_id, max_id + 999)
-            original_pid = el_data.get("parent_id", -1)
             
-            if original_pid in id_map:
-                new_el.parent_id = id_map[original_pid]
-            else:
-                new_el.parent_id = root_parent_id
-                dict_to_rzm(el_data, new_el)
+            # Определяем ремаппированные ID
+            safe_new_id = id_map.get(old_temp_id, 999) 
+            
+            # Ремаппинг родителя
+            original_pid = el_data.get("parent_id", -1)
+            safe_new_pid = id_map.get(original_pid, root_parent_id)
+            
+            # Заливаем данные (включая коллекции типа value_link)
+            dict_to_rzm(el_data, new_el)
+            
+            # --- ФИКС: Принудительно устанавливаем ремаппированные ID после dict_to_rzm ---
+            # dict_to_rzm перезаписывает id на тот, что был в el_data (старый).
+            # Мы возвращаем правильный новый ID.
+            new_el.id = safe_new_id
+            new_el.parent_id = safe_new_pid
+            
+            # Если это корневой элемент шаблона (нет родителя в шаблоне), применяем оффсет
+            if original_pid not in id_map:
                 cur_x, cur_y = new_el.position
                 new_el.position = (int(cur_x - origin[0] + offset[0]), int(cur_y - origin[1] + offset[1]))
-                continue
-            
-            dict_to_rzm(el_data, new_el)
