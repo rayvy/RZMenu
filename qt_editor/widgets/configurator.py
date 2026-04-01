@@ -34,6 +34,7 @@ class AsyncFontLoader(QtCore.QThread):
             
             # --- Variable Font Support (Qt Enrichment) ---
             # For each family, ask Qt if there are styles we missed (e.g. named instances in variable fonts)
+            # --- Оказывается удаление данного куска кода не приводит к ускорению запуска редактора, так что проблема не в нём---
             try:
                 db = QtGui.QFontDatabase()
                 for family in list(registry.keys()):
