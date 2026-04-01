@@ -32,25 +32,6 @@ class AsyncFontLoader(QtCore.QThread):
             reset_registry()  # Ensure fresh scan (handles addon reloads)
             registry = build_font_registry()
             
-            # --- Variable Font Support (Qt Enrichment) ---
-            # For each family, ask Qt if there are styles we missed (e.g. named instances in variable fonts)
-            try:
-                db = QtGui.QFontDatabase()
-                for family in list(registry.keys()):
-                    styles = registry[family]
-                    if "Regular" not in styles:
-                        continue
-                    
-                    path, index = styles["Regular"]
-                    # Ask Qt for styles of this specific family
-                    available_styles = db.styles(family)
-                    for s in available_styles:
-                        if s not in styles:
-                            # Map the new style to the same file (Variable Font behavior)
-                            styles[s] = (path, index)
-            except Exception as e:
-                print(f"[FontsDebug] Qt Enrichment failed: {e}")
-
             AsyncFontLoader._cache = registry
             self.fonts_loaded.emit(registry)
         except Exception as e:
