@@ -79,18 +79,7 @@ class RZM_OT_UpdateTwItem(bpy.types.Operator):
 
             elif hasattr(target, final_prop):
                 prop_type = type(getattr(target, final_prop))
-                
-                # Check for vector types (e.g., FloatVectorProperty, IntVectorProperty)
-                if hasattr(prop_type, '__iter__') or "Vector" in str(prop_type):
-                    # Try parsing as comma separated string
-                    vals = [x.strip() for x in self.value_str.split(",")]
-                    current_vec = getattr(target, final_prop)
-                    for i in range(min(len(vals), len(current_vec))):
-                        try:
-                            current_vec[i] = float(vals[i]) if "." in vals[i] or "e" in vals[i].lower() else int(vals[i])
-                        except ValueError: pass
-                
-                elif prop_type == bool:
+                if prop_type == bool:
                     setattr(target, final_prop, self.value_str.lower() in ("true", "1"))
                 elif prop_type == int:
                     setattr(target, final_prop, int(float(self.value_str)))
@@ -436,6 +425,7 @@ class RZM_OT_SetActiveBlock(bpy.types.Operator):
     index: bpy.props.IntProperty()
     def execute(self, context):
         context.scene.rzm.active_tw_block_index = self.index
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_SetActiveComponent(bpy.types.Operator):
@@ -446,6 +436,7 @@ class RZM_OT_SetActiveComponent(bpy.types.Operator):
     index: bpy.props.IntProperty()
     def execute(self, context):
         context.scene.rzm.tw_blocks[self.block_index].active_component_index = self.index
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_SetActiveSlot(bpy.types.Operator):
@@ -457,6 +448,7 @@ class RZM_OT_SetActiveSlot(bpy.types.Operator):
     index: bpy.props.IntProperty()
     def execute(self, context):
         context.scene.rzm.tw_blocks[self.block_index].components[self.comp_index].active_slot_index = self.index
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_SetTwActiveLayer(bpy.types.Operator):

@@ -546,324 +546,67 @@ class TexWorksResourcesTab(QtWidgets.QWidget):
     def _toggle_details(self, val): self.show_details = val; self.update_ui()
     def _toggle_previews(self, val): self.show_previews = val; self.update_ui()
     
-    def update_ui(self):
-        self._block = True
-        rzm = bpy.context.scene.rzm
-        
-        # Ensure we have a _widgets list
-        if not hasattr(self, "_widgets"):
-            self._widgets = []
-            
-        # 1. Ajust widget count
-        count = len(rzm.tw_resources)
-        while len(self._widgets) > count:
-            w = self._widgets.pop()
-            self.list_layout.removeWidget(w)
-            w.hide(); w.setParent(None); w.deleteLater()
-            
-        while len(self._widgets) < count:
-            new_idx = len(self._widgets)
-            # Create placeholder data for now, will be updated below
-            w = TexWorksResourceItem(new_idx, rzm.tw_resources[new_idx], self)
-            self.list_layout.insertWidget(self.list_layout.count() - 1, w)
-            self._widgets.append(w)
-            
-        # 2. Update existing widgets
-        for i, res in enumerate(rzm.tw_resources):
-            w = self._widgets[i]
-            w.index = i
-            w.update_data(res)
-            
-        self._block = False
-
-    def remove_item(self, idx): bpy.ops.rzm.remove_tw_resource(index=idx); self.update_ui()
-
-# --- TABS: OVERRIDES ---
-
-class TexWorksOverrideItem(QtWidgets.QWidget):
-    def __init__(self, index, data, parent_list):
-        super().__init__()
-        self.index = index; self.parent_list = parent_list
-        row = QtWidgets.QHBoxLayout(self); row.setContentsMargins(5, 2, 5, 2); row.setSpacing(6)
-        
-        self.pre = ResourcePreviewWidget(42, self)
-        row.addWidget(self.pre)
-        
-        im = IconManager.get_instance()
-        self.btn_fav = RZPushButton("")
-        self.btn_fav.setFixedSize(24, 24); row.addWidget(self.btn_fav)
-        self.btn_fav.setIcon(im.get_icon("star", QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton))
-        self.btn_fav.clicked.connect(self._toggle_fav)
-        
-        self.edit_name = RZLineEdit(); self.edit_name.setPlaceholderText("Name"); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 1)
-        self.edit_name.editingFinished.connect(self._on_changed)
-        
-        self.edit_hash = RZLineEdit(); self.edit_hash.setPlaceholderText("Hash"); self.edit_hash.setText(data.hash); self.edit_hash.setFixedWidth(85); row.addWidget(self.edit_hash)
-        self.edit_hash.editingFinished.connect(self._on_changed)
-        
-        self.edit_res = RZResourceLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); self.edit_res.setFixedWidth(120); row.addWidget(self.edit_res)
-        self.edit_res.editingFinished.connect(self._on_changed)
-        self.edit_res.textChanged.connect(self._on_res_typing)
-        
-        self.btn_del = RZPushButton(""); self.btn_del.setFixedSize(24, 24); row.addWidget(self.btn_del)
-        self.btn_del.setIcon(im.get_icon("circle_x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton))
-        self.btn_del.clicked.connect(lambda: self.parent_list.remove_item(self.index))
-        
-        self.update_data(data)
-
-    def update_data(self, data):
-        self.btn_fav.setProperty("active", data.qt_favorite)
-        self.btn_fav.setStyleSheet(f"color: {'#FFD700' if data.qt_favorite else '#888'};")
-        self.pre.setVisible(self.parent_list.show_previews)
-        self.pre.update_resource_by_name(data.resource_name)
-
-    def _on_res_typing(self):
-        self.pre.update_resource_by_name(self.edit_res.text())
-
-    def _toggle_fav(self):
-        bpy.ops.rzm.update_tw_item(collection_name="overrides", index=self.index, prop_name="qt_favorite", value_str=str(not self.btn_fav.property("active")))
-        SIGNALS.structure_changed.emit()
-
-    def _on_changed(self):
-        props = {"name": self.edit_name.text(), "hash": self.edit_hash.text(), "resource_name": self.edit_res.text()}
-        for k, v in props.items(): bpy.ops.rzm.update_tw_item(collection_name="overrides", index=self.index, prop_name=k, value_str=v)
-
-class TexWorksOverridesTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent); self.show_previews = True
-        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(5, 5, 5, 5)
-        tools = QtWidgets.QHBoxLayout(); self.layout.addLayout(tools)
-        btn_add = RZPushButton("+ Add Override"); btn_add.clicked.connect(lambda: bpy.ops.rzm.add_tw_override())
-        tools.addWidget(btn_add)
-        btn_auto = RZPushButton("Auto-Import")
-        btn_auto.clicked.connect(self._on_auto_import_clicked)
-        tools.addWidget(btn_auto)
-
-        self.chk_preview = RZCheckBox("Show Preview"); self.chk_preview.setChecked(True); self.chk_preview.toggled.connect(self._toggle_previews); tools.addWidget(self.chk_preview)
-        
-        self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll)
-        self.scroll_content = QtWidgets.QWidget(); self.scroll.setWidget(self.scroll_content); self.scroll.setWidgetResizable(True)
-        self.list_layout = QtWidgets.QVBoxLayout(self.scroll_content); self.list_layout.setSpacing(4); self.list_layout.setContentsMargins(0, 0, 0, 0)
-        self.list_layout.addStretch()
-
-    def _toggle_previews(self, val): self.show_previews = val; self.update_ui()
-
-    def _on_auto_import_clicked(self):
-        # Use native Qt dialog to avoid switching to Blender window
-        root = image_utils.get_mod_base_path()
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Dump Folder", root)
-        if path:
-            # We call the operator with the directory property explicitly
-            # This triggers the new context-aware logic in operators/texworks_ops.py
-            bpy.ops.rzm.tw_res_over_fill(directory=path)
-            # Re-sync local UI
-            self.update_ui()
-            # Also notify other widgets
-            SIGNALS.structure_changed.emit()
-
-
-    def update_ui(self):
-        rzm = bpy.context.scene.rzm
-        if not hasattr(self, "_widgets"):
-            self._widgets = []
-            
-        count = len(rzm.tw_overrides)
-        while len(self._widgets) > count:
-            w = self._widgets.pop()
-            self.list_layout.removeWidget(w)
-            w.hide(); w.setParent(None); w.deleteLater()
-            
-        while len(self._widgets) < count:
-            new_idx = len(self._widgets)
-            w = TexWorksOverrideItem(new_idx, rzm.tw_overrides[new_idx], self)
-            self.list_layout.insertWidget(self.list_layout.count() - 1, w)
-            self._widgets.append(w)
-            
-        for i, over in enumerate(rzm.tw_overrides):
-            w = self._widgets[i]
-            w.index = i
-            w.update_data(over)
-
-    def remove_item(self, idx): bpy.ops.rzm.remove_tw_override(index=idx); self.update_ui()
-
-# --- TABS: MATERIALS ---
-
-class TexWorksMaterialsTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent); self._block = False
-        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 5, 0, 0)
-        
-        tools = QtWidgets.QHBoxLayout(); self.layout.addLayout(tools)
-        btn_add = RZPushButton("+ Add MaterialSlot"); btn_add.clicked.connect(lambda: bpy.ops.rzm.add_tw_material())
-        tools.addWidget(btn_add)
-
-        self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll)
-        self.scroll_content = QtWidgets.QWidget(); self.scroll.setWidget(self.scroll_content); self.scroll.setWidgetResizable(True)
-        self.list_layout = QtWidgets.QVBoxLayout(self.scroll_content); self.list_layout.setSpacing(2); self.list_layout.setContentsMargins(0, 0, 0, 0)
-        self.list_layout.addStretch()
-
-    def update_ui(self):
-        self._block = True
-        while self.list_layout.count() > 1: # Keep stretch
-            it = self.list_layout.takeAt(0)
-            if it.widget(): it.widget().deleteLater()
-        
-        rzm = bpy.context.scene.rzm
-        for i, mat_item in enumerate(rzm.tw_materials):
-            row = QtWidgets.QHBoxLayout(); w = QtWidgets.QWidget(); w.setLayout(row); w.setFixedHeight(28)
-            row.setContentsMargins(5, 0, 5, 0)
-            
-            lbl = RZLabel(f"M{i}:"); row.addWidget(lbl)
-            
-            btn_mat = RZPushButton(mat_item.material.name if mat_item.material else "None")
-            btn_mat.setCursor(QtCore.Qt.PointingHandCursor)
-            btn_mat.setFixedHeight(24)
-            btn_mat.clicked.connect(partial(self._select_material, i))
-            row.addWidget(btn_mat, 1)
-            
-            btn_del = RZPushButton("✕"); btn_del.setFixedWidth(24); btn_del.setFixedHeight(24); row.addWidget(btn_del)
-            btn_del.clicked.connect(partial(self._remove_material, i))
-            
-            self.list_layout.insertWidget(self.list_layout.count() - 1, w)
-        self._block = False
-
-    def _select_material(self, idx):
-        bpy.ops.rzm.tw_select_material('INVOKE_DEFAULT', index=idx)
-
-    def _remove_material(self, idx):
-        bpy.ops.rzm.remove_tw_material(index=idx)
-        # trigger_refresh handled by operator
-
-
-
-# --- TABS: MAIN (SELECTION BASED) ---
-
-class TexWorksDetailView(QtWidgets.QWidget):
-    """Refined detail view for active item."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(5, 5, 5, 5); self.layout.setSpacing(8)
-        self.layout.addStretch()
-        t = get_current_theme()
-        # Ensure it has a background to avoid "ghosting"
-        self.setStyleSheet(f"background-color: {t.get('bg_dark', '#1E2127')};")
-
-    def add_section(self, title, icon=None):
-        box = RZGroupBox(title, self)
-        box.setStyleSheet("QGroupBox { border: 1px solid #3E4451; border-radius: 4px; margin-top: 10px; padding-top: 10px; font-weight: bold; color: #BBB; } QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }")
-        l = QtWidgets.QVBoxLayout(box); l.setContentsMargins(8, 15, 8, 8); l.setSpacing(4)
-        self.layout.insertWidget(self.layout.count() - 1, box)
-        return l
-
-
-
-class TexWorksMainTab(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent); self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 0, 0, 0)
-        im = IconManager.get_instance()
-
-        # Level 1: Blocks
-        row_b = QtWidgets.QHBoxLayout(); row_b.setContentsMargins(5, 2, 5, 2); self.layout.addLayout(row_b)
-        row_b.addWidget(RZLabel("Blocks:")); self.tab_blocks = RZTabRow(); self.tab_blocks.setFixedHeight(30); row_b.addWidget(self.tab_blocks, 1)
-        
-        btn_ops_b = QtWidgets.QHBoxLayout(); btn_ops_b.setSpacing(2); row_b.addLayout(btn_ops_b)
-        btn_add_b = RZPushButton(""); btn_add_b.setFixedSize(24, 24); btn_add_b.setIcon(im.get_icon("plus", QtWidgets.QStyle.StandardPixmap.SP_FileDialogNewFolder)); btn_add_b.clicked.connect(lambda: bpy.ops.rzm.add_tw_block()); btn_ops_b.addWidget(btn_add_b)
-        btn_dup_b = RZPushButton(""); btn_dup_b.setFixedSize(24, 24); btn_dup_b.setIcon(im.get_icon("copy", QtWidgets.QStyle.StandardPixmap.SP_FileDialogDetailedView)); btn_dup_b.clicked.connect(lambda: bpy.ops.rzm.duplicate_tw_block()); btn_ops_b.addWidget(btn_dup_b)
-        btn_rem_b = RZPushButton(""); btn_rem_b.setFixedSize(24, 24); btn_rem_b.setIcon(im.get_icon("x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton)); btn_rem_b.clicked.connect(lambda: bpy.ops.rzm.remove_tw_block()); btn_ops_b.addWidget(btn_rem_b)
-        
-        # Level 2: Components
-        self.w_comps = QtWidgets.QWidget(); self.w_comps.setFixedHeight(34)
-        self.l_comps = QtWidgets.QHBoxLayout(self.w_comps); self.l_comps.setContentsMargins(5, 2, 5, 2)
-        self.l_comps.addWidget(RZLabel("Comps:")); self.tab_comps = RZTabRow(); self.tab_comps.setFixedHeight(30); self.l_comps.addWidget(self.tab_comps, 1)
-        
-        btn_ops_c = QtWidgets.QHBoxLayout(); btn_ops_c.setSpacing(2); self.l_comps.addLayout(btn_ops_c)
-        btn_add_c = RZPushButton(""); btn_add_c.setFixedSize(24, 24); btn_add_c.setIcon(im.get_icon("plus", QtWidgets.QStyle.StandardPixmap.SP_FileDialogNewFolder)); btn_add_c.clicked.connect(self._add_comp); btn_ops_c.addWidget(btn_add_c)
-        btn_rem_c = RZPushButton(""); btn_rem_c.setFixedSize(24, 24); btn_rem_c.setIcon(im.get_icon("x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton)); btn_rem_c.clicked.connect(self._rem_comp); btn_ops_c.addWidget(btn_rem_c)
-        self.layout.addWidget(self.w_comps)
-
-        # Level 3: Slots
-        self.w_slots = QtWidgets.QWidget(); self.w_slots.setFixedHeight(34)
-        self.l_slots = QtWidgets.QHBoxLayout(self.w_slots); self.l_slots.setContentsMargins(5, 2, 5, 2)
-        self.l_slots.addWidget(RZLabel("Slots:")); self.tab_slots = RZTabRow(); self.tab_slots.setFixedHeight(30); self.l_slots.addWidget(self.tab_slots, 1)
-        
-        btn_ops_s = QtWidgets.QHBoxLayout(); btn_ops_s.setSpacing(2); self.l_slots.addLayout(btn_ops_s)
-        btn_add_s = RZPushButton(""); btn_add_s.setFixedSize(24, 24); btn_add_s.setIcon(im.get_icon("plus", QtWidgets.QStyle.StandardPixmap.SP_FileDialogNewFolder)); btn_add_s.clicked.connect(self._add_slot); btn_ops_s.addWidget(btn_add_s)
-        btn_rem_s = RZPushButton(""); btn_rem_s.setFixedSize(24, 24); btn_rem_s.setIcon(im.get_icon("x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton)); btn_rem_s.clicked.connect(self._rem_slot); btn_ops_s.addWidget(btn_rem_s)
-        self.layout.addWidget(self.w_slots)
-
-        self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll, 1)
-        self.details = TexWorksDetailView(); self.scroll.setWidget(self.details); self.scroll.setWidgetResizable(True)
-        
-        # SIDE-BY-SIDE PREVIEWS at the bottom
-        self.p_wrap = QtWidgets.QWidget(); self.layout.addWidget(self.p_wrap)
-        self.p_layout = QtWidgets.QHBoxLayout(self.p_wrap); self.p_layout.setContentsMargins(5, 5, 5, 5); self.p_layout.setSpacing(10)
-        
-        self.blk_box = RZGroupBox("Atlas (Block Output)", self); l1 = QtWidgets.QVBoxLayout(self.blk_box)
-        self.blk_pre = AtlasPreviewWidget(size=250, parent=self); l1.addWidget(self.blk_pre); self.p_layout.addWidget(self.blk_box)
-        
-        self.cmp_box = RZGroupBox("Selected Component Preview", self); l2 = QtWidgets.QVBoxLayout(self.cmp_box)
-        self.cmp_pre = AtlasPreviewWidget(size=250, parent=self); l2.addWidget(self.cmp_pre); self.p_layout.addWidget(self.cmp_box)
-        
-        # Tab signals
-        self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
-        self.tab_comps.clicked.connect(lambda i: self._set_active("comp", i))
-        self.tab_slots.clicked.connect(lambda i: self._set_active("slot", i))
-
-    def _set_active(self, type, idx):
-        rzm = bpy.context.scene.rzm
-        if type == "block": bpy.ops.rzm.set_active_block(index=idx)
-        elif type == "comp": bpy.ops.rzm.set_active_component(block_index=rzm.active_tw_block_index, index=idx)
-        elif type == "slot": bpy.ops.rzm.set_active_slot(block_index=rzm.active_tw_block_index, comp_index=rzm.tw_blocks[rzm.active_tw_block_index].active_component_index, index=idx)
-        self.update_ui()
-
-    def _add_comp(self): idx = bpy.context.scene.rzm.active_tw_block_index; bpy.ops.rzm.add_tw_component(block_index=idx)
-    def _rem_comp(self): rzm = bpy.context.scene.rzm; b = rzm.active_tw_block_index; c = rzm.tw_blocks[b].active_component_index; bpy.ops.rzm.remove_tw_component(block_index=b, index=c)
-    def _add_slot(self): rzm = bpy.context.scene.rzm; b = rzm.active_tw_block_index; c = rzm.tw_blocks[b].active_component_index; bpy.ops.rzm.add_tw_slot(block_index=b, comp_index=c)
-    def _rem_slot(self): rzm = bpy.context.scene.rzm; b = rzm.active_tw_block_index; c = rzm.tw_blocks[b].active_component_index; s = rzm.tw_blocks[b].components[c].active_slot_index; bpy.ops.rzm.remove_tw_slot(block_index=b, comp_index=c, index=s)
 
     def clear_layout(self, layout):
-        if not layout: return
-        while layout.count() > 1: # Keep the stretch!
-            it = layout.takeAt(0)
-            w = it.widget()
-            if w:
-                w.hide(); w.setParent(None); w.deleteLater()
-            elif it.layout():
-                self.clear_layout(it.layout()); it.layout().deleteLater()
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+                else:
+                    self.clear_layout(item.layout())
+
+    def _set_active_layer(self, idx):
+        rzm = bpy.context.scene.rzm
+        b = rzm.active_tw_block_index
+        c = rzm.tw_blocks[b].active_component_index
+        s = rzm.tw_blocks[b].components[c].active_slot_index
+        bpy.ops.rzm.set_tw_active_layer(block_index=b, comp_index=c, slot_index=s, index=idx)
+        self.update_ui()
 
     def update_ui(self):
         rzm = bpy.context.scene.rzm
         self.tab_blocks.sync_items([b.name for b in rzm.tw_blocks], rzm.active_tw_block_index)
         
-        # Robust clear
-        self.clear_layout(self.details.layout)
+        # Clean details (except stretch)
+        while self.details.layout.count() > 1:
+            it = self.details.layout.takeAt(0)
+            if it:
+                if it.widget():
+                    it.widget().deleteLater()
+                elif it.layout():
+                    self.clear_layout(it.layout())
+
         
         b_idx = rzm.active_tw_block_index
+        self.w_comps.setVisible(b_idx >= 0 and len(rzm.tw_blocks) > 0)
         if 0 <= b_idx < len(rzm.tw_blocks):
-            block = rzm.tw_blocks[b_idx]; self.w_comps.setVisible(True)
+            block = rzm.tw_blocks[b_idx]
             self.tab_comps.sync_items([c.name for c in block.components], block.active_component_index)
-            self._draw_block_details(block, b_idx)
             
             c_idx = block.active_component_index
+            self.w_slots.setVisible(c_idx >= 0 and len(block.components) > 0)
+            
             if 0 <= c_idx < len(block.components):
-                comp = block.components[c_idx]; self.w_slots.setVisible(True)
+                comp = block.components[c_idx]
                 self.tab_slots.sync_items([s.name for s in comp.slots], comp.active_slot_index)
-                self._draw_comp_details(comp, b_idx, c_idx)
+                
+                self._update_comp_preview(comp)
                 
                 s_idx = comp.active_slot_index
                 if 0 <= s_idx < len(comp.slots):
-                    slot = comp.slots[s_idx]
-                    self._draw_slot_details(slot, b_idx, c_idx, s_idx)
+                    self._draw_slot_details(comp.slots[s_idx], b_idx, c_idx, s_idx)
                 else:
-                    self.tab_slots.sync_items([], -1)
+                    self._draw_comp_details(comp, b_idx, c_idx)
             else:
-                self.w_slots.setVisible(False)
-                self.tab_slots.sync_items([], -1)
+                self._draw_block_details(block, b_idx)
+                self.cmp_pre.hide()
             
             self._update_block_preview(block)
         else:
-            self.w_comps.setVisible(False); self.w_slots.setVisible(False)
-            self.blk_pre.hide(); self.cmp_pre.hide()
+            self.blk_pre.hide()
+            self.cmp_pre.hide()
 
     def _update_block_preview(self, block):
         blk_data = image_utils.collect_block_preview_data(block)
@@ -901,6 +644,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
         self.cmp_pre.show()
 
     def _draw_block_details(self, block, b_idx):
+        # Already have block preview drawn globally in update_ui
         l = self.details.add_section("Block Settings")
         
         row = QtWidgets.QHBoxLayout(); l.addLayout(row)
@@ -913,64 +657,46 @@ class TexWorksMainTab(QtWidgets.QWidget):
         e_res = RZResourceLineEdit(); e_res.setText(block.resource_name); row.addWidget(e_res, 1)
         e_res.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "resource_name", -1, -1, e_res.text()))
 
-        l_sh = self.details.add_section("Shader & Atlas Config")
+        l_sh = self.details.add_section("Shader Config")
         row = QtWidgets.QHBoxLayout(); l_sh.addLayout(row)
         cb_sh = ComboBoxFix(); cb_sh.addItems(["STANDARD", "SKIN", "CLOTH", "METAL"]); cb_sh.setCurrentText(block.shader_type)
         cb_sh.currentTextChanged.connect(lambda v: self._item_changed("blocks", b_idx, "shader_type", -1, -1, v))
         row.addWidget(RZLabel("Type:")); row.addWidget(cb_sh)
-        
-        e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(", ".join([f"{v:.3f}" for v in block.shader_config])); l_sh.addWidget(e_conf)
-        e_conf.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "shader_config", -1, -1, e_conf.text()))
-        e_over = RZLineEdit(); e_over.setPlaceholderText("Shader Overlay (x47)"); e_over.setText(", ".join([f"{v:.3f}" for v in block.shader_overlay])); l_sh.addWidget(e_over)
-        e_over.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "shader_overlay", -1, -1, e_over.text()))
-
-        r_shared = QtWidgets.QHBoxLayout(); l_sh.addLayout(r_shared)
-        chk_shared = RZCheckBox("Use Shared Textures"); chk_shared.setChecked(block.use_shared_textures); r_shared.addWidget(chk_shared)
-        chk_shared.toggled.connect(lambda v: self._item_changed("blocks", b_idx, "use_shared_textures", -1, -1, str(v)))
-        e_sh_blk = RZLineEdit(); e_sh_blk.setPlaceholderText("Shared Block Name"); e_sh_blk.setText(block.shared_textures_block); r_shared.addWidget(e_sh_blk, 1)
-        e_sh_blk.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "shared_textures_block", -1, -1, e_sh_blk.text()))
-        e_sh_blk.setVisible(block.use_shared_textures)
-        
-        row_uv = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_uv)
-        row_uv.addWidget(RZLabel("UV Rescale:")); sp_uv = RZDoubleSpinBox(); sp_uv.setRange(0.01, 10.0); sp_uv.setValue(block.uv_rescale); row_uv.addWidget(sp_uv)
-        sp_uv.valueChanged.connect(lambda v: self._item_changed("blocks", b_idx, "uv_rescale", -1, -1, str(v)))
 
         l_back = self.details.add_section("Backdrop")
         chk_back = RZCheckBox("Enable Backdrop"); chk_back.setChecked(block.backdrop_enabled); l_back.addWidget(chk_back)
         chk_back.toggled.connect(lambda v: self._item_changed("blocks", b_idx, "backdrop_enabled", -1, -1, str(v)))
         
         if block.backdrop_enabled:
-            row_b = QtWidgets.QHBoxLayout(); l_back.addLayout(row_b); row_b.addWidget(RZLabel("Resource:"))
+            row_b = QtWidgets.QHBoxLayout(); l_back.addLayout(row_b)
+            row_b.addWidget(RZLabel("Resource:"))
             e_b_res = RZResourceLineEdit(); e_b_res.setText(block.backdrop_resource_name); row_b.addWidget(e_b_res, 1)
             e_b_res.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "backdrop_resource_name", -1, -1, e_b_res.text()))
             
-            row_rect = QtWidgets.QHBoxLayout(); l_back.addLayout(row_rect); row_rect.addWidget(RZLabel("Rect:"))
+            row_rect = QtWidgets.QHBoxLayout(); l_back.addLayout(row_rect)
+            row_rect.addWidget(RZLabel("Rect:"))
             for i in range(4):
-                sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(block.backdrop_rect[i]); row_rect.addWidget(sp)
-                sp.valueChanged.connect(lambda v, i=i: self._item_changed("blocks", b_idx, f"backdrop_rect[{i}]", -1, -1, str(v)))
+                sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(block.backdrop_rect[i])
+                sp.valueChanged.connect(partial(self._item_changed, "blocks", b_idx, f"backdrop_rect[{i}]", -1, -1))
+                row_rect.addWidget(sp)
         
     def _draw_comp_details(self, comp, b_idx, c_idx):
         l = self.details.add_section("Component: " + comp.name)
         
-        row_n = QtWidgets.QHBoxLayout(); l.addLayout(row_n)
-        row_n.addWidget(RZLabel("Name:")); e_name = RZLineEdit(); e_name.setText(comp.name); row_n.addWidget(e_name, 1)
-        e_name.editingFinished.connect(lambda: self._item_changed("components", c_idx, "name", b_idx, -1, e_name.text()))
-
         row = QtWidgets.QHBoxLayout(); l.addLayout(row)
         row.addWidget(RZLabel("Base Res:"))
         e_base = RZResourceLineEdit(); e_base.setText(comp.base_resource_name); row.addWidget(e_base, 1)
         e_base.editingFinished.connect(lambda: self._item_changed("components", c_idx, "base_resource_name", b_idx, -1, e_base.text()))
         
-        row_src = QtWidgets.QHBoxLayout(); l.addLayout(row_src); row_src.addWidget(RZLabel("Base Rect:"))
+        # Atlas Rect
+        row = QtWidgets.QHBoxLayout(); l.addLayout(row)
+        row.addWidget(RZLabel("Atlas Rect:"))
         for i in range(4):
-            sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(comp.base_rect[i]); row_src.addWidget(sp)
-            sp.valueChanged.connect(lambda v, i=i: self._item_changed("components", c_idx, f"base_rect[{i}]", b_idx, -1, str(v)))
-
-        row_atl = QtWidgets.QHBoxLayout(); l.addLayout(row_atl); row_atl.addWidget(RZLabel("Atlas Rect:"))
-        for i in range(4):
-            sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(comp.rect[i]); row_atl.addWidget(sp)
-            sp.valueChanged.connect(lambda v, i=i: self._item_changed("components", c_idx, f"rect[{i}]", b_idx, -1, str(v)))
+            sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(comp.rect[i])
+            sp.valueChanged.connect(partial(self._item_changed, "components", c_idx, f"rect[{i}]", b_idx, -1))
+            row.addWidget(sp)
             
+        # TexMorph
         row_m = QtWidgets.QHBoxLayout(); l.addLayout(row_m)
         chk_m = RZCheckBox("TexMorph"); chk_m.setChecked(comp.tex_morph_enabled); row_m.addWidget(chk_m)
         chk_m.toggled.connect(lambda v: self._item_changed("components", c_idx, "tex_morph_enabled", b_idx, -1, str(v)))
@@ -978,32 +704,12 @@ class TexWorksMainTab(QtWidgets.QWidget):
             e_m_res = RZResourceLineEdit(); e_m_res.setText(comp.tex_morph_resource_name); row_m.addWidget(e_m_res, 1)
             e_m_res.editingFinished.connect(lambda: self._item_changed("components", c_idx, "tex_morph_resource_name", b_idx, -1, e_m_res.text()))
 
-        # Shared Config
-        l_sh = self.details.add_section("Shared Component Config")
-        chk_sh = RZCheckBox("Use Shared Config"); chk_sh.setChecked(comp.use_shared_config); l_sh.addWidget(chk_sh)
-        chk_sh.toggled.connect(lambda v: self._item_changed("components", c_idx, "use_shared_config", b_idx, -1, str(v)))
-        if comp.use_shared_config:
-            row_sh = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_sh)
-            e_sh_b = RZLineEdit(); e_sh_b.setPlaceholderText("Block Name"); e_sh_b.setText(comp.shared_config_block); row_sh.addWidget(e_sh_b)
-            e_sh_b.editingFinished.connect(lambda: self._item_changed("components", c_idx, "shared_config_block", b_idx, -1, e_sh_b.text()))
-            e_sh_c = RZLineEdit(); e_sh_c.setPlaceholderText("Comp Name"); e_sh_c.setText(comp.shared_config_component); row_sh.addWidget(e_sh_c)
-            e_sh_c.editingFinished.connect(lambda: self._item_changed("components", c_idx, "shared_config_component", b_idx, -1, e_sh_c.text()))
-
+        # Component Masking
         l_fx = self.details.add_section("Effects & Masking")
         row = QtWidgets.QHBoxLayout(); l_fx.addLayout(row)
         chk_mask = RZCheckBox("Mask"); chk_mask.setChecked(comp.mask_enabled); row.addWidget(chk_mask)
         chk_mask.toggled.connect(lambda v: self._item_changed("components", c_idx, "mask_enabled", b_idx, -1, str(v)))
-        
-        chk_hsv = RZCheckBox("HSV"); chk_hsv.setChecked(comp.hsv_enabled); row.addWidget(chk_hsv)
-        chk_hsv.toggled.connect(lambda v: self._item_changed("components", c_idx, "hsv_enabled", b_idx, -1, str(v)))
-        
-        chk_h_mask = RZCheckBox("HSV Mask"); chk_h_mask.setChecked(comp.hsv_mask_enabled); row.addWidget(chk_h_mask)
-        chk_h_mask.toggled.connect(lambda v: self._item_changed("components", c_idx, "hsv_mask_enabled", b_idx, -1, str(v)))
-        
-        e_hsv_l = RZLineEdit(); e_hsv_l.setPlaceholderText("($) Link"); e_hsv_l.setText(comp.hsv_link); row.addWidget(e_hsv_l)
-        e_hsv_l.editingFinished.connect(lambda: self._item_changed("components", c_idx, "hsv_link", b_idx, -1, e_hsv_l.text()))
-
-        btn_mask = RZPushButton("Easy Mask (Component)"); btn_mask.clicked.connect(lambda: bpy.ops.rzm.tw_create_easy_mask(block_idx=b_idx, comp_idx=c_idx, slot_idx=-1))
+        btn_mask = RZPushButton("Easy Mask"); btn_mask.clicked.connect(lambda: bpy.ops.rzm.tw_create_easy_mask(block_idx=b_idx, comp_idx=c_idx, slot_idx=-1))
         l_fx.addWidget(btn_mask)
 
     def _draw_slot_details(self, slot, b_idx, c_idx, s_idx):
@@ -1037,35 +743,19 @@ class TexWorksMainTab(QtWidgets.QWidget):
         cb_mode.currentTextChanged.connect(lambda v: self._item_changed("slots", s_idx, "multi_pass_mode", b_idx, c_idx, v))
         l_mp.addWidget(cb_mode)
         
-        # FX & Masking
-        l_fx = self.details.add_section("Effects & Masking")
-        row_h = QtWidgets.QHBoxLayout(); l_fx.addLayout(row_h)
-        chk_hsv = RZCheckBox("HSV"); chk_hsv.setChecked(slot.hsv_enabled); row_h.addWidget(chk_hsv)
-        chk_hsv.toggled.connect(lambda v: self._item_changed("slots", s_idx, "hsv_enabled", b_idx, c_idx, str(v)))
-        chk_h_only = RZCheckBox("Only"); chk_h_only.setChecked(slot.hsv_only); row_h.addWidget(chk_h_only)
-        chk_h_only.toggled.connect(lambda v: self._item_changed("slots", s_idx, "hsv_only", b_idx, c_idx, str(v)))
-        chk_h_mask = RZCheckBox("Mask"); chk_h_mask.setChecked(slot.hsv_mask_enabled); row_h.addWidget(chk_h_mask)
-        chk_h_mask.toggled.connect(lambda v: self._item_changed("slots", s_idx, "hsv_mask_enabled", b_idx, c_idx, str(v)))
-        e_h_link = RZLineEdit(); e_h_link.setPlaceholderText("HSV Link"); e_h_link.setText(slot.hsv_link); row_h.addWidget(e_h_link, 1)
-        e_h_link.editingFinished.connect(lambda: self._item_changed("slots", s_idx, "hsv_link", b_idx, c_idx, e_h_link.text()))
-
-        row_m = QtWidgets.QHBoxLayout(); l_fx.addLayout(row_m)
-        chk_mask = RZCheckBox("Slot Mask"); chk_mask.setChecked(slot.mask_enabled); row_m.addWidget(chk_mask)
-        chk_mask.toggled.connect(lambda v: self._item_changed("slots", s_idx, "mask_enabled", b_idx, c_idx, str(v)))
-        e_m_src = RZLineEdit(); e_m_src.setPlaceholderText("Mask Source"); e_m_src.setText(slot.mask_source); row_m.addWidget(e_m_src, 1)
-        e_m_src.editingFinished.connect(lambda: self._item_changed("slots", s_idx, "mask_source", b_idx, c_idx, e_m_src.text()))
-        chk_p0 = RZCheckBox("P0"); chk_p0.setChecked(slot.pass0_use_mask); row_m.addWidget(chk_p0)
-        chk_p0.toggled.connect(lambda v: self._item_changed("slots", s_idx, "pass0_use_mask", b_idx, c_idx, str(v)))
-        chk_p1 = RZCheckBox("P1"); chk_p1.setChecked(slot.pass1_use_mask); row_m.addWidget(chk_p1)
-        chk_p1.toggled.connect(lambda v: self._item_changed("slots", s_idx, "pass1_use_mask", b_idx, c_idx, str(v)))
-
-        btn_mask = RZPushButton("Easy Mask (Slot)"); btn_mask.clicked.connect(lambda: bpy.ops.rzm.tw_create_easy_mask(block_idx=b_idx, comp_idx=c_idx, slot_idx=s_idx))
-        l_fx.addWidget(btn_mask)
+        if slot.multi_pass_mode != 'NONE':
+            mp_row = QtWidgets.QHBoxLayout(); l_mp.addLayout(mp_row)
+            mp_row.addWidget(RZLabel("Pass 1 Rect:"))
+            for i in range(4):
+                sp = RZSpinBox(); sp.setRange(0, 16384); sp.setValue(slot.multi_pass_rect[i])
+                sp.valueChanged.connect(lambda v, i=i: self._item_changed("slots", s_idx, f"multi_pass_rect[{i}]", b_idx, c_idx, str(v)))
+                mp_row.addWidget(sp)
 
         # Warping 3x3
         l_warp = self.details.add_section("Warping / Lattice (3x3)")
         chk_w0 = RZCheckBox("Pass 0 Warp"); chk_w0.setChecked(slot.warp_p0_enabled); l_warp.addWidget(chk_w0)
         chk_w0.toggled.connect(lambda v: self._item_changed("slots", s_idx, "warp_p0_enabled", b_idx, c_idx, str(v)))
+        
         if slot.warp_p0_enabled:
             grid0 = QtWidgets.QGridLayout(); l_warp.addLayout(grid0)
             for i in range(9):
@@ -1076,34 +766,80 @@ class TexWorksMainTab(QtWidgets.QWidget):
                 spy.valueChanged.connect(lambda v, i=i: self._item_changed("slots", s_idx, f"warp_p0_grid[{i*2+1}]", b_idx, c_idx, str(v)))
                 grid0.addWidget(spx, row, col*2); grid0.addWidget(spy, row, col*2+1)
 
-        chk_w1 = RZCheckBox("Pass 1 Warp"); chk_w1.setChecked(slot.warp_p1_enabled); l_warp.addWidget(chk_w1)
-        chk_w1.toggled.connect(lambda v: self._item_changed("slots", s_idx, "warp_p1_enabled", b_idx, c_idx, str(v)))
-        if slot.warp_p1_enabled:
-            grid1 = QtWidgets.QGridLayout(); l_warp.addLayout(grid1)
-            for i in range(9):
-                row, col = divmod(i, 3)
-                spx = RZDoubleSpinBox(); spx.setRange(-2.0, 2.0); spx.setValue(slot.warp_p1_grid[i*2]); spx.setFixedWidth(50)
-                spy = RZDoubleSpinBox(); spy.setRange(-2.0, 2.0); spy.setValue(slot.warp_p1_grid[i*2+1]); spy.setFixedWidth(50)
-                spx.valueChanged.connect(lambda v, i=i: self._item_changed("slots", s_idx, f"warp_p1_grid[{i*2}]", b_idx, c_idx, str(v)))
-                spy.valueChanged.connect(lambda v, i=i: self._item_changed("slots", s_idx, f"warp_p1_grid[{i*2+1}]", b_idx, c_idx, str(v)))
-                grid1.addWidget(spx, row, col*2); grid1.addWidget(spy, row, col*2+1)
-
         # UV Calculator
         l_calc = self.details.add_section("UV Calculator")
         row_c = QtWidgets.QHBoxLayout(); l_calc.addLayout(row_c)
         row_c.addWidget(RZLabel("Padding:")); sp_pad = RZSpinBox(); sp_pad.setValue(slot.calc_padding); row_c.addWidget(sp_pad)
         sp_pad.valueChanged.connect(lambda v: self._item_changed("slots", s_idx, "calc_padding", b_idx, c_idx, str(v)))
         
-        row_res = QtWidgets.QHBoxLayout(); l_calc.addLayout(row_res)
-        row_res.addWidget(RZLabel("Calc Res:")); sp_rx = RZSpinBox(); sp_rx.setRange(1, 16384); sp_rx.setValue(slot.calc_res_x); row_res.addWidget(sp_rx)
-        sp_rx.valueChanged.connect(lambda v: self._item_changed("slots", s_idx, "calc_res_x", b_idx, c_idx, str(v)))
-        sp_ry = RZSpinBox(); sp_ry.setRange(1, 16384); sp_ry.setValue(slot.calc_res_y); row_res.addWidget(sp_ry)
-        sp_ry.valueChanged.connect(lambda v: self._item_changed("slots", s_idx, "calc_res_y", b_idx, c_idx, str(v)))
+        btn_c0 = RZPushButton("Calc P0")
+        btn_c0.clicked.connect(lambda: bpy.ops.rzm.calc_slot_config(block_index=b_idx, comp_index=c_idx, slot_index=s_idx, target_pass=0))
+        btn_c1 = RZPushButton("Calc P1")
+        btn_c1.clicked.connect(lambda: bpy.ops.rzm.calc_slot_config(block_index=b_idx, comp_index=c_idx, slot_index=s_idx, target_pass=1))
+        l_calc.addWidget(btn_c0); l_calc.addWidget(btn_c1)
 
-        row_ops = QtWidgets.QHBoxLayout(); l_calc.addLayout(row_ops)
-        btn_c0 = RZPushButton("Calc P0"); btn_c0.clicked.connect(lambda: bpy.ops.rzm.calc_slot_config(block_index=b_idx, comp_index=c_idx, slot_index=s_idx, target_pass=0)); row_ops.addWidget(btn_c0)
-        btn_c1 = RZPushButton("Calc P1"); btn_c1.clicked.connect(lambda: bpy.ops.rzm.calc_slot_config(block_index=b_idx, comp_index=c_idx, slot_index=s_idx, target_pass=1)); row_ops.addWidget(btn_c1)
-        btn_cisl = RZPushButton("Calc Splitted Island"); btn_cisl.clicked.connect(lambda: bpy.ops.rzm.calc_splitted_island_config(block_index=b_idx, comp_index=c_idx, slot_index=s_idx)); row_ops.addWidget(btn_cisl)
+        # Layers
+        l_lyrs = self.details.add_section("Decal Layers")
+        row_l = QtWidgets.QHBoxLayout(); l_lyrs.addLayout(row_l)
+        btn_add_l = RZPushButton("+ Add Layer"); btn_add_l.clicked.connect(lambda: bpy.ops.rzm.add_tw_decal_layer(block_index=b_idx, comp_index=c_idx, slot_index=s_idx)); row_l.addWidget(btn_add_l)
+        
+        if slot.decal_layers:
+            # Active Layer Tabs
+            self.tab_layers = RZTabRow(); self.tab_layers.setFixedHeight(30)
+            self.tab_layers.sync_items([layer.name if layer.name else f"L{i}" for i, layer in enumerate(slot.decal_layers)], slot.active_layer_index)
+            self.tab_layers.clicked.connect(lambda i: self._set_active_layer(i))
+            l_lyrs.addWidget(self.tab_layers)
+
+            l_idx = slot.active_layer_index
+            if 0 <= l_idx < len(slot.decal_layers):
+                act_l = slot.decal_layers[l_idx]
+                r1 = QtWidgets.QHBoxLayout(); l_lyrs.addLayout(r1)
+                chk_la = RZCheckBox("Active"); chk_la.setChecked(act_l.active); r1.addWidget(chk_la)
+                chk_la.toggled.connect(lambda v: self._item_changed("decal_layers", l_idx, "active", b_idx, c_idx, str(v)))
+                
+                e_lname = RZLineEdit(); e_lname.setText(act_l.name); r1.addWidget(e_lname)
+                e_lname.editingFinished.connect(lambda: self._item_changed("decal_layers", l_idx, "name", b_idx, c_idx, e_lname.text()))
+                
+                r2 = QtWidgets.QHBoxLayout(); l_lyrs.addLayout(r2)
+                r2.addWidget(RZLabel("Idx/Count:"))
+                sp_li = RZSpinBox(); sp_li.setValue(act_l.index); r2.addWidget(sp_li)
+                sp_li.valueChanged.connect(lambda v: self._item_changed("decal_layers", l_idx, "index", b_idx, c_idx, str(v)))
+                
+                sp_lc = RZSpinBox(); sp_lc.setValue(act_l.count); r2.addWidget(sp_lc)
+                sp_lc.valueChanged.connect(lambda v: self._item_changed("decal_layers", l_idx, "count", b_idx, c_idx, str(v)))
+                
+                btn_rem_l = RZPushButton("X Remove Layer")
+                btn_rem_l.clicked.connect(lambda: bpy.ops.rzm.remove_tw_decal_layer(block_index=b_idx, comp_index=c_idx, slot_index=s_idx, index=l_idx))
+                l_lyrs.addWidget(btn_rem_l)
+
+        # Slot Effects & Masking
+        l_fx = self.details.add_section("Effects & Masking")
+        r_mask = QtWidgets.QHBoxLayout(); l_fx.addLayout(r_mask)
+        chk_mask = RZCheckBox("Use Mask"); chk_mask.setChecked(slot.mask_enabled); r_mask.addWidget(chk_mask)
+        chk_mask.toggled.connect(lambda v: self._item_changed("slots", s_idx, "mask_enabled", b_idx, c_idx, str(v)))
+        
+        cb_mask_src = ComboBoxFix(); cb_mask_src.addItems(["TEXTURE_ALPHA", "SEPARATE_MASK", "CHANNEL_R", "CHANNEL_G", "CHANNEL_B"])
+        cb_mask_src.setCurrentText(slot.mask_source); r_mask.addWidget(cb_mask_src)
+        cb_mask_src.currentTextChanged.connect(lambda v: self._item_changed("slots", s_idx, "mask_source", b_idx, c_idx, v))
+        
+        r_p_mask = QtWidgets.QHBoxLayout(); l_fx.addLayout(r_p_mask)
+        chk_p0m = RZCheckBox("Mask P0"); chk_p0m.setChecked(slot.pass0_use_mask); r_p_mask.addWidget(chk_p0m)
+        chk_p0m.toggled.connect(lambda v: self._item_changed("slots", s_idx, "pass0_use_mask", b_idx, c_idx, str(v)))
+        chk_p1m = RZCheckBox("Mask P1"); chk_p1m.setChecked(slot.pass1_use_mask); r_p_mask.addWidget(chk_p1m)
+        chk_p1m.toggled.connect(lambda v: self._item_changed("slots", s_idx, "pass1_use_mask", b_idx, c_idx, str(v)))
+        
+        r_hsv = QtWidgets.QHBoxLayout(); l_fx.addLayout(r_hsv)
+        chk_hsv = RZCheckBox("HSV"); chk_hsv.setChecked(slot.hsv_enabled); r_hsv.addWidget(chk_hsv)
+        chk_hsv.toggled.connect(lambda v: self._item_changed("slots", s_idx, "hsv_enabled", b_idx, c_idx, str(v)))
+        
+        chk_hsv_only = RZCheckBox("Only"); chk_hsv_only.setChecked(slot.hsv_only); r_hsv.addWidget(chk_hsv_only)
+        chk_hsv_only.toggled.connect(lambda v: self._item_changed("slots", s_idx, "hsv_only", b_idx, c_idx, str(v)))
+        
+        chk_hsv_mask = RZCheckBox("Mask"); chk_hsv_mask.setChecked(slot.hsv_mask_enabled); r_hsv.addWidget(chk_hsv_mask)
+        chk_hsv_mask.toggled.connect(lambda v: self._item_changed("slots", s_idx, "hsv_mask_enabled", b_idx, c_idx, str(v)))
+        
+        e_hsv_l = RZLineEdit(); e_hsv_l.setPlaceholderText("($) Link"); e_hsv_l.setText(slot.hsv_link); r_hsv.addWidget(e_hsv_l)
+        e_hsv_l.editingFinished.connect(lambda: self._item_changed("slots", s_idx, "hsv_link", b_idx, c_idx, e_hsv_l.text()))
 
     def _item_changed(self, coll, idx, prop, b, c, val):
         bpy.ops.rzm.update_tw_item(collection_name=coll, index=idx, prop_name=prop, value_str=str(val), block_index=b, comp_index=c)

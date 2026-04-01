@@ -1,0 +1,578 @@
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\area.py", line 204, in change_panel
+    self._current_panel.on_activate()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1143, in on_activate
+    def on_activate(self): self.manager.on_activate()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1137, in on_activate
+    def on_activate(self): self._do_refresh()
+                           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\area.py", line 204, in change_panel
+    self._current_panel.on_activate()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1143, in on_activate
+    def on_activate(self): self.manager.on_activate()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1137, in on_activate
+    def on_activate(self): self._do_refresh()
+                           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\area.py", line 204, in change_panel
+    self._current_panel.on_activate()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1143, in on_activate
+    def on_activate(self): self.manager.on_activate()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1137, in on_activate
+    def on_activate(self): self._do_refresh()
+                           ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+[FontsDebug] File Fallback: 'bahnschrift.ttf' -> Fam: 'bahnschrift', Style: 'Regular'
+[FontsDebug] File Fallback: 'marlett.ttf' -> Fam: 'marlett', Style: 'Regular'
+[FontsDebug] File Fallback: 'mstmc.ttf' -> Fam: 'mstmc', Style: 'Regular'
+[FontsDebug] File Fallback: 'arial.ttf' -> Fam: 'arial', Style: 'Regular'
+[FontsDebug] File Fallback: 'arialbd.ttf' -> Fam: 'arialbd', Style: 'Regular'
+[FontsDebug] File Fallback: 'arialbi.ttf' -> Fam: 'arialbi', Style: 'Regular'
+[FontsDebug] File Fallback: 'ariali.ttf' -> Fam: 'ariali', Style: 'Regular'
+[FontsDebug] File Fallback: 'ariblk.ttf' -> Fam: 'ariblk', Style: 'Regular'
+[FontsDebug] File Fallback: 'Bahnschrift-Bold.ttf' -> Fam: 'Bahnschrift', Style: 'Bold'
+[FontsDebug] File Fallback: 'Bahnschrift-LightCondensed.ttf' -> Fam: 'Bahnschrift LightCondensed', Style: 'Regular'
+RZMenu: Scanning directory: G:\XXMI\EFMI\Mods\YvonneCasual\Textures
+RZMenu: Scanning directory: G:\XXMI\EFMI\Mods\YvonneCasual\Textures
+RZMenu: Scanning directory: G:\XXMI\EFMI\Mods\YvonneCasual\Textures
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+[ViewportDebug] Created Metrics: Fam=Arial, Style=, Size=32, RealFam=Arial, RealStyle=
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 808, in <lambda>
+    self.tab_blocks.clicked.connect(lambda i: self._set_active("block", i))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 817, in _set_active
+    self.update_ui()
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+[IconsDebug] Custom Library from Prefs: 'C:\Users\Rayvy\Desktop\New Folder\'
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 844, in update_ui
+    self._draw_block_details(block, b_idx)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 921, in _draw_block_details
+    e_conf = RZLineEdit(); e_conf.setPlaceholderText("Shader Config (x46)"); e_conf.setText(block.shader_config); l_sh.addWidget(e_conf)
+                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'PySide6.QtWidgets.QLineEdit.setText' called with wrong argument types:
+  PySide6.QtWidgets.QLineEdit.setText(bpy_prop_array)
+Supported signatures:
+  PySide6.QtWidgets.QLineEdit.setText(arg__1: str | None, /)
+Traceback (most recent call last):
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 1135, in _do_refresh
+    if hasattr(w, 'update_ui'): w.update_ui()
+                                ^^^^^^^^^^^^^
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 838, in update_ui
+    self.clear_layout(self.details.layout)
+  File "C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\qt_editor\widgets\texworks_panel.py", line 829, in clear_layout
+    it.widget().hide(); it.widget().setParent(None); it.widget().deleteLater()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'deleteLater'
