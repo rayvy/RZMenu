@@ -20,7 +20,7 @@ from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings
 )
 from .p_settings import (
-    RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, 
+    RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings
 )
 from ..operators import custom_draw_ops
 
@@ -31,6 +31,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     config: PointerProperty(type=RZMenuConfig)
     meta_data: PointerProperty(type=RZMMetaDataSettings)
     export_settings: PointerProperty(type=RZMExportSettings)
+    auto_menu: PointerProperty(type=RZMAutoMenuSettings)
 
     images: CollectionProperty(type=RZMenuImage)
     atlas_size: IntVectorProperty(name="Atlas Size", size=2)
@@ -74,7 +75,7 @@ classes_to_register = [
     ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
     TexResource, TexOverride, TexWorksMaterial, 
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
-    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings, RZM_AddonPreferences, RZMenuProperties, 
+    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings, RZM_AddonPreferences, RZMAutoMenuSettings, RZMenuProperties, 
 ]
 
 def register():

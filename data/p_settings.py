@@ -291,6 +291,26 @@ class RZMMetaDataSettings(bpy.types.PropertyGroup):
     features_list: CollectionProperty(type=RZMFeatureItem)
     features_list_index: IntProperty(default=0)
 
+class RZMAutoMenuSettings(bpy.types.PropertyGroup):
+    margin_x: IntProperty(name="Margin X", default=20, min=0)
+    margin_y: IntProperty(name="Margin Y", default=20, min=0)
+    padding_x: IntProperty(name="Padding X", default=10, min=0)
+    padding_y: IntProperty(name="Padding Y", default=10, min=0)
+    
+    base_button_width: IntProperty(name="Button Width", default=64, min=16)
+    base_button_height: IntProperty(name="Button Height", default=64, min=16)
+    
+    last_loaded_rzmct: StringProperty(
+        name="Loaded Template",
+        description="Path to the loaded .rzmct template",
+        subtype='FILE_PATH',
+        default=""
+    )
+    
+    # Temporary stats for UI display
+    stat_toggles_count: IntProperty(name="Toggles Count", default=0)
+    stat_meshes_count: IntProperty(name="Meshes Found", default=0)
+
 class RZM_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__.split(".")[0] if "." in __package__ else __package__
 

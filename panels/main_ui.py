@@ -386,6 +386,67 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
 
 
 # ... (Остальные панели без изменений) ...
+
+class VIEW3D_PT_RZM_AutoMenuCreator(bpy.types.Panel):
+    bl_label = "Auto Menu Creator"
+    bl_idname = "VIEW3D_PT_rzm_auto_menu_creator"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'RZ Constructor'
+    bl_parent_id = "VIEW3D_PT_rz_constructor_panel"
+    bl_order = 98 
+
+    def draw(self, context):
+        layout = self.layout
+        rzm = context.scene.rzm
+        auto_menu = rzm.auto_menu
+        
+        # Statistics
+        stat_box = layout.box()
+        stat_box.label(text="Scene Context:", icon='VIEW3D')
+        
+        row = stat_box.row()
+        row.label(text=f"Total Toggles Found: {auto_menu.stat_toggles_count}", icon='DOT')
+        row.label(text=f"Meshes Using Toggles: {auto_menu.stat_meshes_count}", icon='MESH_DATA')
+        stat_box.operator("rzm.amc_refresh_stats", text="Refresh Stats", icon='FILE_REFRESH')
+        
+        # Configuration
+        cfg_box = layout.box()
+        cfg_box.label(text="Auto-Generator Config:", icon='PREFERENCES')
+        col = cfg_box.column(align=True)
+        row = col.row(align=True)
+        row.prop(auto_menu, "margin_x")
+        row.prop(auto_menu, "padding_x")
+        row = col.row(align=True)
+        row.prop(auto_menu, "margin_y")
+        row.prop(auto_menu, "padding_y")
+        
+        col.separator()
+        row = col.row(align=True)
+        row.prop(auto_menu, "base_button_width")
+        row.prop(auto_menu, "base_button_height")
+        
+        # Asset Preview (Placeholder)
+        preview_box = layout.box()
+        preview_box.label(text="Template Icons (Preview)", icon='IMAGE_DATA')
+        row = preview_box.row(align=True)
+        row.label(text="[ Icon 1 ]")
+        row.label(text="[ Icon 2 ]")
+        row.label(text="[ Icon 3 ]")
+        
+        layout.separator()
+        
+        # Actions
+        act_box = layout.box()
+        act_box.label(text="Actions:", icon='PLAY')
+        act_box.operator("rzm.amc_pack_template", text="Pack .rzmct", icon='PACKAGE')
+        
+        row = act_box.row(align=True)
+        row.prop(auto_menu, "last_loaded_rzmct", text="")
+        row.operator("rzm.amc_load_template", text="Load", icon='FILE_FOLDER')
+        
+        act_box.operator("rzm.amc_build_menu", text="Build Auto Menu", icon='MOD_BUILD')
+
 class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
     bl_label = "Mod Export Manager"
     bl_idname = "VIEW3D_PT_rzm_export_manager"
@@ -462,5 +523,6 @@ classes_to_register = [
     RZM_MT_AssignToggleMenu, 
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel, 
+    VIEW3D_PT_RZM_AutoMenuCreator,
     VIEW3D_PT_RZM_ExportManager
 ]
