@@ -1,6 +1,6 @@
 import bpy
 import os
-from bpy_extras.io_utils import ExportHelper
+from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 class RZM_OT_AMC_RefreshStats(bpy.types.Operator):
     bl_idname = "rzm.amc_refresh_stats"
@@ -49,13 +49,33 @@ class RZM_OT_AMC_PackTemplate(bpy.types.Operator, ExportHelper):
             self.report({'ERROR'}, "Failed to pack template. See console for details.")
         return {'FINISHED'}
 
-class RZM_OT_AMC_LoadTemplate(bpy.types.Operator):
+class RZM_OT_AMC_LoadTemplate(bpy.types.Operator, ImportHelper):
     bl_idname = "rzm.amc_load_template"
     bl_label = "Load .rzmct Template"
     bl_description = "Loads a template configuration (does not apply to scene yet)"
+    
+    filename_ext = ".rzmct"
+    filter_glob: bpy.props.StringProperty(
+        default="*.rzmct",
+        options={'HIDDEN'},
+        maxlen=255,
+    )
 
     def execute(self, context):
-        self.report({'INFO'}, "Load Template stub.")
+        auto_menu = context.scene.rzm.auto_menu
+        auto_menu.last_loaded_rzmct = self.filepath
+        
+        # Test unpack to verify it's a valid template
+        from ..core.rzmct_manager import unpack_template
+        manifest = unpack_template(context, self.filepath)
+        
+        if manifest:
+            prefabs = manifest.get('elements', [])
+            count = len(prefabs)
+            self.report({'INFO'}, f"Template loaded: {os.path.basename(self.filepath)} ({count} prefabs found)")
+        else:
+            self.report({'ERROR'}, "Invalid template file.")
+            
         return {'FINISHED'}
 
 class RZM_OT_AMC_BuildMenu(bpy.types.Operator):
@@ -64,7 +84,13 @@ class RZM_OT_AMC_BuildMenu(bpy.types.Operator):
     bl_description = "Generates the menu structure into the current scene based on the loaded template"
 
     def execute(self, context):
-        self.report({'INFO'}, "Build Menu stub.")
+        from ..core.generator import generate_menu
+        success = generate_menu(context)
+        
+        if success:
+            self.report({'INFO'}, "Auto Menu built successfully!")
+        else:
+            self.report({'ERROR'}, "Failed to build menu. Check console for details.")
         return {'FINISHED'}
 
 classes_to_register = [

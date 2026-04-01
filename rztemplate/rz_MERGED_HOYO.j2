@@ -25,7 +25,11 @@
             if DRAW_TYPE == 1
                 vb0 = Resource{{ component.fullname }}Position
                 draw = {{ component.vertex_count }}, 0
+                Resource{{component.fullname}}vb0.copy = copy so0
             endif
+            [Resource{{component.fullname}}vb0.copy]
+            type = Buffer
+            stride = 40
         {% elif mod_file.game.name == "GenshinImpact" %}
             vb1 = Resource{{ component.fullname }}Blend
             draw = {{ component.vertex_count }}, 0
@@ -124,6 +128,8 @@
             [TextureOverride{{ part.fullname }}]
             hash = {{ component.ib }}
             match_first_index = {{ part.first_index }}
+            run = CommandListTextureOverride{{ part.fullname }}
+            [CommandListTextureOverride{{ part.fullname }}]
             ib = Resource{{ part.fullname }}IB
             {% if mod_file.game.name == "ZenlessZoneZero" %}run = CommandListSkinTexture{%endif%}
         {% if scene.rzm %}

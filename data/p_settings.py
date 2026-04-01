@@ -5,6 +5,19 @@ from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, 
 # Импорт зависимостей для CollectionProperty
 # from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
 
+def log_amc(context, message, reset=False):
+    """Updates the Auto Menu Creator log in the UI and prints to console."""
+    auto_menu = context.scene.rzm.auto_menu
+    print(f"[AMC] {message}")
+    if reset:
+        auto_menu.auto_menu_log = message
+    else:
+        # Keep last 10 lines
+        lines = auto_menu.auto_menu_log.split('\n')
+        if len(lines) > 10: lines = lines[-10:]
+        lines.append(message)
+        auto_menu.auto_menu_log = '\n'.join(lines)
+
 def update_rzm_game_name(self, context):
     """Обновляет строковое имя при выборе из списка"""
     self.name = self.selection
@@ -307,9 +320,22 @@ class RZMAutoMenuSettings(bpy.types.PropertyGroup):
         default=""
     )
     
+    # Block Config Overrides
+    main_pos: IntVectorProperty(name="Main Position", size=2, default=(0, 0))
+    main_size: IntVectorProperty(name="Main Size", size=2, default=(1920, 1080))
+    
+    page_pos: IntVectorProperty(name="Page Position", size=2, default=(400, 100))
+    page_size: IntVectorProperty(name="Page Size", size=2, default=(1100, 800))
+    
+    # Button Logic Toggles
+    button_auto_icons: BoolProperty(name="Auto Icons", default=True, description="Try to find matching icons for toggles in the library")
+    button_rename_text: BoolProperty(name="Rename Text", default=True, description="Automatically find text elements in the button and rename them based on the toggle")
+    
     # Temporary stats for UI display
     stat_toggles_count: IntProperty(name="Toggles Count", default=0)
     stat_meshes_count: IntProperty(name="Meshes Found", default=0)
+    
+    auto_menu_log: StringProperty(name="Log", default="Ready.")
 
 class RZM_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__.split(".")[0] if "." in __package__ else __package__

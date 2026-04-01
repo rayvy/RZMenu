@@ -410,31 +410,54 @@ class VIEW3D_PT_RZM_AutoMenuCreator(bpy.types.Panel):
         row.label(text=f"Meshes Using Toggles: {auto_menu.stat_meshes_count}", icon='MESH_DATA')
         stat_box.operator("rzm.amc_refresh_stats", text="Refresh Stats", icon='FILE_REFRESH')
         
-        # Configuration
-        cfg_box = layout.box()
-        cfg_box.label(text="Auto-Generator Config:", icon='PREFERENCES')
-        col = cfg_box.column(align=True)
+        # --- Action Buttons (Fixed at Top for easy access) ---
+        act_box = layout.box()
+        act_box.label(text="Process:", icon='PLAY')
+        
+        row = act_box.row(align=True)
+        row.prop(auto_menu, "last_loaded_rzmct", text="")
+        row.operator("rzm.amc_load_template", text="Load", icon='FILE_FOLDER')
+
+        row = act_box.row(align=True)
+        row.operator("rzm.amc_pack_template", text="Pack Template", icon='PACKAGE')
+        row.operator("rzm.amc_build_menu", text="Build!", icon='MOD_BUILD')
+
+        # --- Configuration Blocks ---
+        layout.separator()
+        
+        # 1. MAIN BLOCK
+        main_box = layout.box()
+        main_box.label(text="Main Block Overrides:", icon='NONE')
+        col = main_box.column(align=True)
+        col.prop(auto_menu, "main_pos")
+        col.prop(auto_menu, "main_size")
+        
+        # 2. PAGE BLOCK
+        page_box = layout.box()
+        page_box.label(text="Page Block Layout:", icon='NONE')
+        col = page_box.column(align=True)
+        col.prop(auto_menu, "page_pos")
+        col.prop(auto_menu, "page_size")
+        
         row = col.row(align=True)
         row.prop(auto_menu, "margin_x")
-        row.prop(auto_menu, "padding_x")
-        row = col.row(align=True)
         row.prop(auto_menu, "margin_y")
+        row = col.row(align=True)
+        row.prop(auto_menu, "padding_x")
         row.prop(auto_menu, "padding_y")
+
+        # 3. BUTTONS
+        btn_box = layout.box()
+        btn_box.label(text="Button Spawning:", icon='NONE')
+        col = btn_box.column(align=True)
+        row = col.row(align=True)
+        row.prop(auto_menu, "base_button_width", text="W")
+        row.prop(auto_menu, "base_button_height", text="H")
         
         col.separator()
         row = col.row(align=True)
-        row.prop(auto_menu, "base_button_width")
-        row.prop(auto_menu, "base_button_height")
-        
-        # Asset Preview (Placeholder)
-        preview_box = layout.box()
-        preview_box.label(text="Template Icons (Preview)", icon='IMAGE_DATA')
-        row = preview_box.row(align=True)
-        row.label(text="[ Icon 1 ]")
-        row.label(text="[ Icon 2 ]")
-        row.label(text="[ Icon 3 ]")
-        
-        layout.separator()
+        row.prop(auto_menu, "button_auto_icons", toggle=True, icon='IMAGE_DATA')
+        row.prop(auto_menu, "button_rename_text", toggle=True, icon='TEXT')
         
         # Actions
         act_box = layout.box()
@@ -446,6 +469,15 @@ class VIEW3D_PT_RZM_AutoMenuCreator(bpy.types.Panel):
         row.operator("rzm.amc_load_template", text="Load", icon='FILE_FOLDER')
         
         act_box.operator("rzm.amc_build_menu", text="Build Auto Menu", icon='MOD_BUILD')
+        
+        # Log Box
+        layout.separator()
+        log_box = layout.box()
+        log_box.label(text="Build Log:", icon='TEXT')
+        col = log_box.column(align=True)
+        # Using a label for each line to simulate a multi-line box
+        for line in auto_menu.auto_menu_log.split('\n'):
+            col.label(text=line)
 
 class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
     bl_label = "Mod Export Manager"
