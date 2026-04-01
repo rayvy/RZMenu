@@ -317,6 +317,10 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         col.prop(rzm.config, "canvas_size")
         col.prop(rzm, "export_texture_slots")
         col.prop(rzm, "export_toggle_swap_mode")
+        
+        box.label(text="Advanced Snippets (Debugging Only):")
+        box.prop(rzm.config, "pre_snippet")
+        box.prop(rzm.config, "post_snippet")
 
     def draw_addons_settings(self, layout, rzm):
         layout.separator()

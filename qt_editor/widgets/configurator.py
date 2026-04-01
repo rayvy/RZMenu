@@ -324,32 +324,65 @@ class SnippetTab(BaseConfigTab):
         self.layout.addWidget(container)
 
     def update_ui(self):
+        if self._block: return
         self._block = True
-        if not bpy.context or not bpy.context.scene: return
-        rzm = bpy.context.scene.rzm
-        config = rzm.config
-        
-        # Check if property exists (user might not have added multiple lines to p_settings yet)
-        if not hasattr(config, self.property_name):
-            if self.editor.isEnabled():
-                self.editor.setPlainText(f"Error: Property '{self.property_name}' not found in RZMenuConfig.\nPlease update p_settings.py")
-                self.editor.setEnabled(False)
-            return
+        try:
+            if not bpy.context or not bpy.context.scene: return
+            rzm = bpy.context.scene.rzm
+            config = rzm.config
             
-        self.editor.setEnabled(True)
-        val = getattr(config, self.property_name)
-        if self.editor.toPlainText() != val:
-            self.editor.setPlainText(val)
+            # Check if property exists
+            if not hasattr(config, self.property_name):
+                if self.editor.isEnabled():
+                    self.editor.setPlainText(f"Error: Property '{self.property_name}' not found in RZMenuConfig.\nPlease update p_settings.py")
+                    self.editor.setEnabled(False)
+                return
+                
+            self.editor.setEnabled(True)
+            val = getattr(config, self.property_name)
             
-        self._block = False
+            # CRITICAL: Cancel pending debouncer to avoid sync loops
+            # If we are receiving data from Blender, we must not commit it back.
+            if hasattr(self.editor, 'debouncer'):
+                self.editor.debouncer.cancel()
+
+            if self.editor.toPlainText() != val:
+                self.editor.blockSignals(True)
+                self.editor.setPlainText(val)
+                self.editor.blockSignals(False)
+        finally:
+            self._block = False
 
     def on_text_changed(self):
         if self._block: return
+        
+        # SAFETY 1: Only commit if this tab is actually the ACTIVE one.
+        # This prevents background tabs (which may not have been updated from Blender yet)
+        # from overwriting data with their initial empty state.
+        parent_manager = self.parentWidget()
+        while parent_manager and not hasattr(parent_manager, 'stack'):
+            parent_manager = parent_manager.parentWidget()
+        
+        if parent_manager:
+            idx = parent_manager.stack.indexOf(self)
+            if idx != parent_manager.stack.currentIndex():
+                return
+
+        if not bpy.context or not bpy.context.scene: return
+        rzm = bpy.context.scene.rzm
+        current_val = getattr(rzm.config, self.property_name, "")
+        new_val = self.editor.toPlainText()
+
+        # SAFETY 2: If Blender has data but UI is empty, and user didn't explicitly clear it,
+        # skip to avoid accidental wipes during initialization.
+        if current_val and not new_val and not self.editor.hasFocus():
+            print(f"[RZM] Refused to overwrite '{self.property_name}' with empty text (Safety)")
+            return
+
         # Use generic update_config_setting op
-        # Note: update_config_setting takes 'prop_name', 'val_str'
         self._call_op("update_config_setting", 
                       prop_name=self.property_name, 
-                      val_str=self.editor.toPlainText(), 
+                      val_str=new_val, 
                       is_int=False)
 
 class ModInfoTab(BaseConfigTab):
@@ -791,6 +824,7 @@ class RZConfiguratorManager(QtWidgets.QWidget):
         
         # Subscribe to updates
         SIGNALS.structure_changed.connect(self.refresh_current)
+        SIGNALS.data_changed.connect(self.refresh_current)
 
     def add_tab(self, name, widget):
         self.tab_bar.addTab(name)

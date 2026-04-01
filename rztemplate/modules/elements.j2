@@ -47,7 +47,7 @@
     {% if scene.rzm and scene.rzm.elements %}
         {% for element in scene.rzm.elements %}
             {% if not (element.disable_export and not element.is_preset) %}
-            {% set parent_element = {'element_name': [], 'elem_class': [], 'grid_wrap_mode': []} %}
+            {% set parent_element = {'element_name': [], 'elem_class': [], 'grid_wrap_mode': [], 'value_link': []} %}
 
 
             {% if element.parent_id > -1 %}
@@ -56,6 +56,9 @@
                         {% set _ = parent_element['element_name'].insert(0, potential_parent.element_name) %}
                         {% set _ = parent_element['elem_class'].insert(0, potential_parent.elem_class) %}
                         {% set _ = parent_element['grid_wrap_mode'].insert(0, potential_parent.grid_wrap_mode) %}
+                        {% if potential_parent.value_link and potential_parent.value_link|length > 0 %}
+                            {% set _ = parent_element['value_link'].insert(0, potential_parent.value_link[0].value_name) %}
+                        {% endif %}
                     {% endif %}
                 {% endfor %}
             {% endif %}
@@ -88,7 +91,7 @@
             {% elif element.tag == 'HSVColorPicker' %}
             {{class_container.HSVColorPicker(element,parent_element,mod_file,scene)}}
             {% else %}
-            {{class_container.main(element,parent_element,mod_file,scene)}}
+            {% if element.is_helper %}{%else%}{{class_container.main(element,parent_element,mod_file,scene)}}{%endif%}
             {% endif %}
             {% endif %}
         {% endfor %}
@@ -111,6 +114,20 @@
     {% endif %}
 {% endfor %}
 
+{# ─── HELPER DEFINITIONS ─── #}
+{# Для каждого host-элемента с helper_ids генерируем отдельный CommandList блок хелпера #}
+{% for host_element in scene.rzm.elements %}
+    {% if not host_element.is_preset and not host_element.is_helper and not host_element.disable_export %}
+        {% if host_element.helper_ids %}
+            {% for ref in host_element.helper_ids %}
+                {% set helper_item = scene.rzm.elements | selectattr('id', 'equalto', ref.helper_id) | first %}
+                {% if helper_item %}
+{{ class_container.generate_helper_definition(helper_item, host_element, mod_file, scene) }}
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    {% endif %}
+{% endfor %}
 
 {%endmacro%}
 

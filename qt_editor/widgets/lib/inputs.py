@@ -179,7 +179,7 @@ class RZFormulaHighlighter(RZBaseHighlighter):
         self.formats['var'] = self._make_format(theme.get('text_variable', '#E06C75'), bold=True)
 
     def highlightBlock(self, text):
-        for match in re.finditer(r'[\$@#][a-zA-Z0-9_]+', text):
+        for match in re.finditer(r'[\$@#~][a-zA-Z0-9_]+', text):
             start, end = match.span()
             self.setFormat(start, end - start, self.formats['var'])
 
@@ -198,7 +198,7 @@ class RZIniHighlighter(RZBaseHighlighter):
             self.setFormat(match.start(), match.end() - match.start(), self.formats['section'])
         for match in re.finditer(r'^[^=;\n]+(?==)', text):
              self.setFormat(match.start(), match.end() - match.start(), self.formats['key'])
-        for match in re.finditer(r'[\$@#][a-zA-Z0-9_]+', text):
+        for match in re.finditer(r'[\$@#~][a-zA-Z0-9_]+', text):
             self.setFormat(match.start(), match.end() - match.start(), self.formats['var'])
         for match in re.finditer(r';.*', text):
             self.setFormat(match.start(), match.end() - match.start(), self.formats['comment'])
@@ -456,13 +456,13 @@ class RZFormulaInput(_RZBaseTextEdit):
         self.setTabChangesFocus(True)
         
         # --- Настройки автокомплита для формул ---
-        self._ac_pattern = r'[\$@#]([a-zA-Z0-9_]*)$'
+        self._ac_pattern = r'[\$@#~]([a-zA-Z0-9_]*)$'
         self._ac_provider = core_read.get_variable_suggestions
         self._ac_suffix = ""
 
         self.highlighter = RZFormulaHighlighter(self.document())
 
-        self.debouncer = RZDebouncer(delay_ms=400, parent=self)
+        self.debouncer = RZDebouncer(delay_ms=200, parent=self)
         self.debouncer.timeout.connect(self.editingFinished.emit)
         self.textChanged.connect(lambda: self.debouncer.trigger(lambda: None))
         
@@ -553,6 +553,7 @@ class RZFormulaInput(_RZBaseTextEdit):
 
     def focusOutEvent(self, event):
         QtCore.QTimer.singleShot(100, self.popup.hide)
+        self.debouncer.commit() # ENSURE IMMEDIATE SYNC ON FOCUS LOSS
         self.editingFinished.emit()
         super().focusOutEvent(event)
 

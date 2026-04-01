@@ -39,10 +39,18 @@ class RZMGameSettings(bpy.types.PropertyGroup):
         description="Internal string used by Jinja2 templates"
     )
 
+def on_snippet_update(self, context):
+    try:
+        # Avoid recursion or heavy lifting in update callback
+        # Just a simple print to console to verify the value was set safely.
+        print(f"[RZM Debug] Snippet Updated: {self.pre_snippet[:15]}... | {self.post_snippet[:15]}...")
+    except:
+        pass
+
 class RZMenuConfig(bpy.types.PropertyGroup): 
     canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
-    pre_snippet: StringProperty(name="Pre Snippet", default="")
-    post_snippet: StringProperty(name="Post Snippet", default="")
+    pre_snippet: StringProperty(name="Pre Snippet", default="", update=on_snippet_update)
+    post_snippet: StringProperty(name="Post Snippet", default="", update=on_snippet_update)
     mod_info: StringProperty(name="Mod Info", default="", description="Custom mod metadata for meta.j2")
     custom_interpolation_speed: FloatProperty(name="Interpolation Speed", default=16.0, min=0.001, max=100.0)
 

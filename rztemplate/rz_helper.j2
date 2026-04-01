@@ -58,7 +58,7 @@
                 
                 {% if toggle_indices %}
                     {% set _ = active_toggles.append(toggle_name) %}
-                    if ${{utils.format_var(toggle_name)}} == {{ toggle_indices|join(' || $' + toggle_name + ' == ') }}
+                    if ${{utils.format_var(toggle_name, none, scene)}} == {{ toggle_indices|join(' || $' + toggle_name + ' == ') }}
                 {% endif %}
             {% endif %}
         {% endfor %}

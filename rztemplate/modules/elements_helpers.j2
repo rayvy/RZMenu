@@ -126,7 +126,7 @@ endif
 
 {% macro popup_helpers_generate(mod_file,scene) %}
     {% for element in scene.rzm.elements %}
-        {% if utils.has_attribute(element, 'hadPopup') and (element.value_link is defined and (element.value_link|length) > 0) %}
+        {% if utils.has_attribute(element, 'hadPopup') and not element.is_helper and (element.value_link is defined and (element.value_link|length) > 0) %}
 
             {# ------------------ MASTER/SLAVE Init ------------------ #}
             {% set popup_elements_count = {'elements': [2]} %}

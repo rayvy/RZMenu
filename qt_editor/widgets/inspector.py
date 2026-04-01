@@ -1098,7 +1098,8 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_template_prefab = self._add_row(f_prefab, "Type:", RZComboBox(), 'template_prefab')
             self.cb_template_prefab.addItems(["MAIN_BLOCK", "PAGE_BLOCK", "BUTTONS"])
             self.chk_is_template_prefab.toggled.connect(self.cb_template_prefab.setVisible)
-            self.grp_template_prefab.setVisible(False)  # Hidden until is_template_prefab is enabled
+            self.cb_template_prefab.setVisible(False)  # Combo hidden until checkbox is checked
+            # grp_template_prefab itself is always visible so user can see the checkbox
             layout.addWidget(self.grp_template_prefab)
 
             # --- Applied Presets ---
@@ -1484,13 +1485,13 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'list_helpers'): self.list_helpers.update_data(props.get('helper_ids', []))
 
             # Template Prefab
+            is_template_pref = props.get('is_template_prefab') is True
             if hasattr(self, 'chk_is_template_prefab'):
-                self.chk_is_template_prefab.setChecked(props.get('is_template_prefab') is True)
+                self.chk_is_template_prefab.setChecked(is_template_pref)
             if hasattr(self, 'cb_template_prefab'):
                 tp = props.get('template_prefab', 'MAIN_BLOCK')
                 self.cb_template_prefab.setCurrentText(tp or 'MAIN_BLOCK')
-            if hasattr(self, 'grp_template_prefab'):
-                self.grp_template_prefab.setVisible(props.get('is_template_prefab') is True)
+                self.cb_template_prefab.setVisible(is_template_pref)
 
             # --- Visibility ---
             vis_mode = props.get('visibility_mode', 'ALWAYS')

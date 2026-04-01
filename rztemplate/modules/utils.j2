@@ -90,11 +90,91 @@
     {%- endif -%}
 {%- endmacro -%}
 
-{%- macro format_var(input_string) -%}
-    {%- if input_string -%}
-        {{- input_string.lstrip('$@#') -}}
+{%- macro resolve_parent_min_max(element, scene, type='MAX') -%}
+    {%- if element and element.value_link and element.value_link|length > 0 -%}
+        {%- set first_link = element.value_link[0] -%}
+        {%- set v_name = first_link.value_name | default('') -%}
+        
+        {# @ = Toggle (Project) #}
+        {%- if v_name.startswith('@') -%}
+            {%- if type == 'MIN' -%}
+                0.0
+            {%- else -%}
+                {# Ищем длину тоггла в дефинициях сцены #}
+                {%- set t_name = v_name.lstrip('@') -%}
+                {%- set found_max = [1.0] -%}
+                {%- if scene and scene.rzm and scene.rzm.toggle_definitions -%}
+                    {%- for t in scene.rzm.toggle_definitions if t.toggle_name == t_name -%}
+                        {%- set _ = found_max.pop() -%}
+                        {%- set _ = found_max.append(t.toggle_length) -%}
+                    {%- endfor -%}
+                {%- endif -%}
+                {{- found_max[0] -}}
+            {%- endif -%}
+        {%- else -%}
+            {# Шейпы (#) и обычные значения ($) используют min/max диапазон линка #}
+            {%- if type == 'MIN' -%}
+                {{- first_link.value_min | default(0.0) -}}
+            {%- else -%}
+                {{- first_link.value_max | default(1.0) -}}
+            {%- endif -%}
+        {%- endif -%}
+    {%- else -%}
+        {{- '0.0' if type == 'MIN' else '1.0' -}}
     {%- endif -%}
 {%- endmacro -%}
+
+{%- macro format_var(input_string, element=none, scene=none) -%}
+    {%- if input_string -%}
+        {%- set result = input_string -%}
+        
+        {# 1. Продвинутый режим: подставляем имя (или value_link) элемента, если он передан #}
+        {%- if element and element.value_link -%}
+            {%- set p_val = get_first_value_link_var(element)|trim -%}
+            {%- set p_min = resolve_parent_min_max(element, scene, 'MIN')|trim -%}
+            {%- set p_max = resolve_parent_min_max(element, scene, 'MAX')|trim -%}
+            {%- set result = result | replace('~ParentValueMin', p_min) | replace('~PVMin', p_min) | replace('~PVmin', p_min) | replace('~pvmin', p_min) | replace('~PVMIN', p_min)
+                                    | replace('~ParentValueMax', p_max) | replace('~PVMax', p_max) | replace('~PVmax', p_max) | replace('~pvmax', p_max) | replace('~PVMAX', p_max)
+                                    | replace('~ParentValue', p_val)    | replace('~PV', p_val)    | replace('~pv', p_val) -%}
+        {%- endif -%}
+        
+        {# 2. Базовый режим: удаляем спецсимволы в начале строки #}
+        {{- result.lstrip('$@#~') -}}
+    {%- endif -%}
+{%- endmacro -%}
+
+{%- macro normalize_all_vars(input_string, element=none, scene=none) -%}
+    {%- if input_string -%}
+        {%- set result = input_string -%}
+        
+        {# 1. Продвинутый режим: подставляем имя (или value_link) элемента, если он передан #}
+        {%- if element and element.value_link -%}
+            {%- set p_val = '$' ~ get_first_value_link_var(element)|trim -%}
+            {%- set p_min = resolve_parent_min_max(element, scene, 'MIN')|trim -%}
+            {%- set p_max = resolve_parent_min_max(element, scene, 'MAX')|trim -%}
+            {%- set result = result | replace('~ParentValueMin', p_min) | replace('~PVMin', p_min) | replace('~PVmin', p_min) | replace('~pvmin', p_min) | replace('~PVMIN', p_min)
+                                    | replace('~ParentValueMax', p_max) | replace('~PVMax', p_max) | replace('~PVmax', p_max) | replace('~pvmax', p_max) | replace('~PVMAX', p_max)
+                                    | replace('~ParentValue', p_val)    | replace('~PV', p_val)    | replace('~pv', p_val) -%}
+        {%- endif -%}
+        
+        {# 2. Базовый режим: заменяем префиксы @ и # на стандартный $ #}
+        {%- set result = result | replace('@', '$') | replace('#', '$') -%}
+        
+        {{- result -}}
+    {%- endif -%}
+{%- endmacro -%}
+
+{% macro get_first_value_link_var(element) -%}
+    {%- if element.value_link and element.value_link|length > 0 -%}
+        {%- set first_link = element.value_link[0] -%}
+        {# Проверяем, если это строка (уже проброшенная), отдаем её. Если объект — берем свойство #}
+        {%- if first_link is string -%}
+            {{- first_link.lstrip('$@#~') -}}
+        {%- else -%}
+            {{- first_link.value_name.lstrip('$@#~') -}}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
 
 {%- macro get_var_name(name, scene, auto_x=true) -%}
     {%- if not name -%}{%- else -%}

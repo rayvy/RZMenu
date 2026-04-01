@@ -105,8 +105,9 @@ def get_variable_suggestions():
         if shape.shape_name:
             suggestions.append(f"{shape.shape_name}") # Shape names usually have # prefix based on description
 
-    # 5. System variables (~)
+    # 5. System variables (~) — processed on exporter side
     suggestions.append("~ParentValue")
+    suggestions.append("~PV")          # Short alias for ~ParentValue
 
     return sorted(suggestions)
 

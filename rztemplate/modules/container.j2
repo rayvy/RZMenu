@@ -3,6 +3,11 @@
 
 {%macro base(element,parent_element,mod_file,scene)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
+;parent_elem_name: {{parent_element.element_name}}
+;parent_elem_value: {{utils.get_first_value_link_var(parent_element)}}
+{% if parent_element.value_link %}
+;parent_elem_value: {{parent_element.value_link}}
+{% endif %}
 {% if not element.is_preset %}
 $id = {{ element.id }}
 {% endif %}
@@ -19,7 +24,7 @@ $scissorZ = 0
 $scissorW = 0
 $fontSlot = {{ element.font_slot | default(0) }}
 {% if element.visibility_mode == 'CONDITIONAL' %}
-if {{element.visibility_condition}}
+if {{ utils.normalize_all_vars(element.visibility_condition, element, scene) }}
     $LocalVisibility = 1
 endif
 {% elif element.visibility_mode == 'HIDED' %}
@@ -68,6 +73,10 @@ Local $current_sizeY
         {{generate_position_and_size(element,parent_element,mod_file,scene)}}
     {% endif %}
     ;Underlayer Presets
+    {% if not element.is_preset%}
+    w23 = $hoverInterpolate
+    z23 = $clickInterpolate
+    {% endif %}
     {{generate_underlayer_presets(element,mod_file,scene)}}
     {%if element.color%}{{generate_color(element)}}{%endif%}
     {%if element.fn%}{{generate_fn(element)}}{%endif%}
@@ -83,7 +92,7 @@ Local $current_sizeY
     if $LocalVisibility
     $element_align = {{ utils.ALIGNMENT_MAP.get(element.alignment, 0) }}
     run = CommandListCoreAlignment.Check
-    {{generate_interactions(element, parent_element)}}
+    {{generate_interactions(element, parent_element, scene)}}
     {%if class_name == 'SLIDER'%}
         {{ handle_slider_logic(element, parent_element, mod_file,scene) }}
             $slider_node_disable_nums = {{ 1 if element.disable_slider_nums else 0 }}
@@ -104,6 +113,7 @@ Local $current_sizeY
     {%else%}
         {{generate_image(element,parent_element,scene)}}
         {%if element.fx%}{{generate_fx(element)}}{%endif%}
+        ;val {{utils.format_var("~PV",parent_element, scene)}}
         run = CustomShaderRCI2D
     {%endif%}
     {% if class_name == 'GRID_CONTAINER' %}
@@ -116,10 +126,6 @@ Local $current_sizeY
     $P_PY = $PositionY
     $P_SX = $SizeX
     $P_SY = $SizeY
-    {% if not element.is_preset%}
-    w23 = $hoverInterpolate
-    z23 = $clickInterpolate
-    {% endif %}
     if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
     $hoverInterpolate = $hoverInterpolate + (1 - $hoverInterpolate) * ($dtCustom + 0.0069)
     else
@@ -130,8 +136,16 @@ Local $current_sizeY
     {% if not element.is_preset and element.value_link %}
     x24 = $ValueX24Interpolated
     {% endif %}
+    {% if not element.is_preset%}
+    w23 = $hoverInterpolate
+    z23 = $clickInterpolate
+    {% endif %}
     {{generate_presets(element,mod_file,scene)}}
+    ;Helpers
+    {{generate_helpers(element,mod_file,scene)}}
     ;Childs
+    z23 = 0
+    w23 = 0
     {{generate_child(element,mod_file,scene)}}
     endif
     endif
@@ -160,6 +174,112 @@ Local $current_sizeY
             run = CommandListElement{{preset_item.element_name}}
         {% endif %}
     {% endfor %}
+{%endmacro%}
+
+{# ─── HELPERS ──────────────────────────────────────────────────────────────── #}
+{#
+  generate_helpers — вызывает CommandList хелперов из host-элемента.
+  Хелперы генерируются как отдельные CommandList секции в data.j2 (или elements_helpers.j2),
+  поэтому здесь только run-вызовы с правильным нейминг-ключом.
+  Нейминг: {host_name}_{helper_name_lstrip_underscore}
+  Example: host=ButtonB, helper=_helper_arrow → ButtonB_helper_arrow
+#}
+{%macro generate_helpers(element, mod_file, scene)%}
+    {% if not element.is_preset and not element.is_helper %}
+        {% for ref in element.helper_ids %}
+            {% set helper_item = scene.rzm.elements | selectattr('id', 'equalto', ref.helper_id) | first %}
+            {% if helper_item %}
+                {%- set h_raw_name = helper_item.element_name -%}
+                {%- set h_clean = h_raw_name.lstrip('_') -%}
+                {%- set h_name = element.element_name ~ '_' ~ h_clean -%}
+                $positionX = $P_PX
+                $positionY = $P_PY
+                $sizeX = $P_SX
+                $sizeY = $P_SY
+                run = CommandListElement{{h_name}}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{%endmacro%}
+
+{# ─── HELPER ELEMENT DEFINITION ─────────────────────────────────────────────
+  generate_helper_definition — генерирует полный CommandList блок для одного хелпера,
+  привязанного к конкретному host-элементу.
+  Вызывается из elements_helpers.j2 по каждому уникальному host+helper паре.
+  
+  Параметры:
+    helper_item   — элемент-хелпер (из scene.rzm.elements, is_helper=True)
+    host_item     — host-элемент, к которому привязан хелпер
+    mod_file      — имя модфайла
+    scene         — сцена
+    
+  Нейминг: host_element_name + '_' + helper_element_name.lstrip('_')
+  ID: helper_item.id + 3500  (оффсет для уникальности в 3DMigoto)
+#}
+{%macro generate_helper_definition(helper_item, host_item, mod_file, scene)%}
+    {%- set h_raw_name = helper_item.element_name -%}
+    {%- set h_clean = h_raw_name.lstrip('_') -%}
+    {%- set h_name = host_item.element_name ~ '_' ~ h_clean -%}
+    {%- set h_id = helper_item.id + host_item.id + 3500 -%}
+
+[CommandListElement{{h_name}}]
+$id = {{h_id}}
+local $LocalVisibility
+    {% if helper_item.visibility_mode == 'CONDITIONAL' %}
+if {{ utils.normalize_all_vars(helper_item.visibility_condition, host_item, scene) }}
+    $LocalVisibility = 1
+endif
+    {% elif helper_item.visibility_mode == 'HIDED' %}
+    $LocalVisibility = 0
+    {% else %}
+    $LocalVisibility = 1
+    {% endif %}
+    $drawType = 0
+if $LocalVisibility
+    {{generate_position_and_size(helper_item, host_item, mod_file, scene)}}
+    {{generate_interactions_for_helper(helper_item, host_item, scene)}}
+    {%if helper_item.color%}{{generate_color(helper_item)}}{%endif%}
+    {{generate_image(helper_item, host_item, scene)}}
+    {%if helper_item.fx%}{{generate_fx(helper_item)}}{%endif%}
+    {%- set h_cls = utils.get_cls(helper_item)|trim -%}
+    {% if h_cls == 'SLIDER' %}
+        {{ handle_slider_logic(helper_item, host_item, mod_file, scene) }}
+        run = CustomShaderRCI2D_SLIDER
+    {% elif h_cls == 'TEXT' %}
+        {{generate_text(helper_item)}}
+        run = CustomShaderRCI2D_TEXT_{{helper_item.text_align | default('LEFT')}}
+    {% else %}
+        run = CustomShaderRCI2D
+    {% endif %}
+endif
+{%endmacro%}
+
+{# Interactions для хелпера — аналог generate_interactions, но с normalize_all_vars и parent_element #}
+{%macro generate_interactions_for_helper(element, parent_element, scene)%}
+    {% if utils.has_any_attribute(element) or element.hover_event_enabled or element.click_event_enabled %}
+    run = CommandListCoreFNUpdateHoverState
+    {% endif %}
+    {% if utils.has_attribute(element, 'isClickable') or utils.has_attribute(element, 'isHoldable')%}
+    run = CommandListNavProcessElement
+    {%endif%}
+    {% if utils.has_attribute(element, 'isClickable') %}
+        run = CommandListCoreFNHandleClick
+    {% endif %}
+    {% if utils.has_attribute(element, 'isHoldable') %}
+        run = CommandListCoreFNHandleHold
+    {% endif %}
+
+    {% if element.hover_event_enabled and element.hover_event_formula %}
+    if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+    {{ utils.normalize_all_vars(element.hover_event_formula, parent_element, scene) }}
+    endif
+    {% endif %}
+
+    {% if element.click_event_enabled and element.click_event_formula %}
+    if $id == $clickTriggerID
+    {{ utils.normalize_all_vars(element.click_event_formula, parent_element, scene) }}
+    endif
+    {% endif %}
 {%endmacro%}
 
 
@@ -233,7 +353,7 @@ Local $current_sizeY
     ;No Transform Formula
     {% endif %}
 {%endmacro%}
-{%macro generate_interactions(element, parent_element)%}
+{%macro generate_interactions(element, parent_element, scene)%}
     {% set is_child_of_grid = parent_element and utils.get_cls(parent_element)|trim == 'GRID_CONTAINER' %}
     {% if not is_child_of_grid %}
         {% if utils.has_any_attribute(element) or element.hover_event_enabled or element.click_event_enabled %}
@@ -262,14 +382,14 @@ Local $current_sizeY
         {% if element.hover_event_enabled and element.hover_event_formula %}
         {# Выполняется, когда мышь над элементом #}
         if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
-        {{ element.hover_event_formula }}
+        {{ utils.normalize_all_vars(element.hover_event_formula, parent_element, scene) }}
         endif
         {% endif %}
 
         {% if element.click_event_enabled and element.click_event_formula %}
         {# Выполняется при клике #}
         if $id == $clickTriggerID
-        {{ element.click_event_formula }}
+        {{ utils.normalize_all_vars(element.click_event_formula, parent_element, scene) }}
         $clickInterpolate = 1
         endif
         {% endif %}
@@ -498,7 +618,7 @@ Local $current_sizeY
     {# --- Логика для value_link (если он есть) --- #}
     {% if element.value_link %}
         {% set first_link = element.value_link[0] %}
-        {% set target_var = utils.format_var(first_link.value_name) %}
+        {% set target_var = utils.format_var(first_link.value_name,parent_element, scene) %}
         {% set target_var_is_toggle = 0 %}
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
         {% if not element.is_preset %}
@@ -573,10 +693,10 @@ Local $current_sizeY
     {# --- MASTER/SLAVE синхронизация value_link --- #}
     {% if element.value_link and element.value_link|length > 1 %}
         {% set master_link = element.value_link[0] %}
-        {% set master_var = utils.format_var(master_link.value_name) %}
+        {% set master_var = utils.format_var(master_link.value_name,parent_element, scene) %}
         {% for slave in element.value_link[1:] %}
             {% if slave.value_name %}
-                ${{ utils.format_var(slave.value_name) }} = ${{ master_var }}
+                ${{ utils.format_var(slave.value_name,parent_element, scene) }} = ${{ master_var }}
             {% endif %}
         {% endfor %}
     {% endif %}
@@ -630,7 +750,7 @@ endif
     {# RZM_SLIDER_LIMIT: Визуализация — приведение значения к 0.0-1.0 для отображения ползунка #}
     local $range_span_display = {{ (first_link.value_max | default(1.0) | float) }} - {{ (first_link.value_min| default(0.0) | float) }}
     if $range_span_display > 0.0001
-        x24 = (${{utils.format_var(first_link.value_name)}} - {{ (first_link.value_min| default(0.0) | float) }}) / $range_span_display
+        x24 = (${{utils.format_var(first_link.value_name,parent_element, scene)}} - {{ (first_link.value_min| default(0.0) | float) }}) / $range_span_display
     else
         x24 = 0.0
     endif
@@ -691,13 +811,13 @@ endif
     {% if element.value_link %}
         {% if element.value_link|length == 1 %}
             {# СЦЕНАРИЙ 2: Одинарная ссылка. Заменяем префикс переменных на имя ссылки #}
-            {% set var_prefix = utils.format_var(element.value_link[0].value_name) %}
+            {% set var_prefix = utils.format_var(element.value_link[0].value_name,parent_element, scene) %}
         {% else %}
             {# СЦЕНАРИЙ 3: Мульти-ссылка. Префикс локальный (буфер), включаем логику свитча #}
             {% set var_prefix = element_id_name %}
             {% set is_multi_link = true %}
             {# 0-й индекс - переменная состояния #}
-            {% set state_var = "$" + utils.format_var(element.value_link[0].value_name) %}
+            {% set state_var = "$" + utils.format_var(element.value_link[0].value_name,parent_element, scene) %}
             {# Остальные - цели #}
             {% set link_targets = element.value_link[1:] %}
         {% endif %}
@@ -737,7 +857,7 @@ endif
         ; --- [СЦЕНАРИЙ 3] LOAD LOGIC: Загружаем данные из целей в буфер ---
         {% if is_multi_link %}
             {% for target in link_targets %}
-                {% set t_name = utils.format_var(target.value_name) %}
+                {% set t_name = utils.format_var(target.value_name,parent_element, scene) %}
                 {% if loop.first %}
         if {{ state_var }} == {{ loop.index0 }}
                 {% else %}
@@ -817,7 +937,7 @@ endif
         ; Делаем это ПОСЛЕ helpers и HueSlider, чтобы сохранить свежие изменения
         {% if is_multi_link %}
             {% for target in link_targets %}
-                {% set t_name = utils.format_var(target.value_name) %}
+                {% set t_name = utils.format_var(target.value_name,parent_element, scene) %}
                 {% if loop.first %}
         if {{ state_var }} == {{ loop.index0 }}
                 {% else %}
