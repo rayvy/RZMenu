@@ -415,6 +415,21 @@ class AsyncImageLoader(QtCore.QObject):
         super().__init__()
         self.pool = QtCore.QThreadPool.globalInstance()
         self.active_requests = {} # {widget_id: path}
+        self._already_cached = set()
+
+    def precache_folder(self, folder_path, max_size=128):
+        """Recursively scans folder and loads all images into memory cache."""
+        if not folder_path or not os.path.exists(folder_path): return
+        
+        # Rayvich: Scan and spawn workers
+        images = scan_textures(folder_path, subfolder="", recursive=True)
+        for img_path in images:
+            if img_path in self._already_cached: continue
+            self._already_cached.add(img_path)
+            
+            # Start a worker but don't care about callback (just wants it in _thumbnail_cache)
+            worker = ThumbnailWorker(img_path, max_size)
+            self.pool.start(worker)
 
     def load_async(self, path, max_size, callback):
         """Loads a texture in background and calls callback(data)."""

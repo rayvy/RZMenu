@@ -12,6 +12,7 @@ class RZColorButton(RZVisualInputMixin, QtWidgets.QPushButton):
     def __init__(self, text=""):
         super().__init__(text)
         self._init_visuals()
+        self.setAcceptDrops(True)
         self._qcolor = QtGui.QColor(255, 255, 255)
         self.clicked.connect(self._pick_color)
         self.update_style()
@@ -869,10 +870,36 @@ class RZLineEdit(RZVisualInputMixin, QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_visuals()
+        self.setAcceptDrops(True)
         self.setMinimumHeight(30)
         self.apply_theme()
         self._pattern = ""
         self._originals = []
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+            
+    def dropEvent(self, event):
+        text = event.mimeData().text()
+        if not text: return
+        
+        # User logic prefix handling: $Values, @Toggles, #Shapes
+        prefix = ""
+        clean_text = text
+        if text.startswith("$"): prefix = "$"; clean_text = text[1:]
+        elif text.startswith("@"): prefix = "@"; clean_text = text[1:]
+        elif text.startswith("#"): prefix = "#"; clean_text = text[1:]
+        
+        # No duplication of prefix if one was already partially provided
+        if prefix:
+            new_text = prefix + clean_text.lstrip(prefix)
+        else:
+            new_text = clean_text
+            
+        self.insert(new_text)
+        self.editingFinished.emit()
+        event.acceptProposedAction()
 
     def paintEvent(self, event):
         super().paintEvent(event)

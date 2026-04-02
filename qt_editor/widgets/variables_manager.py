@@ -58,15 +58,37 @@ class RZVariablesManager(QtWidgets.QWidget):
         self.tab_toggles.refresh()
         self.tab_shapes.refresh()
 
+class RZDraggableVariableList(QtWidgets.QListWidget):
+    def __init__(self, prefix="", parent=None):
+        super().__init__(parent)
+        self.prefix = prefix
+        self.setDragEnabled(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragOnly)
+
+    def startDrag(self, supportedActions):
+        item = self.currentItem()
+        if not item: return
+        drag = QtGui.QDrag(self)
+        mime_data = QtCore.QMimeData()
+        text = item.text()
+        # Rayvich: logic to prefix without duplication
+        if self.prefix:
+            clean_name = text.lstrip(self.prefix)
+            text = self.prefix + clean_name
+        mime_data.setText(text)
+        drag.setMimeData(mime_data)
+        drag.exec_(supportedActions)
+
 
 class BaseListTab(QtWidgets.QWidget):
-    def __init__(self):
+    def __init__(self, prefix=""):
         super().__init__()
+        self.prefix = prefix
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(5, 5, 5, 5)
         
         # List
-        self.list_widget = QtWidgets.QListWidget()
+        self.list_widget = RZDraggableVariableList(prefix=self.prefix)
         self.list_widget.currentItemChanged.connect(self.on_selection_changed)
         self.list_widget.itemChanged.connect(self.on_item_changed)
         self.layout.addWidget(self.list_widget)
@@ -134,7 +156,7 @@ class BaseListTab(QtWidgets.QWidget):
 
 class ValuesTab(BaseListTab):
     def __init__(self):
-        super().__init__()
+        super().__init__(prefix="$")
         
         # Props
         self.inp_name = QtWidgets.QLineEdit()
@@ -272,7 +294,7 @@ class ValuesTab(BaseListTab):
 
 class TogglesTab(BaseListTab):
     def __init__(self):
-        super().__init__()
+        super().__init__(prefix="@")
         
         self.inp_name = QtWidgets.QLineEdit()
         self.inp_name.editingFinished.connect(self.synch_name)
@@ -352,7 +374,7 @@ class TogglesTab(BaseListTab):
 
 class ShapesTab(BaseListTab):
     def __init__(self):
-        super().__init__()
+        super().__init__(prefix="#")
         
         # Shape Props
         self.inp_name = QtWidgets.QLineEdit()

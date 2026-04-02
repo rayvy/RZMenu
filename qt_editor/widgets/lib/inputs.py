@@ -235,6 +235,7 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_visuals() 
+        self.setAcceptDrops(True)
         self._is_multiline = False
         
         # Переменные для автокомплита
@@ -516,6 +517,30 @@ class RZFormulaInput(_RZBaseTextEdit):
     def _reposition_preview(self):
         self.preview_label.adjustSize()
         self.preview_label.move(self.width() - self.preview_label.width() - 5, 2)
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasText():
+            super().dropEvent(event)
+            return
+            
+        text = event.mimeData().text()
+        # Rayvich's Logic: Prefix handling
+        prefix = ""
+        clean_text = text
+        if text.startswith("$"): prefix = "$"; clean_text = text[1:]
+        elif text.startswith("@"): prefix = "@"; clean_text = text[1:]
+        elif text.startswith("#"): prefix = "#"; clean_text = text[1:]
+        
+        if prefix:
+            new_text = prefix + clean_text.lstrip(prefix)
+        else:
+            new_text = clean_text
+            
+        cursor = self.cursorForPosition(event.position().toPoint())
+        cursor.insertText(new_text)
+        self.setTextCursor(cursor)
+        self.editingFinished.emit()
+        event.acceptProposedAction()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
