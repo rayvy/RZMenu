@@ -43,11 +43,13 @@ class RZTabRow(QtWidgets.QScrollArea):
 
     def clear(self):
         while self.container_layout.count():
-            it = self.container_layout.takeAt(0)
-            if it.widget():
-                it.widget().hide()
-                it.widget().setParent(None)
-                it.widget().deleteLater()
+            item = self.container_layout.takeAt(0)
+            if item:
+                w = item.widget()
+                if w:
+                    w.hide()
+                    w.setParent(None)
+                    w.deleteLater()
         self.buttons.clear()
         self.active_idx = -1
 
@@ -625,10 +627,10 @@ class TexWorksMainTab(QtWidgets.QWidget):
         super().__init__(parent); self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(0, 0, 0, 0); im = IconManager.get_instance(); self.mode = "BLOCKS"; self.show_details = False
         row_b = QtWidgets.QHBoxLayout(); row_b.setContentsMargins(5, 2, 5, 2); self.layout.addLayout(row_b)
         row_b.addWidget(RZLabel("Blocks:")); self.tab_blocks = RZTabRow(); self.tab_blocks.setFixedHeight(30); row_b.addWidget(self.tab_blocks, 1)
-        btn_ops_b = QtWidgets.QHBoxLayout(); btn_ops_b.setSpacing(2); row_b.addLayout(btn_ops_b)
-        btn_add_b = RZPushButton("+"); btn_add_b.setFixedSize(24, 24); btn_add_b.clicked.connect(lambda: bpy.ops.rzm.add_tw_block()); btn_ops_b.addWidget(btn_add_b)
-        btn_dup_b = RZPushButton("C"); btn_dup_b.setFixedSize(24, 24); btn_dup_b.clicked.connect(lambda: bpy.ops.rzm.duplicate_tw_block()); btn_ops_b.addWidget(btn_dup_b)
-        btn_rem_b = RZPushButton("x"); btn_rem_b.setFixedSize(24, 24); btn_rem_b.clicked.connect(lambda: bpy.ops.rzm.remove_tw_block()); btn_ops_b.addWidget(btn_rem_b)
+        btn_ops_b = QtWidgets.QHBoxLayout(); btn_ops_b.setSpacing(4); row_b.addLayout(btn_ops_b)
+        btn_add_b = RZPushButton("Add Block"); btn_add_b.setFixedHeight(24); btn_add_b.clicked.connect(lambda: bpy.ops.rzm.add_tw_block()); btn_ops_b.addWidget(btn_add_b)
+        btn_dup_b = RZPushButton("Copy"); btn_dup_b.setFixedHeight(24); btn_dup_b.clicked.connect(lambda: bpy.ops.rzm.duplicate_tw_block()); btn_ops_b.addWidget(btn_dup_b)
+        btn_rem_b = RZPushButton("Delete"); btn_rem_b.setFixedHeight(24); btn_rem_b.clicked.connect(lambda: bpy.ops.rzm.remove_tw_block()); btn_ops_b.addWidget(btn_rem_b)
         row_m = QtWidgets.QHBoxLayout(); row_m.setContentsMargins(5, 0, 5, 0); self.layout.addLayout(row_m); self.tab_modes = RZTabRow(); self.tab_modes.setFixedHeight(30); row_m.addWidget(self.tab_modes, 1)
         self.tab_modes.sync_items(["BLOCKS", "COMPONENTS", "SLOTS"], 0)
         self.tab_modes.clicked.connect(self._set_mode)
@@ -683,19 +685,19 @@ class TexWorksMainTab(QtWidgets.QWidget):
         b_idx = rzm.active_tw_block_index
         block = rzm.tw_blocks[b_idx] if 0 <= b_idx < len(rzm.tw_blocks) else None
         
+        if not block:
+            self.clear_layout(self.details.layout)
+            self._last_state = (None, b_idx, -1, -1, self.show_details)
+            return
+
+        c_idx = block.active_component_index if block else -1
+        comp = block.components[c_idx] if (block and 0 <= c_idx < len(block.components)) else None
+        s_idx = comp.active_slot_index if comp else -1
+
         self.tab_blocks.sync_items([b.name for b in rzm.tw_blocks], b_idx)
         self.tab_modes.sync_items(["BLOCKS", "COMPONENTS", "SLOTS"], ["BLOCKS", "COMPONENTS", "SLOTS"].index(self.mode))
         
-        if not block:
-            self.clear_layout(self.details.layout)
-            self._last_state = (None, -1, -1, -1)
-            return
-
-        c_idx = block.active_component_index
-        comp = block.components[c_idx] if 0 <= c_idx < len(block.components) else None
-        s_idx = comp.active_slot_index if comp else -1
-
-        current_state = (self.mode, b_idx, c_idx, s_idx)
+        current_state = (self.mode, b_idx, c_idx, s_idx, self.show_details)
         state_changed = current_state != self._last_state
         self._last_state = current_state
 
@@ -749,51 +751,51 @@ class TexWorksMainTab(QtWidgets.QWidget):
         self._widgets['info_lbl'] = RZLabel(); l_core.addWidget(self._widgets['info_lbl'])
         btn_exp = RZPushButton("Export Hierarchy"); btn_exp.clicked.connect(lambda: bpy.ops.rzm.tw_export_hierarchy(block_index=b_idx)); l_core.addWidget(btn_exp); l_core.addStretch()
 
-        l_sh = self.details.add_section("Shader & Atlas Config")
-        row_t = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_t)
-        cb_sh = ComboBoxFix(); cb_sh.setObjectName("p_shader_type"); self._widgets['shader_type'] = cb_sh; cb_sh.addItems(["STANDARD", "SKIN", "CLOTH", "METAL"])
-        cb_sh.currentTextChanged.connect(lambda v: self._item_changed("blocks", b_idx, "shader_type", -1, -1, v))
-        row_t.addWidget(RZLabel("Shader Type:")); row_t.addWidget(cb_sh)
-        l_sh.addWidget(RZLabel("Shader Config (Color x46):"))
-        row_c = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_c)
+        l_back = self.details.add_section("Backdrop"); row_back = QtWidgets.QHBoxLayout(); l_back.addLayout(row_back)
+        self.back_pre = ResourcePreviewWidget(90, self); row_back.addWidget(self.back_pre)
+        l_b_opts = QtWidgets.QVBoxLayout(); row_back.addLayout(l_b_opts)
+        chk_b = RZCheckBox("Enable Backdrop"); chk_b.setObjectName("p_backdrop_enabled"); self._widgets['backdrop_en'] = chk_b
+        chk_b.toggled.connect(lambda v: self._item_changed("blocks", b_idx, "backdrop_enabled", -1, -1, str(v))); l_b_opts.addWidget(chk_b)
+        self._widgets['backdrop_res_row'] = QtWidgets.QWidget(); l_b_res = QtWidgets.QHBoxLayout(self._widgets['backdrop_res_row'])
+        l_b_res.setContentsMargins(0,0,0,0); e_br = RZResourceLineEdit(); e_br.setObjectName("p_backdrop_res"); self._widgets['backdrop_res'] = e_br
+        e_br.editingFinished.connect(lambda p=e_br: self._item_changed("blocks", b_idx, "backdrop_resource_name", -1, -1, p.text()))
+        l_b_res.addWidget(RZLabel("Res:")); l_b_res.addWidget(e_br, 1); l_b_opts.addWidget(self._widgets['backdrop_res_row'])
+        self._widgets['backdrop_rect_row'] = QtWidgets.QWidget(); l_b_rect = QtWidgets.QHBoxLayout(self._widgets['backdrop_rect_row'])
+        l_b_rect.setContentsMargins(0,0,0,0)
         for i in range(4):
-            sp = RZDoubleSpinBox(); sp.setObjectName(f"p_shader_config_{i}"); self._widgets[f'sh_cfg_{i}'] = sp; sp.setRange(-1000, 1000)
-            sp.editingFinished.connect(lambda p=sp, ix=i: self._item_changed("blocks", b_idx, f"shader_config[{ix}]", -1, -1, p.value()))
-            row_c.addWidget(sp)
-        l_sh.addWidget(RZLabel("Shader Overlay (Overlap x47):"))
-        row_o = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_o)
-        for i in range(4):
-            sp = RZDoubleSpinBox(); sp.setObjectName(f"p_shader_overlay_{i}"); self._widgets[f'sh_ovl_{i}'] = sp; sp.setRange(-1000, 1000)
-            sp.editingFinished.connect(lambda p=sp, ix=i: self._item_changed("blocks", b_idx, f"shader_overlay[{ix}]", -1, -1, p.value()))
-            row_o.addWidget(sp)
-        row_sh = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_sh)
-        chk_sh = RZCheckBox("Shared Textures"); chk_sh.setObjectName("p_shared_textures"); self._widgets['use_shared'] = chk_sh
-        chk_sh.toggled.connect(lambda v: self._item_changed("blocks", b_idx, "use_shared_textures", -1, -1, str(v))); row_sh.addWidget(chk_sh)
-        e_sh_b = RZLineEdit(); e_sh_b.setObjectName("p_shared_block"); self._widgets['shared_blk'] = e_sh_b; e_sh_b.setPlaceholderText("Block Name")
-        e_sh_b.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "shared_textures_block", -1, -1, e_sh_b.text()))
-        row_sh.addWidget(e_sh_b, 1)
+            sp = RZSpinBox(); sp.setObjectName(f"p_backdrop_rect_{i}"); self._widgets[f'back_rect_{i}'] = sp; sp.setRange(0, 16384)
+            sp.editingFinished.connect(lambda p=sp, ix=i: self._item_changed("blocks", b_idx, f"backdrop_rect[{ix}]", -1, -1, p.value()))
+            l_b_rect.addWidget(sp)
+        l_b_opts.addWidget(self._widgets['backdrop_rect_row'])
 
         if self.show_details:
+            l_sh = self.details.add_section("Shader & Atlas Config")
+            row_t = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_t)
+            cb_sh = ComboBoxFix(); cb_sh.setObjectName("p_shader_type"); self._widgets['shader_type'] = cb_sh; cb_sh.addItems(["STANDARD", "SKIN", "CLOTH", "METAL"])
+            cb_sh.currentTextChanged.connect(lambda v: self._item_changed("blocks", b_idx, "shader_type", -1, -1, v))
+            row_t.addWidget(RZLabel("Shader Type:")); row_t.addWidget(cb_sh)
+            l_sh.addWidget(RZLabel("Shader Config (Color x46):"))
+            row_c = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_c)
+            for i in range(4):
+                sp = RZDoubleSpinBox(); sp.setObjectName(f"p_shader_config_{i}"); self._widgets[f'sh_cfg_{i}'] = sp; sp.setRange(-1000, 1000)
+                sp.editingFinished.connect(lambda p=sp, ix=i: self._item_changed("blocks", b_idx, f"shader_config[{ix}]", -1, -1, p.value()))
+                row_c.addWidget(sp)
+            l_sh.addWidget(RZLabel("Shader Overlay (Overlap x47):"))
+            row_o = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_o)
+            for i in range(4):
+                sp = RZDoubleSpinBox(); sp.setObjectName(f"p_shader_overlay_{i}"); self._widgets[f'sh_ovl_{i}'] = sp; sp.setRange(-1000, 1000)
+                sp.editingFinished.connect(lambda p=sp, ix=i: self._item_changed("blocks", b_idx, f"shader_overlay[{ix}]", -1, -1, p.value()))
+                row_o.addWidget(sp)
+            row_sh = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_sh)
+            chk_sh = RZCheckBox("Shared Textures"); chk_sh.setObjectName("p_shared_textures"); self._widgets['use_shared'] = chk_sh
+            chk_sh.toggled.connect(lambda v: self._item_changed("blocks", b_idx, "use_shared_textures", -1, -1, str(v))); row_sh.addWidget(chk_sh)
+            e_sh_b = RZLineEdit(); e_sh_b.setObjectName("p_shared_block"); self._widgets['shared_blk'] = e_sh_b; e_sh_b.setPlaceholderText("Block Name")
+            e_sh_b.editingFinished.connect(lambda: self._item_changed("blocks", b_idx, "shared_textures_block", -1, -1, e_sh_b.text()))
+            row_sh.addWidget(e_sh_b, 1)
             row_uv = QtWidgets.QHBoxLayout(); l_sh.addLayout(row_uv)
             sp_uv = RZDoubleSpinBox(); sp_uv.setObjectName("p_uv_rescale"); self._widgets['uv_rescale'] = sp_uv; sp_uv.setRange(0.01, 10.0)
             sp_uv.editingFinished.connect(lambda p=sp_uv: self._item_changed("blocks", b_idx, "uv_rescale", -1, -1, str(p.value())))
             row_uv.addWidget(RZLabel("UV Rescale:")); row_uv.addWidget(sp_uv)
-            l_back = self.details.add_section("Backdrop"); row_back = QtWidgets.QHBoxLayout(); l_back.addLayout(row_back)
-            self.back_pre = ResourcePreviewWidget(90, self); row_back.addWidget(self.back_pre)
-            l_b_opts = QtWidgets.QVBoxLayout(); row_back.addLayout(l_b_opts)
-            chk_b = RZCheckBox("Enable Backdrop"); chk_b.setObjectName("p_backdrop_enabled"); self._widgets['backdrop_en'] = chk_b
-            chk_b.toggled.connect(lambda v: self._item_changed("blocks", b_idx, "backdrop_enabled", -1, -1, str(v))); l_b_opts.addWidget(chk_b)
-            self._widgets['backdrop_res_row'] = QtWidgets.QWidget(); l_b_res = QtWidgets.QHBoxLayout(self._widgets['backdrop_res_row'])
-            l_b_res.setContentsMargins(0,0,0,0); e_br = RZResourceLineEdit(); e_br.setObjectName("p_backdrop_res"); self._widgets['backdrop_res'] = e_br
-            e_br.editingFinished.connect(lambda p=e_br: self._item_changed("blocks", b_idx, "backdrop_resource_name", -1, -1, p.text()))
-            l_b_res.addWidget(RZLabel("Res:")); l_b_res.addWidget(e_br, 1); l_b_opts.addWidget(self._widgets['backdrop_res_row'])
-            self._widgets['backdrop_rect_row'] = QtWidgets.QWidget(); l_b_rect = QtWidgets.QHBoxLayout(self._widgets['backdrop_rect_row'])
-            l_b_rect.setContentsMargins(0,0,0,0)
-            for i in range(4):
-                sp = RZSpinBox(); sp.setObjectName(f"p_backdrop_rect_{i}"); self._widgets[f'back_rect_{i}'] = sp; sp.setRange(0, 16384)
-                sp.editingFinished.connect(lambda p=sp, ix=i: self._item_changed("blocks", b_idx, f"backdrop_rect[{ix}]", -1, -1, p.value()))
-                l_b_rect.addWidget(sp)
-            l_b_opts.addWidget(self._widgets['backdrop_rect_row'])
         self._sync_blocks_data(block)
 
     def _sync_blocks_data(self, block):
@@ -805,20 +807,21 @@ class TexWorksMainTab(QtWidgets.QWidget):
         w['info_lbl'].setText(info_txt)
         blk_data = image_utils.collect_block_preview_data(block)
         self.blk_pre.update_with_layers(blk_data["layers"], blk_data["res"])
-        w['shader_type'].setCurrentText(block.shader_type)
-        for i in range(4): w[f'sh_cfg_{i}'].setValue(block.shader_config[i]); w[f'sh_ovl_{i}'].setValue(block.shader_overlay[i])
-        w['use_shared'].setChecked(block.use_shared_textures)
-        w['shared_blk'].set_text_silent(block.shared_textures_block)
-        w['shared_blk'].setVisible(block.use_shared_textures)
+        w['backdrop_en'].setChecked(block.backdrop_enabled)
+        w['backdrop_res_row'].setVisible(block.backdrop_enabled)
+        w['backdrop_rect_row'].setVisible(block.backdrop_enabled)
+        if block.backdrop_enabled:
+            w['backdrop_res'].set_text_silent(block.backdrop_resource_name)
+            for i in range(4): w[f'back_rect_{i}'].setValue(block.backdrop_rect[i])
+        self.back_pre.update_resource(block.backdrop_resource_name if block.backdrop_enabled else "")
+
         if self.show_details:
+            w['shader_type'].setCurrentText(block.shader_type)
+            for i in range(4): w[f'sh_cfg_{i}'].setValue(block.shader_config[i]); w[f'sh_ovl_{i}'].setValue(block.shader_overlay[i])
+            w['use_shared'].setChecked(block.use_shared_textures)
+            w['shared_blk'].set_text_silent(block.shared_textures_block)
+            w['shared_blk'].setVisible(block.use_shared_textures)
             w['uv_rescale'].setValue(block.uv_rescale)
-            w['backdrop_en'].setChecked(block.backdrop_enabled)
-            w['backdrop_res_row'].setVisible(block.backdrop_enabled)
-            w['backdrop_rect_row'].setVisible(block.backdrop_enabled)
-            if block.backdrop_enabled:
-                w['backdrop_res'].set_text_silent(block.backdrop_resource_name)
-                for i in range(4): w[f'back_rect_{i}'].setValue(block.backdrop_rect[i])
-            self.back_pre.update_resource(block.backdrop_resource_name if block.backdrop_enabled else "")
 
     def _toggle_cmp_slots(self, v):
         self.cmp_show_slots = v
@@ -830,8 +833,8 @@ class TexWorksMainTab(QtWidgets.QWidget):
         row_sel.addWidget(RZLabel("Components:")); self.tab_comps = RZTabRow(); row_sel.addWidget(self.tab_comps, 1)
         self.tab_comps.sync_items([c.name for c in block.components], block.active_component_index)
         self.tab_comps.clicked.connect(lambda i: self._set_active("comp", i))
-        btn_add = RZPushButton("+"); btn_add.setFixedSize(24, 24); btn_add.clicked.connect(self._add_comp); row_sel.addWidget(btn_add)
-        btn_rem = RZPushButton("x"); btn_rem.setFixedSize(24, 24); btn_rem.clicked.connect(self._rem_comp); row_sel.addWidget(btn_rem)
+        btn_add = RZPushButton("Add Comp"); btn_add.setFixedHeight(24); btn_add.clicked.connect(self._add_comp); row_sel.addWidget(btn_add)
+        btn_rem = RZPushButton("Delete"); btn_rem.setFixedHeight(24); btn_rem.clicked.connect(self._rem_comp); row_sel.addWidget(btn_rem)
         if block.active_component_index < 0 or block.active_component_index >= len(block.components): return
         comp = block.components[block.active_component_index]; c_idx = block.active_component_index
         l_core = self.details.add_section(f"[{comp.name}] Settings")
@@ -882,7 +885,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
     def _sync_components_data(self, block):
         if block.active_component_index < 0: return
         comp = block.components[block.active_component_index]; w = self._widgets
-        if self.show_details:
+        if self.show_details and 'use_shared_cfg' in w:
             w['use_shared_cfg'].setChecked(comp.use_shared_config)
             w['shared_cfg_row'].setVisible(comp.use_shared_config)
             if comp.use_shared_config:
@@ -893,7 +896,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
         w['show_slots'].setChecked(getattr(self, "cmp_show_slots", True))
         for i in range(4):
             w[f'rect_{i}'].setValue(comp.rect[i])
-            if self.show_details: w[f'base_rect_{i}'].setValue(comp.base_rect[i])
+            if self.show_details and f'base_rect_{0}' in w: w[f'base_rect_{i}'].setValue(comp.base_rect[i])
         for h in ["hsv_enabled", "mask_enabled", "hsv_mask_enabled"]: w[h].setChecked(getattr(comp, h))
         w['hsv_link'].set_text_silent(comp.hsv_link); w['morph_en'].setChecked(comp.tex_morph_enabled)
         w['morph_res'].set_text_silent(comp.tex_morph_resource_name); w['morph_res'].setVisible(comp.tex_morph_enabled)
@@ -925,8 +928,8 @@ class TexWorksMainTab(QtWidgets.QWidget):
         row_sel.addWidget(RZLabel("Slots:")); self.tab_slots = RZTabRow(); row_sel.addWidget(self.tab_slots, 1)
         self.tab_slots.sync_items([s.name for s in comp.slots], comp.active_slot_index)
         self.tab_slots.clicked.connect(lambda i: self._set_active("slot", i))
-        btn_add = RZPushButton("+"); btn_add.setFixedSize(24, 24); btn_add.clicked.connect(self._add_slot); row_sel.addWidget(btn_add)
-        btn_rem = RZPushButton("x"); btn_rem.setFixedSize(24, 24); btn_rem.clicked.connect(self._rem_slot); row_sel.addWidget(btn_rem)
+        btn_add = RZPushButton("Add Slot"); btn_add.setFixedHeight(24); btn_add.clicked.connect(self._add_slot); row_sel.addWidget(btn_add)
+        btn_rem = RZPushButton("Delete"); btn_rem.setFixedHeight(24); btn_rem.clicked.connect(self._rem_slot); row_sel.addWidget(btn_rem)
         if comp.active_slot_index < 0 or comp.active_slot_index >= len(comp.slots): return
         slot = comp.slots[comp.active_slot_index]; s_idx = comp.active_slot_index
         l_core = self.details.add_section(f"[{slot.name}] Settings")
@@ -1021,22 +1024,36 @@ class TexWorksMainTab(QtWidgets.QWidget):
         layers = [{"rect": [0, 0, comp.rect[2], comp.rect[3]], "path": p, "opacity": 1.0}]
         if slot.active: layers.append({"rect": list(slot.rect), "path": "", "is_decal": True, "opacity": 1.0})
         self.slot_pre.update_with_layers(layers, (comp.rect[2] if comp.rect[2]>0 else 1024, comp.rect[3] if comp.rect[3]>0 else 1024))
-        self.lyr_row.clear(); base_path = bpy.context.scene.rzm.export.custom_path if hasattr(bpy.context.scene.rzm, "export") else ""
+        self.lyr_row.clear()
+        base_path = bpy.context.scene.rzm.export.custom_path if hasattr(bpy.context.scene.rzm, "export") else ""
         import os
-        for idx, lyr in enumerate(slot.decal_layers):
-            fw = QtWidgets.QFrame(); fw.setFixedSize(120, 120); fw.setStyleSheet("QFrame { background: #1a1e24; border: 1px solid #3E4451; border-radius: 4px; }")
-            fl = QtWidgets.QVBoxLayout(fw); fl.setContentsMargins(4,4,4,4); fl.setSpacing(2)
-            fh = QtWidgets.QHBoxLayout(); fl.addLayout(fh); eln = RZLineEdit(); eln.setText(lyr.name); eln.editingFinished.connect(lambda p=eln, ix=idx: self._item_changed("decal_layers", ix, "name", b_idx, c_idx, p.text(), s_idx)); fh.addWidget(eln, 1)
-            bup = RZPushButton("<"); bup.setFixedSize(16,16); bup.clicked.connect(lambda _, ix=idx: self._move_layer(ix, "UP")); fh.addWidget(bup)
-            bdn = RZPushButton(">"); bdn.setFixedSize(16,16); bdn.clicked.connect(lambda _, ix=idx: self._move_layer(ix, "DOWN")); fh.addWidget(bdn)
-            brm = RZPushButton("x"); brm.setFixedSize(16,16); brm.clicked.connect(lambda _, ix=idx: self._rem_layer(ix)); fh.addWidget(brm)
-            rcnt = QtWidgets.QHBoxLayout(); fl.addLayout(rcnt); rcnt.addWidget(RZLabel("Count:")); spc = RZSpinBox(); spc.setRange(1, 100); spc.setValue(lyr.count)
-            spc.editingFinished.connect(lambda p=spc, ix=idx: self._item_changed("decal_layers", ix, "count", b_idx, c_idx, p.value(), s_idx)); rcnt.addWidget(spc, 1)
-            pre = ResourcePreviewWidget(64, self); fl.addWidget(pre, alignment=QtCore.Qt.AlignCenter); tp = os.path.join(base_path, "TexWorks", "Decals", lyr.name)
-            if os.path.exists(tp):
-                im = [f for f in os.listdir(tp) if f.lower().endswith(('.png', '.dds', '.tga'))]
-                if im: pre.update_from_path(os.path.join(tp, im[0]))
-            self.lyr_row.container_layout.addWidget(fw)
+        for l_idx, lyr in enumerate(slot.decal_layers):
+            layer_frame = QtWidgets.QFrame(); layer_frame.setStyleSheet("QFrame { background: #1a1e24; border: 1px solid #3E4451; border-radius: 4px; }")
+            lv = QtWidgets.QVBoxLayout(layer_frame); lv.setContentsMargins(5,5,5,5); lv.setSpacing(4)
+            lh = QtWidgets.QHBoxLayout(); lv.addLayout(lh)
+            le_name = RZLineEdit(); le_name.set_text_silent(lyr.name); le_name.editingFinished.connect(lambda p=le_name, ix=l_idx: self._item_changed("decal_layers", ix, "name", b_idx, c_idx, p.text(), s_idx))
+            lh.addWidget(le_name, 1)
+            btn_up = RZPushButton("Up"); btn_up.setFixedSize(30,20); btn_up.clicked.connect(lambda _, ix=l_idx: self._move_layer(ix, "UP")); lh.addWidget(btn_up)
+            btn_dn = RZPushButton("Dn"); btn_dn.setFixedSize(30,20); btn_dn.clicked.connect(lambda _, ix=l_idx: self._move_layer(ix, "DOWN")); lh.addWidget(btn_dn)
+            btn_rm = RZPushButton("Del"); btn_rm.setFixedSize(30,20); btn_rm.clicked.connect(lambda _, ix=l_idx: self._rem_layer(ix)); lh.addWidget(btn_rm)
+            
+            # Decal Gallery for this layer
+            gal = QtWidgets.QWidget(); gl = QtWidgets.QHBoxLayout(gal); gl.setContentsMargins(0,0,0,0); gl.setSpacing(5)
+            scroll = RZScrollArea(); scroll.setFixedHeight(100); scroll.setWidget(gal); scroll.setWidgetResizable(True); scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded); lv.addWidget(scroll)
+            
+            for i in range(lyr.count):
+                item_w = QtWidgets.QWidget(); iv = QtWidgets.QVBoxLayout(item_w); iv.setContentsMargins(0,0,0,0); iv.setSpacing(2)
+                pre = ResourcePreviewWidget(64, self); iv.addWidget(pre)
+                iv.addWidget(RZLabel(f"Decal {i}", self), alignment=QtCore.Qt.AlignCenter)
+                # ModNameFolder\TexWorks\BlockName\ComponentName\SlotName\LayerName\0.png
+                decal_path = os.path.join(base_path, "TexWorks", block.name, comp.name, slot.name, lyr.name, f"{i}.png")
+                pre.update_from_path(decal_path)
+                gl.addWidget(item_w)
+            gl.addStretch()
+            
+            lc = QtWidgets.QHBoxLayout(); lv.addLayout(lc); lc.addWidget(RZLabel("Count:")); sp_c = RZSpinBox(); sp_c.setRange(1, 100); sp_c.setValue(lyr.count)
+            sp_c.editingFinished.connect(lambda p=sp_c, ix=l_idx: self._item_changed("decal_layers", ix, "count", b_idx, c_idx, p.value(), s_idx)); lc.addWidget(sp_c, 1)
+            self.lyr_row.container_layout.addWidget(layer_frame)
 
     def _item_changed(self, coll, idx, prop, b, c, val=None, s=-1):
         if val is None: # For value-based signals like valueChanged
