@@ -1,0 +1,30 @@
+{
+    "Window": [
+        {"label": "Screen Width", "text": "$ScreenWidth"},
+        {"label": "Screen Height", "text": "$ScreenHeight"},
+        {"label": "Safe Width", "text": "$SafeWidth"},
+        {"label": "Safe Height", "text": "$SafeHeight"}
+    ],
+    "Element": [
+        {"label": "My Width", "text": "{{element.id}}"},
+        {"label": "My Height", "text": "{{id}}"},
+        {"label": "My Pos X", "text": "{{size}}"},
+        {"label": "My Pos Y", "text": "{{size[0]}}"},
+        {"label": "Parent Width", "text": [
+            "123",
+            "123"
+        ]},
+        {"label": "Parent Height", "text": "{{element.size[1]}}"}
+    ],
+    "Input": [
+        {"label": "Mouse X", "text": "$MouseX"},
+        {"label": "Mouse Y", "text": "$MouseY"},
+        {"label": "Is Hovered", "text": "$IsHovered"},
+        {"label": "Gamepad Button", "text": "@gamepad_a"}
+    ],
+    "Math": [
+        {"label": "Clamp(v, min, max)", "text": "clamp(value, 0, 1)"},
+        {"label": "Lerp(a, b, t)", "text": "lerp(0, 100, $ScreenWidth / 1920)"},
+        {"label": "Pulse(speed)", "text": "sin($Time * speed) * 0.5 + 0.5"}
+    ]
+}

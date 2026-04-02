@@ -288,6 +288,31 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     }
 
     float2 finalPos = ApplyAnimation(output.animType, expandedPos, expandedSize, quadUv);
+    float rotationTurns = MirrorBuffer[iID].w;
+    if (rotationTurns != 0.0) {
+        // Конвертируем обороты (0.0 - 1.0) в радианы
+        float a = rotationTurns * 6.2831853;
+        float s = sin(a), c = cos(a);
+        
+        // Центр вращения (оригинальный центр элемента)
+        float2 center = pos + size * 0.5;
+        
+        // Смещаем координату в 0 относительно центра
+        float2 p = finalPos - center;
+        
+        // Корректируем aspect ratio экрана, чтобы квадрат оставался квадратом при повороте
+        p.x *= ScreenRes.x / ScreenRes.y;
+        
+        // Вращаем 2D вектор
+        float2 rotated;
+        rotated.x = p.x * c - p.y * s;
+        rotated.y = p.x * s + p.y * c;
+        
+        // Возвращаем aspect ratio обратно
+        rotated.x *= ScreenRes.y / ScreenRes.x;
+        
+        finalPos = center + rotated;
+    }
     output.position = float4(finalPos * 2.0 - 1.0, 0.5, 1.0);
 }
 #endif

@@ -45,7 +45,34 @@ class RZM_OT_RemoveObjectTexSlot(bpy.types.Operator):
         context.area.tag_redraw()
         return {'FINISHED'}
 
+class RZM_OT_CopyTexSlotsToSelected(bpy.types.Operator):
+    """Copy all texture slot settings from the active object to all selected objects."""
+    bl_idname = "rzm.copy_tex_slots_to_selected"
+    bl_label = "Apply to Selected"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        active_obj = context.active_object
+        selected_objs = [obj for obj in context.selected_objects if obj != active_obj]
+
+        if not active_obj:
+            self.report({'WARNING'}, "No active object")
+            return {'CANCELLED'}
+
+        tex_keys = [k for k in active_obj.keys() if k.startswith("rzm.TexSlot.")]
+        if not tex_keys:
+            self.report({'INFO'}, "No texture slots to copy")
+            return {'CANCELLED'}
+
+        for obj in selected_objs:
+            for key in tex_keys:
+                obj[key] = active_obj[key]
+
+        self.report({'INFO'}, f"Applied {len(tex_keys)} slots to {len(selected_objs)} objects")
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_AssignObjectTexSlot,
     RZM_OT_RemoveObjectTexSlot,
+    RZM_OT_CopyTexSlotsToSelected,
 ]

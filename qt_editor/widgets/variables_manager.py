@@ -2,7 +2,7 @@
 import bpy
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.theme import get_current_theme
-from .lib.widgets import RZPanelWidget
+from .lib.widgets import RZPanelWidget, RZColorButton
 from ..core.signals import SIGNALS
 
 class RZVariablesManager(QtWidgets.QWidget):
@@ -71,11 +71,16 @@ class RZDraggableVariableList(QtWidgets.QListWidget):
         drag = QtGui.QDrag(self)
         mime_data = QtCore.QMimeData()
         text = item.text()
+        
         # Rayvich: logic to prefix without duplication
         if self.prefix:
             clean_name = text.lstrip(self.prefix)
             text = self.prefix + clean_name
+            
         mime_data.setText(text)
+        # Add custom MIME type for internal RZMenu use
+        mime_data.setData("application/x-rzm-variable", text.encode('utf-8'))
+        
         drag.setMimeData(mime_data)
         drag.exec_(supportedActions)
 
@@ -185,6 +190,11 @@ class ValuesTab(BaseListTab):
             sb.valueChanged.connect(lambda v, idx=i: self.synch_val_vector(idx, v))
             self.vec_layout.addWidget(sb)
             self.inp_vecs.append(sb)
+            
+        self.inp_val_color = RZColorButton()
+        self.inp_val_color.setFixedSize(24, 24)
+        self.inp_val_color.colorChanged.connect(self.synch_color_picker)
+        self.vec_layout.addWidget(self.inp_val_color)
         
         self.props_layout.addRow("Name:", self.inp_name)
         self.props_layout.addRow("Type:", self.inp_type)
@@ -241,6 +251,7 @@ class ValuesTab(BaseListTab):
         for i in range(4):
             if abs(self.inp_vecs[i].value() - val.vector_value[i]) > 0.0001:
                 self.inp_vecs[i].setValue(val.vector_value[i])
+        self.inp_val_color.set_color(list(val.vector_value))
         
         # Visibility (Smart hide for Form Layout)
         def set_row_visible(widget, visible):
@@ -291,6 +302,18 @@ class ValuesTab(BaseListTab):
         row = self.list_widget.currentRow()
         # Prop name format for indexed update: vector_value[idx]
         bpy.ops.rzm.update_value(index=row, prop_name=f"vector_value[{idx}]", val_str=str(v))
+        
+        # Update color button without triggering its signals
+        self.inp_val_color.blockSignals(True)
+        self.inp_val_color.set_color([self.inp_vecs[i].value() for i in range(4)])
+        self.inp_val_color.blockSignals(False)
+
+    def synch_color_picker(self, color_data):
+        if self.is_updating_ui: return
+        # Setting values will trigger synch_val_vector
+        for i in range(4):
+            if i < len(color_data):
+                self.inp_vecs[i].setValue(color_data[i])
 
 class TogglesTab(BaseListTab):
     def __init__(self):

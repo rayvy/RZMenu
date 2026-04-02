@@ -29,6 +29,7 @@ class RZFontManager:
 
     def __init__(self):
         self._metrics_cache = {} # (font_family, cell_size) -> RZFontAtlasMetrics
+        self._font_configs = {} # Cached from bpy
 
     @classmethod
     def instance(cls):
@@ -36,36 +37,46 @@ class RZFontManager:
             cls._instance = cls()
         return cls._instance
 
-    def get_metrics(self, font_slot=0):
+    def refresh_font_config(self):
+        """Cache font settings from bpy to avoid expensive access during paint."""
         import bpy
-        font_family = "Arial"
-        cell_size = 128
-        density = 0.88
-        font_index = 0
-        font_style = "Regular"
+        if not bpy.context or not hasattr(bpy.context, 'scene') or not hasattr(bpy.context.scene, 'rzm'):
+            return
+            
+        fonts = bpy.context.scene.rzm.fonts
+        for i, slot in enumerate(fonts):
+            slot_cs = getattr(slot, 'cell_size', 128)
+            slot_den = getattr(slot, 'density', 0.88)
+            cell_size = slot_cs if slot_cs and slot_cs > 0 else 128
+            density = slot_den if slot_den and slot_den > 0 else 0.88
+            
+            font_index = getattr(slot, 'font_index', 0)
+            font_style = getattr(slot, 'font_style_name', "Regular")
+            
+            font_family = "Arial"
+            if getattr(slot, 'font_source', 'DEFAULT') == 'CUSTOM' and getattr(slot, 'custom_path', ''):
+                font_path = bpy.path.abspath(slot.custom_path)
+                if os.path.exists(font_path):
+                    font_family = font_path
+            
+            self._font_configs[i] = {
+                'family': font_family,
+                'style': font_style,
+                'size': cell_size,
+                'index': font_index,
+                'density': density
+            }
+
+    def get_metrics(self, font_slot=0):
+        config = self._font_configs.get(font_slot, {
+            'family': "Arial", 'style': "Regular", 'size': 128, 'index': 0, 'density': 0.88
+        })
         
-        if bpy.context and hasattr(bpy.context, 'scene') and hasattr(bpy.context.scene, 'rzm'):
-            fonts = bpy.context.scene.rzm.fonts
-            if 0 <= font_slot < len(fonts):
-                slot = fonts[font_slot]
-                # Defensive fallback for older projects that might have 0 or None properties
-                slot_cs = getattr(slot, 'cell_size', 128)
-                slot_den = getattr(slot, 'density', 0.88)
-                cell_size = slot_cs if slot_cs and slot_cs > 0 else 128
-                density = slot_den if slot_den and slot_den > 0 else 0.88
-                
-                font_index = getattr(slot, 'font_index', 0)
-                font_style = getattr(slot, 'font_style_name', "Regular")
-                
-                if getattr(slot, 'font_source', 'DEFAULT') == 'CUSTOM' and getattr(slot, 'custom_path', ''):
-                    font_path = bpy.path.abspath(slot.custom_path)
-                    if os.path.exists(font_path):
-                        font_family = font_path
-                else:
-                    # Default mode
-                    font_family = "Arial"
-                    font_index = 0
-                    font_style = "Regular"
+        font_family = config['family']
+        font_style = config['style']
+        cell_size = config['size']
+        font_index = config['index']
+        density = config['density']
 
         cache_key = (font_family, font_style, cell_size, font_index)
         if cache_key not in self._metrics_cache:
@@ -225,6 +236,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self._is_hovered_state = False
         self._is_pressed_state = False
         self.setAcceptHoverEvents(True)
+        self.setAcceptDrops(True)
 
         self._init_data()
         self.create_handles()
@@ -247,6 +259,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.grid_padding = 0
         self.grid_gap = 0
         self.grid_cell_size = 50
+        
+        self.rotation = 0.0
         self.grid_cols = 0
         
         self._initial_rect = None
@@ -289,6 +303,40 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self._is_pressed_state = False
         self.update()
         super().mouseReleaseEvent(event)
+
+    # --- DRAG & DROP SUPPORT ---
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-rzm-variable"):
+            event.accept()
+            self.set_drop_highlight(True)
+            # Hover is usually enough, but let's be explicit
+            self.update()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-rzm-variable"):
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self.set_drop_highlight(False)
+        self.update()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self.set_drop_highlight(False)
+        m = event.mimeData()
+        if m.hasFormat("application/x-rzm-variable"):
+            var_name = m.data("application/x-rzm-variable").data().decode('utf-8')
+            # Use the new helper in core.props
+            from ..core import props
+            props.add_value_link_with_name([self.uid], var_name)
+            event.accept()
+            self.update()
+        else:
+            event.ignore()
 
     def set_drop_highlight(self, active):
         if self._is_drop_target != active:
@@ -532,10 +580,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
-    # Обновили сигнатуру: добавлен аргумент text_id, text_align и order
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False):
+    # Обновили сигнатуру: добавлена ротация
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
+        self.rotation = rotation
         self.flip_x, self.flip_y = flip_x, flip_y
         self.image_id, self.is_selectable = img_id, is_selectable
         self.text_content = text_content if text_content else self.name
@@ -601,6 +650,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         t = get_current_theme()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
+        # --- PHASE 2.5: ROTATION (2D) ---
+        if self.rotation != 0:
+            center = rect.center()
+            painter.translate(center)
+            painter.rotate(self.rotation * 360.0)
+            painter.translate(-center)
+
         # --- PHASE 2.4: MICRO-ANIMATIONS (HOVER/PRESSED) ---
         if self._is_pressed_state:
             # Subtle "pressed" fill
@@ -983,7 +1039,7 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
             # Rayvich Multi-Drag Fix: Check if target is already in selection
             ctx = RZContextManager.get_instance().get_snapshot()
-            if target_uid in ctx.selected_ids:
+            if target_uid in ctx.selected_ids and modifier_str is None:
                 # Keep current selection, but update active ID
                 RZContextManager.get_instance().set_selection(ctx.selected_ids, target_uid)
             else:
@@ -1225,9 +1281,24 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
 
     def update_selection_visuals(self, selected_ids, active_id):
         if self._is_user_interaction: return
+        
+        # Optimization: Only update items that are or were part of selection
+        # or items whose state actually needs to change.
+        new_sel = set(selected_ids)
+        old_sel = getattr(self, "_last_selected_ids", set())
+        
+        # Items that need update: either were selected, are now selected, or were active, or are now active
+        affected_ids = new_sel | old_sel
+        if self._active_id != -1: affected_ids.add(self._active_id)
+        if active_id != -1: affected_ids.add(active_id)
+        
         self._active_id = active_id
-        for uid, item in self._items_map.items():
-            item.set_visual_state(uid in selected_ids, uid == active_id)
+        self._last_selected_ids = new_sel
+        
+        for uid in affected_ids:
+            item = self._items_map.get(uid)
+            if item and shiboken6.isValid(item):
+                item.set_visual_state(uid in new_sel, uid == active_id)
 
     def update_scene(self, elements_data, selected_ids, active_id):
         if self._is_user_interaction: return
@@ -1296,7 +1367,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 image_blending_mode=data.get('image_blending_mode', 'NONE'),
                 flip_x=data.get('flip_x', False),
                 flip_y=data.get('flip_y', False),
-                is_underlayer=data.get('is_underlayer', False)
+                is_underlayer=data.get('is_underlayer', False),
+                rotation=data.get('rotation', 0.0)
             )
 
             
@@ -2013,6 +2085,11 @@ class RZViewportPanel(RZEditorPanel):
         layout.setSpacing(0)
         layout.addWidget(self.view)
         
+        # Performance: Throttle refresh
+        self._refresh_timer = QtCore.QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._do_refresh_data)
+
         # Connect scene signals to internal handlers
         self.view.rz_scene.item_moved_signal.connect(self._on_item_moved)
         self.view.rz_scene.element_resized_signal.connect(self._on_element_resized)
@@ -2052,12 +2129,22 @@ class RZViewportPanel(RZEditorPanel):
             pass
     
     def refresh_data(self):
+        """Request a refresh (throttled)."""
+        if not self._is_panel_active: return
+        if not self._refresh_timer.isActive():
+            self._refresh_timer.start(16) # ~60 FPS limit
+
+    def _do_refresh_data(self):
         """Fetch and display current viewport data from core."""
         if not self._is_panel_active:
             return
-        # Don't refresh during user interaction
+        # Don't refresh during user interaction to avoid drift/lag
         if self.view.rz_scene._is_user_interaction:
             return
+        
+        # Optimize: Refresh font configs once per data fetch, not per paintEvent
+        RZFontManager.instance().refresh_font_config()
+        
         data = core.get_viewport_data()
         ctx = RZContextManager.get_instance().get_snapshot()
 
@@ -2155,10 +2242,11 @@ class RZViewportPanel(RZEditorPanel):
     
     def _on_selection_changed(self, target_data, modifiers):
         """Handle selection changes from viewport interaction."""
-        ctx = RZContextManager.get_instance().get_snapshot()
-        current_selection = set(ctx.selected_ids)
+        # Use direct manager access to ensure we have the absolute latest state
+        manager = RZContextManager.get_instance()
+        current_selection = set(manager.selected_ids)
         new_selection = current_selection.copy()
-        new_active = -1
+        new_active = manager.active_id
         
         if isinstance(target_data, list):
             # Box selection
@@ -2169,38 +2257,38 @@ class RZViewportPanel(RZEditorPanel):
                 new_selection.difference_update(items_ids)
             else:
                 new_selection = items_ids
+            
             if items_ids:
                 new_active = list(items_ids)[0]
             elif new_selection:
-                new_active = next(iter(new_selection))
+                if new_active not in new_selection:
+                    new_active = next(iter(new_selection))
         else:
             # Single item click
             clicked_id = target_data
             if clicked_id == -1:
                 if modifiers not in ['SHIFT', 'CTRL']:
                     new_selection.clear()
-                new_active = -1
+                    new_active = -1
             else:
-                if modifiers == 'SHIFT':
+                if modifiers in ['SHIFT', 'CTRL']:
                     if clicked_id in new_selection:
+                        # Toggle OFF
                         new_selection.remove(clicked_id)
-                        new_active = -1 if not new_selection else next(iter(new_selection))
+                        if clicked_id == new_active:
+                            new_active = -1 if not new_selection else next(iter(new_selection))
                     else:
+                        # Toggle ON
                         new_selection.add(clicked_id)
                         new_active = clicked_id
-                elif modifiers == 'CTRL':
-                    if clicked_id in new_selection:
-                        new_selection.remove(clicked_id)
                 else:
-                    # If clicked item is already selected, don't clear the rest of the selection
-                    # This allows dragging multiple items without holding Shift
-                    if clicked_id in new_selection:
-                        new_active = clicked_id
-                    else:
+                    # No modifiers: Select single
+                    if clicked_id not in new_selection:
                         new_selection = {clicked_id}
-                        new_active = clicked_id
+                    new_active = clicked_id
         
-        RZContextManager.get_instance().set_selection(new_selection, new_active)
+        # Immediate update to the manager to prevent "dropping" items during rapid clicks
+        manager.set_selection(new_selection, new_active)
     
     @property
     def rz_scene(self) -> RZViewportScene:

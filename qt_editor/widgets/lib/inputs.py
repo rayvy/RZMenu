@@ -8,6 +8,7 @@ from ...core import read as core_read # For suggestions
 from ...core import blender_bridge
 from ...utils.debounce import RZDebouncer
 from ...utils.evaluation import get_formula_preview
+import json, os
 
 class RZImageComboBox(RZVisualInputMixin, QtWidgets.QComboBox):
     """
@@ -473,6 +474,107 @@ class RZFormulaInput(_RZBaseTextEdit):
         self.preview_label.hide()
         
         self.textChanged.connect(self._on_formula_changed)
+        
+        # --- Task 10: Formula Palette ---
+        self.btn_palette = QtWidgets.QToolButton(self)
+        self.btn_palette.setFixedSize(20, 20)
+        self.btn_palette.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_palette.setStyleSheet("background: transparent; border: none; padding: 0;")
+        self.btn_palette.setToolTip("Formula Palette")
+        
+        # Load simple icon (placeholder/symbol)
+        theme = get_current_theme()
+        palette_col = theme.get('accent', '#5298D4')
+        self.btn_palette.setText("☰") # Use a symbol for now or a small icon
+        self.btn_palette.clicked.connect(self._show_palette)
+        
+        # Example of snippet formula in formula_snippets.json:
+        # {
+        #   "Math": [
+        #     {"label": "Sin Pulse", "text": "sin($time * 2.0) * 0.5 + 0.5"},
+        #     {"label": "Clamp 0-100", "text": "max(0, min(100, {{ value }}))"}
+        #   ]
+        # }
+        
+        self._reposition_sub_widgets()
+
+    def _reposition_sub_widgets(self):
+        # Move to the right side, but leave space for padding
+        self.btn_palette.move(self.width() - self.btn_palette.width() - 4, 3)
+        if hasattr(self, 'preview_label'):
+            self._reposition_preview()
+
+    def _show_palette(self):
+        menu = QtWidgets.QMenu(self)
+        theme = get_current_theme()
+        menu.setStyleSheet(f"background-color: {theme.get('bg_panel', '#2C313A')}; color: {theme.get('text_main', '#E0E2E4')};")
+        
+        # Load snippets
+        snippets_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "formula_snippets.json")
+        try:
+            with open(snippets_path, 'r') as f:
+                data = json.load(f)
+                for category, items in data.items():
+                    cat_menu = menu.addMenu(category)
+                    for item in items:
+                        action = cat_menu.addAction(item['label'])
+                        action.triggered.connect(lambda _, t=item['text']: self._insert_snippet(t))
+        except Exception as e:
+            menu.addAction(f"Error loading snippets: {e}")
+            
+        menu.exec_(self.btn_palette.mapToGlobal(QtCore.QPoint(0, self.btn_palette.height())))
+
+    def _insert_snippet(self, text):
+        import re
+        import bpy
+        from ...context import RZContextManager
+        
+        ctx = RZContextManager.get_instance().get_snapshot()
+        active_id = ctx.active_id
+        
+        if active_id != -1 and bpy.context and hasattr(bpy.context.scene, 'rzm'):
+            elements = bpy.context.scene.rzm.elements
+            elem = next((e for e in elements if e.id == active_id), None)
+            if elem:
+                def replacer(match):
+                    token = match.group(1).strip()
+                    if not token.startswith("element."):
+                        return match.group(0)
+                        
+                    path = token[len("element."):]
+                    parts = path.split('.')
+                    current_obj = elem
+                    
+                    for part in parts:
+                        arr_match = re.match(r'([a-zA-Z0-9_]+)(?:\[(\d+)\])?', part)
+                        if not arr_match: return ""
+                        
+                        prop_name = arr_match.group(1)
+                        idx_str = arr_match.group(2)
+                        
+                        if not hasattr(current_obj, prop_name): return ""
+                        current_obj = getattr(current_obj, prop_name)
+                        
+                        if idx_str is not None:
+                            try: current_obj = current_obj[int(idx_str)]
+                            except: return ""
+                        else:
+                            # Auto-index array if not specified (exclude strings)
+                            if hasattr(current_obj, '__len__') and not isinstance(current_obj, (str, bytes)):
+                                if len(current_obj) > 0: current_obj = current_obj[0]
+                                else: return ""
+                                
+                    return str(current_obj) if current_obj is not None else ""
+                
+                text = re.sub(r'\{\{(.*?)\}\}', replacer, text)
+
+        cursor = self.textCursor()
+        cursor.insertText(text)
+        self.setTextCursor(cursor)
+        self.setFocus()
+        self.editingFinished.emit()
+        self.setFocus()
+        self.editingFinished.emit()
 
     def apply_theme(self):
         super().apply_theme()
@@ -516,7 +618,8 @@ class RZFormulaInput(_RZBaseTextEdit):
 
     def _reposition_preview(self):
         self.preview_label.adjustSize()
-        self.preview_label.move(self.width() - self.preview_label.width() - 5, 2)
+        # Position preview to the left of the palette button
+        self.preview_label.move(self.width() - self.btn_palette.width() - self.preview_label.width() - 10, 3)
 
     def dropEvent(self, event):
         if not event.mimeData().hasText():
@@ -544,7 +647,7 @@ class RZFormulaInput(_RZBaseTextEdit):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._reposition_preview()
+        self._reposition_sub_widgets()
 
     def keyPressEvent(self, event):
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):

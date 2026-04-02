@@ -203,7 +203,32 @@ class RZM_OT_SelectObjectsWithToggle(bpy.types.Operator):
         self.report({'INFO'}, f"Selected {len(objects_to_select)} objects.")
         return {'FINISHED'}
 
-    
+class RZM_OT_ApplyActiveTogglesToSelected(bpy.types.Operator):
+    """Apply all assigned toggles from the active object to all selected objects."""
+    bl_idname = "rzm.apply_toggles_to_selected"
+    bl_label = "Apply to Selected"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        active_obj = context.active_object
+        selected_objs = [obj for obj in context.selected_objects if obj != active_obj]
+
+        if not active_obj:
+            self.report({'WARNING'}, "No active object")
+            return {'CANCELLED'}
+
+        toggle_keys = [k for k in active_obj.keys() if k.startswith("rzm.Toggle.")]
+        if not toggle_keys:
+            self.report({'INFO'}, "No toggles to copy")
+            return {'CANCELLED'}
+
+        for obj in selected_objs:
+            for key in toggle_keys:
+                obj[key] = list(active_obj[key])
+
+        self.report({'INFO'}, f"Applied {len(toggle_keys)} toggles to {len(selected_objs)} objects")
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_AddProjectToggle,
     RZM_OT_RemoveProjectToggle,
@@ -213,4 +238,5 @@ classes_to_register = [
     RZM_OT_ToggleObjectBit,
     RZM_OT_SelectOccupyingObjects,
     RZM_OT_SelectObjectsWithToggle,
+    RZM_OT_ApplyActiveTogglesToSelected,
 ]

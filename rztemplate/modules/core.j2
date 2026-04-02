@@ -840,6 +840,7 @@ else
 x105 = 0
 endif
 y105 = $fontSlot
+w105 = $rotation
 x102 = $texPosX
 y102 = $texPosY
 z102 = $texSizeX
@@ -854,17 +855,7 @@ z110 = 0
 w110 = $drawType
 y111 = $di_count
 
-if $flipX == 1 && $flipY == 1
-    x105 = 3 
-elif $flipX == 1
-    x105 = 1
-elif $flipY == 1
-    x105 = 2
-else
-    x105 = 0
-endif
 dispatch = 1, 1, 1
-x105 = 0
 $di_count = $di_count + 1
 
 [CustomShaderRCI2D_HOVERTEXT]
@@ -945,8 +936,9 @@ else
     x105 = 0
 endif
 y105 = $fontSlot
+w105 = $rotation
+
 dispatch = 1, 1, 1
-x105 = 0
 $di_count = $di_count + 1
 
 [CustomShaderRCI2D]
@@ -1020,8 +1012,9 @@ elif $flipY == 1
 else
     x105 = 0
 endif
+w105 = $rotation
+
 dispatch = 1, 1, 1
-x105 = 0
 $di_count = $di_count + 1
 
 x110 = 0

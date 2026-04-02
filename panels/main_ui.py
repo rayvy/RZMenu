@@ -130,9 +130,11 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         layout.separator()
 
         # 5. OBJECT PROPERTIES
-        self.draw_object_properties(context, layout)
-        
-        layout.separator()
+        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+        prefs = context.preferences.addons.get(addon_name)
+        if not prefs or not getattr(prefs.preferences, "move_to_npanel", False):
+            self.draw_object_properties(context, layout)
+            layout.separator()
 
         # 6. EDITOR MODE
         mode_box = layout.box()
@@ -277,6 +279,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box = layout.box()
         row = box.row(align=True)
         row.label(text="RZ-Toggles", icon='CHECKBOX_HLT')
+        row.operator("rzm.apply_toggles_to_selected", text="", icon='PASTEDOWN')
         row.menu("RZM_MT_assign_toggle_menu", text="Assign", icon="ADD")
         
         toggle_keys = sorted([key for key in target_obj.keys() if key.startswith("rzm.Toggle.")])
@@ -342,6 +345,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box = layout.box()
         row = box.row(align=True)
         row.label(text="RZ-TexSlots", icon='TEXTURE_DATA')
+        row.operator("rzm.copy_tex_slots_to_selected", text="", icon='PASTEDOWN')
         row.menu("RZM_MT_assign_tex_slot_menu", text="Assign", icon="ADD")
 
         tex_keys = sorted([key for key in target_obj.keys() if key.startswith("rzm.TexSlot.")])
@@ -550,11 +554,29 @@ class RZM_UL_CustomScriptList(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text="", icon='FILE_SCRIPT')
 
+class VIEW3D_PT_RZConstructorMeshPanel(bpy.types.Panel):
+    bl_label = "Mesh & Toggles"
+    bl_idname = "VIEW3D_PT_rz_constructor_mesh_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'RZ Constructor MESH'
+    bl_order = 1
+    
+    @classmethod
+    def poll(cls, context):
+        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+        prefs = context.preferences.addons.get(addon_name)
+        return prefs and getattr(prefs.preferences, "move_to_npanel", False)
+
+    def draw(self, context):
+        VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, self.layout)
+
 classes_to_register = [ 
     RZM_UL_CustomScriptList,
     RZM_MT_AssignToggleMenu, 
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel, 
     VIEW3D_PT_RZM_AutoMenuCreator,
-    VIEW3D_PT_RZM_ExportManager
+    VIEW3D_PT_RZM_ExportManager,
+    VIEW3D_PT_RZConstructorMeshPanel
 ]

@@ -59,13 +59,23 @@ class RZMenuElement(bpy.types.PropertyGroup):
     elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", "")], default='CONTAINER')
     visibility_mode: EnumProperty(name="Visibility", items=[('ALWAYS', "Always Visible", ""), ('CONDITIONAL', "Conditional", ""), ('HIDED', "Hided", "")], default='ALWAYS')
     visibility_condition: StringProperty(name="Condition", description="e.g., $var > 0 or @ToggleA[1]")
+    # Transform - Formula flags
     position_is_formula: BoolProperty(name="Position Formula Mode")
-    position: IntVectorProperty(name="Position", size=2, default=(0, 0))
-    position_formula_x: StringProperty(name="X Formula"); position_formula_y: StringProperty(name="Y Formula")
     size_is_formula: BoolProperty(name="Size Formula Mode")
-    size: IntVectorProperty(name="Size", size=2, default=(100, 30))
-    size_formula_x: StringProperty(name="W Formula"); size_formula_y: StringProperty(name="H Formula")
+    rotation_is_formula: BoolProperty(name="Rotation Formula Mode")
     transform_is_formula: BoolProperty(name="Transform Formula Mode")
+
+    # Transform - Static Values
+    position: IntVectorProperty(name="Position", size=2, default=(0, 0))
+    size: IntVectorProperty(name="Size", size=2, default=(100, 30))
+    rotation: FloatProperty(name="Rotation", default=0.0)
+
+    # Transform - Formulas
+    position_formula_x: StringProperty(name="X Formula")
+    position_formula_y: StringProperty(name="Y Formula")
+    size_formula_x: StringProperty(name="W Formula")
+    size_formula_y: StringProperty(name="H Formula")
+    rotation_formula: StringProperty(name="Rotation Formula")
     transform_formula: StringProperty(name="Transform formula", description="Raw code transformation, not affect to position and size formula", default="")
     alignment: EnumProperty(name="Alignment", items=[('BOTTOM_LEFT', "Bottom Left", ""), ('BOTTOM_CENTER', "Bottom Center", ""), ('BOTTOM_RIGHT', "Bottom Right", ""), ('CENTER_LEFT', "Center Left", ""), ('CENTER', "Center", ""), ('CENTER_RIGHT', "Center Right", ""), ('TOP_LEFT', "Top Left", ""), ('TOP_CENTER', "Top Center", ""), ('TOP_RIGHT', "Top Right", "")], default='BOTTOM_LEFT')
     text_align: EnumProperty(name="Text Align", items=[('LEFT', "Left", ""), ('CENTER', "Center", ""), ('RIGHT', "Right", "")], default='LEFT')

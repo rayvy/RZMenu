@@ -15,6 +15,15 @@ class RZColorButton(RZVisualInputMixin, QtWidgets.QPushButton):
         self.setAcceptDrops(True)
         self._qcolor = QtGui.QColor(255, 255, 255)
         self.clicked.connect(self._pick_color)
+        
+        # --- Task 1: Eyedropper ---
+        self.btn_picker = QtWidgets.QToolButton(self)
+        self.btn_picker.setFixedSize(20, 20)
+        self.btn_picker.setText("✎") # Magnifier/Pick symbol
+        self.btn_picker.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_picker.setStyleSheet("background: transparent; border: none; font-size: 14px;")
+        self.btn_picker.clicked.connect(self._start_eyedropper)
+        
         self.update_style()
 
     def paintEvent(self, event):
@@ -49,13 +58,26 @@ class RZColorButton(RZVisualInputMixin, QtWidgets.QPushButton):
         self.setStyleSheet(f"background-color: rgba({r},{g},{b},{a}); color: {contrast_color};")
 
     def _pick_color(self):
+        # Allow standard picker by clicking the button normally
         dialog = QtWidgets.QColorDialog(self._qcolor, self)
         dialog.setOption(QtWidgets.QColorDialog.ShowAlphaChannel, True)
         if dialog.exec():
             c = dialog.selectedColor()
-            self._qcolor = c
-            self.update_style()
-            self.colorChanged.emit([c.redF(), c.greenF(), c.blueF(), c.alphaF()])
+            self._apply_picked_color(c)
+
+    def _start_eyedropper(self, event=None):
+        from .eyedropper import start_eyedropper
+        self._overlay = start_eyedropper(self._apply_picked_color)
+
+    def _apply_picked_color(self, c):
+        self._qcolor = c
+        self.update_style()
+        self.colorChanged.emit([c.redF(), c.greenF(), c.blueF(), c.alphaF()])
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Position picker button to the right
+        self.btn_picker.move(self.width() - 24, (self.height() - 20) // 2)
 
 # --- Advanced Color Panel ---
 # --- Advanced Color Components ---

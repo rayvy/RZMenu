@@ -301,7 +301,13 @@ endif
         $sizeX = {{ element.size_formula_x | default('$sizeX') }}
         $sizeY = {{ element.size_formula_y | default('$sizeY') }}
         {% endif %}
-
+        {% if element.rotation_is_formula %}
+        $rotation = {{ element.rotation_formula | default('0') }}
+        {% else %}
+        $rotation = {{ element.rotation | default(0.0) }}
+        {% endif %}
+        $flipX = {{ 1 if element.flip_x else 0 }}
+        $flipY = {{ 1 if element.flip_y else 0 }}
     {% else %}
         {# СТАНДАРТНАЯ ЛОГИКА ДЛЯ ОБЫЧНЫХ ЭЛЕМЕНТОВ #}
         {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
@@ -345,6 +351,15 @@ endif
             $sizeX = (100) * $sizeMultiplier
             $sizeY = (100) * $sizeMultiplier
         {% endif %}
+
+        ;ROTATION
+        {% if element.rotation_is_formula %}
+        $rotation = {{ element.rotation_formula | default('0') }}
+        {% else %}
+        $rotation = {{ element.rotation | default(0.0) }}
+        {% endif %}
+        $flipX = {{ 1 if element.flip_x else 0 }}
+        $flipY = {{ 1 if element.flip_y else 0 }}
     {% endif %}
 
     {% if element.transform_is_formula %}
@@ -462,8 +477,6 @@ endif
     {# --- DEBUG END --- #}
 
     {# --- Часть 1: ВСЕГДА отрисовываем базовый image_id, если он указан. --- #}
-    $flipX = {{ 1 if element.flip_x else 0 }}
-    $flipY = {{ 1 if element.flip_y else 0 }}
     {% if safe_img_mode == 0 and element.image_id is defined and element.image_id != -1 %}
         {% if parent_class_name == 'GRID_CONTAINER' and class_name == 'BUTTON'%}
         $drawType = 0

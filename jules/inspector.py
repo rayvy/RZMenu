@@ -14,46 +14,6 @@ from .. import core
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
 from ...data.constants import FX_COMMANDS
-import bpy
-import os
-
-class RZFontSlotComboBox(RZComboBox):
-    """
-    ComboBox for selecting font slots (0-3).
-    Displays slot number and the name of the font assigned to it.
-    """
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedHeight(30)
-        
-    def refresh_slots(self):
-        self.blockSignals(True)
-        self.clear()
-        
-        fonts = []
-        if bpy.context and hasattr(bpy.context.scene, "rzm"):
-            fonts = bpy.context.scene.rzm.fonts
-            
-        from ...utils.font_utils import find_by_path
-        for i in range(4):
-            label = "Empty"
-            if i < len(fonts):
-                slot = fonts[i]
-                if slot.font_source in ('DEFAULT', 'ARIAL', 'CONSOLAS', 'SEGOE'):
-                    label = "Windows Arial"
-                elif slot.custom_path:
-                    result = find_by_path(slot.custom_path)
-                    if result:
-                        family, style, _ = result
-                        label = family if style == "Regular" else f"{family} - {style}"
-                    else:
-                        label = os.path.basename(slot.custom_path) or "Custom"
-                else:
-                    label = "Not Set"
-            
-            self.addItem(f"Slot {i+1}: {label}", i)
-        
-        self.blockSignals(False)
 
 class RZInspectorAnchorBar(QtWidgets.QWidget):
     """
@@ -102,13 +62,11 @@ class RZInspectorAnchorBar(QtWidgets.QWidget):
         btn = self.buttons.get(grp_name)
         if not btn: return
         
+        # --- PHASE 2.6: ROLLING TABS ---
         # Ensure the active tab is visible (scroll to it)
-        parent = self.parentWidget()
-        while parent:
-            if isinstance(parent, QtWidgets.QScrollArea):
-                parent.ensureWidgetVisible(btn, 10, 10)
-                break
-            parent = parent.parentWidget()
+        parent_scroll = self.parentWidget()
+        if isinstance(parent_scroll, QtWidgets.QScrollArea):
+             parent_scroll.ensureWidgetVisible(btn, 10, 10)
 
         # Animate underline to button geometry
         self.underline.show()
@@ -123,28 +81,17 @@ class RZInspectorAnchorBar(QtWidgets.QWidget):
         self._anim.setEndValue(target_rect)
         self._anim.start()
         
-        # Style buttons - Use CSS classes for hover effects
-        accent = t.get('vp_active', '#FF8C00')
-        text_bright = t.get('text_bright', '#FFF')
-        text_dim = t.get('text_dim', '#888')
-        
+        # Style buttons
         for name, b in self.buttons.items():
             is_active = (name == grp_name)
-            col = text_bright if is_active else text_dim
-            weight = 'bold' if is_active else 'normal'
-            b.setStyleSheet(f"""
-                QPushButton {{
-                    color: {col};
-                    font-weight: {weight};
-                    border: none;
-                    background: transparent;
-                    padding: 4px 8px;
-                }}
-                QPushButton:hover {{
-                    color: {accent};
-                    background-color: rgba(255, 255, 255, 10);
-                }}
-            """)
+            col = t.get('text_bright', '#FFF') if is_active else t.get('text_dim', '#888')
+            b.setStyleSheet(f"color: {col}; font-weight: {'bold' if is_active else 'normal'}; border: none; background: transparent;")
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+    def wheelEvent(self, event):
+        event.ignore()
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
@@ -276,22 +223,17 @@ class RZConditionalImageItem(RZInspectorItem):
     def __init__(self, index, data, images, parent=None):
         super().__init__(index, parent, parent=parent)
         
-        # Use a vertical layout for content to give fields full width
-        self.v_content = QtWidgets.QVBoxLayout()
-        self.v_content.setSpacing(2)
-        self.content_layout.addLayout(self.v_content)
-        
         self.edit_cond = RZFormulaInput()
-        self.edit_cond.setPlaceholderText("Condition (e.g. $var == 1)...")
+        self.edit_cond.setPlaceholderText("Condition...")
         self.edit_cond.setText(data.get('condition', ''))
         self.edit_cond.editingFinished.connect(self._on_cond_changed)
-        self.v_content.addWidget(self.edit_cond)
+        self.add_widget(self.edit_cond, 2)
         
         self.cb_img = RZImageComboBox()
         self.cb_img.update_items(images)
         self.cb_img.set_value(data.get('image_id', -1))
         self.cb_img.value_changed.connect(self._on_img_changed)
-        self.v_content.addWidget(self.cb_img)
+        self.add_widget(self.cb_img, 3)
 
     def _on_cond_changed(self):
         self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
@@ -353,22 +295,17 @@ class RZConditionalTextItem(RZInspectorItem):
     def __init__(self, index, data, parent=None):
         super().__init__(index, parent, parent=parent)
         
-        # Use a vertical layout for content to give fields full width
-        self.v_content = QtWidgets.QVBoxLayout()
-        self.v_content.setSpacing(2)
-        self.content_layout.addLayout(self.v_content)
-
         self.edit_cond = RZFormulaInput()
-        self.edit_cond.setPlaceholderText("Condition (e.g. $var == 1)...")
+        self.edit_cond.setPlaceholderText("Condition...")
         self.edit_cond.setText(data.get('condition', ''))
         self.edit_cond.editingFinished.connect(self._on_cond_changed)
-        self.v_content.addWidget(self.edit_cond)
+        self.add_widget(self.edit_cond, 2)
         
         self.edit_txt = RZLineEdit()
-        self.edit_txt.setPlaceholderText("Text ID...")
+        self.edit_txt.setPlaceholderText("Text...")
         self.edit_txt.setText(data.get('text_id', ''))
         self.edit_txt.editingFinished.connect(self._on_txt_changed)
-        self.v_content.addWidget(self.edit_txt)
+        self.add_widget(self.edit_txt, 3)
 
     def _on_cond_changed(self):
         self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
@@ -497,30 +434,6 @@ class RZValueLinkList(RZListEditor):
     """A list-like widget to manage ValueLink collection."""
     def __init__(self, parent=None):
         super().__init__("+ Add Link", parent)
-        self.setAcceptDrops(True)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasFormat("application/x-rzm-variable"):
-            event.accept()
-        else:
-            event.ignore()
-
-    def dragMoveEvent(self, event):
-        if event.mimeData().hasFormat("application/x-rzm-variable"):
-            event.accept()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event):
-        m = event.mimeData()
-        if m.hasFormat("application/x-rzm-variable"):
-            var_name = m.data("application/x-rzm-variable").data().decode('utf-8')
-            ctx = RZContextManager.get_instance().get_snapshot()
-            if ctx.selected_ids:
-                core.props.add_value_link_with_name(ctx.selected_ids, var_name)
-            event.accept()
-        else:
-            event.ignore()
 
     def update_data(self, data_list, is_slider):
         def factory(i, data):
@@ -714,116 +627,6 @@ class RZPresetList(RZListEditor):
         if ctx.selected_ids:
             core.props.remove_preset_id(ctx.selected_ids, index)
 
-class RZUnderlayerPresetList(RZListEditor):
-    """A list-like widget to manage Underlayer Preset IDs."""
-    def __init__(self, parent=None):
-        super().__init__("+ Add Underlayer", parent)
-        self.layout_main.removeWidget(self.btn_add)
-        h_add = QtWidgets.QHBoxLayout()
-        self.cb_add_preset = RZComboBox()
-        h_add.addWidget(self.cb_add_preset, 1)
-        h_add.addWidget(self.btn_add)
-        self.layout_main.addLayout(h_add)
-
-    def update_data(self, preset_list):
-        elements = core.read.get_all_elements_list()
-        name_map = {e['id']: e['name'] for e in elements}
-            
-        def factory(i, pid):
-            name = name_map.get(pid, "Unknown")
-            return RZPresetItem(i, pid, name, self)
-            
-        def updater(w, pid):
-            w.blockSignals(True)
-            name = name_map.get(pid, "Unknown")
-            w.update_data(pid, name)
-            w.blockSignals(False)
-            
-        self.sync_widgets(preset_list, factory, updater)
-        
-        # Update dropdown with available preset elements
-        self.cb_add_preset.blockSignals(True)
-        self.cb_add_preset.clear()
-        preset_elements = [e for e in elements if e.get('is_preset', False)]
-        for e in preset_elements:
-            self.cb_add_preset.addItem(f"{e['name']} (ID: {e['id']})", e['id'])
-        self.cb_add_preset.blockSignals(False)
-
-    def add_item(self):
-        if self._block: return
-        pid = self.cb_add_preset.currentData()
-        if pid is None: return
-        ctx = RZContextManager.get_instance().get_snapshot()
-        if ctx.selected_ids:
-            core.props.add_underlayer_preset_id(ctx.selected_ids, pid)
-
-    def reorder_item(self, old_index, new_index):
-        if self._block: return
-        ctx = RZContextManager.get_instance().get_snapshot()
-        if ctx.selected_ids:
-            core.props.reorder_underlayer_preset_id(ctx.selected_ids, old_index, new_index)
-
-    def remove_item(self, index):
-        if self._block: return
-        ctx = RZContextManager.get_instance().get_snapshot()
-        if ctx.selected_ids:
-            core.props.remove_underlayer_preset_id(ctx.selected_ids, index)
-
-class RZHelperList(RZListEditor):
-    """A list-like widget to manage Helper IDs (analogous to RZPresetList)."""
-    def __init__(self, parent=None):
-        super().__init__("+ Add Helper", parent)
-        self.layout_main.removeWidget(self.btn_add)
-        h_add = QtWidgets.QHBoxLayout()
-        self.cb_add_helper = RZComboBox()
-        h_add.addWidget(self.cb_add_helper, 1)
-        h_add.addWidget(self.btn_add)
-        self.layout_main.addLayout(h_add)
-
-    def update_data(self, helper_list):
-        elements = core.read.get_all_elements_list()
-        name_map = {e['id']: e['name'] for e in elements}
-
-        def factory(i, hid):
-            name = name_map.get(hid, "Unknown")
-            return RZPresetItem(i, hid, name, self)
-
-        def updater(w, hid):
-            w.blockSignals(True)
-            name = name_map.get(hid, "Unknown")
-            w.update_data(hid, name)
-            w.blockSignals(False)
-
-        self.sync_widgets(helper_list, factory, updater)
-
-        # Update dropdown with available helper elements
-        self.cb_add_helper.blockSignals(True)
-        self.cb_add_helper.clear()
-        helper_elements = [e for e in elements if e.get('is_helper', False)]
-        for e in helper_elements:
-            self.cb_add_helper.addItem(f"{e['name']} (ID: {e['id']})", e['id'])
-        self.cb_add_helper.blockSignals(False)
-
-    def add_item(self):
-        if self._block: return
-        hid = self.cb_add_helper.currentData()
-        if hid is None: return
-        ctx = RZContextManager.get_instance().get_snapshot()
-        if ctx.selected_ids:
-            core.props.add_helper_id(ctx.selected_ids, hid)
-
-    def reorder_item(self, old_index, new_index):
-        if self._block: return
-        ctx = RZContextManager.get_instance().get_snapshot()
-        if ctx.selected_ids:
-            core.props.reorder_helper_id(ctx.selected_ids, old_index, new_index)
-
-    def remove_item(self, index):
-        if self._block: return
-        ctx = RZContextManager.get_instance().get_snapshot()
-        if ctx.selected_ids:
-            core.props.remove_helper_id(ctx.selected_ids, index)
-
 
 class RZMInspectorPanel(RZEditorPanel):
     """
@@ -846,10 +649,6 @@ class RZMInspectorPanel(RZEditorPanel):
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self._do_refresh_data)
         
-        self._hover_timer = QtCore.QTimer(self)
-        self._hover_timer.timeout.connect(self._check_hover_section)
-        self._hover_timer.start(100)
-        
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(2, 5, 2, 5)
         layout.setSpacing(5)
@@ -857,13 +656,11 @@ class RZMInspectorPanel(RZEditorPanel):
         
         self.anchor_items = [
             ("Identity", "grp_ident"),
-            ("Transform", "grp_trans"),
-            ("Appearance", "grp_style"),
-            ("Text", "grp_text"),
+            ("Layout", "grp_anchor"),
+            ("Style", "grp_style"),
             ("Logic", "grp_logic"),
             ("Events", "grp_events"),
-            ("Special", "grp_special"),
-            ("Flags", "grp_flags")
+            ("Presets", "grp_presets")
         ]
         
         self.anchor_scroll = QtWidgets.QScrollArea()
@@ -897,8 +694,6 @@ class RZMInspectorPanel(RZEditorPanel):
         
         self._init_properties_ui()
         self.layout_props.addStretch()
-        
-        self.scroll_content.setMouseTracking(True)
 
         # --- TAB 2: Raw Data ---
         self.tab_raw = QtWidgets.QWidget()
@@ -919,11 +714,9 @@ class RZMInspectorPanel(RZEditorPanel):
             # Anchor bar logic
             self.anchor_bar.set_active(group_name)
             
-            # Smooth scrolling integration with RZScrollArea
+            # Smooth scrolling
             bar = self.scroll_area.verticalScrollBar()
             y = target_widget.geometry().top()
-            
-            target_val = max(0, y - 5)
             
             # Use QPropertyAnimation for smooth scroll
             if not hasattr(self, "_scroll_anim"):
@@ -932,43 +725,8 @@ class RZMInspectorPanel(RZEditorPanel):
                 self._scroll_anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
             
             self._scroll_anim.stop()
-            self._scroll_anim.setEndValue(target_val)
-            
-            # Sync physics state in RZScrollArea
-            self.scroll_area._current_y = float(bar.value())
-            self.scroll_area._target_y = float(target_val)
-            
+            self._scroll_anim.setEndValue(max(0, y - 5))
             self._scroll_anim.start()
-
-    def _check_hover_section(self):
-        """Highlights the anchor corresponding to the group under the cursor."""
-        if not hasattr(self, "_is_panel_active") or not self._is_panel_active: return
-        
-        # Don't override if scrolling animation is active
-        if hasattr(self, "_scroll_anim") and self._scroll_anim.state() == QtCore.QPropertyAnimation.Running:
-            return
-            
-        pos = QtGui.QCursor.pos()
-        widget_under_cursor = QtWidgets.QApplication.widgetAt(pos)
-        
-        if not widget_under_cursor: return
-        
-        # Check if cursor is inside our scroll content
-        if not self.scroll_content.isAncestorOf(widget_under_cursor) and widget_under_cursor != self.scroll_content:
-            return
-            
-        # Map cursor pos to scroll_content
-        local_pos = self.scroll_content.mapFromGlobal(pos)
-        
-        best_match = None
-        for label, grp_name in reversed(self.anchor_items):
-            w = getattr(self, grp_name, None)
-            if w and w.geometry().top() <= local_pos.y():
-                best_match = grp_name
-                break
-                
-        if best_match:
-            self.anchor_bar.set_active(best_match)
 
     def _on_scroll_sync(self, value):
         """Updates Anchor bar based on current scroll position."""
@@ -1044,40 +802,6 @@ class RZMInspectorPanel(RZEditorPanel):
             traceback.print_exc()
         finally:
             self._block_signals = False
-
-    # --- DRAG & DROP FOR VISIBILITY & OTHERS ---
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasFormat("application/x-rzm-variable"):
-            event.accept()
-        else:
-            super().dragEnterEvent(event)
-
-    def dropEvent(self, event):
-        m = event.mimeData()
-        if m.hasFormat("application/x-rzm-variable"):
-            var_name = m.data("application/x-rzm-variable").data().decode('utf-8')
-            
-            # Check what widget is under the cursor
-            pos = event.position().toPoint()
-            widget = self.childAt(pos)
-            
-            # 1. VISIBILITY LOGIC
-            if self.grp_vis.isAncestorOf(widget) or widget == self.grp_vis:
-                self._emit_change('visibility_mode', 'CONDITIONAL')
-                self._emit_change('visibility_condition', var_name)
-                event.accept()
-                return
-
-            # 2. TRANSFORM FORMULAS (Auto-enable)
-            if self.grp_trans.isAncestorOf(widget) or widget == self.grp_trans:
-                # If dropped on a specific field area, we could be smarter, 
-                # but for now just let RZFormulaInput handled it if dropped directly on it.
-                # If dropped on the Group Box itself, maybe do nothing or assume it's just a general drop.
-                pass
-
-            event.accept()
-        else:
-            super().dropEvent(event)
     
     def _add_row(self, layout, label, widget, field_name=None, signal=None):
         """Helper to add a property row and optionally connect its change signal."""
@@ -1091,8 +815,7 @@ class RZMInspectorPanel(RZEditorPanel):
                 lbl_w = RZLabel(label) if isinstance(label, str) else label
                 h.addWidget(lbl_w)
             h.addWidget(widget)
-            # Only add stretch if it's NOT a full-width code editor or list
-            if not label and not isinstance(widget, (RZCodeTextEdit, RZListEditor, RZFormulaInput)):
+            if not label:
                 h.addStretch()
             if hasattr(layout, 'addLayout'):
                 layout.addLayout(h)
@@ -1111,7 +834,7 @@ class RZMInspectorPanel(RZEditorPanel):
                 if hasattr(widget, 'value_changed'): signal = 'value_changed'
                 elif hasattr(widget, 'valueChanged'): signal = 'valueChanged'
                 elif hasattr(widget, 'colorChanged'): signal = 'colorChanged'
-                elif isinstance(widget, (RZComboBox, RZImageComboBox)): signal = 'currentTextChanged'
+                elif isinstance(widget, RZComboBox): signal = 'currentTextChanged'
                 elif isinstance(widget, RZCheckBox): signal = 'toggled'
                 else: signal = 'editingFinished'
             
@@ -1119,8 +842,6 @@ class RZMInspectorPanel(RZEditorPanel):
             if sig:
                 if signal in ['valueChanged', 'value_changed', 'colorChanged']: 
                     sig.connect(lambda v: self._emit_change(field_name, v))
-                elif signal == 'currentIndexChanged':
-                    sig.connect(lambda i: self._emit_change(field_name, i))
                 elif signal == 'currentTextChanged': 
                     sig.connect(lambda t: self._emit_change(field_name, t))
                 elif signal == 'toggled': 
@@ -1138,15 +859,14 @@ class RZMInspectorPanel(RZEditorPanel):
     def _init_properties_ui(self):
         sections = [
             ("Identity", self._init_identity_ui),
+            ("Visibility", self._init_visibility_ui),
+            ("Presets System", self._init_presets_ui),
             ("Anchor & Alignment", self._init_layout_ui),
             ("Transform", self._init_transform_ui),
             ("Grid Settings", self._init_grid_ui),
             ("Appearance", self._init_style_ui),
             ("Text content", self._init_text_ui),
-            # LOGIC GROUP (All under Logic Anchor)
-            ("Visibility", self._init_visibility_ui),
             ("Value Links & FX", self._init_logic_ui),
-            ("Presets System", self._init_presets_ui),
             ("Interactions", self._init_events_ui),
             ("Special Options", self._init_special_ui),
             ("Editor Flags", self._init_flags_ui),
@@ -1195,45 +915,15 @@ class RZMInspectorPanel(RZEditorPanel):
 
     def _init_presets_ui(self):
         try:
-            self.grp_presets = RZGroupBox("Presets & Helpers")
+            self.grp_presets = RZGroupBox("Presets System")
             layout = QtWidgets.QVBoxLayout(self.grp_presets)
             layout.setSpacing(6)
-
-            # --- Is Preset / Is Helper (identity flags) ---
-            h_flags = QtWidgets.QHBoxLayout()
-            self.chk_is_preset = self._add_row(h_flags, "", RZCheckBox("Is Preset"), 'is_preset')
-            self.chk_is_helper = self._add_row(h_flags, "", RZCheckBox("Is Helper"), 'is_helper')
-            layout.addLayout(h_flags)
-
-            self.chk_preset_hide = self._add_row(layout, "", RZCheckBox("Hide Presets/Helpers (Overlay)"), 'qt_preset_hide')
-
-            # --- Template Prefab ---
-            self.grp_template_prefab = RZGroupBox("Template Prefab")
-            f_prefab = QtWidgets.QFormLayout(self.grp_template_prefab)
-            f_prefab.setSpacing(4)
-            self.chk_is_template_prefab = self._add_row(f_prefab, "", RZCheckBox("Is Template Prefab"), 'is_template_prefab')
-            self.cb_template_prefab = self._add_row(f_prefab, "Type:", RZComboBox(), 'template_prefab')
-            self.cb_template_prefab.addItems(["MAIN_BLOCK", "PAGE_BLOCK", "BUTTONS"])
-            self.chk_is_template_prefab.toggled.connect(self.cb_template_prefab.setVisible)
-            self.cb_template_prefab.setVisible(False)  # Combo hidden until checkbox is checked
-            # grp_template_prefab itself is always visible so user can see the checkbox
-            layout.addWidget(self.grp_template_prefab)
-
-            # --- Applied Presets ---
+            self.chk_is_preset = self._add_row(layout, "", RZCheckBox("Is Preset Element"), 'is_preset')
+            self.chk_preset_hide = self._add_row(layout, "", RZCheckBox("Hide Presets (Overlay)"), 'qt_preset_hide')
             layout.addWidget(RZLabel("Applied Presets:"))
             self.list_presets = RZPresetList()
             layout.addWidget(self.list_presets)
-            layout.addWidget(RZLabel("Applied Underlayer Presets:"))
-            self.list_underlayers = RZUnderlayerPresetList()
-            layout.addWidget(self.list_underlayers)
-
-            # --- Applied Helpers ---
-            layout.addWidget(RZLabel("Applied Helpers:"))
-            self.list_helpers = RZHelperList()
-            layout.addWidget(self.list_helpers)
-
             self.layout_props.addWidget(self.grp_presets)
-
         except Exception as e: print(f"[INSPECTOR] Error Presets: {e}")
 
     def _init_layout_ui(self):
@@ -1278,13 +968,9 @@ class RZMInspectorPanel(RZEditorPanel):
 
             self.w_pos_formulas = QtWidgets.QWidget()
             l_pos_f = QtWidgets.QVBoxLayout(self.w_pos_formulas)
-            l_pos_f.setContentsMargins(0, 0, 0, 0); l_pos_f.setSpacing(2)
-            l_pos_f.addWidget(RZLabel("X Formula:"))
-            self.edit_pos_fx = self._add_row(l_pos_f, "", RZFormulaInput(), 'position_formula_x')
-            self.edit_pos_fx.setMinimumHeight(92) # Increased height
-            l_pos_f.addWidget(RZLabel("Y Formula:"))
-            self.edit_pos_fy = self._add_row(l_pos_f, "", RZFormulaInput(), 'position_formula_y')
-            self.edit_pos_fy.setMinimumHeight(92) # Increased height
+            l_pos_f.setContentsMargins(0, 0, 0, 0); l_pos_f.setSpacing(4)
+            self.edit_pos_fx = self._add_row(l_pos_f, "X:", RZFormulaInput(), 'position_formula_x')
+            self.edit_pos_fy = self._add_row(l_pos_f, "Y:", RZFormulaInput(), 'position_formula_y')
             self.stack_pos.addWidget(self.w_pos_formulas)
             self.chk_pos_formula.toggled.connect(lambda v: self.stack_pos.setCurrentIndex(1 if v else 0))
 
@@ -1315,30 +1001,6 @@ class RZMInspectorPanel(RZEditorPanel):
             self.stack_size.addWidget(self.w_size_formulas)
             self.chk_size_formula.toggled.connect(lambda v: self.stack_size.setCurrentIndex(1 if v else 0))
 
-            # --- ROTATION ---
-            h_rot_head = QtWidgets.QHBoxLayout()
-            h_rot_head.addWidget(RZLabel("Rotation"))
-            h_rot_head.addStretch()
-            self.chk_rot_formula = self._add_row(h_rot_head, "", RZCheckBox("Formula"), 'rotation_is_formula')
-            layout_trans.addLayout(h_rot_head)
-
-            self.stack_rot = QtWidgets.QStackedLayout()
-            layout_trans.addLayout(self.stack_rot)
-
-            self.w_rot_sliders = QtWidgets.QWidget()
-            l_rot_sl = QtWidgets.QVBoxLayout(self.w_rot_sliders)
-            l_rot_sl.setContentsMargins(0, 0, 0, 0); l_rot_sl.setSpacing(4)
-            self.sl_rot = self._add_row(l_rot_sl, "Angle", RZSmartSlider(is_int=False, show_slider=True, label_text=""), 'rotation', 'value_changed')
-            self.sl_rot.math_requested.connect(lambda op: self._emit_math('rotation', op))
-            self.stack_rot.addWidget(self.w_rot_sliders)
-
-            self.w_rot_formulas = QtWidgets.QWidget()
-            l_rot_f = QtWidgets.QVBoxLayout(self.w_rot_formulas)
-            l_rot_f.setContentsMargins(0, 0, 0, 0); l_rot_f.setSpacing(2)
-            self.edit_rot_f = self._add_row(l_rot_f, "Formula:", RZFormulaInput(), 'rotation_formula')
-            self.stack_rot.addWidget(self.w_rot_formulas)
-            self.chk_rot_formula.toggled.connect(lambda v: self.stack_rot.setCurrentIndex(1 if v else 0))
-
             # --- GLOBAL TRANSFORM ---
             h_tf_head = QtWidgets.QHBoxLayout()
             h_tf_head.addWidget(RZLabel("Global Transform"))
@@ -1347,7 +1009,7 @@ class RZMInspectorPanel(RZEditorPanel):
             layout_trans.addLayout(h_tf_head)
             self.edit_trans_fx = self._add_row(layout_trans, "", RZCodeTextEdit(), 'transform_formula')
             self.edit_trans_fx.setPlaceholderText("Transform(x, y, w, h)...")
-            self.edit_trans_fx.setMinimumHeight(120); self.edit_trans_fx.setMaximumHeight(400)
+            self.edit_trans_fx.setMinimumHeight(40); self.edit_trans_fx.setMaximumHeight(80)
             self.chk_trans_formula.toggled.connect(self.edit_trans_fx.setVisible)
 
             self.layout_props.addWidget(self.grp_trans)
@@ -1389,7 +1051,6 @@ class RZMInspectorPanel(RZEditorPanel):
             self.w_color_formulas = QtWidgets.QWidget(); l_col_f = QtWidgets.QVBoxLayout(self.w_color_formulas); l_col_f.setContentsMargins(0, 0, 0, 0); l_col_f.setSpacing(2)
             for chan in ['r','g','b','a']:
                 edit = self._add_row(l_col_f, f"{chan.upper()}:", RZFormulaInput(), f'color_formula_{chan}')
-                edit.setFixedHeight(30) # Compressed per user request
                 setattr(self, f"edit_col_{chan}", edit)
             self.stack_color.addWidget(self.w_color_formulas)
             layout.addLayout(self.stack_color)
@@ -1399,7 +1060,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_img_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
             
             self.cb_blend_mode = self._add_row(layout, "Blend Mode:", RZComboBox(), 'image_blending_mode')
-            self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR"])
+            self.cb_blend_mode.addItems(["NONE", "OVERLAY", "COLOR_HUE"])
             
             self.cb_image = self._add_row(layout, "Image:", RZImageComboBox(), 'image_id', 'value_changed')
             self.cb_hover_image = self._add_row(layout, "Hover Image:", RZImageComboBox(), 'hover_image_id', 'value_changed')
@@ -1425,9 +1086,6 @@ class RZMInspectorPanel(RZEditorPanel):
             self.grp_text = RZGroupBox("Text content")
             layout = QtWidgets.QVBoxLayout(self.grp_text)
             layout.setSpacing(6)
-            
-            self.cb_font_slot = self._add_row(layout, "Font Slot:", RZFontSlotComboBox(), 'font_slot', 'currentIndexChanged')
-            
             self.cb_text_mode = self._add_row(layout, "Text Mode:", RZComboBox(), 'text_mode')
             self.cb_text_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
             
@@ -1450,7 +1108,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.list_links = RZValueLinkList()
             layout.addWidget(self.list_links)
             self.edit_vl_formula = self._add_row(layout, "", RZCodeTextEdit(), 'value_link_formula')
-            self.edit_vl_formula.setPlaceholderText("Link Formula..."); self.edit_vl_formula.setMinimumHeight(140)
+            self.edit_vl_formula.setPlaceholderText("Link Formula..."); self.edit_vl_formula.setMinimumHeight(60)
             self.list_fx = RZFXList()
             layout.addWidget(self.list_fx)
             self.layout_props.addWidget(self.grp_logic)
@@ -1465,14 +1123,14 @@ class RZMInspectorPanel(RZEditorPanel):
             self.chk_hover_event = self._add_row(h_hov, "", RZCheckBox("Enable"), 'hover_event_enabled')
             layout.addLayout(h_hov)
             self.edit_hover_fx = self._add_row(layout, "", RZCodeTextEdit(), 'hover_event_formula')
-            self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(120)
+            self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(40)
             self.chk_hover_event.toggled.connect(self.edit_hover_fx.setVisible)
             
             h_clk = QtWidgets.QHBoxLayout(); h_clk.addWidget(RZLabel("Click Event")); h_clk.addStretch()
             self.chk_click_event = self._add_row(h_clk, "", RZCheckBox("Enable"), 'click_event_enabled')
             layout.addLayout(h_clk)
             self.edit_click_fx = self._add_row(layout, "", RZCodeTextEdit(), 'click_event_formula')
-            self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(120)
+            self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(40)
             self.chk_click_event.toggled.connect(self.edit_click_fx.setVisible)
             
             self.layout_props.addWidget(self.grp_events)
@@ -1615,20 +1273,8 @@ class RZMInspectorPanel(RZEditorPanel):
 
             # --- Presets ---
             if hasattr(self, 'chk_is_preset'): self.chk_is_preset.setChecked(props.get('is_preset') is True)
-            if hasattr(self, 'chk_is_helper'): self.chk_is_helper.setChecked(props.get('is_helper') is True)
             if hasattr(self, 'chk_preset_hide'): self.chk_preset_hide.setChecked(props.get('qt_preset_hide') is True)
             if hasattr(self, 'list_presets'): self.list_presets.update_data(props.get('preset_ids', []))
-            if hasattr(self, 'list_underlayers'): self.list_underlayers.update_data(props.get('underlayer_preset_ids', []))
-            if hasattr(self, 'list_helpers'): self.list_helpers.update_data(props.get('helper_ids', []))
-
-            # Template Prefab
-            is_template_pref = props.get('is_template_prefab') is True
-            if hasattr(self, 'chk_is_template_prefab'):
-                self.chk_is_template_prefab.setChecked(is_template_pref)
-            if hasattr(self, 'cb_template_prefab'):
-                tp = props.get('template_prefab', 'MAIN_BLOCK')
-                self.cb_template_prefab.setCurrentText(tp or 'MAIN_BLOCK')
-                self.cb_template_prefab.setVisible(is_template_pref)
 
             # --- Visibility ---
             vis_mode = props.get('visibility_mode', 'ALWAYS')
@@ -1668,31 +1314,19 @@ class RZMInspectorPanel(RZEditorPanel):
             else:
                 if hasattr(self, 'sl_w'): self.sl_w.set_value_from_backend(props.get('width'))
                 if hasattr(self, 'sl_h'): self.sl_h.set_value_from_backend(props.get('height'))
-                
-            rot_is_form = props.get('rotation_is_formula') is True
-            if hasattr(self, 'chk_rot_formula'): self.chk_rot_formula.setChecked(rot_is_form)
-            if hasattr(self, 'stack_rot'): self.stack_rot.setCurrentIndex(1 if rot_is_form else 0)
-            
-            if rot_is_form:
-                if hasattr(self, 'edit_rot_f'): self.edit_rot_f.set_text_silent(props.get('rotation_formula', ''))
-            else:
-                if hasattr(self, 'sl_rot'): self.sl_rot.set_value_from_backend(props.get('rotation'))
             
             # Locking Logic
             is_locked_pos = props.get('is_locked_pos', False)
             is_locked_size = props.get('is_locked_size', False)
             is_grid_child = props.get('is_grid_child', False)
             
-            # Formulas ignore the 'locked' flag per user request, allowing logic editing 
-            # while protecting against accidental viewport drags.
-            can_edit_pos_formula = True 
-            can_edit_pos_manual = (is_locked_pos is not True) and (not is_grid_child)
+            can_edit_pos = (is_locked_pos is not True) and (not is_grid_child)
             can_edit_size = (is_locked_size is not True)
             
-            if hasattr(self, 'sl_x'): self.sl_x.setEnabled(can_edit_pos_manual)
-            if hasattr(self, 'sl_y'): self.sl_y.setEnabled(can_edit_pos_manual)
-            if hasattr(self, 'edit_pos_fx'): self.edit_pos_fx.setEnabled(can_edit_pos_formula)
-            if hasattr(self, 'edit_pos_fy'): self.edit_pos_fy.setEnabled(can_edit_pos_formula)
+            if hasattr(self, 'sl_x'): self.sl_x.setEnabled(can_edit_pos)
+            if hasattr(self, 'sl_y'): self.sl_y.setEnabled(can_edit_pos)
+            if hasattr(self, 'edit_pos_fx'): self.edit_pos_fx.setEnabled(can_edit_pos)
+            if hasattr(self, 'edit_pos_fy'): self.edit_pos_fy.setEnabled(can_edit_pos)
             
             if hasattr(self, 'sl_w') and hasattr(self, 'sl_h'):
                 self.sl_w.setEnabled(can_edit_size)
@@ -1765,11 +1399,6 @@ class RZMInspectorPanel(RZEditorPanel):
                     self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
             
             # --- Text ---
-            if hasattr(self, 'cb_font_slot'):
-                self.cb_font_slot.refresh_slots()
-                idx = props.get('font_slot', 0)
-                self.cb_font_slot.setCurrentIndex(idx)
-                
             txt_mode = props.get('text_mode', 'SINGLE')
             if hasattr(self, 'cb_text_mode'): self.cb_text_mode.setCurrentText(txt_mode)
             is_txt_single = (txt_mode == 'SINGLE')

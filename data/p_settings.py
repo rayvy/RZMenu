@@ -347,8 +347,16 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         default=""
     )
 
+    move_to_npanel: BoolProperty(
+        name="Detach Mesh & Toggles to N-Panel",
+        description="Move Mesh and Toggle managers to an independent 'RZ Constructor MESH' tab",
+        default=False
+    )
+
     def draw(self, context):
         layout = self.layout
         column = layout.column()
         column.prop(self, "custom_asset_library")
         column.label(text="Icons from this folder will be loaded alongside base_icons.", icon='INFO')
+        column.separator()
+        column.prop(self, "move_to_npanel")

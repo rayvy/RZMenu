@@ -237,12 +237,15 @@ def get_selection_details(selected_ids, active_id):
             "pos_y": get_uniform("position", 1), 
             "width": get_uniform("size", 0),
             "height": get_uniform("size", 1), 
+            "rotation": get_uniform("rotation"),
             
             # Transform - Formulas
             "position_formula_x": get_uniform("position_formula_x", default=""),
             "position_formula_y": get_uniform("position_formula_y", default=""),
             "size_formula_x": get_uniform("size_formula_x", default=""),
             "size_formula_y": get_uniform("size_formula_y", default=""),
+            "rotation_is_formula": get_uniform("rotation_is_formula", default=False),
+            "rotation_formula": get_uniform("rotation_formula_x", default=""),
             "transform_is_formula": get_uniform("transform_is_formula", default=False),
             "transform_formula": get_uniform("transform_formula", default=""),
 
@@ -384,10 +387,13 @@ def get_viewport_data():
             "pos_y": elem.position[1],
             "width": elem.size[0],
             "height": elem.size[1],
+            "rotation": elem.rotation,
 
             # Formula flags
             "pos_is_formula": getattr(elem, "position_is_formula", False),
             "size_is_formula": getattr(elem, "size_is_formula", False),
+            "rotation_is_formula": getattr(elem, "rotation_is_formula", False),
+            "transform_is_formula": getattr(elem, "transform_is_formula", False),
 
             # Formula strings (Important: sanitize/default to empty string)
             "formula_x": getattr(elem, "position_formula_x", ""),
