@@ -28,6 +28,18 @@ class RZM_MT_AssignTexSlotMenu(bpy.types.Menu):
             op = layout.operator("rzm.assign_object_tex_slot", text=s)
             op.slot_name = s
 
+class RZM_UL_Values(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "value_name", text="", emboss=False)
+        row.prop(item, "value_type", text="")
+        if item.value_type == 'INT':
+            row.prop(item, "int_value", text="")
+        elif item.value_type == 'FLOAT':
+            row.prop(item, "float_value", text="")
+        elif item.value_type == 'VECTOR':
+            row.prop(item, "vector_value", text="")
+
 class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     bl_label = "RZ Constructor"
     bl_idname = "VIEW3D_PT_rz_constructor_panel"
@@ -354,17 +366,43 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         else:
             for key in tex_keys:
                 display_name = key.replace("rzm.TexSlot.", "")
-                row = box.row(align=True)
+                slot_id = display_name
+                cond_key = f"rzm.TexCond.{slot_id}"
                 
-                # Используем split для четкого разделения имени и поля ввода
-                split = row.split(factor=0.3)
-                split.label(text=display_name, icon='IMAGE_DATA')
+                # Используем колонку для группировки слота и его условия
+                slot_col = box.column(align=True)
+                row = slot_col.row(align=True)
                 
-                # Поле ввода и кнопка удаления в одной группе
-                sub = split.row(align=True)
-                sub.prop(target_obj, f'["{key}"]', text="")
-                op_rem = sub.operator("rzm.remove_object_tex_slot", text="", icon='X', emboss=False)
-                op_rem.prop_key = key
+                # Метка слота
+                row.label(text=display_name, icon='IMAGE_DATA')
+                
+                # Поле пути к текстуре
+                row.prop(target_obj, f'["{key}"]', text="")
+                
+                # Кнопка добавления/удаления условия
+                if cond_key in target_obj:
+                    op_rem_cond = row.operator("rzm.remove_object_tex_cond", text="", icon='REMOVE', emboss=False)
+                    op_rem_cond.prop_key = key
+                else:
+                    op_add_cond = row.operator("rzm.add_object_tex_cond", text="", icon='ADD', emboss=False)
+                    op_add_cond.prop_key = key
+                
+                # Кнопка удаления слота целиком
+                op_rem_slot = row.operator("rzm.remove_object_tex_slot", text="", icon='X', emboss=False)
+                op_rem_slot.prop_key = key
+                
+                # Если условие есть, рисуем вторую строку
+                if cond_key in target_obj:
+                    cond_row = slot_col.row(align=True)
+                    # Сдвиг для визуальной иерархии
+                    sub = cond_row.split(factor=0.1)
+                    sub.label(text="") # Empty space
+                    
+                    details = sub.row(align=True)
+                    details.label(text="Condition:", icon='BLANK1')
+                    details.prop(target_obj, f'["{cond_key}"]', text="")
+                
+                slot_col.separator()
 
         # --- CUSTOM DRAW ---
         box = layout.box()
@@ -554,12 +592,12 @@ class RZM_UL_CustomScriptList(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text="", icon='FILE_SCRIPT')
 
-class VIEW3D_PT_RZConstructorMeshPanel(bpy.types.Panel):
-    bl_label = "Mesh & Toggles"
-    bl_idname = "VIEW3D_PT_rz_constructor_mesh_panel"
+class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
+    bl_label = "RZ Construct Toolbox"
+    bl_idname = "VIEW3D_PT_rz_constructor_toolbox_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'RZ Constructor MESH'
+    bl_category = 'RZ Toolbox'
     bl_order = 1
     
     @classmethod
@@ -569,14 +607,28 @@ class VIEW3D_PT_RZConstructorMeshPanel(bpy.types.Panel):
         return prefs and getattr(prefs.preferences, "move_to_npanel", False)
 
     def draw(self, context):
-        VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, self.layout)
+        layout = self.layout
+        rzm = context.scene.rzm
+        
+        # 1. Object Properties (Existing Toggles & TexSlots)
+        VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)
+        
+        # 2. Variables (New Section)
+        layout.separator()
+        box = layout.box()
+        box.label(text="Project Global Values:", icon='IPO_SINE')
+        row = box.row(align=True)
+        row.operator("rzm.add_value", text="Add", icon='ADD')
+        row.operator("rzm.remove_value", text="", icon='REMOVE')
+        box.template_list("RZM_UL_Values", "", rzm, "rzm_values", context.scene, "rzm_active_value_index")
 
 classes_to_register = [ 
     RZM_UL_CustomScriptList,
+    RZM_UL_Values,
     RZM_MT_AssignToggleMenu, 
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel, 
     VIEW3D_PT_RZM_AutoMenuCreator,
     VIEW3D_PT_RZM_ExportManager,
-    VIEW3D_PT_RZConstructorMeshPanel
+    VIEW3D_PT_RZConstructorToolboxPanel
 ]

@@ -5,22 +5,27 @@
         {"label": "Safe Width", "text": "$SafeWidth"},
         {"label": "Safe Height", "text": "$SafeHeight"}
     ],
-    "Element": [
-        {"label": "My Width", "text": "{{element.id}}"},
-        {"label": "My Height", "text": "{{id}}"},
-        {"label": "My Pos X", "text": "{{size}}"},
-        {"label": "My Pos Y", "text": "{{size[0]}}"},
-        {"label": "Parent Width", "text": [
-            "123",
-            "123"
-        ]},
-        {"label": "Parent Height", "text": "{{element.size[1]}}"}
+    "Properties": [
+        {"label": "Active Element ID", "text": "{{element.id}}"},
+        {"label": "Element X Pos", "text": "{{element.position[0]}}"},
+        {"label": "Element Width", "text": "{{element.size[0]}}"},
+        {"label": "Active Page Color (R)", "text": "{{element.page_color[0]}}"}
     ],
-    "Input": [
-        {"label": "Mouse X", "text": "$MouseX"},
-        {"label": "Mouse Y", "text": "$MouseY"},
-        {"label": "Is Hovered", "text": "$IsHovered"},
-        {"label": "Gamepad Button", "text": "@gamepad_a"}
+    "Variables": [
+        {"label": "First Link Name", "text": "{{element.value_link[0].value_name}}"},
+        {"label": "First Link Value", "text": "${{element.value_link[0].value_name}}"},
+        {"label": "First Link Range", "text": "clamp(value, {{element.value_link[0].value_min}}, {{element.value_link[0].value_max}})"}
+    ],
+    "Logic": [
+        {
+            "label": "Cycle Value Link",
+            "text": [
+                "if {{element.value_link[0].value_name}} < {{element.value_link[0].value_max}}",
+                "    {{element.value_link[0].value_name}} = {{element.value_link[0].value_name}} + 1",
+                "else:",
+                "    {{element.value_link[0].value_name}} = 0"
+            ]
+        }
     ],
     "Math": [
         {"label": "Clamp(v, min, max)", "text": "clamp(value, 0, 1)"},

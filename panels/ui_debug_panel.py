@@ -837,7 +837,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
     #     row.operator("rzm.launch_inspector", text="Inspector")
 
 classes_to_register = [
-    RZM_UL_Elements, RZM_UL_Images, RZM_UL_Values, RZM_UL_ProjectToggles,
+    RZM_UL_Elements, RZM_UL_Images, RZM_UL_ProjectToggles,
     RZM_MT_ValueLinkMenu, RZM_MT_TwFormatMenu,
     VIEW3D_PT_RZConstructorDebugPanel
 ]

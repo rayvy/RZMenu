@@ -518,7 +518,10 @@ class RZFormulaInput(_RZBaseTextEdit):
                     cat_menu = menu.addMenu(category)
                     for item in items:
                         action = cat_menu.addAction(item['label'])
-                        action.triggered.connect(lambda _, t=item['text']: self._insert_snippet(t))
+                        snippet_text = item['text']
+                        if isinstance(snippet_text, list):
+                            snippet_text = "\n".join(snippet_text)
+                        action.triggered.connect(lambda _, t=snippet_text: self._insert_snippet(t))
         except Exception as e:
             menu.addAction(f"Error loading snippets: {e}")
             
@@ -546,6 +549,7 @@ class RZFormulaInput(_RZBaseTextEdit):
                     current_obj = elem
                     
                     for part in parts:
+                        # Handle array access, e.g., value_link[0]
                         arr_match = re.match(r'([a-zA-Z0-9_]+)(?:\[(\d+)\])?', part)
                         if not arr_match: return ""
                         
@@ -556,14 +560,16 @@ class RZFormulaInput(_RZBaseTextEdit):
                         current_obj = getattr(current_obj, prop_name)
                         
                         if idx_str is not None:
-                            try: current_obj = current_obj[int(idx_str)]
+                            try:
+                                # Blender collections support both index and key access.
+                                current_obj = current_obj[int(idx_str)]
                             except: return ""
                         else:
                             # Auto-index array if not specified (exclude strings)
                             if hasattr(current_obj, '__len__') and not isinstance(current_obj, (str, bytes)):
                                 if len(current_obj) > 0: current_obj = current_obj[0]
                                 else: return ""
-                                
+                    
                     return str(current_obj) if current_obj is not None else ""
                 
                 text = re.sub(r'\{\{(.*?)\}\}', replacer, text)

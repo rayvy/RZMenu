@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from .export_manager import get_target_path
+from ..utils.texture_collector import collect_missing_textures
 
 class RZM_OT_AddCustomScript(bpy.types.Operator):
     bl_idname = "rzm.add_custom_script"
@@ -126,6 +127,14 @@ class RZM_OT_FullExport(bpy.types.Operator):
         if not target_path:
             self.report({'ERROR'}, "Export path not set! Initialize path in settings first.")
             return {'CANCELLED'}
+
+        # -1. Texture Collection & Missing Resources Check
+        try:
+            missing_count = collect_missing_textures(context)
+            if missing_count > 0:
+                print(f"[RZM Full Export] Marked {missing_count} missing textures for auto-generation.")
+        except Exception as e:
+            self.report({'WARNING'}, f"Texture collection failed: {e}")
 
         # 0. Auto-Setup & Initialization Check
         try:

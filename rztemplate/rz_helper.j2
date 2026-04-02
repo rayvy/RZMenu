@@ -64,25 +64,47 @@
         {% endfor %}
     {% endif %}
 
-    {# 4.5. КАСТОМНЫЕ ТЕКСТУРЫ (TexSlot) #}
-    {# Используем массив, так как он мутирует внутри цикла без ошибок #}
+    {# 4.5. КАСТОМНЫЕ ТЕКСТУРЫ (TexSlot & TexCond) #}
     {% set found_textures = [] %}
     {% if real_obj %}
-        {% for key, value in real_obj.items() %}
-            {% if key.startswith('rzm.TexSlot.') %}
-                {% set slot_name = key[12:] %}
+        {# 1. Сбор уникальных условий для текстур #}
+        {% set unique_conditions = [] %}
+        {% for key in real_obj.keys() if key.startswith('rzm.TexSlot.') %}
+            {% set slot_id = key[12:] %}
+            {% set cond_key = 'rzm.TexCond.' + slot_id %}
+            {% set cond_val = real_obj.get(cond_key, "") %}
+            {% if cond_val and cond_val not in unique_conditions %}
+                {% set _ = unique_conditions.append(cond_val) %}
+            {% endif %}
+        {% endfor %}
+
+        {# 2. Сначала выводим текстуры БЕЗ условий #}
+        {% for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
+            {% set slot_id = key[12:] %}
+            {% set cond_key = 'rzm.TexCond.' + slot_id %}
+            {% if cond_key not in real_obj %}
                 {% set safe_val = value | string %}
-                
-                {# Сэйф-механизм: срезаем Resource или Resource\, если юзер вписал их в начало #}
-                {% if safe_val.startswith('Resource\\') %}
-                    {% set safe_val = safe_val[9:] %}
-                {% elif safe_val.startswith('Resource') %}
-                    {% set safe_val = safe_val[8:] %}
-                {% endif %}
-                
-            Resource\ZZMI\{{ slot_name }} = ref Resource{{ safe_val }}
+                {%- if safe_val.startswith('Resource\\') -%}{% set safe_val = safe_val[9:] %}
+                {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}{%- endif -%}
+            Resource\ZZMI\{{ slot_id }} = ref Resource{{ safe_val }}
                 {% set _ = found_textures.append(1) %}
             {% endif %}
+        {% endfor %}
+
+        {# 3. Группируем текстуры под их условиями (if blocks) #}
+        {% for cond in unique_conditions %}
+            if {{ utils.normalize_all_vars(cond, none, scene) }}
+            {%- for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
+                {% set slot_id = key[12:] %}
+                {% if real_obj.get('rzm.TexCond.' + slot_id) == cond %}
+                    {% set safe_val = value | string %}
+                    {%- if safe_val.startswith('Resource\\') -%}{% set safe_val = safe_val[9:] %}
+                    {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}{%- endif -%}
+                Resource\ZZMI\{{ slot_id }} = ref Resource{{ safe_val }}
+                    {% set _ = found_textures.append(1) %}
+                {% endif %}
+            {% endfor %}
+            endif
         {% endfor %}
     {% endif %}
     {# Если в массиве есть хотя бы один элемент, значит текстуры были #}

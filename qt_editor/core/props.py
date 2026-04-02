@@ -388,45 +388,76 @@ def remove_fx(target_ids, index):
             blender_bridge.safe_undo_push("RZM: Remove FX")
             signals.SIGNALS.data_changed.emit()
 
-def update_fx(target_ids, index, value):
-    if not target_ids or index < 0: return
-    with signals.qt_update_guard():
-        elements = bpy.context.scene.rzm.elements
-        changed = False
-        for elem in elements:
-            if elem.id in target_ids and index < len(elem.fx):
-                item = elem.fx[index]
-                if item.value != value:
-                    item.value = value
-                    changed = True
-        
-        if changed:
-            blender_bridge.safe_undo_push("RZM: Update FX")
-            signals.SIGNALS.data_changed.emit()
+def find_longest_common_subsequence(lists):
+    """Finds the longest contiguous subsequence common to all lists."""
+    if not lists: return []
+    ref = lists[0]
+    n = len(ref)
+    for length in range(n, 0, -1):
+        for start in range(n - length + 1):
+            sub = ref[start : start + length]
+            if all(any(other[i : i + length] == sub for i in range(len(other) - length + 1)) for other in lists[1:]):
+                return sub
+    return []
 
 def add_preset_id(target_ids, preset_data):
     if not target_ids: return
     with signals.qt_update_guard():
         elements = bpy.context.scene.rzm.elements
+        targets = [e for e in elements if e.id in target_ids and hasattr(e, "preset_ids")]
+        if not targets: return
         changed = False
         
         is_list = isinstance(preset_data, (list, tuple))
         is_one_to_one = is_list and len(preset_data) == len(target_ids) and len(target_ids) > 1
         
-        assignment_map = {}
         if is_one_to_one:
             assignment_map = {t_id: [preset_data[i]] for i, t_id in enumerate(target_ids)}
-        else:
-            p_ids = preset_data if is_list else [preset_data]
-            assignment_map = {t_id: p_ids for t_id in target_ids}
-            
-        for elem in elements:
-            if elem.id in assignment_map and hasattr(elem, "preset_ids"):
+            for elem in targets:
                 for p_id in assignment_map[elem.id]:
                     if not any(p.preset_id == p_id for p in elem.preset_ids):
                         new_p = elem.preset_ids.add()
                         new_p.preset_id = p_id
                         changed = True
+        else:
+            p_ids = preset_data if is_list else [preset_data]
+            
+            # Smart Insertion Logic
+            if len(targets) > 1 and len(p_ids) == 1:
+                new_p_id = p_ids[0]
+                current_lists = [[p.preset_id for p in e.preset_ids] for e in targets]
+                common = find_longest_common_subsequence(current_lists)
+                
+                for elem in targets:
+                    if any(p.preset_id == new_p_id for p in elem.preset_ids): continue
+                    
+                    insert_idx = -1
+                    if common:
+                        # Find last occurrence of common sequence
+                        curr = [p.preset_id for p in elem.preset_ids]
+                        cl = len(common)
+                        for i in range(len(curr) - cl + 1):
+                            if curr[i : i + cl] == common:
+                                insert_idx = i + cl
+                    
+                    if insert_idx == -1:
+                        new_p = elem.preset_ids.add()
+                        new_p.preset_id = new_p_id
+                    else:
+                        new_p = elem.preset_ids.add()
+                        new_p.preset_id = new_p_id
+                        last_idx = len(elem.preset_ids) - 1
+                        if last_idx != insert_idx:
+                            elem.preset_ids.move(last_idx, insert_idx)
+                    changed = True
+            else:
+                # Normal bulk add
+                for elem in targets:
+                    for p_id in p_ids:
+                        if not any(p.preset_id == p_id for p in elem.preset_ids):
+                            new_p = elem.preset_ids.add()
+                            new_p.preset_id = p_id
+                            changed = True
         
         if changed:
             blender_bridge.safe_undo_push("RZM: Add Preset")
@@ -465,25 +496,57 @@ def add_underlayer_preset_id(target_ids, preset_data):
     if not target_ids: return
     with signals.qt_update_guard():
         elements = bpy.context.scene.rzm.elements
+        targets = [e for e in elements if e.id in target_ids and hasattr(e, "underlayer_preset_ids")]
+        if not targets: return
         changed = False
         
         is_list = isinstance(preset_data, (list, tuple))
         is_one_to_one = is_list and len(preset_data) == len(target_ids) and len(target_ids) > 1
         
-        assignment_map = {}
         if is_one_to_one:
             assignment_map = {t_id: [preset_data[i]] for i, t_id in enumerate(target_ids)}
-        else:
-            p_ids = preset_data if is_list else [preset_data]
-            assignment_map = {t_id: p_ids for t_id in target_ids}
-            
-        for elem in elements:
-            if elem.id in assignment_map and hasattr(elem, "underlayer_preset_ids"):
+            for elem in targets:
                 for p_id in assignment_map[elem.id]:
                     if not any(p.preset_id == p_id for p in elem.underlayer_preset_ids):
                         new_p = elem.underlayer_preset_ids.add()
                         new_p.preset_id = p_id
                         changed = True
+        else:
+            p_ids = preset_data if is_list else [preset_data]
+            
+            if len(targets) > 1 and len(p_ids) == 1:
+                new_p_id = p_ids[0]
+                current_lists = [[p.preset_id for p in e.underlayer_preset_ids] for e in targets]
+                common = find_longest_common_subsequence(current_lists)
+                
+                for elem in targets:
+                    if any(p.preset_id == new_p_id for p in elem.underlayer_preset_ids): continue
+                    
+                    insert_idx = -1
+                    if common:
+                        curr = [p.preset_id for p in elem.underlayer_preset_ids]
+                        cl = len(common)
+                        for i in range(len(curr) - cl + 1):
+                            if curr[i : i + cl] == common:
+                                insert_idx = i + cl
+                    
+                    if insert_idx == -1:
+                        new_p = elem.underlayer_preset_ids.add()
+                        new_p.preset_id = new_p_id
+                    else:
+                        new_p = elem.underlayer_preset_ids.add()
+                        new_p.preset_id = new_p_id
+                        last_idx = len(elem.underlayer_preset_ids) - 1
+                        if last_idx != insert_idx:
+                            elem.underlayer_preset_ids.move(last_idx, insert_idx)
+                    changed = True
+            else:
+                for elem in targets:
+                    for p_id in p_ids:
+                        if not any(p.preset_id == p_id for p in elem.underlayer_preset_ids):
+                            new_p = elem.underlayer_preset_ids.add()
+                            new_p.preset_id = p_id
+                            changed = True
         
         if changed:
             blender_bridge.safe_undo_push("RZM: Add Underlayer Preset")
@@ -526,25 +589,57 @@ def add_helper_id(target_ids, helper_data):
     if not target_ids: return
     with signals.qt_update_guard():
         elements = bpy.context.scene.rzm.elements
+        targets = [e for e in elements if e.id in target_ids and hasattr(e, "helper_ids")]
+        if not targets: return
         changed = False
         
         is_list = isinstance(helper_data, (list, tuple))
         is_one_to_one = is_list and len(helper_data) == len(target_ids) and len(target_ids) > 1
         
-        assignment_map = {}
         if is_one_to_one:
             assignment_map = {t_id: [helper_data[i]] for i, t_id in enumerate(target_ids)}
-        else:
-            h_ids = helper_data if is_list else [helper_data]
-            assignment_map = {t_id: h_ids for t_id in target_ids}
-            
-        for elem in elements:
-            if elem.id in assignment_map and hasattr(elem, "helper_ids"):
+            for elem in targets:
                 for h_id in assignment_map[elem.id]:
                     if not any(h.helper_id == h_id for h in elem.helper_ids):
                         new_h = elem.helper_ids.add()
                         new_h.helper_id = h_id
                         changed = True
+        else:
+            h_ids = helper_data if is_list else [helper_data]
+            
+            if len(targets) > 1 and len(h_ids) == 1:
+                new_h_id = h_ids[0]
+                current_lists = [[h.helper_id for h in e.helper_ids] for e in targets]
+                common = find_longest_common_subsequence(current_lists)
+                
+                for elem in targets:
+                    if any(h.helper_id == new_h_id for h in elem.helper_ids): continue
+                    
+                    insert_idx = -1
+                    if common:
+                        curr = [h.helper_id for h in elem.helper_ids]
+                        cl = len(common)
+                        for i in range(len(curr) - cl + 1):
+                            if curr[i : i + cl] == common:
+                                insert_idx = i + cl
+                    
+                    if insert_idx == -1:
+                        new_h = elem.helper_ids.add()
+                        new_h.helper_id = new_h_id
+                    else:
+                        new_h = elem.helper_ids.add()
+                        new_h.helper_id = new_h_id
+                        last_idx = len(elem.helper_ids) - 1
+                        if last_idx != insert_idx:
+                            elem.helper_ids.move(last_idx, insert_idx)
+                    changed = True
+            else:
+                for elem in targets:
+                    for h_id in h_ids:
+                        if not any(h.helper_id == h_id for h in elem.helper_ids):
+                            new_h = elem.helper_ids.add()
+                            new_h.helper_id = h_id
+                            changed = True
         
         if changed:
             blender_bridge.safe_undo_push("RZM: Add Helper")

@@ -1546,3 +1546,15 @@ global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
 
 
 {% endmacro %}
+
+{% macro generate_missing_resources(scene) -%}
+{% if scene["rzm_missing_textures"] %}
+; --- AUTO-GENERATED MISSING RESOURCES ---
+{% for tex_name in scene["rzm_missing_textures"].split(',') -%}
+{%- if tex_name -%}
+[Resource{{ tex_name }}]
+filename = ./Textures/{{ tex_name }}
+{%- endif -%}
+{%- endfor %}
+{% endif %}
+{%- endmacro %}

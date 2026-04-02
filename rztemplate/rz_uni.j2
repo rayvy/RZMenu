@@ -26,6 +26,7 @@
 
 {% block rz_menu_core %}
 {{core.menu_resource_ui(mod_file,scene)}}
+{{core.generate_missing_resources(scene)}}
 {{core.entryPoint(mod_file,scene)}}
 {{core.baseCompute(mod_file,scene)}}
 {{core.menuDrawUi(mod_file,scene)}}
