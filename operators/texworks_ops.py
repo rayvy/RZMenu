@@ -81,7 +81,8 @@ class RZM_OT_UpdateTwItem(bpy.types.Operator):
                 prop_type = type(getattr(target, final_prop))
                 
                 # Check for vector types (e.g., FloatVectorProperty, IntVectorProperty)
-                if hasattr(prop_type, '__iter__') or "Vector" in str(prop_type):
+                # Note: strings are iterable in Python, so we must explicitly exclude them
+                if (hasattr(prop_type, '__iter__') and prop_type != str) or "Vector" in str(prop_type):
                     # Try parsing as comma separated string
                     vals = [x.strip() for x in self.value_str.split(",")]
                     current_vec = getattr(target, final_prop)
@@ -99,7 +100,7 @@ class RZM_OT_UpdateTwItem(bpy.types.Operator):
                 else:
                     setattr(target, final_prop, self.value_str)
             
-        except (AttributeError, IndexError, ValueError) as e:
+        except (AttributeError, IndexError, ValueError, TypeError) as e:
             print(f"UpdateTwItem Error: {e}")
             return {'CANCELLED'}
             
