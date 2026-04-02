@@ -4,7 +4,7 @@ import bpy
 from functools import partial
 
 from .panel_base import RZEditorPanel
-from .lib.widgets import RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZSpinBox, RZDoubleSpinBox, RZCheckBox, RZGroupBox, RZScrollArea
+from .lib.widgets import RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZSpinBox, RZDoubleSpinBox, RZCheckBox, RZGroupBox, RZScrollArea, RZColorButton
 from .lib.theme import get_current_theme
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
@@ -931,10 +931,8 @@ class TexWorksMainTab(QtWidgets.QWidget):
         if comp.tex_morph_enabled: self.morph_pre.update_resource(comp.tex_morph_resource_name)
         
         # Update Component Mask Preview
-        rzm = bpy.context.scene.rzm
-        base_path = rzm.export.custom_path if hasattr(rzm, "export") else ""
+        base_path = image_utils.get_mod_base_path()
         if comp.mask_enabled and base_path:
-            import os
             mask_path = os.path.join(base_path, "TexWorks", block.name, comp.name, "mask.png")
             self.comp_mask_pre.update_from_path(mask_path)
         else:
@@ -972,7 +970,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
         r1.addWidget(RZLabel("Name:")); r1.addWidget(e_name, 1); l_info.addStretch()
         l_mp = self.details.add_section("Multi-Pass / Symmetries")
         r_mp = QtWidgets.QHBoxLayout(); l_mp.addLayout(r_mp)
-        cb_mode = ComboBoxFix(); self._widgets['mp_mode'] = cb_mode; cb_mode.addItems(["NONE", "DUPLICATE", "INDIVIDUAL"])
+        cb_mode = RZComboBox(); self._widgets['mp_mode'] = cb_mode; cb_mode.addItems(["NONE", "DUPLICATE", "INDIVIDUAL"])
         cb_mode.currentTextChanged.connect(lambda v: self._item_changed("slots", s_idx, "multi_pass_mode", b_idx, c_idx, v))
         r_mp.addWidget(RZLabel("Mode:")); r_mp.addWidget(cb_mode, 1)
         self._widgets['mp_details'] = QtWidgets.QWidget(); l_mpd = QtWidgets.QVBoxLayout(self._widgets['mp_details']); l_mpd.setContentsMargins(0,0,0,0); l_mp.addWidget(self._widgets['mp_details'])
@@ -1041,7 +1039,8 @@ class TexWorksMainTab(QtWidgets.QWidget):
         w['active'].setChecked(slot.active); w['name'].set_text_silent(slot.name); w['mp_mode'].setCurrentText(slot.multi_pass_mode)
         w['mp_details'].setVisible(slot.multi_pass_mode != 'NONE')
         if slot.multi_pass_mode != 'NONE':
-            w['mp_data'].set_text_silent(slot.multi_pass_data)
+            for i in range(4): w[f'mp_data_{i}'].setValue(slot.multi_pass_data[i])
+            w['mp_data_cp'].set_color(slot.multi_pass_data)
             for i in range(4): w[f'mp_rect_{i}'].setValue(slot.multi_pass_rect[i])
             w['mp_rot'].setValue(slot.multi_pass_rotation); w['mp_mirror'].setChecked(slot.multi_pass_mirror); w['mp_flip'].setChecked(slot.multi_pass_flip); w['mp_dummy'].setChecked(slot.multi_pass_dummy)
         for i in range(4): w[f'rect_{i}'].setValue(slot.rect[i])
@@ -1056,8 +1055,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
         for h in ["hsv_enabled", "hsv_only", "hsv_mask_enabled"]: w[h].setChecked(getattr(slot, h))
         w['hsv_link'].set_text_silent(slot.hsv_link); w['mask_en'].setChecked(slot.mask_enabled)
         # Update Slot Mask Preview
-        base_path = rzm.export.custom_path if hasattr(rzm, "export") else ""
-        import os
+        base_path = image_utils.get_mod_base_path()
         if slot.mask_enabled and base_path:
             m_comp = comp.name.replace(" ", "")
             m_slot = slot.name.replace(" ", "")
@@ -1100,6 +1098,7 @@ class TexWorksMainTab(QtWidgets.QWidget):
             lc = QtWidgets.QHBoxLayout(); lv.addLayout(lc); lc.addWidget(RZLabel("Count:")); sp_c = RZSpinBox(); sp_c.setRange(1, 100); sp_c.setValue(lyr.count)
             sp_c.editingFinished.connect(lambda p=sp_c, ix=l_idx: self._item_changed("decal_layers", ix, "count", b_idx, c_idx, p.value(), s_idx)); lc.addWidget(sp_c, 1)
             self.lyr_row.container_layout.addWidget(layer_frame)
+        self.lyr_row.container_layout.addStretch()
 
     def _item_changed(self, coll, idx, prop, b, c, val=None, s=-1):
         if getattr(self, "_is_updating", False): return
