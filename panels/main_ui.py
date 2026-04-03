@@ -44,7 +44,7 @@ class RZM_UL_ToggleDefinitions(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
         row.prop(item, "toggle_name", text="", emboss=False, icon='CHECKBOX_HLT')
-        row.prop(item, "bit_count", text="Bits")
+        row.prop(item, "toggle_length", text="Bits")
 
 class RZM_UL_Shapes(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):

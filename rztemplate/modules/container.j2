@@ -522,6 +522,17 @@ endif
         run = CommandListGetImageCords{{element.conditional_images[0].image_id}}
         endif
     {% endif %}
+
+    {# ─── Hover Image ──────────────────────────────────────────────────────────
+         Генерируется ПОСЛЕДНИМ — перезаписывает $texPos*/texSize* при наведении.
+         Высокий приоритет = позиция в коде (последний win), без доп. draw calls.
+         Работает поверх любого image_mode (SINGLE / CONDITIONAL_LIST / INDEX_LIST).
+    #}
+    {% if element.hover_image_id is defined and element.hover_image_id != -1 %}
+    if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+        run = CommandListGetImageCords{{ element.hover_image_id }}
+    endif
+    {% endif %}
 {% endmacro %}
 
 {%macro generate_fn(element)%}

@@ -298,10 +298,17 @@ def import_image_from_path(filepath):
         # Snapshot existing IDs to find the new one
         pre_images = {img['id'] for img in read.get_available_images()}
         
-        # Execute operator
-        if hasattr(bpy.ops.rzm, "add_image"):
+        # Choose the right operator based on file extension
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext in ['.gif', '.mp4', '.webm', '.avi']:
+            op_name = "add_animated_image"
+        else:
+            op_name = "add_image"
+            
+        if hasattr(bpy.ops.rzm, op_name):
             with bpy.context.temp_override(window=bpy.context.window_manager.windows[0]):
-                res = bpy.ops.rzm.add_image(filepath=filepath)
+                op_callable = getattr(bpy.ops.rzm, op_name)
+                res = op_callable(filepath=filepath)
         else:
             print(f"Core: rzm.add_image operator not found. Path: {filepath}")
             return None, None

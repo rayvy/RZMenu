@@ -70,24 +70,17 @@ class RZM_OT_InstallDependency(bpy.types.Operator):
         
         # --- ФУНКЦИЯ ОБРАТНОГО ВЫЗОВА ---
         def progress_callback(progress, message):
-            # Обновление свойств (можно делать из потока в Blender, но с осторожностью)
-            if dep_prop:
-                if progress == -1:
-                    # Ошибка
-                    pass 
-                else:
-                    dep_prop.status = 'INSTALLING'
-                    dep_prop.install_progress = progress
-            
-            wm.rzm_dependency_install_status = message
-            
-            # Если завершено (успех или провал)
-            if progress == 100 or progress == -1:
-                # Используем таймер, чтобы выполнить код в основном потоке UI
-                def _finalize():
+            def _update_ui():
+                if dep_prop:
+                    if progress == -1:
+                        pass
+                    else:
+                        dep_prop.status = 'INSTALLING'
+                        dep_prop.install_progress = progress
+                wm.rzm_dependency_install_status = message
+                
+                if progress == 100 or progress == -1:
                     bpy.ops.rzm.check_dependencies()
-                    
-                    # Если ошибка, показываем лог
                     if progress == -1:
                         def draw_error_popup(self, context):
                             self.layout.label(text="Installation Failed!", icon='ERROR')
@@ -95,10 +88,8 @@ class RZM_OT_InstallDependency(bpy.types.Operator):
                             self.layout.separator()
                             self.layout.label(text="Check the 'Show Install Log' for details.")
                         bpy.context.window_manager.popup_menu(draw_error_popup, title="Error", icon='ERROR')
-                    
-                    return None
-                
-                bpy.app.timers.register(_finalize, first_interval=0.5)
+                return None
+            bpy.app.timers.register(_update_ui)
 
         self.report({'INFO'}, f"Installing {pip_name}... Please wait.")
         wm.rzm_dependency_install_status = "Initializing..."
@@ -108,6 +99,57 @@ class RZM_OT_InstallDependency(bpy.types.Operator):
             dep_prop.status = 'INSTALLING'
             
         deps.install_package(pip_name, progress_callback)
+        return {'FINISHED'}
+
+class RZM_OT_InstallAllDependencies(bpy.types.Operator):
+    """Установить все недостающие или устаревшие pip-зависимости разом."""
+    bl_idname = "rzm.install_all_dependencies"
+    bl_label = "Install All Missing"
+    
+    @classmethod
+    def poll(cls, context):
+        return not deps.is_installing()
+
+    def execute(self, context):
+        wm = context.window_manager
+        
+        missing_pkgs = []
+        for dep_info in deps.DEPS:
+            if not dep_info.get("pip_name"): continue
+            status = find_dep_status(context, dep_info["name"])
+            if status and status.status in ['NOT_FOUND', 'OUTDATED']:
+                missing_pkgs.append(dep_info["pip_name"])
+                
+        if not missing_pkgs:
+            self.report({'INFO'}, "All dependencies are already installed and up to date.")
+            return {'CANCELLED'}
+            
+        def progress_callback(progress, message):
+            def _update_ui():
+                wm.rzm_dependency_install_status = message
+                if progress == 100 or progress == -1:
+                    bpy.ops.rzm.check_dependencies()
+                    if progress == -1:
+                        def draw_error_popup(self, context):
+                            self.layout.label(text="Batch Installation Failed!", icon='ERROR')
+                            self.layout.label(text=message)
+                            self.layout.separator()
+                            self.layout.label(text="Check the 'Show Install Log' for details.")
+                        bpy.context.window_manager.popup_menu(draw_error_popup, title="Error", icon='ERROR')
+                return None
+            bpy.app.timers.register(_update_ui)
+
+        self.report({'INFO'}, f"Installing {len(missing_pkgs)} packages. Please wait.")
+        wm.rzm_dependency_install_status = "Initializing Batch Install..."
+        
+        for dep_info in deps.DEPS:
+            if dep_info.get("pip_name") in missing_pkgs:
+                dp = find_dep_status(context, dep_info["name"])
+                if dp:
+                    dp.status = 'INSTALLING'
+                    dp.install_progress = 0
+
+        deps.install_multiple_packages(missing_pkgs, progress_callback)
         return {'FINISHED'}
 
 class RZM_OT_ShowInstallLog(bpy.types.Operator):
@@ -138,12 +180,39 @@ class RZM_OT_DebugListAddons(bpy.types.Operator):
     bl_idname = "rzm.debug_list_addons"
     bl_label = "Debug Addons"
     def execute(self, context):
-        self.report({'INFO'}, "Check console")
+        import sys, site
+        import pkg_resources
+        
+        info = []
+        info.append("=== Python Environment ===")
+        info.append(f"User Site: {site.getusersitepackages()}")
+        info.append("Sys Path:")
+        for p in sys.path:
+            info.append(f" - {p}")
+            
+        info.append("\n=== Installed Packages (User Site) ===")
+        try:
+            installed = {pkg.key: pkg.version for pkg in pkg_resources.working_set}
+            for key in sorted(installed.keys()):
+                if key.lower() in ["pyside6", "shiboken6", "pillow", "numpy", "imageio", "imageio-ffmpeg"]:
+                    info.append(f" * {key} == {installed[key]}")
+        except:
+            info.append("Could not read pkg_resources")
+            
+        full_text = "\n".join(info)
+        print(full_text)
+        
+        def draw(self, context):
+            for line in info:
+                self.layout.label(text=line)
+                
+        context.window_manager.popup_menu(draw, title="Environment Info", icon='INFO')
         return {'FINISHED'}
 
 classes_to_register = [
     RZM_OT_CheckDependencies,
     RZM_OT_InstallDependency,
+    RZM_OT_InstallAllDependencies,
     RZM_OT_DebugListAddons,
     RZM_OT_ShowInstallLog,
 ]

@@ -24,6 +24,7 @@ class RZ_PT_DependenciesPanel(bpy.types.Panel):
 
         row = layout.row()
         row.operator("rzm.check_dependencies", text="Check Status", icon='FILE_REFRESH')
+        row.operator("rzm.install_all_dependencies", text="Install All Missing", icon='IMPORT')
         row.operator("rzm.debug_list_addons", text="Debug Addons", icon='INFO')
         
         box = layout.box()

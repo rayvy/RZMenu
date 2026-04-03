@@ -66,6 +66,7 @@ class RZMenuConfig(bpy.types.PropertyGroup):
     post_snippet: StringProperty(name="Post Snippet", default="", update=on_snippet_update)
     mod_info: StringProperty(name="Mod Info", default="", description="Custom mod metadata for meta.j2")
     custom_interpolation_speed: FloatProperty(name="Interpolation Speed", default=16.0, min=0.001, max=100.0)
+    
 
 
 class DependencyStatus(bpy.types.PropertyGroup):
@@ -167,6 +168,10 @@ class RZMExportSettings(bpy.types.PropertyGroup):
         ],
         default='SRGB'
     )
+    
+    # --- Atlas Tracking ---
+    atlas_is_dirty: BoolProperty(name="Atlas Dirty Flag", default=True)
+    atlas_last_hash: StringProperty(name="Atlas Config Hash", default="")
 
 class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debugger_info: BoolProperty(name="DebuggerInfo", default=False)

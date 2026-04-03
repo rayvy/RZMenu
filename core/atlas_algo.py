@@ -24,51 +24,71 @@ class PackerNode:
         self.down = PackerNode(x=self.x, y=self.y + h, w=self.w, h=self.h - h)
         return self
 
-def calculate_atlas_layout(image_sizes_dict: dict):
+# Зазор между элементами атласа в пикселях (предотвращает texture bleeding).
+ATLAS_MARGIN = 2
+
+def calculate_atlas_layout(image_sizes_dict: dict, margin: int = ATLAS_MARGIN):
     """
     БЫСТРАЯ ЧАСТЬ: Только рассчитывает геометрию атласа без обработки пикселей.
     Принимает словарь {name: (width, height)}.
     Возвращает (atlas_w, atlas_h), uv_data_dict.
+
+    margin: пикселей зазора между элементами (предотвращает texture bleeding).
+    Каждый блок резервирует (w+margin, h+margin) в атласе.
+    UV-координаты уже включают отступ margin//2 внутрь, поэтому
+    пиксели изображения окружены прозрачной окантовкой со всех сторон.
     """
     if not image_sizes_dict:
         print("DEBUG LAYOUT: No image sizes provided.")
         return (0, 0), {}
 
-    print(f"DEBUG LAYOUT: Calculating layout for {len(image_sizes_dict)} images.")
+    print(f"DEBUG LAYOUT: Calculating layout for {len(image_sizes_dict)} images with margin {margin}.")
     
     images = sorted(image_sizes_dict.items(), key=lambda item: item[1][1], reverse=True)
-    
-    root_w, root_h = images[0][1]
-    root = PackerNode(w=root_w, h=root_h)
+
+    # Первый слот с учётом зазора
+    first_w, first_h = images[0][1]
+    root = PackerNode(w=first_w + margin, h=first_h + margin)
     uv_data = {}
 
     for name, (w, h) in images:
-        node = root.find_space(w, h)
+        pw, ph = w + margin, h + margin  # padded slot размер
+
+        node = root.find_space(pw, ph)
         if node:
-            split_node = node.split_node(w, h)
-            uv_data[name] = {'uv_coords': [split_node.x, split_node.y], 'uv_size': [w, h]}
+            split_node = node.split_node(pw, ph)
+            # UV сдвинут на margin//2 внутрь слота — пиксели не касаются краёв
+            uv_data[name] = {
+                'uv_coords': [split_node.x + margin // 2, split_node.y + margin // 2],
+                'uv_size': [w, h]
+            }
         else:
-            can_grow_down = w <= root.w; can_grow_right = h <= root.h
-            should_grow_right = can_grow_right and (root.h >= (root.w + w))
-            should_grow_down = can_grow_down and (root.w >= (root.h + h))
+            can_grow_down = pw <= root.w
+            can_grow_right = ph <= root.h
+            should_grow_right = can_grow_right and (root.h >= (root.w + pw))
+            should_grow_down = can_grow_down and (root.w >= (root.h + ph))
             if should_grow_right:
-                new_root = PackerNode(w=root.w + w, h=root.h); new_root.used = True; new_root.down = root
-                new_root.right = PackerNode(x=root.w, y=0, w=w, h=root.h); root = new_root
+                new_root = PackerNode(w=root.w + pw, h=root.h); new_root.used = True; new_root.down = root
+                new_root.right = PackerNode(x=root.w, y=0, w=pw, h=root.h); root = new_root
             elif should_grow_down:
-                new_root = PackerNode(w=root.w, h=root.h + h); new_root.used = True; new_root.down = PackerNode(x=0, y=root.h, w=root.w, h=h)
+                new_root = PackerNode(w=root.w, h=root.h + ph); new_root.used = True
+                new_root.down = PackerNode(x=0, y=root.h, w=root.w, h=ph)
                 new_root.right = root; root = new_root
             else:
-                new_root = PackerNode(w=root.w + w, h=root.h); new_root.used = True; new_root.down = root
-                new_root.right = PackerNode(x=root.w, y=0, w=w, h=root.h); root = new_root
-            node = root.find_space(w, h)
-            split_node = node.split_node(w, h)
-            uv_data[name] = {'uv_coords': [split_node.x, split_node.y], 'uv_size': [w, h]}
+                new_root = PackerNode(w=root.w + pw, h=root.h); new_root.used = True; new_root.down = root
+                new_root.right = PackerNode(x=root.w, y=0, w=pw, h=root.h); root = new_root
+            node = root.find_space(pw, ph)
+            split_node = node.split_node(pw, ph)
+            uv_data[name] = {
+                'uv_coords': [split_node.x + margin // 2, split_node.y + margin // 2],
+                'uv_size': [w, h]
+            }
 
     unpadded_w, unpadded_h = root.w, root.h
     atlas_w = (unpadded_w + 3) & ~3
     atlas_h = (unpadded_h + 3) & ~3
     print(f"DEBUG LAYOUT: Calculated atlas size: {atlas_w}x{atlas_h}")
-    
+
     return (atlas_w, atlas_h), uv_data
 
 def apply_gamma_correction(atlas_pixels, width, height):

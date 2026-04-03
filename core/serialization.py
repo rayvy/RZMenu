@@ -178,6 +178,11 @@ class RZTemplateEngine:
             if hasattr(elem, "conditional_images"):
                 for ci in elem.conditional_images:
                     if ci.image_id != -1: deps_ids["images"].add(ci.image_id)
+            # Hover и extramap тоже пакуются в экспорт
+            if hasattr(elem, 'hover_image_id') and elem.hover_image_id != -1:
+                deps_ids["images"].add(elem.hover_image_id)
+            if hasattr(elem, 'extramap_image_id') and elem.extramap_image_id != -1:
+                deps_ids["images"].add(elem.extramap_image_id)
 
         # Scan TexWorks dependencies
         for block in self.rzm.tw_blocks:
@@ -418,6 +423,11 @@ class RZTemplateEngine:
                 for ci in el["conditional_images"]:
                     if ci.get("image_id") in img_remap:
                         ci["image_id"] = img_remap[ci["image_id"]]
+            # Hover и extramap: тоже ремапируем при импорте
+            if "hover_image_id" in el and el["hover_image_id"] in img_remap:
+                el["hover_image_id"] = img_remap[el["hover_image_id"]]
+            if "extramap_image_id" in el and el.get("extramap_image_id") in img_remap:
+                el["extramap_image_id"] = img_remap[el["extramap_image_id"]]
 
         origin = data.get("offset_origin", [0, 0])
 

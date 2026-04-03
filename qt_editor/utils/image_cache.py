@@ -26,10 +26,12 @@ class ImageCache:
 
     def __init__(self):
         self._cache = {} # {image_id: QPixmap}
+        self._anim_cache = {} # {name_frame: QPixmap}
 
     def clear(self):
         """Очистка кэша перед обновлением."""
         self._cache.clear()
+        self._anim_cache.clear()
 
     def pre_cache_image(self, image_id):
         """
@@ -117,3 +119,31 @@ class ImageCache:
     def get_pixmap(self, image_id):
         """Возвращает картинку из кэша. Не лезет в Blender."""
         return self._cache.get(image_id, None)
+
+    def get_anim_frame(self, base_name, frame_idx):
+        """Достает запеченный кадр анимации из Blender и кэширует его."""
+        key = f"{base_name}_anim_{frame_idx:04d}"
+        if key in self._anim_cache:
+            return self._anim_cache[key]
+            
+        # Если нет в кэше, пробуем достать из Blender
+        bl_img = bpy.data.images.get(key)
+        if not bl_img: return None
+        
+        try:
+            width, height = bl_img.size
+            if width <= 0 or height <= 0: return None
+            
+            raw_pixels = np.array(bl_img.pixels[:], dtype=np.float32)
+            pixels_uint8 = (raw_pixels * 255).astype(np.uint8)
+            pixels_reshaped = pixels_uint8.reshape((height, width, 4))
+            pixels_flipped = np.flipud(pixels_reshaped)
+            
+            final_buffer = np.require(pixels_flipped, requirements=['C'])
+            q_image = QtGui.QImage(final_buffer.data, width, height, width*4, QtGui.QImage.Format_RGBA8888).copy()
+            
+            pix = QtGui.QPixmap.fromImage(q_image)
+            self._anim_cache[key] = pix
+            return pix
+        except:
+            return None

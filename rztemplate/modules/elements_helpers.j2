@@ -112,12 +112,44 @@ endif
     [CommandListGetImageCords-1]
     {% for image in scene.rzm.images %}
         {% if image.id not in processed_ids['images'] %}
+
+        {% if image.source_type == 'ANIMATED' and image.anim_sequence | length > 0 %}
+            {# ─── ANIMATED: генерируем if/elif цепочку по time ─────────────── #}
+            {% set sequence = image.anim_sequence %}
+            {% set frames = image.anim_frames %}
+            {% set speed = image.anim_speed_multiplier if image.anim_speed_multiplier is defined else 1.0 %}
+            {% set total_dur = image.anim_total_duration / speed if speed > 0 else image.anim_total_duration %}
+            [CommandListGetImageCords{{ image.id }}]
+            $drawType = 1
+            local $anim_t = time % {{ "%.6f" | format(total_dur) }}
+            {%- set ns = {'t': 0.0} %}
+            {% for seq in sequence %}
+                {%- set frame = frames[seq.frame_index] %}
+                {%- set t_start = ns['t'] %}
+                {%- set t_end = t_start + seq.duration / speed %}
+                {% if loop.first %}
+            if $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
+                {% else %}
+            elif $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
+                {% endif %}
+            $texPosX = {{ frame.x }}
+            $texPosY = {{ frame.y }}
+            $texSizeX = {{ frame.w }}
+            $texSizeY = {{ frame.h }}
+                {%- if ns.update({'t': t_end}) %}{% endif %}
+            {% endfor %}
+            endif
+
+        {% else %}
+            {# ─── STANDARD: статические 4 строки ───────────────────────────── #}
             [CommandListGetImageCords{{ image.id }}]
             $drawType = 1
             $texPosX = {{ image.uv_coords[0] }}
             $texPosY = {{ image.uv_coords[1] }}
             $texSizeX = {{ image.uv_size[0] }}
             $texSizeY = {{ image.uv_size[1] }}
+        {% endif %}
+
         {% set _ = processed_ids['images'].append(image.id) %}
         {% endif %}
     {% endfor %}

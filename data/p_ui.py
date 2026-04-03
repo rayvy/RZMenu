@@ -4,11 +4,16 @@ from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, 
 
 # Импорт констант и зависимых типов из соседних файлов data
 from .constants import FX_COMMANDS, FN_COMMANDS
-from .p_images import ConditionalImage
+from .p_images import ConditionalImage, mark_atlas_dirty_img
 from .p_logic import ValueLinkProperty, AssignedToggle
 
 class FXProperty(bpy.types.PropertyGroup): value: EnumProperty(name="Effect", items=FX_COMMANDS)
 class FNProperty(bpy.types.PropertyGroup): function_name: EnumProperty(name="Function", items=FN_COMMANDS)
+
+def mark_atlas_dirty(self, context):
+    """Sets the atlas dirty flag to True when an image-related property changes."""
+    if hasattr(context.scene, "rzm"):
+        context.scene.rzm.export_settings.atlas_is_dirty = True
 
 class RZFontSlotSettings(bpy.types.PropertyGroup):
     font_source: EnumProperty(
@@ -81,8 +86,9 @@ class RZMenuElement(bpy.types.PropertyGroup):
     text_align: EnumProperty(name="Text Align", items=[('LEFT', "Left", ""), ('CENTER', "Center", ""), ('RIGHT', "Right", "")], default='LEFT')
     image_mode: EnumProperty(name="Image Mode", items=[('SINGLE', "Single", ""), ('CONDITIONAL_LIST', "Conditional List", ""), ('INDEX_LIST', "Index List", "")], default='SINGLE')
     image_blending_mode: EnumProperty(name="Blending Mode",description="Determines how color parameters affect the image",items=[('NONE', "None", "Color parameters have no effect on the image"),('OVERLAY', "Overlay", "Standard Overlay blending (Photoshop style)"),('COLOR', "Color_HUE", "Forces target Hue while preserving Saturation and Value (similar to Blender Color mode)")],default='NONE')
-    image_id: IntProperty(name="Image ID",description="ID изображения (-1 = нет)",default=-1)
-    hover_image_id: IntProperty(name="Hover Image ID", description="ID изображения при наведении (-1 = нет)", default=-1)
+    image_id: IntProperty(name="Image ID",description="ID изображения (-1 = нет)",default=-1, update=mark_atlas_dirty)
+    hover_image_id: IntProperty(name="Hover Image ID", description="ID изображения при наведении (-1 = нет). Имеет высокий приоритет — заменяет любой image_mode при ховере.", default=-1, update=mark_atlas_dirty)
+    extramap_image_id: IntProperty(name="ExtraMap Image ID", description="ID изображения для extra map (-1 = нет). Функционал шейдера в разработке.", default=-1, update=mark_atlas_dirty)
     flip_x: BoolProperty(name="Flip X", default=False)
     flip_y: BoolProperty(name="Flip Y", default=False)
     conditional_images: CollectionProperty(type=ConditionalImage)

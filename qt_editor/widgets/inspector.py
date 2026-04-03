@@ -1408,7 +1408,6 @@ class RZMInspectorPanel(RZEditorPanel):
             h_ratio = QtWidgets.QHBoxLayout()
             self.btn_reset_ratio = QtWidgets.QPushButton("Reset Ratio")
             self.btn_reset_ratio.setToolTip("Match element height to image aspect ratio")
-            self.btn_reset_ratio.clicked.connect(self._on_reset_ratio_clicked)
             h_ratio.addWidget(self.btn_reset_ratio)
             
             self.chk_lock_ratio = self._add_row(h_ratio, "", RZCheckBox("Lock Ratio"), 'qt_lock_ratio')

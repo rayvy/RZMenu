@@ -24,7 +24,7 @@ os.environ["QT_API"] = "pyside6"
 try:
     user_site = site.getusersitepackages()
     if user_site not in sys.path:
-        sys.path.append(user_site)
+        sys.path.insert(0, user_site)
 except Exception:
     pass
 

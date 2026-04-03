@@ -689,9 +689,27 @@ def get_available_images() -> list[dict]:
         
     for img in rzm.images:
         ImageCache.instance().pre_cache_image(img.id)
-        results.append({
+        img_dict = {
             'id': img.id,
             'name': img.display_name,
-            'source_type': getattr(img, 'source_type', 'CUSTOM')
-        })
+            'source_type': getattr(img, 'source_type', 'CUSTOM'),
+            'path': getattr(img, 'anim_source_path', ''),
+            'uv_coords': [img.uv_coords[0], img.uv_coords[1]],
+            'uv_size': [img.uv_size[0], img.uv_size[1]],
+        }
+        
+        # Инфо об анимации
+        if img_dict['source_type'] == 'ANIMATED':
+            img_dict.update({
+                'anim_preset': img.anim_export_preset,
+                'anim_start': img.anim_start_frame,
+                'anim_end': img.anim_end_frame,
+                'anim_max': img.anim_max_frames,
+                'anim_speed': img.anim_speed_multiplier,
+                'anim_frame_count': img.anim_frame_count,
+                'anim_total_dur': img.anim_total_duration,
+                'anim_paused': img.anim_paused
+            })
+        
+        results.append(img_dict)
     return results

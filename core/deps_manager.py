@@ -49,7 +49,31 @@ DEPS = [
         "pip_name": "Pillow",
         "target_version": "12.1.1",
         "is_optional": False
-    }
+    },
+    {
+        "name": "imageio",
+        "import_name": "imageio",
+        "pip_name": "imageio",
+        "target_version": "2.37.0",
+        "is_optional": True,
+        "description": "Чтение видеофайлов (MP4/WebM/AVI) для анимированных изображений"
+    },
+    {
+        "name": "av (PyAV)",
+        "import_name": "av",
+        "pip_name": "av",
+        "target_version": "14.1.0",
+        "is_optional": False,
+        "description": "Движок для декодирования видео в imageio"
+    },
+    {
+        "name": "imageio-ffmpeg",
+        "import_name": "imageio_ffmpeg",
+        "pip_name": "imageio-ffmpeg",
+        "target_version": "0.6.0",
+        "is_optional": True,
+        "description": "FFmpeg backend для imageio (требуется для MP4/WebM)"
+    },
 
 ]
 
@@ -193,33 +217,62 @@ def ensure_user_pip(callback):
         
     return code == 0
 
-def move_conflicting_packages(callback):
+def move_conflicting_packages(package_name, callback):
     """
-    Пытается переименовать существующие папки PySide6 и shiboken6,
+    Пытается переименовать существующие папки пакетов (и их зависимости),
     чтобы освободить место для новой установки, даже если файлы заблокированы.
     """
     try:
+        import site
         site_packages = site.getusersitepackages()
         if not os.path.exists(site_packages):
             return True
 
-        targets = ["PySide6", "shiboken6"]
-        ts = int(time.time())
+        target_map = {
+            "pyside6": ["PySide6", "shiboken6"],
+            "pillow": ["PIL"],
+            "numpy": ["numpy"],
+            "imageio": ["imageio", "numpy", "PIL"], 
+            "av": ["av", "libav"],
+            "imageio-ffmpeg": ["imageio_ffmpeg"],
+        }
         
-        for name in targets:
-            path = os.path.join(site_packages, name)
-            if os.path.exists(path):
-                new_name = f"{name}_trash_{ts}"
-                new_path = os.path.join(site_packages, new_name)
-                log_msg(f"Moving locked folder {name} to {new_name}...")
+        targets = []
+        name_lower = package_name.lower()
+        for key in target_map:
+            if key in name_lower:
+                targets.extend(target_map[key])
                 
+        targets = list(set(targets))
+        if not targets:
+            return True
+
+        ts = int(time.time())
+        import glob
+        
+        for base_name in targets:
+            # 1. Сначала ищем саму папку пакета
+            path = os.path.join(site_packages, base_name)
+            if os.path.exists(path):
+                new_name = f"{base_name}_trash_{ts}"
+                new_path = os.path.join(site_packages, new_name)
+                log_msg(f"Moving locked folder {base_name} to {new_name}...")
                 try:
                     os.rename(path, new_path)
                 except OSError as e:
-                    # Если переименовать не удалось (совсем жесткий лок), это проблема
-                    log_msg(f"Warning: Could not move {name}: {e}")
-                    # Но мы продолжим, надеясь, что pip справится
-                    
+                    log_msg(f"Warning: Could not move {base_name}: {e}")
+            
+            # 2. Ищем папки dist-info 
+            dist_pattern = os.path.join(site_packages, f"{base_name}*.dist-info")
+            for dist_path in glob.glob(dist_pattern):
+                if os.path.exists(dist_path):
+                    dist_basename = os.path.basename(dist_path)
+                    new_dist_path = os.path.join(site_packages, f"{dist_basename}_trash_{ts}")
+                    try:
+                        os.rename(dist_path, new_dist_path)
+                    except OSError:
+                        pass
+
     except Exception as e:
         log_msg(f"Pre-install cleanup error: {e}")
 
@@ -245,7 +298,7 @@ def install_logic(package_name, callback):
     # --- ЭТАП ОЧИСТКИ ---
     # Перемещаем старые папки, чтобы обойти блокировку Windows
     if callback: callback(35, "Cleaning up old files...")
-    move_conflicting_packages(callback)
+    move_conflicting_packages(package_name, callback)
     # --------------------
 
     if callback: callback(40, f"Installing {package_name}...")
@@ -268,7 +321,7 @@ def install_logic(package_name, callback):
             importlib.reload(site)
             user_site = site.getusersitepackages()
             if user_site not in sys.path:
-                sys.path.append(user_site)
+                sys.path.insert(0, user_site)
         except:
             pass
     else:
@@ -292,3 +345,25 @@ def install_package(package_name, callback=None):
             _installing = False
 
     threading.Thread(target=_worker, daemon=True).start()
+
+def install_multiple_packages(package_names, callback=None):
+    """Устанавливает несколько пакетов последовательно в одном фоновом потоке."""
+    global _installing
+    if _installing: return
+
+    def _worker():
+        global _installing
+        _installing = True
+        try:
+            for i, pkg in enumerate(package_names):
+                if callback: callback(1, f"Preparing {pkg} ({i+1}/{len(package_names)})...")
+                install_logic(pkg, callback)
+            if callback: callback(100, "All Done! Restart Blender.")
+        except Exception as e:
+            import traceback
+            log_msg(f"Critical in batch: {traceback.format_exc()}")
+            if callback: callback(-1, f"Batch Error: {e}")
+        finally:
+            _installing = False
+
+    threading.Thread(target=_worker, daemon=True).start()

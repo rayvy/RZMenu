@@ -6,7 +6,7 @@ from bpy.props import (
 )
 
 # Импорт из под-модулей в той же папке data
-from .p_images import RZMCaptureSettings, RZMenuImage, ConditionalImage
+from .p_images import RZMCaptureSettings, RZMenuImage, ConditionalImage, RZMenuAnimationFrame, RZMenuAnimationSequence
 from .p_logic import (
     ValueLinkProperty, ValueProperty, ToggleDefinition, 
     BitProperty, AssignedToggle, RZMCondition, 
@@ -70,7 +70,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     tw_show_res_details: BoolProperty(name="Show Details", default=False)
 
 classes_to_register = [
-    RZMCaptureSettings, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
+    RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
     ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
     TexResource, TexOverride, TexWorksMaterial, 

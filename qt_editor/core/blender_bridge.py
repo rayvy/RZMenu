@@ -251,3 +251,68 @@ def get_templates_list(folder_path):
                 })
     return templates
 
+def update_asset_property(asset_id, prop_name, value):
+    """Обновляет свойство изображения в Blender."""
+    if not bpy.context or not bpy.context.scene: return
+    rzm = bpy.context.scene.rzm
+    img = next((i for i in rzm.images if i.id == asset_id), None)
+    if not img: return
+    
+    # Маппинг имен свойств Qt -> Blender (если не совпадают)
+    attr_map = {
+        'anim_preset': 'anim_export_preset',
+        'anim_start': 'anim_start_frame',
+        'anim_end': 'anim_end_frame',
+        'anim_max': 'anim_max_frames',
+        'anim_speed': 'anim_speed_multiplier',
+        'name': 'display_name'
+    }
+    blender_prop = attr_map.get(prop_name, prop_name)
+    
+    if hasattr(img, blender_prop):
+        try:
+            setattr(img, blender_prop, value)
+            print(f"[Bridge] Updated asset {asset_id}: {blender_prop} = {value}")
+        except Exception as e:
+            print(f"[Bridge] Error updating {blender_prop}: {e}")
+
+def delete_asset(asset_id, asset_type):
+    """Удаляет ассет из проекта."""
+    from .signals import SIGNALS
+    if not bpy.context or not bpy.context.scene: return
+    rzm = bpy.context.scene.rzm
+    
+    if asset_type == "IMAGE":
+        idx = next((i for i, img in enumerate(rzm.images) if img.id == asset_id), -1)
+        if idx != -1:
+            img = rzm.images[idx]
+            # Чистим данные Blender (если картинка больше нигде не используется)
+            if img.image_pointer:
+                # В идеале проверять пользователей через users_count, но в аддоне 
+                # мы часто храним ссылки на превью, которые можно удалить.
+                pass
+            rzm.images.remove(idx)
+            print(f"[Bridge] Deleted image asset {asset_id}")
+            SIGNALS.structure_changed.emit()
+            
+    elif asset_type == "TEMPLATE":
+        # asset_id в данном случае - это путь к файлу
+        if os.path.exists(asset_id):
+            try:
+                os.remove(asset_id)
+                print(f"[Bridge] Deleted template file: {asset_id}")
+                SIGNALS.structure_changed.emit()
+            except Exception as e:
+                print(f"[Bridge] Error deleting template: {e}")
+
+def trigger_atlas_update():
+    """Запускает оператор обновления атласа (нарезка, упаковка)."""
+    if hasattr(bpy.ops.rzm, "update_atlas_layout"):
+        try:
+            bpy.ops.rzm.update_atlas_layout()
+            print("[Bridge] Atlas update triggered.")
+            return True
+        except Exception as e:
+            print(f"[Bridge] Atlas update error: {e}")
+    return False
+

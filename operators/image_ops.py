@@ -1,6 +1,7 @@
 # RZMenu/operators/image_ops.py
 import bpy
 import os
+import json
 from pathlib import Path
 from ..core.utils import get_next_image_id
 from ..core.atlas_algo import calculate_atlas_layout, create_atlas_pixels, inject_paintnet_metadata, inject_metadata_profile
@@ -114,20 +115,77 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
         for img in rzm.images:
             img.uv_coords, img.uv_size = (0, 0), (0, 0)
 
+        # --- ЧЕСТНЫЙ ПОИСК ИСПОЛЬЗУЕМЫХ ID ---
         used_image_ids = set()
         for elem in rzm.elements:
-            if elem.image_mode == 'SINGLE' and elem.image_id != -1:
+            if elem.image_id != -1:
                 used_image_ids.add(elem.image_id)
-            else:
-                for cond_img in elem.conditional_images:
-                    if cond_img.image_id != -1:
-                        used_image_ids.add(cond_img.image_id)
+            if elem.hover_image_id != -1:
+                used_image_ids.add(elem.hover_image_id)
+            if hasattr(elem, 'extramap_image_id') and elem.extramap_image_id != -1:
+                used_image_ids.add(elem.extramap_image_id)
+            for cond_img in elem.conditional_images:
+                if cond_img.image_id != -1:
+                    used_image_ids.add(cond_img.image_id)
 
-        image_sizes_to_pack = {
-            img.display_name: img.image_pointer.size
-            for img in rzm.images
-            if img.id in used_image_ids and img.image_pointer
-        }
+        # Собираем размеры для упаковки.
+        image_sizes_to_pack = {}
+        # Временное хранилище для пикселей/данных анимации, чтобы не перечитывать в ExportAtlas
+        # (Хранится только во время работы оператора)
+        
+        from ..core.animated_loader import load_animated_advanced
+
+        for img in rzm.images:
+            if img.id not in used_image_ids:
+                # Очищаем данные у неиспользуемых анимированных картинок, чтобы не сбивать с толку
+                if img.source_type == 'ANIMATED':
+                    img.anim_frames.clear()
+                    img.anim_sequence.clear()
+                continue
+
+            if img.source_type == 'ANIMATED':
+                if not img.anim_source_path or not os.path.exists(img.anim_source_path):
+                    continue
+                
+                try:
+                    # Извлекаем уникальные кадры на лету согласно пресету
+                    unique_frames, sequence = load_animated_advanced(
+                        img.anim_source_path,
+                        preset=img.anim_export_preset,
+                        start_frame=img.anim_start_frame,
+                        end_frame=img.anim_end_frame,
+                        max_source_frames=img.anim_max_frames
+                    )
+                    
+                    # Обновляем нативные коллекции
+                    img.anim_frames.clear()
+                    img.anim_sequence.clear()
+                    
+                    for f in unique_frames:
+                        it = img.anim_frames.add()
+                        it.w, it.h = f['size']
+                    
+                    for seq_item in sequence:
+                        it = img.anim_sequence.add()
+                        it.frame_index = seq_item['idx']
+                        it.duration = seq_item['duration']
+
+                    img.anim_frame_count = len(unique_frames)
+                    img.anim_total_duration = sum(s['duration'] for s in sequence)
+
+                    # Добавляем уникальные кадры в паковщик
+                    for n, f in enumerate(unique_frames):
+                        frame_key = f"{img.display_name}_anim_{n:04d}"
+                        image_sizes_to_pack[frame_key] = f['size']
+                        
+                except Exception as e:
+                    print(f"[RZM] Error processing animation {img.display_name}: {e}")
+                    continue
+
+            elif img.image_pointer:
+                w, h = img.image_pointer.size
+                if w > 0 and h > 0:
+                    image_sizes_to_pack[img.display_name] = (w, h)
 
         if not image_sizes_to_pack:
             self.report({'WARNING'}, "No used images found to create a layout.")
@@ -137,16 +195,42 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
 
         rzm.atlas_size = (atlas_w, atlas_h)
 
+        # Обновляем UV данные изображений
         updated_count = 0
         for rzm_image in rzm.images:
-            if rzm_image.display_name in uv_data:
+            if rzm_image.source_type == 'ANIMATED' and rzm_image.id in used_image_ids:
+                # Обновляем координаты в anim_frames
+                for n in range(rzm_image.anim_frame_count):
+                    frame_key = f"{rzm_image.display_name}_anim_{n:04d}"
+                    if frame_key in uv_data:
+                        coords = uv_data[frame_key]['uv_coords']
+                        size = uv_data[frame_key]['uv_size']
+                        rzm_image.anim_frames[n].x = coords[0]
+                        rzm_image.anim_frames[n].y = coords[1]
+                        rzm_image.anim_frames[n].w = size[0]
+                        rzm_image.anim_frames[n].h = size[1]
+                
+                # Обновляем JSON для совместимости с шаблоном
+                legacy_json = []
+                for seq in rzm_image.anim_sequence:
+                    f = rzm_image.anim_frames[seq.frame_index]
+                    legacy_json.append([f.x, f.y, f.w, f.h, seq.duration])
+                rzm_image.anim_frame_coords = json.dumps(legacy_json)
+
+                # UV главного изображения = первый кадр (для превью в редакторе)
+                if rzm_image.anim_frames:
+                    rzm_image.uv_coords = (rzm_image.anim_frames[0].x, rzm_image.anim_frames[0].y)
+                    rzm_image.uv_size = (rzm_image.anim_frames[0].w, rzm_image.anim_frames[0].h)
+                updated_count += 1
+
+            elif rzm_image.display_name in uv_data:
                 data = uv_data[rzm_image.display_name]
                 rzm_image.uv_coords = data['uv_coords']
                 rzm_image.uv_size = data['uv_size']
                 updated_count += 1
-        
+
         self.report({'INFO'}, f"Layout updated for {updated_count} images. Atlas size: {atlas_w}x{atlas_h}")
-        
+        rzm.export_settings.atlas_is_dirty = False
         return {'FINISHED'}
 
 class RZM_OT_ExportAtlas(bpy.types.Operator):
@@ -156,9 +240,13 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        bpy.ops.rzm.update_atlas_layout()
         rzm = context.scene.rzm
-        export_settings = rzm.export_settings  # Восстанавливаем доступ к настройкам
+        export_settings = rzm.export_settings
+        
+        if export_settings.atlas_is_dirty:
+            bpy.ops.rzm.update_atlas_layout()
+        else:
+            print("[RZM] Atlas is not dirty, skipping layout update.")
         
         # --- ЛОГИКА ОПРЕДЕЛЕНИЯ КОРНЕВОЙ ПАПКИ ---
         root_path = ""
@@ -201,24 +289,69 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         if not os.path.exists(export_path):
             os.makedirs(export_path, exist_ok=True)
 
-        # ... ДАЛЕЕ ТВОЙ КОД РЕНДЕРА (без изменений) ...
+        # --- СБОР ИСПОЛЬЗУЕМЫХ ID (КАК В UPDATE LAYOUT) ---
+        used_image_ids = set()
+        for elem in rzm.elements:
+            if elem.image_id != -1: used_image_ids.add(elem.image_id)
+            if elem.hover_image_id != -1: used_image_ids.add(elem.hover_image_id)
+            if hasattr(elem, 'extramap_image_id') and elem.extramap_image_id != -1:
+                used_image_ids.add(elem.extramap_image_id)
+            for cond_img in elem.conditional_images:
+                if cond_img.image_id != -1: used_image_ids.add(cond_img.image_id)
 
-        images_to_render = {
-            img.display_name: img.image_pointer
-            for img in rzm.images
-            if img.image_pointer and any(img.uv_size)
-        }
+        # Собираем все изображения, которые нужно отрендерить в атлас
+        from ..core.animated_loader import load_animated_advanced, frames_to_blender_images
+
+        images_to_render = {} # Key: unique_frame_key, Value: bpy.data.Image (temporary)
+        temp_bl_images = []
+
+        for img in rzm.images:
+            if img.id not in used_image_ids: continue
+
+            if img.source_type == 'ANIMATED':
+                # Снова извлекаем на лету
+                unique_frames, _ = load_animated_advanced(
+                    img.anim_source_path,
+                    preset=img.anim_export_preset,
+                    start_frame=img.anim_start_frame,
+                    end_frame=img.anim_end_frame,
+                    max_source_frames=img.anim_max_frames
+                )
+                
+                # Создаем временные Blender-картинки для рендера
+                bl_frames = frames_to_blender_images(unique_frames, f"TEMP_{img.display_name}")
+                temp_bl_images.extend(bl_frames)
+                
+                for n, bl_img in enumerate(bl_frames):
+                    frame_key = f"{img.display_name}_anim_{n:04d}"
+                    images_to_render[frame_key] = bl_img
+            
+            elif img.image_pointer and any(img.uv_size):
+                images_to_render[img.display_name] = img.image_pointer
         
         if not images_to_render:
             return {'CANCELLED'}
             
         atlas_w, atlas_h = rzm.atlas_size
-        uv_data = {
-            img.display_name: {'uv_coords': list(img.uv_coords), 'uv_size': list(img.uv_size)}
-            for img in rzm.images if any(img.uv_size)
-        }
+        
+        # 2. Собираем UV-данные всех элементов (включая кадры анимации)
+        uv_data = {}
+        for img in rzm.images:
+            if img.source_type == 'ANIMATED':
+                # Повторяем логику формирования ключей:
+                for n, frame in enumerate(img.anim_frames):
+                    frame_key = f"{img.display_name}_anim_{n:04d}"
+                    uv_data[frame_key] = {
+                        'uv_coords': [frame.x, frame.y],
+                        'uv_size': [frame.w, frame.h]
+                    }
+            elif any(img.uv_size):
+                uv_data[img.display_name] = {
+                    'uv_coords': list(img.uv_coords),
+                    'uv_size': list(img.uv_size)
+                }
 
-        # 1. Генерируем пиксели С УЧЕТОМ ГАММЫ (если SRGB)
+        # 3. Генерируем пиксели С УЧЕТОМ ГАММЫ (если SRGB)
         atlas_pixels = create_atlas_pixels(
             images_to_render, 
             atlas_w, 
@@ -238,6 +371,10 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             temp_image.save()
             
             bpy.data.images.remove(temp_image)
+            
+            # Чистим временные кадры анимации
+            for bl_img in temp_bl_images:
+                bpy.data.images.remove(bl_img)
             
             #inject_paintnet_metadata(final_filepath)
             inject_metadata_profile(final_filepath, profile=export_settings.icc_profile)
@@ -340,10 +477,107 @@ class RZM_OT_RemoveImage(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class RZM_OT_AddAnimatedImage(bpy.types.Operator):
+    """Load a GIF or video file as an animated RZMenu image."""
+    bl_idname = "rzm.add_animated_image"
+    bl_label = "Add Animated Image"
+    bl_description = "Load a GIF or video file (MP4/WebM/AVI). Frames are auto-deduplicated to save atlas space."
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath: bpy.props.StringProperty(
+        name="File Path",
+        description="Path to GIF or video file",
+        subtype='FILE_PATH'
+    )
+    filter_glob: bpy.props.StringProperty(
+        default="*.gif;*.mp4;*.webm;*.avi;*.mov;*.mkv",
+        options={'HIDDEN'}
+    )
+    max_frames: bpy.props.IntProperty(
+        name="Max Source Frames",
+        description="Maximum frames to read from source before deduplication",
+        default=128,
+        min=1,
+        max=2048
+    )
+    dedupe_threshold: bpy.props.FloatProperty(
+        name="Dedupe Threshold",
+        description="MAE threshold for frame deduplication (0=strict, 0.1=loose)",
+        default=0.04,
+        min=0.0,
+        max=0.5
+    )
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        from ..core.animated_loader import load_animated_advanced, frames_to_blender_images
+
+        rzm = context.scene.rzm
+        filepath = bpy.path.abspath(self.filepath)
+
+        if not os.path.isfile(filepath):
+            self.report({'ERROR'}, f"File not found: {filepath}")
+            return {'CANCELLED'}
+
+        # ─── Гигиеничный импорт: грузим только превью ──────────────────────
+        try:
+            # Читаем только 1 первый кадр для превью
+            unique_frames, _ = load_animated_advanced(filepath, preset='ADAPTIVE', max_source_frames=1)
+            preview_bl_images = frames_to_blender_images(unique_frames, Path(filepath).stem + "_preview")
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to load preview: {e}")
+            return {'CANCELLED'}
+
+        base_name = Path(filepath).stem
+        existing = next((img for img in rzm.images if img.display_name == base_name), None)
+        if existing and existing.source_type == 'ANIMATED':
+            rzm_image = existing
+        else:
+            rzm_image = rzm.images.add()
+            rzm_image.id = get_next_image_id(rzm.images)
+
+        rzm_image.display_name = base_name
+        rzm_image.source_type = 'ANIMATED'
+        rzm_image.anim_source_path = filepath
+        rzm_image.anim_frame_count = len(unique_frames)
+        rzm_image.anim_max_frames = self.max_frames
+
+        # Записываем frametime каждого кадра
+        # UV coords пока нулевые — заполнятся при UpdateAtlasLayout
+        frame_frametimes = [[0, 0, 0, 0, f['frametime']] for f in unique_frames]
+        rzm_image.anim_frame_coords = json.dumps(frame_frametimes)
+        
+        # --- NATIVE COLLECTION SYNC ---
+        rzm_image.anim_frames.clear()
+        for f in unique_frames:
+            it = rzm_image.anim_frames.add()
+            it.duration = f['frametime']
+        # -----------------------------
+        
+        rzm_image.anim_total_duration = sum(f['frametime'] for f in unique_frames)
+
+        # Привязываем image_pointer к первому кадру (для превью в редакторе)
+        if preview_bl_images:
+            rzm_image.image_pointer = preview_bl_images[0]
+            # Упаковываем превью в бленд
+            preview_bl_images[0].pack()
+
+        self.report({'INFO'}, (
+            f"Loaded '{base_name}': {len(unique_frames)} unique frames, "
+            f"{rzm_image.anim_total_duration:.2f}s total. "
+            f"Run 'Update Atlas Layout' to pack frames."
+        ))
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_LoadBaseIcons,
     RZM_OT_UpdateAtlasLayout,
     RZM_OT_ExportAtlas,
     RZM_OT_AddImage,
     RZM_OT_RemoveImage,
+    RZM_OT_AddAnimatedImage,
 ]

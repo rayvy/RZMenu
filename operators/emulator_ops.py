@@ -1,6 +1,7 @@
 import bpy
 import os
 import time
+import json
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, TemplateSyntaxError, UndefinedError
 
@@ -57,6 +58,8 @@ class RZM_OT_EmulatorExport(bpy.types.Operator):
             
             templates_path = addon_dir / "rztemplate"
             env = Environment(loader=FileSystemLoader(str(templates_path)))
+            # Регистрация фильтра fromjson для парсинга метаданных анимации
+            env.filters['fromjson'] = json.loads
             
             # Simplified Dummy Objects for Test Export (Empty components skips model code)
             class DummyObject:
