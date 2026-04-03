@@ -114,6 +114,11 @@ class ThemeManager:
                 if theme_id in self._themes:
                     del self._themes[theme_id]
                 self.load_user_themes()
+                # Invalidate icon cache so icons re-tint with new theme
+                try:
+                    from ....utils.icons import IconManager
+                    IconManager.get_instance().clear_cache()
+                except Exception: pass
                 return True
             except Exception as e:
                 print(f"RZMenu: Failed to reset theme '{theme_id}': {e}")
@@ -183,6 +188,11 @@ class ThemeManager:
         try:
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(output, f, indent=4)
-            self.load_user_themes() 
+            self.load_user_themes()
+            # Invalidate icon cache so icons re-tint with new theme
+            try:
+                from ....utils.icons import IconManager
+                IconManager.get_instance().clear_cache()
+            except Exception: pass
         except Exception as e:
             print(f"RZMenu: Failed to save theme: {e}")

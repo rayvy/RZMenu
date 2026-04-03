@@ -1433,18 +1433,22 @@ class RZMInspectorPanel(RZEditorPanel):
     def _init_vector_ui(self):
         try:
             self.grp_vector = RZGroupBox("Vector Modifiers (SVG)")
+            self.grp_vector.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
             layout = QtWidgets.QVBoxLayout(self.grp_vector)
-            layout.setSpacing(6)
+            layout.setSpacing(4)
+            layout.setContentsMargins(6, 4, 6, 4)
             
             # Scale
             self.sl_svg_scale = self._add_row(layout, "Scale:", RZSmartSlider(is_int=False, label_text=""), 'svg_scale', 'value_changed')
+            self.sl_svg_scale.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
             self.sl_svg_scale.setRange(0.1, 5.0)
             
-            # Offset
-            h_off = QtWidgets.QHBoxLayout()
-            self.sl_svg_off_x = self._add_row(h_off, "Offset X:", RZSmartSlider(is_int=False), 'svg_offset_x', 'value_changed')
-            self.sl_svg_off_y = self._add_row(h_off, "Offset Y:", RZSmartSlider(is_int=False), 'svg_offset_y', 'value_changed')
-            layout.addLayout(h_off)
+            # Offset (vertical to prevent width expansion)
+            self.sl_svg_off_x = self._add_row(layout, "Offset X:", RZSmartSlider(is_int=False), 'svg_offset_x', 'value_changed')
+            self.sl_svg_off_x.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+            
+            self.sl_svg_off_y = self._add_row(layout, "Offset Y:", RZSmartSlider(is_int=False), 'svg_offset_y', 'value_changed')
+            self.sl_svg_off_y.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
             
             self.layout_props.addWidget(self.grp_vector)
         except Exception as e: print(f"[INSPECTOR] Error Vector: {e}")
@@ -1463,9 +1467,21 @@ class RZMInspectorPanel(RZEditorPanel):
             self.list_texts = RZConditionalTextList()
             layout.addWidget(self.list_texts)
             
-            self.w_legacy_text = QtWidgets.QWidget(); f_txt = QtWidgets.QFormLayout(self.w_legacy_text); f_txt.setContentsMargins(0, 0, 0, 0); f_txt.setSpacing(5)
-            self.edit_txt_id = self._add_row(f_txt, "Text ID:", RZLineEdit(), 'text_id')
-            self.edit_hov_txt = self._add_row(f_txt, "Hover ID:", RZLineEdit(), 'hover_text_id')
+            self.w_legacy_text = QtWidgets.QWidget()
+            f_txt = QtWidgets.QVBoxLayout(self.w_legacy_text)
+            f_txt.setContentsMargins(0, 0, 0, 0)
+            f_txt.setSpacing(4)
+            
+            h_txt = QtWidgets.QHBoxLayout()
+            self.edit_txt_id = self._add_row(h_txt, "Text ID:", RZLineEdit(), 'text_id')
+            self.chk_txt_is_data = self._add_row(h_txt, "", RZCheckBox("Is Data"), 'text_id_is_data')
+            f_txt.addLayout(h_txt)
+            
+            h_hov = QtWidgets.QHBoxLayout()
+            self.edit_hov_txt = self._add_row(h_hov, "Hover ID:", RZLineEdit(), 'hover_text_id')
+            self.chk_hov_is_data = self._add_row(h_hov, "", RZCheckBox("Is Data"), 'hover_text_id_is_data')
+            f_txt.addLayout(h_hov)
+            
             layout.addWidget(self.w_legacy_text)
             self.layout_props.addWidget(self.grp_text)
         except Exception as e: print(f"[INSPECTOR] Error Text: {e}")
@@ -1821,6 +1837,8 @@ class RZMInspectorPanel(RZEditorPanel):
                     else:
                         self.edit_txt_id.clear_pattern()
                         self.edit_txt_id.set_text_silent(props.get('text_id', ''))
+                if hasattr(self, 'chk_txt_is_data'):
+                    self.chk_txt_is_data.setChecked(props.get('text_id_is_data', False))
                         
                 hov_pat = props.get('hover_text_id_pattern')
                 if hasattr(self, 'edit_hov_txt'):
@@ -1828,6 +1846,8 @@ class RZMInspectorPanel(RZEditorPanel):
                     else:
                         self.edit_hov_txt.clear_pattern()
                         self.edit_hov_txt.set_text_silent(props.get('hover_text_id', ''))
+                if hasattr(self, 'chk_hov_is_data'):
+                    self.chk_hov_is_data.setChecked(props.get('hover_text_id_is_data', False))
             else:
                 if hasattr(self, 'list_texts'): self.list_texts.update_data(props.get('conditional_texts', []), txt_mode)
 

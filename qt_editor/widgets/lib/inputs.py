@@ -699,36 +699,28 @@ class RZCodeTextEdit(RZFormulaInput):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._is_multiline = True 
-        self._is_resizable = True  # Enable drag-to-resize at bottom edge
-        
+        self._is_multiline = True
+        self._is_resizable = False  # Handled by the SizeGrip below
+
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        
+
         self.setMinimumHeight(78)
-        self.setMaximumHeight(680) 
+        self.setMaximumHeight(680)
         self.setMouseTracking(True)
 
-    def mousePressEvent(self, event):
-        if self._handle_visual_mouse_press(event): return
-        super().mousePressEvent(event)
+        # Resize grip — visible in bottom-right corner
+        self._grip = _RZResizeGrip(self)
+        self._grip.raise_()
 
-    def mouseMoveEvent(self, event):
-        if self._handle_visual_mouse_move(event): return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if self._handle_visual_mouse_release(event): return
-        super().mouseReleaseEvent(event)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        # Draw resize dots on top of normal painting
-        painter = QtGui.QPainter(self.viewport())
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        self._draw_resizer_dots(painter)
-        painter.end()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Keep grip pinned to bottom-right
+        if hasattr(self, '_grip'):
+            gs = self._grip.sizeHint()
+            self._grip.move(self.width() - gs.width(), self.height() - gs.height())
+            self._grip.raise_()
 
     def set_highlighter(self, highlighter_class):
         if highlighter_class:
@@ -737,6 +729,56 @@ class RZCodeTextEdit(RZFormulaInput):
             self.highlighter.rehighlight()
         else:
             self.highlighter = None
+
+
+class _RZResizeGrip(QtWidgets.QWidget):
+    """
+    A custom drag-to-resize grip that lives in the bottom-right corner of
+    an RZCodeTextEdit. Drag it vertically to change the editor's height.
+    """
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setFixedSize(14, 14)
+        self.setCursor(QtCore.Qt.SizeVerCursor)
+        self.setToolTip("Drag to resize")
+        self._dragging = False
+        self._start_y = 0
+        self._start_h = 0
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        from .theme import get_current_theme
+        t = get_current_theme()
+        col = QtGui.QColor(t.get('border_contrast', '#5F6672'))
+        pen = QtGui.QPen(col, 1.5)
+        painter.setPen(pen)
+        # Draw three diagonal dots (classic resize grip look)
+        w, h = self.width(), self.height()
+        for i in range(3):
+            o = i * 4
+            painter.drawLine(w - 2, h - 6 - o, w - 6 - o, h - 2)
+        painter.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton:
+            self._dragging = True
+            self._start_y = event.globalPosition().y()
+            self._start_h = self.parent().height()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            dy = event.globalPosition().y() - self._start_y
+            p = self.parent()
+            new_h = max(p.minimumHeight(), min(p.maximumHeight(), self._start_h + int(dy)))
+            p.setMinimumHeight(new_h)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._dragging = False
+        event.accept()
+
 
 
 class RZModInfoTextEdit(RZCodeTextEdit):
