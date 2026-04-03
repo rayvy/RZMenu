@@ -187,10 +187,9 @@ class RZMEditorWindow(QtWidgets.QWidget):
         import bpy
         try:
             bpy.ops.rzm.full_export()
-            SIGNALS.status_message.emit("Export Complete.")
+            print("[QT] Export Complete.")
         except Exception as e:
-            SIGNALS.status_message.emit(f"Export Failed: {str(e)}")
-            print(f"[QT] Export Error: {e}")
+            print(f"[QT] Export Failed: {e}")
 
     def save_current_layout(self):
         name, ok = QtWidgets.QInputDialog.getText(self, "Save Layout", "Layout Name:")

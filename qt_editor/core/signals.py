@@ -17,6 +17,8 @@ class RZSignalManager(QObject):
     # Отправляет ключ изменившейся секции (например, "appearance")
     config_changed = Signal(str) 
     theme_changed_signal = Signal() # Explicit signal for theme editor updates
+    
+    status_message = Signal(str)  # General status updates for the UI
 
 SIGNALS = RZSignalManager()
 IS_UPDATING_FROM_QT = False

@@ -51,20 +51,12 @@ DEPS = [
         "is_optional": False
     },
     {
-        "name": "imageio",
+        "name": "imageio (Video Engine)",
         "import_name": "imageio",
-        "pip_name": "imageio",
+        "pip_name": "imageio[pyav]",
         "target_version": "2.37.0",
         "is_optional": True,
-        "description": "Чтение видеофайлов (MP4/WebM/AVI) для анимированных изображений"
-    },
-    {
-        "name": "av (PyAV)",
-        "import_name": "av",
-        "pip_name": "av",
-        "target_version": "14.1.0",
-        "is_optional": False,
-        "description": "Движок для декодирования видео в imageio"
+        "description": "Базовый движок для чтения видео (MP4/WebM/AVI)"
     },
     {
         "name": "imageio-ffmpeg",
@@ -72,7 +64,7 @@ DEPS = [
         "pip_name": "imageio-ffmpeg",
         "target_version": "0.6.0",
         "is_optional": True,
-        "description": "FFmpeg backend для imageio (требуется для MP4/WebM)"
+        "description": "FFmpeg backend для imageio (требуется для некоторых форматов)"
     },
 
 ]

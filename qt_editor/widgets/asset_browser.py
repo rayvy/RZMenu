@@ -27,6 +27,51 @@ def get_base_templates_dir():
             print(f"RZM Error: Could not create base_templates dir: {e}")
     return base_dir
 
+class RZDensityTimeline(QtWidgets.QWidget):
+    """Визуализация плотности уникальных кадров на таймлайне."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(12)
+        self.sequence_data = [] # List of {'duration': float, 'is_unique': bool}
+        self.total_duration = 0.0
+
+    def set_data(self, sequence):
+        self.sequence_data = sequence
+        self.total_duration = sum(s.get('duration', 0) for s in sequence)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        # Background
+        rect = self.rect()
+        painter.fillRect(rect, QtGui.QColor(40, 40, 40))
+        
+        if not self.sequence_data or self.total_duration <= 0:
+            return
+
+        # Draw markers
+        curr_time = 0.0
+        w = rect.width()
+        
+        # Draw unique blocks
+        painter.setPen(QtCore.Qt.NoPen)
+        for item in self.sequence_data:
+            x = (curr_time / self.total_duration) * w
+            block_w = (item.get('duration', 0.1) / self.total_duration) * w
+            
+            if item.get('is_unique'):
+                # Синий маркер для начала нового уникального блока
+                painter.setBrush(QtGui.QColor(80, 160, 255, 200)) # Яркий синий
+                painter.drawRect(QtCore.QRectF(x, 0, max(2.5, block_w * 0.1), rect.height()))
+            else:
+                # Тусклый маркер для повторов (чтобы видеть 'ритм' видео)
+                painter.setBrush(QtGui.QColor(100, 100, 100, 80)) # Серый прозрачный
+                painter.drawRect(QtCore.QRectF(x, 0, 1, rect.height()))
+
+            curr_time += item.get('duration', 0)
+
 class RZAssetDetailsPanel(QtWidgets.QFrame):
     """Панель инспектора для выбранного ассета."""
     def __init__(self, parent=None):
@@ -49,13 +94,33 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         self.preview_label = QtWidgets.QLabel()
         self.preview_label.setFixedSize(160, 160)
         self.preview_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.preview_label.setStyleSheet("border: 1px solid #444; background: #222;")
+        self.preview_label.setStyleSheet("border: 1px solid #444; background: #000;")
         layout.addWidget(self.preview_label, 0, QtCore.Qt.AlignCenter)
+
+        # --- PLAYBACK CONTROLS ---
+        self.playback_container = QtWidgets.QWidget()
+        self.playback_layout = QtWidgets.QHBoxLayout(self.playback_container)
+        self.playback_layout.setContentsMargins(0, 0, 0, 0)
+        self.playback_layout.setSpacing(4)
+        
+        self.btn_play = QtWidgets.QPushButton("▶")
+        self.btn_play.setFixedWidth(24)
+        self.btn_play.setCheckable(True)
+        self.btn_play.clicked.connect(self.on_play_clicked)
+        self.playback_layout.addWidget(self.btn_play)
+        
+        self.slider_preview = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.slider_preview.setFixedHeight(12)
+        self.slider_preview.sliderMoved.connect(self.on_slider_moved)
+        self.playback_layout.addWidget(self.slider_preview)
+        
+        layout.addWidget(self.playback_container)
         
         # Timer for animation preview
         self.anim_timer = QtCore.QTimer()
         self.anim_timer.timeout.connect(self.update_anim_preview)
         self.curr_frame_idx = 0
+        self.total_frames = 0
         
         self.q_movie = None # For GIF support
 
@@ -87,7 +152,7 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         anim_form = QtWidgets.QFormLayout()
         
         self.combo_preset = QtWidgets.QComboBox()
-        self.combo_preset.addItems(["ECONOMY", "ECONOMY_PLUS", "ADAPTIVE", "ADAPTIVE_PLUS", "EXTREME"])
+        self.combo_preset.addItems(["ECONOMY", "ADAPTIVE_LIGHT", "ADAPTIVE", "ADAPTIVE_HEAVY"])
         self.combo_preset.currentTextChanged.connect(self.on_prop_changed)
         anim_form.addRow("Quality Preset:", self.combo_preset)
         
@@ -105,10 +170,21 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         trim_h.addWidget(self.spin_end)
         anim_form.addRow("Frame Range:", trim_h)
 
+        # Max Frames Limit
+        self.spin_max_frames = QtWidgets.QSpinBox()
+        self.spin_max_frames.setRange(1, 4096)
+        self.spin_max_frames.setToolTip("Limits the number of frames read from the source file. Increase if your video is cut short.")
+        self.spin_max_frames.valueChanged.connect(self.on_prop_changed)
+        anim_form.addRow("Read Limit:", self.spin_max_frames)
+
         self.lbl_stats = QtWidgets.QLabel("Frames: - | Duration: -")
         self.lbl_stats.setStyleSheet("color: #888;")
-        anim_form.addRow("Current Stats:", self.lbl_stats)
+        anim_form.addRow("Stats:", self.lbl_stats)
         
+        # --- DENSITY TIMELINE ---
+        self.timeline = RZDensityTimeline()
+        anim_form.addRow("Density:", self.timeline)
+
         self.btn_view_json = QtWidgets.QPushButton("View UV JSON")
         self.btn_view_json.clicked.connect(self.on_view_json)
         anim_form.addRow("Debug:", self.btn_view_json)
@@ -118,15 +194,8 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
 
         layout.addStretch()
 
-        # --- BUTTONS ---
         btn_h = QtWidgets.QHBoxLayout()
         
-        self.btn_build_atlas = QtWidgets.QPushButton("Build Atlas")
-        self.btn_build_atlas.setToolTip("Process animation and pack into atlas to see results")
-        self.btn_build_atlas.clicked.connect(self.on_build_atlas)
-        self.btn_build_atlas.setStyleSheet("background-color: #2b5b2b;")
-        btn_h.addWidget(self.btn_build_atlas)
-
         self.btn_delete = QtWidgets.QPushButton("Delete")
         self.btn_delete.clicked.connect(self.on_delete_clicked)
         self.btn_delete.setStyleSheet("background-color: #5b2b2b;")
@@ -152,6 +221,7 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         path = data.get('path', '')
         if path.lower().endswith('.gif'):
             self.q_movie = QtGui.QMovie(path)
+            self.q_movie.frameChanged.connect(self.on_movie_frame_changed)
             self.preview_label.setMovie(self.q_movie)
             self.q_movie.setScaledSize(QtCore.QSize(150, 150))
             self.q_movie.start()
@@ -164,41 +234,104 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         else:
             self.preview_label.setText("No Preview")
 
-        is_anim = data.get('source_type') == 'ANIMATED'
+        static_exts = ('.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp')
+        is_static_ext = path.lower().endswith(static_exts)
+        is_anim = (data.get('source_type') == 'ANIMATED' or path.lower().endswith('.gif')) and not is_static_ext
+        
         self.anim_group.setVisible(is_anim)
-        self.btn_build_atlas.setVisible(is_anim)
+        self.playback_container.setVisible(is_anim)
+        self.playback_container.setEnabled(is_anim)
         
         if is_anim:
+            from ...core import animated_loader
+            info = animated_loader.get_frame_info(path)
+            self.total_frames = info['frame_count']
+            self.slider_preview.setRange(0, max(0, self.total_frames - 1))
+            self.slider_preview.setValue(0)
+            
+            # Set timer interval based on FPS
+            interval = int(1000 / max(1, info['fps']))
+            self.anim_timer.setInterval(interval)
+
             self.combo_preset.setCurrentText(data.get('anim_preset', 'ADAPTIVE'))
             self.spin_start.setValue(data.get('anim_start', 0))
             self.spin_end.setValue(data.get('anim_end', 0))
+            self.spin_max_frames.setValue(data.get('anim_max_frames', 256))
             
             unique = data.get('anim_frame_count', 0)
             total_dur = data.get('anim_total_dur', 0)
-            self.lbl_stats.setText(f"Unique Frames: {unique} | Total: {total_dur:.2f}s")
+            src_fps = info.get('fps', 24.0)
+            self.lbl_stats.setText(f"Src: {src_fps:.1f} FPS | Unique: {unique} | Total: {total_dur:.2f}s")
             
-            # Start preview timer if baked
-            if unique > 0:
-                self.anim_timer.start(100) # 10 FPS preview
+            # --- UPDATE TIMELINE ---
+            sequence = []
+            if data.get('id'):
+                import bpy
+                img = next((i for i in bpy.context.scene.rzm.images if i.id == data['id']), None)
+                if img:
+                    for s in img.anim_sequence:
+                        sequence.append({'duration': s.duration, 'is_unique': s.is_unique})
+            self.timeline.set_data(sequence)
 
         self.is_updating = False
 
-    def update_anim_preview(self):
-        """Циклический показ запеченных кадров (если они есть в блендере)."""
-        if not self.asset_data: return
-        
-        unique = self.asset_data.get('anim_frame_count', 0)
-        if unique <= 0: return
-        
-        self.curr_frame_idx = (self.curr_frame_idx + 1) % unique
-        
-        # Пытаемся достать кадр из кэша
-        pix = ImageCache.instance().get_anim_frame(self.asset_data['name'], self.curr_frame_idx)
-        if pix:
-            self.preview_label.setPixmap(pix.scaled(150, 150, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+    def on_play_clicked(self, checked):
+        if checked:
+            self.btn_play.setText("⏸")
+            if self.q_movie: self.q_movie.setPaused(False)
+            else: self.anim_timer.start()
         else:
-            # Если хоть раз не удалось достать кадр (не запечен), останавливаем
-            self.anim_timer.stop()
+            self.btn_play.setText("▶")
+            if self.q_movie: self.q_movie.setPaused(True)
+            else: self.anim_timer.stop()
+
+    def on_movie_frame_changed(self, frame_no):
+        """Called when QMovie (GIF) advance to a new frame."""
+        if not self.is_updating:
+            self.is_updating = True
+            self.slider_preview.setValue(frame_no)
+            self.is_updating = False
+
+    def on_slider_moved(self, pos):
+        # При скраббинге останавливаем авто-воспроизведение
+        self.btn_play.setChecked(False)
+        self.btn_play.setText("▶")
+        self.anim_timer.stop()
+        
+        self.curr_frame_idx = pos
+        self.show_frame(pos)
+
+    def show_frame(self, idx):
+        if not self.asset_data or not self.asset_data.get('path'):
+            return
+            
+        from ...core import animated_loader
+        import numpy as np
+        
+        pixels = animated_loader.get_frame_at(self.asset_data['path'], idx)
+        if pixels is not None:
+            # pixels: (H, W, 4) float32 [0..1]
+            height, width = pixels.shape[:2]
+            # Convert to uint8 RGBA
+            uint8_pixels = (pixels * 255).astype(np.uint8)
+            
+            # QImage expects data as (bytes, width, height, format)
+            qimg = QtGui.QImage(uint8_pixels.data, width, height, width * 4, QtGui.QImage.Format_RGBA8888)
+            pix = QtGui.QPixmap.fromImage(qimg)
+            self.preview_label.setPixmap(pix.scaled(150, 150, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+            
+            # Update slider without recursive trigger
+            self.is_updating = True
+            self.slider_preview.setValue(idx)
+            self.is_updating = False
+
+    def update_anim_preview(self):
+        """Looping playback logic."""
+        if self.total_frames <= 1:
+            return
+            
+        self.curr_frame_idx = (self.curr_frame_idx + 1) % self.total_frames
+        self.show_frame(self.curr_frame_idx)
 
     def on_prop_changed(self, *args):
         if self.is_updating or not self.asset_data: return
@@ -218,12 +351,12 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
             blender_bridge.update_asset_property(asset_id, 'anim_preset', self.combo_preset.currentText())
             blender_bridge.update_asset_property(asset_id, 'anim_start', self.spin_start.value())
             blender_bridge.update_asset_property(asset_id, 'anim_end', self.spin_end.value())
+            blender_bridge.update_asset_property(asset_id, 'anim_max_frames', self.spin_max_frames.value())
 
     def on_build_atlas(self):
         """Вызывает пересборку атласа для предпросмотра эффекта Optimization."""
         if blender_bridge.trigger_atlas_update():
-            # После обновления атласа, перечитываем данные (чтобы обновились Stats)
-            self.on_prop_changed() # Force sync before reread
+            # Заставляем основную панель обновиться, чтобы подтянуть новые статы
             SIGNALS.structure_changed.emit()
 
     def on_view_json(self):
@@ -421,6 +554,11 @@ class RZAssetBrowserPanel(RZEditorPanel):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
+        # Selection state
+        self._last_selected_id = None
+        self._last_selected_type = None
+        self._is_rebuilding = False
+
         # --- TOOLBAR ---
         toolbar = QtWidgets.QHBoxLayout()
         
@@ -434,6 +572,11 @@ class RZAssetBrowserPanel(RZEditorPanel):
         self.btn_reload.setFixedWidth(30)
         self.btn_reload.clicked.connect(self.on_reload_clicked)
         toolbar.addWidget(self.btn_reload)
+
+        self.btn_build_atlas = QtWidgets.QPushButton("Build Atlas")
+        self.btn_build_atlas.setStyleSheet("background-color: #2b5b2b; color: white; font-weight: bold;")
+        self.btn_build_atlas.clicked.connect(self.on_build_atlas)
+        toolbar.addWidget(self.btn_build_atlas)
         
         toolbar.addStretch()
 
@@ -469,8 +612,12 @@ class RZAssetBrowserPanel(RZEditorPanel):
         layout.addWidget(self.splitter)
 
     def on_selection_changed(self):
+        if self._is_rebuilding: return
+        
         items = self.list_widget.selectedItems()
         if not items:
+            self._last_selected_id = None
+            self._last_selected_type = None
             self.details_panel.setVisible(False)
             return
 
@@ -478,6 +625,9 @@ class RZAssetBrowserPanel(RZEditorPanel):
         asset_id = item.data(QtCore.Qt.UserRole)
         asset_type = item.data(QtCore.Qt.UserRole + 1)
         
+        self._last_selected_id = asset_id
+        self._last_selected_type = asset_type
+
         # Ищем полные данные в результатах read.get_available_images()
         # Для простоты, мы можем заново запросить список или передать данные при наполнении
         all_imgs = read.get_available_images()
@@ -493,6 +643,11 @@ class RZAssetBrowserPanel(RZEditorPanel):
             self.details_panel.setVisible(True)
         else:
             self.details_panel.setVisible(False)
+
+    def on_build_atlas(self):
+        """Вызывается из верхнего тулбара."""
+        if blender_bridge.trigger_atlas_update():
+            SIGNALS.structure_changed.emit()
 
     def _connect_signals(self):
         SIGNALS.structure_changed.connect(self.refresh_data)
@@ -521,6 +676,12 @@ class RZAssetBrowserPanel(RZEditorPanel):
 
     def rebuild_view(self, *args):
         """Главная функция построения списка"""
+        self._is_rebuilding = True
+        
+        # Save scroll pos
+        v_scroll = self.list_widget.verticalScrollBar()
+        old_scroll = v_scroll.value()
+
         self.list_widget.clear()
         
         filter_mode = self.combo_filter.currentText() # All, Images, Templates
@@ -594,6 +755,24 @@ class RZAssetBrowserPanel(RZEditorPanel):
             
             self.list_widget.addItem(list_item)
             
+            # Restore selection
+            if self._last_selected_id is not None:
+                is_match = False
+                if item_data['type'] == self._last_selected_type:
+                    if item_data['type'] == "IMAGE" and item_data['id'] == self._last_selected_id:
+                        is_match = True
+                    elif item_data['type'] == "TEMPLATE" and item_data['filepath'] == self._last_selected_id:
+                        is_match = True
+                
+                if is_match:
+                    list_item.setSelected(True)
+                    self.list_widget.setCurrentItem(list_item)
+
+        # Restore scroll
+        QtCore.QTimer.singleShot(50, lambda: v_scroll.setValue(old_scroll))
+            
+        self._is_rebuilding = False
+
         if not items_to_show:
             empty = QtWidgets.QListWidgetItem("No items found")
             empty.setFlags(QtCore.Qt.NoItemFlags)

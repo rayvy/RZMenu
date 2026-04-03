@@ -251,55 +251,71 @@ def frames_to_blender_images(frames: list, base_name: str) -> list:
 
 # ─── ГЛОБАЛЬНАЯ ДЕДУПЛИКАЦИЯ ──────────────────────────────────────────────────
 
-def deduplicate_global(raw_frames: list, threshold: float = 0.04) -> tuple:
+def deduplicate_global(raw_frames: list, threshold: float = 0.04, double_pass: bool = True) -> tuple:
     """
     Анализирует ВЕСЬ список кадров и находит уникальные.
-    Возвращает (unique_frames_list, sequence_mapping).
     
-    sequence_mapping: список индексов в unique_frames_list.
+    Args:
+        raw_frames: список dict с кадрами (pixels, frametime)
+        threshold: порог схожести
+        double_pass:
+            True: Глобальное слияние (циклические дубликаты в разных частях таймлайна схлопываются).
+            False: Только последовательное слияние (соседние дубликаты).
+    
+    Returns:
+        (unique_frames_list, mapping)
     """
     if not raw_frames:
         return [], []
 
-    unique_frames = []
-    sequence = []
+    # --- PASS 1: Temporal (Sequential) Grouping ---
+    # Всегда схлопываем идущие подряд похожие кадры.
+    temporal_groups = []
+    if raw_frames:
+        curr = raw_frames[0].copy()
+        for i in range(1, len(raw_frames)):
+            frame = raw_frames[i]
+            if _frames_are_similar(curr['pixels'], frame['pixels'], threshold):
+                curr['frametime'] += frame['frametime']
+            else:
+                temporal_groups.append(curr)
+                curr = frame.copy()
+        temporal_groups.append(curr)
 
-    for frame in raw_frames:
+    if not double_pass:
+        # Если Double Pass выключен, temporal_groups и есть наши уникальные кадры
+        mapping = []
+        for i, group in enumerate(temporal_groups):
+            mapping.append({'idx': i, 'duration': group['frametime']})
+        return temporal_groups, mapping
+
+    # --- PASS 2: Global Merging (Optional) ---
+    unique_frames = []
+    group_to_unique = [] # индекс в temporal_groups -> индекс в unique_frames
+
+    for group in temporal_groups:
         found_idx = -1
-        # Ищем среди уже найденных уникальных
+        # Ищем среди уже накопленных уникальных
         for i, u_frame in enumerate(unique_frames):
-            if _frames_are_similar(u_frame['pixels'], frame['pixels'], threshold):
+            if _frames_are_similar(u_frame['pixels'], group['pixels'], threshold):
                 found_idx = i
                 break
         
         if found_idx == -1:
-            # Новый уникальный кадр
-            unique_frames.append(frame.copy())
-            sequence.append(len(unique_frames) - 1)
+            unique_frames.append(group.copy())
+            group_to_unique.append(len(unique_frames) - 1)
         else:
-            # Повтор существующего — просто добавляем индекс в последовательность
-            sequence.append(found_idx)
+            group_to_unique.append(found_idx)
 
-    # После того как построили индексы, нужно "схлопнуть" идущие подряд 
-    # одинаковые индексы в один с суммарной длительностью.
-    collapsed_sequence = []
-    if sequence:
-        curr_idx = sequence[0]
-        curr_dur = raw_frames[0]['frametime']
-        
-        for i in range(1, len(sequence)):
-            next_idx = sequence[i]
-            next_dur = raw_frames[i]['frametime']
-            if next_idx == curr_idx:
-                curr_dur += next_dur
-            else:
-                collapsed_sequence.append({'idx': curr_idx, 'duration': curr_dur})
-                curr_idx = next_idx
-                curr_dur = next_dur
-        
-        collapsed_sequence.append({'idx': curr_idx, 'duration': curr_dur})
+    # Reconstruct mapping
+    mapping = []
+    for i, u_idx in enumerate(group_to_unique):
+        mapping.append({
+            'idx': u_idx,
+            'duration': temporal_groups[i]['frametime']
+        })
 
-    return unique_frames, collapsed_sequence
+    return unique_frames, mapping
 
 
 # ─── Высокоуровневый API ──────────────────────────────────────────────────────
@@ -340,31 +356,134 @@ def load_animated_advanced(filepath: str,
     
     raw_frames = raw_frames[start_frame:end_frame]
 
-    # 3. Применение пресетов (Frame Selection)
-    threshold = 0.04 # Adaptive default
+    # 3. Применение пресетов (Adaptive Selection & Limits)
+    threshold = 0.04
+    double_pass = True
     
-    if preset == 'EXTREME':
-        threshold = 0.0001
-    elif preset == 'ADAPTIVE_PLUS':
-        threshold = 0.02
-    elif preset == 'ADAPTIVE':
-        threshold = 0.04
-    elif preset.startswith('ECONOMY'):
-        # Для экономики СНАЧАЛА делаем даунсэмплинг, потом дедупликацию
-        limit = 8 if preset == 'ECONOMY' else 16
+    if preset == 'ECONOMY':
+        # Жесткий лимит: 4 кадра
+        limit = 4
         if len(raw_frames) > limit:
             indices = np.linspace(0, len(raw_frames) - 1, limit, dtype=int)
-            # При даунсэмплинге нужно перераспределить длительность, чтобы итоговое время не поменялось
             total_dur = sum(f['frametime'] for f in raw_frames)
-            sampled_frames = []
+            sampled = []
             for idx in indices:
                 f = raw_frames[idx].copy()
                 f['frametime'] = total_dur / limit
-                sampled_frames.append(f)
-            raw_frames = sampled_frames
-        threshold = 0.05 # Чуть грубее для экономики
+                sampled.append(f)
+            raw_frames = sampled
+        threshold = 0.06
+        double_pass = False # Для экономии нет смысла в сложном поиске циклов
 
-    # 4. Глобальная дедупликация
-    unique_frames, sequence = deduplicate_global(raw_frames, threshold)
+    elif preset == 'ADAPTIVE_LIGHT':
+        threshold = 0.04
+        double_pass = True
+    elif preset == 'ADAPTIVE':
+        threshold = 0.02
+        double_pass = True
+    elif preset == 'ADAPTIVE_HEAVY':
+        threshold = 0.005 # Высокое качество
+        double_pass = False # Как просил юзер: выключаем для Heavy
+
+    # 4. Дедупликация (Double Pass или Sequential)
+    unique_frames, sequence = deduplicate_global(raw_frames, threshold, double_pass)
     
+    # 5. Санитария для ECONOMY (если после дедупликации все еще > 4 — берем первые 4)
+    if preset == 'ECONOMY' and len(unique_frames) > 4:
+        unique_frames = unique_frames[:4]
+        for m in sequence:
+            if m['idx'] >= 4: m['idx'] = 0
+
     return unique_frames, sequence
+
+
+# ─── QT PREVIEW API (In-Memory) ───────────────────────────────────────────────
+
+class VideoReaderCache:
+    """Кэш для открытых файлов imageio, чтобы ускорить скраббинг."""
+    _instance = None
+    
+    def __init__(self):
+        self.last_path = None
+        self.reader = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = VideoReaderCache()
+        return cls._instance
+
+    def get_reader(self, filepath):
+        import imageio.v3 as iio
+        if self.last_path == filepath and self.reader is not None:
+            return self.reader
+        
+        # Закрываем старый
+        if self.reader is not None:
+            try: self.reader.close()
+            except: pass
+        
+        try:
+            self.last_path = filepath
+            # В v3 нет долгоживущих ридеров в обычном imread, 
+            # но мы можем использовать iio.imopen
+            self.reader = iio.imopen(filepath, "r", plugin="pyav")
+            return self.reader
+        except Exception as e:
+            print(f"[RZM] Failed to open video reader for {filepath}: {e}")
+            return None
+
+def get_frame_info(filepath: str) -> dict:
+    """
+    Возвращает метаданные файла для превью-плеера.
+    """
+    cache = VideoReaderCache.get_instance()
+    reader = cache.get_reader(filepath)
+    if not reader:
+        return {'frame_count': 1, 'fps': 24.0, 'duration': 0.0416}
+    
+    try:
+        props = reader.properties()
+        count = getattr(props, 'n_frames', 0)
+        if count == 0:
+             # Fallback: пробуем итерировать или просто 100
+             count = 100 
+        
+        fps = getattr(props, 'fps', 24.0)
+        return {
+            'frame_count': count,
+            'fps': fps,
+            'duration': count / max(fps, 0.1)
+        }
+    except Exception as e:
+        print(f"[RZM] Error getting frame info: {e}")
+        return {'frame_count': 1, 'fps': 24.0, 'duration': 0.0416}
+
+
+def get_frame_at(filepath: str, index: int) -> np.ndarray:
+    """
+    Извлекает ОДИН кадр из файла по индексу с использованием кэша ридера.
+    """
+    cache = VideoReaderCache.get_instance()
+    reader = cache.get_reader(filepath)
+    if not reader:
+        return None
+        
+    try:
+        raw_frame = reader.read(index=index)
+        
+        # Конвертация в float32 RGBA
+        arr = np.array(raw_frame, dtype=np.float32) / 255.0
+        
+        if arr.ndim == 3 and arr.shape[2] == 3:
+            alpha = np.ones((*arr.shape[:2], 1), dtype=np.float32)
+            arr = np.concatenate([arr, alpha], axis=2)
+            
+        return arr
+    except Exception as e:
+        # Если ошибка при чтении, возможно ридер "протух", сбрасываем
+        cache.reader = None
+        cache.last_path = None
+        # Убираем спам в консоль, так как случайный доступ в pyav иногда может падать на проблемных кадрах GIF
+        # print(f"[RZM] Error reading frame {index}: {e}")
+        return None

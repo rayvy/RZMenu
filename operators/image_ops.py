@@ -165,10 +165,13 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                         it = img.anim_frames.add()
                         it.w, it.h = f['size']
                     
+                    last_idx = -1
                     for seq_item in sequence:
                         it = img.anim_sequence.add()
                         it.frame_index = seq_item['idx']
                         it.duration = seq_item['duration']
+                        it.is_unique = (seq_item['idx'] != last_idx)
+                        last_idx = seq_item['idx']
 
                     img.anim_frame_count = len(unique_frames)
                     img.anim_total_duration = sum(s['duration'] for s in sequence)
@@ -180,6 +183,8 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                         
                 except Exception as e:
                     print(f"[RZM] Error processing animation {img.display_name}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     continue
 
             elif img.image_pointer:
@@ -522,11 +527,14 @@ class RZM_OT_AddAnimatedImage(bpy.types.Operator):
             self.report({'ERROR'}, f"File not found: {filepath}")
             return {'CANCELLED'}
 
-        # ─── Гигиеничный импорт: грузим только превью ──────────────────────
+        # --- ГИГИЕНИЧНЫЙ ИМПОРТ: грузим только превью (1-й кадр) ---
         try:
             # Читаем только 1 первый кадр для превью
             unique_frames, _ = load_animated_advanced(filepath, preset='ADAPTIVE', max_source_frames=1)
-            preview_bl_images = frames_to_blender_images(unique_frames, Path(filepath).stem + "_preview")
+            if not unique_frames:
+                raise ValueError("No frames could be extracted for preview.")
+            
+            bl_preview_images = frames_to_blender_images(unique_frames, Path(filepath).stem + "_preview")
         except Exception as e:
             self.report({'ERROR'}, f"Failed to load preview: {e}")
             return {'CANCELLED'}
@@ -542,34 +550,18 @@ class RZM_OT_AddAnimatedImage(bpy.types.Operator):
         rzm_image.display_name = base_name
         rzm_image.source_type = 'ANIMATED'
         rzm_image.anim_source_path = filepath
-        rzm_image.anim_frame_count = len(unique_frames)
         rzm_image.anim_max_frames = self.max_frames
-
-        # Записываем frametime каждого кадра
-        # UV coords пока нулевые — заполнятся при UpdateAtlasLayout
-        frame_frametimes = [[0, 0, 0, 0, f['frametime']] for f in unique_frames]
-        rzm_image.anim_frame_coords = json.dumps(frame_frametimes)
         
-        # --- NATIVE COLLECTION SYNC ---
+        # Сбрасываем коллекции — они заполнятся при Update Atlas Layout
         rzm_image.anim_frames.clear()
-        for f in unique_frames:
-            it = rzm_image.anim_frames.add()
-            it.duration = f['frametime']
-        # -----------------------------
+        rzm_image.anim_sequence.clear()
         
-        rzm_image.anim_total_duration = sum(f['frametime'] for f in unique_frames)
-
         # Привязываем image_pointer к первому кадру (для превью в редакторе)
-        if preview_bl_images:
-            rzm_image.image_pointer = preview_bl_images[0]
-            # Упаковываем превью в бленд
-            preview_bl_images[0].pack()
+        if bl_preview_images:
+            rzm_image.image_pointer = bl_preview_images[0]
+            bl_preview_images[0].pack()
 
-        self.report({'INFO'}, (
-            f"Loaded '{base_name}': {len(unique_frames)} unique frames, "
-            f"{rzm_image.anim_total_duration:.2f}s total. "
-            f"Run 'Update Atlas Layout' to pack frames."
-        ))
+        self.report({'INFO'}, f"Loaded '{base_name}' thumbnail. Run 'Update Atlas Layout' to process full animation.")
         return {'FINISHED'}
 
 

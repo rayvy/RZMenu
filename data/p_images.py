@@ -20,6 +20,7 @@ class RZMenuAnimationSequence(bpy.types.PropertyGroup):
     """Запись в таймлайне: какой уникальный кадр показывать и как долго."""
     frame_index: IntProperty(name="Unique Frame Index", description="Индекс в коллекции anim_frames")
     duration: FloatProperty(name="Duration", default=0.0416, description="Длительность показа этого кадра в секундах")
+    is_unique: BoolProperty(name="Is Unique Start", default=True, description="Является ли этот кадр началом нового уникального блока")
 
 class RZMCaptureSettings(bpy.types.PropertyGroup):
     """Настройки для оператора захвата изображений."""
@@ -94,11 +95,10 @@ class RZMenuImage(bpy.types.PropertyGroup):
     anim_export_preset: EnumProperty(
         name="Export Preset",
         items=[
-            ('ECONOMY',      "Economy",      "8 уникальных кадров (равномерное распределение)"),
-            ('ECONOMY_PLUS', "Economy+",     "16 уникальных кадров"),
-            ('ADAPTIVE',     "Adaptive",     "Умный поиск уникальных кадров (по умолч.)"),
-            ('ADAPTIVE_PLUS',"Adaptive+",    "Мягкий поиск (больше кадров)"),
-            ('EXTREME',      "Extreme",      "Максимальное количество уникальных кадров"),
+            ('ECONOMY',       "Economy",         "МАКСИМУМ 4 уникальных кадров"),
+            ('ADAPTIVE_LIGHT',"Adaptive Light",  "Легкая оптимизация (бывший Adaptive)"),
+            ('ADAPTIVE',      "Adaptive",        "Умная оптимизация (бывший Adaptive+)"),
+            ('ADAPTIVE_HEAVY',"Adaptive Heavy",  "Максимальное качество (без Double-Pass)")
         ],
         default='ADAPTIVE',
         update=mark_atlas_dirty_img
