@@ -482,7 +482,7 @@ endif
         $drawType = 0
         run = CustomShaderRCI2D
         {% endif %}
-        run = CommandListGetImageCords{{ element.image_id }}
+        run = CommandList{{ utils.get_image_cords_name(element, element.image_id, scene) }}
         {% if element.image_blending_mode == "OVERLAY" %}
         $drawtype = 2
         {% elif element.image_blending_mode == "COLOR"%}
@@ -501,10 +501,10 @@ endif
         {% else %}
         elif {{ item.condition }}
         {% endif %}
-            run = CommandListGetImageCords{{ item.image_id }}
+            run = CommandList{{ utils.get_image_cords_name(element, item.image_id, scene) }}
         {% endfor %}
         else
-        run = CommandListGetImageCords{{element.conditional_images[0].image_id}}
+        run = CommandList{{ utils.get_image_cords_name(element, element.conditional_images[0].image_id, scene) }}
         endif
 
     {# --- Часть 3: Index List (ID: 2) --- #}
@@ -516,10 +516,10 @@ endif
         {% else %}
         elif ${{ var_name }} == {{ loop.index0 }}
         {% endif %}
-            run = CommandListGetImageCords{{ item.image_id }}
+            run = CommandList{{ utils.get_image_cords_name(element, item.image_id, scene) }}
         {% endfor %}
         else
-        run = CommandListGetImageCords{{element.conditional_images[0].image_id}}
+        run = CommandList{{ utils.get_image_cords_name(element, element.conditional_images[0].image_id, scene) }}
         endif
     {% endif %}
 
@@ -530,7 +530,7 @@ endif
     #}
     {% if element.hover_image_id is defined and element.hover_image_id != -1 %}
     if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
-        run = CommandListGetImageCords{{ element.hover_image_id }}
+        run = CommandList{{ utils.get_image_cords_name(element, element.hover_image_id, scene) }}
     endif
     {% endif %}
 {% endmacro %}

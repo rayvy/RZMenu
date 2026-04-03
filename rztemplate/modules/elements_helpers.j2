@@ -36,9 +36,9 @@
 
             {# Генерируем if/elif #}
             {% if loop.first %}
-if {{ item.condition }}
+if {{ utils.normalize_all_vars(item.condition, element, scene) }}
             {% else %}
-elif {{ item.condition }}
+elif {{ utils.normalize_all_vars(item.condition, element, scene) }}
             {% endif %}
     $texPosX = {{ current_offset }}
     $texPosY = {{ txt_len }}

@@ -795,51 +795,30 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             if pix and not pix.isNull():
                 painter.save()
                 
-                # Apply SVG Tint if needed
+                # Apply SVG Tint ONLY for VECTOR source type
                 if self.image_source_type == 'VECTOR' and not self.svg_preserve_color:
-                    temp_pix = QtGui.QPixmap(pix.size())
-                    temp_pix.fill(QtCore.Qt.transparent)
-                    p_tint = QtGui.QPainter(temp_pix)
-                    p_tint.drawPixmap(0, 0, pix)
-                    p_tint.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
-                    
-                    color_vals = self.custom_color if self.custom_color else [1, 1, 1, 1]
-                    r, g, b = [int(max(0, min(255, x * 255))) for x in color_vals[:3]]
-                    p_tint.fillRect(temp_pix.rect(), QtGui.QColor(r, g, b))
-                    p_tint.end()
-                    pix = temp_pix
-                
-                # Apply theme icon_color tint for BASE/CUSTOM images without explicit element color
-                elif self.image_source_type in ('BASE', 'CUSTOM', 'VECTOR'):
-                    # Check if element has a meaningful custom color set (non-zero alpha)
+                    # Use element's explicit color if set (non-zero alpha), else fall back to theme icon_color
                     has_elem_color = (self.custom_color and 
                                       len(self.custom_color) > 3 and 
                                       self.custom_color[3] > 0.01)
                     if has_elem_color:
-                        # Element has explicit color - tint with it
+                        tint_r, tint_g, tint_b = [int(max(0,min(255, x*255))) for x in self.custom_color[:3]]
+                        tint_color = QtGui.QColor(tint_r, tint_g, tint_b)
+                    else:
+                        icon_col_str = t.get('icon_color', '')
+                        tint_color = QtGui.QColor(icon_col_str) if icon_col_str else QtGui.QColor(255, 255, 255)
+                    
+                    if tint_color.isValid():
                         temp_pix = QtGui.QPixmap(pix.size())
                         temp_pix.fill(QtCore.Qt.transparent)
                         p_tint = QtGui.QPainter(temp_pix)
                         p_tint.drawPixmap(0, 0, pix)
                         p_tint.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
-                        r, g, b = [int(max(0, min(255, x * 255))) for x in self.custom_color[:3]]
-                        p_tint.fillRect(temp_pix.rect(), QtGui.QColor(r, g, b))
+                        p_tint.fillRect(temp_pix.rect(), tint_color)
                         p_tint.end()
                         pix = temp_pix
-                    else:
-                        # No element color - apply theme's default icon_color
-                        icon_col_str = t.get('icon_color', '')
-                        if icon_col_str:
-                            icon_col = QtGui.QColor(icon_col_str)
-                            if icon_col.isValid():
-                                temp_pix = QtGui.QPixmap(pix.size())
-                                temp_pix.fill(QtCore.Qt.transparent)
-                                p_tint = QtGui.QPainter(temp_pix)
-                                p_tint.drawPixmap(0, 0, pix)
-                                p_tint.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
-                                p_tint.fillRect(temp_pix.rect(), icon_col)
-                                p_tint.end()
-                                pix = temp_pix
+                # Regular images (non-VECTOR) with NONE blend mode: draw as-is, no tinting ever.
+                # OVERLAY/COLOR blending is applied separately in the bg fill phase below.
 
                 # Calculate target rect
                 target_rect = rect

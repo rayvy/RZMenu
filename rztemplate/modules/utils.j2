@@ -145,7 +145,7 @@
 
 {%- macro normalize_all_vars(input_string, element=none, scene=none) -%}
     {%- if input_string -%}
-        {%- set result = input_string -%}
+        {%- set result = input_string | string -%}
         
         {# 1. Продвинутый режим: подставляем имя (или value_link) элемента, если он передан #}
         {%- if element and element.value_link -%}
@@ -157,8 +157,8 @@
                                     | replace('~ParentValue', p_val)    | replace('~PV', p_val)    | replace('~pv', p_val) -%}
         {%- endif -%}
         
-        {# 2. Базовый режим: заменяем префиксы @ и # на стандартный $ #}
-        {%- set result = result | replace('@', '$') | replace('#', '$') -%}
+        {# 2. Базовый режим: заменяем префиксы @, #, ~ на стандартный $ и исправляем возможные дубликаты $$ #}
+        {%- set result = result | replace('@', '$') | replace('#', '$') | replace('~', '$') | replace('$$', '$') | replace('$$', '$') -%}
         
         {{- result -}}
     {%- endif -%}
@@ -243,3 +243,35 @@
 {% macro merge_strings(a, b) -%}
 {{ a ~ '\n' ~ b }}
 {%- endmacro %}
+{%- macro get_img_res(image_id, scene) -%}
+    {%- if scene.rzm and scene.rzm.images -%}
+        {%- for img in scene.rzm.images if img.id == image_id -%}
+            {{- img -}}
+        {%- endfor -%}
+    {%- endif -%}
+{%- endmacro -%}
+
+{%- macro get_svg_config_key(element, image_id, scene) -%}
+    {%- set img = none -%}
+    {%- if scene.rzm and scene.rzm.images -%}
+        {%- for i in scene.rzm.images if i.id == image_id -%}{%- set img = i -%}{%- endfor -%}
+    {%- endif -%}
+    
+    {%- if img and img.source_type == 'VECTOR' -%}
+        {%- set scale = element.svg_scale | round(2) -%}
+        {%- set off_x = element.svg_offset[0] | round(2) -%}
+        {%- set off_y = element.svg_offset[1] | round(2) -%}
+        {%- set color_key = "ORIG" -%}
+        {%- if not img.svg_preserve_color -%}
+            {%- set r = (element.color[0] * 255) | int -%}
+            {%- set g = (element.color[1] * 255) | int -%}
+            {%- set b = (element.color[2] * 255) | int -%}
+            {%- set color_key = "%02x%02x%02x" | format(r, g, b) -%}
+        {%- endif -%}
+        {{- "SVG_" ~ image_id ~ "_" ~ scale ~ "_" ~ off_x ~ "_" ~ off_y ~ "_" ~ color_key -}}
+    {%- endif -%}
+{%- endmacro -%}
+
+{%- macro get_image_cords_name(element, image_id, scene) -%}
+    {%- endif -%}
+{%- endmacro -%}
