@@ -529,7 +529,7 @@ endif
          Работает поверх любого image_mode (SINGLE / CONDITIONAL_LIST / INDEX_LIST).
     #}
     {% if element.hover_image_id is defined and element.hover_image_id != -1 %}
-    if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+    if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
         run = CommandListGetImageCords{{ element.hover_image_id }}
     endif
     {% endif %}

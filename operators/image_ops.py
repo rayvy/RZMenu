@@ -187,6 +187,11 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                     traceback.print_exc()
                     continue
 
+            elif img.source_type == 'VECTOR':
+                # Векторная графика (SVG)
+                res = img.svg_custom_res if img.svg_use_custom_res else rzm.svg_global_res
+                image_sizes_to_pack[img.display_name] = (res, res)
+
             elif img.image_pointer:
                 w, h = img.image_pointer.size
                 if w > 0 and h > 0:
@@ -331,6 +336,23 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                     frame_key = f"{img.display_name}_anim_{n:04d}"
                     images_to_render[frame_key] = bl_img
             
+            elif img.source_type == 'VECTOR':
+                # Рендерим SVG в растр нужного разрешения
+                from ..core.svg_loader import render_svg_to_pixels
+                res = img.svg_custom_res if img.svg_use_custom_res else rzm.svg_global_res
+                pixels = render_svg_to_pixels(img.anim_source_path, res, res)
+                
+                if pixels is not None:
+                    # Создаем временную картинку для атласа
+                    name = f"TEMP_SVG_{img.display_name}"
+                    # frames_to_blender_images ожидает список [{'pixels', 'size'}]
+                    from ..core.animated_loader import frames_to_blender_images
+                    bl_svg_list = frames_to_blender_images([{'pixels': pixels, 'size': (res, res)}], name)
+                    temp_bl_images.extend(bl_svg_list)
+                    images_to_render[img.display_name] = bl_svg_list[0]
+                else:
+                    print(f"[RZM] Failed to render SVG for export: {img.display_name}")
+
             elif img.image_pointer and any(img.uv_size):
                 images_to_render[img.display_name] = img.image_pointer
         
@@ -396,36 +418,65 @@ class RZM_OT_AddImage(bpy.types.Operator):
     bl_label = "Add Image to Library"
     bl_options = {'REGISTER', 'UNDO'}
     
-    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
-    filter_glob: bpy.props.StringProperty(default="*.png;*.jpg;*.jpeg;*.dds;*.tga;*.bmp", options={'HIDDEN'})
+    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
+    filter_glob: bpy.props.StringProperty(default="*.png;*.jpg;*.jpeg;*.dds;*.tga;*.bmp;*.svg", options={'HIDDEN'})
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
     
     def execute(self, context):
-        rzm_images = context.scene.rzm.images
-        display_name = Path(self.filepath).stem
+        rzm = context.scene.rzm
+        rzm_images = rzm.images
+        filepath = bpy.path.abspath(self.filepath)
         
-        try:
-            bl_image = bpy.data.images.load(self.filepath)
-            bl_image.pack()
-        except Exception as e:
-            self.report({'ERROR'}, f"Could not load image: {e}")
+        if not os.path.isfile(filepath):
+            self.report({'ERROR'}, f"File not found: {filepath}")
             return {'CANCELLED'}
 
-        new_id = get_next_image_id(rzm_images)
-        new_rzm_image = rzm_images.add()
-        
-        new_rzm_image.id = new_id
-        new_rzm_image.display_name = display_name
-        new_rzm_image.image_pointer = bl_image
-        new_rzm_image.source_type = 'CUSTOM'
+        display_name = Path(filepath).stem
+        ext = Path(filepath).suffix.lower()
+
+        if ext == ".svg":
+            # Специальная обработка для SVG
+            from ..core.svg_loader import render_svg_to_pixels
+            from ..core.animated_loader import frames_to_blender_images
+            
+            res = rzm.svg_global_res
+            pixels = render_svg_to_pixels(filepath, res, res)
+            
+            if pixels is None:
+                self.report({'ERROR'}, "Failed to render SVG preview.")
+                return {'CANCELLED'}
+            
+            # Создаем Blender Image для превью в редакторе
+            bl_preview_list = frames_to_blender_images([{'pixels': pixels, 'size': (res, res)}], display_name + "_svg_preview")
+            bl_image = bl_preview_list[0]
+            bl_image.pack()
+
+            new_rzm_image = rzm_images.add()
+            new_rzm_image.id = get_next_image_id(rzm_images)
+            new_rzm_image.display_name = display_name
+            new_rzm_image.source_type = 'VECTOR'
+            new_rzm_image.anim_source_path = filepath
+            new_rzm_image.image_pointer = bl_image
+        else:
+            # Обычные растровые изображения
+            try:
+                bl_image = bpy.data.images.load(filepath)
+                bl_image.pack()
+            except Exception as e:
+                self.report({'ERROR'}, f"Could not load image: {e}")
+                return {'CANCELLED'}
+
+            new_rzm_image = rzm_images.add()
+            new_rzm_image.id = get_next_image_id(rzm_images)
+            new_rzm_image.display_name = display_name
+            new_rzm_image.image_pointer = bl_image
+            new_rzm_image.source_type = 'CUSTOM'
         
         context.scene.rzm_active_image_index = len(rzm_images) - 1
-        self.report({'INFO'}, f"Image '{display_name}' added with ID {new_rzm_image.id}.")
-        
-        
+        self.report({'INFO'}, f"Image '{display_name}' added as {new_rzm_image.source_type}.")
         return {'FINISHED'}
 
 class RZM_OT_RemoveImage(bpy.types.Operator):

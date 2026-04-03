@@ -46,6 +46,7 @@ class RZMenuImage(bpy.types.PropertyGroup):
             ('BASE',     "Base",     "Базовая иконка из библиотеки"),
             ('CAPTURED', "Captured", "Захвачено из вьюпорта"),
             ('ANIMATED', "Animated", "GIF или видеофайл с автоматической нарезкой кадров"),
+            ('VECTOR',   "Vector (SVG)", "Scale-independent vector graphics (SVG)"),
         ],
         default='CUSTOM'
     )
@@ -112,6 +113,22 @@ class RZMenuImage(bpy.types.PropertyGroup):
         default=1.0,
         min=0.01,
         max=16.0,
+        update=mark_atlas_dirty_img
+    )
+
+    # ─── Vector-специфичные поля ───────────────────────────────────────────────
+    svg_use_custom_res: BoolProperty(
+        name="Use Custom Resolution",
+        description="Override global SVG resolution for this resource",
+        default=False,
+        update=mark_atlas_dirty_img
+    )
+    svg_custom_res: IntProperty(
+        name="Custom Resolution",
+        description="Rasterization size for this SVG in the atlas",
+        default=256,
+        min=16,
+        max=2048,
         update=mark_atlas_dirty_img
     )
 

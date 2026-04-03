@@ -42,7 +42,7 @@ class RZAreaHeader(QtWidgets.QFrame):
         
         # Area menu button
         im = IconManager.get_instance()
-        self.btn_menu = QtWidgets.QPushButton(im.get_icon("circle_3dots"), "")
+        self.btn_menu = QtWidgets.QPushButton(im.get_icon("dots-three-circle"), "")
         self.btn_menu.setObjectName("AreaMenuButton")
         self.btn_menu.setFixedSize(14, 14)
         self.btn_menu.setIconSize(QtCore.QSize(12, 12))
@@ -82,15 +82,15 @@ class RZAreaHeader(QtWidgets.QFrame):
         im = IconManager.get_instance()
         menu = QtWidgets.QMenu(self)
         
-        act_split_v = menu.addAction(im.get_icon("down_doublearrow"), "Split Vertical")
+        act_split_v = menu.addAction(im.get_icon("caret-double-down"), "Split Vertical")
         act_split_v.triggered.connect(self.split_vertical_requested.emit)
         
-        act_split_h = menu.addAction(im.get_icon("right_doublearrow"), "Split Horizontal")
+        act_split_h = menu.addAction(im.get_icon("caret-double-right"), "Split Horizontal")
         act_split_h.triggered.connect(self.split_horizontal_requested.emit)
         
         menu.addSeparator()
         
-        act_close = menu.addAction(im.get_icon("circle_x"), "Close Area")
+        act_close = menu.addAction(im.get_icon("x-circle"), "Close Area")
         act_close.triggered.connect(self.close_requested.emit)
         
         menu.exec(self.btn_menu.mapToGlobal(QtCore.QPoint(0, self.btn_menu.height())))

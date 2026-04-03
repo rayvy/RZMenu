@@ -1,5 +1,6 @@
 import os
-from PySide6 import QtWidgets, QtGui, QtCore
+import re
+from PySide6 import QtWidgets, QtGui, QtCore, QtSvg
 
 class IconManager:
     _instance = None
@@ -12,27 +13,15 @@ class IconManager:
         qt_editor_dir = os.path.dirname(current_dir) # qt_editor
         rzmenu_root = os.path.dirname(qt_editor_dir) # RZMenu
         
-        # Priority 1: Modern resources (if exists)
+        # Priority 1: Modern SVG resources
+        self.icons_svg_dir = os.path.join(rzmenu_root, "resources", "icons_svg")
+        # Priority 2: Standard icon resources
         self.icons_dir = os.path.join(rzmenu_root, "resources", "icons")
-        # Priority 3: System base icons
+        # Priority 3: Legacy base icons
         self.base_icons_dir = os.path.join(rzmenu_root, "base_icons")
-        print(f"[IconsDebug] IconManager Init: icons_dir={self.icons_dir}, base_icons_dir={self.base_icons_dir}")
+        
         self._cache = {}
-
-    def _get_custom_icons_dir(self) -> str:
-        """Query Blender for the custom asset library path from Addon Preferences."""
-        import bpy
-        try:
-            addon_name = __package__.split(".")[0] if "." in __package__ else "RZMenu"
-            prefs = bpy.context.preferences.addons.get(addon_name)
-            if prefs:
-                prefs = prefs.preferences
-                val = getattr(prefs, "custom_asset_library", "")
-                print(f"[IconsDebug] Custom Library from Prefs: '{val}'")
-                return val
-        except Exception as e:
-            print(f"[IconsDebug] Error reading preferences: {e}")
-        return ""
+        self._svg_cache = {} # Cache for tinted SVGs: (name, color_hex) -> QIcon
 
     @classmethod
     def get_instance(cls):
@@ -40,58 +29,89 @@ class IconManager:
             cls._instance = IconManager()
         return cls._instance
 
-    def _find_path(self, name: str) -> str:
-        """Smarter path discovery for icons, handling prefixes, extensions, and custom dirs."""
-        search_dirs = []
-        # Priority 1: modern resources
-        if os.path.exists(self.icons_dir):
-            search_dirs.append(self.icons_dir)
+    def _get_theme_color(self, color_key: str) -> str:
+        """Helper to get hex color from the current theme."""
+        # Simple fallback if theme system is not accessible here
+        from ..widgets.lib.theme import get_current_theme
+        t = get_current_theme()
+        return t.get(color_key, "#FFFFFF")
+
+    def get_icon(self, name: str, color: str = None, size: int = 24) -> QtGui.QIcon:
+        """
+        Get icon by name. If color is provided (hex or theme key like 'accent'), 
+        and the icon is an SVG, it will be dynamically tinted.
+        """
+        # Resolve theme key to hex
+        if color and not color.startswith("#"):
+            color = self._get_theme_color(color)
         
-        # Priority 2: user custom directory
-        custom_dir = self._get_custom_icons_dir()
-        if custom_dir and os.path.isdir(custom_dir):
-            search_dirs.append(custom_dir)
-            
-        # Priority 3: legacy base_icons
-        if os.path.exists(self.base_icons_dir):
-            search_dirs.append(self.base_icons_dir)
+        cache_key = (name, color)
+        if cache_key in self._svg_cache:
+            return self._svg_cache[cache_key]
 
-        supported_exts = [".svg", ".png", ".dds", ".jpg", ".jpeg", ".tga", ".bmp"]
+        # 1. Try to find SVG first for best quality
+        svg_path = os.path.join(self.icons_svg_dir, f"{name}.svg")
+        if not os.path.exists(svg_path):
+            # Try with -fill suffix if using Phosphor fill icons
+            svg_path = os.path.join(self.icons_svg_dir, f"{name}-fill.svg")
 
-        for d in search_dirs:
-            # Exact match first
-            for ext in supported_exts:
-                path = os.path.join(d, f"{name}{ext}")
-                if os.path.exists(path): return path
-            
-            # Pattern match: [number]_[name]
-            try:
-                files = os.listdir(d)
-                for f in files:
-                    if "_" in f:
-                        parts = f.split("_", 1)
-                        if len(parts) > 1:
-                            fn_no_ext, ext = os.path.splitext(parts[1])
-                            if fn_no_ext == name and ext.lower() in supported_exts:
-                                return os.path.join(d, f)
-            except OSError:
-                continue
-        return None
+        if os.path.exists(svg_path):
+            icon = self._load_svg(svg_path, color, size)
+            if icon:
+                self._svg_cache[cache_key] = icon
+                return icon
 
-    def get_icon(self, name: str, fallback_sp: QtWidgets.QStyle.StandardPixmap = None) -> QtGui.QIcon:
-        if name in self._cache:
-            return self._cache[name]
-
+        # 2. Fallback to legacy discovery (find_path)
         path = self._find_path(name)
         if path:
             icon = QtGui.QIcon(path)
-        else:
-            style = QtWidgets.QApplication.style()
-            if fallback_sp is not None:
-                icon = style.standardIcon(fallback_sp)
-            else:
-                icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MessageBoxQuestion)
+            self._svg_cache[cache_key] = icon
+            return icon
 
-        self._cache[name] = icon
+        # 3. Last fallback: System icon
+        style = QtWidgets.QApplication.style()
+        icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MessageBoxQuestion)
         return icon
+
+    def _load_svg(self, path: str, color: str, size: int) -> QtGui.QIcon:
+        """Loads and optionally tints an SVG file."""
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                svg_data = f.read()
+
+            if color:
+                # Tinting logic: 
+                # Phosphor icons usually have paths without fill (default black)
+                # We inject fill/stroke attributes or replace currentColor if present
+                if 'currentColor' in svg_data:
+                    svg_data = svg_data.replace('currentColor', color)
+                else:
+                    # Inject fill into the <svg> tag as a default for all paths
+                    svg_data = re.sub(r'<svg([^>]*)>', rf'<svg\1 fill="{color}">', svg_data)
+
+            renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(svg_data.encode('utf-8')))
+            if not renderer.isValid():
+                return None
+
+            pixmap = QtGui.QPixmap(size, size)
+            pixmap.fill(QtCore.Qt.transparent)
+            painter = QtGui.QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+
+            return QtGui.QIcon(pixmap)
+        except Exception as e:
+            print(f"[IconManager] Error loading SVG {path}: {e}")
+            return None
+
+    def _find_path(self, name: str) -> str:
+        search_dirs = [self.icons_dir, self.base_icons_dir]
+        supported_exts = [".svg", ".png", ".dds", ".jpg", ".jpeg"]
+
+        for d in search_dirs:
+            if not os.path.exists(d): continue
+            for ext in supported_exts:
+                path = os.path.join(d, f"{name}{ext}")
+                if os.path.exists(path): return path
+        return None
 

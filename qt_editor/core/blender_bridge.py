@@ -265,7 +265,9 @@ def update_asset_property(asset_id, prop_name, value):
         'anim_end': 'anim_end_frame',
         'anim_max': 'anim_max_frames',
         'anim_speed': 'anim_speed_multiplier',
-        'name': 'display_name'
+        'name': 'display_name',
+        'svg_use_custom': 'svg_use_custom_res',
+        'svg_custom': 'svg_custom_res'
     }
     blender_prop = attr_map.get(prop_name, prop_name)
     
@@ -275,6 +277,17 @@ def update_asset_property(asset_id, prop_name, value):
             print(f"[Bridge] Updated asset {asset_id}: {blender_prop} = {value}")
         except Exception as e:
             print(f"[Bridge] Error updating {blender_prop}: {e}")
+
+def update_global_property(prop_name, value):
+    """Обновляет глобальное свойство в rzm root."""
+    if not bpy.context or not bpy.context.scene: return
+    rzm = bpy.context.scene.rzm
+    if hasattr(rzm, prop_name):
+        try:
+            setattr(rzm, prop_name, value)
+            print(f"[Bridge] Updated global: {prop_name} = {value}")
+        except Exception as e:
+            print(f"[Bridge] Error updating global {prop_name}: {e}")
 
 def delete_asset(asset_id, asset_type):
     """Удаляет ассет из проекта."""

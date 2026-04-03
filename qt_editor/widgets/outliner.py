@@ -270,13 +270,13 @@ class RZMOutlinerPanel(RZEditorPanel):
             
             ctype = data.get('class_type', 'CONTAINER')
             
-            # MODERNIZATION: Custom Icon System with Fallback
+            # MODERNIZATION: Custom Icon System with Phosphor SVGs
             icon_map = {
-                "CONTAINER": ("folder", QtWidgets.QStyle.StandardPixmap.SP_DirIcon),
-                "BUTTON": ("button", QtWidgets.QStyle.StandardPixmap.SP_DialogOkButton),
-                "TEXT": ("text", QtWidgets.QStyle.StandardPixmap.SP_FileIcon),
-                "SLIDER": ("slider", QtWidgets.QStyle.StandardPixmap.SP_ToolBarHorizontalExtensionButton),
-                "GRID_CONTAINER": ("grid", QtWidgets.QStyle.StandardPixmap.SP_FileDialogDetailedView),
+                "CONTAINER": "folder",
+                "BUTTON": "cursor-click",
+                "TEXT": "text-t",
+                "SLIDER": "sliders",
+                "GRID_CONTAINER": "grid-four",
             }
             
             # Page Indication Highlight
@@ -289,13 +289,13 @@ class RZMOutlinerPanel(RZEditorPanel):
                 font.setBold(True)
                 item.setFont(0, font)
 
-            name, sp = icon_map.get(ctype, ("file", QtWidgets.QStyle.StandardPixmap.SP_FileIcon))
-            icon = IconManager.get_instance().get_icon(name, fallback_sp=sp)
+            name = icon_map.get(ctype, "file")
+            icon = IconManager.get_instance().get_icon(name, color="text_light")
             item.setIcon(0, icon)
 
             is_hidden = data.get('is_hidden', False)
-            vis_icon = IconManager.get_instance().get_icon("eye" if not is_hidden else "circle_x", 
-                                                         fallback_sp=QtWidgets.QStyle.StandardPixmap.SP_TitleBarContextHelpButton if is_hidden else QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton)
+            vis_icon = IconManager.get_instance().get_icon("eye" if not is_hidden else "eye-slash", 
+                                                         color="accent" if not is_hidden else "text_disabled")
             item.setIcon(1, vis_icon)
             item.setText(1, "") # Icon only
             item.setTextAlignment(1, QtCore.Qt.AlignCenter)
@@ -303,8 +303,8 @@ class RZMOutlinerPanel(RZEditorPanel):
                 item.setForeground(0, disabled_color)
 
             is_sel = data.get('is_selectable', True)
-            sel_icon = IconManager.get_instance().get_icon("arrow_right" if is_sel else "lock",
-                                                         fallback_sp=QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton if is_sel else QtWidgets.QStyle.StandardPixmap.SP_DialogCloseButton) 
+            sel_icon = IconManager.get_instance().get_icon("cursor" if is_sel else "lock-simple",
+                                                         color="accent" if is_sel else "text_disabled") 
             item.setIcon(2, sel_icon)
             item.setText(2, "") # Icon only
             item.setTextAlignment(2, QtCore.Qt.AlignCenter)

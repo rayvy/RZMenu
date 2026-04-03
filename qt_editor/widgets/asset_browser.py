@@ -6,6 +6,7 @@ from .panel_base import RZEditorPanel
 from .. import core
 from ..core import read, blender_bridge, signals
 from ..utils.image_cache import ImageCache
+from ..utils.icons import IconManager
 from ..core.signals import SIGNALS
 import json
 
@@ -103,7 +104,8 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         self.playback_layout.setContentsMargins(0, 0, 0, 0)
         self.playback_layout.setSpacing(4)
         
-        self.btn_play = QtWidgets.QPushButton("▶")
+        self.btn_play = QtWidgets.QPushButton()
+        self.btn_play.setIcon(IconManager.get_instance().get_icon("play"))
         self.btn_play.setFixedWidth(24)
         self.btn_play.setCheckable(True)
         self.btn_play.clicked.connect(self.on_play_clicked)
@@ -144,8 +146,33 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         form.addRow("Source Path:", self.lbl_path)
         
         layout.addLayout(form)
+        
+        # --- VECTOR SETTINGS (SVG) ---
+        self.vector_group = QtWidgets.QGroupBox("Vector Graphics (SVG)")
+        vector_vbox = QtWidgets.QVBoxLayout(self.vector_group)
+        vector_form = QtWidgets.QFormLayout()
+        
+        self.spin_svg_global = QtWidgets.QSpinBox()
+        self.spin_svg_global.setRange(16, 2048)
+        self.spin_svg_global.setSuffix(" px")
+        self.spin_svg_global.setToolTip("Global rasterization size for all SVGs in this project.")
+        self.spin_svg_global.valueChanged.connect(self.on_prop_changed)
+        vector_form.addRow("Global Res:", self.spin_svg_global)
+        
+        self.chk_svg_custom = QtWidgets.QCheckBox("Use Custom Resolution")
+        self.chk_svg_custom.toggled.connect(self.on_prop_changed)
+        vector_form.addRow(self.chk_svg_custom)
+        
+        self.spin_svg_custom = QtWidgets.QSpinBox()
+        self.spin_svg_custom.setRange(16, 2048)
+        self.spin_svg_custom.setSuffix(" px")
+        self.spin_svg_custom.valueChanged.connect(self.on_prop_changed)
+        vector_form.addRow("Custom Res:", self.spin_svg_custom)
+        
+        vector_vbox.addLayout(vector_form)
+        layout.addWidget(self.vector_group)
 
-        # --- ANIMATION GROUP ---
+        # --- ANIMATION OPTIMIZATION ---
         self.anim_group = QtWidgets.QGroupBox("Animation Optimization")
         anim_vbox = QtWidgets.QVBoxLayout(self.anim_group)
         
@@ -196,7 +223,8 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
 
         btn_h = QtWidgets.QHBoxLayout()
         
-        self.btn_delete = QtWidgets.QPushButton("Delete")
+        self.btn_delete = QtWidgets.QPushButton()
+        self.btn_delete.setIcon(IconManager.get_instance().get_icon("trash"))
         self.btn_delete.clicked.connect(self.on_delete_clicked)
         self.btn_delete.setStyleSheet("background-color: #5b2b2b;")
         btn_h.addWidget(self.btn_delete)
@@ -236,12 +264,25 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
 
         static_exts = ('.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp')
         is_static_ext = path.lower().endswith(static_exts)
-        is_anim = (data.get('source_type') == 'ANIMATED' or path.lower().endswith('.gif')) and not is_static_ext
+        is_vector = data.get('source_type') == 'VECTOR' or path.lower().endswith('.svg')
+        is_anim = (data.get('source_type') == 'ANIMATED' or path.lower().endswith('.gif')) and not is_static_ext and not is_vector
         
+        self.vector_group.setVisible(is_vector)
         self.anim_group.setVisible(is_anim)
         self.playback_container.setVisible(is_anim)
         self.playback_container.setEnabled(is_anim)
         
+        if is_vector:
+            import bpy
+            rzm = bpy.context.scene.rzm
+            # Find image to get specific properties
+            img = next((i for i in rzm.images if i.id == data.get('id')), None)
+            if img:
+                self.spin_svg_global.setValue(rzm.svg_global_res)
+                self.chk_svg_custom.setChecked(img.svg_use_custom_res)
+                self.spin_svg_custom.setValue(img.svg_custom_res)
+                self.spin_svg_custom.setEnabled(img.svg_use_custom_res)
+
         if is_anim:
             from ...core import animated_loader
             info = animated_loader.get_frame_info(path)
@@ -276,12 +317,13 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         self.is_updating = False
 
     def on_play_clicked(self, checked):
+        icon_mgr = IconManager.get_instance()
         if checked:
-            self.btn_play.setText("⏸")
+            self.btn_play.setIcon(icon_mgr.get_icon("pause"))
             if self.q_movie: self.q_movie.setPaused(False)
             else: self.anim_timer.start()
         else:
-            self.btn_play.setText("▶")
+            self.btn_play.setIcon(icon_mgr.get_icon("play"))
             if self.q_movie: self.q_movie.setPaused(True)
             else: self.anim_timer.stop()
 
@@ -342,6 +384,7 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
             asset_id = self.asset_data.get('path')
         
         is_anim = self.asset_data.get('source_type') == 'ANIMATED'
+        is_vector = self.asset_data.get('source_type') == 'VECTOR'
         
         # Общий Name
         if self.txt_name.text() != self.asset_data.get('name'):
@@ -352,6 +395,12 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
             blender_bridge.update_asset_property(asset_id, 'anim_start', self.spin_start.value())
             blender_bridge.update_asset_property(asset_id, 'anim_end', self.spin_end.value())
             blender_bridge.update_asset_property(asset_id, 'anim_max_frames', self.spin_max_frames.value())
+            
+        if is_vector:
+            blender_bridge.update_global_property('svg_global_res', self.spin_svg_global.value())
+            blender_bridge.update_asset_property(asset_id, 'svg_use_custom', self.chk_svg_custom.isChecked())
+            blender_bridge.update_asset_property(asset_id, 'svg_custom', self.spin_svg_custom.value())
+            self.spin_svg_custom.setEnabled(self.chk_svg_custom.isChecked())
 
     def on_build_atlas(self):
         """Вызывает пересборку атласа для предпросмотра эффекта Optimization."""

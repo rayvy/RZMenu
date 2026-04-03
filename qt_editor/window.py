@@ -229,7 +229,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         if layout_name == "Default": return # Cannot delete default
 
         menu = QtWidgets.QMenu(self)
-        act_del = menu.addAction(IconManager.get_instance().get_icon("circle_x"), f"Delete Layout '{layout_name}'")
+        act_del = menu.addAction(IconManager.get_instance().get_icon("trash"), f"Delete Layout '{layout_name}'")
         act_del.triggered.connect(lambda: self._delete_layout(layout_name))
         menu.exec(self.layout_tabs.mapToGlobal(pos))
 
@@ -253,12 +253,12 @@ class RZMEditorWindow(QtWidgets.QWidget):
             self.action_manager.connect_button(btn, op_id)
             return btn
 
-        add_btn("rotate", "rzm.refresh", "Refresh All Data")
+        add_btn("arrows-clockwise", "rzm.refresh", "Refresh All Data")
         self.toolbar_layout.addSpacing(10)
-        add_btn("arrow_left", "rzm.undo", "Undo Action")
-        add_btn("arrow_right", "rzm.redo", "Redo Action")
+        add_btn("arrow-u-up-left", "rzm.undo", "Undo Action")
+        add_btn("arrow-u-up-right", "rzm.redo", "Redo Action")
         self.toolbar_layout.addSpacing(10)
-        add_btn("circle_x", "rzm.delete", "Delete Selected") 
+        add_btn("trash", "rzm.delete", "Delete Selected") 
         
         self.toolbar_layout.addSpacing(10)
         btn_exp = add_btn("export", "rzm.full_export", "Full Export (rzm.full_export)", special=True)
@@ -279,23 +279,23 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
         # Move Save/Reset here
         self.toolbar_layout.addSpacing(4)
-        btn_save = QtWidgets.QPushButton(IconManager.get_instance().get_icon("circle_+"), "")
+        btn_save = QtWidgets.QPushButton(IconManager.get_instance().get_icon("plus-circle"), "")
         btn_save.setFixedSize(20, 20)
         btn_save.setIconSize(QtCore.QSize(12, 12))
         btn_save.setToolTip("Save Current Layout")
         btn_save.clicked.connect(self.save_current_layout)
         self.toolbar_layout.addWidget(btn_save)
-
-        btn_reset = QtWidgets.QPushButton(IconManager.get_instance().get_icon("rotate"), "")
+        
+        btn_reset = QtWidgets.QPushButton(IconManager.get_instance().get_icon("arrows-clockwise"), "")
         btn_reset.setFixedSize(20, 20)
         btn_reset.setIconSize(QtCore.QSize(12, 12))
         btn_reset.setToolTip("Reset to Default")
         btn_reset.clicked.connect(self.reset_layout)
         self.toolbar_layout.addWidget(btn_reset)
-
+        
         self.toolbar_layout.addStretch()
         
-        btn_pref = add_btn("gear", "rzm.open_preferences", "Editor Preferences", special=True)
+        btn_pref = add_btn("gear-six", "rzm.open_preferences", "Editor Preferences", special=True)
         btn_pref.clicked.connect(self.open_settings)
 
     def setup_footer(self):
