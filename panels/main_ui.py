@@ -40,13 +40,25 @@ class RZM_UL_Values(bpy.types.UIList):
         elif item.value_type == 'VECTOR':
             row.prop(item, "vector_value", text="")
 
+class RZM_UL_ToggleDefinitions(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "toggle_name", text="", emboss=False, icon='CHECKBOX_HLT')
+        row.prop(item, "bit_count", text="Bits")
+
+class RZM_UL_Shapes(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "shape_name", text="", emboss=False, icon='SHAPEKEY_DATA')
+        row.label(text=f"Keys: {len(item.shape_keys)}")
+
 class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     bl_label = "RZ Constructor"
     bl_idname = "VIEW3D_PT_rz_constructor_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'RZ Constructor'
-    bl_order = 0
+    bl_order = 1
     
     # ... (draw_capture_pro_ui и draw_captures_preview_ui оставляем без изменений) ...
     def draw_capture_pro_ui(self, context, layout):
@@ -597,8 +609,8 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
     bl_idname = "VIEW3D_PT_rz_constructor_toolbox_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'RZ Toolbox'
-    bl_order = 1
+    bl_category = 'RZ Constructor'
+    bl_order = 0
     
     @classmethod
     def poll(cls, context):
@@ -608,23 +620,50 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        rzm = context.scene.rzm
+        scene = context.scene
+        rzm = scene.rzm
         
-        # 1. Object Properties (Existing Toggles & TexSlots)
+        # 1. ALWAYS SHOW MESH PROPERTIES AT TOP
         VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)
         
-        # 2. Variables (New Section)
-        layout.separator()
+        layout.separator(factor=2.0)
+        
+        # 2. PROJECT CONFIGURATION AT BOTTOM
         box = layout.box()
-        box.label(text="Project Global Values:", icon='IPO_SINE')
+        box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
+        
+        # Tabs Selector inside the box
         row = box.row(align=True)
-        row.operator("rzm.add_value", text="Add", icon='ADD')
-        row.operator("rzm.remove_value", text="", icon='REMOVE')
-        box.template_list("RZM_UL_Values", "", rzm, "rzm_values", context.scene, "rzm_active_value_index")
+        row.prop(scene, "rzm_toolbox_tab", expand=True)
+        
+        tab = scene.rzm_toolbox_tab
+        
+        if tab == 'TOGGLES':
+            # Project Toggles
+            row = box.row(align=True)
+            row.operator("rzm.add_toggle_definition", text="Add Toggle", icon='ADD')
+            row.operator("rzm.remove_toggle_definition", text="", icon='REMOVE')
+            box.template_list("RZM_UL_ToggleDefinitions", "", rzm, "toggle_definitions", context.scene, "rzm_active_toggle_def_index")
+        
+        elif tab == 'VARIABLES':
+            # Project Variables
+            row = box.row(align=True)
+            row.operator("rzm.add_value", text="Add Var", icon='ADD')
+            row.operator("rzm.remove_value", text="", icon='REMOVE')
+            box.template_list("RZM_UL_Values", "", rzm, "rzm_values", context.scene, "rzm_active_value_index")
+
+        elif tab == 'SHAPES':
+            # Project Shapes
+            row = box.row(align=True)
+            row.operator("rzm.add_shape", text="Add Shape", icon='ADD')
+            row.operator("rzm.remove_shape", text="", icon='REMOVE')
+            box.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
 
 classes_to_register = [ 
     RZM_UL_CustomScriptList,
     RZM_UL_Values,
+    RZM_UL_ToggleDefinitions,
+    RZM_UL_Shapes,
     RZM_MT_AssignToggleMenu, 
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel, 

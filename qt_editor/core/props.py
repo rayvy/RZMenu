@@ -42,6 +42,7 @@ PROP_MAP = {
     "is_locked_pos": ("qt_lock_pos", None, 'S'), # Alias
     "qt_lock_size": ("qt_lock_size", None, 'S'),
     "is_locked_size": ("qt_lock_size", None, 'S'), # Alias
+    "qt_lock_ratio": ("qt_lock_ratio", None, 'S'),
     
     "qt_selectable": ("qt_selectable", None, 'D'),
     "is_selectable": ("qt_selectable", None, 'D'), # Alias
@@ -873,3 +874,44 @@ def update_element_id(old_id, new_id):
         signals.SIGNALS.structure_changed.emit()
     except Exception as e:
         print(f"[CORE_PROPS] Error updating ID: {e}")
+def reset_element_ratio(target_ids):
+    """
+    Resets elements' heights based on their width and the aspect ratio of their assigned image.
+    If multiple images (conditional) exist, the first one is used.
+    """
+    if not target_ids: return
+    import bpy
+    from ..utils.image_cache import ImageCache
+    
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        targets = [e for e in elements if e.id in target_ids]
+        changed = False
+        
+        for elem in targets:
+            # 1. Determine Image ID
+            img_id = elem.image_id
+            if img_id == -1 and elem.conditional_images:
+                img_id = elem.conditional_images[0].image_id
+            
+            if img_id == -1: continue
+            
+            # 2. Get Resolution from Cache
+            # Note: Assuming ImageCache.get_image_resolution exists or analogous
+            res = ImageCache.get_instance().get_image_resolution(img_id)
+            if not res or res[0] == 0: continue
+            
+            img_w, img_h = res
+            current_w = elem.size[0]
+            
+            # 3. Calculate New Height
+            new_h = int(current_w * (img_h / img_w))
+            
+            if elem.size[1] != new_h:
+                elem.size[1] = new_h
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Reset Ratio")
+            signals.SIGNALS.transform_changed.emit()
+            signals.SIGNALS.data_changed.emit()

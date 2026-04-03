@@ -1,35 +1,165 @@
 {
-    "Window": [
-        {"label": "Screen Width", "text": "$ScreenWidth"},
-        {"label": "Screen Height", "text": "$ScreenHeight"},
-        {"label": "Safe Width", "text": "$SafeWidth"},
-        {"label": "Safe Height", "text": "$SafeHeight"}
+    "System stuff": [
+        {"label": "Screen Width", "text": "$ScreenW"},
+        {"label": "Screen Height", "text": "$ScreenH"},
+        {"label": "Cursor X", "text": "$cursorX"},
+        {"label": "Cursor Y", "text": "$cursorY"},
+        {"label": "Time", "text": "time"},
+        {"label": "Time 0.0-1.0 (linear)", "text": "(time%1)"},
+        {"label": "Time 0.0-1.0 (cyclic)", "text": "((time % 1) * (1 - (time % 1)) * 4)"}
     ],
     "Properties": [
         {"label": "Active Element ID", "text": "{{element.id}}"},
         {"label": "Element X Pos", "text": "{{element.position[0]}}"},
-        {"label": "Element Width", "text": "{{element.size[0]}}"},
-        {"label": "Active Page Color (R)", "text": "{{element.page_color[0]}}"}
+        {"label": "Element Width", "text": "{{element.size[0]}}"}
     ],
-    "Variables": [
-        {"label": "First Link Name", "text": "{{element.value_link[0].value_name}}"},
-        {"label": "First Link Value", "text": "${{element.value_link[0].value_name}}"},
-        {"label": "First Link Range", "text": "clamp(value, {{element.value_link[0].value_min}}, {{element.value_link[0].value_max}})"}
-    ],
-    "Logic": [
+    "Value_Link_Math": [
         {
-            "label": "Cycle Value Link",
+            "label": "Sin Wave on Link",
             "text": [
-                "if {{element.value_link[0].value_name}} < {{element.value_link[0].value_max}}",
-                "    {{element.value_link[0].value_name}} = {{element.value_link[0].value_name}} + 1",
-                "else:",
-                "    {{element.value_link[0].value_name}} = 0"
+                "$mathin = {{element.value_link[0].value_name}}",
+                "run = CommandListMathSin",
+                "{{element.value_link[0].value_name}} = $mathout"
+            ]
+        },
+        {
+            "label": "Absolute Value Link",
+            "text": [
+                "$mathin = {{element.value_link[0].value_name}}",
+                "run = CommandListMathABS",
+                "{{element.value_link[0].value_name}} = $mathout"
+            ]
+        },
+        {
+            "label": "Smooth Step Link",
+            "text": [
+                "; Превращает линейный вход в плавную S-кривую",
+                "$mathin = {{element.value_link[0].value_name}}",
+                "run = CommandListMathClamp",
+                "local $t",
+                "$t = $mathout",
+                "{{element.value_link[0].value_name}} = $t * $t * (3 - 2 * $t)"
+            ]
+        },
+        {
+            "label": "Tangent Explosion",
+            "text": [
+                "; Осторожно: значения улетают в бесконечность",
+                "$mathin = {{element.value_link[0].value_name}}",
+                "run = CommandListMathTan",
+                "{{element.value_link[0].value_name}} = $mathout"
             ]
         }
     ],
-    "Math": [
-        {"label": "Clamp(v, min, max)", "text": "clamp(value, 0, 1)"},
-        {"label": "Lerp(a, b, t)", "text": "lerp(0, 100, $ScreenWidth / 1920)"},
-        {"label": "Pulse(speed)", "text": "sin($Time * speed) * 0.5 + 0.5"}
+    "Basic_Math_Loops": [
+        {
+            "label": "Ping-Pong (Smooth)",
+            "text": "$positionX = $PositionX - (50 * ((time % 1) * (1 - (time % 1)) * 4))"
+        },
+        {
+            "label": "Stepped Movement",
+            "text": [
+                "local $step",
+                "$step = (time * 4 % 4) - (time * 4 % 1)",
+                "$positionX = $PositionX - (10 * $step)"
+            ]
+        },
+        {
+            "label": "Ease Out (Quadratic)",
+            "text": "$positionY = $PositionY - (50 * ((time % 1) * (time % 1)))"
+        },
+        {
+            "label": "Ease In (Quadratic)",
+            "text": "$positionY = $PositionY - (50 * ((1 - (time % 1)) * (1 - (time % 1))))"
+        }
+    ],
+    "RZM_Trigonometry": [
+        {
+            "label": "Circle Path",
+            "text": [
+                "$mathin = (time % 1) * 6.2831853",
+                "run = CommandListMathCos",
+                "$positionX = $PositionX + (50 * $mathout)",
+                "run = CommandListMathSin",
+                "$positionY = $PositionY + (50 * $mathout)"
+            ]
+        },
+        {
+            "label": "Infinity Sign (Lissajous)",
+            "text": [
+                "$mathin = (time % 1) * 6.2831853",
+                "run = CommandListMathCos",
+                "$positionX = $PositionX + (50 * $mathout)",
+                "$mathin = (time * 2 % 1) * 6.2831853",
+                "run = CommandListMathSin",
+                "$positionY = $PositionY + (50 * $mathout)"
+            ]
+        },
+        {
+            "label": "Squash & Stretch (Momoi Meme)",
+            "text": [
+                "local $angle",
+                "local $stretch",
+                "$angle = (time % 1) * 6.2831853",
+                "$mathin = $angle * 2",
+                "run = CommandListMathSin",
+                "$stretch = $mathout * 0.2",
+                "$sizeX = $SizeX * (1.0 + $stretch)",
+                "$sizeY = $SizeY * (1.0 - $stretch)"
+            ]
+        },
+        {
+            "label": "Flower Trajectory",
+            "text": [
+                "local $a1", "local $a2", "local $bx", "local $by",
+                "$a1 = (time % 1) * 6.2831853",
+                "$a2 = (time * 4 % 1) * 6.2831853",
+                "$mathin = $a1", "run = CommandListMathCos", "$bx = $mathout * 50",
+                "$mathin = $a2", "run = CommandListMathCos", "$positionX = $PositionX + $bx + ($mathout * 20)",
+                "$mathin = $a1", "run = CommandListMathSin", "$by = $mathout * 50",
+                "$mathin = $a2", "run = CommandListMathSin", "$positionY = $PositionY + $by + ($mathout * 20)"
+            ]
+        }
+    ],
+    "Interactivity": [
+        {
+            "label": "Circle Collider",
+            "text": [
+                "local $centerX", "local $centerY", "local $dx", "local $dy", "local $distSq",
+                "$centerX = $PositionX + ($sizeX / 2)",
+                "$centerY = $PositionY + ($sizeY / 2)",
+                "$dx = $cursorX - $centerX",
+                "$dy = $cursorY - $centerY",
+                "$distSq = ($dx * $dx) + ($dy * $dy)",
+                "if ($distSq <= (($sizeX / 2) * ($sizeX / 2)))",
+                "    $isInsideCircle = 1.0",
+                "endif"
+            ]
+        },
+        {
+            "label": "Magnetic Attraction (Hover/Click)",
+            "text": [
+                "local $centerX", "local $centerY", "local $diffX", "local $diffY",
+                "$centerX = $PositionX + ($sizeX / 2)",
+                "$centerY = $PositionY + ($sizeY / 2)",
+                "$diffX = ($cursorX - $centerX) * 0.1 * w23",
+                "$diffY = ($cursorY - $centerY) * 0.1 * w23",
+                "$positionX = $PositionX + $diffX",
+                "$positionY = $PositionY + $diffY",
+                "$sizeX = $SizeX * (1.0 + (z23 * 0.3))",
+                "$sizeY = $SizeY * (1.0 + (z23 * 0.3))"
+            ]
+        },
+        {
+            "label": "Diamond Collider",
+            "text": [
+                "local $relX", "local $relY",
+                "$relX = ($cursorX - ($PositionX + $sizeX / 2)) / $sizeX",
+                "$relY = ($cursorY - ($PositionY + $sizeY / 2)) / $sizeY",
+                "if (($relX * $relX) + ($relY * $relY) <= 0.125)",
+                "    $isInsideDiamond = 1.0",
+                "endif"
+            ]
+        }
     ]
 }

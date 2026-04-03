@@ -182,6 +182,16 @@ class RZMEditorWindow(QtWidgets.QWidget):
             if layout_name != "Default":
                 self.apply_layout("Default")
 
+    def _on_full_export(self):
+        """Triggers the full export operator in Blender."""
+        import bpy
+        try:
+            bpy.ops.rzm.full_export()
+            SIGNALS.status_message.emit("Export Complete.")
+        except Exception as e:
+            SIGNALS.status_message.emit(f"Export Failed: {str(e)}")
+            print(f"[QT] Export Error: {e}")
+
     def save_current_layout(self):
         name, ok = QtWidgets.QInputDialog.getText(self, "Save Layout", "Layout Name:")
         if ok and name:
@@ -250,6 +260,10 @@ class RZMEditorWindow(QtWidgets.QWidget):
         add_btn("arrow_right", "rzm.redo", "Redo Action")
         self.toolbar_layout.addSpacing(10)
         add_btn("circle_x", "rzm.delete", "Delete Selected") 
+        
+        self.toolbar_layout.addSpacing(10)
+        btn_exp = add_btn("export", "rzm.full_export", "Full Export (rzm.full_export)", special=True)
+        btn_exp.clicked.connect(self._on_full_export)
         
         self.toolbar_layout.addStretch()
 

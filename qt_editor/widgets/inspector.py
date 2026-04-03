@@ -1404,6 +1404,16 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_image = self._add_row(layout, "Image:", RZImageComboBox(), 'image_id', 'value_changed')
             self.cb_hover_image = self._add_row(layout, "Hover Image:", RZImageComboBox(), 'hover_image_id', 'value_changed')
             
+            # Ratio Tools
+            h_ratio = QtWidgets.QHBoxLayout()
+            self.btn_reset_ratio = QtWidgets.QPushButton("Reset Ratio")
+            self.btn_reset_ratio.setToolTip("Match element height to image aspect ratio")
+            self.btn_reset_ratio.clicked.connect(self._on_reset_ratio_clicked)
+            h_ratio.addWidget(self.btn_reset_ratio)
+            
+            self.chk_lock_ratio = self._add_row(h_ratio, "", RZCheckBox("Lock Ratio"), 'qt_lock_ratio')
+            layout.addLayout(h_ratio)
+            
             h_flip = QtWidgets.QHBoxLayout()
             self.chk_flip_x = self._add_row(h_flip, "", RZCheckBox("Flip X"), 'flip_x')
             self.chk_flip_y = self._add_row(h_flip, "", RZCheckBox("Flip Y"), 'flip_y')

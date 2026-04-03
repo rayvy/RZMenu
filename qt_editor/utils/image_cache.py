@@ -13,6 +13,17 @@ class ImageCache:
             cls._instance = cls()
         return cls._instance
 
+    @classmethod
+    def get_instance(cls):
+        return cls.instance()
+
+    def get_image_resolution(self, image_id):
+        """Returns (width, height) of the cached image or (0, 0) if not found."""
+        pix = self._cache.get(image_id)
+        if pix and not pix.isNull():
+            return (pix.width(), pix.height())
+        return (0, 0)
+
     def __init__(self):
         self._cache = {} # {image_id: QPixmap}
 

@@ -492,8 +492,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         new_w = abs_right - abs_left
         new_h = abs_bottom - abs_top
 
-        # --- Alt Modifier: Aspect Ratio Preservation ---
-        if modifiers & QtCore.Qt.AltModifier:
+        # --- Alt Modifier or qt_lock_ratio: Aspect Ratio Preservation ---
+        if (modifiers & QtCore.Qt.AltModifier) or getattr(self, "qt_lock_ratio", False):
             is_diag = h_type in (RZHandleItem.TOP_LEFT, RZHandleItem.TOP_RIGHT, RZHandleItem.BOTTOM_LEFT, RZHandleItem.BOTTOM_RIGHT)
             if is_diag and self._aspect_ratio > 0:
                 # Constrain height based on width and initial aspect ratio
@@ -580,10 +580,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
-    # Обновили сигнатуру: добавлена ротация
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0):
+    # Обновили сигнатуру: добавлена ротация и лок пропорций
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0, lock_ratio=False):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
+        self.qt_lock_ratio = lock_ratio
         self.rotation = rotation
         self.flip_x, self.flip_y = flip_x, flip_y
         self.image_id, self.is_selectable = img_id, is_selectable
@@ -1368,7 +1369,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 flip_x=data.get('flip_x', False),
                 flip_y=data.get('flip_y', False),
                 is_underlayer=data.get('is_underlayer', False),
-                rotation=data.get('rotation', 0.0)
+                rotation=data.get('rotation', 0.0),
+                lock_ratio=data.get('qt_lock_ratio', False)
             )
 
             
@@ -1810,6 +1812,33 @@ class RZViewportView(QtWidgets.QGraphicsView):
             btn.setToolTip(tip)
             btn.clicked.connect(lambda checked=False, m=mode: run_distribute(m))
             layout.addWidget(btn)
+
+        # Image Ratio Toolbox
+        layout.addSpacing(4)
+        v_line4 = QtWidgets.QFrame(); v_line4.setFrameShape(QtWidgets.QFrame.VLine); v_line4.setStyleSheet("color: rgba(255,255,255,20)"); layout.addWidget(v_line4)
+        layout.addSpacing(4)
+        
+        layout.addWidget(QtWidgets.QLabel("RATIO:"))
+        
+        btn_reset_ratio = QtWidgets.QPushButton("⟳")
+        btn_reset_ratio.setToolTip("Reset Ratio (Match Image Dims)")
+        def run_reset_ratio():
+            ctx = RZContextManager.get_instance().get_snapshot()
+            if ctx.selected_ids:
+                from ..core import props
+                props.reset_element_ratio(list(ctx.selected_ids))
+        btn_reset_ratio.clicked.connect(run_reset_ratio)
+        layout.addWidget(btn_reset_ratio)
+        
+        btn_lock_ratio = QtWidgets.QPushButton("🔒")
+        btn_lock_ratio.setToolTip("Toggle Ratio Lock")
+        def run_toggle_ratio_lock():
+            ctx = RZContextManager.get_instance().get_snapshot()
+            if ctx.selected_ids:
+                from ..core import props
+                props.toggle_editor_flag(list(ctx.selected_ids), "qt_lock_ratio")
+        btn_lock_ratio.clicked.connect(run_toggle_ratio_lock)
+        layout.addWidget(btn_lock_ratio)
         
         self.overlay_container.adjustSize()
 

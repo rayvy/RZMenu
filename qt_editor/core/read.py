@@ -333,8 +333,9 @@ def get_selection_details(selected_ids, active_id):
 
             # Editor Flags
             "is_hidden": get_uniform("qt_hide"),
-            "is_locked_pos": get_uniform("qt_lock_pos"),
-            "is_locked_size": get_uniform("qt_lock_size"),
+            "qt_lock_pos": get_uniform("qt_lock_pos", default=False),
+            "qt_lock_size": get_uniform("qt_lock_size", default=False),
+            "qt_lock_ratio": get_uniform("qt_lock_ratio", default=False),
             
             # Computed Helpers
             "is_multi": len(selected_ids) > 1,
@@ -418,6 +419,7 @@ def get_viewport_data():
             "is_selectable": getattr(elem, "qt_selectable", True),
             "is_locked_pos": getattr(elem, "qt_lock_pos", False),
             "is_locked_size": getattr(elem, "qt_lock_size", False),
+            "qt_lock_ratio": getattr(elem, "qt_lock_ratio", False),
             "alignment": getattr(elem, "alignment", "BOTTOM_LEFT"),
             "text_align": getattr(elem, "text_align", "LEFT"),
 

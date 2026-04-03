@@ -160,6 +160,96 @@ x110 = 1
 ;BlurMask
 $drawtype = 9000
 
+;Copy Pasted from https://github.com/SinsOfSeven/3dmigoto_math_lib
+[Constants]
+global $mathinA
+global $mathinB
+global $mathinC
+global $mathout
+
+[CommandListMathCos]
+local $pi = 3.14159265
+if $mathinA == inf || $mathinA == -inf || $mathinA == NaN || $mathinA == null
+    $mathout = NaN
+else
+    local $x = ($mathinA+$pi/2)%$pi-$pi/2
+    local $xx = $x*$x
+    local $f0 = -($xx/2)
+    local $f1 = (($xx*$xx)/24)
+    local $f2 = -(($xx*$xx*$xx)/720)
+    local $f3 = (($xx*$xx*$xx*$xx)/40320)
+    local $f4 = -(($xx*$xx*$xx*$xx*$xx)/3628800)
+    $mathout = -((($mathinA+$pi/2)/$pi)%2//1*2-1) * (1+$f0+$f1+$f2+$f3+$f4)
+endif
+
+[CommandListMathSin]
+local $pi = 3.14159265
+$mathinA = $mathinA - $pi / 2
+run = CommandListMathCos
+$mathout = $mathout
+
+[CommandListMathTan]
+$mathinA = $mathinA
+run = CommandListMathSin
+$mathinA = $mathinA
+run = CommandListMathCos
+$mathout = $mathout / $mathout
+
+[CommandListMathABS]
+if $mathinA < 0
+    $mathout = -$mathinA
+else
+    $mathout = $mathinA
+endif
+
+[CommandListMathClamp]
+if $mathinA < 0
+    $mathout = 0
+else if $mathinA > 1
+    $mathout = 1
+else
+    $mathout = $mathinA
+endif
+
+[CommandListMathSign]
+if $mathinA < 0
+    $mathout = -1
+else if $mathinA > 0
+    $mathout = 1
+else
+    $mathout = 0
+endif
+
+[CommandListMathMin]
+if $mathinA < $mathinB
+    $mathout = $mathinA
+else
+    $mathout = $mathinB
+endif
+
+[CommandListMathMax]
+if $mathinA > $mathinB
+    $mathout = $mathinA
+else
+    $mathout = $mathinB
+endif
+
+[CommandListMathLerp]
+$mathout = $mathinA + $mathinC * ($mathinB - $mathinA)
+
+[CommandListMathStep]
+if $mathinA >= $mathinB
+    $mathout = 1.0
+else
+    $mathout = 0.0
+endif
+
+[CommandListMathFract]
+$mathout = $mathinA % 1
+if $mathout < 0
+    $mathout = $mathout + 1
+endif
+
 {{ButtonNumbers()}}
 {{mouseInteraction()}}
 {% endmacro %}

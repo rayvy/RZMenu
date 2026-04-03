@@ -89,12 +89,22 @@ def register():
     bpy.types.Scene.rzm_active_image_index = IntProperty(name="Active Image Index")
     bpy.types.Scene.rzm_active_value_index = IntProperty(name="Active Value Index")
     bpy.types.Scene.rzm_active_toggle_def_index = IntProperty(name="Active Toggle Definition Index")
+    bpy.types.Scene.rzm_active_shape_index = IntProperty(name="Active Shape Index")
     bpy.types.Scene.rzm_editor_mode = EnumProperty(name="Editor Mode", items=[('LIGHT', "Light", ""), ('PRO', "Pro", "")], default='LIGHT')
     bpy.types.Scene.rzm_show_debug_panel = BoolProperty(name="Show Debug Panel", default=False)
     bpy.types.Scene.rzm_capture_settings = PointerProperty(type=RZMCaptureSettings)
     bpy.types.Scene.rzm_capture_overwrite_id = IntProperty(name="Overwrite ID", default=-1)
     bpy.types.Scene.rzm_show_captures_preview = BoolProperty(name="Show Captures Preview", default=True)
     bpy.types.Scene.rzm_show_capture_tools = BoolProperty(name="Show Capture Tools", default=False)
+    bpy.types.Scene.rzm_toolbox_tab = EnumProperty(
+        name="Toolbox Tab",
+        items=[
+            ('TOGGLES', "Toggles", "Manage object toggles"),
+            ('VARIABLES', "Variables", "Manage global project values"),
+            ('SHAPES', "Shapes", "Manage shape keys and morphs")
+        ],
+        default='TOGGLES'
+    )
     
     bpy.types.WindowManager.rzm_context_atlas_index = IntProperty(default=-1)
     bpy.types.WindowManager.rzm_dependency_install_status = StringProperty()
@@ -104,6 +114,7 @@ def unregister():
     del bpy.types.WindowManager.rzm_context_atlas_index
     del bpy.types.Scene.rzm_show_captures_preview
     del bpy.types.Scene.rzm_show_capture_tools
+    del bpy.types.Scene.rzm_toolbox_tab
     del bpy.types.Scene.rzm_editor_mode
     del bpy.types.Scene.rzm_show_debug_panel
     del bpy.types.Scene.rzm_capture_settings
