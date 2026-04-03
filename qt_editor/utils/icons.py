@@ -40,9 +40,17 @@ class IconManager:
         """
         Get icon by name. If color is provided (hex or theme key like 'accent'), 
         and the icon is an SVG, it will be dynamically tinted.
+        If color is None, automatically uses 'icon_color' from the current theme.
+        Pass color='RAW' to skip auto-tinting and get the original icon.
         """
-        # Resolve theme key to hex
-        if color and not color.startswith("#"):
+        # Auto-apply theme icon_color when no explicit color given
+        if color is None:
+            color = self._get_theme_color('icon_color')
+        elif color == 'RAW':
+            color = None
+        
+        # Resolve theme key to hex 
+        elif not color.startswith('#'):
             color = self._get_theme_color(color)
         
         cache_key = (name, color)
@@ -114,4 +122,9 @@ class IconManager:
                 path = os.path.join(d, f"{name}{ext}")
                 if os.path.exists(path): return path
         return None
+
+    def clear_cache(self):
+        """Clears the icon cache. Call when the theme changes so icons are re-tinted."""
+        self._cache.clear()
+        self._svg_cache.clear()
 
