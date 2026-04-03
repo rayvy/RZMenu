@@ -148,28 +148,12 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         layout.addLayout(form)
         
         # --- VECTOR SETTINGS (SVG) ---
-        self.vector_group = QtWidgets.QGroupBox("Vector Graphics (SVG)")
-        vector_vbox = QtWidgets.QVBoxLayout(self.vector_group)
-        vector_form = QtWidgets.QFormLayout()
+        self.vector_group = QtWidgets.QGroupBox("Vector Settings (SVG)")
+        vector_layout = QtWidgets.QFormLayout(self.vector_group)
+        self.cb_preserve_color = QtWidgets.QCheckBox("Preserve Original Color")
+        self.cb_preserve_color.stateChanged.connect(self.on_prop_changed)
+        vector_layout.addRow(self.cb_preserve_color)
         
-        self.spin_svg_global = QtWidgets.QSpinBox()
-        self.spin_svg_global.setRange(16, 2048)
-        self.spin_svg_global.setSuffix(" px")
-        self.spin_svg_global.setToolTip("Global rasterization size for all SVGs in this project.")
-        self.spin_svg_global.valueChanged.connect(self.on_prop_changed)
-        vector_form.addRow("Global Res:", self.spin_svg_global)
-        
-        self.chk_svg_custom = QtWidgets.QCheckBox("Use Custom Resolution")
-        self.chk_svg_custom.toggled.connect(self.on_prop_changed)
-        vector_form.addRow(self.chk_svg_custom)
-        
-        self.spin_svg_custom = QtWidgets.QSpinBox()
-        self.spin_svg_custom.setRange(16, 2048)
-        self.spin_svg_custom.setSuffix(" px")
-        self.spin_svg_custom.valueChanged.connect(self.on_prop_changed)
-        vector_form.addRow("Custom Res:", self.spin_svg_custom)
-        
-        vector_vbox.addLayout(vector_form)
         layout.addWidget(self.vector_group)
 
         # --- ANIMATION OPTIMIZATION ---
@@ -275,13 +259,9 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         if is_vector:
             import bpy
             rzm = bpy.context.scene.rzm
-            # Find image to get specific properties
             img = next((i for i in rzm.images if i.id == data.get('id')), None)
             if img:
-                self.spin_svg_global.setValue(rzm.svg_global_res)
-                self.chk_svg_custom.setChecked(img.svg_use_custom_res)
-                self.spin_svg_custom.setValue(img.svg_custom_res)
-                self.spin_svg_custom.setEnabled(img.svg_use_custom_res)
+                self.cb_preserve_color.setChecked(img.svg_preserve_color)
 
         if is_anim:
             from ...core import animated_loader
@@ -378,29 +358,24 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
     def on_prop_changed(self, *args):
         if self.is_updating or not self.asset_data: return
         
-        # Отправляем изменения в Blender
         asset_id = self.asset_data.get('id')
-        if not asset_id and self.asset_data.get('type') == 'TEMPLATE':
-            asset_id = self.asset_data.get('path')
+        if not asset_id: return
         
-        is_anim = self.asset_data.get('source_type') == 'ANIMATED'
-        is_vector = self.asset_data.get('source_type') == 'VECTOR'
+        is_vector = self.vector_group.isVisible()
+        is_anim = self.anim_group.isVisible()
         
         # Общий Name
         if self.txt_name.text() != self.asset_data.get('name'):
             blender_bridge.update_asset_property(asset_id, 'name', self.txt_name.text())
+            
+        if is_vector:
+            blender_bridge.update_asset_property(asset_id, 'svg_preserve_color', self.cb_preserve_color.isChecked())
         
         if is_anim:
             blender_bridge.update_asset_property(asset_id, 'anim_preset', self.combo_preset.currentText())
             blender_bridge.update_asset_property(asset_id, 'anim_start', self.spin_start.value())
             blender_bridge.update_asset_property(asset_id, 'anim_end', self.spin_end.value())
-            blender_bridge.update_asset_property(asset_id, 'anim_max_frames', self.spin_max_frames.value())
-            
-        if is_vector:
-            blender_bridge.update_global_property('svg_global_res', self.spin_svg_global.value())
-            blender_bridge.update_asset_property(asset_id, 'svg_use_custom', self.chk_svg_custom.isChecked())
-            blender_bridge.update_asset_property(asset_id, 'svg_custom', self.spin_svg_custom.value())
-            self.spin_svg_custom.setEnabled(self.chk_svg_custom.isChecked())
+            blender_bridge.update_asset_property(asset_id, 'anim_speed', self.spin_speed.value())
 
     def on_build_atlas(self):
         """Вызывает пересборку атласа для предпросмотра эффекта Optimization."""
@@ -565,7 +540,7 @@ class RZAssetListWidget(QtWidgets.QListWidget):
                         print(f"[AssetBrowser] Failed to copy template: {e}")
 
                 # Б) Если кинули КАРТИНКУ -> Импортируем в Blend (как раньше)
-                elif ext in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp', '.gif', '.mp4', '.webm', '.avi']:
+                elif ext in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp', '.gif', '.mp4', '.webm', '.avi', '.svg']:
                     print(f"[AssetBrowser] Calling core.import_image_from_path for {path}")
                     from .. import core
                     core.import_image_from_path(path)
@@ -629,17 +604,31 @@ class RZAssetBrowserPanel(RZEditorPanel):
         
         toolbar.addStretch()
 
-        # 2. Фильтр (All / Images / Templates)
-        toolbar.addWidget(QtWidgets.QLabel("Type:"))
+        # 2. Фильтр по Типу (All / Images / Templates)
+        toolbar.addWidget(QtWidgets.QLabel("Ref:"))
         self.combo_filter = QtWidgets.QComboBox()
         self.combo_filter.addItems(["All", "Images", "Templates"])
         self.combo_filter.currentTextChanged.connect(self.rebuild_view)
         toolbar.addWidget(self.combo_filter)
 
+        # 2b. Фильтр по Источнику
+        toolbar.addWidget(QtWidgets.QLabel("Src:"))
+        self.combo_source = QtWidgets.QComboBox()
+        self.combo_source.addItems(["All", "Base", "Custom", "Captured", "Vector", "Anim"])
+        self.combo_source.currentTextChanged.connect(self.rebuild_view)
+        toolbar.addWidget(self.combo_source)
+
+        # 2c. Фильтр по Расширению
+        toolbar.addWidget(QtWidgets.QLabel("Ext:"))
+        self.combo_ext = QtWidgets.QComboBox()
+        self.combo_ext.addItems(["All", ".png", ".svg", ".mp4", ".gif", ".rzmt"])
+        self.combo_ext.currentTextChanged.connect(self.rebuild_view)
+        toolbar.addWidget(self.combo_ext)
+
         # 3. Сортировка
         toolbar.addWidget(QtWidgets.QLabel("Sort:"))
         self.combo_sort = QtWidgets.QComboBox()
-        self.combo_sort.addItems(["ID (New-Old)", "ID (Old-New)", "A-Z", "Z-A"])
+        self.combo_sort.addItems(["ID (New-Old)", "ID (Old-New)", "A-Z", "Z-A", "Type"])
         self.combo_sort.currentTextChanged.connect(self.rebuild_view)
         toolbar.addWidget(self.combo_sort)
         
@@ -659,6 +648,75 @@ class RZAssetBrowserPanel(RZEditorPanel):
         self.splitter.addWidget(self.details_panel)
         
         layout.addWidget(self.splitter)
+
+    def draw_type_badge(self, pixmap, ext):
+        if not ext: return pixmap
+        ext_clean = ext.upper().replace('.', '')
+        if ext_clean in ['PNG', 'JPG', 'JPEG']: return pixmap  # Skip common
+        
+        # We need a copy to not modify cache
+        pix = pixmap.copy()
+        painter = QtGui.QPainter(pix)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        colors = {
+            'SVG': '#EF7D00', # Orange
+            'MP4': '#00A2E8', # Blue
+            'GIF': '#D80073', # Pink
+            'RZMT': '#60A917' # Green
+        }
+        col_str = colors.get(ext_clean, '#647687') # Default grey-blue
+        
+        font = QtGui.QFont("Arial", 7, QtGui.QFont.Bold)
+        painter.setFont(font)
+        metrics = QtGui.QFontMetrics(font)
+        tw = metrics.horizontalAdvance(ext_clean)
+        th = metrics.height()
+        
+        # Position: bottom right
+        badge_rect = QtCore.QRect(pix.width() - tw - 6, pix.height() - th - 2, tw + 4, th)
+        
+        painter.setBrush(QtGui.QColor(col_str))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawRoundedRect(badge_rect, 2, 2)
+        
+        painter.setPen(QtCore.Qt.white)
+        painter.drawText(badge_rect, QtCore.Qt.AlignCenter, ext_clean)
+        painter.end()
+        return pix
+
+    def draw_source_badge(self, pixmap, source_type):
+        if not source_type or source_type == 'CUSTOM': return pixmap
+        
+        pix = pixmap.copy()
+        painter = QtGui.QPainter(pix)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        colors = {
+            'VECTOR': '#CC6600', # Darker Orange
+            'BASE': '#007ACC',   # Darker Blue
+            'CAPTURED': '#4B8B11', # Darker Green
+            'ANIMATED': '#B0005E'  # Darker Pink
+        }
+        col_str = colors.get(source_type, '#647687')
+        
+        font = QtGui.QFont("Arial", 6, QtGui.QFont.Bold)
+        painter.setFont(font)
+        metrics = QtGui.QFontMetrics(font)
+        tw = metrics.horizontalAdvance(source_type)
+        th = metrics.height()
+        
+        # Position: top right
+        badge_rect = QtCore.QRect(pix.width() - tw - 6, 2, tw + 4, th)
+        
+        painter.setBrush(QtGui.QColor(col_str))
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.drawRoundedRect(badge_rect, 2, 2)
+        
+        painter.setPen(QtCore.Qt.white)
+        painter.drawText(badge_rect, QtCore.Qt.AlignCenter, source_type)
+        painter.end()
+        return pix
 
     def on_selection_changed(self):
         if self._is_rebuilding: return
@@ -734,6 +792,8 @@ class RZAssetBrowserPanel(RZEditorPanel):
         self.list_widget.clear()
         
         filter_mode = self.combo_filter.currentText() # All, Images, Templates
+        src_mode = self.combo_source.currentText().upper() # ALL, BASE, CUSTOM, CAPTURED, VECTOR, ANIM
+        ext_filter = self.combo_ext.currentText().lower() # .png, .svg, etc.
         
         items_to_show = []
 
@@ -741,33 +801,50 @@ class RZAssetBrowserPanel(RZEditorPanel):
         # A. Images
         if filter_mode in ["All", "Images"]:
             all_images = read.get_available_images()
-            # Фильтр по source_type (если нужно, можно добавить в комбобокс, но пока берем все)
             for img in all_images:
+                # Filter Source
+                if src_mode != "ALL":
+                    img_src = img['source_type']
+                    if src_mode == "ANIM" and img_src != "ANIMATED": continue
+                    elif src_mode != "ANIM" and img_src != src_mode: continue
+                
+                # Filter Extension
+                path = img.get('path', '')
+                ext = os.path.splitext(path)[1].lower() if path else ""
+                if ext_filter != "all" and ext != ext_filter:
+                    if not (ext_filter == ".png" and not ext): # Default to .png if no ext
+                        continue
+
                 items_to_show.append({
                     "type": "IMAGE",
                     "id": img['id'],
                     "name": img['name'],
+                    "ext": ext,
+                    "source_type": img['source_type'],
                     "sort_key_id": img['id'],
                     "sort_key_name": img['name']
                 })
 
         # B. Templates
         if filter_mode in ["All", "Templates"]:
-            # Сканируем только base_templates как ты просил
-            base_dir = get_base_templates_dir()
-            if os.path.exists(base_dir):
-                for f in os.listdir(base_dir):
-                    if f.endswith(".rzmt"):
-                        name = os.path.splitext(f)[0]
-                        path = os.path.join(base_dir, f)
-                        items_to_show.append({
-                            "type": "TEMPLATE",
-                            "id": 999999, # Фейковый ID для сортировки (чтобы были сверху или снизу)
-                            "name": name,
-                            "filepath": path,
-                            "sort_key_id": 999999,
-                            "sort_key_name": name
-                        })
+            if src_mode in ["ALL", "BASE", "CUSTOM"]: # Templates count as base icons folder usually
+                # Filter Extension
+                if ext_filter in ["all", ".rzmt"]:
+                    base_dir = get_base_templates_dir()
+                    if os.path.exists(base_dir):
+                        for f in os.listdir(base_dir):
+                            if f.endswith(".rzmt"):
+                                name = os.path.splitext(f)[0]
+                                path = os.path.join(base_dir, f)
+                                items_to_show.append({
+                                    "type": "TEMPLATE",
+                                    "id": 999999,
+                                    "name": name,
+                                    "ext": ".rzmt",
+                                    "filepath": path,
+                                    "sort_key_id": 999999,
+                                    "sort_key_name": name
+                                })
 
         # 2. СОРТИРОВКА
         sort_mode = self.combo_sort.currentText()
@@ -780,6 +857,8 @@ class RZAssetBrowserPanel(RZEditorPanel):
             items_to_show.sort(key=lambda x: x['sort_key_name'].lower())
         elif sort_mode == "Z-A":
             items_to_show.sort(key=lambda x: x['sort_key_name'].lower(), reverse=True)
+        elif sort_mode == "Type":
+            items_to_show.sort(key=lambda x: (x['type'], x['sort_key_name'].lower()))
 
         # 3. ЗАПОЛНЕНИЕ ВИДЖЕТА
         cache = ImageCache.instance()
@@ -794,7 +873,10 @@ class RZAssetBrowserPanel(RZEditorPanel):
                 list_item.setToolTip(f"ID: {item_data['id']} (Image)")
                 
                 pix = cache.get_pixmap(item_data['id'])
-                if pix: list_item.setIcon(QtGui.QIcon(pix))
+                if pix:
+                    pix = self.draw_type_badge(pix, item_data['ext'])
+                    pix = self.draw_source_badge(pix, item_data.get('source_type', ''))
+                    list_item.setIcon(QtGui.QIcon(pix))
                 
             elif item_data['type'] == "TEMPLATE":
                 list_item.setData(QtCore.Qt.UserRole, item_data['filepath'])

@@ -91,6 +91,15 @@ class RZMenuElement(bpy.types.PropertyGroup):
     extramap_image_id: IntProperty(name="ExtraMap Image ID", description="ID изображения для extra map (-1 = нет). Функционал шейдера в разработке.", default=-1, update=mark_atlas_dirty)
     flip_x: BoolProperty(name="Flip X", default=False)
     flip_y: BoolProperty(name="Flip Y", default=False)
+    
+    # Vector Modifiers (SVG)
+    svg_scale: FloatProperty(name="SVG Scale", default=1.0, update=mark_atlas_dirty)
+    svg_offset: FloatVectorProperty(name="SVG Offset", size=2, default=(0.0, 0.0), update=mark_atlas_dirty)
+    
+    # Atlas Rendering Result (For VECTOR elements)
+    uv_coords: IntVectorProperty(name="UV Coords", size=2, default=(0, 0))
+    uv_size: IntVectorProperty(name="UV Size", size=2, default=(0, 0))
+
     conditional_images: CollectionProperty(type=ConditionalImage)
     text_mode: EnumProperty(name="Text Mode",items=[('SINGLE', "Single", "Обычный одиночный текст"),('CONDITIONAL_LIST', "Conditional List", "Список текстов, меняющихся по условию"),('INDEX_LIST', "Index List", "Список, выбираемый по индексу (пока резерв)")],default='SINGLE')
     text_id: StringProperty(name="Text ID"); hover_text_id: StringProperty(name="Hover Text ID")
@@ -136,3 +145,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     disable_slider_prebuild_render: BoolProperty(name="Force Standard Render", default=False)
     disable_export: BoolProperty(name="Disable Export", description="If active, this element will not be exported to templates", default=False)
     font_slot: IntProperty(name="Font Slot", min=0, max=3, default=0, description="Which font configuration slot to use (0-3)")
+    
+    # SVG Modifiers (Element-level)
+    svg_scale: FloatProperty(name="SVG Scale", default=1.0, min=0.01, max=10.0, update=mark_atlas_dirty)
+    svg_offset: FloatVectorProperty(name="SVG Offset", size=2, default=(0.0, 0.0), update=mark_atlas_dirty)

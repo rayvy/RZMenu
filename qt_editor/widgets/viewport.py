@@ -248,6 +248,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.is_locked_pos = False
         self.is_locked_size = False
         self.image_id = -1
+        self.image_source_type = 'CUSTOM'
+        self.svg_scale = 1.0
+        self.svg_offset_x = 0.0
+        self.svg_offset_y = 0.0
         self.is_selectable = True
         self.custom_color = None 
         self.handles = {} 
@@ -580,14 +584,19 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
-    # Обновили сигнатуру: добавлена ротация и лок пропорций
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0, lock_ratio=False):
+    # Обновили сигнатуру: добавлена ротация, лок пропорций и параметры SVG
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0, lock_ratio=False, image_source_type='CUSTOM', svg_scale=1.0, svg_offset_x=0.0, svg_offset_y=0.0, svg_preserve_color=True):
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.qt_lock_ratio = lock_ratio
         self.rotation = rotation
         self.flip_x, self.flip_y = flip_x, flip_y
         self.image_id, self.is_selectable = img_id, is_selectable
+        self.image_source_type = image_source_type
+        self.svg_scale = svg_scale
+        self.svg_offset_x = svg_offset_x
+        self.svg_offset_y = svg_offset_y
+        self.svg_preserve_color = svg_preserve_color
         self.text_content = text_content if text_content else self.name
         self.text_id = text_id if text_id is not None else "TEST" # Сохраняем text_id
         self.text_align = text_align
@@ -651,7 +660,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         t = get_current_theme()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
-        # --- PHASE 2.5: ROTATION (2D) ---
+        # --- PHASE 1: ROTATION ---
         if self.rotation != 0:
             center = rect.center()
             painter.translate(center)
@@ -780,41 +789,50 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                 cur_x_128 += m.advance
 
             painter.restore()
-
-            # Selection Border (PHASE 2.2: Modern Glow)
-            if self.isSelected():
-                 painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_selection', '#FFF')), 1.5))
-                 painter.setBrush(QtCore.Qt.NoBrush)
-                 painter.drawRect(rect)
-            
-            return
-
         has_image = False
         if self.image_id != -1:
             pix = ImageCache.instance().get_pixmap(self.image_id)
-            # print(f"[VIEWPORT] Element {self.name} (ID: {self.uid}), image_id: {self.image_id}")
-            # print(f"[VIEWPORT] Rect: {rect}, Size: {rect.width()}x{rect.height()}")
-            if pix:
-                if not pix.isNull():
-                    painter.save()
-                    if getattr(self, "flip_x", False) or getattr(self, "flip_y", False):
-                        sx = -1 if getattr(self, "flip_x", False) else 1
-                        sy = -1 if getattr(self, "flip_y", False) else 1
-                        cx = rect.x() + rect.width() / 2.0
-                        cy = rect.y() + rect.height() / 2.0
-                        painter.translate(cx, cy)
-                        painter.scale(sx, sy)
-                        painter.translate(-cx, -cy)
+            if pix and not pix.isNull():
+                painter.save()
+                
+                # Apply SVG Tint if needed
+                if self.image_source_type == 'VECTOR' and not self.svg_preserve_color:
+                    temp_pix = QtGui.QPixmap(pix.size())
+                    temp_pix.fill(QtCore.Qt.transparent)
+                    p_tint = QtGui.QPainter(temp_pix)
+                    p_tint.drawPixmap(0, 0, pix)
+                    p_tint.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
                     
-                    painter.drawPixmap(rect.toRect(), pix)
-                    painter.restore()
-                    has_image = True
-                else:
-                    pass
-                    # print(f"[VIEWPORT] Pixmap is null, skipping draw")
-            else:
-                pass
-                # print(f"[VIEWPORT] No pixmap in cache for image_id {self.image_id}")
+                    color_vals = self.custom_color if self.custom_color else [1, 1, 1, 1]
+                    r, g, b = [int(max(0, min(255, x * 255))) for x in color_vals[:3]]
+                    p_tint.fillRect(temp_pix.rect(), QtGui.QColor(r, g, b))
+                    p_tint.end()
+                    pix = temp_pix
+
+                # Calculate target rect
+                target_rect = rect
+                if self.image_source_type == 'VECTOR':
+                    sw = rect.width() * self.svg_scale
+                    sh = rect.height() * self.svg_scale
+                    target_rect = QtCore.QRectF(
+                        rect.center().x() - sw/2.0,
+                        rect.center().y() - sh/2.0,
+                        sw, sh
+                    )
+                    target_rect.translate(self.svg_offset_x, self.svg_offset_y)
+
+                # Handle Flip
+                if self.flip_x or self.flip_y:
+                    sx = -1 if self.flip_x else 1
+                    sy = -1 if self.flip_y else 1
+                    cx, cy = target_rect.center().x(), target_rect.center().y()
+                    painter.translate(cx, cy)
+                    painter.scale(sx, sy)
+                    painter.translate(-cx, -cy)
+                
+                painter.drawPixmap(target_rect, pix, QtCore.QRectF(pix.rect()))
+                painter.restore()
+                has_image = True
 
         if self.custom_color and len(self.custom_color) >= 3:
             r, g, b = [int(c*255) for c in self.custom_color[:3]]
@@ -1370,7 +1388,12 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 flip_y=data.get('flip_y', False),
                 is_underlayer=data.get('is_underlayer', False),
                 rotation=data.get('rotation', 0.0),
-                lock_ratio=data.get('qt_lock_ratio', False)
+                lock_ratio=data.get('qt_lock_ratio', False),
+                image_source_type=data.get('image_source_type', 'CUSTOM'),
+                svg_scale=data.get('svg_scale', 1.0),
+                svg_offset_x=data.get('svg_offset_x', 0.0),
+                svg_offset_y=data.get('svg_offset_y', 0.0),
+                svg_preserve_color=data.get('svg_preserve_color', True)
             )
 
             

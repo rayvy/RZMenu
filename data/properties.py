@@ -43,15 +43,6 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     export_toggle_swap_mode: EnumProperty(name="toggleSwapMode", items=[('None', "None", ""), ('DToggle', "DToggle", ""), ('RToggle', "RToggle", "")], default='None')
     addons: PointerProperty(type=RZMenuAddonSettings)
     
-    # SVG Settings
-    svg_global_res: IntProperty(
-        name="Global SVG Resolution",
-        description="Default size for SVG rasterization if not overridden on the resource",
-        default=128,
-        min=16,
-        max=2048
-    )
-
     conditions: CollectionProperty(type=RZMShape)
     shapes: CollectionProperty(type=RZMShape)
     dependency_statuses: CollectionProperty(type=DependencyStatus)

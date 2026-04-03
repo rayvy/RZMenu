@@ -100,11 +100,21 @@ PROP_MAP = {
     "color_formula_b": ("color_formula_b", None, 'D'),
     "color_formula_a": ("color_formula_a", None, 'D'),
 
+    # Vector Modifiers (SVG)
+    "svg_scale": ("svg_scale", None, 'D'),
+    "svg_offset_x": ("svg_offset", 0, 'D'),
+    "svg_offset_y": ("svg_offset", 1, 'D'),
+
     # Value Link Formula
     "value_link_is_formula": ("value_link_is_formula", None, 'D'),
     "value_link_formula": ("value_link_formula", None, 'D'),
     "disable_export": ("disable_export", None, 'S'),
     "class_type": ("elem_class", None, 'S'),
+
+    # SVG Modifiers
+    "svg_scale": ("svg_scale", None, 'T'),
+    "svg_offset_x": ("svg_offset", 0, 'T'),
+    "svg_offset_y": ("svg_offset", 1, 'T'),
 
 }
 

@@ -1142,6 +1142,7 @@ class RZMInspectorPanel(RZEditorPanel):
             ("Transform", self._init_transform_ui),
             ("Grid Settings", self._init_grid_ui),
             ("Appearance", self._init_style_ui),
+            ("Vector Modifiers", self._init_vector_ui),
             ("Text content", self._init_text_ui),
             # LOGIC GROUP (All under Logic Anchor)
             ("Visibility", self._init_visibility_ui),
@@ -1428,6 +1429,25 @@ class RZMInspectorPanel(RZEditorPanel):
             layout.addWidget(self.list_images)
             self.layout_props.addWidget(self.grp_style)
         except Exception as e: print(f"[INSPECTOR] Error Style: {e}")
+
+    def _init_vector_ui(self):
+        try:
+            self.grp_vector = RZGroupBox("Vector Modifiers (SVG)")
+            layout = QtWidgets.QVBoxLayout(self.grp_vector)
+            layout.setSpacing(6)
+            
+            # Scale
+            self.sl_svg_scale = self._add_row(layout, "Scale:", RZSmartSlider(is_int=False, label_text=""), 'svg_scale', 'value_changed')
+            self.sl_svg_scale.setRange(0.1, 5.0)
+            
+            # Offset
+            h_off = QtWidgets.QHBoxLayout()
+            self.sl_svg_off_x = self._add_row(h_off, "Offset X:", RZSmartSlider(is_int=False), 'svg_offset_x', 'value_changed')
+            self.sl_svg_off_y = self._add_row(h_off, "Offset Y:", RZSmartSlider(is_int=False), 'svg_offset_y', 'value_changed')
+            layout.addLayout(h_off)
+            
+            self.layout_props.addWidget(self.grp_vector)
+        except Exception as e: print(f"[INSPECTOR] Error Vector: {e}")
 
     def _init_text_ui(self):
         try:
@@ -1769,9 +1789,17 @@ class RZMInspectorPanel(RZEditorPanel):
                 if hasattr(self, 'cb_hover_image'):
                     self.cb_hover_image.update_items(all_images)
                     self.cb_hover_image.set_value(props.get('hover_image_id', -1))
-            else:
                 if hasattr(self, 'list_images'):
                     self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
+            
+            # --- Vector Modifiers visibility ---
+            is_vector_res = props.get('image_source_type') == 'VECTOR'
+            if hasattr(self, 'grp_vector'):
+                self.grp_vector.setVisible(is_vector_res)
+                if is_vector_res:
+                    if hasattr(self, 'sl_svg_scale'): self.sl_svg_scale.set_value_from_backend(props.get('svg_scale', 1.0))
+                    if hasattr(self, 'sl_svg_off_x'): self.sl_svg_off_x.set_value_from_backend(props.get('svg_offset_x', 0))
+                    if hasattr(self, 'sl_svg_off_y'): self.sl_svg_off_y.set_value_from_backend(props.get('svg_offset_y', 0))
             
             # --- Text ---
             if hasattr(self, 'cb_font_slot'):

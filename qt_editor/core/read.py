@@ -276,6 +276,10 @@ def get_selection_details(selected_ids, active_id):
             # Images
             "image_mode": get_uniform("image_mode", default="SINGLE"),
             "image_id": get_uniform("image_id", default=-1),
+            "image_source_type": next((img.source_type for img in bpy.context.scene.rzm.images if img.id == target.image_id), 'CUSTOM') if target and target.image_id != -1 else 'NONE',
+            "svg_scale": get_uniform("svg_scale", default=1.0),
+            "svg_offset_x": get_uniform("svg_offset", 0),
+            "svg_offset_y": get_uniform("svg_offset", 1),
             "hover_image_id": get_uniform("hover_image_id", default=-1),
             "flip_x": get_uniform("flip_x", default=False),
             "flip_y": get_uniform("flip_y", default=False),
@@ -368,8 +372,10 @@ def get_selection_details(selected_ids, active_id):
 def get_viewport_data():
     results = []
     if not bpy.context or not bpy.context.scene: return results
+    
+    rzm = bpy.context.scene.rzm
 
-    for idx, elem in enumerate(bpy.context.scene.rzm.elements):
+    for idx, elem in enumerate(rzm.elements):
         color_list = None
         if hasattr(elem, "color"):
             color_list = list(elem.color)
@@ -407,11 +413,14 @@ def get_viewport_data():
 
 
             # Visuals
-            "image_id": getattr(elem, "image_id", -1),
+            "image_id": elem.image_id,
             "hover_image_id": getattr(elem, "hover_image_id", -1),
-            "flip_x": getattr(elem, "flip_x", False),
-            "flip_y": getattr(elem, "flip_y", False),
             "image_blending_mode": getattr(elem, "image_blending_mode", 'NONE'),
+            "image_source_type": next((img.source_type for img in rzm.images if img.id == elem.image_id), 'STATIC') if elem.image_id != -1 else 'NONE',
+            "svg_preserve_color": next((img.svg_preserve_color for img in rzm.images if img.id == elem.image_id), True) if elem.image_id != -1 else True,
+            "svg_scale": getattr(elem, "svg_scale", 1.0),
+            "svg_offset_x": getattr(elem, "svg_offset", [0, 0])[0],
+            "svg_offset_y": getattr(elem, "svg_offset", [0, 0])[1],
             "font_slot": getattr(elem, "font_slot", 0),
             "text_id": getattr(elem, "text_id", ""),
             "color": color_list,

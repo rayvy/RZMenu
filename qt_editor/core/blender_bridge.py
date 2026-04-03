@@ -266,8 +266,7 @@ def update_asset_property(asset_id, prop_name, value):
         'anim_max': 'anim_max_frames',
         'anim_speed': 'anim_speed_multiplier',
         'name': 'display_name',
-        'svg_use_custom': 'svg_use_custom_res',
-        'svg_custom': 'svg_custom_res'
+        'svg_preserve_color': 'svg_preserve_color'
     }
     blender_prop = attr_map.get(prop_name, prop_name)
     

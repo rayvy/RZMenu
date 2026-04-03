@@ -117,18 +117,10 @@ class RZMenuImage(bpy.types.PropertyGroup):
     )
 
     # ─── Vector-специфичные поля ───────────────────────────────────────────────
-    svg_use_custom_res: BoolProperty(
-        name="Use Custom Resolution",
-        description="Override global SVG resolution for this resource",
+    svg_preserve_color: BoolProperty(
+        name="Preserve Original Color",
+        description="Don't tint this SVG with the element's color. Keep original vector colors.",
         default=False,
-        update=mark_atlas_dirty_img
-    )
-    svg_custom_res: IntProperty(
-        name="Custom Resolution",
-        description="Rasterization size for this SVG in the atlas",
-        default=256,
-        min=16,
-        max=2048,
         update=mark_atlas_dirty_img
     )
 

@@ -249,6 +249,16 @@ class RZSmartSlider(QtWidgets.QWidget):
     math_requested = QtCore.Signal(str) # Emits e.g., "+=10"
     released = QtCore.Signal()          # Emits on mouse release/editing finish
 
+    def setRange(self, min_val, max_val):
+        self.spin.setRange(min_val, max_val)
+        if self.is_int:
+            self.slider.setRange(int(min_val), int(max_val))
+        else:
+            self.slider.setRange(int(min_val * 100), int(max_val * 100))
+
+    def set_range(self, min_val, max_val):
+        self.setRange(min_val, max_val)
+
     def __init__(self, value=0.0, is_int=True, parent=None, label_text="Value", show_slider=True):
         super().__init__(parent)
         self.setSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Preferred)

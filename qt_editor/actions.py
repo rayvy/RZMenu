@@ -80,6 +80,8 @@ class RZActionManager(QObject):
                 q_act.setEnabled(op.poll(ctx))
 
     def connect_button(self, btn, op_id, **kwargs):
+        if not op_id:
+            return
         if op_id not in self.operators_instances:
             print(f"Warning: connect_button failed, unknown op {op_id}")
             return

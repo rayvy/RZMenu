@@ -48,11 +48,12 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
                 base_name, ext = os.path.splitext(filename)
                 ext = ext.lower()
 
-                if ext not in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp']:
+                if ext not in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp', '.svg', '.gif', '.mp4']:
                     continue
                 
                 print(f"[IconsDebug] Detected File: {filename}")
 
+                # [OMITTED ID PARSING LOGIC - KEEP AS IS]
                 parsed_id = -1
                 display_name = base_name
 
@@ -69,30 +70,42 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
 
                 # If no prefix, we still load it!
                 if parsed_id == -1:
-                    # Check if an image with this name is already in the library to avoid duplicates
                     if any(img.display_name == display_name for img in rzm_images if img.source_type == 'BASE'):
-                        print(f"[IconsDebug] Skipping '{filename}': Display name already exists.")
                         continue
                     
-                    # Generate a new ID
                     from ..core.utils import get_next_image_id
                     parsed_id = get_next_image_id(rzm_images)
-                    print(f"[IconsDebug] Auto-generated ID {parsed_id} for '{display_name}'")
 
                 if parsed_id in existing_base_ids:
-                    print(f"[IconsDebug] Skipping '{filename}': ID {parsed_id} already loaded.")
                     continue
                 
                 try:
                     filepath = os.path.join(assets_dir, filename)
-                    bl_image = bpy.data.images.load(filepath)
-                    bl_image.pack()
-
+                    
                     new_item = rzm_images.add()
                     new_item.id = parsed_id
                     new_item.display_name = display_name
-                    new_item.image_pointer = bl_image
-                    new_item.source_type = 'BASE'
+                    new_item.source_type = 'BASE' if ext != '.svg' else 'VECTOR'
+                    
+                    if ext == '.svg':
+                        # For SVG, we generate a preview just like Add Image does
+                        from ..core.svg_loader import render_svg_to_pixels
+                        from ..core.animated_loader import frames_to_blender_images
+                        
+                        res = 512
+                        pixels = render_svg_to_pixels(filepath, res, res)
+                        if pixels is not None:
+                            bl_preview_list = frames_to_blender_images([{'pixels': pixels, 'size': (res, res)}], display_name + "_svg_preview")
+                            bl_image = bl_preview_list[0]
+                            bl_image.pack()
+                            new_item.image_pointer = bl_image
+                        
+                        new_item.anim_source_path = filepath
+                    else:
+                        bl_image = bpy.data.images.load(filepath)
+                        bl_image.pack()
+                        new_item.image_pointer = bl_image
+                    
                     loaded_count += 1
                     existing_base_ids.add(parsed_id)
                     print(f"[IconsDebug] Successfully loaded: {filename} as ID {parsed_id}")
@@ -115,33 +128,61 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
         for img in rzm.images:
             img.uv_coords, img.uv_size = (0, 0), (0, 0)
 
-        # --- ЧЕСТНЫЙ ПОИСК ИСПОЛЬЗУЕМЫХ ID ---
+        # --- ЧЕСТНЫЙ ПОИСК ИСПОЛЬЗУЕМЫХ ID И КОНФИГУРАЦИЙ ---
         used_image_ids = set()
+        svg_render_configs = {} # Key: unique_svg_key, Value: list of (element, image_id)
+        
         for elem in rzm.elements:
-            if elem.image_id != -1:
-                used_image_ids.add(elem.image_id)
-            if elem.hover_image_id != -1:
-                used_image_ids.add(elem.hover_image_id)
+            img_id = elem.image_id
+            if img_id == -1: continue
+            
+            # Find the image resource to check its type
+            img = next((i for i in rzm.images if i.id == img_id), None)
+            if not img: continue
+            
+            if img.source_type == 'VECTOR':
+                # SVG Deduplication Key
+                # Format: SVG_{id}_{scale}_{offX}_{offY}_{ColorHex or 'ORIG'}
+                scale = round(elem.svg_scale, 2)
+                off_x = round(elem.svg_offset[0], 2)
+                off_y = round(elem.svg_offset[1], 2)
+                
+                color_key = "ORIG"
+                if not img.svg_preserve_color:
+                    # Convert RGB to Hex for the key (ignore alpha)
+                    r, g, b = [int(elem.color[i] * 255) for i in range(3)]
+                    color_key = f"{r:02x}{g:02x}{b:02x}"
+                
+                config_key = f"SVG_{img_id}_{scale}_{off_x}_{off_y}_{color_key}"
+                
+                if config_key not in svg_render_configs:
+                    svg_render_configs[config_key] = []
+                svg_render_configs[config_key].append(elem)
+            else:
+                used_image_ids.add(img_id)
+            
+            # Also check hover and extra maps (treat as standard for now, they are rarely SVGs)
+            if elem.hover_image_id != -1: used_image_ids.add(elem.hover_image_id)
             if hasattr(elem, 'extramap_image_id') and elem.extramap_image_id != -1:
                 used_image_ids.add(elem.extramap_image_id)
+            
             for cond_img in elem.conditional_images:
-                if cond_img.image_id != -1:
-                    used_image_ids.add(cond_img.image_id)
+                if cond_img.image_id != -1: used_image_ids.add(cond_img.image_id)
 
         # Собираем размеры для упаковки.
         image_sizes_to_pack = {}
-        # Временное хранилище для пикселей/данных анимации, чтобы не перечитывать в ExportAtlas
-        # (Хранится только во время работы оператора)
         
         from ..core.animated_loader import load_animated_advanced
 
         for img in rzm.images:
             if img.id not in used_image_ids:
-                # Очищаем данные у неиспользуемых анимированных картинок, чтобы не сбивать с толку
+                # Очищаем данные у неиспользуемых анимированных картинок
                 if img.source_type == 'ANIMATED':
                     img.anim_frames.clear()
                     img.anim_sequence.clear()
-                continue
+                # SVGs are handled per-element below
+                if img.source_type != 'VECTOR':
+                    continue
 
             if img.source_type == 'ANIMATED':
                 if not img.anim_source_path or not os.path.exists(img.anim_source_path):
@@ -188,14 +229,25 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                     continue
 
             elif img.source_type == 'VECTOR':
-                # Векторная графика (SVG)
-                res = img.svg_custom_res if img.svg_use_custom_res else rzm.svg_global_res
-                image_sizes_to_pack[img.display_name] = (res, res)
+                # SVG are now handled via svg_render_configs
+                pass
 
             elif img.image_pointer:
                 w, h = img.image_pointer.size
                 if w > 0 and h > 0:
                     image_sizes_to_pack[img.display_name] = (w, h)
+        
+        # Add Unique SVGs to packing list
+        for config_key, elements in svg_render_configs.items():
+            # Estimate size: First element's pixel size * Scale
+            # (Note: we use element scale not global res)
+            first_elem = elements[0]
+            base_w, base_h = first_elem.size
+            scale = first_elem.svg_scale
+            # Limit resolution to prevent insane memory usage
+            render_w = int(min(base_w * scale, 512))
+            render_h = int(min(base_h * scale, 512))
+            image_sizes_to_pack[config_key] = (render_w, render_h)
 
         if not image_sizes_to_pack:
             self.report({'WARNING'}, "No used images found to create a layout.")
@@ -238,8 +290,17 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                 rzm_image.uv_coords = data['uv_coords']
                 rzm_image.uv_size = data['uv_size']
                 updated_count += 1
+        
+        # Обновляем UV данные элементов (для SVG)
+        for config_key, elements in svg_render_configs.items():
+            if config_key in uv_data:
+                data = uv_data[config_key]
+                for elem in elements:
+                    elem.uv_coords = data['uv_coords']
+                    elem.uv_size = data['uv_size']
+                updated_count += 1
 
-        self.report({'INFO'}, f"Layout updated for {updated_count} images. Atlas size: {atlas_w}x{atlas_h}")
+        self.report({'INFO'}, f"Layout updated for {updated_count} groups. Atlas size: {atlas_w}x{atlas_h}")
         rzm.export_settings.atlas_is_dirty = False
         return {'FINISHED'}
 
@@ -299,10 +360,42 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         if not os.path.exists(export_path):
             os.makedirs(export_path, exist_ok=True)
 
-        # --- СБОР ИСПОЛЬЗУЕМЫХ ID (КАК В UPDATE LAYOUT) ---
+        # --- СБОР ИСПОЛЬЗУЕМЫХ ID И КОНФИГУРАЦИЙ (КАК В UPDATE LAYOUT) ---
         used_image_ids = set()
+        svg_render_configs = {} # Key: unique_svg_key, Value: list of (element, image_id)
+        
         for elem in rzm.elements:
-            if elem.image_id != -1: used_image_ids.add(elem.image_id)
+            img_id = elem.image_id
+            if img_id == -1: continue
+            
+            img = next((i for i in rzm.images if i.id == img_id), None)
+            if not img: continue
+            
+            if img.source_type == 'VECTOR':
+                scale = round(elem.svg_scale, 2)
+                off_x = round(elem.svg_offset[0], 2)
+                off_y = round(elem.svg_offset[1], 2)
+                
+                color_key = "ORIG"
+                tint_color = None
+                if not img.svg_preserve_color:
+                    r, g, b = [int(elem.color[i] * 255) for i in range(3)]
+                    color_key = f"{r:02x}{g:02x}{b:02x}"
+                    tint_color = f"#{color_key}"
+                
+                config_key = f"SVG_{img_id}_{scale}_{off_x}_{off_y}_{color_key}"
+                if config_key not in svg_render_configs:
+                    svg_render_configs[config_key] = {
+                        'elem': elem, 
+                        'image_id': img_id, 
+                        'scale': scale, 
+                        'offset': (off_x, off_y),
+                        'tint': tint_color,
+                        'path': img.anim_source_path or ""
+                    }
+            else:
+                used_image_ids.add(img_id)
+            
             if elem.hover_image_id != -1: used_image_ids.add(elem.hover_image_id)
             if hasattr(elem, 'extramap_image_id') and elem.extramap_image_id != -1:
                 used_image_ids.add(elem.extramap_image_id)
@@ -337,24 +430,32 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                     images_to_render[frame_key] = bl_img
             
             elif img.source_type == 'VECTOR':
-                # Рендерим SVG в растр нужного разрешения
-                from ..core.svg_loader import render_svg_to_pixels
-                res = img.svg_custom_res if img.svg_use_custom_res else rzm.svg_global_res
-                pixels = render_svg_to_pixels(img.anim_source_path, res, res)
-                
-                if pixels is not None:
-                    # Создаем временную картинку для атласа
-                    name = f"TEMP_SVG_{img.display_name}"
-                    # frames_to_blender_images ожидает список [{'pixels', 'size'}]
-                    from ..core.animated_loader import frames_to_blender_images
-                    bl_svg_list = frames_to_blender_images([{'pixels': pixels, 'size': (res, res)}], name)
-                    temp_bl_images.extend(bl_svg_list)
-                    images_to_render[img.display_name] = bl_svg_list[0]
-                else:
-                    print(f"[RZM] Failed to render SVG for export: {img.display_name}")
+                # SVG are now handled via svg_render_configs
+                pass
 
             elif img.image_pointer and any(img.uv_size):
                 images_to_render[img.display_name] = img.image_pointer
+        
+        # Render Unique SVGs
+        from ..core.svg_loader import render_svg_to_pixels
+        from ..core.animated_loader import frames_to_blender_images
+        
+        for config_key, cfg in svg_render_configs.items():
+            elem = cfg['elem']
+            render_w, render_h = elem.uv_size
+            if render_w <= 0 or render_h <= 0: continue
+            
+            pixels = render_svg_to_pixels(
+                cfg['path'], render_w, render_h, 
+                tint_color=cfg['tint'],
+                scale=cfg['scale'],
+                offset=cfg['offset']
+            )
+            
+            if pixels is not None:
+                bl_svg_list = frames_to_blender_images([{'pixels': pixels, 'size': (render_w, render_h)}], f"TEMP_{config_key}")
+                temp_bl_images.extend(bl_svg_list)
+                images_to_render[config_key] = bl_svg_list[0]
         
         if not images_to_render:
             return {'CANCELLED'}
@@ -377,6 +478,14 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                     'uv_coords': list(img.uv_coords),
                     'uv_size': list(img.uv_size)
                 }
+        
+        # UV for unique SVGs (from any element in that config group)
+        for config_key, cfg in svg_render_configs.items():
+            elem = cfg['elem']
+            uv_data[config_key] = {
+                'uv_coords': list(elem.uv_coords),
+                'uv_size': list(elem.uv_size)
+            }
 
         # 3. Генерируем пиксели С УЧЕТОМ ГАММЫ (если SRGB)
         atlas_pixels = create_atlas_pixels(
@@ -442,7 +551,7 @@ class RZM_OT_AddImage(bpy.types.Operator):
             from ..core.svg_loader import render_svg_to_pixels
             from ..core.animated_loader import frames_to_blender_images
             
-            res = rzm.svg_global_res
+            res = 512 # Default for library preview
             pixels = render_svg_to_pixels(filepath, res, res)
             
             if pixels is None:

@@ -261,7 +261,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         add_btn("trash", "rzm.delete", "Delete Selected") 
         
         self.toolbar_layout.addSpacing(10)
-        btn_exp = add_btn("export", "rzm.full_export", "Full Export (rzm.full_export)", special=True)
+        btn_exp = add_btn("export", None, "Full Export (rzm.full_export)", special=True)
         btn_exp.clicked.connect(self._on_full_export)
         
         self.toolbar_layout.addStretch()
@@ -295,7 +295,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         
         self.toolbar_layout.addStretch()
         
-        btn_pref = add_btn("gear-six", "rzm.open_preferences", "Editor Preferences", special=True)
+        btn_pref = add_btn("gear-six", None, "Editor Preferences", special=True)
         btn_pref.clicked.connect(self.open_settings)
 
     def setup_footer(self):
