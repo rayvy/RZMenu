@@ -95,7 +95,17 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         self.preview_label = QtWidgets.QLabel()
         self.preview_label.setFixedSize(160, 160)
         self.preview_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.preview_label.setStyleSheet("border: 1px solid #444; background: #000;")
+        # Checkered background so transparent images look correct (no black!)
+        self.preview_label.setStyleSheet("""
+            QLabel {
+                border: 1px solid #444;
+                background-image: url();
+                background-color: transparent;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #303030, stop:0.5 #404040,
+                    stop:0.5 #404040, stop:1 #303030);
+            }
+        """)
         layout.addWidget(self.preview_label, 0, QtCore.Qt.AlignCenter)
 
         # --- PLAYBACK CONTROLS ---
@@ -649,74 +659,55 @@ class RZAssetBrowserPanel(RZEditorPanel):
         
         layout.addWidget(self.splitter)
 
-    def draw_type_badge(self, pixmap, ext):
-        if not ext: return pixmap
-        ext_clean = ext.upper().replace('.', '')
-        if ext_clean in ['PNG', 'JPG', 'JPEG']: return pixmap  # Skip common
+    def draw_type_badge(self, pixmap, ext, source_type=''):
+        """Draws a small fixed-size color circle badge.
+        Bottom-right: file type color. Top-right: source type color.
+        Hover tooltip is set separately on the list item."""
+        if not ext and not source_type: return pixmap
         
-        # We need a copy to not modify cache
         pix = pixmap.copy()
         painter = QtGui.QPainter(pix)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
-        colors = {
-            'SVG': '#EF7D00', # Orange
-            'MP4': '#00A2E8', # Blue
-            'GIF': '#D80073', # Pink
-            'RZMT': '#60A917' # Green
-        }
-        col_str = colors.get(ext_clean, '#647687') # Default grey-blue
+        CIRCLE_R = 5  # radius in px
         
-        font = QtGui.QFont("Arial", 7, QtGui.QFont.Bold)
-        painter.setFont(font)
-        metrics = QtGui.QFontMetrics(font)
-        tw = metrics.horizontalAdvance(ext_clean)
-        th = metrics.height()
+        # Bottom-right: file extension dot
+        ext_clean = ext.upper().replace('.', '') if ext else ''
+        if ext_clean and ext_clean not in ('PNG', 'JPG', 'JPEG'):
+            ext_colors = {
+                'SVG': '#EF7D00',
+                'MP4': '#00A2E8',
+                'GIF': '#D80073',
+                'RZMT': '#60A917',
+            }
+            col = QtGui.QColor(ext_colors.get(ext_clean, '#647687'))
+            cx = pix.width() - CIRCLE_R - 3
+            cy = pix.height() - CIRCLE_R - 3
+            painter.setBrush(col)
+            painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 120), 1))
+            painter.drawEllipse(QtCore.QPoint(cx, cy), CIRCLE_R, CIRCLE_R)
         
-        # Position: bottom right
-        badge_rect = QtCore.QRect(pix.width() - tw - 6, pix.height() - th - 2, tw + 4, th)
+        # Top-right: source type dot
+        if source_type and source_type != 'CUSTOM':
+            src_colors = {
+                'VECTOR': '#CC6600',
+                'BASE': '#007ACC',
+                'CAPTURED': '#4B8B11',
+                'ANIMATED': '#B0005E',
+            }
+            col2 = QtGui.QColor(src_colors.get(source_type, '#647687'))
+            cx2 = pix.width() - CIRCLE_R - 3
+            cy2 = CIRCLE_R + 3
+            painter.setBrush(col2)
+            painter.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 120), 1))
+            painter.drawEllipse(QtCore.QPoint(cx2, cy2), CIRCLE_R, CIRCLE_R)
         
-        painter.setBrush(QtGui.QColor(col_str))
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.drawRoundedRect(badge_rect, 2, 2)
-        
-        painter.setPen(QtCore.Qt.white)
-        painter.drawText(badge_rect, QtCore.Qt.AlignCenter, ext_clean)
         painter.end()
         return pix
 
     def draw_source_badge(self, pixmap, source_type):
-        if not source_type or source_type == 'CUSTOM': return pixmap
-        
-        pix = pixmap.copy()
-        painter = QtGui.QPainter(pix)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        
-        colors = {
-            'VECTOR': '#CC6600', # Darker Orange
-            'BASE': '#007ACC',   # Darker Blue
-            'CAPTURED': '#4B8B11', # Darker Green
-            'ANIMATED': '#B0005E'  # Darker Pink
-        }
-        col_str = colors.get(source_type, '#647687')
-        
-        font = QtGui.QFont("Arial", 6, QtGui.QFont.Bold)
-        painter.setFont(font)
-        metrics = QtGui.QFontMetrics(font)
-        tw = metrics.horizontalAdvance(source_type)
-        th = metrics.height()
-        
-        # Position: top right
-        badge_rect = QtCore.QRect(pix.width() - tw - 6, 2, tw + 4, th)
-        
-        painter.setBrush(QtGui.QColor(col_str))
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.drawRoundedRect(badge_rect, 2, 2)
-        
-        painter.setPen(QtCore.Qt.white)
-        painter.drawText(badge_rect, QtCore.Qt.AlignCenter, source_type)
-        painter.end()
-        return pix
+        """Compatibility stub - source badge is now drawn inside draw_type_badge."""
+        return pixmap
 
     def on_selection_changed(self):
         if self._is_rebuilding: return
@@ -874,9 +865,13 @@ class RZAssetBrowserPanel(RZEditorPanel):
                 
                 pix = cache.get_pixmap(item_data['id'])
                 if pix:
-                    pix = self.draw_type_badge(pix, item_data['ext'])
-                    pix = self.draw_source_badge(pix, item_data.get('source_type', ''))
+                    src = item_data.get('source_type', '')
+                    pix = self.draw_type_badge(pix, item_data['ext'], source_type=src)
                     list_item.setIcon(QtGui.QIcon(pix))
+                # Build detailed tooltip for hover
+                src_label = item_data.get('source_type', 'CUSTOM')
+                ext_label = item_data['ext'].upper() if item_data['ext'] else 'PNG'
+                list_item.setToolTip(f"ID: {item_data['id']} | {src_label} | {ext_label}")
                 
             elif item_data['type'] == "TEMPLATE":
                 list_item.setData(QtCore.Qt.UserRole, item_data['filepath'])

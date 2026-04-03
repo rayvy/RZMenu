@@ -700,6 +700,7 @@ class RZCodeTextEdit(RZFormulaInput):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._is_multiline = True 
+        self._is_resizable = True  # Enable drag-to-resize at bottom edge
         
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
@@ -708,6 +709,26 @@ class RZCodeTextEdit(RZFormulaInput):
         self.setMinimumHeight(78)
         self.setMaximumHeight(680) 
         self.setMouseTracking(True)
+
+    def mousePressEvent(self, event):
+        if self._handle_visual_mouse_press(event): return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._handle_visual_mouse_move(event): return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._handle_visual_mouse_release(event): return
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Draw resize dots on top of normal painting
+        painter = QtGui.QPainter(self.viewport())
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        self._draw_resizer_dots(painter)
+        painter.end()
 
     def set_highlighter(self, highlighter_class):
         if highlighter_class:

@@ -103,6 +103,8 @@ class RZMenuElement(bpy.types.PropertyGroup):
     conditional_images: CollectionProperty(type=ConditionalImage)
     text_mode: EnumProperty(name="Text Mode",items=[('SINGLE', "Single", "Обычный одиночный текст"),('CONDITIONAL_LIST', "Conditional List", "Список текстов, меняющихся по условию"),('INDEX_LIST', "Index List", "Список, выбираемый по индексу (пока резерв)")],default='SINGLE')
     text_id: StringProperty(name="Text ID"); hover_text_id: StringProperty(name="Hover Text ID")
+    text_id_is_data: BoolProperty(name="Text ID is Data Key", description="If true, text_id is treated as a runtime data key (e.g. a variable name) rather than a literal string", default=False)
+    hover_text_id_is_data: BoolProperty(name="Hover Text ID is Data Key", description="If true, hover_text_id is treated as a runtime data key rather than a literal string", default=False)
     conditional_texts: CollectionProperty(type=ConditionalText)
     tile_uv: IntVectorProperty(name="Tile UV", size=2); tile_size: IntVectorProperty(name="Tile Size", size=2)
     color_is_formula: BoolProperty(name="Color Formula Mode", default=False)

@@ -808,6 +808,38 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                     p_tint.fillRect(temp_pix.rect(), QtGui.QColor(r, g, b))
                     p_tint.end()
                     pix = temp_pix
+                
+                # Apply theme icon_color tint for BASE/CUSTOM images without explicit element color
+                elif self.image_source_type in ('BASE', 'CUSTOM', 'VECTOR'):
+                    # Check if element has a meaningful custom color set (non-zero alpha)
+                    has_elem_color = (self.custom_color and 
+                                      len(self.custom_color) > 3 and 
+                                      self.custom_color[3] > 0.01)
+                    if has_elem_color:
+                        # Element has explicit color - tint with it
+                        temp_pix = QtGui.QPixmap(pix.size())
+                        temp_pix.fill(QtCore.Qt.transparent)
+                        p_tint = QtGui.QPainter(temp_pix)
+                        p_tint.drawPixmap(0, 0, pix)
+                        p_tint.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+                        r, g, b = [int(max(0, min(255, x * 255))) for x in self.custom_color[:3]]
+                        p_tint.fillRect(temp_pix.rect(), QtGui.QColor(r, g, b))
+                        p_tint.end()
+                        pix = temp_pix
+                    else:
+                        # No element color - apply theme's default icon_color
+                        icon_col_str = t.get('icon_color', '')
+                        if icon_col_str:
+                            icon_col = QtGui.QColor(icon_col_str)
+                            if icon_col.isValid():
+                                temp_pix = QtGui.QPixmap(pix.size())
+                                temp_pix.fill(QtCore.Qt.transparent)
+                                p_tint = QtGui.QPainter(temp_pix)
+                                p_tint.drawPixmap(0, 0, pix)
+                                p_tint.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+                                p_tint.fillRect(temp_pix.rect(), icon_col)
+                                p_tint.end()
+                                pix = temp_pix
 
                 # Calculate target rect
                 target_rect = rect
@@ -819,7 +851,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                         rect.center().y() - sh/2.0,
                         sw, sh
                     )
-                    target_rect.translate(self.svg_offset_x, self.svg_offset_y)
+                    # Normalize offset: 1.0 = 100% of element size, moves icon off-screen
+                    offset_px_x = self.svg_offset_x * rect.width()
+                    offset_px_y = self.svg_offset_y * rect.height()
+                    target_rect.translate(offset_px_x, offset_px_y)
 
                 # Handle Flip
                 if self.flip_x or self.flip_y:
@@ -834,6 +869,9 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                 painter.restore()
                 has_image = True
 
+        # TEXT elements have transparent bg by design
+        is_text = (self.elem_type == 'TEXT')
+        
         if self.custom_color and len(self.custom_color) >= 3:
             r, g, b = [int(c*255) for c in self.custom_color[:3]]
             a = int(self.custom_color[3]*255) if len(self.custom_color) > 3 else 255
@@ -846,7 +884,9 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         if self.is_locked_pos or self.is_locked_size: bg_color = bg_color.darker(120)
         
         # --- BLENDING RENDERING ---
-        if has_image:
+        if is_text:
+            pass  # TEXT background is always transparent — no fill
+        elif has_image:
             mode = getattr(self, "image_blending_mode", "NONE")
             if mode == "OVERLAY":
                 painter.setCompositionMode(QtGui.QPainter.CompositionMode_Overlay)

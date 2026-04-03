@@ -69,6 +69,7 @@ THEME_DARK = {
     "vp_type_slider": "rgba(70, 110, 90, 255)",
     "vp_type_anchor": "rgba(255, 0, 0, 100)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
+    "icon_color": "#C8C8C8",  # Default icon tint
 
     # Context Colors
     "ctx_viewport": "#4772b3",
@@ -136,6 +137,7 @@ THEME_LIGHT = {
     "vp_type_slider": "rgba(224, 242, 241, 255)",
     "vp_type_anchor": "rgba(239, 83, 80, 100)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
+    "icon_color": "#505050",  # Default icon tint (dark for light bg)
 
     "ctx_viewport": "#29B6F6",
     "ctx_outliner": "#FFA726",
@@ -199,6 +201,7 @@ THEME_BLUE = {
     "vp_type_slider": "rgba(50, 90, 70, 255)",
     "vp_type_anchor": "rgba(255, 0, 0, 100)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
+    "icon_color": "#AADDFF",  # Default icon tint (blue flavor)
 
     "ctx_viewport": "#4FC3F7",
     "ctx_outliner": "#FFD54F",
