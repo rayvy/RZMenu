@@ -18,6 +18,7 @@ class ValueProperty(bpy.types.PropertyGroup):
     int_value: IntProperty(name="Integer Value")
     float_value: FloatProperty(name="Float Value")
     vector_value: bpy.props.FloatVectorProperty(name="Vector Value", size=4, default=(0.0, 0.0, 0.0, 1.0))
+    force_export: BoolProperty(name="Force Export", default=False)
 
 class ToggleDefinition(bpy.types.PropertyGroup):
     toggle_name: StringProperty(name="Toggle Name", description="Уникальное имя, e.g., ToggleA")
@@ -29,6 +30,7 @@ class ToggleDefinition(bpy.types.PropertyGroup):
         default=False, 
         description="Показать, какие объекты используют биты этого тоггла"
     )
+    force_export: BoolProperty(name="Force Export", default=False)
 
 class BitProperty(bpy.types.PropertyGroup): value: BoolProperty(name="Bit")
 
@@ -66,4 +68,5 @@ class RZMShape(bpy.types.PropertyGroup):
         description="Условие для проигрывания анимации (e.g., $var > 0). Пустое поле = всегда активно."
     )
     disable_export: BoolProperty(name="Disable Export", description="If active, this shape variable will not be exported to templates", default=False)
+    force_export: BoolProperty(name="Force Export", default=False)
     shape_keys: CollectionProperty(type=RZMShapeKey)

@@ -166,6 +166,8 @@ class RZM_OT_UpdateValue(bpy.types.Operator):
                      setattr(target, final_prop, int(float(self.val_str)))
                 elif target_type is float:
                      setattr(target, final_prop, float(self.val_str))
+                elif target_type is bool:
+                     setattr(target, final_prop, self.val_str == "True")
                 else:
                      setattr(target, final_prop, self.val_str)
         except Exception as e:

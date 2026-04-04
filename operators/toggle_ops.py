@@ -68,6 +68,8 @@ class RZM_OT_UpdateProjectToggle(bpy.types.Operator):
                 target_type = type(getattr(t, self.prop_name))
                 if target_type is int:
                     setattr(t, self.prop_name, int(self.val_str))
+                elif target_type is bool:
+                    setattr(t, self.prop_name, self.val_str == "True")
                 else:
                     setattr(t, self.prop_name, self.val_str)
             except: pass

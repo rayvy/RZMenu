@@ -202,6 +202,14 @@ class ValuesTab(BaseListTab):
         self.props_layout.addRow("Float Value:", self.inp_val_float)
         self.props_layout.addRow("Vector:", self.inp_val_vector_widget)
 
+        self.chk_force_export = QtWidgets.QToolButton()
+        self.chk_force_export.setCheckable(True)
+        self.chk_force_export.setText("★")
+        self.chk_force_export.setToolTip("Force Export: Always include this variable in templates/partial exports")
+        self.chk_force_export.setFixedSize(24, 24)
+        self.chk_force_export.clicked.connect(self.synch_force_export)
+        self.props_layout.addRow("Force Export:", self.chk_force_export)
+
     def refresh(self):
         if not bpy.context: return
         self.sync_list_items(bpy.context.scene.rzm.rzm_values, lambda x: x.value_name)
@@ -263,7 +271,25 @@ class ValuesTab(BaseListTab):
         set_row_visible(self.inp_val_float, val.value_type == 'FLOAT')
         set_row_visible(self.inp_val_vector_widget, val.value_type == 'VECTOR')
         
+        self.chk_force_export.blockSignals(True)
+        self.chk_force_export.setChecked(val.force_export)
+        self._update_star_style(self.chk_force_export)
+        self.chk_force_export.blockSignals(False)
+        
         self.is_updating_ui = False
+
+    def _update_star_style(self, btn):
+        t = get_current_theme()
+        if btn.isChecked():
+            btn.setStyleSheet(f"color: #FFD700; background: transparent; border: 1px solid #FFD700; border-radius: 4px; font-size: 16px;")
+        else:
+            btn.setStyleSheet(f"color: {t['text_dim']}; background: transparent; border: 1px solid {t['border_main']}; border-radius: 4px; font-size: 16px;")
+
+    def synch_force_export(self, checked):
+        if self.is_updating_ui: return
+        row = self.list_widget.currentRow()
+        bpy.ops.rzm.update_value(index=row, prop_name="force_export", val_str=str(checked))
+        self._update_star_style(self.chk_force_export)
 
     def synch_name(self):
         if self.is_updating_ui: return
@@ -334,6 +360,14 @@ class TogglesTab(BaseListTab):
         self.props_layout.addRow("Length:", self.inp_len)
         self.props_layout.addRow("Start Index:", self.inp_start_idx)
 
+        self.chk_force_export = QtWidgets.QToolButton()
+        self.chk_force_export.setCheckable(True)
+        self.chk_force_export.setText("★")
+        self.chk_force_export.setToolTip("Force Export: Always include this toggle in templates")
+        self.chk_force_export.setFixedSize(24, 24)
+        self.chk_force_export.clicked.connect(self.synch_force_export)
+        self.props_layout.addRow("Force Export:", self.chk_force_export)
+
     def refresh(self):
         if not bpy.context: return
         self.sync_list_items(bpy.context.scene.rzm.toggle_definitions, lambda x: x.toggle_name)
@@ -368,7 +402,26 @@ class TogglesTab(BaseListTab):
             self.inp_len.setValue(t.toggle_length)
         if self.inp_start_idx.value() != t.toggle_start_index:
             self.inp_start_idx.setValue(t.toggle_start_index)
+            
+        self.chk_force_export.blockSignals(True)
+        self.chk_force_export.setChecked(t.force_export)
+        self._update_star_style(self.chk_force_export)
+        self.chk_force_export.blockSignals(False)
+
         self.is_updating_ui = False
+
+    def _update_star_style(self, btn):
+        t = get_current_theme()
+        if btn.isChecked():
+            btn.setStyleSheet(f"color: #FFD700; background: transparent; border: 1px solid #FFD700; border-radius: 4px; font-size: 16px;")
+        else:
+            btn.setStyleSheet(f"color: {t['text_dim']}; background: transparent; border: 1px solid {t['border_main']}; border-radius: 4px; font-size: 16px;")
+
+    def synch_force_export(self, checked):
+        if self.is_updating_ui: return
+        row = self.list_widget.currentRow()
+        bpy.ops.rzm.update_project_toggle(index=row, prop_name="force_export", val_str=str(checked))
+        self._update_star_style(self.chk_force_export)
 
     def synch_name(self):
         if self.is_updating_ui: return
@@ -410,13 +463,24 @@ class ShapesTab(BaseListTab):
         self.inp_cond = QtWidgets.QLineEdit()
         self.inp_cond.editingFinished.connect(self.synch_cond)
         
+        self.props_layout.addRow("Anim Condition:", self.inp_cond)
+        
+        h_export = QtWidgets.QHBoxLayout()
         self.chk_disable_export = QtWidgets.QCheckBox("Disable Export")
         self.chk_disable_export.toggled.connect(self.synch_disable_export)
-        
-        self.props_layout.addRow("Name:", self.inp_name)
-        self.props_layout.addRow("Type:", self.inp_type)
-        self.props_layout.addRow("Anim Condition:", self.inp_cond)
-        self.props_layout.addRow("", self.chk_disable_export)
+        h_export.addWidget(self.chk_disable_export)
+
+        self.chk_force_export = QtWidgets.QToolButton()
+        self.chk_force_export.setCheckable(True)
+        self.chk_force_export.setText("★")
+        self.chk_force_export.setToolTip("Force Export: Always include this shape in templates")
+        self.chk_force_export.setFixedSize(24, 24)
+        self.chk_force_export.clicked.connect(self.synch_force_export)
+        h_export.addWidget(self.chk_force_export)
+        h_export.addWidget(QtWidgets.QLabel("Force Export"))
+        h_export.addStretch()
+
+        self.props_layout.addRow("Export Options:", h_export)
         
         # Nested ShapeKeys List
         self.keys_group = QtWidgets.QGroupBox("Shape Keys")
@@ -494,7 +558,26 @@ class ShapesTab(BaseListTab):
             self.inp_cond.setText(shape.anim_condition)
         if self.chk_disable_export.isChecked() != shape.disable_export:
             self.chk_disable_export.setChecked(shape.disable_export)
+            
+        self.chk_force_export.blockSignals(True)
+        self.chk_force_export.setChecked(shape.force_export)
+        self._update_star_style(self.chk_force_export)
+        self.chk_force_export.blockSignals(False)
+
         self.is_updating_ui = False
+
+    def _update_star_style(self, btn):
+        t = get_current_theme()
+        if btn.isChecked():
+            btn.setStyleSheet(f"color: #FFD700; background: transparent; border: 1px solid #FFD700; border-radius: 4px; font-size: 16px;")
+        else:
+            btn.setStyleSheet(f"color: {t['text_dim']}; background: transparent; border: 1px solid {t['border_main']}; border-radius: 4px; font-size: 16px;")
+
+    def synch_force_export(self, checked):
+        if self.is_updating_ui: return
+        row = self.list_widget.currentRow()
+        bpy.ops.rzm.update_shape(shape_index=row, prop_name="force_export", val_str=str(checked))
+        self._update_star_style(self.chk_force_export)
         
         self.refresh_keys_list(shape)
 

@@ -202,6 +202,22 @@ class RZTemplateEngine:
                         elif field.startswith('#'): deps_ids["shapes"].add(field[1:])
                         elif field.startswith('$'): deps_ids["values"].add(field[1:])
 
+        # Collect forced dependencies
+        for v in self.rzm.rzm_values:
+            if getattr(v, "force_export", False):
+                name = v.value_name.replace('$', '')
+                deps_ids["values"].add(name)
+        for t in self.rzm.toggle_definitions:
+            if getattr(t, "force_export", False):
+                deps_ids["toggles"].add(t.toggle_name)
+        for s in self.rzm.shapes:
+            if getattr(s, "force_export", False):
+                deps_ids["shapes"].add(s.shape_name)
+        for c in self.rzm.conditions:
+            if getattr(c, "force_export", False):
+                deps_ids["conditions"].add(c.condition_name)
+
+        # Build dependency data
         for name in deps_ids["values"]:
             obj = next((v for v in self.rzm.rzm_values if v.value_name == name or v.value_name == f"${name}"), None)
             if obj: data["dependencies"]["values"].append(rzm_to_dict(obj))
