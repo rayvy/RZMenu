@@ -812,6 +812,9 @@ $texSizeX = 2
 run = CustomShaderRCI2D_TEXT
 [CustomShaderRCI2D_TEXT]
 $drawType = 3
+if $TextIsData == 1
+$drawType = 4
+endif
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
@@ -857,6 +860,7 @@ y111 = $di_count
 
 dispatch = 1, 1, 1
 $di_count = $di_count + 1
+$TextIsData = 0
 
 [CustomShaderRCI2D_HOVERTEXT]
 cs-u0 = ResourceBuffer100

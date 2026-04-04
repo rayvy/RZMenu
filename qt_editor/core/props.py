@@ -86,6 +86,12 @@ PROP_MAP = {
     "disable_slider_blur": ("disable_slider_blur", None, 'D'),
     "disable_slider_prebuild_render": ("disable_slider_prebuild_render", None, 'D'),
     "text_mode": ("text_mode", None, 'D'),
+    "text_id": ("text_id", None, 'D'),
+    "hover_text_id": ("hover_text_id", None, 'D'),
+    "text_id_is_data": ("text_id_is_data", None, 'D'),
+    "hover_text_id_is_data": ("hover_text_id_is_data", None, 'D'),
+    "text_id_data_length": ("text_id_data_length", None, 'D'),
+    "hover_text_id_data_length": ("hover_text_id_data_length", None, 'D'),
     
     # Events
     "hover_event_enabled": ("hover_event_enabled", None, 'D'),

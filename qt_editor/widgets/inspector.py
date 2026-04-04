@@ -1475,11 +1475,15 @@ class RZMInspectorPanel(RZEditorPanel):
             h_txt = QtWidgets.QHBoxLayout()
             self.edit_txt_id = self._add_row(h_txt, "Text ID:", RZLineEdit(), 'text_id')
             self.chk_txt_is_data = self._add_row(h_txt, "", RZCheckBox("Is Data"), 'text_id_is_data')
+            self.spin_txt_data_len = self._add_row(h_txt, "Len:", RZSpinBox(), 'text_id_data_length')
+            self.spin_txt_data_len.setFixedWidth(50)
             f_txt.addLayout(h_txt)
             
             h_hov = QtWidgets.QHBoxLayout()
             self.edit_hov_txt = self._add_row(h_hov, "Hover ID:", RZLineEdit(), 'hover_text_id')
             self.chk_hov_is_data = self._add_row(h_hov, "", RZCheckBox("Is Data"), 'hover_text_id_is_data')
+            self.spin_hov_data_len = self._add_row(h_hov, "Len:", RZSpinBox(), 'hover_text_id_data_length')
+            self.spin_hov_data_len.setFixedWidth(50)
             f_txt.addLayout(h_hov)
             
             layout.addWidget(self.w_legacy_text)

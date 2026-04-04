@@ -9,6 +9,12 @@ def mark_atlas_dirty_img(self, context):
     if hasattr(context.scene, "rzm"):
         context.scene.rzm.export_settings.atlas_is_dirty = True
 
+class RZMenuSVGVariation(bpy.types.PropertyGroup):
+    """Stores coordinate mapping for a specific variation of an SVG used by a set of elements."""
+    element_ids_str: StringProperty(name="Element IDs", description="Comma separated element IDs")
+    uv_coords: IntVectorProperty(name="UV Coords", size=2)
+    uv_size: IntVectorProperty(name="UV Size", size=2)
+
 class RZMenuAnimationFrame(bpy.types.PropertyGroup):
     """Уникальный текстурный кадр в атласе."""
     x: IntProperty(name="X")
@@ -123,6 +129,7 @@ class RZMenuImage(bpy.types.PropertyGroup):
         default=False,
         update=mark_atlas_dirty_img
     )
+    svg_variations: CollectionProperty(type=RZMenuSVGVariation)
 
 class ConditionalImage(bpy.types.PropertyGroup):
     condition: StringProperty(name="Condition", description="e.g., $varA > 5 and @ToggleB[1]")

@@ -273,5 +273,14 @@
 {%- endmacro -%}
 
 {%- macro get_image_cords_name(element, image_id, scene) -%}
+    {%- set img = none -%}
+    {%- if scene.rzm and scene.rzm.images -%}
+        {%- for i in scene.rzm.images if i.id == image_id -%}{%- set img = i -%}{%- endfor -%}
+    {%- endif -%}
+    
+    {%- if img and img.source_type == 'VECTOR' -%}
+        {{- "GetImageCords_" ~ get_svg_config_key(element, image_id, scene) -}}
+    {%- else -%}
+        {{- "GetImageCords" ~ image_id -}}
     {%- endif -%}
 {%- endmacro -%}

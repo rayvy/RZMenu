@@ -40,8 +40,14 @@ if {{ utils.normalize_all_vars(item.condition, element, scene) }}
             {% else %}
 elif {{ utils.normalize_all_vars(item.condition, element, scene) }}
             {% endif %}
+            {% if element.text_id_is_data %}
+    $TextIsData = 1
+    $texPosX = {{ item.text_id }}
+    $texPosY = {{ element.text_id_data_length | default(1) }}
+            {% else %}
     $texPosX = {{ current_offset }}
     $texPosY = {{ txt_len }}
+            {% endif %}
     cs-t24 = ResourceTextElement{{ element.id }}.{{ loop.index }}
         {% endfor %}
 
@@ -57,8 +63,14 @@ else
             'content': fallback_text
         }) %}
         
+        {% if element.text_id_is_data %}
+    $TextIsData = 1
+    $texPosX = {{ fallback_text }}
+    $texPosY = {{ element.text_id_data_length | default(1) }}
+        {% else %}
     $texPosX = {{ current_offset }}
     $texPosY = {{ txt_len }}
+        {% endif %}
     cs-t24 = ResourceTextElement{{ element.id }}.0
 endif
 
@@ -74,8 +86,14 @@ endif
             'content': fallback_text
         }) %}
 
+    {% if element.text_id_is_data %}
+    $TextIsData = 1
+    $texPosX = {{ fallback_text }}
+    $texPosY = {{ element.text_id_data_length | default(1) }}
+    {% else %}
     $texPosX = {{ current_offset }}
     $texPosY = {{ txt_len }}
+    {% endif %}
     cs-t24 = ResourceTextElement{{ element.id }}.0
     {% endif %}
 
@@ -95,8 +113,14 @@ endif
             {% set current_offset = text_offset_tracker[0] %}
 
             [CommandListGetTextHoverElement{{ element.id }}]
+            {% if element.hover_text_id_is_data %}
+            $TextIsData = 1
+            $textOffset = {{ element.hover_text_id }}
+            $textLength = {{ element.hover_text_id_data_length | default(1) }}
+            {% else %}
             $textOffset = {{ current_offset }}
             $textLength = {{ text_length }}
+            {% endif %}
             cs-t24 = ResourceTextHoverElement{{ element.id }}
             run = CustomShaderRCI2D_HOVERTEXT
             [ResourceTextHoverElement{{ element.id }}]
@@ -140,8 +164,35 @@ endif
             {% endfor %}
             endif
 
+        {% elif image.source_type == 'VECTOR' %}
+            {# ─── VECTOR: ID-based variations ───────────────────────────── #}
+            [CommandListGetImageCords{{ image.id }}]
+            $drawType = 1
+            {% for var in image.svg_variations %}
+            {% set id_list = var.element_ids_str.split(',') %}
+            {% if loop.first %}
+            if {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}
+            {% else %}
+            elif {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}
+            {% endif %}
+            $texPosX = {{ var.uv_coords[0] }}
+            $texPosY = {{ var.uv_coords[1] }}
+            $texSizeX = {{ var.uv_size[0] }}
+            $texSizeY = {{ var.uv_size[1] }}
+            {% endfor %}
+            {% if (image.svg_variations | length) > 0 %}
+            else
+            $texPosX = {{ image.svg_variations[0].uv_coords[0] }}
+            $texPosY = {{ image.svg_variations[0].uv_coords[1] }}
+            $texSizeX = {{ image.svg_variations[0].uv_size[0] }}
+            $texSizeY = {{ image.svg_variations[0].uv_size[1] }}
+            endif
+            {% else %}
+            $drawType = 0
+            {% endif %}
+
         {% else %}
-            {# ─── STANDARD: статические 4 строки ───────────────────────────── #}
+            {# ─── STANDARD: static fallback ───────────────────────────── #}
             [CommandListGetImageCords{{ image.id }}]
             $drawType = 1
             $texPosX = {{ image.uv_coords[0] }}

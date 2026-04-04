@@ -130,44 +130,63 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
 
         # --- ЧЕСТНЫЙ ПОИСК ИСПОЛЬЗУЕМЫХ ID И КОНФИГУРАЦИЙ ---
         used_image_ids = set()
-        svg_render_configs = {} # Key: unique_svg_key, Value: list of (element, image_id)
+        # svg_render_configs Key: (img_id, scale, off_x, off_y, color_key)
+        # Value: {'element_ids': set(element_ids), 'config_key': str, ...}
+        svg_render_configs = {} 
+
+        # 0. Clear existing variations before processing
+        for img in rzm.images:
+            img.svg_variations.clear()
         
+        print(f"[RZM] Updating atlas layout. Elements: {len(rzm.elements)}, Images: {len(rzm.images)}")
+
         for elem in rzm.elements:
-            img_id = elem.image_id
-            if img_id == -1: continue
-            
-            # Find the image resource to check its type
-            img = next((i for i in rzm.images if i.id == img_id), None)
-            if not img: continue
-            
-            if img.source_type == 'VECTOR':
-                # SVG Deduplication Key
-                # Format: SVG_{id}_{scale}_{offX}_{offY}_{ColorHex or 'ORIG'}
-                scale = round(elem.svg_scale, 2)
-                off_x = round(elem.svg_offset[0], 2)
-                off_y = round(elem.svg_offset[1], 2)
-                
-                color_key = "ORIG"
-                if not img.svg_preserve_color:
-                    # Convert RGB to Hex for the key (ignore alpha)
-                    r, g, b = [int(elem.color[i] * 255) for i in range(3)]
-                    color_key = f"{r:02x}{g:02x}{b:02x}"
-                
-                config_key = f"SVG_{img_id}_{scale}_{off_x}_{off_y}_{color_key}"
-                
-                if config_key not in svg_render_configs:
-                    svg_render_configs[config_key] = []
-                svg_render_configs[config_key].append(elem)
-            else:
-                used_image_ids.add(img_id)
-            
-            # Also check hover and extra maps (treat as standard for now, they are rarely SVGs)
-            if elem.hover_image_id != -1: used_image_ids.add(elem.hover_image_id)
-            if hasattr(elem, 'extramap_image_id') and elem.extramap_image_id != -1:
-                used_image_ids.add(elem.extramap_image_id)
+            # We check all potential SVG sources for this element
+            sources = [
+                ('MAIN', elem.image_id),
+                ('HOVER', elem.hover_image_id),
+            ]
+            if hasattr(elem, 'extramap_image_id'):
+                sources.append(('EXTRA', elem.extramap_image_id))
             
             for cond_img in elem.conditional_images:
-                if cond_img.image_id != -1: used_image_ids.add(cond_img.image_id)
+                sources.append(('COND', cond_img.image_id))
+            
+            for source_tag, img_id in sources:
+                if img_id == -1: continue
+                
+                img = next((i for i in rzm.images if i.id == img_id), None)
+                if not img: continue
+                
+                if img.source_type == 'VECTOR':
+                    # SVGs are tracked strictly by Element ID grouping + Resolution
+                    res_w, res_h = elem.size
+                    scale = round(elem.svg_scale, 2)
+                    off_x = round(elem.svg_offset[0], 2)
+                    off_y = round(elem.svg_offset[1], 2)
+                    
+                    color_key = "ORIG"
+                    if not img.svg_preserve_color:
+                        r, g, b = [int(elem.color[i] * 255) for i in range(3)]
+                        color_key = f"{r:02x}{g:02x}{b:02x}"
+                    
+                    # Variation identity includes the image ID and target Resolution
+                    var_tuple = (img_id, res_w, res_h, scale, off_x, off_y, color_key)
+                    config_key = f"SVG_{img_id}_{res_w}x{res_h}_{scale}_{off_x}_{off_y}_{color_key}"
+                    
+                    if var_tuple not in svg_render_configs:
+                        svg_render_configs[var_tuple] = {
+                            'element_ids': set(),
+                            'config_key': config_key,
+                            'img_id': img_id,
+                            'res': (res_w, res_h),
+                            'scale': scale,
+                            'offset': (off_x, off_y),
+                            'color_key': color_key
+                        }
+                    svg_render_configs[var_tuple]['element_ids'].add(elem.id)
+                else:
+                    used_image_ids.add(img_id)
 
         # Собираем размеры для упаковки.
         image_sizes_to_pack = {}
@@ -175,93 +194,74 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
         from ..core.animated_loader import load_animated_advanced
 
         for img in rzm.images:
-            if img.id not in used_image_ids:
-                # Очищаем данные у неиспользуемых анимированных картинок
+            # Check if this image is used as a standard image anywhere
+            if img.id in used_image_ids:
                 if img.source_type == 'ANIMATED':
-                    img.anim_frames.clear()
-                    img.anim_sequence.clear()
-                # SVGs are handled per-element below
-                if img.source_type != 'VECTOR':
-                    continue
-
-            if img.source_type == 'ANIMATED':
-                if not img.anim_source_path or not os.path.exists(img.anim_source_path):
-                    continue
-                
-                try:
-                    # Извлекаем уникальные кадры на лету согласно пресету
-                    unique_frames, sequence = load_animated_advanced(
-                        img.anim_source_path,
-                        preset=img.anim_export_preset,
-                        start_frame=img.anim_start_frame,
-                        end_frame=img.anim_end_frame,
-                        max_source_frames=img.anim_max_frames
-                    )
+                    if not img.anim_source_path or not os.path.exists(img.anim_source_path):
+                        continue
                     
-                    # Обновляем нативные коллекции
-                    img.anim_frames.clear()
-                    img.anim_sequence.clear()
-                    
-                    for f in unique_frames:
-                        it = img.anim_frames.add()
-                        it.w, it.h = f['size']
-                    
-                    last_idx = -1
-                    for seq_item in sequence:
-                        it = img.anim_sequence.add()
-                        it.frame_index = seq_item['idx']
-                        it.duration = seq_item['duration']
-                        it.is_unique = (seq_item['idx'] != last_idx)
-                        last_idx = seq_item['idx']
-
-                    img.anim_frame_count = len(unique_frames)
-                    img.anim_total_duration = sum(s['duration'] for s in sequence)
-
-                    # Добавляем уникальные кадры в паковщик
-                    for n, f in enumerate(unique_frames):
-                        frame_key = f"{img.display_name}_anim_{n:04d}"
-                        image_sizes_to_pack[frame_key] = f['size']
+                    try:
+                        unique_frames, sequence = load_animated_advanced(
+                            img.anim_source_path,
+                            preset=img.anim_export_preset,
+                            start_frame=img.anim_start_frame,
+                            end_frame=img.anim_end_frame,
+                            max_source_frames=img.anim_max_frames
+                        )
                         
-                except Exception as e:
-                    print(f"[RZM] Error processing animation {img.display_name}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
+                        img.anim_frames.clear()
+                        img.anim_sequence.clear()
+                        
+                        for f in unique_frames:
+                            it = img.anim_frames.add()
+                            it.w, it.h = f['size']
+                        
+                        last_idx = -1
+                        for seq_item in sequence:
+                            it = img.anim_sequence.add()
+                            it.frame_index = seq_item['idx']
+                            it.duration = seq_item['duration']
+                            it.is_unique = (seq_item['idx'] != last_idx)
+                            last_idx = seq_item['idx']
 
-            elif img.source_type == 'VECTOR':
-                # SVG are now handled via svg_render_configs
-                pass
+                        img.anim_frame_count = len(unique_frames)
+                        img.anim_total_duration = sum(s['duration'] for s in sequence)
 
-            elif img.image_pointer:
-                w, h = img.image_pointer.size
-                if w > 0 and h > 0:
-                    image_sizes_to_pack[img.display_name] = (w, h)
+                        for n, f in enumerate(unique_frames):
+                            frame_key = f"{img.display_name}_anim_{n:04d}"
+                            image_sizes_to_pack[frame_key] = f['size']
+                    except Exception as e:
+                        print(f"[RZM] Animation error: {e}")
+                        continue
+                elif img.source_type == 'VECTOR':
+                    pass # Handled by svg_render_configs
+                elif img.image_pointer:
+                    w, h = img.image_pointer.size
+                    if w > 0 and h > 0:
+                        image_sizes_to_pack[img.display_name] = (w, h)
         
         # Add Unique SVGs to packing list
-        for config_key, elements in svg_render_configs.items():
-            # Estimate size: First element's pixel size * Scale
-            # (Note: we use element scale not global res)
-            first_elem = elements[0]
-            base_w, base_h = first_elem.size
-            scale = first_elem.svg_scale
-            # Limit resolution to prevent insane memory usage
-            render_w = int(min(base_w * scale, 512))
-            render_h = int(min(base_h * scale, 512))
-            image_sizes_to_pack[config_key] = (render_w, render_h)
+        for var_tuple, cfg in svg_render_configs.items():
+            base_w, base_h = cfg['res']
+            # We don't multiply by scale here because svg_scale should not reduce resolution, only the vector content.
+            # We pack at full element resolution.
+            render_w = int(min(base_w, 1024))
+            render_h = int(min(base_h, 1024))
+            image_sizes_to_pack[cfg['config_key']] = (render_w, render_h)
 
         if not image_sizes_to_pack:
             self.report({'WARNING'}, "No used images found to create a layout.")
             return {'CANCELLED'}
 
+        print(f"[RZM] Packing {len(image_sizes_to_pack)} items into atlas...")
         (atlas_w, atlas_h), uv_data = calculate_atlas_layout(image_sizes_to_pack)
 
         rzm.atlas_size = (atlas_w, atlas_h)
 
-        # Обновляем UV данные изображений
+        # Обновляем UV данные стандартных изображений
         updated_count = 0
         for rzm_image in rzm.images:
             if rzm_image.source_type == 'ANIMATED' and rzm_image.id in used_image_ids:
-                # Обновляем координаты в anim_frames
                 for n in range(rzm_image.anim_frame_count):
                     frame_key = f"{rzm_image.display_name}_anim_{n:04d}"
                     if frame_key in uv_data:
@@ -272,14 +272,6 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                         rzm_image.anim_frames[n].w = size[0]
                         rzm_image.anim_frames[n].h = size[1]
                 
-                # Обновляем JSON для совместимости с шаблоном
-                legacy_json = []
-                for seq in rzm_image.anim_sequence:
-                    f = rzm_image.anim_frames[seq.frame_index]
-                    legacy_json.append([f.x, f.y, f.w, f.h, seq.duration])
-                rzm_image.anim_frame_coords = json.dumps(legacy_json)
-
-                # UV главного изображения = первый кадр (для превью в редакторе)
                 if rzm_image.anim_frames:
                     rzm_image.uv_coords = (rzm_image.anim_frames[0].x, rzm_image.anim_frames[0].y)
                     rzm_image.uv_size = (rzm_image.anim_frames[0].w, rzm_image.anim_frames[0].h)
@@ -291,13 +283,30 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                 rzm_image.uv_size = data['uv_size']
                 updated_count += 1
         
-        # Обновляем UV данные элементов (для SVG)
-        for config_key, elements in svg_render_configs.items():
+        # Обновляем UV данные для SVG вариаций
+        print(f"[RZM] Found {len(svg_render_configs)} SVG variations.")
+        for var_tuple, cfg in svg_render_configs.items():
+            config_key = cfg['config_key']
             if config_key in uv_data:
                 data = uv_data[config_key]
-                for elem in elements:
-                    elem.uv_coords = data['uv_coords']
-                    elem.uv_size = data['uv_size']
+                img_id = cfg['img_id']
+                
+                # We need to find the correct image object in scene
+                for rzm_image in rzm.images:
+                    if rzm_image.id == img_id:
+                        var = rzm_image.svg_variations.add()
+                        var.element_ids_str = ",".join(map(str, sorted(list(cfg['element_ids']))))
+                        var.uv_coords = data['uv_coords']
+                        var.uv_size = data['uv_size']
+                        print(f"  > Linked variation for ImageID {img_id} to elements: {var.element_ids_str}")
+                
+                # Backwards compat for element viewport
+                for elem_id in cfg['element_ids']:
+                    elem = next((e for e in rzm.elements if e.id == elem_id), None)
+                    if elem:
+                        elem.uv_coords = data['uv_coords']
+                        elem.uv_size = data['uv_size']
+
                 updated_count += 1
 
         self.report({'INFO'}, f"Layout updated for {updated_count} groups. Atlas size: {atlas_w}x{atlas_h}")
@@ -365,42 +374,48 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         svg_render_configs = {} # Key: unique_svg_key, Value: list of (element, image_id)
         
         for elem in rzm.elements:
-            img_id = elem.image_id
-            if img_id == -1: continue
+            sources = [
+                ('MAIN', elem.image_id),
+                ('HOVER', elem.hover_image_id),
+            ]
+            if hasattr(elem, 'extramap_image_id'):
+                sources.append(('EXTRA', elem.extramap_image_id))
             
-            img = next((i for i in rzm.images if i.id == img_id), None)
-            if not img: continue
-            
-            if img.source_type == 'VECTOR':
-                scale = round(elem.svg_scale, 2)
-                off_x = round(elem.svg_offset[0], 2)
-                off_y = round(elem.svg_offset[1], 2)
-                
-                color_key = "ORIG"
-                tint_color = None
-                if not img.svg_preserve_color:
-                    r, g, b = [int(elem.color[i] * 255) for i in range(3)]
-                    color_key = f"{r:02x}{g:02x}{b:02x}"
-                    tint_color = f"#{color_key}"
-                
-                config_key = f"SVG_{img_id}_{scale}_{off_x}_{off_y}_{color_key}"
-                if config_key not in svg_render_configs:
-                    svg_render_configs[config_key] = {
-                        'elem': elem, 
-                        'image_id': img_id, 
-                        'scale': scale, 
-                        'offset': (off_x, off_y),
-                        'tint': tint_color,
-                        'path': img.anim_source_path or ""
-                    }
-            else:
-                used_image_ids.add(img_id)
-            
-            if elem.hover_image_id != -1: used_image_ids.add(elem.hover_image_id)
-            if hasattr(elem, 'extramap_image_id') and elem.extramap_image_id != -1:
-                used_image_ids.add(elem.extramap_image_id)
             for cond_img in elem.conditional_images:
-                if cond_img.image_id != -1: used_image_ids.add(cond_img.image_id)
+                sources.append(('COND', cond_img.image_id))
+            
+            for source_tag, img_id in sources:
+                if img_id == -1: continue
+                
+                img = next((i for i in rzm.images if i.id == img_id), None)
+                if not img: continue
+                
+                if img.source_type == 'VECTOR':
+                    res_w, res_h = elem.size
+                    scale = round(elem.svg_scale, 2)
+                    off_x = round(elem.svg_offset[0], 2)
+                    off_y = round(elem.svg_offset[1], 2)
+                    
+                    color_key = "ORIG"
+                    tint_color = None
+                    if not img.svg_preserve_color:
+                        r, g, b = [int(elem.color[i] * 255) for i in range(3)]
+                        color_key = f"{r:02x}{g:02x}{b:02x}"
+                        tint_color = f"#{color_key}"
+                    
+                    config_key = f"SVG_{img_id}_{res_w}x{res_h}_{scale}_{off_x}_{off_y}_{color_key}"
+                    if config_key not in svg_render_configs:
+                        svg_render_configs[config_key] = {
+                            'elem': elem, 
+                            'image_id': img_id,
+                            'res': (res_w, res_h),
+                            'scale': scale, 
+                            'offset': (off_x, off_y),
+                            'tint': tint_color,
+                            'path': img.anim_source_path or ""
+                        }
+                else:
+                    used_image_ids.add(img_id)
 
         # Собираем все изображения, которые нужно отрендерить в атлас
         from ..core.animated_loader import load_animated_advanced, frames_to_blender_images
@@ -441,8 +456,9 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         from ..core.animated_loader import frames_to_blender_images
         
         for config_key, cfg in svg_render_configs.items():
-            elem = cfg['elem']
-            render_w, render_h = elem.uv_size
+            res_w, res_h = cfg['res']
+            render_w = int(min(res_w, 1024))
+            render_h = int(min(res_h, 1024))
             if render_w <= 0 or render_h <= 0: continue
             
             pixels = render_svg_to_pixels(
