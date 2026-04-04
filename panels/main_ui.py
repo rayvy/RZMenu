@@ -52,6 +52,14 @@ class RZM_UL_Shapes(bpy.types.UIList):
         row.prop(item, "shape_name", text="", emboss=False, icon='SHAPEKEY_DATA')
         row.label(text=f"Keys: {len(item.shape_keys)}")
 
+class RZM_UL_ShapeKeys(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "key_name", text="Key")
+        row.prop(item, "mode", text="")
+        if item.mode == 'ADVANCED':
+            row.label(text="*", icon='SETTINGS')
+
 class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     bl_label = "RZ Constructor"
     bl_idname = "VIEW3D_PT_rz_constructor_panel"
@@ -299,6 +307,23 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         if not target_obj:
             layout.label(text="Select an object to see its properties.", icon='INFO')
             return
+
+        # --- MOD PRODUCER TIERS ---
+        box = layout.box()
+        box.label(text="Mod Producer Tiers", icon='FILE_CACHE')
+        
+        from ..operators.tier_ops import get_tier_ids
+        available_tiers = get_tier_ids(context)
+        if not available_tiers:
+            box.label(text="No tiers configured in Addon Prefs.", icon='INFO')
+        else:
+            active_tiers = {t.tier_id for t in target_obj.rzm_tier_list}
+            flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+            for tid in available_tiers:
+                is_active = tid in active_tiers
+                op_name = "rzm.remove_object_tier" if is_active else "rzm.add_object_tier"
+                op = flow.operator(op_name, text=tid, depress=is_active)
+                op.tier_id = tid
 
         # --- TOGGLES ---
         box = layout.box()
@@ -652,6 +677,20 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
             row.operator("rzm.add_value", text="Add Var", icon='ADD')
             row.operator("rzm.remove_value", text="", icon='REMOVE')
             box.template_list("RZM_UL_Values", "", rzm, "rzm_values", context.scene, "rzm_active_value_index")
+            if rzm.rzm_values and 0 <= context.scene.rzm_active_value_index < len(rzm.rzm_values):
+                active_val = rzm.rzm_values[context.scene.rzm_active_value_index]
+                from ..operators.tier_ops import get_tier_ids
+                available = get_tier_ids(context)
+                if available:
+                    box.label(text="Export Tiers:")
+                    v_active = {t.tier_id for t in active_val.export_tiers}
+                    flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+                    for tid in available:
+                        is_act = tid in v_active
+                        op_str = "rzm.remove_value_tier" if is_act else "rzm.add_value_tier"
+                        op = flow.operator(op_str, text=tid, depress=is_act)
+                        op.value_index = context.scene.rzm_active_value_index
+                        op.tier_id = tid
 
         elif tab == 'SHAPES':
             # Project Shapes
@@ -659,16 +698,155 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
             row.operator("rzm.add_shape", text="Add Shape", icon='ADD')
             row.operator("rzm.remove_shape", text="", icon='REMOVE')
             box.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
+            if rzm.shapes and 0 <= context.scene.rzm_active_shape_index < len(rzm.shapes):
+                active_shape = rzm.shapes[context.scene.rzm_active_shape_index]
+                from ..operators.tier_ops import get_tier_ids
+                available = get_tier_ids(context)
+                if available:
+                    box.label(text="Export Tiers:")
+                    s_active = {t.tier_id for t in active_shape.export_tiers}
+                    flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+                    for tid in available:
+                        is_act = tid in s_active
+                        op_str = "rzm.remove_shape_tier" if is_act else "rzm.add_shape_tier"
+                        op = flow.operator(op_str, text=tid, depress=is_act)
+                        op.shape_index = context.scene.rzm_active_shape_index
+                        op.tier_id = tid
+                    
+                    # --- Selection list for the shape properties ---
+                    s_box = box.box()
+                    s_box.prop(active_shape, "shape_name")
+                    s_box.prop(active_shape, "shape_type")
+                    s_box.prop(active_shape, "force_export")
+                    
+                    if active_shape.shape_type == 'Anim':
+                        s_box.prop(active_shape, "anim_condition")
+
+                    # --- Shape Keys List ---
+                    s_box.separator()
+                    k_row = s_box.row()
+                    k_row.label(text="Shape Keyframes:", icon='SHAPEKEY_DATA')
+                    
+                    op_add = k_row.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
+                    op_add.shape_index = context.scene.rzm_active_shape_index
+                    
+                    op_rem = k_row.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
+                    op_rem.shape_index = context.scene.rzm_active_shape_index
+                    op_rem.key_index = context.scene.rzm_active_shape_key_index
+                    
+                    s_box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
+                    
+                    if active_shape.shape_keys and 0 <= context.scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
+                        key = active_shape.shape_keys[context.scene.rzm_active_shape_key_index]
+                        kd_box = s_box.box()
+                        kd_box.prop(key, "key_name")
+                        kd_box.prop(key, "mode")
+                        
+                        if key.mode == 'ADVANCED':
+                            kd_box.prop(key, "input_range_min")
+                            kd_box.prop(key, "input_range_max")
+                            kd_box.prop(key, "multiplier")
+                        
+                        if active_shape.shape_type == 'Anim':
+                            kd_box.separator()
+                            kd_box.label(text="Animation Frames:")
+                            row = kd_box.row(align=True)
+                            row.prop(key, "anim_start_frame", text="Start")
+                            row.prop(key, "anim_end_frame", text="End")
+                            kd_box.prop(key, "anim_type_index")
+                
+                # --- Shape Properties ---
+                box.separator()
+                box.prop(active_shape, "shape_name")
+                box.prop(active_shape, "shape_type")
+                box.prop(active_shape, "force_export")
+                
+                if active_shape.shape_type == 'Anim':
+                    box.prop(active_shape, "anim_condition")
+
+                # --- Shape Keys List ---
+                box.separator()
+                row = box.row()
+                row.label(text="Shape Keys:", icon='SHAPEKEY_DATA')
+                
+                # Add/Remove Buttons for Keys
+                op_add = row.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
+                op_add.shape_index = context.scene.rzm_active_shape_index
+                
+                op_rem = row.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
+                op_rem.shape_index = context.scene.rzm_active_shape_index
+                op_rem.key_index = context.scene.rzm_active_shape_key_index
+                
+                box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
+                
+                # Selected Keyframe Details
+                if active_shape.shape_keys and 0 <= context.scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
+                    key = active_shape.shape_keys[context.scene.rzm_active_shape_key_index]
+                    sbox = box.box()
+                    sbox.prop(key, "key_name")
+                    sbox.prop(key, "mode")
+                    
+                    if key.mode == 'ADVANCED':
+                        sbox.prop(key, "input_range_min")
+                        sbox.prop(key, "input_range_max")
+                        sbox.prop(key, "multiplier")
+                    
+                    if active_shape.shape_type == 'Anim':
+                        sbox.separator()
+                        sbox.label(text="Animation Settings:")
+                        sbox.prop(key, "anim_type_index")
+                        sbox.prop(key, "anim_start_frame")
+                        sbox.prop(key, "anim_end_frame")
+
+class VIEW3D_PT_RZModProducerBuild(bpy.types.Panel):
+    bl_label = "Mod Producer Build"
+    bl_idname = "VIEW3D_PT_RZModProducerBuild"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "RZ Constructor"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        mp = context.scene.rzm_mod_producer
+        
+        box = layout.box()
+        from ..operators.export_manager import get_target_path
+        target = get_target_path(context)
+        if target:
+            box.label(text=f"Auto-Target: {os.path.basename(target)}", icon='FILE_FOLDER')
+        else:
+            box.label(text="No Target Path Found", icon='ERROR')
+
+        row = box.row()
+        row.prop(mp, "author_prefix")
+        row.prop(mp, "build_suffix")
+        
+        box.label(text="Build Tiers:")
+        flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+        from ..operators.tier_ops import get_tier_ids
+        available = get_tier_ids(context)
+        active_list = [t.strip() for t in mp.active_tiers.split(",") if t.strip()]
+        
+        for tid in available:
+            is_active = tid in active_list
+            op = flow.operator("rzm.toggle_build_tier", text=tid, depress=is_active)
+            op.tier_id = tid
+            
+        layout.separator()
+        layout.operator("rzm.mod_producer_build", text="Build Tier Version", icon='EXPORT')
 
 classes_to_register = [ 
     RZM_UL_CustomScriptList,
     RZM_UL_Values,
     RZM_UL_ToggleDefinitions,
     RZM_UL_Shapes,
+    RZM_UL_ShapeKeys,
     RZM_MT_AssignToggleMenu, 
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel, 
     VIEW3D_PT_RZM_AutoMenuCreator,
     VIEW3D_PT_RZM_ExportManager,
+    VIEW3D_PT_RZModProducerBuild,
     VIEW3D_PT_RZConstructorToolboxPanel
 ]

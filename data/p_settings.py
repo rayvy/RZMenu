@@ -1,6 +1,7 @@
 # RZMenu/data/p_settings.py
 import bpy
-from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, IntVectorProperty, PointerProperty
+from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, IntVectorProperty, PointerProperty, FloatVectorProperty
+from .constants import DEFAULT_MOD_INFO_TEXT
 
 # Импорт зависимостей для CollectionProperty
 # from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
@@ -64,7 +65,7 @@ class RZMenuConfig(bpy.types.PropertyGroup):
     canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
     pre_snippet: StringProperty(name="Pre Snippet", default="", update=on_snippet_update)
     post_snippet: StringProperty(name="Post Snippet", default="", update=on_snippet_update)
-    mod_info: StringProperty(name="Mod Info", default="", description="Custom mod metadata for meta.j2")
+    mod_info: StringProperty(name="Mod Info", default=DEFAULT_MOD_INFO_TEXT, description="Custom mod metadata for meta.j2")
     custom_interpolation_speed: FloatProperty(name="Interpolation Speed", default=16.0, min=0.001, max=100.0)
     
 
@@ -230,6 +231,30 @@ class RZMFeatureItem(bpy.types.PropertyGroup):
         default=""
     )
 
+# ─── TIER SYSTEM ─────────────────────────────────────────────────────────────
+
+class RZMTierDefinition(bpy.types.PropertyGroup):
+    """Defines a single exportable tier (stored in AddonPreferences, not in .rzm)."""
+    tier_id: StringProperty(
+        name="Tier ID",
+        description="Short unique ID used in export_tiers field, e.g. 'Tier0', 'TierPremium'",
+        default="Tier0"
+    )
+    display_name: StringProperty(
+        name="Display Name",
+        description="Human-readable label shown in UI",
+        default="Public"
+    )
+    tier_color: FloatVectorProperty(
+        name="Color",
+        subtype='COLOR',
+        size=3,
+        default=(0.4, 0.6, 0.4),
+        min=0.0, max=1.0
+    )
+
+# ─── META DATA ───────────────────────────────────────────────────────────────
+
 class RZMMetaDataSettings(bpy.types.PropertyGroup):
     
     # --- 1. БАЗОВАЯ ИНФОРМАЦИЯ ---
@@ -249,25 +274,9 @@ class RZMMetaDataSettings(bpy.types.PropertyGroup):
         description="Версия самого мода (патч)"
     )
 
-    # --- 2. PATREON / РЕЛИЗНАЯ ИНФА ---
-    # EnumProperty идеален для Тиров — в Blender это будет красивый выпадающий список
-    patreon_tier: EnumProperty(
-        name="Patreon Tier",
-        description="Уровень доступа (для генерации тегов)",
-        items=[
-            ('PUBLIC', "Public (Free)", "Бесплатный релиз для всех"),
-            ('TIER_1', "Tier 1", "Базовый платный тир"),
-            ('TIER_2', "Tier 2", "Продвинутый тир"),
-            ('SPICED', "Spiced Tier", "Максимальный / NSFW тир"),
-            ('WIP', "Work in Progress", "Дев-билд, не для релиза")
-        ],
-        default='PUBLIC'
-    )
-    is_nsfw: BoolProperty(
-        name="NSFW Flag", 
-        default=True,
-        description="Добавляет тег [NSFW] в генерацию"
-    )
+    # --- 2. RELEASE INFO (Tier is now configured globally in AddonPreferences) ---
+    # patreon_tier и is_nsfw убраны — тиры теперь вешаются прямо на элементы
+    # через поле export_tiers (см. p_ui.py) и управляются в AddonPreferences
     
     # --- 3. ОПИСАНИЕ И ТЕХНИЧКА ---
     # В Blender нет полноценного многострочного поля свойств в UI, 
@@ -288,10 +297,10 @@ class RZMMetaDataSettings(bpy.types.PropertyGroup):
         description="Требования для работы мода"
     )
 
-    # --- 4. АВТОРСТВО И КОМЬЮНИТИ ---
+    # --- 4. AUTHORSHIP ---
     author_name: StringProperty(
         name="Main Author", 
-        default="Rayvich"
+        default="UNKNOWN"
     )
     community_respect: StringProperty(
         name="Community Respect",
@@ -358,10 +367,60 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         default=False
     )
 
+    # ─── TIER DEFINITIONS ───────────────────────────────────────────────────
+    tier_definitions: CollectionProperty(
+        type=RZMTierDefinition,
+        name="Tier Definitions",
+        description="Global tier definitions for Mod Producer. Stored in AddonPreferences, not in .rzm files."
+    )
+    tier_definitions_index: IntProperty(
+        name="Active Tier",
+        default=0
+    )
+
+    def ensure_default_tiers(self):
+        """Populates tier_definitions with sensible defaults if empty."""
+        if len(self.tier_definitions) == 0:
+            defaults = [
+                ("Tier0", "Public (Free)", (0.35, 0.65, 0.35)),
+                ("Tier1", "Tier 1",        (0.35, 0.55, 0.80)),
+                ("Tier2", "Tier 2",        (0.75, 0.60, 0.20)),
+                ("TierPremium", "Premium",  (0.80, 0.35, 0.60)),
+            ]
+            for tid, dname, col in defaults:
+                t = self.tier_definitions.add()
+                t.tier_id = tid
+                t.display_name = dname
+                t.tier_color = col
+
     def draw(self, context):
         layout = self.layout
         column = layout.column()
         column.prop(self, "custom_asset_library")
         column.label(text="Icons from this folder will be loaded alongside base_icons.", icon='INFO')
         column.separator()
-        column.prop(self, "move_to_npanel")
+        column.prop(self, "move_to_npanel")
+
+        column.separator()
+        column.label(text="Mod Producer — Tier Definitions:", icon='BOOKMARKS')
+        column.label(text="These are global tiers used for export filtering. Not saved in .rzm files.", icon='INFO')
+
+        row = column.row()
+        row.template_list(
+            "RZM_UL_TierDefinitions", "",
+            self, "tier_definitions",
+            self, "tier_definitions_index",
+            rows=4
+        )
+        col_btn = row.column(align=True)
+        col_btn.operator("rzm.add_tier_definition", text="", icon='ADD')
+        col_btn.operator("rzm.remove_tier_definition", text="", icon='REMOVE')
+        col_btn.separator()
+        col_btn.operator("rzm.reset_tier_definitions", text="", icon='FILE_REFRESH')
+
+        if self.tier_definitions and 0 <= self.tier_definitions_index < len(self.tier_definitions):
+            active_tier = self.tier_definitions[self.tier_definitions_index]
+            box = column.box()
+            box.prop(active_tier, "tier_id", text="ID")
+            box.prop(active_tier, "display_name", text="Name")
+            box.prop(active_tier, "tier_color", text="Color")

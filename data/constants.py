@@ -1,5 +1,16 @@
 # RZMenu/data/constants.py
 
+# Default template text for Mod Info editor.
+# Uses {{tag}} syntax resolved by parse_and_replace_tags in meta.j2
+DEFAULT_MOD_INFO_TEXT = """; === {{mod_name}} ===
+; Author: {{author_name}}
+; Character: {{character_name}} — {{outfit_name}}
+; Version: {{version_num}}
+; Game: {{game_name}}
+; Keybind: {{menu_keybind}}
+; Requirements: {{requirements}}
+; Credits: {{community_respect}}"""
+
 FX_COMMANDS = [
     ('CommandListShaderPreset0', "ShaderPreset-HOVER UPSCALE", "ShaderPres"),
     ('CommandListShaderPreset1', "ShaderPreset-HOVER UPSCALE 3D", "ShaderPres"),

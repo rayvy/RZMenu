@@ -2,6 +2,10 @@
 import bpy
 from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty
 
+class RZMTierRef(bpy.types.PropertyGroup):
+    """A single tier reference stored as part of a CollectionProperty on elements/shapes/values."""
+    tier_id: StringProperty(name="Tier ID", default="")
+
 class ValueLinkProperty(bpy.types.PropertyGroup):
     """Хранит одну строку value link с диапазоном."""
     value_name: StringProperty(name="Link", description="Привязка к ($) Value, (@) Toggle или (#) Shape")
@@ -19,6 +23,11 @@ class ValueProperty(bpy.types.PropertyGroup):
     float_value: FloatProperty(name="Float Value")
     vector_value: bpy.props.FloatVectorProperty(name="Vector Value", size=4, default=(0.0, 0.0, 0.0, 1.0))
     force_export: BoolProperty(name="Force Export", default=False)
+    export_tiers: CollectionProperty(
+        type=RZMTierRef,
+        name="Export Tiers",
+        description="Тиры для которых этот элемент будет включён в Mod Producer. Пусто = все тиры."
+    )
 
 class ToggleDefinition(bpy.types.PropertyGroup):
     toggle_name: StringProperty(name="Toggle Name", description="Уникальное имя, e.g., ToggleA")
@@ -60,13 +69,18 @@ class RZMShapeKey(bpy.types.PropertyGroup):
     anim_end_frame: FloatProperty(name="End Frame", default=1.0, min=0.0, max=1.0)
 
 class RZMShape(bpy.types.PropertyGroup):
-    """Определяет одну переменную типа Shape, которая может управлять несколькими шейп-ключами."""
-    shape_name: StringProperty(name="Shape Name", description="Уникальное имя переменной шейпа, e.g., #MyShape")
+    """Defines a single Shape variable that can control multiple shape keys."""
+    shape_name: StringProperty(name="Shape Name", description="Unique shape variable name, e.g. #MyShape")
     shape_type: EnumProperty(name="Type", items=[('Linear', "Linear", ""), ('Anim', "Anim", "")], default='Linear')
     anim_condition: StringProperty(
         name="Anim Condition",
-        description="Условие для проигрывания анимации (e.g., $var > 0). Пустое поле = всегда активно."
+        description="Condition for animation playback (e.g. $var > 0). Empty = always active."
     )
     disable_export: BoolProperty(name="Disable Export", description="If active, this shape variable will not be exported to templates", default=False)
     force_export: BoolProperty(name="Force Export", default=False)
+    export_tiers: CollectionProperty(
+        type=RZMTierRef,
+        name="Export Tiers",
+        description="Тиры для которых этот шейп экспортируется. Пусто = все тиры."
+    )
     shape_keys: CollectionProperty(type=RZMShapeKey)

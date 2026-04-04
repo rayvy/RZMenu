@@ -90,6 +90,15 @@ def register():
     else:
         print("RZMenu Constructor: Registered successfully.")
 
+    # Populate default tiers if none defined yet (first run for this user)
+    try:
+        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+        prefs_entry = bpy.context.preferences.addons.get(addon_name)
+        if prefs_entry and hasattr(prefs_entry.preferences, "ensure_default_tiers"):
+            prefs_entry.preferences.ensure_default_tiers()
+    except Exception as e:
+        print(f"RZMenu: Could not init default tiers: {e}")
+
 def unregister():
     if auto_check_dependencies in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(auto_check_dependencies)

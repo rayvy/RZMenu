@@ -5,7 +5,7 @@ from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, 
 # Импорт констант и зависимых типов из соседних файлов data
 from .constants import FX_COMMANDS, FN_COMMANDS
 from .p_images import ConditionalImage, mark_atlas_dirty_img
-from .p_logic import ValueLinkProperty, AssignedToggle
+from .p_logic import ValueLinkProperty, AssignedToggle, RZMTierRef
 
 class FXProperty(bpy.types.PropertyGroup): value: EnumProperty(name="Effect", items=FX_COMMANDS)
 class FNProperty(bpy.types.PropertyGroup): function_name: EnumProperty(name="Function", items=FN_COMMANDS)
@@ -148,6 +148,11 @@ class RZMenuElement(bpy.types.PropertyGroup):
     disable_slider_blur: BoolProperty(name="Disable Slider Blur", default=False)
     disable_slider_prebuild_render: BoolProperty(name="Force Standard Render", default=False)
     disable_export: BoolProperty(name="Disable Export", description="If active, this element will not be exported to templates", default=False)
+    export_tiers: CollectionProperty(
+        type=RZMTierRef,
+        name="Export Tiers",
+        description="Тиры для которых этот элемент экспортируется. Пусто = все тиры."
+    )
     font_slot: IntProperty(name="Font Slot", min=0, max=3, default=0, description="Which font configuration slot to use (0-3)")
     
     # SVG Modifiers (Element-level)

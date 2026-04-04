@@ -126,6 +126,49 @@ PROP_MAP = {
 
 from ..utils import logger
 
+# ─── Tier helpers for elements (CollectionProperty — can't use PROP_MAP) ───────
+
+def get_element_tier_ids(element) -> list:
+    """Returns list of tier_id strings from element.export_tiers collection."""
+    return [t.tier_id for t in getattr(element, 'export_tiers', [])]
+
+
+def add_element_tier(target_ids, tier_id: str):
+    """Add a tier to all selected elements."""
+    if not target_ids or not tier_id:
+        return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                if not any(t.tier_id == tier_id for t in elem.export_tiers):
+                    t = elem.export_tiers.add()
+                    t.tier_id = tier_id
+                    changed = True
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Add Tier {tier_id}")
+            signals.SIGNALS.data_changed.emit()
+
+
+def remove_element_tier(target_ids, tier_id: str):
+    """Remove a tier from all selected elements."""
+    if not target_ids or not tier_id:
+        return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                for i, t in enumerate(elem.export_tiers):
+                    if t.tier_id == tier_id:
+                        elem.export_tiers.remove(i)
+                        changed = True
+                        break
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Remove Tier {tier_id}")
+            signals.SIGNALS.data_changed.emit()
+
 def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mode=False):
     if not target_ids: return
     

@@ -66,6 +66,10 @@ Local $current_sizeY
 {%macro main(element,parent_element,mod_file,scene)%}
     {% set class_name = utils.get_cls(element)|trim %}
     {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
+    {% set element_tags = utils.tier_tags(element) %}
+    {% if element_tags %}
+    ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ element.element_name }}] {{ element_tags }}
+    {% endif %}
     [CommandListElement{{ element.element_name }}]
     {{base(element,parent_element,mod_file,scene)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
@@ -149,7 +153,12 @@ Local $current_sizeY
     {{generate_child(element,mod_file,scene)}}
     endif
     endif
-{%endmacro%}
+    $hoverInterpolate = $hoverInterpolate
+    $clickInterpolate = $clickInterpolate
+    {% if element_tags %}
+    ;[META-INFO] [END] [DELETE] [ELEMENT] [{{ element.element_name }}] {{ element_tags }}
+    {% endif %}
+{%- endmacro -%}
 {#MAINSTUFF#}
 
 {%macro generate_presets(element, mod_file, scene)%}
@@ -222,6 +231,9 @@ Local $current_sizeY
     {%- set h_name = host_item.element_name ~ '_' ~ h_clean -%}
     {%- set h_id = helper_item.id + host_item.id + 3500 -%}
 
+    {% if helper_item.export_tiers | length > 0 %}
+    ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ h_name }}] {{ utils.tier_tags(helper_item) }}
+    {% endif %}
 [CommandListElement{{h_name}}]
 $id = {{h_id}}
 local $LocalVisibility
@@ -252,6 +264,9 @@ if $LocalVisibility
         run = CustomShaderRCI2D
     {% endif %}
 endif
+    {% if helper_item.export_tiers | length > 0 %}
+    ;[META-INFO] [END] [DELETE] [ELEMENT] [{{ h_name }}] {{ utils.tier_tags(helper_item) }}
+    {% endif %}
 {%endmacro%}
 
 {# Interactions для хелпера — аналог generate_interactions, но с normalize_all_vars и parent_element #}

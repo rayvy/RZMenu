@@ -692,7 +692,14 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3) ---
         # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3 - SHADER MATCH) ---
         if self.elem_type == 'TEXT':
-            text = self.text_id if self.text_id else self.name
+            raw_text_id = self.text_id if self.text_id else self.name
+            # Resolve ~meta_var system variables for viewport preview.
+            # Inspector shows the raw ~author_name; viewport shows resolved value (e.g. RAYVICH).
+            try:
+                from ..core.read import evaluate_text_id
+                text = evaluate_text_id(raw_text_id, highlight=False)
+            except Exception:
+                text = raw_text_id
             if not text: return
 
             # 1. Init Metrics & Font

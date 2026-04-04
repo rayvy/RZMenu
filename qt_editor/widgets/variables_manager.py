@@ -247,6 +247,14 @@ class ValuesTab(BaseListTab):
         self.chk_force_export.clicked.connect(self.synch_force_export)
         self.props_layout.addRow("Force Export:", self.chk_force_export)
 
+        # Tier assignment — chip buttons for each configured tier
+        self.tiers_group = QtWidgets.QGroupBox("Mod Producer Tiers")
+        self.tiers_layout = QtWidgets.QHBoxLayout(self.tiers_group)
+        self.tiers_layout.setContentsMargins(4, 4, 4, 4)
+        self.tiers_layout.setSpacing(4)
+        self._tier_buttons = {}  # tier_id -> QPushButton
+        self.props_layout.addRow(self.tiers_group)
+
     def refresh(self):
         if not bpy.context: return
         data = list(enumerate(bpy.context.scene.rzm.rzm_values))
@@ -302,7 +310,9 @@ class ValuesTab(BaseListTab):
         self.chk_force_export.setChecked(val.force_export)
         self._update_star_style(self.chk_force_export)
         self.chk_force_export.blockSignals(False)
-        
+
+        self._update_tier_chips(orig_idx, val)
+
         self.is_updating_ui = False
 
     def _update_star_style(self, btn):
@@ -317,8 +327,6 @@ class ValuesTab(BaseListTab):
                 font-size: 18px;
                 font-weight: bold;
             """)
-        else:
-            # Dim star
             btn.setStyleSheet(f"""
                 color: {t.get('text_dark', '#666')}; 
                 background: transparent; 
@@ -326,6 +334,80 @@ class ValuesTab(BaseListTab):
                 border-radius: 4px; 
                 font-size: 16px;
             """)
+
+    def _get_available_tiers(self):
+        """Returns list of (tier_id, color_tuple) from AddonPreferences."""
+        try:
+            if not bpy.context: return []
+            for name, addon in bpy.context.preferences.addons.items():
+                if 'RZMenu' in name or 'rzm' in name.lower():
+                    return [(t.tier_id, tuple(t.tier_color)) for t in addon.preferences.tier_definitions]
+        except Exception:
+            pass
+        return []
+
+    def _update_tier_chips(self, value_index, val):
+        """Rebuild tier chip buttons for the selected value."""
+        available = self._get_available_tiers()
+        active_ids = {t.tier_id for t in val.export_tiers}
+        existing = set(self._tier_buttons.keys())
+        available_ids = {tid for tid, _ in available}
+
+        # Remove obsolete chips
+        for tid in (existing - available_ids):
+            btn = self._tier_buttons.pop(tid)
+            self.tiers_layout.removeWidget(btn)
+            btn.deleteLater()
+
+        # Add or update chips
+        for tier_id, _ in available:
+            if tier_id not in self._tier_buttons:
+                btn = QtWidgets.QPushButton(tier_id)
+                btn.setCheckable(True)
+                btn.setFixedHeight(22)
+                btn.setCursor(QtWidgets.QSizePolicy.Policy.Expanding)
+                btn.clicked.connect(
+                    lambda checked, tid=tier_id, vidx=value_index: self._on_tier_clicked(vidx, tid, checked)
+                )
+                self.tiers_layout.addWidget(btn)
+                self._tier_buttons[tier_id] = btn
+
+        if not any(isinstance(self.tiers_layout.itemAt(i), QtWidgets.QSpacerItem)
+                   for i in range(self.tiers_layout.count())):
+            self.tiers_layout.addStretch()
+
+        t = get_current_theme()
+        for tier_id, btn in self._tier_buttons.items():
+            is_active = tier_id in active_ids
+            btn.blockSignals(True)
+            btn.setChecked(is_active)
+            btn.blockSignals(False)
+            # Reconnect with updated value_index
+            try:
+                btn.clicked.disconnect()
+            except Exception:
+                pass
+            btn.clicked.connect(
+                lambda checked, tid=tier_id, vidx=value_index: self._on_tier_clicked(vidx, tid, checked)
+            )
+            if is_active:
+                btn.setStyleSheet(
+                    "QPushButton { background: #1a6ea8; color: #fff; border: 1px solid #3b9de0; "
+                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; font-weight: bold; }"
+                )
+            else:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background: transparent; color: {t.get('text_dark', '#888')}; "
+                    f"border: 1px solid {t.get('border_main', '#555')}; "
+                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; }"
+                )
+
+    def _on_tier_clicked(self, value_index, tier_id, checked):
+        if self.is_updating_ui: return
+        if checked:
+            bpy.ops.rzm.add_value_tier(value_index=value_index, tier_id=tier_id)
+        else:
+            bpy.ops.rzm.remove_value_tier(value_index=value_index, tier_id=tier_id)
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return
@@ -575,6 +657,14 @@ class ShapesTab(BaseListTab):
 
         self.props_layout.addRow("Export Options:", h_export)
         
+        # Tier assignment — chip buttons for each configured tier
+        self.tiers_group = QtWidgets.QGroupBox("Mod Producer Tiers")
+        self.tiers_layout = QtWidgets.QHBoxLayout(self.tiers_group)
+        self.tiers_layout.setContentsMargins(4, 4, 4, 4)
+        self.tiers_layout.setSpacing(4)
+        self._tier_buttons = {}  # tier_id -> QPushButton
+        self.props_layout.addRow(self.tiers_group)
+        
         # Nested ShapeKeys List
         self.keys_group = QtWidgets.QGroupBox("Shape Keys")
         self.keys_layout = QtWidgets.QVBoxLayout(self.keys_group)
@@ -652,6 +742,8 @@ class ShapesTab(BaseListTab):
         self.chk_force_export.setChecked(shape.force_export)
         self._update_star_style(self.chk_force_export)
         self.chk_force_export.blockSignals(False)
+        
+        self._update_tier_chips(orig_idx, shape)
 
         self.refresh_keys_list(shape)
         self.is_updating_ui = False
@@ -676,6 +768,80 @@ class ShapesTab(BaseListTab):
                 font-size: 16px;
             """)
 
+    def _get_available_tiers(self):
+        """Returns list of (tier_id, color_tuple) from AddonPreferences."""
+        try:
+            if not bpy.context: return []
+            for name, addon in bpy.context.preferences.addons.items():
+                if 'RZMenu' in name or 'rzm' in name.lower():
+                    return [(t.tier_id, tuple(t.tier_color)) for t in addon.preferences.tier_definitions]
+        except Exception:
+            pass
+        return []
+
+    def _update_tier_chips(self, shape_index, shape):
+        """Rebuild tier chip buttons for the selected shape."""
+        available = self._get_available_tiers()
+        active_ids = {t.tier_id for t in shape.export_tiers}
+        existing = set(self._tier_buttons.keys())
+        available_ids = {tid for tid, _ in available}
+
+        # Remove obsolete chips
+        for tid in (existing - available_ids):
+            btn = self._tier_buttons.pop(tid)
+            self.tiers_layout.removeWidget(btn)
+            btn.deleteLater()
+
+        # Add or update chips
+        for tier_id, _ in available:
+            if tier_id not in self._tier_buttons:
+                btn = QtWidgets.QPushButton(tier_id)
+                btn.setCheckable(True)
+                btn.setFixedHeight(22)
+                btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+                btn.clicked.connect(
+                    lambda checked, tid=tier_id, sidx=shape_index: self._on_tier_clicked(sidx, tid, checked)
+                )
+                self.tiers_layout.addWidget(btn)
+                self._tier_buttons[tier_id] = btn
+
+        if not any(isinstance(self.tiers_layout.itemAt(i), QtWidgets.QSpacerItem)
+                   for i in range(self.tiers_layout.count())):
+            self.tiers_layout.addStretch()
+
+        t = get_current_theme()
+        for tier_id, btn in self._tier_buttons.items():
+            is_active = tier_id in active_ids
+            btn.blockSignals(True)
+            btn.setChecked(is_active)
+            btn.blockSignals(False)
+            # Reconnect with updated shape_index
+            try:
+                btn.clicked.disconnect()
+            except Exception:
+                pass
+            btn.clicked.connect(
+                lambda checked, tid=tier_id, sidx=shape_index: self._on_tier_clicked(sidx, tid, checked)
+            )
+            if is_active:
+                btn.setStyleSheet(
+                    "QPushButton { background: #1a6ea8; color: #fff; border: 1px solid #3b9de0; "
+                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; font-weight: bold; }"
+                )
+            else:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background: transparent; color: {t.get('text_dark', '#888')}; "
+                    f"border: 1px solid {t.get('border_main', '#555')}; "
+                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; }"
+                )
+
+    def _on_tier_clicked(self, shape_index, tier_id, checked):
+        if self.is_updating_ui: return
+        if checked:
+            bpy.ops.rzm.add_shape_tier(shape_index=shape_index, tier_id=tier_id)
+        else:
+            bpy.ops.rzm.remove_shape_tier(shape_index=shape_index, tier_id=tier_id)
+
     def synch_force_export(self, checked):
         if self.is_updating_ui: return
         item = self.list_widget.currentItem()
@@ -684,8 +850,6 @@ class ShapesTab(BaseListTab):
         bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="force_export", val_str=str(checked))
         self._update_star_style(self.chk_force_export)
         self.refresh()
-        
-        self.refresh_keys_list(shape)
 
     def synch_name(self):
         if self.is_updating_ui: return

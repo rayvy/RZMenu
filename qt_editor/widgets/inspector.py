@@ -17,6 +17,89 @@ from ...data.constants import FX_COMMANDS
 import bpy
 import os
 
+
+class RZTierTagsWidget(QtWidgets.QWidget):
+    """
+    A row of chip-style toggle buttons, one per tier defined in AddonPreferences.
+    Green filled = tier is assigned to the selected element.
+    Grey outline  = tier not assigned.
+    Clicking toggles the tier on/off via core.props.*_element_tier().
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        self._layout = layout
+        self._buttons = {}  # tier_id -> QPushButton
+        self._block = False
+
+    def update_data(self, available_tiers: list, active_tiers: set, target_ids):
+        """Rebuild tier chip buttons and update their states."""
+        self._block = True
+        self._target_ids = target_ids
+
+        # Remove chips for tiers that no longer exist in prefs
+        for tid in list(self._buttons.keys()):
+            if tid not in available_tiers:
+                btn = self._buttons.pop(tid)
+                self._layout.removeWidget(btn)
+                btn.deleteLater()
+
+        # Add missing chips
+        for tier_id in available_tiers:
+            if tier_id not in self._buttons:
+                btn = QtWidgets.QPushButton(tier_id)
+                btn.setCheckable(True)
+                btn.setFixedHeight(22)
+                btn.setCursor(QtCore.Qt.PointingHandCursor)
+                btn.clicked.connect(lambda checked, tid=tier_id: self._on_tier_clicked(tid, checked))
+                self._layout.addWidget(btn)
+                self._buttons[tier_id] = btn
+
+        # Add stretch at end (only once)
+        if not any(isinstance(self._layout.itemAt(i), QtWidgets.QSpacerItem)
+                   for i in range(self._layout.count())):
+            self._layout.addStretch()
+
+        # Update states and styles
+        for tier_id, btn in self._buttons.items():
+            is_active = tier_id in active_tiers
+            btn.blockSignals(True)
+            btn.setChecked(is_active)
+            btn.blockSignals(False)
+            self._style_btn(btn, is_active)
+
+        self._block = False
+
+    def _style_btn(self, btn, is_active):
+        t = get_current_theme()
+        if is_active:
+            btn.setStyleSheet(
+                "QPushButton { background: #1a6ea8; color: #fff; border: 1px solid #3b9de0; "
+                "border-radius: 3px; padding: 1px 8px; font-size: 11px; font-weight: bold; }"
+                "QPushButton:hover { background: #2280c0; }"
+            )
+        else:
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {t.get('text_dark', '#888')}; "
+                f"border: 1px solid {t.get('border_main', '#555')}; "
+                "border-radius: 3px; padding: 1px 8px; font-size: 11px; }"
+                "QPushButton:hover { border-color: #3b9de0; color: #ccc; }"
+            )
+
+    def _on_tier_clicked(self, tier_id, checked):
+        if self._block:
+            return
+        target_ids = getattr(self, '_target_ids', set())
+        if not target_ids:
+            return
+        if checked:
+            core.props.add_element_tier(target_ids, tier_id)
+        else:
+            core.props.remove_element_tier(target_ids, tier_id)
+        self._style_btn(self._buttons[tier_id], checked)
+
 class RZFontSlotComboBox(RZComboBox):
     """
     ComboBox for selecting font slots (0-3).
@@ -1170,6 +1253,11 @@ class RZMInspectorPanel(RZEditorPanel):
         self.name_edit = self._add_row(layout, "Name:", RZLineEdit(), 'element_name')
         self.edit_tag = self._add_row(layout, "Tag:", RZLineEdit(), 'tag')
         
+        # Tier assignment — chip buttons, no free-text input
+        tier_label = QtWidgets.QLabel("Tiers:")
+        self.tier_tags = RZTierTagsWidget()
+        layout.addRow(tier_label, self.tier_tags)
+        
         self.cb_class = self._add_row(layout, "Class:", RZComboBox(), 'class_type')
         self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
         
@@ -1653,6 +1741,24 @@ class RZMInspectorPanel(RZEditorPanel):
                     self.name_edit.set_text_silent(props.get('name', ''))
             
             if hasattr(self, 'edit_tag'): self.edit_tag.set_text_silent(props.get('tag', ''))
+            # Update tier chips
+            if hasattr(self, 'tier_tags'):
+                try:
+                    prefs = None
+                    if bpy.context:
+                        addon_name = bpy.context.preferences.addons.find("RZMenu") 
+                        # Iterate addons to find ours
+                        for name, addon in bpy.context.preferences.addons.items():
+                            if 'RZMenu' in name or 'rzm' in name.lower():
+                                prefs = addon.preferences
+                                break
+                    available = [t.tier_id for t in prefs.tier_definitions] if prefs else []
+                except Exception:
+                    available = []
+                active = set(props.get('export_tiers', []))
+                ctx = RZContextManager.get_instance()
+                selected_ids = ctx.selected_ids if ctx else set()
+                self.tier_tags.update_data(available, active, selected_ids)
             if hasattr(self, 'spin_priority'): self.spin_priority.setValue(props.get('priority', 0))
             if hasattr(self, 'chk_main_window'): self.chk_main_window.setChecked(props.get('is_main_window') is True)
             if hasattr(self, 'chk_disable_export'): self.chk_disable_export.setChecked(props.get('disable_export') is True)

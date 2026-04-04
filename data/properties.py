@@ -10,7 +10,7 @@ from .p_images import RZMCaptureSettings, RZMenuImage, ConditionalImage, RZMenuA
 from .p_logic import (
     ValueLinkProperty, ValueProperty, ToggleDefinition, 
     BitProperty, AssignedToggle, RZMCondition, 
-    RZMShapeKey, RZMShape
+    RZMShapeKey, RZMShape, RZMTierRef
 )
 from .p_texworks import (
     TexResource, TexOverride, TexWorksMaterial, 
@@ -20,7 +20,7 @@ from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings
 )
 from .p_settings import (
-    RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings
+    RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition
 )
 from ..operators import custom_draw_ops
 
@@ -70,13 +70,37 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     tw_show_tags: BoolProperty(name="Show Tags", default=True)
     tw_show_res_details: BoolProperty(name="Show Details", default=False)
 
+class RZModProducerSettings(bpy.types.PropertyGroup):
+    author_prefix: StringProperty(
+        name="Author Prefix",
+        description="Prefix to add (e.g., rayvich)",
+        default="rayvich"
+    )
+    build_suffix: StringProperty(
+        name="Build Suffix",
+        description="Suffix for this build (e.g., Premium_NSFW)",
+        default=""
+    )
+    active_tiers: StringProperty(
+        name="Active Tiers",
+        description="Comma-separated tier IDs active for this build",
+        default=""
+    )
+
 classes_to_register = [
+    # ─ RZMTierRef FIRST: used by CollectionProperty in ValueProperty, RZMShape, RZMenuElement ─
+    RZMTierRef,
     RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
     ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
     TexResource, TexOverride, TexWorksMaterial, 
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
-    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings, RZM_AddonPreferences, RZMAutoMenuSettings, RZMenuProperties, 
+    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings,
+    # ─ Tier system: RZMTierDefinition must be registered BEFORE RZM_AddonPreferences ─
+    RZMTierDefinition,
+    RZM_AddonPreferences,
+    RZMAutoMenuSettings, RZMenuProperties, 
+    RZModProducerSettings,
 ]
 
 def register():
@@ -84,6 +108,12 @@ def register():
         bpy.utils.register_class(cls)
         
     bpy.types.Scene.rzm = PointerProperty(type=RZMenuProperties)
+    bpy.types.Scene.rzm_mod_producer = PointerProperty(type=RZModProducerSettings)
+    bpy.types.Object.rzm_tier_list = CollectionProperty(
+        type=RZMTierRef,
+        name="Export Tiers",
+        description="Тиры Mod Producer для этого мэша. Пусто = все тиры."
+    )
     custom_draw_ops.register()
     # Регистрация scene properties
     bpy.types.Scene.rzm_active_element_index = IntProperty(name="Active Element Index")
@@ -91,6 +121,7 @@ def register():
     bpy.types.Scene.rzm_active_value_index = IntProperty(name="Active Value Index")
     bpy.types.Scene.rzm_active_toggle_def_index = IntProperty(name="Active Toggle Definition Index")
     bpy.types.Scene.rzm_active_shape_index = IntProperty(name="Active Shape Index")
+    bpy.types.Scene.rzm_active_shape_key_index = IntProperty(name="Active Shape Key Index")
     bpy.types.Scene.rzm_editor_mode = EnumProperty(name="Editor Mode", items=[('LIGHT', "Light", ""), ('PRO', "Pro", "")], default='LIGHT')
     bpy.types.Scene.rzm_show_debug_panel = BoolProperty(name="Show Debug Panel", default=False)
     bpy.types.Scene.rzm_capture_settings = PointerProperty(type=RZMCaptureSettings)
@@ -120,7 +151,10 @@ def unregister():
     del bpy.types.Scene.rzm_show_debug_panel
     del bpy.types.Scene.rzm_capture_settings
     del bpy.types.Scene.rzm_capture_overwrite_id
+    del bpy.types.Scene.rzm_mod_producer
     del bpy.types.Scene.rzm
+    if hasattr(bpy.types.Object, "rzm_tier_list"):
+        del bpy.types.Object.rzm_tier_list
     custom_draw_ops.unregister()
     del bpy.types.Scene.rzm_active_element_index
     del bpy.types.Scene.rzm_active_image_index

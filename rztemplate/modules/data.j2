@@ -398,6 +398,13 @@ global $rayvich_back_values_w110
 
 {% macro shape_generate(mod_file,scene) %}
     {% for shape in scene.rzm.shapes %}
+        {% set shape_tags = utils.tier_tags(shape) %}
+        {% if shape_tags %}
+        ;[META-INFO] [START] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+        {% endif %}
         global persist ${{utils.format_var(shape.shape_name | default(Error) | string)}} = 0
+        {% if shape_tags %}
+        ;[META-INFO] [END] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+        {% endif %}
     {% endfor %}
 {% endmacro%}

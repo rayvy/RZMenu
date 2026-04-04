@@ -195,9 +195,15 @@ if $mod_enabled && DRAW_TYPE == 4
     vb1 = ref Resource_Component{{ componnet_id }}_VB1
     vb2 = ref Resource_Component{{ componnet_id }}_VB2
     {%- for obj in merged_object.components[componnet_id].objects %}
-	;{{obj.original_obj["TEST"]}}
+    {%- set obj_tags = utils.tier_tags_mesh(obj.name, scene) %}
+    {% if obj_tags %}
+;[META-INFO] [START] [DELETE] [MESH] [{{ obj.name }}] {{ obj_tags }}
+    {% endif -%}
     ; Draw {{ obj.name }}
     drawindexedinstanced = {{ obj.index_count }}, INSTANCE_COUNT, 0, 0, FIRST_INSTANCE
+    {% if obj_tags %}
+;[META-INFO] [END] [DELETE] [MESH] [{{ obj.name }}] {{ obj_tags }}
+    {% endif -%}
     {%- endfor %}
 {%- else %}
     handling = skip
@@ -223,8 +229,15 @@ if $mod_enabled && DRAW_TYPE == 4
     vb1 = ref Resource_Component{{ componnet_id }}_VB1
     vb2 = ref Resource_Component{{ componnet_id }}_VB2_LOD
     {%- for obj in merged_object.components[componnet_id].objects %}
+    {%- set obj_tags = utils.tier_tags_mesh(obj.name, scene) %}
+    {% if obj_tags %}
+;[META-INFO] [START] [DELETE] [MESH] [{{ obj.name }}] {{ obj_tags }}
+    {% endif -%}
     ; Draw {{ obj.name }}
     drawindexedinstanced = {{ obj.index_count }}, INSTANCE_COUNT, 0, 0, FIRST_INSTANCE
+    {% if obj_tags %}
+;[META-INFO] [END] [DELETE] [MESH] [{{ obj.name }}] {{ obj_tags }}
+    {% endif -%}
     {%- endfor %}
 {%- else %}
     handling = skip

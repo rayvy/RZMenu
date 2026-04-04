@@ -183,6 +183,15 @@ class GeneralTab(BaseConfigTab):
         h_interp.addWidget(self.spin_interp)
         l_proj.addLayout(h_interp)
 
+        # Menu Keybind (moved here from Mod Info tab)
+        h_key = QtWidgets.QHBoxLayout()
+        h_key.addWidget(RZLabel("Menu Keybind:"))
+        self.inp_keybind = RZLineEdit()
+        self.inp_keybind.setPlaceholderText("/")
+        self.inp_keybind.editingFinished.connect(self.on_keybind_changed)
+        h_key.addWidget(self.inp_keybind)
+        l_proj.addLayout(h_key)
+
         # --- Addons ---
         l_addons = self.add_section("Addons")
         
@@ -233,6 +242,12 @@ class GeneralTab(BaseConfigTab):
             
         if self.spin_interp.value() != rzm.config.custom_interpolation_speed:
             self.spin_interp.setValue(rzm.config.custom_interpolation_speed)
+
+        # Keybind
+        meta = rzm.meta_data
+        if self.inp_keybind.text() != meta.menu_keybind:
+            self.inp_keybind.setText(meta.menu_keybind)
+
         
         addons = rzm.addons
         if self.chk_debug.isChecked() != addons.debugger_info:
@@ -266,6 +281,11 @@ class GeneralTab(BaseConfigTab):
             bpy.context.scene.rzm.config.custom_interpolation_speed = value
         except Exception as e:
             print(f"Error setting interpolation speed: {e}")
+
+    def on_keybind_changed(self):
+        if self._block: return
+        self._call_op("update_metadata_setting", prop_name="menu_keybind",
+                      val_str=self.inp_keybind.text(), val_bool=False, use_bool=False)
 
     def on_canvas_changed(self, idx, val):
         if self._block: return
@@ -403,30 +423,20 @@ class ModInfoTab(BaseConfigTab):
         self.inp_ver = self._add_field(l_base, "Version:", "version_num")
         self.inp_author = self._add_field(l_base, "Author:", "author_name")
 
-        # --- 2. релизная инфа ---
-        l_release = self.add_section("Release Info")
-        
-        h_tier = QtWidgets.QHBoxLayout()
-        h_tier.addWidget(RZLabel("Tier:"))
-        self.combo_tier = RZComboBox()
-        self.combo_tier.addItems(["PUBLIC", "TIER_1", "TIER_2", "SPICED", "WIP"])
-        self.combo_tier.currentTextChanged.connect(lambda v: self._on_meta_changed("patreon_tier", v))
-        h_tier.addWidget(self.combo_tier)
-        l_release.addLayout(h_tier)
-
-        self.chk_nsfw = RZCheckBox("NSFW Content")
-        self.chk_nsfw.toggled.connect(lambda v: self._on_meta_changed("is_nsfw", v, bool_mode=True))
-        l_release.addWidget(self.chk_nsfw)
-
-        # --- 3. Техничка ---
+        # --- 2. Technical ---
         l_tech = self.add_section("Technical")
-        self.inp_key = self._add_field(l_tech, "Keybind:", "menu_keybind")
+        # Keybind moved to General tab — kept here as info only
         self.inp_req = self._add_field(l_tech, "Requirements:", "requirements")
         self.inp_respect = self._add_field(l_tech, "Credits To:", "community_respect")
 
-        # --- 4. Main Mod Info Text ---
+        # --- 3. Main Mod Info Text ---
         l_desc = self.add_section("Mod Info Template (Exported)")
         
+        # Reset to default button
+        btn_reset = RZPushButton("↺  Reset to Default Template")
+        btn_reset.clicked.connect(self._on_reset_mod_info)
+        l_desc.addWidget(btn_reset)
+
         self.editor = RZModInfoTextEdit()
         self.editor.editingFinished.connect(self.on_mod_info_finished)
         l_desc.addWidget(self.editor)
@@ -451,21 +461,23 @@ class ModInfoTab(BaseConfigTab):
         self.inp_outfit.setText(meta.outfit_name)
         self.inp_ver.setText(meta.version_num)
         self.inp_author.setText(meta.author_name)
-        self.inp_key.setText(meta.menu_keybind)
         self.inp_req.setText(meta.requirements)
         self.inp_respect.setText(meta.community_respect)
-
-        # Combo
-        idx = self.combo_tier.findText(meta.patreon_tier)
-        if idx != -1: self.combo_tier.setCurrentIndex(idx)
-
-        # Check
-        self.chk_nsfw.setChecked(meta.is_nsfw)
 
         # Editor
         self.editor.set_text_safe(config.mod_info)
 
         self._block = False
+
+    def _on_reset_mod_info(self):
+        """Resets mod_info to the default template text from constants."""
+        try:
+            from ...data.constants import DEFAULT_MOD_INFO_TEXT
+            self._call_op("update_config_setting", prop_name="mod_info",
+                          val_str=DEFAULT_MOD_INFO_TEXT, is_int=False)
+            self.editor.set_text_safe(DEFAULT_MOD_INFO_TEXT)
+        except Exception as e:
+            print(f"[ModInfoTab] Reset failed: {e}")
 
     def _on_meta_changed(self, prop, val, bool_mode=False):
         if self._block: return

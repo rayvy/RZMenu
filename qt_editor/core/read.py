@@ -114,19 +114,28 @@ def get_variable_suggestions():
 def get_metadata_suggestions():
     """
     Returns a list of tags for Mod Info autocomplete, e.g. {{character_name}}
+    Also returns ~ system variable aliases for use in text_id fields.
     """
     if not bpy.context or not bpy.context.scene: return []
-    rzm = bpy.context.scene.rzm
-    meta = rzm.meta_data
     
-    # Base fields from RZMMetaDataSettings
-    suggestions = [
+    # {{tag}} style — for mod_info template text (meta.j2)
+    meta_tags = [
         "{{character_name}}", "{{outfit_name}}", "{{version_num}}",
-        "{{patreon_tier}}", "{{description}}", "{{menu_keybind}}",
+        "{{description}}", "{{menu_keybind}}",
         "{{requirements}}", "{{author_name}}", "{{community_respect}}",
         "{{mod_name}}", "{{game_name}}"
     ]
-    return sorted(suggestions)
+    
+    # ~var style — for element text_id fields (resolve_meta_var in utils.j2)
+    system_vars = [
+        "~author_name", "~character_name", "~outfit_name",
+        "~version_num", "~mod_name", "~game_name",
+        "~menu_keybind", "~requirements",
+        "~community_respect", "~description"
+    ]
+    
+    return sorted(meta_tags + system_vars)
+
 
 def evaluate_mod_info(text, highlight=False):
     """
@@ -141,7 +150,6 @@ def evaluate_mod_info(text, highlight=False):
         "{{character_name}}": meta.character_name,
         "{{outfit_name}}": meta.outfit_name,
         "{{version_num}}": meta.version_num,
-        "{{patreon_tier}}": meta.patreon_tier,
         "{{description}}": meta.description,
         "{{menu_keybind}}": meta.menu_keybind,
         "{{requirements}}": meta.requirements,
@@ -157,6 +165,44 @@ def evaluate_mod_info(text, highlight=False):
         if highlight:
             sub_val = f"\x01{sub_val}\x02"
         result = result.replace(tag, sub_val)
+    return result
+
+
+def evaluate_text_id(text_id, highlight=False):
+    """
+    Resolves ~system_var placeholders in element text_id for Qt viewport preview.
+    In inspector the raw text_id stays as-is; viewport renders the resolved value.
+    
+    This mirrors the resolve_meta_var macro in utils.j2.
+    """
+    if not text_id or '~' not in text_id:
+        return text_id
+    if not bpy.context or not bpy.context.scene:
+        return text_id
+    
+    rzm = bpy.context.scene.rzm
+    meta = rzm.meta_data
+    
+    sys_vars = {
+        "~author_name":       meta.author_name,
+        "~character_name":    meta.character_name,
+        "~outfit_name":       meta.outfit_name,
+        "~version_num":       meta.version_num,
+        "~mod_name":          rzm.export_settings.mod_name,
+        "~game_name":         rzm.game.name,
+        "~menu_keybind":      meta.menu_keybind,
+        "~requirements":      meta.requirements,
+        "~community_respect": meta.community_respect,
+        "~description":       meta.description,
+    }
+    
+    result = text_id
+    for var_key, var_val in sys_vars.items():
+        if var_key in result:
+            resolved = str(var_val) if var_val else ""
+            if highlight:
+                resolved = f"\x01{resolved}\x02"
+            result = result.replace(var_key, resolved)
     return result
 
 def get_selection_details(selected_ids, active_id):
@@ -216,6 +262,7 @@ def get_selection_details(selected_ids, active_id):
             "is_tab_container": get_uniform("is_tab_container", default=False),
             "page_color": list(get_uniform("page_color") or (0.5, 0.5, 0.5, 1.0)),
             "disable_export": get_uniform("disable_export", default=False),
+            "export_tiers": [t.tier_id for t in selection[0].export_tiers] if selection else [],
 
             
             # Visibility

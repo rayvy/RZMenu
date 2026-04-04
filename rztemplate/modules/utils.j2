@@ -193,6 +193,57 @@
     {%- endif -%}
 {%- endmacro -%}
 
+{#
+    resolve_meta_var(text_id, scene)
+    ─────────────────────────────────────────────────────────────────────────────
+    Resolves system meta-variables (~prefix) inside text_id strings for export.
+    This is the INI-side counterpart to the Qt viewport preview in read.py.
+    
+    Supported variables (~ prefix, case-insensitive):
+        ~author_name      → meta_data.author_name
+        ~character_name   → meta_data.character_name
+        ~outfit_name      → meta_data.outfit_name
+        ~version_num      → meta_data.version_num
+        ~mod_name         → export_settings.mod_name
+        ~game_name        → game.name
+        ~menu_keybind     → meta_data.menu_keybind
+        ~requirements     → meta_data.requirements
+        ~community_respect → meta_data.community_respect
+        ~description      → meta_data.description
+    
+    If the entire text_id is a single ~var, returns just the resolved value.
+    If no ~ is present, returns the input unchanged (zero overhead).
+#}
+{%- macro resolve_meta_var(text_id, scene) -%}
+    {%- if text_id and '~' in text_id -%}
+        {%- set meta = scene.rzm.meta_data -%}
+        {%- set exp  = scene.rzm.export_settings -%}
+        {%- set game = scene.rzm.game -%}
+        {%- set SYS_VARS = {
+            '~author_name':       meta.author_name,
+            '~character_name':    meta.character_name,
+            '~outfit_name':       meta.outfit_name,
+            '~version_num':       meta.version_num,
+            '~mod_name':          exp.mod_name,
+            '~game_name':         game.name,
+            '~menu_keybind':      meta.menu_keybind,
+            '~requirements':      meta.requirements,
+            '~community_respect': meta.community_respect,
+            '~description':       meta.description
+        } -%}
+        {%- set result = {'v': text_id} -%}
+        {%- for var_key, var_val in SYS_VARS.items() -%}
+            {%- if var_key in result.v -%}
+                {%- if result.update({'v': result.v | replace(var_key, var_val | default('') | string)}) -%}{%- endif -%}
+            {%- endif -%}
+        {%- endfor -%}
+        {{- result.v -}}
+    {%- else -%}
+        {{- text_id -}}
+    {%- endif -%}
+{%- endmacro -%}
+
+
 {%- macro clean_resource(input_string) -%}
 {%- if input_string -%}
 {%- if input_string[:8]|lower == 'resource' -%}
@@ -284,3 +335,28 @@
         {{- "GetImageCords" ~ image_id -}}
     {%- endif -%}
 {%- endmacro -%}
+
+{% macro tier_tags(entity) -%}
+    {%- set tags = [] -%}
+    {%- for t in entity.export_tiers -%}
+        {%- set _ = tags.append("[" ~ t.tier_id ~ "]") -%}
+    {%- endfor -%}
+    {{- tags | join(' ') -}}
+{%- endmacro %}
+
+{% macro tier_tags_mesh(component, scene) -%}
+    {%- set name = component.fullname | default(component.name) | default(component) -%}
+    {%- set obj = none -%}
+    {%- if name is string -%}
+        {%- set obj = scene.objects.get(name) -%}
+    {%- else -%}
+        {%- set obj = component -%}
+    {%- endif -%}
+    {%- if obj and obj.rzm_tier_list -%}
+        {%- set tags = [] -%}
+        {%- for t in obj.rzm_tier_list -%}
+            {%- set _ = tags.append("[" ~ t.tier_id ~ "]") -%}
+        {%- endfor -%}
+        {{- tags | join(' ') -}}
+    {%- endif -%}
+{%- endmacro %}
