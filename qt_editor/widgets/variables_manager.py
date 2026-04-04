@@ -133,31 +133,68 @@ class BaseListTab(QtWidgets.QWidget):
     def on_item_changed(self, item):
         pass # To be overridden
 
-    def sync_list_items(self, data_list, name_func):
+    def _get_current_orig_idx(self):
+        """Returns the orig_idx (Blender index) of the currently selected item, or None."""
+        item = self.list_widget.currentItem()
+        if item is None:
+            return None
+        return item.data(QtCore.Qt.UserRole)
+
+    def sync_list_items(self, enumerated_data, name_func, force_export_func=None):
         """
-        Synchronizes the list widget with data_list.
-        Preserves selection if possible.
+        Synchronizes the list widget with enumerated_data: List[Tuple[int, object]].
+        Preserves selection by orig_idx (Blender index) across re-sorts.
+        force_export_func: optional callable(item_data) -> bool for gold highlight.
         """
-        current_row = self.list_widget.currentRow()
-        
-        # 1. Adjust count
-        while self.list_widget.count() < len(data_list):
-            self.list_widget.addItem("")
-        while self.list_widget.count() > len(data_list):
-            self.list_widget.takeItem(self.list_widget.count() - 1)
-            
-        # 2. Update Names
-        for i, item_data in enumerate(data_list):
-            item_widget = self.list_widget.item(i)
-            new_name = name_func(item_data)
-            item_widget.setFlags(item_widget.flags() | QtCore.Qt.ItemIsEditable)
-            if item_widget.text() != new_name:
-                item_widget.setText(new_name)
-                
-        # 3. Restore Selection (if valid and not already set)
-        if current_row >= 0 and current_row < self.list_widget.count():
-            if self.list_widget.currentRow() != current_row:
-                self.list_widget.setCurrentRow(current_row)
+        # Remember which Blender index was selected before the sync
+        prev_orig_idx = self._get_current_orig_idx()
+
+        self.list_widget.blockSignals(True)
+        try:
+            # 1. Adjust count
+            while self.list_widget.count() < len(enumerated_data):
+                self.list_widget.addItem("")
+            while self.list_widget.count() > len(enumerated_data):
+                self.list_widget.takeItem(self.list_widget.count() - 1)
+
+            # 2. Update text, color, and UserRole data
+            gold_color = QtGui.QColor("#FFD700")
+            normal_color = self.list_widget.palette().color(self.list_widget.foregroundRole())
+
+            for i, (orig_idx, item_data) in enumerate(enumerated_data):
+                item_widget = self.list_widget.item(i)
+                new_name = name_func(item_data)
+                item_widget.setFlags(
+                    QtCore.Qt.ItemIsEditable |
+                    QtCore.Qt.ItemIsEnabled |
+                    QtCore.Qt.ItemIsSelectable
+                )
+                item_widget.setData(QtCore.Qt.UserRole, orig_idx)
+                if item_widget.text() != new_name:
+                    item_widget.setText(new_name)
+
+                # Gold color for force_export items instead of ★ in text
+                if force_export_func is not None:
+                    if force_export_func(item_data):
+                        item_widget.setForeground(gold_color)
+                        font = item_widget.font()
+                        font.setBold(True)
+                        item_widget.setFont(font)
+                    else:
+                        item_widget.setForeground(normal_color)
+                        font = item_widget.font()
+                        font.setBold(False)
+                        item_widget.setFont(font)
+        finally:
+            self.list_widget.blockSignals(False)
+
+        # 3. Restore selection by orig_idx (survives re-sort)
+        if prev_orig_idx is not None:
+            for i in range(self.list_widget.count()):
+                if self.list_widget.item(i).data(QtCore.Qt.UserRole) == prev_orig_idx:
+                    if self.list_widget.currentRow() != i:
+                        self.list_widget.setCurrentRow(i)
+                    break
 
 class ValuesTab(BaseListTab):
     def __init__(self):
@@ -212,37 +249,27 @@ class ValuesTab(BaseListTab):
 
     def refresh(self):
         if not bpy.context: return
-        self.sync_list_items(bpy.context.scene.rzm.rzm_values, lambda x: x.value_name)
-        
-    def add_item(self):
-        bpy.ops.rzm.add_value()
-        self.refresh()
-        self.list_widget.setCurrentRow(self.list_widget.count()-1)
-
-    def remove_item(self):
-        row = self.list_widget.currentRow()
-        if row >= 0:
-            bpy.context.scene.rzm_active_value_index = row # Ensure correct active index for operator
-            bpy.ops.rzm.remove_value()
-            self.refresh()
-            # Selection restoration handled by sync roughly, but we might want to select row-1
-            # sync keeps "current_row", but if we deleted it, we want current_row (which is now next item) or prev?
-            # QListWidget auto-handles deletion selection often, but we are managing it.
-            # Let's leave it to QListWidget default behavior if possible, or explicit:
-            new_count = self.list_widget.count()
-            if new_count > 0:
-                self.list_widget.setCurrentRow(min(row, new_count-1))
+        data = list(enumerate(bpy.context.scene.rzm.rzm_values))
+        data.sort(key=lambda x: x[1].force_export, reverse=True)
+        self.sync_list_items(
+            data,
+            name_func=lambda x: x.value_name,
+            force_export_func=lambda x: x.force_export
+        )
 
     def update_properties(self):
-        row = self.list_widget.currentRow()
-        if row < 0 or row >= len(bpy.context.scene.rzm.rzm_values):
-            self.props_group.setEnabled(False)
+        if self.is_updating_ui: return
+        self.is_updating_ui = True
+        
+        item = self.list_widget.currentItem()
+        if not item:
+            self.props_group.hide()
+            self.is_updating_ui = False
             return
             
-        self.props_group.setEnabled(True)
-        val = bpy.context.scene.rzm.rzm_values[row]
-        
-        self.is_updating_ui = True
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        val = bpy.context.scene.rzm.rzm_values[orig_idx]
+        self.props_group.show()
         
         if self.inp_name.text() != val.value_name:
             self.inp_name.setText(val.value_name)
@@ -281,53 +308,78 @@ class ValuesTab(BaseListTab):
     def _update_star_style(self, btn):
         t = get_current_theme()
         if btn.isChecked():
-            btn.setStyleSheet(f"color: #FFD700; background: transparent; border: 1px solid #FFD700; border-radius: 4px; font-size: 16px;")
+            # Glowing gold star
+            btn.setStyleSheet(f"""
+                color: #FFD700; 
+                background: rgba(255, 215, 0, 40); 
+                border: 2px solid #FFD700; 
+                border-radius: 4px; 
+                font-size: 18px;
+                font-weight: bold;
+            """)
         else:
-            btn.setStyleSheet(f"color: {t['text_dim']}; background: transparent; border: 1px solid {t['border_main']}; border-radius: 4px; font-size: 16px;")
+            # Dim star
+            btn.setStyleSheet(f"""
+                color: {t.get('text_dark', '#666')}; 
+                background: transparent; 
+                border: 1px solid {t['border_main']}; 
+                border-radius: 4px; 
+                font-size: 16px;
+            """)
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_value(index=row, prop_name="force_export", val_str=str(checked))
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="force_export", val_str=str(checked))
         self._update_star_style(self.chk_force_export)
+        self.refresh() # Re-sort after change
 
     def synch_name(self):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_value(index=row, prop_name="value_name", val_str=self.inp_name.text())
-        
-        self.is_updating_ui = True
-        self.list_widget.item(row).setText(self.inp_name.text())
-        self.is_updating_ui = False
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="value_name", val_str=self.inp_name.text())
+        self.refresh()
 
     def on_item_changed(self, item):
         if self.is_updating_ui: return
-        row = self.list_widget.row(item)
-        if row >= 0:
-            bpy.ops.rzm.update_value(index=row, prop_name="value_name", val_str=item.text())
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        if orig_idx is not None:
+            bpy.ops.rzm.update_value(index=orig_idx, prop_name="value_name", val_str=item.text())
             self.inp_name.setText(item.text())
 
     def synch_type(self, txt):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_value(index=row, prop_name="value_type", val_str=txt)
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="value_type", val_str=txt)
         self.update_properties() # To toggle visibility
 
     def synch_val_int(self, v):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_value(index=row, prop_name="int_value", val_str=str(v))
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="int_value", val_str=str(v))
 
     def synch_val_float(self, v):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_value(index=row, prop_name="float_value", val_str=str(v))
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="float_value", val_str=str(v))
 
     def synch_val_vector(self, idx, v):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
         # Prop name format for indexed update: vector_value[idx]
-        bpy.ops.rzm.update_value(index=row, prop_name=f"vector_value[{idx}]", val_str=str(v))
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name=f"vector_value[{idx}]", val_str=str(v))
         
         # Update color button without triggering its signals
         self.inp_val_color.blockSignals(True)
@@ -340,6 +392,18 @@ class ValuesTab(BaseListTab):
         for i in range(4):
             if i < len(color_data):
                 self.inp_vecs[i].setValue(color_data[i])
+
+    def add_item(self):
+        bpy.ops.rzm.add_value()
+        self.refresh()
+
+    def remove_item(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.context.scene.rzm_active_value_index = orig_idx
+        bpy.ops.rzm.remove_value()
+        self.refresh()
 
 class TogglesTab(BaseListTab):
     def __init__(self):
@@ -370,32 +434,28 @@ class TogglesTab(BaseListTab):
 
     def refresh(self):
         if not bpy.context: return
-        self.sync_list_items(bpy.context.scene.rzm.toggle_definitions, lambda x: x.toggle_name)
-
-    def add_item(self):
-        bpy.ops.rzm.add_project_toggle()
-        self.refresh()
-        self.list_widget.setCurrentRow(self.list_widget.count()-1)
-
-    def remove_item(self):
-        row = self.list_widget.currentRow()
-        if row >= 0:
-            bpy.context.scene.rzm_active_toggle_def_index = row
-            bpy.ops.rzm.remove_project_toggle()
-            self.refresh()
-            if self.list_widget.count() > 0:
-                self.list_widget.setCurrentRow(min(row, self.list_widget.count()-1))
+        data = list(enumerate(bpy.context.scene.rzm.toggle_definitions))
+        data.sort(key=lambda x: x[1].force_export, reverse=True)
+        self.sync_list_items(
+            data,
+            name_func=lambda x: x.toggle_name,
+            force_export_func=lambda x: x.force_export
+        )
 
     def update_properties(self):
-        row = self.list_widget.currentRow()
-        if row < 0 or row >= len(bpy.context.scene.rzm.toggle_definitions):
-            self.props_group.setEnabled(False)
-            return
-
-        self.props_group.setEnabled(True)
-        t = bpy.context.scene.rzm.toggle_definitions[row]
-        
+        if self.is_updating_ui: return
         self.is_updating_ui = True
+        
+        item = self.list_widget.currentItem()
+        if not item:
+            self.props_group.hide()
+            self.is_updating_ui = False
+            return
+            
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        t = bpy.context.scene.rzm.toggle_definitions[orig_idx]
+        self.props_group.show()
+        
         if self.inp_name.text() != t.toggle_name:
             self.inp_name.setText(t.toggle_name)
         if self.inp_len.value() != t.toggle_length:
@@ -413,40 +473,71 @@ class TogglesTab(BaseListTab):
     def _update_star_style(self, btn):
         t = get_current_theme()
         if btn.isChecked():
-            btn.setStyleSheet(f"color: #FFD700; background: transparent; border: 1px solid #FFD700; border-radius: 4px; font-size: 16px;")
+            btn.setStyleSheet(f"""
+                color: #FFD700; 
+                background: rgba(255, 215, 0, 40); 
+                border: 2px solid #FFD700; 
+                border-radius: 4px; 
+                font-size: 18px;
+                font-weight: bold;
+            """)
         else:
-            btn.setStyleSheet(f"color: {t['text_dim']}; background: transparent; border: 1px solid {t['border_main']}; border-radius: 4px; font-size: 16px;")
+            btn.setStyleSheet(f"""
+                color: {t.get('text_dark', '#666')}; 
+                background: transparent; 
+                border: 1px solid {t['border_main']}; 
+                border-radius: 4px; 
+                font-size: 16px;
+            """)
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_project_toggle(index=row, prop_name="force_export", val_str=str(checked))
-        self._update_star_style(self.chk_force_export)
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_project_toggle(index=orig_idx, prop_name="force_export", val_str=str(checked))
+        self.refresh()
 
     def synch_name(self):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_name", val_str=self.inp_name.text())
-        self.is_updating_ui = True
-        self.list_widget.item(row).setText(self.inp_name.text())
-        self.is_updating_ui = False
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_project_toggle(index=orig_idx, prop_name="toggle_name", val_str=self.inp_name.text())
+        self.refresh()
 
     def on_item_changed(self, item):
         if self.is_updating_ui: return
-        row = self.list_widget.row(item)
-        if row >= 0:
-            bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_name", val_str=item.text())
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        if orig_idx is not None:
+            bpy.ops.rzm.update_project_toggle(index=orig_idx, prop_name="toggle_name", val_str=item.text())
             self.inp_name.setText(item.text())
 
     def synch_len(self, v):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_length", val_str=str(v))
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_project_toggle(index=orig_idx, prop_name="toggle_length", val_str=str(v))
 
     def synch_start_idx(self, v):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_project_toggle(index=row, prop_name="toggle_start_index", val_str=str(v))
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_project_toggle(index=orig_idx, prop_name="toggle_start_index", val_str=str(v))
+
+    def add_item(self):
+        bpy.ops.rzm.add_project_toggle()
+        self.refresh()
+
+    def remove_item(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.context.scene.rzm_active_toggle_def_index = orig_idx
+        bpy.ops.rzm.remove_project_toggle()
+        self.refresh()
 
 class ShapesTab(BaseListTab):
     def __init__(self):
@@ -463,6 +554,8 @@ class ShapesTab(BaseListTab):
         self.inp_cond = QtWidgets.QLineEdit()
         self.inp_cond.editingFinished.connect(self.synch_cond)
         
+        self.props_layout.addRow("Name:", self.inp_name)
+        self.props_layout.addRow("Type:", self.inp_type)
         self.props_layout.addRow("Anim Condition:", self.inp_cond)
         
         h_export = QtWidgets.QHBoxLayout()
@@ -524,32 +617,28 @@ class ShapesTab(BaseListTab):
 
     def refresh(self):
         if not bpy.context: return
-        self.sync_list_items(bpy.context.scene.rzm.shapes, lambda x: x.shape_name)
-
-    def add_item(self):
-        bpy.ops.rzm.add_shape()
-        self.refresh()
-        self.list_widget.setCurrentRow(self.list_widget.count()-1)
-
-    def remove_item(self):
-        row = self.list_widget.currentRow()
-        if row >= 0:
-            bpy.ops.rzm.remove_shape()
-            self.refresh()
-            if self.list_widget.count() > 0:
-                self.list_widget.setCurrentRow(min(row, self.list_widget.count()-1))
+        data = list(enumerate(bpy.context.scene.rzm.shapes))
+        data.sort(key=lambda x: x[1].force_export, reverse=True)
+        self.sync_list_items(
+            data,
+            name_func=lambda x: x.shape_name,
+            force_export_func=lambda x: x.force_export
+        )
 
     def update_properties(self):
-        row = self.list_widget.currentRow()
-        if row < 0 or row >= len(bpy.context.scene.rzm.shapes):
-            self.props_group.setEnabled(False)
-            self.list_keys.clear() # No shape selected
-            return
-
-        self.props_group.setEnabled(True)
-        shape = bpy.context.scene.rzm.shapes[row]
-        
+        if self.is_updating_ui: return
         self.is_updating_ui = True
+        
+        item = self.list_widget.currentItem()
+        if not item:
+            self.props_group.hide()
+            self.is_updating_ui = False
+            return
+            
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        shape = bpy.context.scene.rzm.shapes[orig_idx]
+        self.props_group.show()
+        
         if self.inp_name.text() != shape.shape_name:
             self.inp_name.setText(shape.shape_name)
         if self.inp_type.currentText() != shape.shape_type:
@@ -564,53 +653,76 @@ class ShapesTab(BaseListTab):
         self._update_star_style(self.chk_force_export)
         self.chk_force_export.blockSignals(False)
 
+        self.refresh_keys_list(shape)
         self.is_updating_ui = False
 
     def _update_star_style(self, btn):
         t = get_current_theme()
         if btn.isChecked():
-            btn.setStyleSheet(f"color: #FFD700; background: transparent; border: 1px solid #FFD700; border-radius: 4px; font-size: 16px;")
+            btn.setStyleSheet(f"""
+                color: #FFD700; 
+                background: rgba(255, 215, 0, 40); 
+                border: 2px solid #FFD700; 
+                border-radius: 4px; 
+                font-size: 18px;
+                font-weight: bold;
+            """)
         else:
-            btn.setStyleSheet(f"color: {t['text_dim']}; background: transparent; border: 1px solid {t['border_main']}; border-radius: 4px; font-size: 16px;")
+            btn.setStyleSheet(f"""
+                color: {t.get('text_dark', '#666')}; 
+                background: transparent; 
+                border: 1px solid {t['border_main']}; 
+                border-radius: 4px; 
+                font-size: 16px;
+            """)
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_shape(shape_index=row, prop_name="force_export", val_str=str(checked))
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="force_export", val_str=str(checked))
         self._update_star_style(self.chk_force_export)
+        self.refresh()
         
         self.refresh_keys_list(shape)
 
     def synch_name(self):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_shape(shape_index=row, prop_name="shape_name", val_str=self.inp_name.text())
-        self.is_updating_ui = True
-        self.list_widget.item(row).setText(self.inp_name.text())
-        self.is_updating_ui = False
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="shape_name", val_str=self.inp_name.text())
+        self.refresh()
 
     def on_item_changed(self, item):
         if self.is_updating_ui: return
-        row = self.list_widget.row(item)
-        if row >= 0:
-            bpy.ops.rzm.update_shape(shape_index=row, prop_name="shape_name", val_str=item.text())
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        if orig_idx is not None:
+            bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="shape_name", val_str=item.text())
             self.inp_name.setText(item.text())
 
     def synch_type(self, t):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_shape(shape_index=row, prop_name="shape_type", val_str=t)
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="shape_type", val_str=t)
 
     def synch_cond(self):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
         _val = self.inp_cond.text()
-        bpy.ops.rzm.update_shape(shape_index=row, prop_name="anim_condition", val_str=_val)
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="anim_condition", val_str=_val)
 
     def synch_disable_export(self, v):
         if self.is_updating_ui: return
-        row = self.list_widget.currentRow()
-        bpy.ops.rzm.update_shape(shape_index=row, prop_name="disable_export", val_str=str(v))
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="disable_export", val_str=str(v))
 
     # --- Shape Keys Logic
     def refresh_keys_list(self, shape):
@@ -633,72 +745,85 @@ class ShapesTab(BaseListTab):
              if self.list_keys.currentRow() != current_row:
                  self.list_keys.setCurrentRow(current_row)
 
-    def add_key(self):
-        row = self.list_widget.currentRow()
-        if row < 0: return
-        # Shape index is 'row'
-        bpy.ops.rzm.add_shape_key(shape_index=row)
-        
-        # Refresh needs fetching shape again
-        shape = bpy.context.scene.rzm.shapes[row]
-        self.refresh_keys_list(shape)
-        self.list_keys.setCurrentRow(len(shape.shape_keys)-1)
+    def add_item(self):
+        bpy.ops.rzm.add_shape()
+        self.refresh()
 
-    def remove_key(self):
-        row = self.list_widget.currentRow()
-        if row < 0: return
-        k_idx = self.list_keys.currentRow()
-        if k_idx >= 0:
-            bpy.ops.rzm.remove_shape_key(shape_index=row, key_index=k_idx)
-            
-            shape = bpy.context.scene.rzm.shapes[row]
-            self.refresh_keys_list(shape)
-            if self.list_keys.count() > 0:
-                self.list_keys.setCurrentRow(min(k_idx, self.list_keys.count()-1))
+    def remove_item(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        # We don't have rzm_active_shape_index in scene, so we use operator parameters if available
+        # or rely on active selection logic in operators.
+        # Actually RZMenu operators for shapes usually take indices.
+        bpy.ops.rzm.remove_shape(shape_index=orig_idx)
+        self.refresh()
 
     def on_key_selected(self):
-        row = self.list_widget.currentRow()
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
         k_idx = self.list_keys.currentRow()
-        if row < 0 or k_idx < 0:
-            # Disable key props
-            # TODO: Disable widgets?
+        
+        if orig_idx < 0 or k_idx < 0:
             return
             
-        shape = bpy.context.scene.rzm.shapes[row]
+        shape = bpy.context.scene.rzm.shapes[orig_idx]
         if k_idx >= len(shape.shape_keys): return
         key = shape.shape_keys[k_idx]
         
         self.is_updating_key_ui = True
-        
         if self.inp_k_frame.value() != key.key_name:
             self.inp_k_frame.setValue(key.key_name)
-            
         if self.inp_k_mode.currentText() != key.mode:
             self.inp_k_mode.setCurrentText(key.mode)
-            
-        # Float comparison with tolerance? Or just direct
         if abs(self.inp_k_mul.value() - key.multiplier) > 0.001:
             self.inp_k_mul.setValue(key.multiplier)
-            
         self.is_updating_key_ui = False
 
     def synch_k_frame(self, v):
         if self.is_updating_key_ui: return
-        row = self.list_widget.currentRow()
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
         k_idx = self.list_keys.currentRow()
-        bpy.ops.rzm.update_shape_key(shape_index=row, key_index=k_idx, prop_name="key_name", val_str=str(v))
-        
-        # Update list Item text too
+        bpy.ops.rzm.update_shape_key(shape_index=orig_idx, key_index=k_idx, prop_name="key_name", val_str=str(v))
         self.list_keys.item(k_idx).setText(f"Key {v}")
 
     def synch_k_mode(self, v):
         if self.is_updating_key_ui: return
-        row = self.list_widget.currentRow()
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
         k_idx = self.list_keys.currentRow()
-        bpy.ops.rzm.update_shape_key(shape_index=row, key_index=k_idx, prop_name="mode", val_str=str(v))
+        bpy.ops.rzm.update_shape_key(shape_index=orig_idx, key_index=k_idx, prop_name="mode", val_str=str(v))
 
     def synch_k_mul(self, v):
         if self.is_updating_key_ui: return
-        row = self.list_widget.currentRow()
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
         k_idx = self.list_keys.currentRow()
-        bpy.ops.rzm.update_shape_key(shape_index=row, key_index=k_idx, prop_name="multiplier", val_str=str(v))
+        bpy.ops.rzm.update_shape_key(shape_index=orig_idx, key_index=k_idx, prop_name="multiplier", val_str=str(v))
+
+    def add_key(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.add_shape_key(shape_index=orig_idx)
+        shape = bpy.context.scene.rzm.shapes[orig_idx]
+        self.refresh_keys_list(shape)
+        self.list_keys.setCurrentRow(len(shape.shape_keys)-1)
+
+    def remove_key(self):
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        k_idx = self.list_keys.currentRow()
+        if k_idx >= 0:
+            bpy.ops.rzm.remove_shape_key(shape_index=orig_idx, key_index=k_idx)
+            shape = bpy.context.scene.rzm.shapes[orig_idx]
+            self.refresh_keys_list(shape)
+            if self.list_keys.count() > 0:
+                self.list_keys.setCurrentRow(min(k_idx, self.list_keys.count()-1))
+

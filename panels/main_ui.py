@@ -238,9 +238,10 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box.label(text="Export Management", icon='INFO')
         
         # Единая кнопка экспорта для всех игр
-        row = box.row()
+        row = box.row(align=True)
         row.scale_y = 1.5
-        row.operator("rzm.full_export", text="Export Mod (with auto-setup)", icon='EXPORT')
+        row.operator("rzm.full_export", text="Full Export", icon='EXPORT')
+        row.operator("rzm.batch_export", text="Batch Export", icon='SEQ_STRIP_DUPLICATE')
         
         # --- Custom Scripts Management ---
         script_box = box.column(align=True)

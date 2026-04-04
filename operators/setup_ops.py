@@ -3,8 +3,13 @@ import bpy
 import os
 import subprocess
 import sys
+from pathlib import Path
 from .export_manager import get_target_path
 from ..utils.texture_collector import collect_missing_textures
+
+# Kill-switch: Set to False once EFMI-Tools ships a native batch_export (v2.0+).
+# While True, RZMenu implements a manual frame-loop workaround.
+EFMI_BATCH_EXPORT_ENABLED = True
 
 class RZM_OT_AddCustomScript(bpy.types.Operator):
     bl_idname = "rzm.add_custom_script"
@@ -254,13 +259,229 @@ class RZM_OT_FullExport(bpy.types.Operator):
         
         return {'FINISHED'}
 
+
+class RZM_OT_BatchExport(bpy.types.Operator):
+    """Batch export: generates numbered subfolders (1, 2, 3...) per frame.
+    Disables texture copying and INI generation for duplicate frames.
+    """
+    bl_idname = "rzm.batch_export"
+    bl_label = "Batch Export Mod"
+    bl_description = (
+        "Run RZ internal exports (Atlas, Fonts) and then call game-specific "
+        "BATCH exporter — creates numbered subfolders per frame without "
+        "duplicating textures or INI files"
+    )
+
+    def _run_common_pre_export(self, context, target_path):
+        """Runs Atlas and Fonts export. Returns False on failure."""
+        # -1. Texture collection
+        try:
+            missing_count = collect_missing_textures(context)
+            if missing_count > 0:
+                print(f"[RZM Batch] Marked {missing_count} missing textures.")
+        except Exception as e:
+            self.report({'WARNING'}, f"Texture collection failed: {e}")
+
+        # 0. Auto-Setup
+        try:
+            bpy.ops.rzm.autosetup_game()
+        except Exception as e:
+            self.report({'WARNING'}, f"Auto-Setup failed: {e}")
+
+        # Ensure modules folder exists
+        modules_path = os.path.join(target_path, "modules")
+        if not os.path.exists(modules_path):
+            try:
+                bpy.ops.rzm.initialize_mod()
+            except Exception as e:
+                self.report({'ERROR'}, f"Auto-Initialization failed: {e}")
+                return False
+
+        # 1. Export Atlas
+        try:
+            bpy.ops.rzm.export_atlas()
+        except Exception as e:
+            self.report({'ERROR'}, f"Atlas export failed: {e}")
+            return False
+
+        # 2. Export Fonts
+        try:
+            bpy.ops.rzm.export_fonts()
+        except Exception as e:
+            self.report({'ERROR'}, f"Font export failed: {e}")
+            return False
+
+        return True
+
+    def _batch_xxmi(self, context):
+        """Batch export via XXMI's native ExportAdvancedBatched operator."""
+        if not hasattr(bpy.ops, "xxmi"):
+            self.report({'ERROR'}, "XXMI Tools not found. Cannot batch export.")
+            return False
+
+        xxmi = context.scene.xxmi
+
+        # Save original settings
+        saved = {
+            "copy_textures": xxmi.copy_textures,
+            "write_ini": xxmi.write_ini,
+            "apply_modifiers_and_shapekeys": xxmi.apply_modifiers_and_shapekeys,
+            "batch_pattern": xxmi.batch_pattern,
+        }
+
+        print("[RZM Batch] Overriding XXMI settings for batch mode...")
+        try:
+            xxmi.copy_textures = False
+            xxmi.write_ini = False
+            xxmi.apply_modifiers_and_shapekeys = True
+            xxmi.batch_pattern = "#"
+
+            print("[RZM Batch] Calling xxmi.exportadvancedbatched()...")
+            bpy.ops.xxmi.exportadvancedbatched()
+            print("[RZM Batch] XXMI batch export finished.")
+        except Exception as e:
+            self.report({'ERROR'}, f"XXMI batch export failed: {e}")
+            return False
+        finally:
+            print("[RZM Batch] Restoring XXMI settings...")
+            for k, v in saved.items():
+                try:
+                    setattr(xxmi, k, v)
+                except Exception:
+                    pass
+
+        return True
+
+    def _batch_efmi(self, context):
+        """Batch export for EFMI via manual frame-loop workaround.
+        Creates subfolders: base_folder/1/, base_folder/2/, etc.
+        Kill-switch: EFMI_BATCH_EXPORT_ENABLED = False disables this path.
+        """
+        if not EFMI_BATCH_EXPORT_ENABLED:
+            self.report({'WARNING'}, (
+                "EFMI batch export is disabled (EFMI_BATCH_EXPORT_ENABLED=False). "
+                "Use standard Export Mod instead."
+            ))
+            return False
+
+        if not hasattr(context.scene, "efmi_tools_settings"):
+            self.report({'ERROR'}, "EFMI-Tools not found. Cannot batch export.")
+            return False
+
+        efmi = context.scene.efmi_tools_settings
+        scene = context.scene
+
+        if not efmi.mod_output_folder:
+            self.report({'ERROR'}, "EFMI Mod Output Folder is not set!")
+            return False
+
+        base_dir = Path(bpy.path.abspath(efmi.mod_output_folder))
+        frame_start = scene.frame_start
+        frame_end = scene.frame_end
+        original_frame = scene.frame_current
+
+        # Force start from 1 for ArknightsEndfield (Usually frame 0 is original mesh)
+        game = context.scene.rzm.game.selection
+        if game == 'ArknightsEndfield' and frame_start < 1:
+            frame_start = 1
+            print(f"[RZM Batch EFMI] Forcing frame_start to 1 for Endfield.")
+
+        # Save original settings
+        saved = {
+            "mod_output_folder": efmi.mod_output_folder,
+            "copy_textures": efmi.copy_textures,
+            "write_ini": efmi.write_ini,
+            "apply_all_modifiers": efmi.apply_all_modifiers,
+        }
+
+        print(f"[RZM Batch EFMI] Overriding settings. Base dir: {base_dir}")
+        print(f"[RZM Batch EFMI] Frame range: {frame_start} -> {frame_end}")
+
+        try:
+            efmi.copy_textures = False
+            efmi.write_ini = False
+            efmi.apply_all_modifiers = True
+
+            for frame in range(frame_start, frame_end + 1):
+                print(f"[RZM Batch EFMI] >>> Frame {frame}")
+
+                scene.frame_set(frame)
+
+                frame_dir = base_dir / str(frame)
+                frame_dir.mkdir(parents=True, exist_ok=True)
+
+                efmi.mod_output_folder = str(frame_dir) + os.sep
+
+                try:
+                    bpy.ops.efmi_tools.export_mod()
+                    print(f"[RZM Batch EFMI] Frame {frame} — OK")
+                except Exception as e:
+                    print(f"[RZM Batch EFMI] Frame {frame} — FAILED: {e}")
+                    self.report({'WARNING'}, f"EFMI frame {frame} export failed: {e}")
+
+        except Exception as e:
+            self.report({'ERROR'}, f"EFMI batch loop failed: {e}")
+            return False
+        finally:
+            print("[RZM Batch EFMI] Restoring original settings...")
+            for k, v in saved.items():
+                try:
+                    setattr(efmi, k, v)
+                except Exception:
+                    pass
+            scene.frame_set(original_frame)
+            print("[RZM Batch EFMI] Done.")
+
+        return True
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        game = rzm.game.selection
+        target_path = get_target_path(context)
+
+        print("-" * 40)
+        print(f"[RZM] Batch Export Start — Game: {game}")
+        print(f"[RZM] Target path: {target_path}")
+
+        if not target_path:
+            self.report({'ERROR'}, "Export path not set!")
+            return {'CANCELLED'}
+
+        # Pre-export (Atlas, Fonts, Init)
+        if not self._run_common_pre_export(context, target_path):
+            return {'CANCELLED'}
+
+        # Game-specific batch
+        if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
+            ok = self._batch_xxmi(context)
+        elif game == 'ArknightsEndfield':
+            ok = self._batch_efmi(context)
+        elif game == 'WutheringWaves':
+            self.report({'INFO'}, (
+                "Batch export is not needed for WutheringWaves — "
+                "shape keys are handled natively by WWMI."
+            ))
+            return {'CANCELLED'}
+        else:
+            self.report({'WARNING'}, f"No batch export configured for game: {game}")
+            return {'CANCELLED'}
+
+        if not ok:
+            return {'CANCELLED'}
+
+        print(f"[RZM] Batch Export Finished.")
+        print("-" * 40)
+        return {'FINISHED'}
+
+
 classes_to_register = [
-    RZM_OT_AddCustomScript, 
-    RZM_OT_RemoveCustomScript, 
+    RZM_OT_AddCustomScript,
+    RZM_OT_RemoveCustomScript,
     RZM_OT_MoveCustomScript,
-    RZM_OT_AutoSetupGame, 
-    RZM_OT_RefreshAddonData, 
-    RZM_OT_FullExport
+    RZM_OT_AutoSetupGame,
+    RZM_OT_RefreshAddonData,
+    RZM_OT_FullExport,
+    RZM_OT_BatchExport,
 ]
 
 def register():

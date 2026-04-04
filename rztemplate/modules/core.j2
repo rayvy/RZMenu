@@ -1541,7 +1541,7 @@ global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
             {% if shape.disable_export %}
             filename = Meshes/Component{{ id }}_VB0.buf
             {% else %}
-            filename = Meshes{{ key.key_name }}/Component{{ id }}_VB0.buf
+            filename = /{{ key.key_name }}/Meshes/Component{{ id }}_VB0.buf
             {% endif %}
             {% endif %}
         {% endfor %}
