@@ -4,19 +4,22 @@
     {%- if text -%}
         {# 1. Блок ПОДГОТОВЛЕННЫХ ПЕРЕМЕННЫХ (Контекст).
               Ключи пишем в нижнем регистре без пробелов для бронебойности. #}
+        {%- set meta = scene.rzm.meta_data -%}
+        {%- set author = meta.author_name if meta.author_name else "UNKNOWN" -%}
+        
         {%- set ctx = {
-            'charactername': scene.rzm.meta_data.character_name,
-            'outfitname': scene.rzm.meta_data.outfit_name,
-            'versionnum': scene.rzm.meta_data.version_num,
-            'description': scene.rzm.meta_data.description,
-            'menukeybind': scene.rzm.meta_data.menu_keybind,
-            'requirements': scene.rzm.meta_data.requirements,
-            'authorname': scene.rzm.meta_data.author_name,
-            'communityrespect': scene.rzm.meta_data.community_respect,
-            'modname': scene.rzm.export_settings.mod_name,
-            'gamename': scene.rzm.game.name,
-            'credits': scene.rzm.meta_data.credits_list | map(attribute='name') | join(', '),
-            'features': scene.rzm.meta_data.features_list | map(attribute='text') | join(', ')
+            'charactername': meta.character_name,
+            'outfitname': meta.outfit_name,
+            'versionnum': meta.version_num,
+            'description': meta.description,
+            'menukeybind': meta.menu_keybind,
+            'requirements': meta.requirements,
+            'authorname': author,
+            'communityrespect': meta.community_respect,
+            'modname': meta.character_name ~ " (" ~ meta.outfit_name ~ ")",
+            'gamename': scene.rzm.game.selection,
+            'credits': meta.credits_list | map(attribute='name') | join(', '),
+            'features': meta.features_list | map(attribute='text') | join(', ')
         } -%}
         
         {# 2. Нарезаем текст #}

@@ -120,6 +120,9 @@ class RZM_OT_FullExport(bpy.types.Operator):
     bl_label = "Export Full Mod"
     bl_description = "Run RZ internal exports (Atlas, Fonts) and then call game-specific mod exporter"
 
+    execute_init: bpy.props.BoolProperty(default=True)
+    execute_post: bpy.props.BoolProperty(default=True)
+
     def execute(self, context):
         rzm = context.scene.rzm
         game = rzm.game.selection
@@ -142,10 +145,11 @@ class RZM_OT_FullExport(bpy.types.Operator):
             self.report({'WARNING'}, f"Texture collection failed: {e}")
 
         # 0. Auto-Setup & Initialization Check
-        try:
-            bpy.ops.rzm.autosetup_game()
-        except Exception as e:
-            self.report({'WARNING'}, f"Auto-Setup failed: {e}")
+        if self.execute_init:
+            try:
+                bpy.ops.rzm.autosetup_game()
+            except Exception as e:
+                self.report({'WARNING'}, f"Auto-Setup failed: {e}")
 
         # Проверка на наличие папки modules
         modules_path = os.path.join(target_path, "modules")
@@ -253,6 +257,8 @@ class RZM_OT_FullExport(bpy.types.Operator):
                         
                 except Exception as e:
                     print(f"DEBUG ERROR: Runtime error for script {script_path}: {e}")
+        else:
+            print("DEBUG: Skipping custom post-export scripts (execute_post=False)")
 
         print(f"DEBUG: RZM Full Export Finished")
         print("-" * 30)
@@ -272,6 +278,8 @@ class RZM_OT_BatchExport(bpy.types.Operator):
         "duplicating textures or INI files"
     )
 
+    execute_init: bpy.props.BoolProperty(default=True)
+
     def _run_common_pre_export(self, context, target_path):
         """Runs Atlas and Fonts export. Returns False on failure."""
         # -1. Texture collection
@@ -283,10 +291,11 @@ class RZM_OT_BatchExport(bpy.types.Operator):
             self.report({'WARNING'}, f"Texture collection failed: {e}")
 
         # 0. Auto-Setup
-        try:
-            bpy.ops.rzm.autosetup_game()
-        except Exception as e:
-            self.report({'WARNING'}, f"Auto-Setup failed: {e}")
+        if self.execute_init:
+            try:
+                bpy.ops.rzm.autosetup_game()
+            except Exception as e:
+                self.report({'WARNING'}, f"Auto-Setup failed: {e}")
 
         # Ensure modules folder exists
         modules_path = os.path.join(target_path, "modules")
@@ -474,6 +483,266 @@ class RZM_OT_BatchExport(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_CompleteExport(bpy.types.Operator):
+    bl_idname = "rzm.complete_export"
+    bl_label = "Complete Export (Test Modifiers)"
+    bl_description = "Creates experimental backup, applies modifiers safely, then exports Full + Batch"
+
+    export_filter_mode: bpy.props.EnumProperty(
+        name="Export Targets",
+        items=[
+            ('SELECTED', "Selected Only", "Export only selected visible objects"),
+            ('COLLECTION', "Active Collection", "Export objects in the active collection"),
+            ('ALL_VISIBLE', "All Visible", "Export all visible meshes"),
+        ],
+        default='SELECTED'
+    )
+    
+    ignore_hidden: bpy.props.BoolProperty(
+        name="Ignore Hidden",
+        description="Skip objects hidden in viewport",
+        default=True
+    )
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+        
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "export_filter_mode")
+        layout.prop(self, "ignore_hidden")
+
+    def execute(self, context):
+        print("====== QUANTUM COMPLETE EXPORT ======")
+        pref = context.preferences.addons[__package__.split('.')[0]].preferences
+        blacklist_raw = getattr(pref, "modifier_blacklist", "Surface Deform, Data Transfer, Armature")
+        blacklist = [x.strip().lower() for x in blacklist_raw.split(',') if x.strip()]
+        
+        # 1. Gather original objects
+        targets = []
+        if self.export_filter_mode == 'SELECTED':
+            base_list = context.selected_objects
+        elif self.export_filter_mode == 'COLLECTION':
+            if context.view_layer.active_layer_collection:
+                base_list = context.view_layer.active_layer_collection.collection.objects
+            else:
+                base_list = []
+        else:
+            base_list = context.view_layer.objects
+            
+        for o in base_list:
+            if o.type != 'MESH': continue
+            if self.ignore_hidden and (o.hide_viewport or o.hide_get() or not o.visible_get()): continue
+            # Avoid picking up our own helpers or quantum copies if they linger
+            if "RZM_BACKUP" in o.name: continue
+            targets.append(o)
+            
+        if not targets:
+            self.report({'WARNING'}, "No valid mesh targets found for export.")
+            return {'CANCELLED'}
+            
+        scene = context.scene
+        original_frame = scene.frame_current
+        
+        # Frame sync
+        if scene.frame_start < 1:
+            scene.frame_start = 1
+            
+        quantum_copies = []
+        original_objects = []
+        original_collections_map = {}
+        original_names_map = {}
+        
+        print(f"[RZM Complete] Creating quantum duplicates for {len(targets)} objects...")
+        for obj in targets:
+            temp_obj = obj.copy()
+            if obj.data:
+                temp_obj.data = obj.data.copy()
+                
+            # Name swapping so EFMI exports the correct name
+            orig_name = obj.name
+            original_names_map[obj] = orig_name
+            obj.name = orig_name + "_ORIGINAL_BACKUP"
+            temp_obj.name = orig_name
+                
+            # Save original collections
+            colls = list(obj.users_collection)
+            original_collections_map[obj] = colls
+            
+            # Put quantum duplicate where original lived
+            for coll in colls:
+                coll.objects.link(temp_obj)
+            if not colls:
+                context.scene.collection.objects.link(temp_obj)
+                
+            # Safely UNLINK original from collections so EFMI cannot see it or iterate over it
+            for coll in colls:
+                coll.objects.unlink(obj)
+                
+            quantum_copies.append(temp_obj)
+            original_objects.append(obj)
+            
+        from ..utils.modifier_utils import apply_modifiers_for_object_with_shape_keys
+            
+        try:
+            print("[RZM Complete] Processing modifiers...")
+            bpy.ops.object.select_all(action='DESELECT')
+            
+            for temp_obj in quantum_copies:
+                context.view_layer.objects.active = temp_obj
+                temp_obj.select_set(True)
+                
+                # Check Subsurf
+                has_subsurf = False
+                subsurf_idx = -1
+                for i, mod in enumerate(temp_obj.modifiers):
+                    if mod.type == 'SUBSURF': # Subdivision Surface
+                        has_subsurf = True
+                        subsurf_idx = i
+                        break
+                        
+                # Add Triangulate modifier
+                tri_mod = temp_obj.modifiers.new(name="RZM_Triangulate", type='TRIANGULATE')
+                
+                if has_subsurf:
+                    target_idx = subsurf_idx + 1
+                    try:
+                        bpy.ops.object.modifier_move_to_index(modifier=tri_mod.name, index=target_idx)
+                    except Exception as e:
+                        print(f"  -> WARNING: Could not move Triangulate: {e}")
+                else:
+                    try:
+                        bpy.ops.object.modifier_move_to_index(modifier=tri_mod.name, index=0)
+                    except:
+                        pass
+                    
+                # Collect allowed modifiers in order
+                mods_to_apply = []
+                for mod in temp_obj.modifiers:
+                    type_str = mod.type.replace('_', ' ').lower()
+                    if mod.name.lower() in blacklist or type_str in blacklist or type_str.title() in [b.title() for b in blacklist]:
+                        print(f"  -> Skipping blacklisted modifier: {mod.name}")
+                        continue
+                    mods_to_apply.append(mod.name)
+                    
+                if mods_to_apply:
+                    if temp_obj.data.shape_keys:
+                        print(f"  -> Applying {len(mods_to_apply)} modifiers on {temp_obj.name} (WITH SHAPEKEYS)")
+                        success, err = apply_modifiers_for_object_with_shape_keys(context, temp_obj, mods_to_apply, disable_armatures=False)
+                        if not success:
+                            self.report({'WARNING'}, f"EFMI error on {temp_obj.name}: {err}")
+                    else:
+                        print(f"  -> Applying {len(mods_to_apply)} modifiers on {temp_obj.name} (NO SHAPEKEYS)")
+                        for mod_name in mods_to_apply:
+                            try:
+                                bpy.ops.object.modifier_apply(modifier=mod_name)
+                            except Exception as e:
+                                print(f"  -> Failed to apply {mod_name}: {e}")
+                                
+                bpy.ops.object.select_all(action='DESELECT')
+                
+            print("[RZM Complete] Modifiers processed. Triggering Export Pipeline...")
+            
+            # Select quantum copies for export
+            bpy.ops.object.select_all(action='DESELECT')
+            for qc in quantum_copies:
+                try: qc.select_set(True)
+                except: pass
+            if quantum_copies:
+                context.view_layer.objects.active = quantum_copies[0]
+                
+            print("  [>] Calling Full Export...")
+            bpy.ops.rzm.full_export(execute_post=False)
+            
+            print("  [>] Calling Batch Export...")
+            bpy.ops.rzm.batch_export(execute_init=False)
+            
+            # Run Post scripts
+            settings = context.scene.rzm.export_settings
+            if settings.show_custom_scripts:
+                print("  [>] Executing Post Scripts...")
+                import shlex
+                import subprocess
+                import os
+                from .export_manager import get_target_path
+                target_path = get_target_path(context)
+                
+                if target_path and os.path.exists(target_path):
+                    for script in settings.custom_scripts:
+                        if not script.enabled or not script.path: continue
+                        script_path = bpy.path.abspath(script.path)
+                        if not os.path.exists(script_path): continue
+                        
+                        try:
+                            cmd = ["python", script_path] if script_path.lower().endswith(".py") else [script_path]
+                            if script.args:
+                                try: cmd.extend(shlex.split(script.args))
+                                except: cmd.extend(script.args.split())
+                                
+                            proc = subprocess.Popen(
+                                cmd, cwd=target_path,
+                                stdin=subprocess.PIPE if script.auto_input else None,
+                                stdout=None, stderr=None
+                            )
+                            try:
+                                to = script.timeout if script.use_timeout else None
+                                if script.auto_input:
+                                    proc.communicate(input=b"\n \n123\n", timeout=to)
+                                else:
+                                    proc.wait(timeout=to)
+                            except subprocess.TimeoutExpired:
+                                proc.kill()
+                        except Exception as script_e:
+                            print(f"Error in custom script: {script_e}")
+
+            self.report({'INFO'}, "Complete Export Finished Successfully")
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Complete Export Failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        finally:
+            print("[RZM Complete] Cleaning up quantum duplicates...")
+            try: scene.frame_set(original_frame)
+            except: pass
+
+            for qc in quantum_copies:
+                try:
+                    mesh_data = qc.data
+                    bpy.data.objects.remove(qc, do_unlink=True)
+                    if mesh_data and mesh_data.users == 0:
+                        bpy.data.meshes.remove(mesh_data, do_unlink=True)
+                except ReferenceError:
+                    pass
+                    
+            bpy.ops.object.select_all(action='DESELECT')
+            for orig in original_objects:
+                try:
+                    # Restore Name
+                    if orig in original_names_map:
+                        orig.name = original_names_map[orig]
+                    
+                    # Relink back to collections
+                    if orig in original_collections_map:
+                        for coll in original_collections_map[orig]:
+                            if orig.name not in coll.objects:
+                                coll.objects.link(orig)
+                                
+                    orig.hide_viewport = False
+                    orig.select_set(True)
+                except ReferenceError:
+                    pass
+                    
+            if original_objects:
+                try: context.view_layer.objects.active = original_objects[0]
+                except ReferenceError: pass
+                
+            print("====== COMPLETE EXPORT DONE ======")
+
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_AddCustomScript,
     RZM_OT_RemoveCustomScript,
@@ -482,6 +751,7 @@ classes_to_register = [
     RZM_OT_RefreshAddonData,
     RZM_OT_FullExport,
     RZM_OT_BatchExport,
+    RZM_OT_CompleteExport,
 ]
 
 def register():

@@ -124,6 +124,19 @@
     {%- endif -%}
 {%- endmacro -%}
 
+{%- macro format_from_idiot(input_string) -%}
+    {%- if input_string -%}
+        {%- set forbidden = " !@#$%^&*()+-={}|[]\\:\";'<>?,./" -%}
+        {%- set result = {'v': input_string} -%}
+        {%- for char in forbidden -%}
+            {%- if char in result.v -%}
+                {%- if result.update({'v': result.v | replace(char, '_')}) -%}{%- endif -%}
+            {%- endif -%}
+        {%- endfor -%}
+        {{- result.v -}}
+    {%- endif -%}
+{%- endmacro -%}
+
 {%- macro format_var(input_string, element=none, scene=none) -%}
     {%- if input_string -%}
         {%- set result = input_string -%}
@@ -215,31 +228,31 @@
     If no ~ is present, returns the input unchanged (zero overhead).
 #}
 {%- macro resolve_meta_var(text_id, scene) -%}
-    {%- if text_id and '~' in text_id -%}
+    {%- if "~" not in text_id -%}
+        {{- text_id -}}
+    {%- else -%}
         {%- set meta = scene.rzm.meta_data -%}
-        {%- set exp  = scene.rzm.export_settings -%}
-        {%- set game = scene.rzm.game -%}
-        {%- set SYS_VARS = {
-            '~author_name':       meta.author_name,
+        {%- set author = scene.rzm.meta_data.author_name if scene.rzm.meta_data and scene.rzm.meta_data.author_name else "UNKNOWN" -%}
+        
+        {%- set vars_map = {
+            '~author_name':       author,
             '~character_name':    meta.character_name,
             '~outfit_name':       meta.outfit_name,
             '~version_num':       meta.version_num,
-            '~mod_name':          exp.mod_name,
-            '~game_name':         game.name,
+            '~mod_name':          meta.character_name ~ " (" ~ meta.outfit_name ~ ")",
+            '~game_name':         scene.rzm.game.selection,
             '~menu_keybind':      meta.menu_keybind,
             '~requirements':      meta.requirements,
             '~community_respect': meta.community_respect,
             '~description':       meta.description
         } -%}
-        {%- set result = {'v': text_id} -%}
-        {%- for var_key, var_val in SYS_VARS.items() -%}
-            {%- if var_key in result.v -%}
-                {%- if result.update({'v': result.v | replace(var_key, var_val | default('') | string)}) -%}{%- endif -%}
+        {%- set res = {'v': text_id} -%}
+        {%- for var_key, var_val in vars_map.items() -%}
+            {%- if var_key in res.v -%}
+                {%- set _ = res.update({'v': res.v | replace(var_key, var_val | default('') | string)}) -%}
             {%- endif -%}
         {%- endfor -%}
-        {{- result.v -}}
-    {%- else -%}
-        {{- text_id -}}
+        {{- res.v -}}
     {%- endif -%}
 {%- endmacro -%}
 
@@ -336,12 +349,24 @@
     {%- endif -%}
 {%- endmacro -%}
 
-{% macro tier_tags(entity) -%}
+{% macro tier_tags(entity, scene=none) -%}
     {%- set tags = [] -%}
-    {%- for t in entity.export_tiers -%}
-        {%- set _ = tags.append("[" ~ t.tier_id ~ "]") -%}
+    {%- set all_tiers = scene.rzm.addons.tier_definitions if (scene and scene.rzm and scene.rzm.addons) else [] -%}
+    {%- for t_ref in entity.export_tiers -%}
+        {%- set current = {'id': t_ref.tier_id, 'seen': []} -%}
+        {%- for i in range(5) -%}
+            {%- if current.id and current.id not in current.seen -%}
+                {%- set _ = current.seen.append(current.id) -%}
+                {%- set _ = tags.append("[" ~ current.id ~ "]") -%}
+                {%- set next_id = {'v': none} -%}
+                {%- for d in all_tiers if d.tier_id == current.id -%}
+                    {%- if d.parent_tier_id -%}{%- set _ = next_id.update({'v': d.parent_tier_id}) -%}{%- endif -%}
+                {%- endfor -%}
+                {%- set _ = current.update({'id': next_id.v}) -%}
+            {%- endif -%}
+        {%- endfor -%}
     {%- endfor -%}
-    {{- tags | join(' ') -}}
+    {{- tags | unique | join(' ') -}}
 {%- endmacro %}
 
 {% macro tier_tags_mesh(component, scene) -%}
@@ -354,9 +379,21 @@
     {%- endif -%}
     {%- if obj and obj.rzm_tier_list -%}
         {%- set tags = [] -%}
-        {%- for t in obj.rzm_tier_list -%}
-            {%- set _ = tags.append("[" ~ t.tier_id ~ "]") -%}
+        {%- set all_tiers = scene.rzm.addons.tier_definitions if (scene and scene.rzm and scene.rzm.addons) else [] -%}
+        {%- for t_ref in obj.rzm_tier_list -%}
+            {%- set current = {'id': t_ref.tier_id, 'seen': []} -%}
+            {%- for i in range(5) -%}
+                {%- if current.id and current.id not in current.seen -%}
+                    {%- set _ = current.seen.append(current.id) -%}
+                    {%- set _ = tags.append("[" ~ current.id ~ "]") -%}
+                    {%- set next_id = {'v': none} -%}
+                    {%- for d in all_tiers if d.tier_id == current.id -%}
+                        {%- if d.parent_tier_id -%}{%- set _ = next_id.update({'v': d.parent_tier_id}) -%}{%- endif -%}
+                    {%- endfor -%}
+                    {%- set _ = current.update({'id': next_id.v}) -%}
+                {%- endif -%}
+            {%- endfor -%}
         {%- endfor -%}
-        {{- tags | join(' ') -}}
+        {{- tags | unique | join(' ') -}}
     {%- endif -%}
 {%- endmacro %}

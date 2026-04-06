@@ -26,6 +26,26 @@ class RZM_UL_TierDefinitions(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text=item.tier_id, icon='BOOKMARKS')
 
+class RZM_UL_Contacts(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.prop(item, "contact_type", text="", emboss=False)
+            row.prop(item, "contact_value", text="")
+        elif self.layout_type == 'GRID':
+            layout.alignment = 'CENTER'
+            layout.label(text=item.contact_type, icon='CONTACT')
+
+class RZM_UL_BuildProfiles(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.label(text=item.name, icon='PACKAGE')
+            row.label(text=f" ({item.active_tiers})")
+        elif self.layout_type == 'GRID':
+            layout.alignment = 'CENTER'
+            layout.label(text=item.name, icon='PACKAGE')
+
 
 # ─── Tier Definition CRUD ─────────────────────────────────────────────────────
 
@@ -90,6 +110,63 @@ class RZM_OT_ResetTierDefinitions(bpy.types.Operator):
         self.report({'INFO'}, "Tier definitions reset to defaults.")
         return {'FINISHED'}
 
+# ─── Contact CRUD ─────────────────────────────────────────────────────────────
+
+class RZM_OT_AddContact(bpy.types.Operator):
+    """Add a new contact entry"""
+    bl_idname = "rzm.add_contact"
+    bl_label = "Add Contact"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        prefs = get_prefs(context)
+        if prefs:
+            prefs.contacts.add()
+            prefs.contacts_index = len(prefs.contacts) - 1
+        return {'FINISHED'}
+
+class RZM_OT_RemoveContact(bpy.types.Operator):
+    """Remove the selected contact entry"""
+    bl_idname = "rzm.remove_contact"
+    bl_label = "Remove Contact"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        prefs = get_prefs(context)
+        if prefs and 0 <= prefs.contacts_index < len(prefs.contacts):
+            prefs.contacts.remove(prefs.contacts_index)
+            prefs.contacts_index = max(0, prefs.contacts_index - 1)
+        return {'FINISHED'}
+
+# ─── Build Profile CRUD ───────────────────────────────────────────────────────
+
+class RZM_OT_AddBuildProfile(bpy.types.Operator):
+    """Add a new batch build profile"""
+    bl_idname = "rzm.add_build_profile"
+    bl_label = "Add Build Profile"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        prefs = get_prefs(context)
+        if prefs:
+            p = prefs.build_profiles.add()
+            p.name = f"Build Profile {len(prefs.build_profiles)}"
+            prefs.build_profiles_index = len(prefs.build_profiles) - 1
+        return {'FINISHED'}
+
+class RZM_OT_RemoveBuildProfile(bpy.types.Operator):
+    """Remove the selected build profile"""
+    bl_idname = "rzm.remove_build_profile"
+    bl_label = "Remove Build Profile"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        prefs = get_prefs(context)
+        if prefs and 0 <= prefs.build_profiles_index < len(prefs.build_profiles):
+            prefs.build_profiles.remove(prefs.build_profiles_index)
+            prefs.build_profiles_index = max(0, prefs.build_profiles_index - 1)
+        return {'FINISHED'}
+
 
 # ─── Shape Tier Operators ─────────────────────────────────────────────────────
 
@@ -109,7 +186,8 @@ class RZM_OT_AddShapeTier(bpy.types.Operator):
         if not any(t.tier_id == self.tier_id for t in shape.export_tiers):
             t = shape.export_tiers.add()
             t.tier_id = self.tier_id
-        context.area.tag_redraw()
+        if context.area:
+            context.area.tag_redraw()
         return {'FINISHED'}
 
 
@@ -130,7 +208,8 @@ class RZM_OT_RemoveShapeTier(bpy.types.Operator):
             if t.tier_id == self.tier_id:
                 shape.export_tiers.remove(i)
                 break
-        context.area.tag_redraw()
+        if context.area:
+            context.area.tag_redraw()
         return {'FINISHED'}
 
 
@@ -152,7 +231,8 @@ class RZM_OT_AddValueTier(bpy.types.Operator):
         if not any(t.tier_id == self.tier_id for t in val.export_tiers):
             t = val.export_tiers.add()
             t.tier_id = self.tier_id
-        context.area.tag_redraw()
+        if context.area:
+            context.area.tag_redraw()
         return {'FINISHED'}
 
 
@@ -173,7 +253,8 @@ class RZM_OT_RemoveValueTier(bpy.types.Operator):
             if t.tier_id == self.tier_id:
                 val.export_tiers.remove(i)
                 break
-        context.area.tag_redraw()
+        if context.area:
+            context.area.tag_redraw()
         return {'FINISHED'}
 
 
@@ -193,7 +274,8 @@ class RZM_OT_AddObjectTier(bpy.types.Operator):
         if not any(t.tier_id == self.tier_id for t in obj.rzm_tier_list):
             t = obj.rzm_tier_list.add()
             t.tier_id = self.tier_id
-        context.area.tag_redraw()
+        if context.area:
+            context.area.tag_redraw()
         return {'FINISHED'}
 
 
@@ -212,7 +294,8 @@ class RZM_OT_RemoveObjectTier(bpy.types.Operator):
             if t.tier_id == self.tier_id:
                 obj.rzm_tier_list.remove(i)
                 break
-        context.area.tag_redraw()
+        if context.area:
+            context.area.tag_redraw()
         return {'FINISHED'}
 
 
@@ -248,9 +331,15 @@ def element_passes_tier_filter(element, active_tiers: set) -> bool:
 
 classes_to_register = [
     RZM_UL_TierDefinitions,
+    RZM_UL_Contacts,
+    RZM_UL_BuildProfiles,
     RZM_OT_AddTierDefinition,
     RZM_OT_RemoveTierDefinition,
     RZM_OT_ResetTierDefinitions,
+    RZM_OT_AddContact,
+    RZM_OT_RemoveContact,
+    RZM_OT_AddBuildProfile,
+    RZM_OT_RemoveBuildProfile,
     RZM_OT_AddShapeTier,
     RZM_OT_RemoveShapeTier,
     RZM_OT_AddValueTier,

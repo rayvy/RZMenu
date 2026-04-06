@@ -658,7 +658,7 @@ endif
 dispatch = 1, 1, 1
 x105 = 0
 $di_count = $di_count + 1
-
+$drawType = 0
 [CustomShaderRCI2D_SLIDER]
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
@@ -728,7 +728,7 @@ $di_count = $di_count + 1
 if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
 endif
-
+$drawType = 0
 
 [CustomShaderRCI2D_SLIDER.TEXT]
 cs-u0 = ResourceBuffer100
@@ -800,7 +800,7 @@ run = CommandListCoreFXRenderSliderText
 if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
 endif
-
+$drawType = 0
 [CustomShaderRCI2D_TEXT_LEFT]
 $texSizeX = 0
 run = CustomShaderRCI2D_TEXT
@@ -861,7 +861,7 @@ y111 = $di_count
 dispatch = 1, 1, 1
 $di_count = $di_count + 1
 $TextIsData = 0
-
+$drawType = 0
 [CustomShaderRCI2D_HOVERTEXT]
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
@@ -944,7 +944,7 @@ w105 = $rotation
 
 dispatch = 1, 1, 1
 $di_count = $di_count + 1
-
+$drawType = 0
 [CustomShaderRCI2D]
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
@@ -1023,7 +1023,7 @@ $di_count = $di_count + 1
 
 x110 = 0
 y110 = 0
-
+$drawType = 0
 [ResourceBB]
 [CustomShaderDI2D]
 ResourceBB = copy_desc bb

@@ -38,7 +38,7 @@ class RZMGameSettings(bpy.types.PropertyGroup):
             
             # Гриффоны (EFMI)
             ('ArknightsEndfield', "Arknights: Endfield", "ArknightsEndfield"),
-
+ 
             # Тестирование
             ('EMULATOR', "Emulator (No Model)", "EMULATOR"),
         ],
@@ -125,15 +125,11 @@ class RZMCustomScript(bpy.types.PropertyGroup):
     )
 
 class RZMExportSettings(bpy.types.PropertyGroup):
-    mod_name: StringProperty(
-        name="Mod Name", 
-        default="My New Mod",
-        description="Имя мода для ReadMe файла"
-    )
-    use_xxmi_path: BoolProperty(
-        name="Use XXMI Path",
+    # mod_name has been removed. Use Character (Outfit) instead.
+    use_game_path: BoolProperty(
+        name="Use Game Path",
         default=True,
-        description="Пытаться взять путь из настроек аддона XXMI Tools"
+        description="Try to take the path from the specific game tool settings (XXMI, EFMI, or WWMI)"
     )
     custom_path: StringProperty(
         name="Custom Path", 
@@ -223,6 +219,21 @@ class RZMCreditItem(bpy.types.PropertyGroup):
         default=""
     )
 
+class RZM_ContactItem(bpy.types.PropertyGroup):
+    """Single contact entry (e.g. Discord: rayvich)"""
+    contact_type: StringProperty(name="Type", default="Discord")
+    contact_value: StringProperty(name="Value", default="")
+
+class RZM_BuildProfile(bpy.types.PropertyGroup):
+    """Preset for a batch export (e.g. 'Lite Version' with only Tier0)"""
+    name: StringProperty(name="Profile Name", default="New Profile")
+    active_tiers: StringProperty(
+        name="Active Tiers", 
+        description="Comma-separated tier IDs, e.g. 'Tier0, Tier1'",
+        default="Tier0"
+    )
+    zip_output: BoolProperty(name="Zip Result", default=True)
+
 class RZMFeatureItem(bpy.types.PropertyGroup):
     """Класс для списка фичей (Features)"""
     text: StringProperty(
@@ -251,6 +262,11 @@ class RZMTierDefinition(bpy.types.PropertyGroup):
         size=3,
         default=(0.4, 0.6, 0.4),
         min=0.0, max=1.0
+    )
+    parent_tier_id: StringProperty(
+        name="Parent Tier ID",
+        description="ID of the tier this one inherits from (automatically includes its tags)",
+        default=""
     )
 
 # ─── META DATA ───────────────────────────────────────────────────────────────
@@ -298,8 +314,9 @@ class RZMMetaDataSettings(bpy.types.PropertyGroup):
     )
 
     # --- 4. AUTHORSHIP ---
+    # TODO: MARKED FOR DELETION. Always use the Global Author Name from Addon Preferences instead.
     author_name: StringProperty(
-        name="Main Author", 
+        name="Main Author (Local Override)", 
         default="UNKNOWN"
     )
     community_respect: StringProperty(
@@ -367,6 +384,52 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         default=False
     )
 
+    modifier_blacklist: StringProperty(
+        name="Modifier Blacklist",
+        description="Comma-separated list of modifiers to ignore during Complete Export",
+        default="Surface Deform, Data Transfer, Armature"
+    )
+
+    # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
+    author_name: StringProperty(
+        name="Global Author Name",
+        description="Your name used for Mod Producer and metadata by default",
+        default="UNKNOWN"
+    )
+    pre_description: StringProperty(
+        name="Global Pre-Description",
+        description="Text added BEFORE the mod lore (e.g. Greetings, Credits)",
+        default="",
+    )
+    post_description: StringProperty(
+        name="Global Post-Description",
+        description="Text added AFTER the mod lore (e.g. Links, Terms of Use)",
+        default="",
+    )
+    contacts: CollectionProperty(type=RZM_ContactItem)
+    contacts_index: IntProperty(default=0)
+
+    mod_logo_url: StringProperty(name="Mod Logo URL", default="")
+    mod_banner_url: StringProperty(name="Mod Banner URL", default="")
+    
+    default_template_path: StringProperty(
+        name="Default Template",
+        description="Default .rzmct file to use for new menus",
+        subtype='FILE_PATH',
+        default=""
+    )
+
+    # ─── BUILD PROFILES ─────────────────────────────────────────────────────
+    build_profiles: CollectionProperty(type=RZM_BuildProfile)
+    build_profiles_index: IntProperty(default=0)
+
+    batch_build_path: StringProperty(
+        name="Global Batch Build Path",
+        description="Path to central Mod Producer output (e.g. Server/Remote). If empty, siblings of the mod folder are used.",
+        subtype='DIR_PATH',
+        default=""
+    )
+
     # ─── TIER DEFINITIONS ───────────────────────────────────────────────────
     tier_definitions: CollectionProperty(
         type=RZMTierDefinition,
@@ -395,23 +458,47 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
-        column = layout.column()
-        column.prop(self, "custom_asset_library")
-        column.label(text="Icons from this folder will be loaded alongside base_icons.", icon='INFO')
-        column.separator()
-        column.prop(self, "move_to_npanel")
+        
+        # ─── 1. ARTIST PROFILE ────────────────────────────────────────────────
+        box = layout.box()
+        box.label(text="Artist Profile (Global)", icon='USER')
+        col = box.column(align=True)
+        col.prop(self, "author_name")
+        col.prop(self, "mod_logo_url")
+        col.prop(self, "mod_banner_url")
+        col.prop(self, "default_template_path")
+        
+        box.separator()
+        box.label(text="Contacts / Socials:", icon='GROUP')
+        row = box.row()
+        row.template_list("RZM_UL_Contacts", "", self, "contacts", self, "contacts_index", rows=3)
+        col_btn = row.column(align=True)
+        col_btn.operator("rzm.add_contact", text="", icon='ADD')
+        col_btn.operator("rzm.remove_contact", text="", icon='REMOVE')
 
-        column.separator()
-        column.label(text="Mod Producer — Tier Definitions:", icon='BOOKMARKS')
-        column.label(text="These are global tiers used for export filtering. Not saved in .rzm files.", icon='INFO')
+        # ─── 2. BATCH BUILD PROFILES ──────────────────────────────────────────
+        layout.separator()
+        box = layout.box()
+        box.label(text="Mod Packager: Build Profiles", icon='PACKAGE')
+        row = box.row()
+        row.template_list("RZM_UL_BuildProfiles", "", self, "build_profiles", self, "build_profiles_index", rows=3)
+        col_btn = row.column(align=True)
+        col_btn.operator("rzm.add_build_profile", text="", icon='ADD')
+        col_btn.operator("rzm.remove_build_profile", text="", icon='REMOVE')
+        
+        if self.build_profiles and 0 <= self.build_profiles_index < len(self.build_profiles):
+            profile = self.build_profiles[self.build_profiles_index]
+            sub = box.column(align=True)
+            sub.prop(profile, "name")
+            sub.prop(profile, "active_tiers")
+            sub.prop(profile, "zip_output")
 
-        row = column.row()
-        row.template_list(
-            "RZM_UL_TierDefinitions", "",
-            self, "tier_definitions",
-            self, "tier_definitions_index",
-            rows=4
-        )
+        # ─── 3. TIER DEFINITIONS ──────────────────────────────────────────────
+        layout.separator()
+        box = layout.box()
+        box.label(text="Mod Producer: Global Tier Definitions", icon='BOOKMARKS')
+        row = box.row()
+        row.template_list("RZM_UL_TierDefinitions", "", self, "tier_definitions", self, "tier_definitions_index", rows=4)
         col_btn = row.column(align=True)
         col_btn.operator("rzm.add_tier_definition", text="", icon='ADD')
         col_btn.operator("rzm.remove_tier_definition", text="", icon='REMOVE')
@@ -420,7 +507,46 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
 
         if self.tier_definitions and 0 <= self.tier_definitions_index < len(self.tier_definitions):
             active_tier = self.tier_definitions[self.tier_definitions_index]
-            box = column.box()
-            box.prop(active_tier, "tier_id", text="ID")
-            box.prop(active_tier, "display_name", text="Name")
-            box.prop(active_tier, "tier_color", text="Color")
+            item_box = box.box()
+            item_box.prop(active_tier, "tier_id", text="ID")
+            item_box.prop(active_tier, "display_name", text="Name")
+            item_box.prop(active_tier, "parent_tier_id", text="Parent ID")
+            item_box.prop(active_tier, "tier_color", text="Color")
+
+        # ─── 4. AUTO MENU CONFIG ──────────────────────────────────────────────
+        layout.separator()
+        box = layout.box()
+        box.label(text="Auto Menu Default Layout", icon='MOD_BUILD')
+        try:
+            auto_menu = context.scene.rzm.auto_menu
+            col = box.column(align=True)
+            col.prop(auto_menu, "main_pos")
+            col.prop(auto_menu, "main_size")
+            col.separator()
+            col.prop(auto_menu, "page_pos")
+            col.prop(auto_menu, "page_size")
+            row = col.row(align=True)
+            row.prop(auto_menu, "margin_x")
+            row.prop(auto_menu, "margin_y")
+            row = col.row(align=True)
+            row.prop(auto_menu, "padding_x")
+            row.prop(auto_menu, "padding_y")
+            col.separator()
+            row = col.row(align=True)
+            row.prop(auto_menu, "base_button_width", text="Btn W")
+            row.prop(auto_menu, "base_button_height", text="Btn H")
+            col.prop(auto_menu, "button_auto_icons")
+            col.prop(auto_menu, "button_rename_text")
+        except:
+            box.label(text="Scene properties not available", icon='INFO')
+
+        # ─── 5. SYSTEM SETTINGS ───────────────────────────────────────────────
+        layout.separator()
+        box = layout.box()
+        box.label(text="System Settings", icon='SETTINGS')
+        col = box.column()
+        col.prop(self, "custom_asset_library")
+        col.prop(self, "move_to_npanel")
+        col.prop(self, "modifier_blacklist")
+        col.separator()
+        col.prop(self, "batch_build_path")

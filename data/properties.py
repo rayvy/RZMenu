@@ -20,7 +20,9 @@ from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings
 )
 from .p_settings import (
-    RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition
+    RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
+    RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition,
+    RZM_ContactItem, RZM_BuildProfile
 )
 from ..operators import custom_draw_ops
 
@@ -42,6 +44,15 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     export_texture_slots: BoolProperty(name="textureSlots", default=True)
     export_toggle_swap_mode: EnumProperty(name="toggleSwapMode", items=[('None', "None", ""), ('DToggle', "DToggle", ""), ('RToggle', "RToggle", "")], default='None')
     addons: PointerProperty(type=RZMenuAddonSettings)
+
+    @property
+    def author_name_global(self):
+        from .p_settings import RZM_AddonPreferences
+        addon_name = __package__.split(".")[0]
+        prefs = bpy.context.preferences.addons.get(addon_name)
+        if prefs and prefs.preferences:
+            return prefs.preferences.author_name
+        return "UNKNOWN"
     
     conditions: CollectionProperty(type=RZMShape)
     shapes: CollectionProperty(type=RZMShape)
@@ -71,11 +82,6 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     tw_show_res_details: BoolProperty(name="Show Details", default=False)
 
 class RZModProducerSettings(bpy.types.PropertyGroup):
-    author_prefix: StringProperty(
-        name="Author Prefix",
-        description="Prefix to add (e.g., rayvich)",
-        default="rayvich"
-    )
     build_suffix: StringProperty(
         name="Build Suffix",
         description="Suffix for this build (e.g., Premium_NSFW)",
@@ -98,6 +104,8 @@ classes_to_register = [
     RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings,
     # ─ Tier system: RZMTierDefinition must be registered BEFORE RZM_AddonPreferences ─
     RZMTierDefinition,
+    RZM_ContactItem,
+    RZM_BuildProfile,
     RZM_AddonPreferences,
     RZMAutoMenuSettings, RZMenuProperties, 
     RZModProducerSettings,

@@ -268,6 +268,17 @@ class _RZBaseTextEdit(RZVisualInputMixin, QtWidgets.QPlainTextEdit):
             
         # Синхронизация состояний Mixin'а с текстовой зоной (viewport)
         if obj == self.viewport():
+            # --- FIX: FORWARD DRAG & DROP TO MAIN WIDGET ---
+            if event.type() == QtCore.QEvent.DragEnter:
+                self.dragEnterEvent(event)
+                return event.isAccepted()
+            if event.type() == QtCore.QEvent.DragMove:
+                self.dragMoveEvent(event)
+                return event.isAccepted()
+            if event.type() == QtCore.QEvent.Drop:
+                self.dropEvent(event)
+                return event.isAccepted()
+
             # Если событие связано с движением мыши — принудительно обновляем виджет
             if event.type() in (QtCore.QEvent.Enter, QtCore.QEvent.Leave, QtCore.QEvent.MouseMove):
                 self.update() # Это заставит перерисовать бордеры немедленно!
@@ -627,12 +638,21 @@ class RZFormulaInput(_RZBaseTextEdit):
         # Position preview to the left of the palette button
         self.preview_label.move(self.width() - self.btn_palette.width() - self.preview_label.width() - 10, 3)
 
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText() or event.mimeData().hasFormat("application/x-rzm-variable"):
+            print(f"[RZM] Formula-DragEnter: Accepting text='{event.mimeData().text()}'")
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
     def dropEvent(self, event):
         if not event.mimeData().hasText():
             super().dropEvent(event)
             return
             
         text = event.mimeData().text()
+        print(f"[RZM] Formula-DropEvent: Received text='{text}'")
+
         # Rayvich's Logic: Prefix handling
         prefix = ""
         clean_text = text
@@ -641,10 +661,14 @@ class RZFormulaInput(_RZBaseTextEdit):
         elif text.startswith("#"): prefix = "#"; clean_text = text[1:]
         
         if prefix:
-            new_text = prefix + clean_text.lstrip(prefix)
+            if clean_text.startswith(prefix):
+                new_text = prefix + clean_text[len(prefix):]
+            else:
+                new_text = prefix + clean_text
         else:
             new_text = clean_text
             
+        print(f"[RZM] Formula-DropEvent: Inserting '{new_text}'")
         cursor = self.cursorForPosition(event.position().toPoint())
         cursor.insertText(new_text)
         self.setTextCursor(cursor)

@@ -2,41 +2,67 @@ import bpy
 import os
 import shutil
 import re
+import zipfile
 from pathlib import Path
-from bpy.props import StringProperty
+from bpy.props import StringProperty, BoolProperty
 from bpy.types import Operator
 from .export_manager import get_target_path
 
 def parse_ini_file(ini_path, active_tiers):
+    if not os.path.exists(ini_path):
+        return
+        
     with open(ini_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
         
     out_lines = []
-    skip_mode = False
-    skip_end_tag = ""
+    skip_mode = False # Can be False, True (delete all), or "MESH_KEEP" / "MESH_DELETE"
     
-    # Pre-compile regex for [EDIT] lines
-    # Matches: filename = /SomeVar/RemainingPath.buf -> filename = RemainingPath.buf
+    # Pre-compile regex for [EDIT] lines and Mesh protected lines
     edit_regex = re.compile(r"^(.*?filename\s*=\s*)/[^/]+/(.*)$")
+    mesh_protected = re.compile(r"^\s*(draw|drawindexed|drawinstanced|\$CD_|run\s*=\s*CustomShader|Resource/|ps-t\d)", re.IGNORECASE)
+    mesh_volatile = re.compile(r"^\s*(if|elif|else|endif)", re.IGNORECASE)
     
     i = 0
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
         
-        # Are we currently skipping a block?
-        if skip_mode:
-            if stripped.startswith(";[META-INFO]") and "[END]" in stripped and "[DELETE]" in stripped:
-                # We reached the end of the block we are deleting
+        # --- MESH PROCESSING MODE ---
+        if skip_mode in ["MESH_KEEP", "MESH_DELETE"]:
+            if stripped.startswith(";[META-INFO]") and "[END]" in stripped:
                 skip_mode = False
-            # We skip this line whether it's the end tag or inner content
+                # We don't add the END tag to the final file to keep it clean
+                i += 1
+                continue
+            
+            # Filter the line
+            if mesh_volatile.match(line):
+                # Erase conditionals (if, endif, etc.)
+                pass
+            elif mesh_protected.match(line):
+                if skip_mode == "MESH_DELETE":
+                    # Deactivate: Comment out instead of deleting
+                    out_lines.append(f";{line}")
+                else:
+                    # Activate: Keep as is (unconditional)
+                    out_lines.append(line)
+            else:
+                # Other lines (comments, unrelated) - erase in mesh mode
+                pass
+                
+            i += 1
+            continue
+
+        # --- STANDARD SKIP MODE ---
+        if skip_mode is True:
+            if stripped.startswith(";[META-INFO]") and "[END]" in stripped and "[DELETE]" in stripped:
+                skip_mode = False
             i += 1
             continue
             
-        # Is this a META-INFO tag?
+        # --- TAG DETECTION ---
         if stripped.startswith(";[META-INFO]"):
-            # Extract tags [Tier1] [Tier2] etc.
-            # Find all parts in brackets
             parts = re.findall(r"\[([\w\s-]+)\]", stripped)
             
             is_start = "START" in parts
@@ -47,47 +73,54 @@ def parse_ini_file(ini_path, active_tiers):
             if "DELETE" in parts: action = "DELETE"
             elif "EDIT" in parts: action = "EDIT"
             
-            # Extract tiers. They are the parts after the entity Type and Name.
-            # Example: [START] [DELETE] [SHAPE] [MyShape] [Premium] [NSFW]
-            # Let's extract all tiers by checking which parts are defined in active_tiers.
-            # Wait, the string 'parts' contains all brackets.
-            # To be safe, we just check if ANY active tier is present in 'parts'.
-            # If active_tiers is empty, it means base build, so we compare.
-            
-            # Get the exact tier tags (we know they are at the end, but easier to use sets)
-            # Find the index of the Entity Name (SHAPE/ELEMENT/MESH)
-            # parts usually are: META-INFO, START, DELETE, SHAPE, ShapeName, Tier1, Tier2
-            # The tiers start from index 5.
             if len(parts) >= 5 and (is_start or is_mark):
-                tier_tags = parts[5:]
-                
-                # Check if at least one tier tag matches our active tiers for this build
-                has_active_tier = any(t in active_tiers for t in tier_tags)
-                
-                if not has_active_tier:
-                    if action == "DELETE" and is_start:
-                        # Skip until we find the END tag for this block
-                        skip_mode = True
-                    elif action == "EDIT" and is_mark:
-                        # We need to edit the NEXT line (or previous?)
-                        # The user template puts filename = ... right after the MARK or before?
-                        # Let's assume the MARK is right before the line we need to edit
-                        # or right after?
-                        # Wait, in the updated core.j2 I put MARK right BEFORE the filename.
-                        # So we edit the NEXT line.
-                        
-                        # Let's edit the next non-empty, non-comment line
+                if "META-TAG-VAR" in parts:
+                    # Special case for global tier indicator variables
+                    tier_id = parts[4]
+                    is_tier_active = tier_id in active_tiers
+                    if not is_tier_active:
+                        # Edit the next non-comment line to set the variable to 0
                         j = i + 1
                         while j < len(lines):
                             next_line = lines[j]
                             if next_line.strip() and not next_line.strip().startswith(";"):
-                                m = edit_regex.match(next_line)
-                                if m:
-                                    lines[j] = f"{m.group(1)}{m.group(2)}\n"
+                                lines[j] = re.sub(r"=\s*1", "= 0", next_line)
                                 break
                             j += 1
+                elif "MESH" in parts:
+                    # [MESH] Logic: Safe Delete or Flattening
+                    # Format: ;[META-INFO] [START] [DELETE] [MESH] [Name] [TierID1] [TierID2]
+                    tier_tags = parts[5:] # [Name] is usually at parts[4], tiers start at parts[5]
+                    # Actually parts[4] is the mesh name. Tiers are from parts[5].
+                    has_active_tier = any(t in active_tiers for t in tier_tags) if tier_tags else True
+                    
+                    if action == "DELETE" and is_start:
+                        if not has_active_tier:
+                            skip_mode = "MESH_DELETE"
+                        else:
+                            skip_mode = "MESH_KEEP" # Flattening
+                    # We skip the START tag itself
+                    i += 1
+                    continue
+                else:
+                    # Standard block deletion logic
+                    tier_tags = parts[5:]
+                    has_active_tier = all(t in active_tiers for t in tier_tags)
+                    
+                    if not has_active_tier:
+                        if action == "DELETE" and is_start:
+                            skip_mode = True
+                        elif action == "EDIT" and is_mark:
+                            j = i + 1
+                            while j < len(lines):
+                                next_line = lines[j]
+                                if next_line.strip() and not next_line.strip().startswith(";"):
+                                    m = edit_regex.match(next_line)
+                                    if m:
+                                        lines[j] = f"{m.group(1)}{m.group(2)}\n"
+                                    break
+                                j += 1
                             
-            # We don't add the META-INFO lines themselves to out_lines
             i += 1
             continue
             
@@ -97,135 +130,226 @@ def parse_ini_file(ini_path, active_tiers):
     with open(ini_path, 'w', encoding='utf-8') as f:
         f.writelines(out_lines)
 
-def process_directories(new_folder_path, active_tiers):
-    # Process the directories (like 0, 1, 2 = shape keys) and delete them 
-    # if they lack metadata tags that map to our active tiers.
-    # The logic here: user said 
-    # "мы смотрим какие у него мета тэги есть... Если отсутствует какой либо мета-тэг ... мы удаляем."
-    # Since META-INFO dictates tiers for shape keys, we should parse core.j2 or ini
-    # to understand which folder belongs to which shape?
-    # Actually, if we deleted the logic blocks from the INI, we don't strictly *need* 
-    # to delete the folders to make it work, but deleting the folders saves disk space!
+def process_directories(new_folder_path):
+    """
+    CLEANUP LOGIC: Blacklist-based approach to prevent data loss.
+    Deletes only 'garbage' files like .bak, .py, .exe and the legacy ReadMe.txt.
+    """
+    blacklist_ext = {'.bak', '.py', '.exe'}
+    blacklist_filenames = {'readme.txt'} # Case-insensitive check
     
-    # Wait, how do we know which '/FolderName/' corresponds to which deleted shape?
-    # The INI file had:
-    # filename = /ShapeKeyName/Meshes/...
-    # If the shape is deleted, that folder 'ShapeKeyName' can be deleted?
-    # But different components might share the same folder if they belong to the same shape key.
-    # If we parsed all lines that were DELETED or EDITED, and collected the folder names
-    # that were part of those lines, we could delete those folders?
-    # If the INI doesn't reference a directory anymore, maybe we can safely delete it?
-    # No, an easier way is to just look for referenced folders in the FINAL ini,
-    # and delete any folders in the mod directory that are NOT referenced in the final INI!
-    
-    allowed_dirs = {"Meshes", "tex", "textures", "Texture", "Resource"}
-    
-    # Find all referenced subdirectories in the final parsed INI
-    ini_path = os.path.join(new_folder_path, 'merged.ini')
-    if not os.path.exists(ini_path):
-        return
+    for root, dirs, files in os.walk(new_folder_path, topdown=False):
+        for name in files:
+            file_path = os.path.join(root, name)
+            ext = os.path.splitext(name)[1].lower()
+            if ext in blacklist_ext or name.lower() in blacklist_filenames:
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    print(f"[ModProducer] Failed to delete {file_path}: {e}")
         
-    with open(ini_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-        
-    # Extract all top-level directory names referenced in paths in ini
-    # e.g., filename = /FolderName/Meshes/...
-    # Match: filename\s*=\s*/([^/]+)/
-    referenced_folders = set()
-    for match in re.finditer(r"filename\s*=\s*/([^/\s]+)/", content):
-        referenced_folders.add(match.group(1).lower())
-        
-    # Also grab without leading slash
-    for match in re.finditer(r"filename\s*=\s*([^/\s]+)/", content):
-        referenced_folders.add(match.group(1).lower())
-        
-    # Standard allowed folders
-    referenced_folders.update(d.lower() for d in allowed_dirs)
-    referenced_folders.add("0") # Usually base is /0/ or just Meshes/
-    
-    # Now iterate the actual directories in the output folder
-    for item in os.listdir(new_folder_path):
-        item_path = os.path.join(new_folder_path, item)
-        if os.path.isdir(item_path):
-            # If this directory is not referenced in the INI, delete it!
-            if item.lower() not in referenced_folders:
-                print(f"[Mod Producer] Deleting unreferenced shape directory: {item}")
-                shutil.rmtree(item_path, ignore_errors=True)
+        # Optional: Remove empty directories created by deleting files (if any)
+        # However, we only delete specific files, so we don't prune folders unless requested.
 
-class RZM_OT_ModProducerBuild(Operator):
+class RZM_OT_ModProducerBuild(bpy.types.Operator):
+    """Perform the cleanup/edit on a copy of the mod folder"""
     bl_idname = "rzm.mod_producer_build"
-    bl_label = "Build Mod Tiers"
-    bl_description = "Generate a specific Tier Build from the selected base folder"
+    bl_label = "Build Tier Version"
+    bl_description = "Create a cleaned-up version of the mod based on active tiers"
     bl_options = {'REGISTER', 'UNDO'}
-    
+
     def execute(self, context):
-        mp = context.scene.rzm_mod_producer
-        base_folder = get_target_path(context)
+        from .tier_ops import get_prefs
+        prefs = get_prefs(context)
         
-        if not base_folder or not os.path.exists(base_folder):
-            self.report({'ERROR'}, "Central Mod Path is invalid or does not exist. Please export once or set path.")
+        base_target = get_target_path(context)
+        if not base_target:
+            self.report({'ERROR'}, "Export path not set! Please check Export Manager.")
             return {'CANCELLED'}
-            
-        base_dir = Path(base_folder)
-        original_name = base_dir.name
         
-        # Clean up original name overrides
-        clean_name = re.sub(r"(?i)^(ARCHIVED|DISABLED)", "", original_name).strip()
-        clean_name = clean_name.strip(" _-")
-        
-        # Construct new name
-        prefix = mp.author_prefix.strip()
-        if prefix and not prefix.startswith("@"):
-            prefix = "@" + prefix
-            
+        mp = context.scene.rzm_mod_producer
         suffix = mp.build_suffix.strip()
         
-        new_folder_name = clean_name
-        if prefix: new_folder_name = f"{prefix}_{new_folder_name}"
-        if suffix: new_folder_name = f"{new_folder_name}_{suffix}"
+        meta = context.scene.rzm.meta_data
+        char = getattr(meta, 'character_name', '').strip().replace(" ", "")
+        outfit = getattr(meta, 'outfit_name', '').strip().replace(" ", "")
         
-        new_folder_path = base_dir.parent / new_folder_name
-        
-        # Copy directory
-        if new_folder_path.exists():
-            self.report({'INFO'}, f"Overwriting existing build folder: {new_folder_name}")
-            shutil.rmtree(new_folder_path)
+        project_part = f"{char}+{outfit}" if (char and outfit) else (char or outfit)
+        if not project_part:
+            project_part = os.path.basename(os.path.normpath(base_target))
             
-        self.report({'INFO'}, f"Copying mod to {new_folder_name}...")
-        shutil.copytree(base_dir, new_folder_path)
+        prefix = prefs.author_name.strip() if (prefs and prefs.author_name) else "UNKNOWN"
         
+        # Sibling build: Use @ prefix as requested
+        folder_name = f"@{prefix}_{project_part}" if prefix else f"@{project_part}"
+        if suffix:
+            folder_name += f"_{suffix}"
+            
+        target_path = os.path.join(os.path.dirname(base_target), folder_name)
+        
+        if os.path.abspath(target_path) == os.path.abspath(base_target):
+            self.report({'ERROR'}, "Build path would overwrite original! Add a suffix.")
+            return {'CANCELLED'}
+
+        try:
+            if os.path.exists(target_path):
+                shutil.rmtree(target_path)
+            
+            # Clean copy: Ignore .py, .bak, and cache
+            ignore_func = shutil.ignore_patterns('*.py', '*.bak', '__pycache__')
+            shutil.copytree(base_target, target_path, ignore=ignore_func)
+        except Exception as e:
+            self.report({'ERROR'}, f"Copying failed: {e}")
+            return {'CANCELLED'}
+
         active_tiers = [t.strip() for t in mp.active_tiers.split(",") if t.strip()]
         
-        # Parse all INI files in the new directory
-        for f in new_folder_path.glob("*.ini"):
-            parse_ini_file(str(f), active_tiers)
-            
-        # Optional: Delete unused shape key folders
-        process_directories(str(new_folder_path), active_tiers)
+        processed_count = 0
+        for root, _, files in os.walk(target_path):
+            for file in files:
+                if file.lower().endswith(".ini"):
+                    ini_full = os.path.join(root, file)
+                    parse_ini_file(ini_full, active_tiers)
+                    processed_count += 1
         
-        self.report({'INFO'}, f"Successfully built {new_folder_name} with tiers: {active_tiers}")
+        process_directories(target_path)
+
+        self.report({'INFO'}, f"Build complete: '{folder_name}' ({processed_count} files processed)")
+        return {'FINISHED'}
+
+class RZM_OT_ModProducerBatchBuild(bpy.types.Operator):
+    """Build all versions defined in Build Profiles"""
+    bl_idname = "rzm.mod_producer_batch_build"
+    bl_label = "Batch Build All Versions"
+    bl_description = "Automatically build, clean and zip all versions defined in Build Profiles"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from .tier_ops import get_prefs
+        prefs = get_prefs(context)
+        if not prefs or not prefs.build_profiles:
+            self.report({'ERROR'}, "No Build Profiles defined in Addon Preferences!")
+            return {'CANCELLED'}
+        
+        target_path = get_target_path(context)
+        print(f"Mod Producer: Build starting in: {target_path}")
+        if not os.path.exists(target_path):
+            self.report({'ERROR'}, f"Path not found: {target_path}")
+            return {'CANCELLED'}
+        
+        inis = [f for f in os.listdir(target_path) if f.lower().endswith(".ini")]
+        print(f"Mod Producer: Found {len(inis)} .ini files: {inis}")
+        if not inis:
+            self.report({'WARNING'}, f"No .ini files found in {target_path}")
+            return {'CANCELLED'}
+
+        batch_log = []
+        base_dir = os.path.dirname(target_path)
+        meta = context.scene.rzm.meta_data
+        char = getattr(meta, 'character_name', '').strip()
+        outfit = getattr(meta, 'outfit_name', '').strip()
+        
+        base_name = f"{char}{outfit}".replace(" ", "")
+        if not base_name:
+            base_name = os.path.basename(os.path.normpath(target_path))
+            
+        for profile in prefs.build_profiles:
+            # Strip only OS-invalid characters, keep things like @ or spaces
+            clean_profile_id = re.sub(r'[\\/:*?"<>|]', '', profile.name).strip()
+            prefix = prefs.author_name.strip() if (prefs and prefs.author_name) else "UNKNOWN"
+            
+            # Combine formatting: Prefix_CharacterOutfit_ProfileName
+            parts = []
+            if prefix: parts.append(prefix)
+            if base_name: parts.append(base_name)
+            if clean_profile_id: parts.append(clean_profile_id)
+            
+            folder_name = "_".join(parts)
+            # Add @ prefix for standard release naming
+            if not folder_name.startswith("@"):
+                folder_name = f"@{folder_name}"
+            
+            # Check global batch path from Preferences
+            prod_root = prefs.batch_build_path.strip() if prefs.batch_build_path else ""
+            if prod_root and os.path.exists(bpy.path.abspath(prod_root)):
+                version_path = os.path.join(bpy.path.abspath(prod_root), folder_name)
+            else:
+                version_path = os.path.join(base_dir, folder_name)
+            
+            if os.path.abspath(version_path) == os.path.abspath(target_path):
+                continue
+
+            try:
+                if os.path.exists(version_path):
+                    shutil.rmtree(version_path)
+                
+                # Clean copy: Ignore .py, .bak, and cache
+                ignore_func = shutil.ignore_patterns('*.py', '*.bak', '__pycache__')
+                shutil.copytree(target_path, version_path, ignore=ignore_func)
+                
+                # --- APPLY TIER FILTERING ---
+                active_tiers = {t.strip() for t in profile.active_tiers.split(",") if t.strip()}
+                for root, _, files in os.walk(version_path):
+                    for file in files:
+                        if file.lower().endswith(".ini"):
+                            ini_full = os.path.join(root, file)
+                            parse_ini_file(ini_full, active_tiers)
+                
+                # --- PROCESS FOLDERS ---
+                process_directories(version_path)
+                
+                # --- PACKAGING ---
+                if profile.zip_output:
+                    zip_name = f"{version_path}.zip"
+                    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as z:
+                        for root, _, files in os.walk(version_path):
+                            for file in files:
+                                f_path = os.path.join(root, file)
+                                arcname = os.path.join(folder_name, os.path.relpath(f_path, version_path))
+                                z.write(f_path, arcname)
+                    shutil.rmtree(version_path)
+                    batch_log.append(f"Zipped {folder_name}.zip")
+                else:
+                    batch_log.append(f"Created {folder_name}")
+                    
+            except Exception as e:
+                msg = f"Failed profile '{profile.name}': {e}"
+                print(f"Mod Producer: {msg}")
+                self.report({'ERROR'}, msg)
+                batch_log.append(f"Failed {profile.name}")
+                continue
+
+        if not batch_log:
+            self.report({'WARNING'}, "Batch finished but no outputs were generated.")
+        else:
+            self.report({'INFO'}, f"Batch complete: {', '.join(batch_log)}")
         return {'FINISHED'}
 
 class RZM_OT_ToggleBuildTier(Operator):
     bl_idname = "rzm.toggle_build_tier"
     bl_label = "Toggle Build Tier"
     bl_options = {'INTERNAL'}
-
     tier_id: StringProperty()
-
     def execute(self, context):
         mp = context.scene.rzm_mod_producer
         active = [t.strip() for t in mp.active_tiers.split(",") if t.strip()]
-        
-        if self.tier_id in active:
-            active.remove(self.tier_id)
-        else:
-            active.append(self.tier_id)
-            
+        if self.tier_id in active: active.remove(self.tier_id)
+        else: active.append(self.tier_id)
         mp.active_tiers = ",".join(active)
+        if context.area:
+            context.area.tag_redraw()
         return {'FINISHED'}
 
 classes_to_register = [
     RZM_OT_ModProducerBuild,
+    RZM_OT_ModProducerBatchBuild,
     RZM_OT_ToggleBuildTier
 ]
+
+def register():
+    for cls in classes_to_register:
+        bpy.utils.register_class(cls)
+
+def unregister():
+    for cls in reversed(classes_to_register):
+        bpy.utils.unregister_class(cls)

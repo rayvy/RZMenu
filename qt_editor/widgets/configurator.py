@@ -153,13 +153,7 @@ class GeneralTab(BaseConfigTab):
         # --- Project Settings ---
         l_proj = self.add_section("Project Settings")
         
-        # Mod Name
-        h_mod = QtWidgets.QHBoxLayout()
-        h_mod.addWidget(RZLabel("Mod Name:"))
-        self.inp_mod_name = RZLineEdit()
-        self.inp_mod_name.editingFinished.connect(self.on_mod_name_changed)
-        h_mod.addWidget(self.inp_mod_name)
-        l_proj.addLayout(h_mod)
+        # Mod Name removed.
         
         # Canvas Size
         h_canvas = QtWidgets.QHBoxLayout()
@@ -231,8 +225,7 @@ class GeneralTab(BaseConfigTab):
         rzm = bpy.context.scene.rzm
         
         # Stateful Update
-        if self.inp_mod_name.text() != rzm.export_settings.mod_name:
-            self.inp_mod_name.setText(rzm.export_settings.mod_name)
+        # Stateful Update
             
         if self.spin_w.value() != rzm.config.canvas_size[0]:
             self.spin_w.setValue(rzm.config.canvas_size[0])
@@ -271,9 +264,7 @@ class GeneralTab(BaseConfigTab):
         
         self._block = False
 
-    def on_mod_name_changed(self):
-        if self._block: return
-        self._call_op("update_export_setting", prop_name="mod_name", val_str=self.inp_mod_name.text(), use_bool=False)
+    # on_mod_name_changed removed
 
     def on_interpolation_changed(self, value):
         if self._block: return
@@ -421,13 +412,15 @@ class ModInfoTab(BaseConfigTab):
         self.inp_char = self._add_field(l_base, "Character:", "character_name")
         self.inp_outfit = self._add_field(l_base, "Outfit:", "outfit_name")
         self.inp_ver = self._add_field(l_base, "Version:", "version_num")
-        self.inp_author = self._add_field(l_base, "Author:", "author_name")
+        self.inp_author = self._add_global_field(l_base, "Artist Name (Global):", "author_name")
 
-        # --- 2. Technical ---
-        l_tech = self.add_section("Technical")
-        # Keybind moved to General tab — kept here as info only
+        # --- 2. Technical & Description ---
+        l_tech = self.add_section("Lore & Technical")
         self.inp_req = self._add_field(l_tech, "Requirements:", "requirements")
         self.inp_respect = self._add_field(l_tech, "Credits To:", "community_respect")
+        
+        self.inp_pre_desc = self._add_global_field(l_tech, "Pre-Description (Global):", "pre_description")
+        self.inp_post_desc = self._add_global_field(l_tech, "Post-Description (Global):", "post_description")
 
         # --- 3. Main Mod Info Text ---
         l_desc = self.add_section("Mod Info Template (Exported)")
@@ -450,6 +443,15 @@ class ModInfoTab(BaseConfigTab):
         layout.addLayout(h)
         return inp
 
+    def _add_global_field(self, layout, label, prop_name):
+        h = QtWidgets.QHBoxLayout()
+        h.addWidget(RZLabel(label))
+        inp = RZLineEdit()
+        inp.editingFinished.connect(lambda: self._on_global_changed(prop_name, inp.text()))
+        h.addWidget(inp)
+        layout.addLayout(h)
+        return inp
+
     def update_ui(self):
         self._block = True
         if not bpy.context or not bpy.context.scene: return
@@ -460,9 +462,16 @@ class ModInfoTab(BaseConfigTab):
         self.inp_char.setText(meta.character_name)
         self.inp_outfit.setText(meta.outfit_name)
         self.inp_ver.setText(meta.version_num)
-        self.inp_author.setText(meta.author_name)
         self.inp_req.setText(meta.requirements)
         self.inp_respect.setText(meta.community_respect)
+        
+        # Addon Prefs (Global)
+        from ...operators.tier_ops import get_prefs
+        prefs = get_prefs(bpy.context)
+        if prefs:
+            self.inp_author.setText(prefs.author_name)
+            self.inp_pre_desc.setText(prefs.pre_description)
+            self.inp_post_desc.setText(prefs.post_description)
 
         # Editor
         self.editor.set_text_safe(config.mod_info)
@@ -482,6 +491,10 @@ class ModInfoTab(BaseConfigTab):
     def _on_meta_changed(self, prop, val, bool_mode=False):
         if self._block: return
         self._call_op("update_metadata_setting", prop_name=prop, val_str=str(val), val_bool=bool(val), use_bool=bool_mode)
+
+    def _on_global_changed(self, prop, val):
+        if self._block: return
+        self._call_op("update_global_setting", prop_name=prop, val_str=str(val))
 
     def on_mod_info_finished(self):
         if self._block: return

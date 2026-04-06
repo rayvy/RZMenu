@@ -899,11 +899,13 @@ class RZLineEdit(RZVisualInputMixin, QtWidgets.QLineEdit):
         self._originals = []
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasText():
+        if event.mimeData().hasText() or event.mimeData().hasFormat("application/x-rzm-variable"):
+            print(f"[RZM] DragEnter: Accepting text='{event.mimeData().text()}'")
             event.acceptProposedAction()
             
     def dropEvent(self, event):
         text = event.mimeData().text()
+        print(f"[RZM] DropEvent: Received text='{text}'")
         if not text: return
         
         # User logic prefix handling: $Values, @Toggles, #Shapes
@@ -915,10 +917,15 @@ class RZLineEdit(RZVisualInputMixin, QtWidgets.QLineEdit):
         
         # No duplication of prefix if one was already partially provided
         if prefix:
-            new_text = prefix + clean_text.lstrip(prefix)
+            # We use a simple slice instead of lstrip to avoid removing matching characters inside the name
+            if clean_text.startswith(prefix):
+                 new_text = prefix + clean_text[len(prefix):]
+            else:
+                 new_text = prefix + clean_text
         else:
             new_text = clean_text
             
+        print(f"[RZM] DropEvent: Inserting '{new_text}'")
         self.insert(new_text)
         self.editingFinished.emit()
         event.acceptProposedAction()

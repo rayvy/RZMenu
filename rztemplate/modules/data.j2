@@ -95,9 +95,14 @@ global $request_weight = 1
 ;ElementCpuSideParams
 global $id
 
-global $shapeCircle
-global $shapeBox
 global $shapeRoundedBox
+
+; --- TIER SYSTEM VARIABLES ---
+{% set all_definitions = scene.rzm.addons.tier_definitions if (scene and scene.rzm and scene.rzm.addons) else [] %}
+{% for t in all_definitions %}
+;[META-INFO] [MARK] [EDIT] [META-TAG-VAR] [{{ t.tier_id }}]
+global $tier_{{ utils.format_from_idiot(t.tier_id) }} = 1
+{% endfor %}
 
 global $isMainWindow
 global $isClickable
@@ -360,10 +365,13 @@ global $rayvich_back_values_w110
             {% if utils.get_cls(element)|trim == 'GRID_CONTAINER'%}
             global persist ${{element.element_name}}scroll = 0
             {% endif%}
+            ;Вот Сюда проверку на трекинг
+            {% if element.trackable or utils.get_cls(element)|trim in ['GRID_CONTAINER', 'ANCHOR'] %}
             global persist ${{element.element_name}}PositionX = {{ (element.position | default([0,0]))[0] }}
             global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
             global persist ${{element.element_name}}SizeX = {{ (element.size | default([0,0]))[0] }}
             global persist ${{element.element_name}}SizeY = {{ (element.size | default([0,0]))[1] }}
+            {% endif %}
         {% endif %}
     {% endfor %}
 {% endif %}

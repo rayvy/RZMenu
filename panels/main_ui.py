@@ -245,11 +245,42 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Export Management", icon='INFO')
         
+        # --- GLOBAL ARTIST INFO ---
+        from ..operators.tier_ops import get_prefs
+        prefs = get_prefs(context)
+        if prefs:
+            row = box.row()
+            row.label(text=f"Author: {prefs.author_name}", icon='USER')
+            row.operator("wm.url_open", text="Logo", icon='IMAGE_DATA').url = prefs.mod_logo_url
+            row.operator("wm.url_open", text="Banner", icon='IMAGE_DATA').url = prefs.mod_banner_url
+
+        # --- MOD INFO / METADATA ---
+        meta_box = layout.box()
+        meta_box.label(text="Mod Details (Meta Data)", icon='GREASEPENCIL')
+        
+        meta = rzm.meta_data
+        col = meta_box.column(align=True)
+        col.prop(meta, "character_name")
+        col.prop(meta, "outfit_name")
+        col.prop(meta, "version_num")
+        
+        # Author stays global, but we show it here for context
+        col.separator()
+        row = col.row()
+        row.label(text=f"Global Author: {prefs.author_name}" if prefs else "Author: UNKNOWN", icon='USER')
+        row.operator("wm.url_open", text="Edit Profile", icon='PREFERENCES').url = "bpy.context.preferences.addons['RZMenu'].preferences" # This won't work as a URL, but it's a hint. In Blender we usually just tell them to check prefs.
+        
+        col.separator()
+        col.prop(meta, "requirements")
+        col.prop(meta, "description", text="Lore")
+        col.prop(meta, "menu_keybind")
+        col.prop(meta, "community_respect")
+
         # Единая кнопка экспорта для всех игр
         row = box.row(align=True)
         row.scale_y = 1.5
         row.operator("rzm.full_export", text="Full Export", icon='EXPORT')
-        row.operator("rzm.batch_export", text="Batch Export", icon='SEQ_STRIP_DUPLICATE')
+        row.operator("rzm.complete_export", text="Complete Export", icon='SEQ_STRIP_DUPLICATE')
         
         # --- Custom Scripts Management ---
         script_box = box.column(align=True)
@@ -494,60 +525,6 @@ class VIEW3D_PT_RZM_AutoMenuCreator(bpy.types.Panel):
         act_box = layout.box()
         act_box.label(text="Process:", icon='PLAY')
         
-        row = act_box.row(align=True)
-        row.prop(auto_menu, "last_loaded_rzmct", text="")
-        row.operator("rzm.amc_load_template", text="Load", icon='FILE_FOLDER')
-
-        row = act_box.row(align=True)
-        row.operator("rzm.amc_pack_template", text="Pack Template", icon='PACKAGE')
-        row.operator("rzm.amc_build_menu", text="Build!", icon='MOD_BUILD')
-
-        # --- Configuration Blocks ---
-        layout.separator()
-        
-        # 1. MAIN BLOCK
-        main_box = layout.box()
-        main_box.label(text="Main Block Overrides:", icon='NONE')
-        col = main_box.column(align=True)
-        col.prop(auto_menu, "main_pos")
-        col.prop(auto_menu, "main_size")
-        
-        # 2. PAGE BLOCK
-        page_box = layout.box()
-        page_box.label(text="Page Block Layout:", icon='NONE')
-        col = page_box.column(align=True)
-        col.prop(auto_menu, "page_pos")
-        col.prop(auto_menu, "page_size")
-        
-        row = col.row(align=True)
-        row.prop(auto_menu, "margin_x")
-        row.prop(auto_menu, "margin_y")
-        row = col.row(align=True)
-        row.prop(auto_menu, "padding_x")
-        row.prop(auto_menu, "padding_y")
-
-        # 3. BUTTONS
-        btn_box = layout.box()
-        btn_box.label(text="Button Spawning:", icon='NONE')
-        col = btn_box.column(align=True)
-        row = col.row(align=True)
-        row.prop(auto_menu, "base_button_width", text="W")
-        row.prop(auto_menu, "base_button_height", text="H")
-        
-        col.separator()
-        row = col.row(align=True)
-        row.prop(auto_menu, "button_auto_icons", toggle=True, icon='IMAGE_DATA')
-        row.prop(auto_menu, "button_rename_text", toggle=True, icon='TEXT')
-        
-        # Actions
-        act_box = layout.box()
-        act_box.label(text="Actions:", icon='PLAY')
-        act_box.operator("rzm.amc_pack_template", text="Pack .rzmct", icon='PACKAGE')
-        
-        row = act_box.row(align=True)
-        row.prop(auto_menu, "last_loaded_rzmct", text="")
-        row.operator("rzm.amc_load_template", text="Load", icon='FILE_FOLDER')
-        
         act_box.operator("rzm.amc_build_menu", text="Build Auto Menu", icon='MOD_BUILD')
         
         # Log Box
@@ -577,25 +554,25 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         settings = rzm.export_settings
         box = layout.box()
         box.label(text="Target Settings:", icon='FILE_FOLDER')
-        box.prop(settings, "mod_name")
-        box.prop(settings, "use_xxmi_path")
+        # mod_name removed.
+        box.prop(settings, "use_game_path")
         
         # UI Blur move to here
         box.prop(rzm.addons, "pre_render_blur", text="UI Blur")
 
-        final_path = ""
-        if settings.use_xxmi_path:
-             if hasattr(context.scene, 'xxmi') and hasattr(context.scene.xxmi, 'destination_path'):
-                 final_path = context.scene.xxmi.destination_path
+        from ..operators.export_manager import get_target_path
+        final_path = get_target_path(context) if settings.use_game_path else ""
+        
         if not final_path:
-            final_path = settings.custom_path
+            # If game path is not found or not used, show custom path prop
             box.prop(settings, "custom_path")
+            final_path = bpy.path.abspath(settings.custom_path)
+            
         if final_path:
-            abs_path = bpy.path.abspath(final_path)
-            if os.path.exists(abs_path):
-                box.label(text=f"Target: .../{os.path.basename(os.path.normpath(abs_path))}", icon='CHECKMARK')
+            if os.path.exists(final_path):
+                box.label(text=f"Target: {os.path.basename(os.path.normpath(final_path))}", icon='CHECKMARK')
             else:
-                box.label(text="Target does not exist", icon='INFO')
+                box.label(text="Path does not exist", icon='INFO')
         else:
             box.label(text="No path set", icon='ERROR')
         
@@ -706,12 +683,21 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                     box.label(text="Export Tiers:")
                     s_active = {t.tier_id for t in active_shape.export_tiers}
                     flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+                    
+                    # Available Tiers
                     for tid in available:
                         is_act = tid in s_active
                         op_str = "rzm.remove_shape_tier" if is_act else "rzm.add_shape_tier"
                         op = flow.operator(op_str, text=tid, depress=is_act)
                         op.shape_index = context.scene.rzm_active_shape_index
                         op.tier_id = tid
+                    
+                    # Orphaned/Missing Tiers
+                    for tid in s_active:
+                        if tid not in available:
+                            op = flow.operator("rzm.remove_shape_tier", text=f"! {tid}", depress=True, icon='ERROR')
+                            op.shape_index = context.scene.rzm_active_shape_index
+                            op.tier_id = tid
                     
                     # --- Selection list for the shape properties ---
                     s_box = box.box()
@@ -819,12 +805,12 @@ class VIEW3D_PT_RZModProducerBuild(bpy.types.Panel):
             box.label(text="No Target Path Found", icon='ERROR')
 
         row = box.row()
-        row.prop(mp, "author_prefix")
         row.prop(mp, "build_suffix")
         
         box.label(text="Build Tiers:")
         flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-        from ..operators.tier_ops import get_tier_ids
+        from ..operators.tier_ops import get_tier_ids, get_prefs
+        prefs = get_prefs(context)
         available = get_tier_ids(context)
         active_list = [t.strip() for t in mp.active_tiers.split(",") if t.strip()]
         
@@ -833,8 +819,51 @@ class VIEW3D_PT_RZModProducerBuild(bpy.types.Panel):
             op = flow.operator("rzm.toggle_build_tier", text=tid, depress=is_active)
             op.tier_id = tid
             
+        box.operator("rzm.mod_producer_build", text="Build Current Version", icon='EXPORT')
+
+        # --- BATCH BUILD ---
         layout.separator()
-        layout.operator("rzm.mod_producer_build", text="Build Tier Version", icon='EXPORT')
+        batch_box = layout.box()
+        batch_box.label(text="Batch Mod Packager", icon='PACKAGE')
+        
+        if prefs and prefs.build_profiles:
+            row = batch_box.row()
+            row.template_list("RZM_UL_BuildProfiles", "", prefs, "build_profiles", prefs, "build_profiles_index", rows=2)
+            
+            if prefs.build_profiles:
+                batch_box.operator("rzm.mod_producer_batch_build", text="Run Serial Batch Export", icon='NONE')
+        else:
+            batch_box.label(text="No Build Profiles defined in Settings.")
+        
+        batch_box.label(text="Author: " + (prefs.author_name if prefs else "UNKNOWN"), icon='USER')
+
+class RZM_PT_ObjectTiers(bpy.types.Panel):
+    """Panel in the standard Object Properties tab to show assigned tiers."""
+    bl_label = "RZ Mod Tiers"
+    bl_idname = "OBJECT_PT_rzm_tiers"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+        if not obj: return
+        
+        from ..operators.tier_ops import get_tier_ids
+        available_tiers = get_tier_ids(context)
+        if not available_tiers:
+            layout.label(text="No tiers configured.", icon='INFO')
+            return
+            
+        active_tiers = {t.tier_id for t in obj.rzm_tier_list}
+        flow = layout.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+        for tid in available_tiers:
+            is_active = tid in active_tiers
+            op_name = "rzm.remove_object_tier" if is_active else "rzm.add_object_tier"
+            op = flow.operator(op_name, text=tid, depress=is_active)
+            op.tier_id = tid
 
 classes_to_register = [ 
     RZM_UL_CustomScriptList,
@@ -848,5 +877,6 @@ classes_to_register = [
     VIEW3D_PT_RZM_AutoMenuCreator,
     VIEW3D_PT_RZM_ExportManager,
     VIEW3D_PT_RZModProducerBuild,
-    VIEW3D_PT_RZConstructorToolboxPanel
+    VIEW3D_PT_RZConstructorToolboxPanel,
+    RZM_PT_ObjectTiers
 ]

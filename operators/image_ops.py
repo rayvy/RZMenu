@@ -329,21 +329,8 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             print("[RZM] Atlas is not dirty, skipping layout update.")
         
         # --- ЛОГИКА ОПРЕДЕЛЕНИЯ КОРНЕВОЙ ПАПКИ ---
-        root_path = ""
-        
-        # 1. Если стоит галочка "Использовать XXMI путь"
-        if export_settings.use_xxmi_path:
-            if hasattr(context.scene, 'xxmi') and getattr(context.scene.xxmi, 'destination_path', ''):
-                root_path = context.scene.xxmi.destination_path
-                # print(f"DEBUG: Using XXMI Path: {root_path}")
-            else:
-                self.report({'WARNING'}, "XXMI path selected but not found. Falling back...")
-        
-        # 2. Если галочка снята — используем Custom Path
-        else:
-            if export_settings.custom_path:
-                root_path = export_settings.custom_path
-                # print(f"DEBUG: Using Custom Path: {root_path}")
+        from .export_manager import get_target_path
+        root_path = get_target_path(context)
         
         # 3. Если путь всё ещё пуст (или не найден) — берем путь текущего .blend файла
         if not root_path:

@@ -71,11 +71,16 @@ class RZM_OT_EmulatorExport(bpy.types.Operator):
                     self.vertex_groups = []
                     self.data = type('obj', (object,), {'polygons': [], 'loops': []})()
 
+            from .tier_ops import get_prefs
+            prefs = get_prefs(context)
+            author = prefs.author_name if prefs else "UNKNOWN"
+            mod_title = f"{rzm.meta_data.character_name} ({rzm.meta_data.outfit_name})"
+
             render_context = {
                 'mod_file': {
-                    'name': rzm.export_settings.mod_name or "EmulatorMod",
-                    'author': rzm.meta_data.author_name or "RZMenu",
-                    'version': rzm.version,
+                    'name': mod_title,
+                    'author': author,
+                    'version': rzm.version_num if hasattr(rzm, 'version_num') else "1.0.0",
                     'game': rzm.game,
                     'components': [],
                 },
@@ -84,9 +89,9 @@ class RZM_OT_EmulatorExport(bpy.types.Operator):
                 'merged_object': DummyObject("Merged"),
                 'mod_info': type('ModInfo', (object,), {
                     'required_efmi_version': type('V', (object,), {'as_float': lambda: 1.0})(),
-                    'mod_name': rzm.export_settings.mod_name,
-                    'mod_author': rzm.meta_data.author_name,
-                    'mod_desc': "",
+                    'mod_name': mod_title,
+                    'mod_author': author,
+                    'mod_desc': rzm.meta_data.description,
                     'mod_link': "",
                     'mod_logo': Path("logo.dds")
                 })(),

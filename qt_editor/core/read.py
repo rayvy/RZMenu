@@ -79,6 +79,11 @@ def get_variable_suggestions():
 
     # 1. Elements (Standard Position/Size variables)
     for elem in rzm.elements:
+        if getattr(elem, "is_preset", False) or getattr(elem, "disable_export", False):
+            continue
+        if not getattr(elem, "trackable", False) and elem.elem_class not in ['GRID_CONTAINER', 'ANCHOR']:
+            continue
+            
         # Sanitize name for usage in variables (alphanumeric + underscore)
         safe_name = re.sub(r'[^a-zA-Z0-9_]', '', elem.element_name)
         if safe_name:
@@ -262,6 +267,7 @@ def get_selection_details(selected_ids, active_id):
             "is_tab_container": get_uniform("is_tab_container", default=False),
             "page_color": list(get_uniform("page_color") or (0.5, 0.5, 0.5, 1.0)),
             "disable_export": get_uniform("disable_export", default=False),
+            "trackable": get_uniform("trackable", default=False),
             "export_tiers": [t.tier_id for t in selection[0].export_tiers] if selection else [],
 
             
@@ -292,7 +298,7 @@ def get_selection_details(selected_ids, active_id):
             "size_formula_x": get_uniform("size_formula_x", default=""),
             "size_formula_y": get_uniform("size_formula_y", default=""),
             "rotation_is_formula": get_uniform("rotation_is_formula", default=False),
-            "rotation_formula": get_uniform("rotation_formula_x", default=""),
+            "rotation_formula": get_uniform("rotation_formula", default=""),
             "transform_is_formula": get_uniform("transform_is_formula", default=False),
             "transform_formula": get_uniform("transform_formula", default=""),
 
@@ -461,6 +467,7 @@ def get_viewport_data():
             "transform_is_formula": getattr(elem, "transform_is_formula", False),
             "transform_formula": getattr(elem, "transform_formula", ""),
             "disable_export": getattr(elem, "disable_export", False),
+            "trackable": getattr(elem, "trackable", False),
 
 
             # Visuals

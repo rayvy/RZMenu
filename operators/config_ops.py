@@ -156,12 +156,33 @@ class RZM_OT_UpdateFontSetting(bpy.types.Operator):
                 return {'FINISHED'}
         return {'CANCELLED'}
 
+class RZM_OT_UpdateGlobalSetting(bpy.types.Operator):
+    """Update a global addon preference setting."""
+    bl_idname = "rzm.update_global_setting"
+    bl_label = "Update Global Setting"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    prop_name: bpy.props.StringProperty()
+    val_str: bpy.props.StringProperty()
+    
+    def execute(self, context):
+        from .tier_ops import get_prefs
+        prefs = get_prefs(context)
+        if prefs and hasattr(prefs, self.prop_name):
+            setattr(prefs, self.prop_name, self.val_str)
+            
+            from ..qt_editor.core.signals import SIGNALS
+            SIGNALS.data_changed.emit()
+            return {'FINISHED'}
+        return {'CANCELLED'}
+
 classes_to_register = [
     RZM_OT_UpdateConfigSetting,
     RZM_OT_UpdateExportSetting,
     RZM_OT_UpdateAddonSetting,
     RZM_OT_UpdateMetadataSetting,
     RZM_OT_UpdateFontSetting,
+    RZM_OT_UpdateGlobalSetting,
 ]
 
 def register():

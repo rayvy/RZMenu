@@ -1,4 +1,4 @@
-﻿# RZMenu Image System — Task List
+# RZMenu Image System — Task List
 
 ## Фаза 1: hover_image_id + extramap + Atlas Margin ✅
 - [x] atlas_algo.py — ATLAS_MARGIN = 2, margin-aware packing
@@ -14,7 +14,7 @@
 - [x] elements_helpers.j2 — if/elif по time для animated
 - [x] emulator_ops.py + export — fromjson Jinja2 filter
 - [x] deps_manager.py — imageio + imageio-ffmpeg (optional)
-- [ ] tests/test_atlas_packer.py — unit тесты
+- [x] tests/test_atlas_packer.py — unit тесты
 
 ## Фаза 3: Dirty Flags ✅
 - [x] p_settings.py — atlas_is_dirty + atlas_last_hash в RZMExportSettings

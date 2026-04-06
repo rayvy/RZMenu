@@ -15,6 +15,15 @@
    override_offset: Если нужно вручную передать оффсет
 #}
 {% macro smart_draw(input_obj, draw_mode='simple', override_count=none, override_offset=none) %}
+    {# [RZ] MESH METADATA TAG #}
+    {%- set obj_name = input_obj.name if input_obj.name is defined else input_obj -%}
+    {%- set real_obj = none -%}
+    {%- if scene is defined and obj_name in scene.objects -%}{%- set real_obj = scene.objects[obj_name] -%}{%- endif -%}
+    
+    {%- set mesh_tags = utils.tier_tags_mesh(real_obj or input_obj, scene) -%}
+    {%- if mesh_tags -%}
+    ;[META-INFO] [START] [DELETE] [MESH] [{{ obj_name }}] {{ mesh_tags }}
+    {%- endif %}
     
     {# 1. Находим реальный объект в сцене для доступа к Custom Properties #}
     {% set obj_name = input_obj.name if input_obj.name is defined else input_obj %}
@@ -64,7 +73,7 @@
         {% endfor %}
     {% endif %}
 
-    {# 4.5. КАСТОМНЫЕ ТЕКСТУРЫ (TexSlot & TexCond) #}
+    {# 4.5. КАСТОМННЫЕ ТЕКСТУРЫ (TexSlot & TexCond) #}
     {% set found_textures = [] %}
     {% if real_obj %}
         {# 1. Сбор уникальных условий для текстур #}
@@ -144,4 +153,8 @@
         {% endfor %}
 
     {% endif %}
+    
+    {%- if mesh_tags %}
+    ;[META-INFO] [END] [DELETE] [MESH] [{{ obj_name }}] {{ mesh_tags }}
+    {%- endif %}
 {% endmacro %}

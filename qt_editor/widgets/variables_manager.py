@@ -68,18 +68,55 @@ class RZDraggableVariableList(QtWidgets.QListWidget):
     def startDrag(self, supportedActions):
         item = self.currentItem()
         if not item: return
+        
         drag = QtGui.QDrag(self)
         mime_data = QtCore.QMimeData()
         text = item.text()
         
         # Rayvich: logic to prefix without duplication
         if self.prefix:
-            clean_name = text.lstrip(self.prefix)
+            # lstrip only the actual prefix characters at the start
+            clean_name = text
+            if text.startswith(self.prefix):
+                clean_name = text[len(self.prefix):]
             text = self.prefix + clean_name
             
         mime_data.setText(text)
         # Add custom MIME type for internal RZMenu use
         mime_data.setData("application/x-rzm-variable", text.encode('utf-8'))
+        
+        # --- NEW: VISUAL INDICATION ---
+        # Create a nice floating label for the drag
+        font = QtGui.QFont("Segoe UI", 10)
+        metrics = QtGui.QFontMetrics(font)
+        padding = 10
+        rect = metrics.boundingRect(text)
+        pix_w = rect.width() + padding * 2
+        pix_h = rect.height() + padding
+        
+        pixmap = QtGui.QPixmap(pix_w, pix_h)
+        pixmap.fill(QtCore.Qt.transparent)
+        
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        # Draw rounded background
+        theme = get_current_theme()
+        bg_color = QtGui.QColor(theme.get('accent', '#5298D4'))
+        bg_color.setAlpha(200)
+        painter.setBrush(bg_color)
+        painter.setPen(QtGui.QPen(QtCore.Qt.white, 1))
+        painter.drawRoundedRect(0, 0, pix_w - 1, pix_h - 1, 4, 4)
+        
+        # Draw text
+        painter.setPen(QtCore.Qt.white)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, text)
+        painter.end()
+        
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(QtCore.QPoint(pix_w // 2, pix_h // 2))
+        # ------------------------------
         
         drag.setMimeData(mime_data)
         drag.exec_(supportedActions)
@@ -167,7 +204,8 @@ class BaseListTab(QtWidgets.QWidget):
                 item_widget.setFlags(
                     QtCore.Qt.ItemIsEditable |
                     QtCore.Qt.ItemIsEnabled |
-                    QtCore.Qt.ItemIsSelectable
+                    QtCore.Qt.ItemIsSelectable |
+                    QtCore.Qt.ItemIsDragEnabled
                 )
                 item_widget.setData(QtCore.Qt.UserRole, orig_idx)
                 if item_widget.text() != new_name:
@@ -247,14 +285,6 @@ class ValuesTab(BaseListTab):
         self.chk_force_export.clicked.connect(self.synch_force_export)
         self.props_layout.addRow("Force Export:", self.chk_force_export)
 
-        # Tier assignment — chip buttons for each configured tier
-        self.tiers_group = QtWidgets.QGroupBox("Mod Producer Tiers")
-        self.tiers_layout = QtWidgets.QHBoxLayout(self.tiers_group)
-        self.tiers_layout.setContentsMargins(4, 4, 4, 4)
-        self.tiers_layout.setSpacing(4)
-        self._tier_buttons = {}  # tier_id -> QPushButton
-        self.props_layout.addRow(self.tiers_group)
-
     def refresh(self):
         if not bpy.context: return
         data = list(enumerate(bpy.context.scene.rzm.rzm_values))
@@ -269,51 +299,49 @@ class ValuesTab(BaseListTab):
         if self.is_updating_ui: return
         self.is_updating_ui = True
         
-        item = self.list_widget.currentItem()
-        if not item:
-            self.props_group.hide()
+        try:
+            item = self.list_widget.currentItem()
+            if not item:
+                self.props_group.hide()
+                return
+                
+            orig_idx = item.data(QtCore.Qt.UserRole)
+            val = bpy.context.scene.rzm.rzm_values[orig_idx]
+            self.props_group.show()
+            
+            if self.inp_name.text() != val.value_name:
+                self.inp_name.setText(val.value_name)
+                
+            if self.inp_type.currentText() != val.value_type:
+                self.inp_type.setCurrentText(val.value_type)
+                
+            if self.inp_val_int.value() != val.int_value:
+                self.inp_val_int.setValue(val.int_value)
+                
+            if self.inp_val_float.value() != val.float_value:
+                self.inp_val_float.setValue(val.float_value)
+
+            for i in range(4):
+                if abs(self.inp_vecs[i].value() - val.vector_value[i]) > 0.0001:
+                    self.inp_vecs[i].setValue(val.vector_value[i])
+            self.inp_val_color.set_color(list(val.vector_value))
+            
+            # Visibility (Smart hide for Form Layout)
+            def set_row_visible(widget, visible):
+                label = self.props_layout.labelForField(widget)
+                if label: label.setVisible(visible)
+                widget.setVisible(visible)
+
+            set_row_visible(self.inp_val_int, val.value_type == 'INT')
+            set_row_visible(self.inp_val_float, val.value_type == 'FLOAT')
+            set_row_visible(self.inp_val_vector_widget, val.value_type == 'VECTOR')
+            
+            self.chk_force_export.blockSignals(True)
+            self.chk_force_export.setChecked(val.force_export)
+            self._update_star_style(self.chk_force_export)
+            self.chk_force_export.blockSignals(False)
+        finally:
             self.is_updating_ui = False
-            return
-            
-        orig_idx = item.data(QtCore.Qt.UserRole)
-        val = bpy.context.scene.rzm.rzm_values[orig_idx]
-        self.props_group.show()
-        
-        if self.inp_name.text() != val.value_name:
-            self.inp_name.setText(val.value_name)
-            
-        if self.inp_type.currentText() != val.value_type:
-            self.inp_type.setCurrentText(val.value_type)
-            
-        if self.inp_val_int.value() != val.int_value:
-            self.inp_val_int.setValue(val.int_value)
-            
-        if self.inp_val_float.value() != val.float_value:
-            self.inp_val_float.setValue(val.float_value)
-
-        for i in range(4):
-            if abs(self.inp_vecs[i].value() - val.vector_value[i]) > 0.0001:
-                self.inp_vecs[i].setValue(val.vector_value[i])
-        self.inp_val_color.set_color(list(val.vector_value))
-        
-        # Visibility (Smart hide for Form Layout)
-        def set_row_visible(widget, visible):
-            label = self.props_layout.labelForField(widget)
-            if label: label.setVisible(visible)
-            widget.setVisible(visible)
-
-        set_row_visible(self.inp_val_int, val.value_type == 'INT')
-        set_row_visible(self.inp_val_float, val.value_type == 'FLOAT')
-        set_row_visible(self.inp_val_vector_widget, val.value_type == 'VECTOR')
-        
-        self.chk_force_export.blockSignals(True)
-        self.chk_force_export.setChecked(val.force_export)
-        self._update_star_style(self.chk_force_export)
-        self.chk_force_export.blockSignals(False)
-
-        self._update_tier_chips(orig_idx, val)
-
-        self.is_updating_ui = False
 
     def _update_star_style(self, btn):
         t = get_current_theme()
@@ -335,79 +363,6 @@ class ValuesTab(BaseListTab):
                 font-size: 16px;
             """)
 
-    def _get_available_tiers(self):
-        """Returns list of (tier_id, color_tuple) from AddonPreferences."""
-        try:
-            if not bpy.context: return []
-            for name, addon in bpy.context.preferences.addons.items():
-                if 'RZMenu' in name or 'rzm' in name.lower():
-                    return [(t.tier_id, tuple(t.tier_color)) for t in addon.preferences.tier_definitions]
-        except Exception:
-            pass
-        return []
-
-    def _update_tier_chips(self, value_index, val):
-        """Rebuild tier chip buttons for the selected value."""
-        available = self._get_available_tiers()
-        active_ids = {t.tier_id for t in val.export_tiers}
-        existing = set(self._tier_buttons.keys())
-        available_ids = {tid for tid, _ in available}
-
-        # Remove obsolete chips
-        for tid in (existing - available_ids):
-            btn = self._tier_buttons.pop(tid)
-            self.tiers_layout.removeWidget(btn)
-            btn.deleteLater()
-
-        # Add or update chips
-        for tier_id, _ in available:
-            if tier_id not in self._tier_buttons:
-                btn = QtWidgets.QPushButton(tier_id)
-                btn.setCheckable(True)
-                btn.setFixedHeight(22)
-                btn.setCursor(QtWidgets.QSizePolicy.Policy.Expanding)
-                btn.clicked.connect(
-                    lambda checked, tid=tier_id, vidx=value_index: self._on_tier_clicked(vidx, tid, checked)
-                )
-                self.tiers_layout.addWidget(btn)
-                self._tier_buttons[tier_id] = btn
-
-        if not any(isinstance(self.tiers_layout.itemAt(i), QtWidgets.QSpacerItem)
-                   for i in range(self.tiers_layout.count())):
-            self.tiers_layout.addStretch()
-
-        t = get_current_theme()
-        for tier_id, btn in self._tier_buttons.items():
-            is_active = tier_id in active_ids
-            btn.blockSignals(True)
-            btn.setChecked(is_active)
-            btn.blockSignals(False)
-            # Reconnect with updated value_index
-            try:
-                btn.clicked.disconnect()
-            except Exception:
-                pass
-            btn.clicked.connect(
-                lambda checked, tid=tier_id, vidx=value_index: self._on_tier_clicked(vidx, tid, checked)
-            )
-            if is_active:
-                btn.setStyleSheet(
-                    "QPushButton { background: #1a6ea8; color: #fff; border: 1px solid #3b9de0; "
-                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; font-weight: bold; }"
-                )
-            else:
-                btn.setStyleSheet(
-                    f"QPushButton {{ background: transparent; color: {t.get('text_dark', '#888')}; "
-                    f"border: 1px solid {t.get('border_main', '#555')}; "
-                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; }"
-                )
-
-    def _on_tier_clicked(self, value_index, tier_id, checked):
-        if self.is_updating_ui: return
-        if checked:
-            bpy.ops.rzm.add_value_tier(value_index=value_index, tier_id=tier_id)
-        else:
-            bpy.ops.rzm.remove_value_tier(value_index=value_index, tier_id=tier_id)
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return
@@ -528,29 +483,29 @@ class TogglesTab(BaseListTab):
         if self.is_updating_ui: return
         self.is_updating_ui = True
         
-        item = self.list_widget.currentItem()
-        if not item:
-            self.props_group.hide()
+        try:
+            item = self.list_widget.currentItem()
+            if not item:
+                self.props_group.hide()
+                return
+                
+            orig_idx = item.data(QtCore.Qt.UserRole)
+            t = bpy.context.scene.rzm.toggle_definitions[orig_idx]
+            self.props_group.show()
+            
+            if self.inp_name.text() != t.toggle_name:
+                self.inp_name.setText(t.toggle_name)
+            if self.inp_len.value() != t.toggle_length:
+                self.inp_len.setValue(t.toggle_length)
+            if self.inp_start_idx.value() != t.toggle_start_index:
+                self.inp_start_idx.setValue(t.toggle_start_index)
+                
+            self.chk_force_export.blockSignals(True)
+            self.chk_force_export.setChecked(t.force_export)
+            self._update_star_style(self.chk_force_export)
+            self.chk_force_export.blockSignals(False)
+        finally:
             self.is_updating_ui = False
-            return
-            
-        orig_idx = item.data(QtCore.Qt.UserRole)
-        t = bpy.context.scene.rzm.toggle_definitions[orig_idx]
-        self.props_group.show()
-        
-        if self.inp_name.text() != t.toggle_name:
-            self.inp_name.setText(t.toggle_name)
-        if self.inp_len.value() != t.toggle_length:
-            self.inp_len.setValue(t.toggle_length)
-        if self.inp_start_idx.value() != t.toggle_start_index:
-            self.inp_start_idx.setValue(t.toggle_start_index)
-            
-        self.chk_force_export.blockSignals(True)
-        self.chk_force_export.setChecked(t.force_export)
-        self._update_star_style(self.chk_force_export)
-        self.chk_force_export.blockSignals(False)
-
-        self.is_updating_ui = False
 
     def _update_star_style(self, btn):
         t = get_current_theme()
@@ -719,34 +674,35 @@ class ShapesTab(BaseListTab):
         if self.is_updating_ui: return
         self.is_updating_ui = True
         
-        item = self.list_widget.currentItem()
-        if not item:
-            self.props_group.hide()
-            self.is_updating_ui = False
-            return
+        try:
+            item = self.list_widget.currentItem()
+            if not item:
+                self.props_group.hide()
+                return
+                
+            orig_idx = item.data(QtCore.Qt.UserRole)
+            shape = bpy.context.scene.rzm.shapes[orig_idx]
+            self.props_group.show()
             
-        orig_idx = item.data(QtCore.Qt.UserRole)
-        shape = bpy.context.scene.rzm.shapes[orig_idx]
-        self.props_group.show()
-        
-        if self.inp_name.text() != shape.shape_name:
-            self.inp_name.setText(shape.shape_name)
-        if self.inp_type.currentText() != shape.shape_type:
-            self.inp_type.setCurrentText(shape.shape_type)
-        if self.inp_cond.text() != shape.anim_condition:
-            self.inp_cond.setText(shape.anim_condition)
-        if self.chk_disable_export.isChecked() != shape.disable_export:
-            self.chk_disable_export.setChecked(shape.disable_export)
+            if self.inp_name.text() != shape.shape_name:
+                self.inp_name.setText(shape.shape_name)
+            if self.inp_type.currentText() != shape.shape_type:
+                self.inp_type.setCurrentText(shape.shape_type)
+            if self.inp_cond.text() != shape.anim_condition:
+                self.inp_cond.setText(shape.anim_condition)
+            if self.chk_disable_export.isChecked() != shape.disable_export:
+                self.chk_disable_export.setChecked(shape.disable_export)
+                
+            self.chk_force_export.blockSignals(True)
+            self.chk_force_export.setChecked(shape.force_export)
+            self._update_star_style(self.chk_force_export)
+            self.chk_force_export.blockSignals(False)
             
-        self.chk_force_export.blockSignals(True)
-        self.chk_force_export.setChecked(shape.force_export)
-        self._update_star_style(self.chk_force_export)
-        self.chk_force_export.blockSignals(False)
-        
-        self._update_tier_chips(orig_idx, shape)
+            self._update_tier_chips(orig_idx, shape)
 
-        self.refresh_keys_list(shape)
-        self.is_updating_ui = False
+            self.refresh_keys_list(shape)
+        finally:
+            self.is_updating_ui = False
 
     def _update_star_style(self, btn):
         t = get_current_theme()
@@ -835,12 +791,27 @@ class ShapesTab(BaseListTab):
                     "border-radius: 3px; padding: 1px 8px; font-size: 11px; }"
                 )
 
-    def _on_tier_clicked(self, shape_index, tier_id, checked):
+    def _on_tier_clicked(self, value_index, tier_id, checked):
         if self.is_updating_ui: return
         if checked:
-            bpy.ops.rzm.add_shape_tier(shape_index=shape_index, tier_id=tier_id)
+            bpy.ops.rzm.add_shape_tier(shape_index=value_index, tier_id=tier_id)
         else:
-            bpy.ops.rzm.remove_shape_tier(shape_index=shape_index, tier_id=tier_id)
+            bpy.ops.rzm.remove_shape_tier(shape_index=value_index, tier_id=tier_id)
+            
+        btn = self._tier_buttons.get(tier_id)
+        if btn:
+            t = get_current_theme()
+            if checked:
+                btn.setStyleSheet(
+                    "QPushButton { background: #1a6ea8; color: #fff; border: 1px solid #3b9de0; "
+                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; font-weight: bold; }"
+                )
+            else:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background: transparent; color: {t.get('text_dark', '#888')}; "
+                    f"border: 1px solid {t.get('border_main', '#555')}; "
+                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; }"
+                )
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return

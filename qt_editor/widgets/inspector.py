@@ -1266,6 +1266,7 @@ class RZMInspectorPanel(RZEditorPanel):
         
         self.chk_main_window = self._add_row(layout, "", RZCheckBox("Is Main Window"), 'is_main_window')
         self.chk_disable_export = self._add_row(layout, "", RZCheckBox("Disable Export"), 'disable_export')
+        self.chk_trackable = self._add_row(layout, "", RZCheckBox("Trackable"), 'trackable')
         
         self.layout_props.addWidget(self.grp_ident)
 
@@ -1680,7 +1681,6 @@ class RZMInspectorPanel(RZEditorPanel):
                 print(f"[INSPECTOR] Blocking standard update for '{key}' because it contains '...' but no pattern mode active.")
                 return
 
-            print(f"[INSPECTOR] Standard update for '{key}': {val}")
             if is_pattern_edit:
                 return
 
@@ -1762,6 +1762,7 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'spin_priority'): self.spin_priority.setValue(props.get('priority', 0))
             if hasattr(self, 'chk_main_window'): self.chk_main_window.setChecked(props.get('is_main_window') is True)
             if hasattr(self, 'chk_disable_export'): self.chk_disable_export.setChecked(props.get('disable_export') is True)
+            if hasattr(self, 'chk_trackable'): self.chk_trackable.setChecked(props.get('trackable') is True)
 
             class_type = props.get('class_type')
             if hasattr(self, 'cb_class'):

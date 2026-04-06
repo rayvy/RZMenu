@@ -126,6 +126,12 @@ Local $current_sizeY
             {{ handle_button_logic(element, parent_element, mod_file,scene) }}
     {% endif %}
     {{generate_hovertext(element)}}
+    {% if element.trackable or utils.get_cls(element)|trim in ['GRID_CONTAINER', 'ANCHOR'] %}
+    ${{element.element_name}}PositionX = $PositionX
+    ${{element.element_name}}PositionY = $PositionY
+    ${{element.element_name}}SizeX = $SizeX
+    ${{element.element_name}}SizeY = $SizeY
+    {% endif %}
     $P_PX = $PositionX
     $P_PY = $PositionY
     $P_SX = $SizeX
@@ -145,8 +151,8 @@ Local $current_sizeY
     z23 = $clickInterpolate
     {% endif %}
     {{generate_presets(element,mod_file,scene)}}
-    ;Helpers
-    {{generate_helpers(element,mod_file,scene)}}
+    ;Helpers (Obsolete - use Presets instead)
+    ;{{generate_helpers(element,mod_file,scene)}}
     ;Childs
     z23 = 0
     w23 = 0
