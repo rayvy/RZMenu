@@ -66,22 +66,22 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
                     except ValueError:
                         parsed_id = -1
 
-                # If no prefix, we still load it!
+                # Check if it exists by ID
+                if parsed_id != -1 and parsed_id in existing_base_ids:
+                    print(f"[IconsDebug] Skipping '{filename}': ID {parsed_id} already loaded.")
+                    continue
+
+                # Check if it exists by Display Name
+                if any(img.display_name == display_name for img in rzm_images if img.source_type == 'BASE'):
+                    print(f"[IconsDebug] Skipping '{filename}': Display name already exists.")
+                    continue
+
+                # Generate a new ID if needed
                 if parsed_id == -1:
-                    # Check if an image with this name is already in the library to avoid duplicates
-                    if any(img.display_name == display_name for img in rzm_images if img.source_type == 'BASE'):
-                        print(f"[IconsDebug] Skipping '{filename}': Display name already exists.")
-                        continue
-                    
-                    # Generate a new ID
                     from ..core.utils import get_next_image_id
                     parsed_id = get_next_image_id(rzm_images)
                     print(f"[IconsDebug] Auto-generated ID {parsed_id} for '{display_name}'")
 
-                if parsed_id in existing_base_ids:
-                    print(f"[IconsDebug] Skipping '{filename}': ID {parsed_id} already loaded.")
-                    continue
-                
                 try:
                     filepath = os.path.join(assets_dir, filename)
                     bl_image = bpy.data.images.load(filepath)
@@ -96,7 +96,8 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
                     existing_base_ids.add(parsed_id)
                     print(f"[IconsDebug] Successfully loaded: {filename} as ID {parsed_id}")
                 except Exception as e:
-                    print(f"[IconsDebug] Error loading icon {filename}: {e}")
+                    import traceback
+                    print(f"[IconsDebug] Error loading icon {filename}: {e}\n{traceback.format_exc()}")
 
         self.report({'INFO'}, f"Loaded {loaded_count} icons from {len(scan_dirs)} source(s).")
         return {'FINISHED'}
