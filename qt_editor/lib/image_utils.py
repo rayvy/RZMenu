@@ -14,10 +14,12 @@ _blender_lock = QtCore.QMutex() # Serialize Blender API calls from threads
 
 
 def get_mod_base_path():
-    """Returns the custom path from export settings."""
+    """Returns the export path based on game tool context (XXMI/EFMI/WWMI) or custom path."""
     try:
-        return bpy.context.scene.rzm.export_settings.custom_path
-    except:
+        from ...operators.export_manager import get_target_path
+        return get_target_path(bpy.context)
+    except Exception as e:
+        print(f"RZMenu Error: Failed to resolve mod base path: {e}")
         return ""
 
 def scan_textures(base_path, subfolder="Textures", recursive=False):

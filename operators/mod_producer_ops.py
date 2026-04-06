@@ -174,7 +174,7 @@ class RZM_OT_ModProducerBuild(bpy.types.Operator):
         char = getattr(meta, 'character_name', '').strip().replace(" ", "")
         outfit = getattr(meta, 'outfit_name', '').strip().replace(" ", "")
         
-        project_part = f"{char}+{outfit}" if (char and outfit) else (char or outfit)
+        project_part = f"{char}_{outfit}" if (char and outfit) else (char or outfit)
         if not project_part:
             project_part = os.path.basename(os.path.normpath(base_target))
             
@@ -185,7 +185,9 @@ class RZM_OT_ModProducerBuild(bpy.types.Operator):
         if suffix:
             folder_name += f"_{suffix}"
             
-        target_path = os.path.join(os.path.dirname(base_target), folder_name)
+        # Use Path.parent to avoid "inside" issues with trailing slashes
+        base_dir = Path(base_target).parent
+        target_path = str(base_dir / folder_name)
         
         if os.path.abspath(target_path) == os.path.abspath(base_target):
             self.report({'ERROR'}, "Build path would overwrite original! Add a suffix.")
@@ -277,6 +279,12 @@ class RZM_OT_ModProducerBatchBuild(bpy.types.Operator):
                 version_path = os.path.join(base_dir, folder_name)
             
             if os.path.abspath(version_path) == os.path.abspath(target_path):
+                continue
+            
+            # --- NESTING PROTECTION (Hang Prevention) ---
+            # If version_path is inside target_path, skip to avoid infinite recursion
+            if os.path.abspath(version_path).startswith(os.path.abspath(target_path) + os.sep):
+                self.report({'WARNING'}, f"Skipping nested build path: {version_path}")
                 continue
 
             try:

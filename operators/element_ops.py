@@ -410,6 +410,51 @@ class RZM_OT_DistributeElements(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class RZM_OT_SwapElements(bpy.types.Operator):
+    """Swap positions of exactly two selected UI elements in the viewport."""
+    bl_idname = "rzm.swap_elements"
+    bl_label = "Swap Positions"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        # We need exactly 2 selected objects in the viewport
+        return len(context.selected_objects) == 2
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        objs = context.selected_objects
+        
+        # Helper to find an element from a Blender object name
+        def find_element(obj):
+            # Try to match object name with element name
+            # RZMenu elements are typically synchronized with objects of the same name
+            return next((e for e in rzm.elements if e.element_name == obj.name), None)
+
+        e1 = find_element(objs[0])
+        e2 = find_element(objs[1])
+
+        if not e1 or not e2:
+            self.report({'ERROR'}, "Selected objects are not recognized as RZMenu elements.")
+            return {'CANCELLED'}
+
+        # SWAP POSITIONS
+        temp_x, temp_y = e1.position[0], e1.position[1]
+        e1.position[0], e1.position[1] = e2.position[0], e2.position[1]
+        e2.position[0], e2.position[1] = temp_x, temp_y
+
+        self.report({'INFO'}, f"Swapped positions: {e1.element_name} <-> {e2.element_name}")
+        
+        # Trigger UI update
+        try:
+            from ..qt_editor.core.signals import SIGNALS
+            SIGNALS.structure_changed.emit()
+        except:
+            pass
+            
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_AddElement,
     RZM_OT_RemoveElement,
@@ -419,5 +464,6 @@ classes_to_register = [
     RZM_OT_MoveElementDown,
     RZM_OT_SetElementPosition,
     RZM_OT_UpdateElementID,
-    RZM_OT_DistributeElements
+    RZM_OT_DistributeElements,
+    RZM_OT_SwapElements
 ]

@@ -164,6 +164,27 @@ def align_elements(target_ids, mode):
     finally:
         signals.IS_UPDATING_FROM_QT = False
 
+def swap_elements(target_ids):
+    """Swap positions of exactly two elements."""
+    if len(target_ids) != 2: return
+    signals.IS_UPDATING_FROM_QT = True
+    try:
+        elements = bpy.context.scene.rzm.elements
+        e1 = next((e for e in elements if e.id == target_ids[0]), None)
+        e2 = next((e for e in elements if e.id == target_ids[1]), None)
+        if e1 and e2:
+            # Atomic swap
+            p1 = list(e1.position)
+            p2 = list(e2.position)
+            e1.position = p2
+            e2.position = p1
+
+            blender_bridge.safe_undo_push("RZM: Swap Positions")
+            signals.SIGNALS.transform_changed.emit()
+            signals.SIGNALS.data_changed.emit()
+    finally:
+        signals.IS_UPDATING_FROM_QT = False
+
 def distribute_elements(target_ids, mode):
     """
     Distribute elements using the Blender operator.

@@ -1821,6 +1821,20 @@ class RZViewportView(QtWidgets.QGraphicsView):
             btn.clicked.connect(lambda checked=False, m=mode: run_align(m))
             layout.addWidget(btn)
 
+        # Swap Tool
+        layout.addSpacing(4)
+        v_line_swap = QtWidgets.QFrame(); v_line_swap.setFrameShape(QtWidgets.QFrame.VLine); v_line_swap.setStyleSheet("color: rgba(255,255,255,20)"); layout.addWidget(v_line_swap)
+        layout.addSpacing(4)
+        
+        btn_swap = QtWidgets.QPushButton("⇌")
+        btn_swap.setToolTip("Swap Positions (Select exactly 2)")
+        def run_swap():
+            ctx = RZContextManager.get_instance().get_snapshot()
+            if len(ctx.selected_ids) == 2:
+                core.swap_elements(list(ctx.selected_ids))
+        btn_swap.clicked.connect(run_swap)
+        layout.addWidget(btn_swap)
+
         # Distribute (Relax) Toolbar
         def run_distribute(mode):
             ctx = RZContextManager.get_instance().get_snapshot()

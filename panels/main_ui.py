@@ -631,6 +631,14 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
         
         layout.separator(factor=2.0)
         
+        # 1.5 VIEWPORT UTILS
+        v_box = layout.box()
+        row = v_box.row(align=True)
+        row.label(text="Viewport Utils:", icon='TRANSFORM_ORIGINS')
+        row.operator("rzm.swap_elements", text="Swap Positions", icon='UV_SYNC_SELECT')
+
+        layout.separator(factor=1.0)
+        
         # 2. PROJECT CONFIGURATION AT BOTTOM
         box = layout.box()
         box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
