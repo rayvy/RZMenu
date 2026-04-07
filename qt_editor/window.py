@@ -16,8 +16,10 @@ from .systems import input_manager
 from .systems.layout_manager import LayoutManager
 from .widgets import preferences
 from .widgets import (
-    outliner, inspector, viewport, asset_browser, 
-    variables_panel, configurator_panel, texworks_panel, texworks, PanelFactory
+    outliner, inspector, viewport, asset_browser,
+    variables_panel, configurator_panel, texworks_panel, texworks,
+    run_links_editor_panel,
+    PanelFactory
 )
 from .widgets.area import RZAreaWidget
 from .context import RZContextManager
@@ -111,6 +113,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         PanelFactory.register(configurator_panel.RZMConfiguratorPanel)
         PanelFactory.register(texworks_panel.RZMTexWorksPanel)
         PanelFactory.register(texworks.RZMTexWorksPanel)
+        PanelFactory.register(run_links_editor_panel.RZMRunLinksPanel)
 
     def _trigger_initial_refresh(self):
         SIGNALS.structure_changed.emit()

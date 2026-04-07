@@ -668,6 +668,19 @@ endif
         {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
         {% if not element.is_preset %}
         $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dtCustom + 0.0069)
+        {% if target_var.target_var_is_toggle == 1%}
+        if $ValueX24Interpolated > {{ target_var.toggle_length - 1 }}
+        ${{ target_var }} = {{ target_var.toggle_length - 1 }}
+        elif $ValueX24Interpolated < 0
+        $ValueX24Interpolated = 0
+        endif
+        {% else %}
+        if $ValueX24Interpolated < {{ target_var.value_min | default(0.0) | float }}
+        $ValueX24Interpolated = {{ target_var.value_min | default(0.0) | float }}
+        elif $ValueX24Interpolated > {{ target_var.value_max | default(0.0) | float }}
+        $ValueX24Interpolated = {{ target_var.value_max | default(0.0) | float }}
+        endif
+        {% endif %}
         {% endif %}
 
         {# Отображение цифрового значения на кнопке #}
@@ -705,6 +718,15 @@ endif
             {% if element.value_link_is_formula %}
                 {{ element.value_link_formula }}
             {% endif %}
+            
+            {# 3. ПРИВЯЗКА RUN LINK #}
+            {% if element.run_link_id is defined and element.run_link_id != -1 %}
+                {% set target_rl = scene.rzm.run_links | selectattr('id', 'equalto', element.run_link_id) | first %}
+                {% if target_rl and target_rl.name %}
+            run = CommandList{{ target_rl.name }}
+                {% endif %}
+            {% endif %}
+            
             $clickInterpolate = 1
         endif
     
@@ -721,7 +743,6 @@ endif
                 endif
             endif
         {% endif %}
-
     {% else %}
         {# --- Логика для простой кнопки БЕЗ value_link --- #}
         if $id == $clickTriggerID
@@ -731,6 +752,15 @@ endif
             {% if element.value_link_is_formula %}
                 {{ element.value_link_formula }}
             {% endif %}
+            
+            {# ПРИВЯЗКА RUN LINK #}
+            {% if element.run_link_id is defined and element.run_link_id != -1 %}
+                {% set target_rl = scene.rzm.run_links | selectattr('id', 'equalto', element.run_link_id) | first %}
+                {% if target_rl and target_rl.name %}
+            run = CommandList{{ target_rl.name }}
+                {% endif %}
+            {% endif %}
+            
             $clickInterpolate = 1
         endif
     {% endif %}
@@ -801,6 +831,12 @@ endif
     endif
 
     run = CommandListCoreFNHandleHold
+    $ValueX24Interpolated = $ValueX24Interpolated + (${{utils.format_var(first_link.value_name,parent_element, scene)}} - $ValueX24Interpolated) * ($dtCustom + 0.0069)
+    if $ValueX24Interpolated < {{ (first_link.value_min| default(0.0) | float) }}
+    $ValueX24Interpolated = {{ (first_link.value_min| default(0.0) | float) }}
+    elif $ValueX24Interpolated > {{ (first_link.value_max| default(0.0) | float) }}
+    $ValueX24Interpolated = {{ (first_link.value_min| default(0.0) | float) }}
+    endif
 {% endif %}
 {% endmacro %}
 

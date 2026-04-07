@@ -1605,16 +1605,64 @@ class RZMInspectorPanel(RZEditorPanel):
             self.edit_hover_fx = self._add_row(layout, "", RZCodeTextEdit(), 'hover_event_formula')
             self.edit_hover_fx.setPlaceholderText("On hover..."); self.edit_hover_fx.setMinimumHeight(120)
             self.chk_hover_event.toggled.connect(self.edit_hover_fx.setVisible)
-            
+
             h_clk = QtWidgets.QHBoxLayout(); h_clk.addWidget(RZLabel("Click Event")); h_clk.addStretch()
             self.chk_click_event = self._add_row(h_clk, "", RZCheckBox("Enable"), 'click_event_enabled')
             layout.addLayout(h_clk)
             self.edit_click_fx = self._add_row(layout, "", RZCodeTextEdit(), 'click_event_formula')
             self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(120)
             self.chk_click_event.toggled.connect(self.edit_click_fx.setVisible)
-            
+
+            # ── Run Link binding ────────────────────────────────────────────────
+            sep = QtWidgets.QFrame(); sep.setFrameShape(QtWidgets.QFrame.HLine); sep.setFrameShadow(QtWidgets.QFrame.Sunken)
+            layout.addWidget(sep)
+            h_rl = QtWidgets.QHBoxLayout()
+            h_rl.addWidget(RZLabel("Run Link:"))
+            self.cb_run_link = RZComboBox()
+            self.cb_run_link.setToolTip(
+                "Bind a RunLink (CommandList) to this element.\n"
+                "When activated, 'run = <RunLink name>' is injected into the element click handler.\n"
+                "Select (none) to remove binding."
+            )
+            self.cb_run_link.currentIndexChanged.connect(self._on_run_link_changed)
+            h_rl.addWidget(self.cb_run_link, 1)
+            layout.addLayout(h_rl)
+            # ID badge — shows the stable integer ID of the selected RunLink
+            self.lbl_rl_id = RZLabel("")
+            self.lbl_rl_id.setStyleSheet(
+                "color: #7ec8e3; font-size: 10px; font-style: italic; padding-left: 4px;"
+            )
+            layout.addWidget(self.lbl_rl_id)
+
             self.layout_props.addWidget(self.grp_events)
         except Exception as e: print(f"[INSPECTOR] Error Events: {e}")
+
+    def _refresh_run_link_combo(self):
+        """Re-populate the Run Link combo from scene.rzm.run_links."""
+        self.cb_run_link.blockSignals(True)
+        self.cb_run_link.clear()
+        self.cb_run_link.addItem("(none)", -1)           # userData = -1 → no link
+        if bpy and bpy.context and hasattr(bpy.context, 'scene') and bpy.context.scene:
+            rzm = bpy.context.scene.rzm
+            for rl in rzm.run_links:
+                self.cb_run_link.addItem(f"#{rl.id}  {rl.name}", rl.id)
+        self.cb_run_link.blockSignals(False)
+
+    def _on_run_link_changed(self, idx):
+        if self._block_signals:
+            return
+        rl_id = self.cb_run_link.itemData(idx)
+        if rl_id is None:
+            return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if not ctx.selected_ids:
+            return
+        core.update_property_multi(ctx.selected_ids, 'run_link_id', int(rl_id))
+        # Update badge
+        if rl_id >= 0:
+            self.lbl_rl_id.setText(f"Stable ID: {rl_id}")
+        else:
+            self.lbl_rl_id.setText("")
 
     def _init_special_ui(self):
         try:
@@ -1980,7 +2028,20 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'edit_click_fx'):
                 self.edit_click_fx.set_text_silent(props.get('click_event_formula', ''))
                 self.edit_click_fx.setVisible(hasattr(self, 'chk_click_event') and self.chk_click_event.isChecked())
-            
+
+            # ── Run Link binding ────────────────────────────────────────────────
+            if hasattr(self, 'cb_run_link'):
+                self._refresh_run_link_combo()
+                current_rl_id = props.get('run_link_id', -1)
+                if current_rl_id is None:
+                    current_rl_id = -1
+                found_idx = self.cb_run_link.findData(int(current_rl_id))
+                self.cb_run_link.blockSignals(True)
+                self.cb_run_link.setCurrentIndex(found_idx if found_idx >= 0 else 0)
+                self.cb_run_link.blockSignals(False)
+                if hasattr(self, 'lbl_rl_id'):
+                    self.lbl_rl_id.setText(f"Stable ID: {current_rl_id}" if current_rl_id >= 0 else "")
+
             if hasattr(self, 'list_fx'): self.list_fx.update_data(props.get('fx', []))
 
             # --- Special Options (Button/Slider) ---

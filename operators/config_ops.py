@@ -176,10 +176,29 @@ class RZM_OT_UpdateGlobalSetting(bpy.types.Operator):
             return {'FINISHED'}
         return {'CANCELLED'}
 
+class RZM_OT_UpdateAddonSettingInt(bpy.types.Operator):
+    """Update an addon integer property (e.g. in_game_profile_count)."""
+    bl_idname = "rzm.update_addon_setting_int"
+    bl_label = "Update Addon Setting (Int)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    prop_name: bpy.props.StringProperty()
+    val_int: bpy.props.IntProperty()
+
+    def execute(self, context):
+        addons = context.scene.rzm.addons
+        if hasattr(addons, self.prop_name):
+            setattr(addons, self.prop_name, self.val_int)
+            from ..qt_editor.core.signals import SIGNALS
+            SIGNALS.data_changed.emit()
+            return {'FINISHED'}
+        return {'CANCELLED'}
+
 classes_to_register = [
     RZM_OT_UpdateConfigSetting,
     RZM_OT_UpdateExportSetting,
     RZM_OT_UpdateAddonSetting,
+    RZM_OT_UpdateAddonSettingInt,
     RZM_OT_UpdateMetadataSetting,
     RZM_OT_UpdateFontSetting,
     RZM_OT_UpdateGlobalSetting,

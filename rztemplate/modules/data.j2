@@ -416,3 +416,108 @@ global $rayvich_back_values_w110
         {% endif %}
     {% endfor %}
 {% endmacro%}
+
+{% macro generate_profiles(mod_file, scene) %}
+{%- if scene.rzm and scene.rzm.addons and scene.rzm.addons.use_in_game_profiles %}
+{% set profile_count = scene.rzm.addons.in_game_profile_count | default(1) | int %}
+; ─── IN-GAME PROFILES ───────────────────────────────────────────────────────
+[Constants]
+; Active profile index (0-based). Persist so the game remembers last selection.
+global persist $RZProfile = 0
+
+; ── Per-Variable profile slots ───────────────────────────────────────────────
+; Variables
+{% if scene.rzm.rzm_values %}
+{% for value in scene.rzm.rzm_values if value.value_name %}
+{% for n in range(profile_count) %}
+global persist $RZProfile_{{ n }}_{{ utils.format_var(value.value_name) | replace('$','') }} = 0
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+; Toggles
+{% if scene.rzm.toggle_definitions %}
+{% for toggle in scene.rzm.toggle_definitions if toggle.toggle_name %}
+{% for n in range(profile_count) %}
+global persist $RZProfile_{{ n }}_{{ utils.format_var(toggle.toggle_name) | replace('$','') }} = {{ toggle.toggle_start_index | default(0) | int }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+; Shapes
+{% if scene.rzm.shapes %}
+{% for shape in scene.rzm.shapes if shape.shape_name %}
+{% for n in range(profile_count) %}
+global persist $RZProfile_{{ n }}_{{ utils.format_var(shape.shape_name) | replace('$','') }} = 0
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+; ── Save / Load CommandLists ──────────────────────────────────────────────────
+[CommandListRZSaveProfile]
+; Called when user wants to save current variable state into the active profile slot.
+{% if scene.rzm.rzm_values %}
+{% for value in scene.rzm.rzm_values if value.value_name %}
+{% set vn = utils.format_var(value.value_name) | replace('$','') %}
+{% for n in range(profile_count) %}
+if $RZProfile == {{ n }}
+    $RZProfile_{{ n }}_{{ vn }} = {{ utils.format_var(value.value_name) }}
+endif
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% if scene.rzm.toggle_definitions %}
+{% for toggle in scene.rzm.toggle_definitions if toggle.toggle_name %}
+{% set tn = utils.format_var(toggle.toggle_name) | replace('$','') %}
+{% for n in range(profile_count) %}
+if $RZProfile == {{ n }}
+    $RZProfile_{{ n }}_{{ tn }} = {{ utils.format_var(toggle.toggle_name) }}
+endif
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% if scene.rzm.shapes %}
+{% for shape in scene.rzm.shapes if shape.shape_name %}
+{% set sn = utils.format_var(shape.shape_name) | replace('$','') %}
+{% for n in range(profile_count) %}
+if $RZProfile == {{ n }}
+    $RZProfile_{{ n }}_{{ sn }} = {{ utils.format_var(shape.shape_name) }}
+endif
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+[CommandListRZLoadProfile]
+; Restores variable state from the active profile slot.
+{% if scene.rzm.rzm_values %}
+{% for value in scene.rzm.rzm_values if value.value_name %}
+{% set vn = utils.format_var(value.value_name) | replace('$','') %}
+{% for n in range(profile_count) %}
+if $RZProfile == {{ n }}
+    {{ utils.format_var(value.value_name) }} = $RZProfile_{{ n }}_{{ vn }}
+endif
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% if scene.rzm.toggle_definitions %}
+{% for toggle in scene.rzm.toggle_definitions if toggle.toggle_name %}
+{% set tn = utils.format_var(toggle.toggle_name) | replace('$','') %}
+{% for n in range(profile_count) %}
+if $RZProfile == {{ n }}
+    {{ utils.format_var(toggle.toggle_name) }} = $RZProfile_{{ n }}_{{ tn }}
+endif
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% if scene.rzm.shapes %}
+{% for shape in scene.rzm.shapes if shape.shape_name %}
+{% set sn = utils.format_var(shape.shape_name) | replace('$','') %}
+{% for n in range(profile_count) %}
+if $RZProfile == {{ n }}
+    {{ utils.format_var(shape.shape_name) }} = $RZProfile_{{ n }}_{{ sn }}
+endif
+{% endfor %}
+{% endfor %}
+{% endif %}
+{%- endif %}
+{% endmacro %}

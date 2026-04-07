@@ -200,6 +200,32 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debug_var_5: StringProperty(name="Debug Var 5", default="")
     debug_var_6: StringProperty(name="Debug Var 6", default="")
     debug_var_7: StringProperty(name="Debug Var 7", default="")
+
+    # ─── In-Game Profile System ────────────────────────────────────────────
+    use_in_game_profiles: BoolProperty(
+        name="Enable In-Game Profiles",
+        default=False,
+        description="Активирует систему профилей. При включении в экспорт добавляются "
+                    "CommandListRZSaveProfile / CommandListRZLoadProfile и переменные "
+                    "$RZProfile_N_<varname> для каждого слота."
+    )
+    in_game_profile_count: IntProperty(
+        name="Profile Slots",
+        default=4,
+        min=1,
+        max=16,
+        description="Количество именованных профилей. "
+                    "Изменение не трогает данные автоматически — "
+                    "используй оператор 'Sync Profile Slots' для обновления коллекций."
+    )
+    invert_random_marking: BoolProperty(
+        name="Invert Random Marking",
+        default=False,
+        description="Инвертирует логику mark_random в UI. "
+                    "Если ON: помеченные (mark_random=True) = ИСКЛЮЧЕНЫ из рандома, "
+                    "непомеченные = включены. Удобно если рандом нужен для большинства, "
+                    "а исключения редки. Шаблон всегда читает реальное значение mark_random."
+    )
     
 class RZMCreditItem(bpy.types.PropertyGroup):
     """Класс для одного человека в списке Credits"""

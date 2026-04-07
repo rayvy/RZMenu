@@ -176,6 +176,7 @@ endif
             {% else %}
             elif {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}
             {% endif %}
+            
             $texPosX = {{ var.uv_coords[0] }}
             $texPosY = {{ var.uv_coords[1] }}
             $texSizeX = {{ var.uv_size[0] }}

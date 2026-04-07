@@ -812,6 +812,110 @@ class FontsTab(BaseConfigTab):
             print(f"Error updating font setting: {e}")
 
 
+class ProfilesTab(BaseConfigTab):
+    """
+    Tab for In-Game Profile System configuration.
+    Controls global profile count, random marking mode, etc.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_ui()
+
+    def _init_ui(self):
+        # ── In-Game Profiles Toggle ─────────────────────────────────────────
+        l_main = self.add_section("In-Game Profiles")
+
+        h_enable = QtWidgets.QHBoxLayout()
+        h_enable.addWidget(RZLabel("Enable Profiles:"))
+        self.chk_enable = RZCheckBox("")
+        self.chk_enable.setToolTip(
+            "Adds CommandListRZSaveProfile / CommandListRZLoadProfile\n"
+            "and per-variable $RZProfile_N_<varname> to the export."
+        )
+        self.chk_enable.toggled.connect(self._on_enable_toggled)
+        h_enable.addWidget(self.chk_enable)
+        h_enable.addStretch()
+        l_main.addLayout(h_enable)
+
+        h_count = QtWidgets.QHBoxLayout()
+        h_count.addWidget(RZLabel("Profile Slots (1–16):"))
+        self.spin_count = RZSpinBox()
+        self.spin_count.setRange(1, 16)
+        self.spin_count.setFixedWidth(70)
+        self.spin_count.valueChanged.connect(self._on_count_changed)
+        h_count.addWidget(self.spin_count)
+        h_count.addStretch()
+        l_main.addLayout(h_count)
+
+        h_inv = QtWidgets.QHBoxLayout()
+        h_inv.addWidget(RZLabel("Invert Random Marking:"))
+        self.chk_invert = RZCheckBox("")
+        self.chk_invert.setToolTip(
+            "ON: marked vars (mark_random=True) are EXCLUDED from randomization.\n"
+            "OFF (default): marked vars ARE included."
+        )
+        self.chk_invert.toggled.connect(self._on_invert_toggled)
+        h_inv.addWidget(self.chk_invert)
+        h_inv.addStretch()
+        l_main.addLayout(h_inv)
+
+        # Sync operator button
+        btn_sync = RZPushButton("↺  Sync Profile Slots")
+        btn_sync.setToolTip(
+            "Reconciles in_game_profiles collections on all variables/toggles/shapes\n"
+            "to match the current slot count."
+        )
+        btn_sync.clicked.connect(self._on_sync_profiles)
+        l_main.addWidget(btn_sync)
+
+        # ── Info ────────────────────────────────────────────────────────────
+        l_info = self.add_section("Variable Profile Table")
+        info_lbl = RZLabel(
+            "Per-variable profile values are managed in the\n"
+            "Variables Manager → select a variable → Profile Slots column.\n\n"
+            "Enable 'In-Game Profiles' above, then run 'Sync Profile Slots'\n"
+            "to populate the data for all variables."
+        )
+        info_lbl.setWordWrap(True)
+        info_lbl.setStyleSheet("color: #9DA5B4; font-size: 11px; padding: 4px;")
+        l_info.addWidget(info_lbl)
+
+        self.scroll_layout.addStretch()
+
+    def update_ui(self):
+        self._block = True
+        try:
+            if not bpy.context or not bpy.context.scene:
+                return
+            addons = bpy.context.scene.rzm.addons
+            if self.chk_enable.isChecked() != addons.use_in_game_profiles:
+                self.chk_enable.setChecked(addons.use_in_game_profiles)
+            if self.spin_count.value() != addons.in_game_profile_count:
+                self.spin_count.setValue(addons.in_game_profile_count)
+            if self.chk_invert.isChecked() != addons.invert_random_marking:
+                self.chk_invert.setChecked(addons.invert_random_marking)
+        finally:
+            self._block = False
+
+    def _on_enable_toggled(self, val):
+        if self._block:
+            return
+        self._call_op("update_addon_setting", prop_name="use_in_game_profiles", val_bool=val)
+
+    def _on_count_changed(self, val):
+        if self._block:
+            return
+        self._call_op("update_addon_setting_int", prop_name="in_game_profile_count", val_int=val)
+
+    def _on_invert_toggled(self, val):
+        if self._block:
+            return
+        self._call_op("update_addon_setting", prop_name="invert_random_marking", val_bool=val)
+
+    def _on_sync_profiles(self):
+        self._call_op("sync_profile_slots")
+
+
 class RZConfiguratorManager(QtWidgets.QWidget):
     """
     Main widget for the Configurator Panel.
@@ -840,6 +944,7 @@ class RZConfiguratorManager(QtWidgets.QWidget):
         self.add_tab("General", GeneralTab())
         self.add_tab("Fonts", FontsTab())
         self.add_tab("Mod Info", ModInfoTab())
+        self.add_tab("Profiles", ProfilesTab())
         self.add_tab("PreSnippet", SnippetTab("pre_snippet", "Pre-Injection Code"))
 
         self.add_tab("PostSnippet", SnippetTab("post_snippet", "Post-Injection Code"))

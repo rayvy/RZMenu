@@ -12,15 +12,109 @@ class ValueLinkProperty(bpy.types.PropertyGroup):
     value_min: FloatProperty(name="Min Value", default=0.0)
     value_max: FloatProperty(name="Max Value", default=1.0)
 
+# ─── PROFILE VALUE ────────────────────────────────────────────────────────────
+
+class RZMProfileValue(bpy.types.PropertyGroup):
+    """Значение переменной в конкретном in-game профиле.
+    Хранится как CollectionProperty на ValueProperty / ToggleDefinition / RZMShape.
+    Индекс в коллекции = индекс профиля.
+    """
+    int_value:   IntProperty(name="Value (Int)", default=0)
+    float_value: FloatProperty(name="Value (Float)", default=0.0)
+    # Примечание: тип данных наследуется от родительской переменной.
+    # Для тогглов используется int_value (индекс слота в длине тоггла).
+
+# ─── RUN LINK ─────────────────────────────────────────────────────────────────
+
+class RZMRunLink(bpy.types.PropertyGroup):
+    """Именованный CommandList — вызываемая «функция» мода.
+    Может быть привязан к элементам UI (по integer id), Keybind-ам,
+    pre/post snippet-ам и другим событиям.
+    """
+    id:          IntProperty(name="Run Link ID", default=-1,
+                              description="Уникальный целочисленный ID. Не меняется при переименовании.")
+    name:        StringProperty(name="Name", default="MyAction",
+                                description="Имя CommandList-а в .ini (= [MyAction])")
+    description: StringProperty(name="Description", default="",
+                                description="Краткое описание того, что делает этот CommandList")
+    body:        StringProperty(name="Body", default="",
+                                description="Тело CommandList-а. Многострочный ввод поддерживается нативно.")
+
+# ─── KEYBIND ──────────────────────────────────────────────────────────────────
+
+class RZMKeybind(bpy.types.PropertyGroup):
+    """Горячая клавиша игры (3DMigoto [Key...] секция), привязанная к RunLink."""
+
+    name: StringProperty(name="Keybind Name", default="",
+                         description="Имя секции, e.g. 'KeyToggleTop' → [KeyToggleTop]")
+
+    # Клавиши
+    key:  StringProperty(name="Primary Key", default="",
+                         description="Первичная клавиша, e.g. 'no_modifiers y' или 'alt 7'")
+    back: StringProperty(name="Back Key", default="",
+                         description="Клавиша для обратного направления цикла (опционально)")
+
+    # Тип нажатия
+    type: EnumProperty(
+        name="Type",
+        items=[
+            ('activate', "Activate", "Срабатывает один раз при нажатии"),
+            ('hold',     "Hold",     "Активно пока зажато"),
+            ('toggle',   "Toggle",   "Переключает между 0 и 1"),
+            ('cycle',    "Cycle",    "Циклически перебирает значения"),
+        ],
+        default='cycle'
+    )
+
+    # Условие
+    condition:        StringProperty(name="Condition", default="",
+                                     description="Произвольное условие 3DMigoto. Если пусто — всегда активно")
+    only_menu_active: BoolProperty(
+        name="Only When Menu Active",
+        default=False,
+        description="Авто-добавляет условие '$active == 1' на стороне шаблона. "
+                    "Если condition тоже заполнен — объединяется через &&"
+    )
+
+    # Привязка к RunLink
+    run_id: StringProperty(
+        name="Run Link ID",
+        default="",
+        description="Имя (name) RZMRunLink, который вызывается при срабатывании клавиши"
+    )
+
+    # ── Резервные поля (для будущих версий 3DMigoto, пока не используются активно) ──
+    delay:                   IntProperty(name="Delay", default=0, min=0,
+                                          description="Задержка перед срабатыванием (мс)")
+    release_delay:           IntProperty(name="Release Delay", default=0, min=0)
+    wrap:                    BoolProperty(name="Wrap", default=False,
+                                          description="Зациклить значения при достижении края")
+    smart:                   BoolProperty(name="Smart", default=False)
+    transition:              IntProperty(name="Transition", default=0, min=0,
+                                          description="Количество кадров для плавного перехода")
+    release_transition:      IntProperty(name="Release Transition", default=0, min=0)
+    transition_type:         EnumProperty(
+        name="Transition Type",
+        items=[('linear', "Linear", ""), ('cosine', "Cosine", "")],
+        default='linear'
+    )
+    release_transition_type: EnumProperty(
+        name="Release Transition Type",
+        items=[('linear', "Linear", ""), ('cosine', "Cosine", "")],
+        default='linear'
+    )
+
+# ─── VALUE PROPERTY ───────────────────────────────────────────────────────────
+
 class ValueProperty(bpy.types.PropertyGroup):
     value_name: StringProperty(name="Name")
     value_type: EnumProperty(
-        name="Type", 
-        items=[('INT', "Integer", ""), ('FLOAT', "Float", ""), ('VECTOR', "Vector (Float4)", "")], 
+        name="Type",
+        items=[('INT', "Integer", ""), ('FLOAT', "Float", ""), ('VECTOR', "Vector (Float4)", "")],
         default='INT'
     )
-    int_value: IntProperty(name="Integer Value")
-    float_value: FloatProperty(name="Float Value")
+    int_value:    IntProperty(name="Integer Value")
+    float_value:  FloatProperty(name="Float Value")
     vector_value: bpy.props.FloatVectorProperty(name="Vector Value", size=4, default=(0.0, 0.0, 0.0, 1.0))
     force_export: BoolProperty(name="Force Export", default=False)
     export_tiers: CollectionProperty(
@@ -29,17 +123,54 @@ class ValueProperty(bpy.types.PropertyGroup):
         description="Тиры для которых этот элемент будет включён в Mod Producer. Пусто = все тиры."
     )
 
+    # ── Randomization ────────────────────────────────────────────────────────
+    val_min:     FloatProperty(name="Min Value", default=0.0,
+                                description="Минимальное значение для рандомизатора и слайдера")
+    val_max:     FloatProperty(name="Max Value", default=10.0,
+                                description="Максимальное значение для рандомизатора и слайдера")
+    mark_random: BoolProperty(name="Include in Randomize", default=True,
+                               description="Включить эту переменную в CommandListRZRandomize")
+
+    # ── In-Game Profiles ─────────────────────────────────────────────────────
+    in_game_profiles: CollectionProperty(
+        type=RZMProfileValue,
+        name="In-Game Profile Values",
+        description="Значения переменной для каждого профиля. "
+                    "Индекс = номер профиля (0-based). Синхронизируется через оператор Sync Profiles."
+    )
+    # NOTE: run_link_id lives on RZMenuElement, NOT on ValueProperty.
+    # Binding RunLink to a variable would create circular dependencies.
+
+# ─── TOGGLE DEFINITION ────────────────────────────────────────────────────────
+
 class ToggleDefinition(bpy.types.PropertyGroup):
-    toggle_name: StringProperty(name="Toggle Name", description="Уникальное имя, e.g., ToggleA")
-    toggle_length: IntProperty(name="Length", default=8, min=1, max=32)
+    toggle_name:        StringProperty(name="Toggle Name", description="Уникальное имя, e.g., ToggleA")
+    toggle_length:      IntProperty(name="Length", default=8, min=1, max=32)
     toggle_start_index: IntProperty(name="Start Index", default=0, min=0, max=999)
     toggle_is_expanded: BoolProperty(name="Expanded", default=False)
-    show_occupancy: BoolProperty(
-        name="Show Slot Occupancy", 
-        default=False, 
+    show_occupancy:     BoolProperty(
+        name="Show Slot Occupancy",
+        default=False,
         description="Показать, какие объекты используют биты этого тоггла"
     )
     force_export: BoolProperty(name="Force Export", default=False)
+
+    # ── Randomization ────────────────────────────────────────────────────────
+    mark_random: BoolProperty(
+        name="Include in Randomize",
+        default=True,
+        description="Включить этот тоггл в CommandListRZRandomize. "
+                    "Границы берутся из toggle_start_index и toggle_start_index + toggle_length - 1"
+    )
+
+    # ── In-Game Profiles ─────────────────────────────────────────────────────
+    in_game_profiles: CollectionProperty(
+        type=RZMProfileValue,
+        name="In-Game Profile Values",
+        description="Значения тоггла (int_value = индекс) для каждого профиля."
+    )
+
+# ─── BIT / ASSIGNED TOGGLE ────────────────────────────────────────────────────
 
 class BitProperty(bpy.types.PropertyGroup): value: BoolProperty(name="Bit")
 
@@ -49,13 +180,15 @@ class AssignedToggle(bpy.types.PropertyGroup):
 class RZMCondition(bpy.types.PropertyGroup):
     condition_name: StringProperty(name="Name"); condition_hash: StringProperty(name="Hash")
 
+# ─── SHAPE KEY / SHAPE ────────────────────────────────────────────────────────
+
 class RZMShapeKey(bpy.types.PropertyGroup):
     """Определяет один шейп-ключ внутри RZMShape и его поведение."""
     key_name: IntProperty(name="Keyframe", description="Номер кадра для этого ключа")
     mode: EnumProperty(
         name="Mode",
         items=[
-            ('SIMPLE', "Simple", "Прямое влияние переменной на ключ (0-1 -> 0-1)"),
+            ('SIMPLE',   "Simple",   "Прямое влияние переменной на ключ (0-1 -> 0-1)"),
             ('ADVANCED', "Advanced", "Настройка диапазона и множителя")
         ],
         default='SIMPLE',
@@ -63,10 +196,10 @@ class RZMShapeKey(bpy.types.PropertyGroup):
     )
     input_range_min: FloatProperty(name="Input Min", default=0.0, min=0.0, max=1.0)
     input_range_max: FloatProperty(name="Input Max", default=1.0, min=0.0, max=1.0)
-    multiplier: FloatProperty(name="Multiplier", default=1.0)
+    multiplier:      FloatProperty(name="Multiplier", default=1.0)
     anim_type_index: IntProperty(name="Type Index", default=0)
     anim_start_frame: FloatProperty(name="Start Frame", default=0.0, min=0.0, max=1.0)
-    anim_end_frame: FloatProperty(name="End Frame", default=1.0, min=0.0, max=1.0)
+    anim_end_frame:   FloatProperty(name="End Frame",   default=1.0, min=0.0, max=1.0)
 
 class RZMShape(bpy.types.PropertyGroup):
     """Defines a single Shape variable that can control multiple shape keys."""
@@ -76,7 +209,9 @@ class RZMShape(bpy.types.PropertyGroup):
         name="Anim Condition",
         description="Condition for animation playback (e.g. $var > 0). Empty = always active."
     )
-    disable_export: BoolProperty(name="Disable Export", description="If active, this shape variable will not be exported to templates", default=False)
+    disable_export: BoolProperty(name="Disable Export",
+                                  description="If active, this shape variable will not be exported to templates",
+                                  default=False)
     force_export: BoolProperty(name="Force Export", default=False)
     export_tiers: CollectionProperty(
         type=RZMTierRef,
@@ -84,3 +219,18 @@ class RZMShape(bpy.types.PropertyGroup):
         description="Тиры для которых этот шейп экспортируется. Пусто = все тиры."
     )
     shape_keys: CollectionProperty(type=RZMShapeKey)
+
+    # ── Randomization ────────────────────────────────────────────────────────
+    val_min:     FloatProperty(name="Min Value", default=0.0,
+                                description="Минимальное значение шейпа для рандомизатора")
+    val_max:     FloatProperty(name="Max Value", default=1.0,
+                                description="Максимальное значение шейпа для рандомизатора")
+    mark_random: BoolProperty(name="Include in Randomize", default=True,
+                               description="Включить этот шейп в CommandListRZRandomize")
+
+    # ── In-Game Profiles ─────────────────────────────────────────────────────
+    in_game_profiles: CollectionProperty(
+        type=RZMProfileValue,
+        name="In-Game Profile Values",
+        description="Значения шейпа для каждого профиля (float_value)."
+    )

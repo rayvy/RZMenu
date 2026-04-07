@@ -60,6 +60,20 @@ class RZM_UL_ShapeKeys(bpy.types.UIList):
         if item.mode == 'ADVANCED':
             row.label(text="*", icon='SETTINGS')
 
+class RZM_UL_RunLinks(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.label(text=item.name, icon='PLAY')
+        if item.description:
+            row.label(text=item.description)
+
+class RZM_UL_Keybinds(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.label(text=item.name, icon='EVENT_SPACEKEY')
+        row.label(text=item.key[:20] if item.key else "<no key>")
+        row.label(text=item.type)
+
 class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     bl_label = "RZ Constructor"
     bl_idname = "VIEW3D_PT_rz_constructor_panel"
@@ -642,6 +656,7 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
         # 2. PROJECT CONFIGURATION AT BOTTOM
         box = layout.box()
         box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
+        box.label(text="Run Links & Keybinds → Qt 'Run Links' panel", icon='INFO')
         
         # Tabs Selector inside the box
         row = box.row(align=True)
@@ -661,9 +676,32 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
             row = box.row(align=True)
             row.operator("rzm.add_value", text="Add Var", icon='ADD')
             row.operator("rzm.remove_value", text="", icon='REMOVE')
+            row.separator()
+            row.operator("rzm.import_ini", text="", icon='IMPORT')
             box.template_list("RZM_UL_Values", "", rzm, "rzm_values", context.scene, "rzm_active_value_index")
             if rzm.rzm_values and 0 <= context.scene.rzm_active_value_index < len(rzm.rzm_values):
                 active_val = rzm.rzm_values[context.scene.rzm_active_value_index]
+
+                # --- Randomization & Range ---
+                rand_box = box.box()
+                rand_box.label(text="Randomization & Range:", icon='SHADERFX')
+                col_r = rand_box.column(align=True)
+                row_r = col_r.row(align=True)
+                row_r.prop(active_val, "val_min", text="Min")
+                row_r.prop(active_val, "val_max", text="Max")
+                rzm_addons = rzm.addons
+                invert = getattr(rzm_addons, 'invert_random_marking', False)
+                if invert:
+                    icon_r = 'CHECKBOX_HLT' if not active_val.mark_random else 'CHECKBOX_DEHLT'
+                    label_r = "Excluded from Randomize" if active_val.mark_random else "Included in Randomize"
+                else:
+                    icon_r = 'CHECKBOX_HLT' if active_val.mark_random else 'CHECKBOX_DEHLT'
+                    label_r = "Included in Randomize" if active_val.mark_random else "Excluded from Randomize"
+                col_r.prop(active_val, "mark_random", text=label_r, icon=icon_r)
+
+                # NOTE: Run Link is bound per-element in the Qt Inspector, not here.
+
+                # --- Export Tiers ---
                 from ..operators.tier_ops import get_tier_ids
                 available = get_tier_ids(context)
                 if available:
@@ -792,6 +830,65 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         sbox.prop(key, "anim_start_frame")
                         sbox.prop(key, "anim_end_frame")
 
+        elif tab == 'KEYBINDS':
+            # ── Run Links (named CommandLists) ─────────────────────────────
+            rl_box = box.box()
+            rl_row = rl_box.row(align=True)
+            rl_row.label(text="Run Links:", icon='PLAY')
+            rl_row.operator("rzm.import_ini", text="Import .ini", icon='IMPORT')
+            rl_box.template_list(
+                "RZM_UL_RunLinks", "",
+                rzm, "run_links",
+                context.scene, "rzm_active_run_link_index",
+                rows=3
+            )
+            if rzm.run_links and 0 <= context.scene.rzm_active_run_link_index < len(rzm.run_links):
+                active_rl = rzm.run_links[context.scene.rzm_active_run_link_index]
+                rl_detail = rl_box.box()
+                rl_detail.prop(active_rl, "name", text="ID")
+                rl_detail.prop(active_rl, "description", text="Desc")
+                rl_detail.label(text="Body (CommandList lines):", icon='TEXT')
+                rl_detail.prop(active_rl, "body", text="")
+
+            box.separator()
+
+            # ── Keybinds ───────────────────────────────────────────────────
+            kb_row = box.row(align=True)
+            kb_row.label(text="Keybinds:", icon='EVENT_SPACEKEY')
+            box.template_list(
+                "RZM_UL_Keybinds", "",
+                rzm, "keybinds",
+                context.scene, "rzm_active_keybind_index",
+                rows=4
+            )
+            if rzm.keybinds and 0 <= context.scene.rzm_active_keybind_index < len(rzm.keybinds):
+                active_kb = rzm.keybinds[context.scene.rzm_active_keybind_index]
+                kb_detail = box.box()
+
+                col_kb = kb_detail.column(align=True)
+                col_kb.prop(active_kb, "name",    text="Name")
+                col_kb.prop(active_kb, "key",     text="Key")
+                col_kb.prop(active_kb, "back",    text="Back")
+                col_kb.prop(active_kb, "type",    text="Type")
+                col_kb.separator()
+                col_kb.prop(active_kb, "only_menu_active")
+                col_kb.prop(active_kb, "condition", text="Condition")
+                col_kb.separator()
+                col_kb.prop(active_kb, "run_id",  text="Run Link ID")
+
+                # Reserve fields (collapsed)
+                res_box = kb_detail.box()
+                res_box.label(text="Reserved (3DMigoto advanced):", icon='SETTINGS')
+                c2 = res_box.column(align=True)
+                c2.prop(active_kb, "wrap")
+                c2.prop(active_kb, "smart")
+                c2.prop(active_kb, "delay")
+                c2.prop(active_kb, "release_delay")
+                c2.prop(active_kb, "transition")
+                c2.prop(active_kb, "transition_type")
+
+
+
 class VIEW3D_PT_RZModProducerBuild(bpy.types.Panel):
     bl_label = "Mod Producer Build"
     bl_idname = "VIEW3D_PT_RZModProducerBuild"
@@ -873,15 +970,18 @@ class RZM_PT_ObjectTiers(bpy.types.Panel):
             op = flow.operator(op_name, text=tid, depress=is_active)
             op.tier_id = tid
 
-classes_to_register = [ 
+
+classes_to_register = [
     RZM_UL_CustomScriptList,
     RZM_UL_Values,
     RZM_UL_ToggleDefinitions,
     RZM_UL_Shapes,
     RZM_UL_ShapeKeys,
-    RZM_MT_AssignToggleMenu, 
+    RZM_UL_RunLinks,
+    RZM_UL_Keybinds,
+    RZM_MT_AssignToggleMenu,
     RZM_MT_AssignTexSlotMenu,
-    VIEW3D_PT_RZConstructorPanel, 
+    VIEW3D_PT_RZConstructorPanel,
     VIEW3D_PT_RZM_AutoMenuCreator,
     VIEW3D_PT_RZM_ExportManager,
     VIEW3D_PT_RZModProducerBuild,

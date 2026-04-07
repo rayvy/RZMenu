@@ -49,8 +49,15 @@ mips = 1
 {% for over in rzm.tw_overrides %}
 [TextureOverride{{ over.name }}]
 hash = {{ over.hash }}
+local $TW_override_is_initialised
+if $TW_override_is_initialised != 1
+$TW_override_is_initialised = 0
+endif
+if $TW_override_is_initialised > 0
 this = Resource{{ utils.clean_resource(over.resource_name) }}
 run = CommandListSafeTexWorks.{{ utils.clean_resource(over.resource_name) }}.CHECK
+endif
+$TW_override_is_initialised = 1
 {% endfor %}
 
 {% set unique_over_resources = rzm.tw_overrides | map(attribute='resource_name') | unique %}

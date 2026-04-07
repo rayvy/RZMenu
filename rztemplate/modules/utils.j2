@@ -397,3 +397,22 @@
         {{- tags | unique | join(' ') -}}
     {%- endif -%}
 {%- endmacro %}
+
+{% macro simple_shape_audit(input_obj, scene) -%}
+    {# Безопасно достаем имя и сам объект #}
+    {%- set obj_name = input_obj.name if input_obj.name is defined else input_obj -%}
+    {%- set real_obj = scene.objects[obj_name] if (scene is defined and obj_name in scene.objects) else none -%}
+
+    {%- if real_obj and real_obj.type == 'MESH' -%}
+        ; --- [INFO] Объект: {{ obj_name }} ---
+        {%- if real_obj.data and real_obj.data.shape_keys -%}
+            ; Найдено шейпкеев: {{ real_obj.data.shape_keys.key_blocks|length }}
+            {%- for sk in real_obj.data.shape_keys.key_blocks -%}
+                ;  -> {{ sk.name }} (Значение: {{ "%.3f"|format(sk.value) }})
+            {%- endfor -%}
+        {%- else -%}
+            ; Шейпкеи отсутствуют.
+        {%- endif -%}
+        ; -------------------------------------
+    {%- endif -%}
+{%- endmacro %}

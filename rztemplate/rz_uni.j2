@@ -4,6 +4,7 @@
 {% import "modules/data.j2" as data  with context %}
 {% import "modules/functions.j2" as fn with context %}
 {% import "modules/keymap.j2" as keymap  with context %}
+{% import "modules/run_links.j2" as run_links with context %}
 {% import "modules/elements.j2" as elements with context %}
 {% import "modules/elements_helpers.j2" as elements_helpers with context %}
 {% import "modules/modules.j2" as modules with context %}
@@ -65,7 +66,10 @@
 
 {% block rz_menu_data %}
 {{keymap.main_button(mod_file,scene)}}
+{{keymap.generate_keybinds(mod_file,scene)}}
+{{run_links.generate_run_links(mod_file,scene)}}
 {{data.config(mod_file,scene)}}
+{{data.generate_profiles(mod_file,scene)}}
 {% endblock %}
 
 {% endcall %}
@@ -78,3 +82,28 @@
 {% if scene.rzm %}
 {{ scene.rzm.config.post_snippet | default(";There Nothing")}}
 {% endif %}
+
+
+{% macro simple_shape_audit(input_obj, scene) -%}
+    {%- set obj_name = input_obj.name if input_obj.name is defined else input_obj -%}
+    {%- set real_obj = scene.objects[obj_name] if (scene is defined and obj_name in scene.objects) else none -%}
+
+    {%- if real_obj and real_obj.type == 'MESH' -%}
+        ; --- [INFO] Объект: {{ obj_name }} ---
+        {%- if real_obj.data and real_obj.data.shape_keys -%}
+            ; Найдено шейпкеев: {{ real_obj.data.shape_keys.key_blocks|length }}
+            {%- for sk in real_obj.data.shape_keys.key_blocks -%}
+                ;  -> {{ sk.name }} (Значение: {{ "%.3f"|format(sk.value) }})
+            {%- endfor -%}
+        {%- else -%}
+            ; Шейпкеи отсутствуют.
+        {%- endif -%}
+        ; -------------------------------------
+    {%- endif -%}
+{%- endmacro %}
+
+{% for obj in scene.objects %}
+    {% if obj.type == 'MESH' %}
+        {{ simple_shape_audit(obj, scene) }}
+    {% endif %}
+{% endfor %}

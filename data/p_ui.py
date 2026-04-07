@@ -155,7 +155,15 @@ class RZMenuElement(bpy.types.PropertyGroup):
         description="Тиры для которых этот элемент экспортируется. Пусто = все тиры."
     )
     font_slot: IntProperty(name="Font Slot", min=0, max=3, default=0, description="Which font configuration slot to use (0-3)")
-    
+
+    # ── API / Run Link ────────────────────────────────────────────────────────
+    run_link_id: IntProperty(
+        name="Run Link ID",
+        default=-1,
+        description="ID of an RZMRunLink to execute when this element is activated. "
+                    "-1 = no run link. Stable across RunLink renames."
+    )
+
     # SVG Modifiers (Element-level)
     svg_scale: FloatProperty(name="SVG Scale", default=1.0, min=0.01, max=10.0, update=mark_atlas_dirty)
     svg_offset: FloatVectorProperty(name="SVG Offset", size=2, default=(0.0, 0.0), update=mark_atlas_dirty)

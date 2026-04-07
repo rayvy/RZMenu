@@ -421,6 +421,9 @@ def get_selection_details(selected_ids, active_id):
             # Template Prefab
             "is_template_prefab": get_uniform("is_template_prefab", default=False),
             "template_prefab": get_uniform("template_prefab", default="MAIN_BLOCK"),
+
+            # Run Link binding (per-element, not per-variable)
+            "run_link_id": get_uniform("run_link_id", default=-1),
         }
 
         return data

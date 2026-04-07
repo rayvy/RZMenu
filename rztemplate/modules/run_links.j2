@@ -1,0 +1,14 @@
+{% import "modules/utils.j2" as utils with context %}
+
+{% macro generate_run_links(mod_file, scene) %}
+{%- if scene.rzm and scene.rzm.run_links %}
+; ─── RUN LINKS (User-defined CommandLists) ───────────────────────────────────
+{% for rl in scene.rzm.run_links if rl.name %}
+{% if rl.description %}
+; {{ rl.description }}
+{% endif %}
+[{{ rl.name }}]
+{{ rl.body | default('') }}
+{% endfor %}
+{%- endif %}
+{% endmacro %}

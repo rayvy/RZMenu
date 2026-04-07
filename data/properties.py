@@ -8,9 +8,10 @@ from bpy.props import (
 # Импорт из под-модулей в той же папке data
 from .p_images import RZMCaptureSettings, RZMenuImage, ConditionalImage, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation
 from .p_logic import (
-    ValueLinkProperty, ValueProperty, ToggleDefinition, 
-    BitProperty, AssignedToggle, RZMCondition, 
-    RZMShapeKey, RZMShape, RZMTierRef
+    ValueLinkProperty, ValueProperty, ToggleDefinition,
+    BitProperty, AssignedToggle, RZMCondition,
+    RZMShapeKey, RZMShape, RZMTierRef,
+    RZMProfileValue, RZMRunLink, RZMKeybind
 )
 from .p_texworks import (
     TexResource, TexOverride, TexWorksMaterial, 
@@ -59,6 +60,20 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     dependency_statuses: CollectionProperty(type=DependencyStatus)
     fonts: CollectionProperty(type=RZFontSlotSettings)
 
+    # ─── Run Links (named CommandLists / API actions) ───────────────────────────
+    run_links: CollectionProperty(
+        type=RZMRunLink,
+        name="Run Links",
+        description="Именованные CommandList-ы мода — вызываемые функции."
+    )
+
+    # ─── Keybinds ──────────────────────────────────────────────────────────────
+    keybinds: CollectionProperty(
+        type=RZMKeybind,
+        name="Keybinds",
+        description="Горячие клавиши игры, привязанные к RunLink-ам."
+    )
+
     # --- TexWorks Core ---
     tw_resources: CollectionProperty(type=TexResource)
     tw_overrides: CollectionProperty(type=TexOverride)
@@ -96,18 +111,24 @@ class RZModProducerSettings(bpy.types.PropertyGroup):
 classes_to_register = [
     # ─ RZMTierRef FIRST: used by CollectionProperty in ValueProperty, RZMShape, RZMenuElement ─
     RZMTierRef,
-    RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig, 
+    # ─ RZMProfileValue BEFORE ValueProperty / ToggleDefinition / RZMShape ──────────────────
+    RZMProfileValue,
+    RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig,
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
-    ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement, 
-    TexResource, TexOverride, TexWorksMaterial, 
+    ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement,
+    TexResource, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
-    RZMShapeKey, RZMShape, RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings,
+    RZMShapeKey, RZMShape,
+    # ─ New API classes: RunLink and Keybind AFTER RZMShape ───────────────────────────
+    RZMRunLink,
+    RZMKeybind,
+    RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings,
     # ─ Tier system: RZMTierDefinition must be registered BEFORE RZM_AddonPreferences ─
     RZMTierDefinition,
     RZM_ContactItem,
     RZM_BuildProfile,
     RZM_AddonPreferences,
-    RZMAutoMenuSettings, RZMenuProperties, 
+    RZMAutoMenuSettings, RZMenuProperties,
     RZModProducerSettings,
 ]
 
@@ -130,6 +151,8 @@ def register():
     bpy.types.Scene.rzm_active_toggle_def_index = IntProperty(name="Active Toggle Definition Index")
     bpy.types.Scene.rzm_active_shape_index = IntProperty(name="Active Shape Index")
     bpy.types.Scene.rzm_active_shape_key_index = IntProperty(name="Active Shape Key Index")
+    bpy.types.Scene.rzm_active_run_link_index = IntProperty(name="Active Run Link Index")
+    bpy.types.Scene.rzm_active_keybind_index = IntProperty(name="Active Keybind Index")
     bpy.types.Scene.rzm_editor_mode = EnumProperty(name="Editor Mode", items=[('LIGHT', "Light", ""), ('PRO', "Pro", "")], default='LIGHT')
     bpy.types.Scene.rzm_show_debug_panel = BoolProperty(name="Show Debug Panel", default=False)
     bpy.types.Scene.rzm_capture_settings = PointerProperty(type=RZMCaptureSettings)
@@ -139,9 +162,10 @@ def register():
     bpy.types.Scene.rzm_toolbox_tab = EnumProperty(
         name="Toolbox Tab",
         items=[
-            ('TOGGLES', "Toggles", "Manage object toggles"),
+            ('TOGGLES',   "Toggles",   "Manage object toggles"),
             ('VARIABLES', "Variables", "Manage global project values"),
-            ('SHAPES', "Shapes", "Manage shape keys and morphs")
+            ('SHAPES',    "Shapes",    "Manage shape keys and morphs"),
+            ('KEYBINDS',  "Keybinds",  "Manage in-game hotkeys and RunLinks"),
         ],
         default='TOGGLES'
     )
@@ -161,6 +185,8 @@ def unregister():
     del bpy.types.Scene.rzm_capture_overwrite_id
     del bpy.types.Scene.rzm_mod_producer
     del bpy.types.Scene.rzm
+    del bpy.types.Scene.rzm_active_run_link_index
+    del bpy.types.Scene.rzm_active_keybind_index
     if hasattr(bpy.types.Object, "rzm_tier_list"):
         del bpy.types.Object.rzm_tier_list
     custom_draw_ops.unregister()
