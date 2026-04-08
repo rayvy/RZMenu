@@ -59,11 +59,18 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
             current_settings[c.shape_name] = {
                 'type': c.shape_type,
                 'link': c.value_link,
-                'anim': c.anim_condition,
+                'condition': c.condition,
                 'disable': c.disable_export,
                 'random': c.mark_random,
                 'min': c.slider_min,
-                'max': c.slider_max
+                'max': c.slider_max,
+                # New animation properties
+                'multiplier': c.multiplier,
+                'anim_type': c.anim_type_index,
+                'start': c.anim_start_frame,
+                'end': c.anim_end_frame,
+                'over_cond': c.override_switch_condition,
+                'over_link': c.override_switch_value_link
             }
 
         legacy_settings = {s.shape_name: s for s in rzm.shapes if s.shape_name}
@@ -80,19 +87,26 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 s = current_settings[name]
                 config.shape_type = s['type']
                 config.value_link = s['link']
-                config.anim_condition = s['anim']
+                config.condition = s['condition']
                 config.disable_export = s['disable']
                 config.mark_random = s['random']
                 config.slider_min = s['min']
                 config.slider_max = s['max']
+                # New animation properties
+                config.multiplier = s['multiplier']
+                config.anim_type_index = s['anim_type']
+                config.anim_start_frame = s['start']
+                config.anim_end_frame = s['end']
+                config.override_switch_condition = s['over_cond']
+                config.override_switch_value_link = s['over_link']
             # 2. Fallback to Legacy config if first time discovery
             elif name in legacy_settings:
                 legacy = legacy_settings[name]
                 config.shape_type = legacy.shape_type
                 config.anim_condition = legacy.anim_condition
-                # Note: value_link is a manual string for native shapes, 
-                # but for legacy shapes it's just the shape name itself usually.
-                # However, let's not auto-fill link unless requested.
+                # Fallback for anim properties from legacy if they exist there
+                if hasattr(legacy, 'multiplier'): config.multiplier = legacy.multiplier
+                # (Add other legacy checks if needed, but usually discovery is from fresh)
             
             # Add affected objects
             for obj in data['objects']:

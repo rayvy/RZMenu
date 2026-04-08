@@ -833,8 +833,13 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         anim_box.prop(active_conf, "anim_start_frame")
                         anim_box.prop(active_conf, "anim_end_frame")
                         
+                        over_box = anim_box.box()
+                        over_box.label(text="Manual Override (Anim -> Linear):")
+                        over_box.prop(active_conf, "override_switch_condition")
+                        over_box.prop(active_conf, "override_switch_value_link")
+                        
                     c_box.prop(active_conf, "value_link")
-                    c_box.prop(active_conf, "anim_condition")
+                    c_box.prop(active_conf, "condition")
                     c_box.prop(active_conf, "mark_random")
                     
                     obj_box = c_box.box()

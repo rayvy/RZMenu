@@ -255,9 +255,17 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         items=[('Linear', "Linear", ""), ('Anim', "Anim", "")],
         default='Linear'
     )
-    anim_condition: StringProperty(
-        name="Anim Condition",
-        description="Condition for animation playback. Empty = always active."
+    condition: StringProperty(
+        name="Condition",
+        description="Condition for this shape key. Empty = always active."
+    )
+    override_switch_condition: StringProperty(
+        name="Override Condition",
+        description="If active, Anim shape behaves as Linear, using Override Value Link."
+    )
+    override_switch_value_link: StringProperty(
+        name="Override Value Link",
+        description="Variable to use when Override Condition is active."
     )
     disable_export: BoolProperty(
         name="Disable Export",
@@ -276,6 +284,7 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
 
     # ── Animation Settings ───────────────────────────────────────────────────
     multiplier: FloatProperty(name="Multiplier", default=1.0)
+    inverse: BoolProperty(name="Inverse", description="If active, Final = 1.0 - (Value * Multiplier)", default=False)
     anim_type_index: IntProperty(name="Type Index", default=0)
     anim_start_frame: FloatProperty(name="Start Frame", default=0.0, min=0.0, max=1.0)
     anim_end_frame:   FloatProperty(name="End Frame",   default=1.0, min=0.0, max=1.0)

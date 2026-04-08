@@ -7,7 +7,7 @@
 {% if rl.description %}
 ; {{ rl.description }}
 {% endif %}
-[{{ rl.name }}]
+[CommandList{{ rl.name }}]
 {{ rl.body | default('') }}
 {% endfor %}
 {%- endif %}
