@@ -66,6 +66,7 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 'max': c.slider_max,
                 # New animation properties
                 'multiplier': c.multiplier,
+                'inverse': c.inverse,
                 'anim_type': c.anim_type_index,
                 'start': c.anim_start_frame,
                 'end': c.anim_end_frame,
@@ -94,6 +95,7 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 config.slider_max = s['max']
                 # New animation properties
                 config.multiplier = s['multiplier']
+                config.inverse = s['inverse']
                 config.anim_type_index = s['anim_type']
                 config.anim_start_frame = s['start']
                 config.anim_end_frame = s['end']

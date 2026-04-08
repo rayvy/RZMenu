@@ -4,10 +4,10 @@
 {%- if scene.rzm and scene.rzm.run_links %}
 ; ─── RUN LINKS (User-defined CommandLists) ───────────────────────────────────
 {% for rl in scene.rzm.run_links if rl.name %}
+[CommandList{{ utils.format_var(rl.name) }}]
 {% if rl.description %}
 ; {{ rl.description }}
 {% endif %}
-[CommandList{{ rl.name }}]
 {{ rl.body | default('') }}
 {% endfor %}
 {%- endif %}

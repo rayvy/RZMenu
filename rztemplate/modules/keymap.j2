@@ -1,3 +1,4 @@
+{% import "modules/utils.j2" as utils with context %}
 {%macro main_button(mod_file,scene)%}
 ; --- Переменные для системы навигации ---
 [Constants]
@@ -394,7 +395,7 @@ $key_test = 0,1,2,3,4,5,6
 {%- if scene.rzm and scene.rzm.keybinds %}
 ; ─── USER KEYBINDS ───────────────────────────────────────────────────────────
 {% for kb in scene.rzm.keybinds if kb.name %}
-[Key{{ kb.name }}]
+[Key{{ utils.format_var(kb.name) }}]
 {% if kb.key %}
 key = {{ kb.key }}
 {% endif %}
@@ -426,7 +427,7 @@ transition = {{ kb.transition }}
 transition_type = {{ kb.transition_type | default('linear') }}
 {% endif %}
 {% if kb.run_id %}
-run = {{ kb.run_id }}
+run = CommandList{{ utils.format_var(kb.run_id) }}
 {% endif %}
 {% endfor %}
 {%- endif %}

@@ -210,8 +210,8 @@ class RZM_OT_FullExport(bpy.types.Operator):
         # 3.1 Puppet Master Baking (Automated Post-Export)
         if getattr(rzm.addons, "export_shapekeys", False):
             try:
-                print("[RZM Full Export] Triggering Puppet Master Baking...")
-                bpy.ops.rzm.puppet_master_bake()
+                print("[RZM Full Export] Triggering Puppet Master Baking (Full Mode)...")
+                bpy.ops.rzm.puppet_master_bake(full_export_mode=True)
             except Exception as e:
                 self.report({'WARNING'}, f"Puppet Master bake failed: {e}")
         

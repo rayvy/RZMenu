@@ -84,7 +84,7 @@ def get_components_to_process(context, per_component=False):
     print("="*50)
     return results
 
-def bake_component_shapes(context, comp_id, comp_objects, mod_root, limit):
+def bake_component_shapes(context, comp_id, comp_objects, mod_root, limit, single_shape_name=None, full_export_mode=False):
     """Core baking logic for a single component."""
     # 1. Prepare paths
     # Standard: Meshes/ComponentN_VB0.buf
@@ -114,9 +114,12 @@ def bake_component_shapes(context, comp_id, comp_objects, mod_root, limit):
     
     # Collect all unique shape keys
     all_keys = set()
-    for o in all_involved:
-        if o.data.shape_keys:
-            all_keys.update([sk.name for sk in o.data.shape_keys.key_blocks if sk != o.data.shape_keys.key_blocks[0]])
+    if single_shape_name:
+        all_keys.add(single_shape_name)
+    else:
+        for o in all_involved:
+            if o.data.shape_keys:
+                all_keys.update([sk.name for sk in o.data.shape_keys.key_blocks if sk != o.data.shape_keys.key_blocks[0]])
 
     depsgraph = context.evaluated_depsgraph_get()
     
@@ -126,7 +129,11 @@ def bake_component_shapes(context, comp_id, comp_objects, mod_root, limit):
         if obj.data and obj.data.shape_keys:
             sk_snapshot[obj] = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
 
-    disabled_shapes = {c.shape_name for c in context.scene.rzm.shape_configs if c.disable_export}
+    # В режиме полного экспорта игнорируем галочки "Disable Export"
+    if full_export_mode:
+        disabled_shapes = set()
+    else:
+        disabled_shapes = {c.shape_name for c in context.scene.rzm.shape_configs if c.disable_export}
     
     # 2. Disable armatures and protect Mirror (if any)
     set_armature_visibility(all_involved, False)
@@ -302,6 +309,8 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
     bl_label = "Bake Puppet Master Shapes"
     bl_description = "Bake shape keys into buffers using Puppet Master v10.1 logic"
 
+    full_export_mode: bpy.props.BoolProperty(default=False)
+
     def execute(self, context):
         from .export_manager import get_target_path
         mod_root = get_target_path(context)
@@ -310,11 +319,12 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
             return {'CANCELLED'}
 
         addons = context.scene.rzm.addons
-        per_component = addons.puppet_master_per_component
+        # Если это полный экспорт, всегда запекаем все компоненты
+        per_component = False if self.full_export_mode else addons.puppet_master_per_component
         limit = addons.puppet_master_limit
 
         print("-" * 30)
-        print(f"[Puppet Master] Starting Bake. Limit: {limit}")
+        print(f"[Puppet Master] Starting Bake. Limit: {limit} (Full Export Path: {self.full_export_mode})")
         
         components = get_components_to_process(context, per_component)
         if not components:
@@ -322,13 +332,49 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
             return {'CANCELLED'}
 
         for comp_id, objs in components.items():
-            bake_component_shapes(context, comp_id, objs, mod_root, limit)
+            bake_component_shapes(context, comp_id, objs, mod_root, limit, full_export_mode=self.full_export_mode)
 
         self.report({'INFO'}, "Puppet Master baking finished.")
         return {'FINISHED'}
 
+class RZM_OT_PuppetMasterBakeSingle(bpy.types.Operator):
+    bl_idname = "rzm.puppet_master_bake_single"
+    bl_label = "Bake Selected Shape (All Components)"
+    bl_description = "Bake only the currently selected shape key across all detected components"
+
+    def execute(self, context):
+        from .export_manager import get_target_path
+        mod_root = get_target_path(context)
+        if not mod_root or not os.path.exists(mod_root):
+            self.report({'ERROR'}, "Invalid export path!")
+            return {'CANCELLED'}
+
+        rzm = context.scene.rzm
+        if not (0 <= context.scene.rzm_active_shape_config_index < len(rzm.shape_configs)):
+            self.report({'ERROR'}, "No active shape configuration selected!")
+            return {'CANCELLED'}
+        
+        target_shape = rzm.shape_configs[context.scene.rzm_active_shape_config_index].shape_name
+        limit = rzm.addons.puppet_master_limit
+
+        print("-" * 30)
+        print(f"[Puppet Master] Baking Single Shape: {target_shape}. Limit: {limit}")
+        
+        # Для одиночной запечки всегда берем все компоненты
+        components = get_components_to_process(context, per_component=False)
+        if not components:
+            self.report({'WARNING'}, "No components found to process.")
+            return {'CANCELLED'}
+
+        for comp_id, objs in components.items():
+            bake_component_shapes(context, comp_id, objs, mod_root, limit, single_shape_name=target_shape)
+
+        self.report({'INFO'}, f"Baking finished for shape: {target_shape}")
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_PuppetMasterBake,
+    RZM_OT_PuppetMasterBakeSingle,
 ]
 
 def register():

@@ -9,6 +9,7 @@
 {% macro _macro_shared_constants_and_present(rzm) %}
 [Constants]
 global $shape_changed = 0
+global persist $SKC_LastTime = 0
 {% for config in rzm.shape_configs if not config.disable_export %}
     {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
     global persist ${{ var_name }} = 0
@@ -20,7 +21,11 @@ global $shape_changed = 0
 
 [Present]
 local $shape_changed = 0
-local $pi = 3.14159265
+local $pi
+$pi = 3.14159265
+local $dt
+$dt = time - $SKC_LastTime
+
 {% for config in rzm.shape_configs if not config.disable_export %}
     {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
     local ${{ var_name }}Past
@@ -50,11 +55,10 @@ local $pi = 3.14159265
             $shape_changed = 1
         endif
 
-        {# 2. Аккумуляция Freq (Глобальный таймер) #}
-        if $dt + $sppeeedyy < $sppeeedyy
-            ${{ var_name }}Freq = ${{ var_name }}Freq + ${{ var_name }}Input * $sppeeedyy
-        else
-            ${{ var_name }}Freq = ${{ var_name }}Freq + ${{ var_name }}Input * ($dt + $sppeeedyy)
+        {# 2. Аккумуляция Freq (Стабильный дельта-таймер) #}
+        ${{ var_name }}Freq = (${{ var_name }}Freq + ${{ var_name }}Input * $dt) % 1.0
+        if ${{ var_name }}Freq < 0
+            ${{ var_name }}Freq = ${{ var_name }}Freq + 1
         endif
 
         local ${{ var_name }}Weight
@@ -120,9 +124,17 @@ local $pi = 3.14159265
         endif
         {% endif %}
 
+        {% if config.inverse %}
+        ${{ var_name }}Final = 1.0 - (${{ var_name }}Weight * {{ config.multiplier }})
+        {% else %}
         ${{ var_name }}Final = ${{ var_name }}Weight * {{ config.multiplier }}
+        {% endif %}
     {% else %}
-        ${{ var_name }} = ${{ var_name }}Input
+        {% if config.inverse %}
+        ${{ var_name }} = 1.0 - (${{ var_name }}Input * {{ config.multiplier }})
+        {% else %}
+        ${{ var_name }} = ${{ var_name }}Input * {{ config.multiplier }}
+        {% endif %}
     {% endif %}
 
     {% if config.condition %}
@@ -136,6 +148,7 @@ if $shape_changed
     run = CustomShaderComputeShapes
 endif
 post $shape_changed = 0
+post $SKC_LastTime = time
 {% endmacro %}
 
 

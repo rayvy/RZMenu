@@ -814,7 +814,10 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                 coll_box.template_list("RZM_UL_ShapeDiscoveryCollections", "", rzm, "shape_discovery_collections", scene, "rzm_active_shape_coll_index")
                 
                 box.separator()
-                box.operator("rzm.shape_key_export", text="Discover Shape Keys", icon='FILE_REFRESH')
+                row = box.row(align=True)
+                row.operator("rzm.shape_key_export", text="Discover", icon='FILE_REFRESH')
+                row.operator("rzm.puppet_master_bake", text="Bake ALL", icon='NONE')
+                row.operator("rzm.puppet_master_bake_single", text="Bake THIS", icon='SHAPEKEY_DATA')
                 
                 box.label(text="Discovered Configurations:", icon='SHAPEKEY_DATA')
                 box.template_list("RZM_UL_ShapeConfigs", "", rzm, "shape_configs", scene, "rzm_active_shape_config_index")
@@ -829,6 +832,7 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         anim_box = c_box.box()
                         anim_box.label(text="Animation Settings:")
                         anim_box.prop(active_conf, "multiplier")
+                        anim_box.prop(active_conf, "inverse")
                         anim_box.prop(active_conf, "anim_type_index")
                         anim_box.prop(active_conf, "anim_start_frame")
                         anim_box.prop(active_conf, "anim_end_frame")
