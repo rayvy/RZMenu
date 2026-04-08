@@ -117,6 +117,7 @@ PROP_MAP = {
     "disable_export": ("disable_export", None, 'S'),
     "class_type": ("elem_class", None, 'S'),
     "trackable": ("trackable", None, 'D'),
+    "run_link_id": ("run_link_id",None, 'D'),
 
     # SVG Modifiers
     "svg_scale": ("svg_scale", None, 'T'),

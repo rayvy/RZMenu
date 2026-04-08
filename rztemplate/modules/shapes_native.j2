@@ -1,0 +1,247 @@
+{# rztemplate/modules/shapes_native.j2 #}
+{% import "modules/utils.j2" as utils with context %}
+
+{# --- 1. XXMI (GENSHIN / ZZZ / HSR) --- #}
+{% macro shape_generate(mod_file, scene) %}
+{% set rzm = scene.rzm %}
+{% set stride = 32 %}
+{% if mod_file.game.name == "ZenlessZoneZero" or mod_file.game.name == "HonkaiStarRail" %}
+    {% set stride = 40 %}
+{% endif %}
+
+[Constants]
+global $shape_changed = 0
+{% for config in rzm.shape_configs if not config.disable_export %}
+global persist $SKC_{{utils.format_var(config.shape_name)}}
+{% if config.shape_type == "Anim" %}
+global persist $SKC_{{utils.format_var(config.shape_name)}}Freq
+{% endif %}
+{% endfor %}
+
+[Present]
+local $shape_changed = 0
+{% for config in rzm.shape_configs if not config.disable_export %}
+local $SKC_{{utils.format_var(config.shape_name)}}Past
+{% endfor %}
+
+{% for config in rzm.shape_configs if not config.disable_export %}
+    {% set var_name = "$SKC_" ~ utils.format_var(config.shape_name) %}
+    {% if config.value_link %}
+        {{ var_name }} = ${{ utils.format_var(config.value_link) | trim }}
+    {% else %}
+        {{ var_name }} = 0
+    {% endif %}
+
+    if {{ var_name }}Past != {{ var_name }}
+        $shape_changed = 1
+    endif
+    {% if config.shape_type == "Anim" %}
+        if {{ var_name }} > 0.005
+            $shape_changed = 1
+        endif
+    {% endif %}
+    post {{ var_name }}Past = {{ var_name }}
+{% endfor %}
+
+{# Animation Timing #}
+{% set anim_shapes = rzm.shape_configs | selectattr("shape_type", "equalto", "Anim") | selectattr("disable_export", "equalto", false) | list %}
+{% if anim_shapes | length > 0 %}
+run = CommandListBaseDataCompute
+[CommandListBaseDataCompute]
+if $dt+$sppeeedyy < $sppeeedyy
+{% for config in anim_shapes %}
+    $SKC_{{utils.format_var(config.shape_name)}}Freq = $SKC_{{utils.format_var(config.shape_name)}}Freq + $SKC_{{utils.format_var(config.shape_name)}} * ($sppeeedyy)
+{% endfor %}
+else
+{% for config in anim_shapes %}
+    $SKC_{{utils.format_var(config.shape_name)}}Freq = $SKC_{{utils.format_var(config.shape_name)}}Freq + $SKC_{{utils.format_var(config.shape_name)}} * ($dt+$sppeeedyy)
+{% endfor %}
+endif
+{% endif %}
+
+if $shape_changed
+    run = CustomShaderComputeShapes
+endif
+post $shape_changed = 0
+
+[CustomShaderComputeShapes]
+{% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 and component.strides %}
+    run = CustomShaderComputeShapes.{{ component.fullname }}
+{% endfor %}
+
+{% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 and component.strides %}
+[CustomShaderComputeShapes.{{ component.fullname }}]
+cs = ./modules/position_shape_linear.hlsl
+cs-u5 = copy Resource_{{ component.fullname }}_Base
+
+{% for config in rzm.shape_configs if config.shape_type == "Linear" and not config.disable_export %}
+    {% set affected_list = [] %}
+    {% for ref in config.affected_objects %}
+        {% set r_name = (ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "")) | lower %}
+        {% set c_name = component.fullname | lower %}
+        {% if (r_name == c_name) or (c_name in r_name) %}
+            {% set _ = affected_list.append(1) %}
+        {% endif %}
+    {% endfor %}
+    {% if affected_list | length > 0 %}
+        x88 = $SKC_{{utils.format_var(config.shape_name)}}
+        cs-t50 = copy Resource_{{ component.fullname }}_Base
+        cs-t51 = copy Resource_{{ component.fullname }}_{{ utils.format_var(config.shape_name) }}
+        Resource_{{ component.fullname }} = ref cs-u5
+        Dispatch = {{ component.vertex_count }}, 1, 1
+    {% endif %}
+{% endfor %}
+
+run = CustomShaderComputeShapes.{{ component.fullname }}.Anim
+cs-u5 = null
+cs-t50 = null
+cs-t51 = null
+
+[CustomShaderComputeShapes.{{ component.fullname }}.Anim]
+cs = ./modules/position_shape_anim.hlsl
+{% for config in rzm.shape_configs if config.shape_type == "Anim" and not config.disable_export %}
+    {% set affected_list = [] %}
+    {% for ref in config.affected_objects %}
+        {% set r_name = (ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "")) | lower %}
+        {% set c_name = component.fullname | lower %}
+        {% if (r_name == c_name) or (c_name in r_name) %}
+            {% set _ = affected_list.append(1) %}
+        {% endif %}
+    {% endfor %}
+    {% if affected_list | length > 0 %}
+        x88 = ($SKC_{{utils.format_var(config.shape_name)}}Freq) % 1
+        y88 = 0
+        z88 = 0.0
+        w88 = 1.0
+        cs-t50 = copy Resource_{{ component.fullname }}_Base
+        cs-t51 = copy Resource_{{ component.fullname }}_{{ utils.format_var(config.shape_name) }}
+        Resource_{{ component.fullname }} = ref cs-u5
+        Dispatch = {{ component.vertex_count }}, 1, 1
+    {% endif %}
+{% endfor %}
+
+[Resource_{{ component.fullname }}_Base]
+type = Buffer
+stride = {{ stride }}
+filename = /0/{{ component.fullname }}Position.buf
+
+{% for config in rzm.shape_configs if not config.disable_export %}
+    {% set affected_list = [] %}
+    {% for ref in config.affected_objects %}
+        {% set r_name = (ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "")) | lower %}
+        {% set c_name = component.fullname | lower %}
+        {% if (r_name == c_name) or (c_name in r_name) %}
+            {% set _ = affected_list.append(1) %}
+        {% endif %}
+    {% endfor %}
+    {% if affected_list | length > 0 %}
+    [Resource_{{ component.fullname }}_{{ utils.format_var(config.shape_name) }}]
+    type = Buffer
+    stride = {{ stride }}
+    filename = ./SK/{{ component.fullname }}_{{ utils.format_var(config.shape_name) }}.buf
+    {% endif %}
+{% endfor %}
+
+{% endfor %}
+{% endmacro %}
+
+
+{# --- 2. EFMI / WWMI (ARKNIGHTS / WUTHERING) --- #}
+{% macro shape_generate_arknights(extracted_object, merged_object, buffers, scene) %}
+{% set rzm = scene.rzm %}
+{% set stride = 16 %}
+
+[Constants]
+global $shape_changed = 0
+{% for config in rzm.shape_configs if not config.disable_export %}
+global persist $SKC_{{utils.format_var(config.shape_name)}}
+{% endfor %}
+
+[Present]
+local $shape_changed = 0
+{% for config in rzm.shape_configs if not config.disable_export %}
+local $SKC_{{utils.format_var(config.shape_name)}}Past
+{% endfor %}
+
+{% for config in rzm.shape_configs if not config.disable_export %}
+    {% set var_name = "$SKC_" ~ utils.format_var(config.shape_name) %}
+    {% if config.value_link %}
+        {{ var_name }} = ${{ utils.format_var(config.value_link) | trim }}
+    {% else %}
+        {{ var_name }} = 0
+    {% endif %}
+
+    if {{ var_name }}Past != {{ var_name }}
+        $shape_changed = 1
+    endif
+    post {{ var_name }}Past = {{ var_name }}
+{% endfor %}
+
+if $shape_changed
+    run = CustomShaderComputeShapes
+endif
+post $shape_changed = 0
+
+[CustomShaderComputeShapes]
+{% for id, component in enumerate(extracted_object.components) %}
+    {% set vb0_key = 'Component' ~ id ~ '_VB0' %}
+    {% if vb0_key in buffers and merged_object.components[id].vertex_count > 0 %}
+    run = CustomShaderComputeShapes.{{ vb0_key }}
+    {% endif %}
+{% endfor %}
+
+{% for id, component in enumerate(extracted_object.components) %}
+{% set vb0_key = 'Component' ~ id ~ '_VB0' %}
+{% if vb0_key in buffers and merged_object.components[id].vertex_count > 0 %}
+[CustomShaderComputeShapes.{{ vb0_key }}]
+cs = ./modules/position_shape_linear_ENDFIELD.hlsl
+cs-u5 = copy Resource_{{ vb0_key }}_Base
+
+{% for config in rzm.shape_configs if not config.disable_export %}
+    {% set affected_list = [] %}
+    {# Match against objects in this component #}
+    {% for m_obj in merged_object.components[id].objects %}
+        {% set m_name = m_obj.name | lower %}
+        {% for ref in config.affected_objects %}
+            {% set r_name = (ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "")) | lower %}
+            {% if (r_name == m_name) or (r_name in m_name) or (m_name in r_name) %}
+                {% set _ = affected_list.append(1) %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    
+    {% if affected_list | length > 0 %}
+        x88 = $SKC_{{utils.format_var(config.shape_name)}}
+        cs-t50 = copy Resource_{{ vb0_key }}_Base
+        cs-t51 = copy Resource_{{ vb0_key }}_{{ utils.format_var(config.shape_name) }}
+        Resource_{{ vb0_key }} = ref cs-u5
+        Dispatch = {{ merged_object.components[id].vertex_count }}, 1, 1
+    {% endif %}
+{% endfor %}
+
+[Resource_{{ vb0_key }}_Base]
+type = Buffer
+stride = {{ stride }}
+filename = Meshes/{{ vb0_key }}.buf
+
+{% for config in rzm.shape_configs if not config.disable_export %}
+    {% set affected_list = [] %}
+    {% for m_obj in merged_object.components[id].objects %}
+        {% set m_name = m_obj.name | lower %}
+        {% for ref in config.affected_objects %}
+            {% set r_name = (ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "")) | lower %}
+            {% if (r_name == m_name) or (r_name in m_name) or (m_name in r_name) %}
+                {% set _ = affected_list.append(1) %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    {% if affected_list | length > 0 %}
+    [Resource_{{ vb0_key }}_{{ utils.format_var(config.shape_name) }}]
+    type = Buffer
+    stride = {{ stride }}
+    filename = ./SK/{{ vb0_key }}_{{ utils.format_var(config.shape_name) }}.buf
+    {% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endmacro %}

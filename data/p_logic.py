@@ -1,6 +1,6 @@
 # RZMenu/data/p_logic.py
 import bpy
-from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty
+from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, PointerProperty
 
 class RZMTierRef(bpy.types.PropertyGroup):
     """A single tier reference stored as part of a CollectionProperty on elements/shapes/values."""
@@ -71,7 +71,7 @@ class RZMKeybind(bpy.types.PropertyGroup):
                                      description="Произвольное условие 3DMigoto. Если пусто — всегда активно")
     only_menu_active: BoolProperty(
         name="Only When Menu Active",
-        default=False,
+        default=True,
         description="Авто-добавляет условие '$active == 1' на стороне шаблона. "
                     "Если condition тоже заполнен — объединяется через &&"
     )
@@ -233,4 +233,81 @@ class RZMShape(bpy.types.PropertyGroup):
         type=RZMProfileValue,
         name="In-Game Profile Values",
         description="Значения шейпа для каждого профиля (float_value)."
+    )
+
+# ─── DISCOVERED SHAPE KEY CONFIG ──────────────────────────────────────────────
+
+class RZMObjectRef(bpy.types.PropertyGroup):
+    """Reference to a Blender Object by name."""
+    obj_name: StringProperty(name="Object Name")
+    obj: PointerProperty(type=bpy.types.Object, name="Object")
+
+class ShapeKeyConfig(bpy.types.PropertyGroup):
+    """Configuration for a discovered Blender ShapeKey name.
+    Generated automatically based on shape keys found in selected collections.
+    """
+    shape_name: StringProperty(
+        name="Shape Name",
+        description="Name of the Shape Key in Blender (e.g. 'Sport')"
+    )
+    shape_type: EnumProperty(
+        name="Type",
+        items=[('Linear', "Linear", ""), ('Anim', "Anim", "")],
+        default='Linear'
+    )
+    anim_condition: StringProperty(
+        name="Anim Condition",
+        description="Condition for animation playback. Empty = always active."
+    )
+    disable_export: BoolProperty(
+        name="Disable Export",
+        description="If active, this shape key will not be exported",
+        default=False
+    )
+    force_export: BoolProperty(
+        name="Force Export",
+        default=False
+    )
+    export_tiers: CollectionProperty(
+        type=RZMTierRef,
+        name="Export Tiers",
+        description="Tiers for which this shape key is exported."
+    )
+
+    # ── Range & Randomization ────────────────────────────────────────────────
+    slider_min: FloatProperty(
+        name="Min",
+        default=0.0,
+        description="Minimum value for the in-game slider and randomizer"
+    )
+    slider_max: FloatProperty(
+        name="Max",
+        default=1.0,
+        description="Maximum value for the in-game slider and randomizer"
+    )
+    mark_random: BoolProperty(
+        name="Include in Randomize",
+        default=True,
+        description="Include this shape key in RZRandomize logic"
+    )
+
+    # ── Value Link ───────────────────────────────────────────────────────────
+    value_link: StringProperty(
+        name="Value Link",
+        description="Link to a manual Shape (#), Value ($), or Toggle (@). "
+                    "If set, this shape key will be driven by the linked variable."
+    )
+
+    # ── In-Game Profiles ─────────────────────────────────────────────────────
+    in_game_profiles: CollectionProperty(
+        type=RZMProfileValue,
+        name="In-Game Profile Values",
+        description="Per-profile override values for this shape key."
+    )
+
+    # ── Affected Objects ─────────────────────────────────────────────────────
+    affected_objects: CollectionProperty(
+        type=RZMObjectRef,
+        name="Affected Objects",
+        description="List of objects that contain this shape key name."
     )

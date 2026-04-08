@@ -144,6 +144,14 @@ class RZM_OT_FullExport(bpy.types.Operator):
         except Exception as e:
             self.report({'WARNING'}, f"Texture collection failed: {e}")
 
+        # -1.1 Shape Key Discovery (Automated)
+        if getattr(rzm.addons, "export_shapekeys", False):
+            try:
+                print("[RZM Full Export] Discovering Shape Keys...")
+                bpy.ops.rzm.shape_key_export()
+            except Exception as e:
+                self.report({'WARNING'}, f"Shape discovery failed: {e}")
+
         # 0. Auto-Setup & Initialization Check
         if self.execute_init:
             try:
@@ -198,6 +206,14 @@ class RZM_OT_FullExport(bpy.types.Operator):
             else:
                 self.report({'ERROR'}, "EFMI Tools not found. Cannot export mod.")
                 return {'CANCELLED'}
+        
+        # 3.1 Puppet Master Baking (Automated Post-Export)
+        if getattr(rzm.addons, "export_shapekeys", False):
+            try:
+                print("[RZM Full Export] Triggering Puppet Master Baking...")
+                bpy.ops.rzm.puppet_master_bake()
+            except Exception as e:
+                self.report({'WARNING'}, f"Puppet Master bake failed: {e}")
         
         # 4. Custom Scripts Execution
         settings = rzm.export_settings
@@ -289,6 +305,14 @@ class RZM_OT_BatchExport(bpy.types.Operator):
                 print(f"[RZM Batch] Marked {missing_count} missing textures.")
         except Exception as e:
             self.report({'WARNING'}, f"Texture collection failed: {e}")
+
+        # -1.1 Shape Key Discovery
+        rzm = context.scene.rzm
+        if getattr(rzm.addons, "export_shapekeys", False):
+            try:
+                bpy.ops.rzm.shape_key_export()
+            except Exception as e:
+                print(f"[RZM Batch] Shape discovery failed: {e}")
 
         # 0. Auto-Setup
         if self.execute_init:

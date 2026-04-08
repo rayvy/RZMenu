@@ -1,6 +1,6 @@
+{% import "texworks.j2" as texworks with context %}
+{% import "modules/functions.j2" as fn with context %}
 {% import "modules/utils.j2" as utils with context %}
-{% import "modules/shapes_legacy.j2" as shapes_legacy with context %}
-{% import "modules/shapes_native.j2" as shapes_native with context %}
 
 {%macro generate_variables(mod_file,scene)%}
 ;macro generate_variables(mod_file,scene)
@@ -347,7 +347,7 @@ w110 = $rayvich_back_values_w110
 if $ModInitialised != 1
     $initFrame = $initFrame + 1
 endif
-if $initFrame > 3 && $ModInitialised != 1
+if $initFrame > 1 && $ModInitialised != 1
 {% if scene.rzm %}
     {% if scene.rzm.addons.tex_works == 1 %}
     run = CommandListTexWorks
@@ -1225,22 +1225,400 @@ filename = .\res\font_atlas_3.png
 filename = .\res\mod_name.png
 {% endmacro %}
 
-{% macro shape_generate(mod_file, scene) %}
-{% if scene.rzm.addons.export_shapekeys %}
-{{ shapes_native.shape_generate(mod_file, scene) }}
-{% else %}
-{{ shapes_legacy.shape_generate(mod_file, scene) }}
-{% endif %}
-{% endmacro %}
+{% macro shape_generate(mod_file,scene)%}
+[Constants]
+global $shape_changed = 0
+{% for shape in scene.rzm.shapes %}
+global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Past
+{% endfor %}
+{% if scene.rzm.shapes %}
+    [Present]
+    {% for shape in scene.rzm.shapes %}
+    post ${{utils.format_var(shape.shape_name | default(Error) | string)}}Past = ${{utils.format_var(shape.shape_name | default(Error) | string)}}
+    {% endfor %}
+    {% for shape in scene.rzm.shapes %}
+        {% if shape.shape_type == "Linear" | default("Linear") %}
+            if ${{utils.format_var(shape.shape_name | default(Error) | string)}}Past != ${{utils.format_var(shape.shape_name | default(Error) | string)}}
+                $shape_changed = 1
+            endif
+        {% endif %}
+        {% if shape.shape_type == "Anim" | default("Linear")%}
+            if ${{utils.format_var(shape.shape_name | default(Error) | string)}} > 0.005
+                $shape_changed = 1
+            endif
+        {% endif %}
+    {% endfor %}
 
+    if $shape_changed
+        run = CustomShaderComputeShapes
+    endif
+    post $shape_changed = 0
+{% endif %}
+
+{% if scene.rzm.shapes %}
+[Constants]
+{% for shape in scene.rzm.shapes %}
+{% if shape.shape_type == "Anim" | default("Linear") %}
+global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
+{% endif %}
+{% endfor %}
+[Present]
+run = CommandListBaseDataCompute
+[CommandListBaseDataCompute]
+if $dt+$sppeeedyy < $sppeeedyy
+{% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
+    {% if shape.anim_condition %}
+    if {{ shape.anim_condition }}
+        ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($sppeeedyy)
+    endif
+    {% else %}
+    ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($sppeeedyy)
+    {% endif %}
+{% endfor %}
+else
+{% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
+    {% if shape.anim_condition %}
+    if {{ shape.anim_condition }}
+        ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($dt+$sppeeedyy)
+    endif
+    {% else %}
+    ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($dt+$sppeeedyy)
+    {% endif %}
+{% endfor %}
+endif
+
+[CustomShaderComputeShapes]
+{% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
+    {% if component.strides %}
+    {% set mesh_tags = utils.tier_tags_mesh(component, scene) %}
+    {% if mesh_tags %}
+    ;[META-INFO] [START] [DELETE] [MESH] [{{ component.fullname }}] {{ mesh_tags }}
+    {% endif %}
+    run = CustomShaderComputeShapes.{{ component.fullname }}
+    {% if mesh_tags %}
+    ;[META-INFO] [END] [DELETE] [MESH] [{{ component.fullname }}] {{ mesh_tags }}
+    {% endif %}
+    {% endif %}
+{% endfor %}
+
+{% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
+    {% if component.strides %}
+    {% set mesh_tags = utils.tier_tags_mesh(component, scene) %}
+    {% if mesh_tags %}
+    ;[META-INFO] [START] [DELETE] [MESH] [{{ component.fullname }}] {{ mesh_tags }}
+    {% endif %}
+    [CustomShaderComputeShapes.{{ component.fullname }}]
+    cs = ./modules/position_shape_linear.hlsl
+    cs-u5 = copy Resource{{ component.fullname }}Position.Base
+    {% for shape in scene.rzm.shapes %}
+        {% for key in shape.shape_keys %}
+            {% if shape.shape_type == "Linear" | default("Linear") %}
+            {% if shape.export_tiers | length > 0 %}
+            ;[META-INFO] [START] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+            {% endif %}
+            {% if key.mode == 1 %}
+                ;Advanced Key
+                x88 = ${{utils.format_var(shape.shape_name | default('Error') | string)}}
+                {% set range_min = key.input_range_min | default(0.0) | float %}
+                {% set range_max = key.input_range_max | default(1.0) | float %}
+                {% set multiplier = key.multiplier | default(1.0) | float %}
+                {% set range_span = range_max - range_min %}
+                if x88 <= {{ range_min }}
+                    x88 = 0.0
+                else if x88 >= {{ range_max }}
+                    x88 = 1.0
+                else
+                    {% if range_span > 0.0001 %}
+                    x88 = (x88 - {{ range_min }}) / {{ range_span }}
+                    {% else %}
+                    x88 = 0.0
+                    {% endif %}
+                endif
+                x88 = x88 * {{ multiplier }}
+                {% else %}
+                x88 = ${{utils.format_var(shape.shape_name | default('Error') | string)}}
+            {% endif %}
+            cs-t50 = copy Resource{{ component.fullname }}Position.Base
+            cs-t51 = copy Resource{{ component.fullname }}Position.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}
+            Resource{{ component.fullname }}Position = ref cs-u5
+            Dispatch = {{ component.vertex_count }}, 1, 1
+            {% if shape.export_tiers | length > 0 %}
+            ;[META-INFO] [END] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+            {% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    run = CustomShaderComputeShapes.{{ component.fullname }}.Anim
+
+    cs-u5 = null
+    cs-t50 = null
+    cs-t51 = null
+
+    [CustomShaderComputeShapes.{{ component.fullname }}.Anim]
+    cs = ./modules/position_shape_anim.hlsl
+    {% for shape in scene.rzm.shapes %}
+        {% for key in shape.shape_keys %}
+            {% if shape.shape_type == "Anim" | default("Linear") %}
+            {% if shape.export_tiers | length > 0 %}
+            ;[META-INFO] [START] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+            {% endif %}
+            x88 = ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
+            y88 = {{ key.anim_type_index | default(0) | int }}
+            z88 = {{ key.anim_start_frame| default(0.0) | float }}
+            w88 = {{ key.anim_end_frame | default(1.0) | float }}
+            cs-t50 = copy Resource{{ component.fullname }}Position.Base
+            cs-t51 = copy Resource{{ component.fullname }}Position.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}
+            Resource{{ component.fullname }}Position = ref cs-u5
+            Dispatch = {{ component.vertex_count }}, 1, 1
+            {% if shape.export_tiers | length > 0 %}
+            ;[META-INFO] [END] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+            {% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    {% if mesh_tags %}
+    ;[META-INFO] [END] [DELETE] [MESH] [{{ component.fullname }}] {{ mesh_tags }}
+    {% endif %}
+    {% endif %}
+{% endfor %}
+
+
+{% endif %}
+
+;BaseShape
+{% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
+    {% if component.strides %}
+        {% set mesh_tags = utils.tier_tags_mesh(component, scene) %}
+        {% if mesh_tags %}
+        ;[META-INFO] [START] [DELETE] [MESH] [{{ component.fullname }}] {{ mesh_tags }}
+        {% endif %}
+        [Resource{{ component.fullname }}Position.Base]
+        type = Buffer
+        stride = {{ component.strides.position }}
+        filename = /0/{{ component.fullname }}Position.buf
+
+        {% if mod_file.game.name == "HonkaiStarRail" %}
+            [Resource{{ component.fullname }}PositionCS.Base]
+            type = StructuredBuffer
+            stride = {{ component.strides.position }}
+            filename = /0/{{ component.fullname }}Position.buf
+        {% endif %}
+        {% if mesh_tags %}
+        ;[META-INFO] [END] [DELETE] [MESH] [{{ component.fullname }}] {{ mesh_tags }}
+        {% endif %}
+    {% endif %}
+{% endfor %}
+
+{% for shape in scene.rzm.shapes %}
+    {% for key in shape.shape_keys %}
+        ;ShapeKey Resource: {{ shape.shape_name }}.{{ key.key_name }}
+        {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 and component.strides %}
+        {% if shape.export_tiers | length > 0 %}
+        ;[META-INFO] [START] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+        {% endif %}
+        [Resource{{ component.fullname }}Position.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}]
+        type = Buffer
+        stride = {{ component.strides.position }}
+        {% if shape.export_tiers | length > 0 %}
+        ;[META-INFO] [MARK] [EDIT] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+        {% endif %}
+        filename = /{{ key.key_name }}/{{ component.fullname }}Position.buf
+
+        {% if mod_file.game.name == "HonkaiStarRail" %}
+        [Resource{{ component.fullname }}PositionCS.{{utils.format_var(shape.shape_name | default('Error') | string)}}_{{ key.key_name }}]
+        type = StructuredBuffer
+        stride = {{ component.strides.position }}
+        {% if shape.export_tiers | length > 0 %}
+        ;[META-INFO] [MARK] [EDIT] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+        {% endif %}
+        filename = /{{ key.key_name }}/{{ component.fullname }}Position.buf
+        {% endif %}
+        {% if shape.export_tiers | length > 0 %}
+        ;[META-INFO] [END] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ utils.tier_tags(shape) }}
+        {% endif %}
+        {% endfor %}
+    {% endfor %}
+{% endfor %}
+{% endmacro %}
 {% macro shape_generate_arknights(extracted_object, merged_object, buffers, scene) %}
-{% if scene.rzm.addons.export_shapekeys %}
-{{ shapes_native.shape_generate_arknights(extracted_object, merged_object, buffers, scene) }}
-{% else %}
-{{ shapes_legacy.shape_generate_arknights(extracted_object, merged_object, buffers, scene) }}
-{% endif %}
-{% endmacro %}
 
+{# 1. ОБЪЯВЛЕНИЕ ПЕРЕМЕННЫХ (Constants) #}
+[Constants]
+global $shape_changed = 0
+{% for shape in scene.rzm.shapes %}
+global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Past
+{% if shape.shape_type == "Anim" | default("Linear") %}
+global ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
+{% endif %}
+{% endfor %}
+
+{# 2. ЛОГИКА ОБНОВЛЕНИЯ И ТАЙМИНГОВ (Present) #}
+[Present]
+{% if scene.rzm.shapes %}
+    ; --- Проверка изменений для оптимизации ---
+    {% for shape in scene.rzm.shapes %}
+    post ${{utils.format_var(shape.shape_name | default(Error) | string)}}Past = ${{utils.format_var(shape.shape_name | default(Error) | string)}}
+    
+    {% if shape.shape_type == "Linear" | default("Linear") %}
+    if ${{utils.format_var(shape.shape_name | default(Error) | string)}}Past != ${{utils.format_var(shape.shape_name | default(Error) | string)}}
+        $shape_changed = 1
+    endif
+    {% endif %}
+    
+    {% if shape.shape_type == "Anim" | default("Linear") %}
+    if ${{utils.format_var(shape.shape_name | default(Error) | string)}} > 0.005
+        $shape_changed = 1
+    endif
+    {% endif %}
+    {% endfor %}
+    
+    if $dt + $sppeeedyy < $sppeeedyy
+        {% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
+        ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * $sppeeedyy
+        {% endfor %}
+    else
+        {% for shape in scene.rzm.shapes if shape.shape_type == "Anim" | default("Linear") %}
+        ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq = ${{utils.format_var(shape.shape_name | default('Error') | string)}}Freq + ${{utils.format_var(shape.shape_name | default('Error') | string)}} * ($dt + $sppeeedyy)
+        {% endfor %}
+    endif
+
+    ; --- Запуск вычислений ---
+    if $shape_changed
+        run = CustomShaderComputeShapes
+    endif
+    post $shape_changed = 0
+{% endif %}
+
+{# 3. ТОЧКА ВХОДА В ШЕЙДЕРЫ #}
+[CustomShaderComputeShapes]
+{% for id, component in enumerate(extracted_object.components) %}
+    {% if ('Component' ~ id ~ '_VB0') in buffers and merged_object.components[id].vertex_count > 0 %}
+        run = CustomShaderComputeShapes_Component{{ id }}
+    {% endif %}
+{% endfor %}
+
+{# 4. ОПРЕДЕЛЕНИЕ КОМПОНЕНТОВ #}
+{% for id, component in enumerate(extracted_object.components) %}
+    {% if ('Component' ~ id ~ '_VB0') in buffers and merged_object.components[id].vertex_count > 0 %}
+    [CustomShaderComputeShapes_Component{{ id }}]
+    cs = ./modules/position_shape_linear_ENDFIELD.hlsl
+    cs-u5 = copy Resource_Component{{ id }}_VB0_Base
+
+    {% for shape in scene.rzm.shapes %}
+        {% for key in shape.shape_keys %}
+            {% if shape.shape_type == "Linear" | default("Linear") %}
+            {% set shape_tags = utils.tier_tags(shape) %}
+            {% if shape_tags %}
+            ;[META-INFO] [START] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+            {% endif %}
+            {% if key.mode == 1 %}
+                ; Advanced Key Logic
+                x88 = ${{ utils.format_var(shape.shape_name | default('Error') | string) }}
+                {% set range_min = key.input_range_min | default(0.0) | float %}
+                {% set range_max = key.input_range_max | default(1.0) | float %}
+                {% set multiplier = key.multiplier | default(1.0) | float %}
+                {% set range_span = range_max - range_min %}
+                
+                if x88 <= {{ range_min }}
+                    x88 = 0.0
+                else if x88 >= {{ range_max }}
+                    x88 = 1.0
+                else
+                    {% if range_span > 0.0001 %}
+                    x88 = (x88 - {{ range_min }}) / {{ range_span }}
+                    {% else %}
+                    x88 = 0.0
+                    {% endif %}
+                endif
+                x88 = x88 * {{ multiplier }}
+            {% else %}
+                x88 = ${{ utils.format_var(shape.shape_name | default('Error') | string) }}
+            {% endif %}
+
+            cs-t50 = copy Resource_Component{{ id }}_VB0_Base
+            cs-t51 = copy Resource_Component{{ id }}_VB0_{{ shape.shape_name }}_{{ key.key_name }}
+            Resource_Component{{ id }}_VB0 = ref cs-u5
+            Dispatch = {{ merged_object.components[id].vertex_count }}, 1, 1
+            {% if shape_tags %}
+            ;[META-INFO] [END] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+            {% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    run = CustomShaderComputeShapes_Component{{ id }}_Anim
+    cs-u5 = null
+    cs-t50 = null
+    cs-t51 = null
+
+    [CustomShaderComputeShapes_Component{{ id }}_Anim]
+    cs = ./modules/position_shape_anim_ENDFIELD.hlsl
+    {% for shape in scene.rzm.shapes %}
+        {% for key in shape.shape_keys %}
+            {% if shape.shape_type == "Anim" | default("Linear") %}
+            {% set shape_tags = utils.tier_tags(shape) %}
+            {% if shape_tags %}
+            ;[META-INFO] [START] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+            {% endif %}
+            x88 = ${{utils.format_var(shape.shape_name | default(Error) | string)}}Freq
+            y88 = {{ key.anim_type_index | default(0) | int }}
+            z88 = {{ key.anim_start_frame| default(0.0) | float }}
+            w88 = {{ key.anim_end_frame | default(1.0) | float }}
+            
+            cs-t50 = copy Resource_Component{{ id }}_VB0_Base
+            cs-t51 = copy Resource_Component{{ id }}_VB0_{{ shape.shape_name }}_{{ key.key_name }}
+            Resource_Component{{ id }}_VB0 = ref cs-u5
+            Dispatch = {{ merged_object.components[id].vertex_count }}, 1, 1
+            {% if shape_tags %}
+            ;[META-INFO] [END] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+            {% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    {% endif %}
+{% endfor %}
+
+{# 5. РЕСУРСЫ #}
+{% for id, component in enumerate(extracted_object.components) %}
+    {% if ('Component' ~ id ~ '_VB0') in buffers and merged_object.components[id].vertex_count > 0 %}
+    [Resource_Component{{ id }}_VB0_Base]
+    type = Buffer
+    stride = 16
+    filename = Meshes/Component{{ id }}_VB0.buf
+    {% endif %}
+{% endfor %}
+
+{# 5. РЕСУРСЫ ШЕЙПОВ #}
+{% for shape in scene.rzm.shapes %}
+    {% for key in shape.shape_keys %}
+        {% for id, component in enumerate(extracted_object.components) %}
+            {% if ('Component' ~ id ~ '_VB0') in buffers and merged_object.components[id].vertex_count > 0 %}
+            {% set shape_tags = utils.tier_tags(shape) %}
+            {% if shape_tags %}
+            ;[META-INFO] [START] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+            {% endif %}
+            [Resource_Component{{ id }}_VB0_{{ shape.shape_name }}_{{ key.key_name }}]
+            type = Buffer
+            stride = 16
+            {% if shape_tags %}
+            ;[META-INFO] [MARK] [EDIT] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+            {% endif %}
+            {% if shape.disable_export %}
+            filename = Meshes/Component{{ id }}_VB0.buf
+            {% else %}
+            filename = /{{ key.key_name }}/Meshes/Component{{ id }}_VB0.buf
+            {% endif %}
+            {% if shape_tags %}
+            ;[META-INFO] [END] [DELETE] [SHAPE] [{{ shape.shape_name }}] {{ shape_tags }}
+            {% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+{% endfor %}
+
+
+{% endmacro %}
 
 {% macro generate_missing_resources(scene) -%}
 {% if scene["rzm_missing_textures"] %}

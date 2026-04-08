@@ -53,6 +53,14 @@ class RZMGameSettings(bpy.types.PropertyGroup):
         description="Internal string used by Jinja2 templates"
     )
 
+class RZMCollectionPointer(bpy.types.PropertyGroup):
+    """Pointer to a Blender collection for shape key discovery."""
+    collection: PointerProperty(
+        type=bpy.types.Collection,
+        name="Collection",
+        description="Collection to scan for shape keys"
+    )
+
 def on_snippet_update(self, context):
     try:
         # Avoid recursion or heavy lifting in update callback
@@ -180,6 +188,22 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     dtoggle_compute: BoolProperty(name="DToggleCompute", default=False)
     rtoggle_compute: BoolProperty(name="RToggleCompute", default=False)
     frame_trace: BoolProperty(name="FrameTrace", default=False)
+    export_shapekeys: BoolProperty(
+        name="Export ShapeKeys",
+        default=False,
+        description="Enable new ShapeKeyConfig discovery and export system"
+    )
+    puppet_master_per_component: BoolProperty(
+        name="Per-Component Export",
+        default=False,
+        description="Export only for the active component vs all discovered components"
+    )
+    puppet_master_limit: FloatProperty(
+        name="Matching Limit",
+        default=0.01,
+        precision=6,
+        description="Distance limit for mesh matching during Puppet Master baking"
+    )
     pre_render_blur: EnumProperty(
         name="Pre-render Blur",
         items=[

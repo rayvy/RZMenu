@@ -11,7 +11,8 @@ from .p_logic import (
     ValueLinkProperty, ValueProperty, ToggleDefinition,
     BitProperty, AssignedToggle, RZMCondition,
     RZMShapeKey, RZMShape, RZMTierRef,
-    RZMProfileValue, RZMRunLink, RZMKeybind
+    RZMProfileValue, RZMRunLink, RZMKeybind,
+    RZMObjectRef, ShapeKeyConfig
 )
 from .p_texworks import (
     TexResource, TexOverride, TexWorksMaterial, 
@@ -23,7 +24,7 @@ from .p_ui import (
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
     RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition,
-    RZM_ContactItem, RZM_BuildProfile
+    RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer
 )
 from ..operators import custom_draw_ops
 
@@ -57,6 +58,11 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     
     conditions: CollectionProperty(type=RZMShape)
     shapes: CollectionProperty(type=RZMShape)
+    
+    # --- New ShapeKeyConfig System ---
+    shape_configs: CollectionProperty(type=ShapeKeyConfig)
+    shape_discovery_collections: CollectionProperty(type=RZMCollectionPointer)
+    
     dependency_statuses: CollectionProperty(type=DependencyStatus)
     fonts: CollectionProperty(type=RZFontSlotSettings)
 
@@ -119,6 +125,7 @@ classes_to_register = [
     TexResource, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
     RZMShapeKey, RZMShape,
+    RZMObjectRef, ShapeKeyConfig,
     # ─ New API classes: RunLink and Keybind AFTER RZMShape ───────────────────────────
     RZMRunLink,
     RZMKeybind,
@@ -127,6 +134,7 @@ classes_to_register = [
     RZMTierDefinition,
     RZM_ContactItem,
     RZM_BuildProfile,
+    RZMCollectionPointer,
     RZM_AddonPreferences,
     RZMAutoMenuSettings, RZMenuProperties,
     RZModProducerSettings,
@@ -151,6 +159,8 @@ def register():
     bpy.types.Scene.rzm_active_toggle_def_index = IntProperty(name="Active Toggle Definition Index")
     bpy.types.Scene.rzm_active_shape_index = IntProperty(name="Active Shape Index")
     bpy.types.Scene.rzm_active_shape_key_index = IntProperty(name="Active Shape Key Index")
+    bpy.types.Scene.rzm_active_shape_config_index = IntProperty(name="Active Shape Config Index")
+    bpy.types.Scene.rzm_active_shape_coll_index = IntProperty(name="Active Shape Collection Index")
     bpy.types.Scene.rzm_active_run_link_index = IntProperty(name="Active Run Link Index")
     bpy.types.Scene.rzm_active_keybind_index = IntProperty(name="Active Keybind Index")
     bpy.types.Scene.rzm_editor_mode = EnumProperty(name="Editor Mode", items=[('LIGHT', "Light", ""), ('PRO', "Pro", "")], default='LIGHT')
@@ -164,7 +174,8 @@ def register():
         items=[
             ('TOGGLES',   "Toggles",   "Manage object toggles"),
             ('VARIABLES', "Variables", "Manage global project values"),
-            ('SHAPES',    "Shapes",    "Manage shape keys and morphs"),
+            ('SHAPES',    "Shapes (Legacy)", "Manage legacy manual shape keys"),
+            ('NATIVE_SHAPES', "Native Shapes", "Manage discovered Blender shape keys"),
             ('KEYBINDS',  "Keybinds",  "Manage in-game hotkeys and RunLinks"),
         ],
         default='TOGGLES'

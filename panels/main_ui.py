@@ -74,6 +74,33 @@ class RZM_UL_Keybinds(bpy.types.UIList):
         row.label(text=item.key[:20] if item.key else "<no key>")
         row.label(text=item.type)
 
+class RZM_UL_ShapeDiscoveryCollections(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        if item.collection:
+            row.label(text=item.collection.name, icon='GROUP')
+        else:
+            row.label(text="<Empty Collection>", icon='ERROR')
+        row.prop(item, "collection", text="")
+
+class RZM_UL_ShapeConfigs(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "shape_name", text="", emboss=False, icon='SHAPEKEY_DATA')
+        
+        # Show first object name for context
+        if item.affected_objects:
+            obj_ref = item.affected_objects[0]
+            name = obj_ref.obj_name if obj_ref.obj_name else (obj_ref.obj.name if obj_ref.obj else "None")
+            row.label(text=name, icon='OBJECT_DATA')
+            if len(item.affected_objects) > 1:
+                row.label(text=f"+{len(item.affected_objects)-1}")
+        else:
+            row.label(text="No Objects", icon='ERROR')
+        
+        op = row.operator("rzm.select_affected_objects", text="", icon='RESTRICT_SELECT_OFF', emboss=False)
+        op.config_index = index
+
 class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
     bl_label = "RZ Constructor"
     bl_idname = "VIEW3D_PT_rz_constructor_panel"
@@ -716,11 +743,12 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         op.tier_id = tid
 
         elif tab == 'SHAPES':
-            # Project Shapes
+            # --- LEGACY SYSTEM (RZMShape) ---
             row = box.row(align=True)
             row.operator("rzm.add_shape", text="Add Shape", icon='ADD')
             row.operator("rzm.remove_shape", text="", icon='REMOVE')
             box.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
+
             if rzm.shapes and 0 <= context.scene.rzm_active_shape_index < len(rzm.shapes):
                 active_shape = rzm.shapes[context.scene.rzm_active_shape_index]
                 from ..operators.tier_ops import get_tier_ids
@@ -729,106 +757,96 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                     box.label(text="Export Tiers:")
                     s_active = {t.tier_id for t in active_shape.export_tiers}
                     flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-                    
-                    # Available Tiers
                     for tid in available:
                         is_act = tid in s_active
                         op_str = "rzm.remove_shape_tier" if is_act else "rzm.add_shape_tier"
                         op = flow.operator(op_str, text=tid, depress=is_act)
                         op.shape_index = context.scene.rzm_active_shape_index
                         op.tier_id = tid
-                    
-                    # Orphaned/Missing Tiers
-                    for tid in s_active:
-                        if tid not in available:
-                            op = flow.operator("rzm.remove_shape_tier", text=f"! {tid}", depress=True, icon='ERROR')
-                            op.shape_index = context.scene.rzm_active_shape_index
-                            op.tier_id = tid
-                    
-                    # --- Selection list for the shape properties ---
-                    s_box = box.box()
-                    s_box.prop(active_shape, "shape_name")
-                    s_box.prop(active_shape, "shape_type")
-                    s_box.prop(active_shape, "force_export")
-                    
-                    if active_shape.shape_type == 'Anim':
-                        s_box.prop(active_shape, "anim_condition")
 
-                    # --- Shape Keys List ---
-                    s_box.separator()
-                    k_row = s_box.row()
-                    k_row.label(text="Shape Keyframes:", icon='SHAPEKEY_DATA')
-                    
-                    op_add = k_row.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
-                    op_add.shape_index = context.scene.rzm_active_shape_index
-                    
-                    op_rem = k_row.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
-                    op_rem.shape_index = context.scene.rzm_active_shape_index
-                    op_rem.key_index = context.scene.rzm_active_shape_key_index
-                    
-                    s_box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
-                    
-                    if active_shape.shape_keys and 0 <= context.scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
-                        key = active_shape.shape_keys[context.scene.rzm_active_shape_key_index]
-                        kd_box = s_box.box()
-                        kd_box.prop(key, "key_name")
-                        kd_box.prop(key, "mode")
-                        
-                        if key.mode == 'ADVANCED':
-                            kd_box.prop(key, "input_range_min")
-                            kd_box.prop(key, "input_range_max")
-                            kd_box.prop(key, "multiplier")
-                        
-                        if active_shape.shape_type == 'Anim':
-                            kd_box.separator()
-                            kd_box.label(text="Animation Frames:")
-                            row = kd_box.row(align=True)
-                            row.prop(key, "anim_start_frame", text="Start")
-                            row.prop(key, "anim_end_frame", text="End")
-                            kd_box.prop(key, "anim_type_index")
-                
                 # --- Shape Properties ---
-                box.separator()
-                box.prop(active_shape, "shape_name")
-                box.prop(active_shape, "shape_type")
-                box.prop(active_shape, "force_export")
+                s_box = box.box()
+                s_box.prop(active_shape, "shape_name")
+                s_box.prop(active_shape, "shape_type")
+                s_box.prop(active_shape, "force_export")
                 
                 if active_shape.shape_type == 'Anim':
-                    box.prop(active_shape, "anim_condition")
+                    s_box.prop(active_shape, "anim_condition")
 
                 # --- Shape Keys List ---
-                box.separator()
-                row = box.row()
-                row.label(text="Shape Keys:", icon='SHAPEKEY_DATA')
-                
-                # Add/Remove Buttons for Keys
-                op_add = row.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
+                s_box.separator()
+                row_k = s_box.row()
+                row_k.label(text="Shape Keyframes:", icon='SHAPEKEY_DATA')
+                op_add = row_k.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
                 op_add.shape_index = context.scene.rzm_active_shape_index
-                
-                op_rem = row.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
+                op_rem = row_k.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
                 op_rem.shape_index = context.scene.rzm_active_shape_index
                 op_rem.key_index = context.scene.rzm_active_shape_key_index
                 
-                box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
+                s_box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
                 
-                # Selected Keyframe Details
                 if active_shape.shape_keys and 0 <= context.scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
                     key = active_shape.shape_keys[context.scene.rzm_active_shape_key_index]
-                    sbox = box.box()
+                    sbox = s_box.box()
                     sbox.prop(key, "key_name")
                     sbox.prop(key, "mode")
-                    
                     if key.mode == 'ADVANCED':
                         sbox.prop(key, "input_range_min")
                         sbox.prop(key, "input_range_max")
                         sbox.prop(key, "multiplier")
-                    
                     if active_shape.shape_type == 'Anim':
                         sbox.separator()
                         sbox.label(text="Animation Settings:")
                         sbox.prop(key, "anim_type_index")
                         sbox.prop(key, "anim_start_frame")
                         sbox.prop(key, "anim_end_frame")
+
+        elif tab == 'NATIVE_SHAPES':
+            # --- NEW SYSTEM (Discovery & Puppet Master) ---
+            box.prop(rzm.addons, "export_shapekeys", text="Enable Native Shapes Export", icon='OUTLINER_OB_MESH')
+            
+            if rzm.addons.export_shapekeys:
+                coll_box = box.box()
+                coll_box.row().label(text="Discovery Collections:", icon='GROUP')
+                row_c = coll_box.row(align=True)
+                row_c.operator("rzm.add_shape_discovery_collection", text="Add Slot", icon='ADD')
+                row_c.operator("rzm.remove_shape_discovery_collection", text="", icon='REMOVE')
+                coll_box.template_list("RZM_UL_ShapeDiscoveryCollections", "", rzm, "shape_discovery_collections", scene, "rzm_active_shape_coll_index")
+                
+                box.separator()
+                box.operator("rzm.shape_key_export", text="Discover Shape Keys", icon='FILE_REFRESH')
+                
+                box.label(text="Discovered Configurations:", icon='SHAPEKEY_DATA')
+                box.template_list("RZM_UL_ShapeConfigs", "", rzm, "shape_configs", scene, "rzm_active_shape_config_index")
+                
+                if rzm.shape_configs and 0 <= scene.rzm_active_shape_config_index < len(rzm.shape_configs):
+                    active_conf = rzm.shape_configs[scene.rzm_active_shape_config_index]
+                    c_box = box.box()
+                    c_box.prop(active_conf, "shape_name")
+                    c_box.prop(active_conf, "disable_export", text="Disable Export", icon='HIDE_OFF')
+                    c_box.prop(active_conf, "shape_type")
+                    c_box.prop(active_conf, "value_link")
+                    c_box.prop(active_conf, "anim_condition")
+                    c_box.prop(active_conf, "mark_random")
+                    
+                    obj_box = c_box.box()
+                    row_o = obj_box.row()
+                    row_o.label(text="Affected Objects:", icon='OUTLINER_OB_MESH')
+                    row_o.label(text=str(len(active_conf.affected_objects)))
+                    op_sel = row_o.operator("rzm.select_affected_objects", text="Select All", icon='RESTRICT_SELECT_OFF')
+                    op_sel.config_index = scene.rzm_active_shape_config_index
+
+                    for ref in active_conf.affected_objects[:5]:
+                        row_obj = obj_box.row(align=True)
+                        row_obj.label(text=ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "<None>"), icon='DOT')
+                    if len(active_conf.affected_objects) > 5:
+                        obj_box.label(text="...")
+                
+                pm_box = box.box()
+                pm_box.label(text="Puppet Master Baking (v10.1):", icon='ARMATURE_DATA')
+                pm_box.prop(rzm.addons, "puppet_master_per_component", text="Active Component Only")
+                pm_box.prop(rzm.addons, "puppet_master_limit", text="Match Limit")
+                pm_box.operator("rzm.puppet_master_bake", text="Bake SK Buffers", icon='MOD_BUILD')
 
         elif tab == 'KEYBINDS':
             # ── Run Links (named CommandLists) ─────────────────────────────
@@ -979,6 +997,8 @@ classes_to_register = [
     RZM_UL_ShapeKeys,
     RZM_UL_RunLinks,
     RZM_UL_Keybinds,
+    RZM_UL_ShapeDiscoveryCollections,
+    RZM_UL_ShapeConfigs,
     RZM_MT_AssignToggleMenu,
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel,
