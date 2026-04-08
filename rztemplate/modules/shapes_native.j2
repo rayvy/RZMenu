@@ -156,7 +156,7 @@ post $SKC_LastTime = time
 {% macro _macro_compute_section(rzm, comp_name, vertex_count, shader_path, affected_names) %}
 [CustomShaderComputeShapes.{{ comp_name }}]
 cs = {{ shader_path }}
-cs-u5 = copy Resource_{{ comp_name }}_Base
+cs-u5 = copy Resource{{ comp_name }}_Base
 
 {% for config in rzm.shape_configs if not config.disable_export %}
     {% set affected_list = [] %}
@@ -183,18 +183,21 @@ cs-u5 = copy Resource_{{ comp_name }}_Base
         {% else %}
         x88 = ${{ var_name }}
         {% endif %}
-        cs-t50 = copy Resource_{{ comp_name }}_Base
-        cs-t51 = copy Resource_{{ comp_name }}_{{ utils.format_var(config.shape_name) }}
-        Resource_{{ comp_name }} = ref cs-u5
+        cs-t50 = copy Resource{{ comp_name }}_Base
+        cs-t51 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}
+        Resource{{ comp_name }}Position = ref cs-u5
         Dispatch = {{ vertex_count }}, 1, 1
     {% endif %}
 {% endfor %}
+cs-u5 = null
+cs-t50 = null
+cs-t51 = null
 {% endmacro %}
 
 
 {# 3. Генерация ресурсов (Base и Shape буферы) #}
 {% macro _macro_resources(rzm, comp_name, stride, base_filename, affected_names) %}
-[Resource_{{ comp_name }}_Base]
+[Resource{{ comp_name }}_Base]
 type = Buffer
 stride = {{ stride }}
 filename = {{ base_filename }}
@@ -211,7 +214,7 @@ filename = {{ base_filename }}
     {% endfor %}
     
     {% if affected_list | length > 0 %}
-[Resource_{{ comp_name }}_{{ utils.format_var(config.shape_name) }}]
+[Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}]
 type = Buffer
 stride = {{ stride }}
 filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
@@ -229,9 +232,9 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
 
 {# --- КОНФИГУРАТОР СВОЙСТВ ИГР --- #}
 {% set GAME_PROPS = {
-    'GenshinImpact':     {'stride': 32, 'shader': './modules/position_shape_linear.hlsl',          'path_prefix': '/0/',     'path_suffix': 'Position.buf'},
-    'ZenlessZoneZero':   {'stride': 40, 'shader': './modules/position_shape_linear.hlsl',          'path_prefix': '/0/',     'path_suffix': 'Position.buf'},
-    'HonkaiStarRail':    {'stride': 40, 'shader': './modules/position_shape_linear.hlsl',          'path_prefix': '/0/',     'path_suffix': 'Position.buf'},
+    'GenshinImpact':     {'stride': 40, 'shader': './modules/position_shape_linear.hlsl',          'path_prefix': '',     'path_suffix': 'Position.buf'},
+    'ZenlessZoneZero':   {'stride': 40, 'shader': './modules/position_shape_linear.hlsl',          'path_prefix': '',     'path_suffix': 'Position.buf'},
+    'HonkaiStarRail':    {'stride': 40, 'shader': './modules/position_shape_linear.hlsl',          'path_prefix': '',     'path_suffix': 'Position.buf'},
     'ArknightsEndfield': {'stride': 16, 'shader': './modules/position_shape_linear_ENDFIELD.hlsl', 'path_prefix': 'Meshes/', 'path_suffix': '.buf'},
     'WutheringWaves':    {'stride': 16, 'shader': './modules/position_shape_linear_ENDFIELD.hlsl', 'path_prefix': 'Meshes/', 'path_suffix': '.buf'}
 } %}
@@ -266,6 +269,10 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 and component.strides %}
         {% set comp_name = component.fullname %}
         {% set affected_names = [component.fullname | lower] %}
+        {% for part in component.parts %}
+            {% set _ = affected_names.append(part.fullname | lower) %}
+        {% endfor %}
+        
         {% set base_filename = props.path_prefix ~ comp_name ~ props.path_suffix %}
         
         {{ _macro_compute_section(rzm, comp_name, component.vertex_count, props.shader, affected_names) }}

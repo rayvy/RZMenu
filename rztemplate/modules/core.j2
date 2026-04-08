@@ -362,9 +362,9 @@ if $active
             {% if scene.rzm.shapes %}
             {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
                 {% if component.strides %}
-                    Resource{{ component.fullname }}Position = copy Resource{{ component.fullname }}Position.Base
+                    Resource{{ component.fullname }}Position = copy Resource{{ component.fullname }}_Base
                     {% if mod_file.game.name == "HonkaiStarRail" %}
-                    Resource{{ component.fullname }}PositionCS = copyResource{{ component.fullname }}PositionCS.Base
+                    Resource{{ component.fullname }}PositionCS = copyResource{{ component.fullname }}CS_Base
                     {% endif %}
                 {% endif %}
             {% endfor %}
