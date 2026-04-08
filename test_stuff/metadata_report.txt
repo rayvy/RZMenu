@@ -1,47 +1,38 @@
 ======================================================================
-XXMI METADATA ARCHITECTURE UNIT TEST
+XXMI METADATA ARCHITECTURE UNIT TEST (V11.0 SHARED BUFFER)
 Source: c:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\test_stuff\hash.json
 ======================================================================
 
 [0] Logical Component: 'Hair'
-    Structure: Single Material
-    |-- Material Buffer: Component0
+    Shared Position Buffer: HairPosition.buf
+    Status: Single Material
 ----------------------------------------
 [1] Logical Component: 'WhiteBody'
-    Structure: Multi-Material (Classified)
-    Classifications found: Head
-    |-- Material Buffer: Component1Head
+    Shared Position Buffer: WhiteBodyPosition.buf
+    Status: Multi-Material (1 parts)
+    Materials: Head
 ----------------------------------------
 [2] Logical Component: 'Extra'
-    Structure: Multi-Material (Classified)
-    Classifications found: Head
-    |-- Material Buffer: Component2Head
+    Shared Position Buffer: ExtraPosition.buf
+    Status: Multi-Material (1 parts)
+    Materials: Head
 ----------------------------------------
 [3] Logical Component: 'Limbs'
-    Structure: Multi-Material (Classified)
-    Classifications found: Head, Body
-    |-- Material Buffer: Component3Head
-    |-- Material Buffer: Component3Body
+    Shared Position Buffer: LimbsPosition.buf
+    Status: Multi-Material (2 parts)
+    Materials: Head, Body
 ----------------------------------------
 [4] Logical Component: 'BlackBody'
-    Structure: Multi-Material (Classified)
-    Classifications found: Head, Body, Dress, Extra
-    |-- Material Buffer: Component4Head
-    |-- Material Buffer: Component4Body
-    |-- Material Buffer: Component4Dress
-    |-- Material Buffer: Component4Extra
+    Shared Position Buffer: BlackBodyPosition.buf
+    Status: Multi-Material (4 parts)
+    Materials: Head, Body, Dress, Extra
 ----------------------------------------
 
-FINAL ARCHITECTURE SUMMARY
-Total Top-Level Components: 5
-Total Logical Material Buffers: 9
+SIMULATION: AMBIGUITY RESOLUTION
+  Collection: 'Hair' (Parent: 'None') -> Result: Component0 [Direct Match]
+  Collection: 'Head' (Parent: 'WhiteBody') -> Result: Component1Head [Resolved via Parent (whitebody)]
+  Collection: 'Head' (Parent: 'Limbs') -> Result: Component3Head [Resolved via Parent (limbs)]
+  Collection: 'Head' (Parent: 'BlackBody') -> Result: Component4Head [Resolved via Parent (blackbody)]
+  Collection: 'Dress' (Parent: 'BlackBody') -> Result: Component4Dress [Direct Match]
 
-======================================================================
-
-INTERNAL MAPPING DICTIONARY (Simulated find_component_mapping):
-  'body' -> Component4Body
-  'dress' -> Component4Dress
-  'extra' -> Component4Extra
-  'hair' -> Component0
-  'head' -> Component4Head
 ======================================================================
