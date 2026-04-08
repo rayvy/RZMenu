@@ -1,0 +1,47 @@
+======================================================================
+XXMI METADATA ARCHITECTURE UNIT TEST
+Source: c:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\test_stuff\hash.json
+======================================================================
+
+[0] Logical Component: 'Hair'
+    Structure: Single Material
+    |-- Material Buffer: Component0
+----------------------------------------
+[1] Logical Component: 'WhiteBody'
+    Structure: Multi-Material (Classified)
+    Classifications found: Head
+    |-- Material Buffer: Component1Head
+----------------------------------------
+[2] Logical Component: 'Extra'
+    Structure: Multi-Material (Classified)
+    Classifications found: Head
+    |-- Material Buffer: Component2Head
+----------------------------------------
+[3] Logical Component: 'Limbs'
+    Structure: Multi-Material (Classified)
+    Classifications found: Head, Body
+    |-- Material Buffer: Component3Head
+    |-- Material Buffer: Component3Body
+----------------------------------------
+[4] Logical Component: 'BlackBody'
+    Structure: Multi-Material (Classified)
+    Classifications found: Head, Body, Dress, Extra
+    |-- Material Buffer: Component4Head
+    |-- Material Buffer: Component4Body
+    |-- Material Buffer: Component4Dress
+    |-- Material Buffer: Component4Extra
+----------------------------------------
+
+FINAL ARCHITECTURE SUMMARY
+Total Top-Level Components: 5
+Total Logical Material Buffers: 9
+
+======================================================================
+
+INTERNAL MAPPING DICTIONARY (Simulated find_component_mapping):
+  'body' -> Component4Body
+  'dress' -> Component4Dress
+  'extra' -> Component4Extra
+  'hair' -> Component0
+  'head' -> Component4Head
+======================================================================

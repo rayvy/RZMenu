@@ -144,6 +144,7 @@
                 {% if loop.previtem and loop.previtem.collection_name != entry.collection_name %}
                 ;{{ entry.collection_name }}
                 {% endif %}
+                ; {{ entry.name }} ({{ entry.vertex_count }})
                 {{ helper.smart_draw(entry, draw_mode='simple') }}
             {% endfor %}
 
