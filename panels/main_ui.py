@@ -321,6 +321,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         row = box.row(align=True)
         row.scale_y = 1.5
         row.operator("rzm.full_export", text="Full Export", icon='EXPORT')
+        row.operator("rzm.quick_export_menu", text="⚡ Quick Update", icon='FILE_REFRESH')
         row.operator("rzm.complete_export", text="Complete Export", icon='SEQ_STRIP_DUPLICATE')
         
         # --- Custom Scripts Management ---

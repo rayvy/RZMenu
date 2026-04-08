@@ -16,6 +16,7 @@
 ;[META-INFO] [START] [MOD-BLOCK]
 
 {% call utils.clean_ws(max_empty=1) %}
+{% if mod_file.extracted_object or mod_file.components or extracted_object %}
 {% if scene.rzm.game.name == "ArknightsEndfield" %}
     {{ efmi.main_logic(extracted_object, merged_object, mod_info, buffers, textures, cfg) }}
 {% else %}
@@ -31,8 +32,13 @@
 {{core.shape_generate(mod_file,scene)}}
 {% endif %}
 {% endif %}
+{% else %}
+;[RZM-QUICK-UPDATE-PLACEHOLDER]
+{% endif %}
+
 
 ;[META-INFO] [END] [MOD-BLOCK]
+
 
 {% block rz_menu_core %}
 {{core.menu_resource_ui(mod_file,scene)}}

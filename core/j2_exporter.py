@@ -1,0 +1,76 @@
+import os
+import sys
+import bpy
+from pathlib import Path
+
+# Add libs to sys.path so we can import jinja2
+ADDON_DIR = Path(__file__).parent.parent
+LIBS_DIR = ADDON_DIR / "libs"
+if str(LIBS_DIR) not in sys.path:
+    sys.path.append(str(LIBS_DIR))
+
+try:
+    from jinja2 import Environment, FileSystemLoader
+except ImportError:
+    # Fallback or error reporting if libs are missing
+    print("RZMenu Error: jinja2 not found in libs directory!")
+    Environment = None
+    FileSystemLoader = None
+
+class StubModFile:
+    """Mock object for mod_file to prevent template errors during Quick Export."""
+    def __init__(self):
+        self.components = []
+        self.extracted_object = None
+        self.merged_object = None
+        self.buffers = []
+        self.textures = []
+        self.cfg = None
+
+class RZMenuJ2Exporter:
+    """Standalone Jinja2 renderer for RZMenu templates."""
+    
+    def __init__(self, context):
+        self.context = context
+        self.template_dir = ADDON_DIR / "rztemplate"
+        
+        if Environment:
+            self.env = Environment(
+                loader=FileSystemLoader(str(self.template_dir)),
+                trim_blocks=True,
+                lstrip_blocks=True,
+                keep_trailing_newline=True
+            )
+            
+            # Add basic globals
+            self.env.globals['enumerate'] = enumerate
+            self.env.globals['zip'] = zip
+            self.env.globals['len'] = len
+        else:
+            self.env = None
+
+    def render(self, template_name="rz_uni.j2", menu_only=False) -> str:
+        """Renders the specified template with the current scene context."""
+        if not self.env:
+            return "; ERROR: Jinja2 Environment not initialized!"
+            
+        template = self.env.get_template(template_name)
+        
+        # Build context
+        mod_file = StubModFile()
+        scene = self.context.scene
+        
+        ctx = {
+            'scene': scene,
+            'mod_file': mod_file,
+            'rzm_is_quick_export': menu_only,
+            # Placeholder variables for EFMI/XXMI specific logic
+            'extracted_object': None,
+            'merged_object': None,
+            'mod_info': None,
+            'buffers': [],
+            'textures': [],
+            'cfg': None,
+        }
+        
+        return template.render(ctx)
