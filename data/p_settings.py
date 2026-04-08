@@ -164,9 +164,29 @@ class RZMExportSettings(bpy.types.PropertyGroup):
     emu_fullscreen: BoolProperty(name="Fullscreen Mode", default=False)
     
     # --- Atlas ---
+    atlas_format: EnumProperty(
+        name="Atlas Format",
+        description="Select the output format for the texture atlas",
+        items=[
+            ('PNG', "PNG", "Portable Network Graphics (.png)"),
+            ('DDS', "DDS (Beta)", "DirectDraw Surface (.dds) - requires texconv"),
+        ],
+        default='PNG'
+    )
+    
+    dds_profile: EnumProperty(
+        name="DDS Profile",
+        description="Select the compression profile for the exported DDS Atlas",
+        items=[
+            ('BC7_UNORM', "BC7 UNORM", "BC7 High Quality Compression"),
+            ('BC7_UNORM_SRGB', "BC7 UNORM SRGB", "BC7 High Quality Compression (SRGB)"),
+        ],
+        default='BC7_UNORM'
+    )
+
     icc_profile: EnumProperty(
         name="ICC Profile",
-        description="Select the color profile for the exported Atlas",
+        description="Select the color profile for the exported Atlas (PNG only)",
         items=[
             ('SRGB', "sRGB", "Standard RGB (sRGB)"),
             ('LINEAR', "Linear", "Linear RGB (No Profile)"),
@@ -177,6 +197,7 @@ class RZMExportSettings(bpy.types.PropertyGroup):
     # --- Atlas Tracking ---
     atlas_is_dirty: BoolProperty(name="Atlas Dirty Flag", default=True)
     atlas_last_hash: StringProperty(name="Atlas Config Hash", default="")
+    last_exported_format: StringProperty(name="Last Exported Format", default="PNG")
 
 class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debugger_info: BoolProperty(name="DebuggerInfo", default=False)

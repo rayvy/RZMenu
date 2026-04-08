@@ -500,25 +500,50 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         )
 
         if atlas_pixels.size > 0:
-            temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
+            intended_format = export_settings.atlas_format
+            exported_success = False
+            final_filepath = ""
+
+            # Attempt DDS if selected
+            if intended_format == 'DDS':
+                from ..core.dds_packer import pack_to_dds
+                final_filepath = os.path.join(export_path, "icons.dds")
+                success, msg = pack_to_dds(atlas_pixels, atlas_w, atlas_h, final_filepath, format=export_settings.dds_profile)
+                if success:
+                    exported_success = True
+                    export_settings.last_exported_format = "DDS"
+                    self.report({'INFO'}, f"Atlas exported as DDS: {final_filepath}")
+                else:
+                    self.report({'WARNING'}, f"DDS Export failed: {msg}. Falling back to PNG.")
+                    intended_format = 'PNG' # Fallback
             
-            temp_image.pixels.foreach_set(atlas_pixels)
-            
-            final_filepath = os.path.join(export_path, "icons.png")
-            temp_image.filepath_raw = final_filepath
-            temp_image.file_format = 'PNG'
-            temp_image.save()
-            
-            bpy.data.images.remove(temp_image)
-            
-            # Чистим временные кадры анимации
+            # Export as PNG (either by choice or fallback)
+            if intended_format == 'PNG':
+                temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
+                temp_image.pixels.foreach_set(atlas_pixels)
+                
+                final_filepath = os.path.join(export_path, "icons.png")
+                temp_image.filepath_raw = final_filepath
+                temp_image.file_format = 'PNG'
+                temp_image.save()
+                
+                bpy.data.images.remove(temp_image)
+                
+                # Inject metadata for PNG
+                # inject_paintnet_metadata(final_filepath)
+                inject_metadata_profile(final_filepath, profile=export_settings.icc_profile)
+                
+                export_settings.last_exported_format = "PNG"
+                exported_success = True
+                self.report({'INFO'}, f"Atlas exported as PNG: {final_filepath}")
+
+            # Clean up temporary frames anyway
             for bl_img in temp_bl_images:
-                bpy.data.images.remove(bl_img)
+                try: bpy.data.images.remove(bl_img)
+                except: pass
             
-            #inject_paintnet_metadata(final_filepath)
-            inject_metadata_profile(final_filepath, profile=export_settings.icc_profile)
-            
-            self.report({'INFO'}, f"Atlas exported: {final_filepath}")
+            if not exported_success:
+                return {'CANCELLED'}
         else:
             return {'CANCELLED'}
 

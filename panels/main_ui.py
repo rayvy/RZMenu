@@ -618,7 +618,17 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         else:
             box.label(text="No path set", icon='ERROR')
         
-        box.prop(settings, "icc_profile")
+        atlas_box = layout.box()
+        atlas_box.label(text="Atlas Export Format:", icon='IMAGE_DATA')
+        atlas_box.prop(settings, "atlas_format", text="Format")
+        if settings.atlas_format == 'DDS':
+            atlas_box.prop(settings, "dds_profile", text="Profile")
+        else:
+            atlas_box.prop(settings, "icc_profile", text="Profile")
+        
+        row = atlas_box.row()
+        row.enabled = False
+        row.prop(settings, "last_exported_format", text="Actual Output")
         
         layout.separator()
         if hasattr(bpy.ops.rzm, "export_atlas"):
@@ -817,6 +827,13 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                 box.separator()
                 row = box.row(align=True)
                 row.operator("rzm.shape_key_export", text="Discover", icon='FILE_REFRESH')
+                
+                # Bulk Toggles
+                en = row.operator("rzm.set_all_shape_export", text="All ON", icon='CHECKBOX_HLT')
+                en.state = True
+                dis = row.operator("rzm.set_all_shape_export", text="All OFF", icon='CHECKBOX_DEHLT')
+                dis.state = False
+
                 row.operator("rzm.puppet_master_bake", text="Bake ALL", icon='NONE')
                 row.operator("rzm.puppet_master_bake_single", text="Bake THIS", icon='SHAPEKEY_DATA')
                 

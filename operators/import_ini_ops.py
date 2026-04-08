@@ -236,7 +236,7 @@ def _parse_ini(path: str, d_prefix: str = 'D'):
     for kb in keybinds:
         if kb['name'] not in ('KeyCycle', 'KeyDCycle') or not kb['cycle_vars']:
             continue
-        max_len = max(len(v) for v in kb['cycle_vars'].values())
+        max_len = max((len(v) for v in kb['cycle_vars'].values()), default=0)
         for i in range(max_len):
             pv = {}
             for vn, vals in kb['cycle_vars'].items():
@@ -256,9 +256,7 @@ def _is_d_keybind(kb_name: str, d_prefix: str = 'D') -> bool:
 
 def _next_run_link_id(rzm) -> int:
     """Return next available integer ID for a new RunLink (like image_id)."""
-    if not rzm.run_links:
-        return 1
-    return max(rl.id for rl in rzm.run_links if rl.id >= 0) + 1
+    return max((rl.id for rl in rzm.run_links if rl.id >= 0), default=0) + 1
 
 
 # --- Operator -----------------------------------------------------------------

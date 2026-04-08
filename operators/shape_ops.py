@@ -15,7 +15,7 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
         target_objects = set()
         for coll_ptr in rzm.shape_discovery_collections:
             if coll_ptr.collection:
-                self.get_all_objects_recursive(coll_ptr.collection, target_objects)
+                self.get_all_objects_recursive(context, coll_ptr.collection, target_objects)
         
         if not target_objects:
             self.report({'WARNING'}, "No objects found in discovery collections.")
@@ -119,11 +119,13 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
         self.report({'INFO'}, f"Discovered {len(rzm.shape_configs)} shape configurations.")
         return {'FINISHED'}
 
-    def get_all_objects_recursive(self, collection, obj_set):
+    def get_all_objects_recursive(self, context, collection, obj_set):
+        view_objects = context.view_layer.objects
         for obj in collection.objects:
-            obj_set.add(obj)
+            if obj.name in view_objects:
+                obj_set.add(obj)
         for child in collection.children:
-            self.get_all_objects_recursive(child, obj_set)
+            self.get_all_objects_recursive(context, child, obj_set)
 
     def add_to_discovered(self, discovered_shapes, name, obj):
         if name not in discovered_shapes:
@@ -182,11 +184,33 @@ class RZM_OT_RemoveShapeDiscoveryCollection(bpy.types.Operator):
             context.scene.rzm_active_shape_coll_index = max(0, idx - 1)
         return {'FINISHED'}
 
+class RZM_OT_SetAllShapeExport(bpy.types.Operator):
+    """Enable or disable export for all discovered shape keys."""
+    bl_idname = "rzm.set_all_shape_export"
+    bl_label = "Set All Shape Export"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    state: BoolProperty(name="State", default=True)
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        count = 0
+        for config in rzm.shape_configs:
+            # Note: disable_export=True means EXPORT IS OFF. 
+            # state=True means we WANT export, so disable_export=False.
+            config.disable_export = not self.state
+            count += 1
+        
+        status = "Enabled" if self.state else "Disabled"
+        self.report({'INFO'}, f"{status} export for {count} shapes.")
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_ShapeKeyExport,
     RZM_OT_SelectAffectedObjects,
     RZM_OT_AddShapeDiscoveryCollection,
     RZM_OT_RemoveShapeDiscoveryCollection,
+    RZM_OT_SetAllShapeExport,
 ]
 
 def register():
