@@ -1227,7 +1227,7 @@ filename = .\res\mod_name.png
 
 {% macro shape_generate(mod_file, scene) %}
 {% if scene.rzm.addons.export_shapekeys %}
-{{ shapes_native.shape_generate(mod_file, scene) }}
+{{ shapes_native.shape_generate(scene=scene, game_name=scene.rzm.game.name, mod_file=mod_file) }}
 {% else %}
 {{ shapes_legacy.shape_generate(mod_file, scene) }}
 {% endif %}
@@ -1235,7 +1235,7 @@ filename = .\res\mod_name.png
 
 {% macro shape_generate_arknights(extracted_object, merged_object, buffers, scene) %}
 {% if scene.rzm.addons.export_shapekeys %}
-{{ shapes_native.shape_generate_arknights(extracted_object, merged_object, buffers, scene) }}
+{{ shapes_native.shape_generate(scene=scene, game_name=scene.rzm.game.name, extracted_object=extracted_object, merged_object=merged_object, buffers=buffers) }}
 {% else %}
 {{ shapes_legacy.shape_generate_arknights(extracted_object, merged_object, buffers, scene) }}
 {% endif %}

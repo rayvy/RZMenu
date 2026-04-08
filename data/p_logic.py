@@ -274,6 +274,12 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         description="Tiers for which this shape key is exported."
     )
 
+    # ── Animation Settings ───────────────────────────────────────────────────
+    multiplier: FloatProperty(name="Multiplier", default=1.0)
+    anim_type_index: IntProperty(name="Type Index", default=0)
+    anim_start_frame: FloatProperty(name="Start Frame", default=0.0, min=0.0, max=1.0)
+    anim_end_frame:   FloatProperty(name="End Frame",   default=1.0, min=0.0, max=1.0)
+
     # ── Range & Randomization ────────────────────────────────────────────────
     slider_min: FloatProperty(
         name="Min",

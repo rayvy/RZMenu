@@ -825,6 +825,14 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                     c_box.prop(active_conf, "shape_name")
                     c_box.prop(active_conf, "disable_export", text="Disable Export", icon='HIDE_OFF')
                     c_box.prop(active_conf, "shape_type")
+                    if active_conf.shape_type == 'Anim':
+                        anim_box = c_box.box()
+                        anim_box.label(text="Animation Settings:")
+                        anim_box.prop(active_conf, "multiplier")
+                        anim_box.prop(active_conf, "anim_type_index")
+                        anim_box.prop(active_conf, "anim_start_frame")
+                        anim_box.prop(active_conf, "anim_end_frame")
+                        
                     c_box.prop(active_conf, "value_link")
                     c_box.prop(active_conf, "anim_condition")
                     c_box.prop(active_conf, "mark_random")
