@@ -13,6 +13,8 @@
 {% import "modules/meta.j2" as meta with context %}
 {{ meta.mod_info_generate(mod_file, scene) }}
 
+;[META-INFO] [START] [MOD-BLOCK]
+
 {% call utils.clean_ws(max_empty=1) %}
 {% if scene.rzm.game.name == "ArknightsEndfield" %}
     {{ efmi.main_logic(extracted_object, merged_object, mod_info, buffers, textures, cfg) }}
@@ -23,7 +25,14 @@
         {{ hoyo.resourcebuffers(mod_file, scene) }}
         {{ hoyo.resourcetextures(mod_file, scene) }}
     {% endblock %}
+{% if scene.rzm.game.name == "ArknightsEndfield" %}
+{{core.shape_generate_arknights(extracted_object, merged_object, buffers, scene)}}
+{% else %}
+{{core.shape_generate(mod_file,scene)}}
 {% endif %}
+{% endif %}
+
+;[META-INFO] [END] [MOD-BLOCK]
 
 {% block rz_menu_core %}
 {{core.menu_resource_ui(mod_file,scene)}}
@@ -31,11 +40,6 @@
 {{core.entryPoint(mod_file,scene)}}
 {{core.baseCompute(mod_file,scene)}}
 {{core.menuDrawUi(mod_file,scene)}}
-{% if scene.rzm.game.name == "ArknightsEndfield" %}
-{{core.shape_generate_arknights(extracted_object, merged_object, buffers, scene)}}
-{% else %}
-{{core.shape_generate(mod_file,scene)}}
-{% endif %}
 {% endblock %}
 
 {{fn.Base()}}
@@ -82,28 +86,3 @@
 {% if scene.rzm %}
 {{ scene.rzm.config.post_snippet | default(";There Nothing")}}
 {% endif %}
-
-
-{% macro simple_shape_audit(input_obj, scene) -%}
-    {%- set obj_name = input_obj.name if input_obj.name is defined else input_obj -%}
-    {%- set real_obj = scene.objects[obj_name] if (scene is defined and obj_name in scene.objects) else none -%}
-
-    {%- if real_obj and real_obj.type == 'MESH' -%}
-        ; --- [INFO] Объект: {{ obj_name }} ---
-        {%- if real_obj.data and real_obj.data.shape_keys -%}
-            ; Найдено шейпкеев: {{ real_obj.data.shape_keys.key_blocks|length }}
-            {%- for sk in real_obj.data.shape_keys.key_blocks -%}
-                ;  -> {{ sk.name }} (Значение: {{ "%.3f"|format(sk.value) }})
-            {%- endfor -%}
-        {%- else -%}
-            ; Шейпкеи отсутствуют.
-        {%- endif -%}
-        ; -------------------------------------
-    {%- endif -%}
-{%- endmacro %}
-
-{% for obj in scene.objects %}
-    {% if obj.type == 'MESH' %}
-        {{ simple_shape_audit(obj, scene) }}
-    {% endif %}
-{% endfor %}
