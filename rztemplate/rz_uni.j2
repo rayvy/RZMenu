@@ -92,3 +92,23 @@
 {% if scene.rzm %}
 {{ scene.rzm.config.post_snippet | default(";There Nothing")}}
 {% endif %}
+
+
+;DEBUG STUFF WITH CACHE
+{% if mod_file.extracted_object or mod_file.components or extracted_object %}
+;oups, it's full game export, not fast export
+{% else %}
+;Fast Export, debug information starts there
+;CACHE EXISTS: {{ rzm_export_cache is not none }}
+{% if rzm_export_cache %}
+;SOURCE: {{ rzm_export_cache.source }}
+;TIMESTAMP: {{ rzm_export_cache.timestamp }}
+;COMPONENTS:
+{% for comp_name, comp_data in rzm_export_cache.components.items() %}
+;  {{ comp_name }}: {{ comp_data.n_verts }} verts
+{% for obj in comp_data.objects %}
+;    [{{ obj.vb_offset }} .. {{ obj.vb_offset + obj.vb_count - 1 }}] {{ obj.name }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+{% endif %}

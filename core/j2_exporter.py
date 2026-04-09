@@ -60,10 +60,17 @@ class RZMenuJ2Exporter:
         mod_file = StubModFile()
         scene = self.context.scene
         
+        try:
+            from ..operators.export_cache import get_cache
+            export_cache = get_cache()
+        except Exception:
+            export_cache = None
+
         ctx = {
             'scene': scene,
             'mod_file': mod_file,
             'rzm_is_quick_export': menu_only,
+            'rzm_export_cache': export_cache,
             # Placeholder variables for EFMI/XXMI specific logic
             'extracted_object': None,
             'merged_object': None,

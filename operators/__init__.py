@@ -15,34 +15,36 @@ def register():
     """
     global __all_classes__
     __all_classes__ = []
-    
+
     package_dir = Path(__file__).parent
-    
+
     for module_path in package_dir.glob("*.py"):
         if module_path.name == "__init__.py":
             continue
-            
+
         module_name = f".{module_path.stem}"
-        
+
         try:
-            # Import the module relative to this package
             module = importlib.import_module(module_name, __package__)
 
-            # If the module has a list of classes, register them
             if hasattr(module, "classes_to_register"):
                 for cls in module.classes_to_register:
                     bpy.utils.register_class(cls)
                     __all_classes__.append(cls)
 
-            # Also call the module's own register function if it exists
-            # (for properties, etc.) - Only if it doesn't just re-register classes
-            # if hasattr(module, "register"):
-            #     module.register()
-
         except Exception as e:
             print(f"ERROR: Failed to register module '{module_path.name}': {e}")
             import traceback
             traceback.print_exc()
+
+    # Install XXMI / EFMI export interceptors via timer.
+    # Safe and catches addons that load after RZMenu or are enabled later.
+    try:
+        from . import export_interceptor
+        export_interceptor.register()
+    except Exception as e:
+        print(f"[RZM] [CACHE] Interceptor install skipped: {e}")
+
 
 def unregister():
     """
@@ -50,13 +52,17 @@ def unregister():
     """
     global __all_classes__
 
-    # Unregister in reverse order to handle dependencies correctly.
+    # Remove export monkey-patches and timer before unregistering classes
+    try:
+        from . import export_interceptor
+        export_interceptor.unregister()
+    except Exception as e:
+        print(f"[RZM] [CACHE] Interceptor uninstall skipped: {e}")
+
     for cls in reversed(__all_classes__):
         try:
             bpy.utils.unregister_class(cls)
         except Exception as e:
             print(f"ERROR: Failed to unregister class '{cls.__name__}': {e}")
-            
-    # Clear the list
-    __all_classes__ = []
 
+    __all_classes__ = []
