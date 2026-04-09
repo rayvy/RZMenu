@@ -26,6 +26,11 @@
         {{ hoyo.resourcebuffers(mod_file, scene) }}
         {{ hoyo.resourcetextures(mod_file, scene) }}
     {% endblock %}
+{% if scene.rzm.game.name == "ArknightsEndfield" %}
+{{core.shape_generate_arknights(extracted_object, merged_object, buffers, scene)}}
+{% else %}
+{{core.shape_generate(mod_file,scene)}}
+{% endif %}
 {% endif %}
 {% else %}
 ;[RZM-QUICK-UPDATE-PLACEHOLDER]
@@ -75,12 +80,6 @@
 {{run_links.generate_run_links(mod_file,scene)}}
 {{data.config(mod_file,scene)}}
 {{data.generate_profiles(mod_file,scene)}}
-
-{% if scene.rzm.game.name == "ArknightsEndfield" %}
-{{core.shape_generate_arknights(extracted_object, merged_object, buffers, scene)}}
-{% else %}
-{{core.shape_generate(mod_file,scene)}}
-{% endif %}
 {% endblock %}
 
 {% endcall %}
