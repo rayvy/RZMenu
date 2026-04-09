@@ -1,0 +1,293 @@
+==================================================
+РЕКУРСИВНЫЙ АНАЛИЗ: Skirk Export
+==================================================
+[Коллекция: Skirk Export]
+  [Коллекция: Skirk Light]
+    [Коллекция: SkirkExtraHead]
+      - Skirt Transparent (765 vertices)
+    [Коллекция: SkirkWhiteBodyHead]
+      [Коллекция: SkirkWhiteBody Head Head]
+        - LS Hair Piece Large (267 vertices)
+        - Skirk Body Light NeckHead (532 vertices)
+        - Cart Bunny Headband (679 vertices)
+        - LS Bunny Headband (465 vertices)
+        - Hair Accessories.LS (240 vertices)
+        - Blue Pendant Earring.LS (45 vertices)
+      [Коллекция: SkirkWhiteBody Head Neck]
+        - LS Straps Choker Only (234 vertices)
+        - LS Scarf (828 vertices)
+        - Cart Bunny Collar (370 vertices)
+        - Cart Bunny BowTie (932 vertices)
+        - Cart Bunny Chain (654 vertices)
+        - LS Bunny Bow (376 vertices)
+        - LS Bunny Collar (518 vertices)
+        - Golden Bikini Choker.LS (463 vertices)
+      [Коллекция: SkirkWhiteBody Head Shoulders]
+        - LS Pauldrons (1056 vertices)
+        - LS Upper Sleeves (1241 vertices)
+        - Cart Bunny Shoulder Straps.Main (438 vertices)
+        - Cart Bunny Shoulder Straps.Secondary (516 vertices)
+      [Коллекция: SkirkWhiteBody Head UpperArms]
+        - LS Glove Stars (212 vertices)
+        - Skirk Body Light Arms (644 vertices)
+        - Cart Bunny Blue Armbands (152 vertices)
+      [Коллекция: SkirkWhiteBody Head Chest]
+        - LS Straps Upper Torso (721 vertices)
+        - LS Straps Vertical (525 vertices)
+        - LS Straps Vertical Crotchless (385 vertices)
+        - LS Upper Chest Gems (40 vertices)
+        - LS Dress Main No Front (2516 vertices)
+        - LS Dress Breast Cups Connected (506 vertices)
+        - LS Dress Breast Cups (450 vertices)
+        - Knight Plate Breasts (1700 vertices)
+        - LS Dress Main Full (2870 vertices)
+        - LS Dress Ribbons (418 vertices)
+        - LS Dress Medallion (147 vertices)
+        - Skirk Body Light Chest (2186 vertices)
+        - Skirk Body Light Breast (1584 vertices)
+        - Cart Bunny Bodysuit.Top (1874 vertices)
+        - LS Reverse Bunny Top (1549 vertices)
+        - Cart Bunny Bra (1982 vertices)
+        - Cart Bunny Bodysuit.Top.TitsDown (1056 vertices)
+        - Cart Bunny Bodysuit.Bottom (1160 vertices)
+        - Cart Bunny Bodysuit.NeckNStraps (1183 vertices)
+        - Cart Bunny Bodysuit.Bottom.Exposed (1089 vertices)
+        - Golden Strap Bikini Top.LS (451 vertices)
+        - MicroBikini Top.LS (541 vertices)
+        - SB Sling Bikini.LS (2046 vertices)
+        - SB Sling Bikini.TitsOut.LS (1826 vertices)
+      [Коллекция: SkirkWhiteBody Head Nipples]
+        - LS Nipple Armor (222 vertices)
+        - Skirk Body Light Breast.Nipples (506 vertices)
+        - LS Cross Nipple Pasties (210 vertices)
+        - LS Heart Nipple Pasties (226 vertices)
+        - Nipple Jewels.LS (232 vertices)
+        - Nipple Studs.LS (72 vertices)
+      [Коллекция: SkirkWhiteBody Head Midriff]
+        - LS Straps Under Skirt (118 vertices)
+      [Коллекция: SkirkWhiteBody Head Pelvis]
+        - Skirk Body Light Pelvis.NoSpread (6011 vertices)
+        - Skirk Body Light Pelvis (6011 vertices)
+        - Knight Plate Sides (608 vertices)
+        - LS Straps Hip Straps (102 vertices)
+        - LS Straps HipThighs (282 vertices)
+        - LS Crotch Guard (319 vertices)
+        - Knight Plate Crotch (665 vertices)
+        - Cart Bunny Tail (162 vertices)
+        - LS Bunny Tail.Fluff (714 vertices)
+        - LS Bunny Tail.Insert (492 vertices)
+        - Cart Bunny Panties (880 vertices)
+        - Skirk Body Light Pelvis.NoSpread.WT (9649 vertices)
+        - Golden Bikini Bottom.LS (497 vertices)
+        - Microbikini Bottom.LS (394 vertices)
+        - Waist Belt Chains.LS (1228 vertices)
+        - Skirk Body Light Pelvis.PrimoGape (7139 vertices)
+      [Коллекция: SkirkWhiteBody Head Pussy]
+        - Clit Ring Gem.LS (116 vertices)
+        - Clit Studs.LS (36 vertices)
+        - LS Cross Pussy Pasty (115 vertices)
+        - LS Heart Pussy Pasty (165 vertices)
+        - PrimoGemInsertion (34 vertices)
+        - AzureLightPrimoHandle (2035 vertices)
+        - AzureLightPrimoHandle.Wand (689 vertices)
+      [Коллекция: SkirkWhiteBody Head Thighs]
+        - Skirk Body Light Thigh Strap Squeeze (1168 vertices)
+        - Skirk Body Light Thighs (1168 vertices)
+        - Skirk Body Light Legs (4958 vertices)
+        - Cart Bunny Suit Thigh Strap (166 vertices)
+        - Thigh Straps.LS (206 vertices)
+      [Коллекция: SkirkWhiteBody Head Feet]
+        - LS Shoe Guards (390 vertices)
+      [Коллекция: SkirkWhiteBody Head WT]
+        - Skirk Body Light Full WT (16785 vertices)
+  [Коллекция: Skirk Dark]
+    [Коллекция: SkirkBlackBodyBody]
+      - Back Fins (189 vertices)
+    [Коллекция: SkirkBlackBodyDress]
+      - DS Spiked Skirt Funnels.Windows (14 vertices)
+      - DS Bodysuit Dark.Blue.FunnelWindows (59 vertices)
+      - DS Bodysuit Dark.Blue.HipWindows (46 vertices)
+      - DS Bodysuit Dark.Blue.SideAbsWindows (114 vertices)
+      - DS Bodysuit Dark.Blue.SideBoobWindows (256 vertices)
+      - DS Bodysuit Dark.Blue.SideHipWindows (114 vertices)
+    [Коллекция: SkirkBlackBodyExtra]
+      - DS Head Feathers (65 vertices)
+      - DS Arm Stars (212 vertices)
+      - DS Frame Back Windows (32 vertices)
+      - DS Dress Hip Floaters (314 vertices)
+    [Коллекция: SkirkBlackBodyHead]
+      [Коллекция: Bunny Dark Body]
+        [Коллекция: Bunny Dark Body Reg]
+      [Коллекция: SkirkBlackBody Head Head]
+        - DS Hairpiece (202 vertices)
+        - Skirk Body Dark NeckHead (532 vertices)
+        - Bunny Headband DS (465 vertices)
+        - Hair Accessories.DS (240 vertices)
+        - Blue Pendant Earring.DS (45 vertices)
+        - Succubus Wings Head (804 vertices)
+        - Succubus Colored Horns (82 vertices)
+        - Succubus Horns Smaller (1840 vertices)
+        - Succubus Horns (3448 vertices)
+        - Succubus Horns Up (122 vertices)
+        - Succubus Horns Forward (122 vertices)
+      [Коллекция: SkirkBlackBody Head Neck]
+        - DS Neck Spikes (110 vertices)
+        - Bunny Bow Black DS (376 vertices)
+        - Bunny Collar DS (518 vertices)
+        - Diamond Choker (316 vertices)
+        - Succubus Fluffy Collar (432 vertices)
+      [Коллекция: SkirkBlackBody Head Shoulders]
+        - DS Pauldrons (1056 vertices)
+        - DS Reverse Bunny Top (1549 vertices)
+      [Коллекция: SkirkBlackBody Head Arms]
+        - DS Forearm Parts (390 vertices)
+        - Skirk Body Dark Upper Arms (836 vertices)
+      [Коллекция: SkirkBlackBody Head Hands]
+        - DS Finger Armor (330 vertices)
+      [Коллекция: SkirkBlackBody Head Chest]
+        - DS Bodysuit Dark.Torso.Frame.Main (1127 vertices)
+        - DS Bodysuit Dark.Torso.Frame.MainExposed (1152 vertices)
+        - DS Bodysuit Dark.Torso.Frame.Vertical.Boobstraps (859 vertices)
+        - DS Bodysuit Dark.Torso.Frame.Vertical.Boobstraps.NipplesOut (859 vertices)
+        - DS Bodysuit Dark.Torso.TitsWindow (394 vertices)
+        - Knight Plate Breasts.DS (1450 vertices)
+        - Skirk Body Dark Breasts (1584 vertices)
+        - Skirk Body Dark Chest (2186 vertices)
+        - Sling Bikini.Blue (874 vertices)
+        - String Bikini Plug (749 vertices)
+        - Bunny Suit DS Top.TitsDown (931 vertices)
+        - Bunny Suit DS Bottom (915 vertices)
+        - Bunny Suit DS Top (931 vertices)
+        - Bunny Suit DS Bottom.Exposed (774 vertices)
+        - Succubus Claw Bra (4102 vertices)
+        - Succubus Collar (166 vertices)
+        - Succubus Body Straps (4171 vertices)
+        - Succubus Body Straps.PussyCover (110 vertices)
+        - Succubus Straps.Bottom Pentacle Accessory (306 vertices)
+        - Succubus Body Straps.Crotch (3071 vertices)
+        - Succubus Claw Bra.Fondling (4102 vertices)
+        - Succubus Body Straps.Crotch.Gape (3045 vertices)
+      [Коллекция: SkirkBlackBody Head Nipples]
+        - DS Nipple Armor (222 vertices)
+        - Skirk Body Dark Torso.Nipples (506 vertices)
+        - DS Cross Nipple Pasties (210 vertices)
+        - DS Heart Nipple Pasties (226 vertices)
+        - Nipple Barbell.DS (328 vertices)
+        - Nipple Barbell.Jewelled.DS (442 vertices)
+      [Коллекция: SkirkBlackBody Head Midriff]
+        - DS Bodysuit Dark.Torso.MidWindow (44 vertices)
+        - DS Torso Gems (92 vertices)
+      [Коллекция: SkirkBlackBody Head Pelvis]
+        - DS Crotch Guard (319 vertices)
+        - DS Bodysuit Dark.AssWindow (244 vertices)
+        - DS Bodysuit Dark.HipsThighFrame (78 vertices)
+        - DS Bodysuit Dark.Torso.BottomWindow (174 vertices)
+        - DS Bodysuit Dark.Torso.Frame.GroinStraps (87 vertices)
+        - DS Bodysuit Dark.Torso.Frame.HipStraps (355 vertices)
+        - DS Bodysuit Dark.Torso.Frame.HipStraps.FunnelWindows (46 vertices)
+        - DS Spiked Skirt Funnels (647 vertices)
+        - Knight Plate Crotch.DS (665 vertices)
+        - Skirk Body Dark Pelvis (6011 vertices)
+        - Skirk Body Dark Pelvis.NoSpread (6011 vertices)
+        - DS Bunny Tail.Fluff (714 vertices)
+        - DS Bunny Tail.Insert (492 vertices)
+        - Jewel Skirt.DS (1497 vertices)
+        - Jewel DS Bikini Top (1609 vertices)
+        - Jewel DS Bikini Bottom (940 vertices)
+        - Skirk Body Dark Pelvis.NoSpread.WT (9649 vertices)
+        - Jewel DS Bikini Top.Gems (24 vertices)
+        - Jewel DS Bikini Bottom.Gem (9 vertices)
+        - Jewel DS Bikini Top.001 (301 vertices)
+        - Succubus Wings (812 vertices)
+        - Succubus Crotch Skull (218 vertices)
+        - Succubus Tail (1525 vertices)
+        - Succubus Tail Plug (525 vertices)
+        - Succubus Wings Smaller (804 vertices)
+        - Skirk Body Dark Pelvis.SuccBallGape (7139 vertices)
+        - Succ Ball Insertion (700 vertices)
+      [Коллекция: SkirkBlackBody Head Pussy]
+        - DS Cross Pussy Pasty (115 vertices)
+        - DS Heart Pussy Pasty (165 vertices)
+        - Clit Barbell.DS (180 vertices)
+        - Clit Jewel.DS (58 vertices)
+        - Pubic Hair DS (93 vertices)
+      [Коллекция: SkirkBlackBody Head Legs]
+        - Skirk Body Dark Lower Legs (5022 vertices)
+        - Skirk Body Dark Thighs (1168 vertices)
+        - Skirk Body Dark Thighs.Thighband.001 (1310 vertices)
+      [Коллекция: SkirkBlackBody Head Feet]
+        - DS Shoe Guards (196 vertices)
+        - DS Shoe Guards.with Shin Armor (196 vertices)
+  [Коллекция: Skirk Shared]
+    [Коллекция: SkirkLimbsBody]
+      [Коллекция: Skirk Light Limbs]
+        - Flower Sandals.LS (3454 vertices)
+        - Flower Sandals.Straps.LS (2388 vertices)
+        - Wrist Flowers.LS (980 vertices)
+        [Коллекция: Skirk Light Limbs Arms]
+          - LS Elbow Guards (1300 vertices)
+          - LS Gauntlets (12842 vertices)
+          - LS Reverse Bunny Top.Forearm (972 vertices)
+          - Skirk Arm Shards (72 vertices)
+        [Коллекция: Skirk Light Limbs Hands]
+        [Коллекция: Skirk Light Limbs Legs]
+          - Cartethiya Golden Anklets (230 vertices)
+          - Cartethiya Thorns Anklet (312 vertices)
+          - LS Knee Guard (932 vertices)
+          - LS Shin Armor (5600 vertices)
+          - LS Reverse Bunny Bottoms.Shins (3958 vertices)
+          - Platinum Anklets.LS (420 vertices)
+          - LS Reverse Bunny Bottoms.Knees (812 vertices)
+        [Коллекция: Skirk Light Limbs Feet]
+          - Bunny Heels (1114 vertices)
+      [Коллекция: Skirk Dark Limbs]
+        [Коллекция: Skirk Dark Limbs Arms]
+          - DS Reverse Bunny Top.Forearm (972 vertices)
+          - DS Gauntlets (13302 vertices)
+          - Succubus Sleeves (7238 vertices)
+        [Коллекция: Skirk Dark Hands]
+          - Diamond Bangle.R (184 vertices)
+          - Diamond Bangle.Twin (368 vertices)
+          - Diamond Bracelets.L (72 vertices)
+          - Diamond Bracelets.Twin (144 vertices)
+        [Коллекция: Skirk Dark Limbs Legs]
+          - DS Reverse Bunny Bottoms.Shins (3958 vertices)
+          - DS Bunny Suit Legs.Bottom (3326 vertices)
+          - DS Knee Guard (734 vertices)
+          - DS Shin Armor (5210 vertices)
+          - Platinum Anklets.DS (420 vertices)
+          - DS Bunny Suit Legs.Knees (736 vertices)
+          - DS Reverse Bunny Bottoms.Knees (888 vertices)
+          - Succubus Thigh High Boots (11170 vertices)
+        [Коллекция: Skirk Dark Limbs Feet]
+          - DS Bunny Heels (1114 vertices)
+          - Platinum Heels.DS (720 vertices)
+      [Коллекция: SkirkLimbs Body Head]
+        - Skirk Hair Shards (12 vertices)
+      [Коллекция: SkirkLimbs Body Arms]
+        - Bunny Cuffs Classic (1228 vertices)
+        - Skirk Body Lower Arms (1020 vertices)
+        - Skirk Body Elbows (568 vertices)
+        [Коллекция: SkirkOG Arms]
+          - Skirk Gloves (1574 vertices)
+          - Skirk Gloves.Elbows (245 vertices)
+          - Skirk Gloves.Lower (1296 vertices)
+          - Skirk Gloves.Upper (302 vertices)
+      [Коллекция: SkirkLimbs Body Hands]
+        - Skirk Body Lower Hands (5826 vertices)
+      [Коллекция: SkirkLimbs Body Back]
+        - Skirk OG Scarf Long (81 vertices)
+      [Коллекция: SkirkLimbs Body Legs]
+        - Knight Thigh Filigree (720 vertices)
+        - Skirk Body Lower Legs (5022 vertices)
+        - Skirk Body Knees (616 vertices)
+        [Коллекция: SkirkLimbs OG Legs]
+          - Skirk Legging Boots (1372 vertices)
+          - Skirk Legging Boots.UpperOnly (612 vertices)
+      [Коллекция: SkirkLimbs Body Feet]
+    [Коллекция: SkirkHairHead]
+      - HairFront (2385 vertices)
+    [Коллекция: SkirkLimbsHead]
+      - HairBack (3489 vertices)
+      - Cat Ears (292 vertices)
+==================================================
