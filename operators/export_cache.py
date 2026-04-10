@@ -2,6 +2,7 @@
 import bpy
 import os
 import time
+import collections
 import numpy as np
 
 CACHE_KEY = 'rzm_export_cache'
@@ -25,9 +26,11 @@ def component_cache(comp_name: str) -> dict | None:
     if c is None: return None
     return c.get('components', {}).get(comp_name)
 
+
+# ── Builder: XXMI (SPATIAL MAPPING) ───────────────────────────────────────────
+
 def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int, vb_count: int, root_obj=None) -> list[int] | None:
-    """Reads the exported target buffer from disk and builds a spatial 1:1 topological map."""
-    # Guard against bad stride calculation that causes reshape array errors
+    """Reads the exported target buffer from disk and builds a spatial map (Used mainly by XXMI)."""
     if vb_count == 0 or stride == 0 or stride % 4 != 0 or not os.path.exists(buf_path):
         return None, -1
         
@@ -35,7 +38,6 @@ def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int
     if not obj or not obj.data:
         return None, -1
         
-    # FIX: Evaluate modifiers (Mirror, Surface Deform) so coords perfectly match exported buffers
     try:
         depsgraph = bpy.context.evaluated_depsgraph_get()
         eval_obj = obj.evaluated_get(depsgraph)
@@ -52,7 +54,6 @@ def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int
         with open(buf_path, 'rb') as f:
             buf_bytes = bytearray(f.read())
         
-        # Read the float buffer safely now that stride is strictly validated
         buf_f32    = np.frombuffer(buf_bytes, dtype=np.float32).reshape(-1, stride_f32)
         buf_slice  = buf_f32[vb_offset : vb_offset + vb_count, :3]
 
@@ -83,8 +84,7 @@ def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int
                 best_v_map = current_idx
                 best_mat_idx = m_idx
             
-            if max_d <= 1e-4: 
-                break
+            if max_d <= 1e-4: break
 
         if best_d <= 1e-3:
             print(f"[RZM] [CACHE] {obj_name}: Spatial map OK (Space {best_mat_idx}, dist {best_d:.6f})")
@@ -96,7 +96,6 @@ def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int
         print(f"[RZM] [CACHE] Spatial map exception for {obj_name}: {e}")
         return None, -1
 
-# ── Builder: XXMI ─────────────────────────────────────────────────────────────
 
 def build_cache_from_xxmi(mod_exporter) -> dict | None:
     try:
@@ -157,7 +156,115 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
         print(f'[RZM] [CACHE] XXMI cache build failed: {e}')
         return None
 
-# ── Builder: EFMI ─────────────────────────────────────────────────────────────
+
+# ── Topology Reconstruction for EFMI ────────────────────────────────────────────
+
+def get_vblayout_semantics(obj: bpy.types.Object) -> list[dict]:
+    if not obj: return []
+    try:
+        scene = getattr(bpy.context, "scene", None)
+        if scene and hasattr(scene, "rzm"):
+            rzm = scene.rzm
+            base_name = obj.name.lower()
+            for mapping in rzm.metadata_mappings:
+                if mapping.metadata_obj and (mapping.component_name.lower() == base_name or mapping.component_name.lower() in base_name):
+                    layout = mapping.metadata_obj.get('3DMigoto:VBLayout')
+                    if layout: return list(layout)
+    except Exception: pass
+
+    layout = obj.get('3DMigoto:VBLayout')
+    if layout: return list(layout)
+    
+    base_name = obj.name.lower()
+    for sib in bpy.data.objects:
+        s_name = sib.name.lower()
+        if s_name.endswith("-keepempty"):
+            match = (base_name in s_name)
+            if not match:
+                clean_s = s_name.replace("-", "").replace("_", "")
+                clean_b = base_name.replace("-", "").replace("_", "")
+                match = clean_b in clean_s or clean_s.startswith(clean_b)
+            if match:
+                layout = sib.get('3DMigoto:VBLayout')
+                if layout: return list(layout)
+    return []
+
+def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object = None) -> list[int] | None:
+    """Achieves 1:1 parity with WWMI/EFMI exporters using signature hashing."""
+    if not mesh: return None
+    try:
+        n_loops = len(mesh.loops)
+        if n_loops == 0: return list(range(len(mesh.vertices)))
+
+        layout = get_vblayout_semantics(obj) if obj else []
+        use_tangents = any(i.get('SemanticName') == 'TANGENT' for i in layout)
+        uv_indices   = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'TEXCOORD']
+        color_indices = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'COLOR']
+        
+        if use_tangents:
+            try:
+                uvmap = mesh.uv_layers.get('TEXCOORD.xy') or mesh.uv_layers.active or (mesh.uv_layers[0] if mesh.uv_layers else None)
+                if uvmap: mesh.calc_tangents(uvmap=uvmap.name)
+                else: use_tangents = False
+            except Exception: use_tangents = False
+
+        v_indices = np.empty(n_loops, dtype=np.int32)
+        mesh.loops.foreach_get('vertex_index', v_indices)
+        
+        sig_fields = [('v', 'i4')]
+        arrays = {'v': v_indices}
+        
+        if not layout or any(i.get('SemanticName') == 'NORMAL' for i in layout):
+            n_data = np.empty(n_loops * 3, dtype=np.float32)
+            mesh.loops.foreach_get('normal', n_data)
+            arrays['n'] = np.nan_to_num(n_data.reshape(-1, 3)).astype(np.float16)
+            sig_fields.append(('n', 'f2', (3,)))
+
+        if use_tangents:
+            t_data = np.empty(n_loops * 3, dtype=np.float32)
+            mesh.loops.foreach_get('tangent', t_data)
+            b_data = np.empty(n_loops, dtype=np.float32)
+            mesh.loops.foreach_get('bitangent_sign', b_data)
+            arrays['t'] = np.nan_to_num(t_data.reshape(-1, 3)).astype(np.float16)
+            arrays['b'] = np.nan_to_num(b_data).astype(np.float16)
+            sig_fields.append(('t', 'f2', (3,)))
+            sig_fields.append(('b', 'f2'))
+
+        if not layout: uv_indices = [0]
+        for idx in uv_indices:
+            if idx < len(mesh.uv_layers):
+                uv_layer = mesh.uv_layers[idx]
+                uv_data = np.empty(n_loops * 2, dtype=np.float32)
+                uv_layer.data.foreach_get('uv', uv_data)
+                arrays[f'u{idx}'] = np.nan_to_num(uv_data.reshape(-1, 2))
+                sig_fields.append((f'u{idx}', 'f4', (2,)))
+
+        for idx in color_indices:
+            if idx < len(mesh.vertex_colors):
+                c_layer = mesh.vertex_colors[idx]
+                c_data = np.empty(n_loops * 4, dtype=np.float32)
+                c_layer.data.foreach_get('color', c_data)
+                arrays[f'c{idx}'] = np.nan_to_num(c_data.reshape(-1, 4))
+                sig_fields.append((f'c{idx}', 'f4', (4,)))
+
+        signatures = np.empty(n_loops, dtype=sig_fields)
+        for key, arr in arrays.items(): signatures[key] = arr
+        
+        indexed_vertices = collections.OrderedDict()
+        for idx, sig in enumerate(signatures):
+            sig_bytes = sig.tobytes()
+            if sig_bytes not in indexed_vertices:
+                indexed_vertices[sig_bytes] = v_indices[idx]
+        
+        results = list(indexed_vertices.values())
+        print(f"[RZM] [CACHE] Parity Mapping Generated: {len(results)} vertices for EFMI")
+        return results
+
+    except Exception as e:
+        print(f"[RZM] [CACHE] Parity mapping failed: {e}")
+        return None
+
+# ── Builder: EFMI (TOPOLOGICAL MAPPING) ───────────────────────────────────────
 
 def build_cache_from_efmi(mod_exporter) -> dict | None:
     try:
@@ -172,31 +279,27 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
             buf_name  = f'Component{comp_id}_VB0.buf'
             buf_path  = os.path.join(meshes_dir, buf_name)
 
-            # FIX: Force strict 16-byte stride for Endfield (X Y Z + Pad). 
-            # Prevents 'cannot reshape array into shape (7)' errors caused by bad file division.
             stride = 16 
             if os.path.exists(buf_path) and comp.vertex_count > 0:
                 calc_stride = os.path.getsize(buf_path) // comp.vertex_count
                 if calc_stride in (16, 32, 40):
                     stride = calc_stride
 
-            root_obj = None
-            if comp.objects:
-                root_obj = bpy.data.objects.get(comp.objects[0].name)
-
             objects   = []
             vb_offset = 0
             for tmp in comp.objects:
                 if tmp.vertex_count == 0: continue
                 
-                v_map, m_idx = _build_spatial_map(tmp.name, buf_path, stride, vb_offset, tmp.vertex_count, root_obj=root_obj)
+                efmi_obj = bpy.data.objects.get(tmp.name)
+                # EFMI uses PERFECT topological mapping, no spatial guessing!
+                v_map = reconstruct_vertex_map_from_mesh(efmi_obj.data, efmi_obj) if efmi_obj else None
                 
                 objects.append({
                     'name':       tmp.name,
                     'vb_offset':  vb_offset,
                     'vb_count':   tmp.vertex_count,
                     'vertex_map': v_map,
-                    'mat_idx':    m_idx,
+                    'mat_idx':    0, # EFMI strictly requires local Identity space!
                 })
                 vb_offset += tmp.vertex_count
 
@@ -204,7 +307,6 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                 'buf_path': buf_path,
                 'stride':   stride,
                 'n_verts':  comp.vertex_count,
-                'root_obj': root_obj.name if root_obj else None,
                 'objects':  objects,
             }
 

@@ -225,8 +225,8 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
         matched_count = 0
         fallback_this = []
 
-        # Only process Direct Shape Keys here. 
-        # via_target (Surface Deform) MUST go to Slow Path because it needs depsgraph evaluation.
+        # Only process direct Shape Keys.
+        # via_target (Surface Deform) automatically skipped and forwarded to Slow Path
         sk_direct = sk_owner_map[sk_name]['direct']
 
         for obj in sk_direct:
@@ -247,6 +247,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
             v_map = entry.get('vertex_map')
             m_idx = entry.get('mat_idx', 0)
             
+            # FAST PATH NOW SUPPORTS EFMI (Since v_map correctly links topological indices)
             if v_map and len(v_map) == vb_cnt:
                 import mathutils
                 if m_idx == 1:   
@@ -263,6 +264,8 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
                 
                 mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
                 delta_local = sk_co - ba_co
+                
+                # Apply the vertex_map safely
                 delta_mapped = (delta_local @ mat_rot.T)[v_map]
                 
                 nonzero = np.linalg.norm(delta_mapped, axis=1) > 1e-7
@@ -375,8 +378,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
         original_bytes = f.read()
     original_data = bytearray(original_bytes)
 
-    # Note: Export Cache has strict stride logic for EFMI now, 
-    # but we ensure it matches here for the float buffer reshape.
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
     buf_v_count = len(original_data) // stride
     
@@ -410,16 +411,16 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
             sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
         )
         
-        # FIX: Explicitly send modified objects AND fallbacks to Slow Path
+        # Route objects with modifiers (and fallbacks) to Slow Path seamlessly
         for sk_name, owners in sk_owner_map.items():
             fb = fallback_map.get(sk_name, [])
-            via = owners.get('via_target', []) # Surface Deform targets!
+            via = owners.get('via_target', []) 
             
             if fb or via:
                 sk_owner_map_slow[sk_name] = {'direct': fb, 'via_target': via}
                 need_slow_path = True
                 if via:
-                    print(f"  [ROUTE] Modifiers detected on {len(via)} object(s). Routing to Spatial Path.")
+                    print(f"  [ROUTE] Modifiers detected. Routing to Spatial Path for precision.")
                     
         if not need_slow_path:
             return True
@@ -556,7 +557,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
             out_name  = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
             out_path  = os.path.join(output_dir, out_name)
             
-            # LOAD EXISTING BUFFER SO WE DON'T OVERWRITE FAST PATH PROGRESS
             if os.path.exists(out_path):
                 with open(out_path, "rb") as _f:
                     _base_bytes = _f.read()
