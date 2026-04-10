@@ -844,16 +844,32 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                     active_conf = rzm.shape_configs[scene.rzm_active_shape_config_index]
                     c_box = box.box()
                     c_box.prop(active_conf, "shape_name")
-                    c_box.prop(active_conf, "disable_export", text="Disable Export", icon='HIDE_OFF')
+                    
+                    row = c_box.row(align=True)
+                    row.prop(active_conf, "disable_export", text="Disable Export", icon='HIDE_OFF')
+                    row.prop(active_conf, "force_export", text="Force Export", icon='IMPORT')
+                    
                     c_box.prop(active_conf, "shape_type")
+                    
+                    # Core values for all types
+                    m_row = c_box.row(align=True)
+                    m_row.prop(active_conf, "multiplier")
+                    m_row.prop(active_conf, "inverse")
+                    
                     if active_conf.shape_type == 'Anim':
                         anim_box = c_box.box()
                         anim_box.label(text="Animation Settings:")
-                        anim_box.prop(active_conf, "multiplier")
-                        anim_box.prop(active_conf, "inverse")
                         anim_box.prop(active_conf, "anim_type_index")
-                        anim_box.prop(active_conf, "anim_start_frame")
-                        anim_box.prop(active_conf, "anim_end_frame")
+                        
+                        row_s = anim_box.row(align=True)
+                        row_s.prop(active_conf, "anim_start_frame")
+                        op_s = row_s.operator("rzm.set_anim_frame", text="", icon='CURSOR')
+                        op_s.target = 'start'
+                        
+                        row_e = anim_box.row(align=True)
+                        row_e.prop(active_conf, "anim_end_frame")
+                        op_e = row_e.operator("rzm.set_anim_frame", text="", icon='CURSOR')
+                        op_e.target = 'end'
                         
                         over_box = anim_box.box()
                         over_box.label(text="Manual Override (Anim -> Linear):")

@@ -138,7 +138,7 @@ class RZM_OT_SelectAffectedObjects(bpy.types.Operator):
     bl_label = "Select Affected"
     bl_options = {'REGISTER', 'UNDO'}
     
-    config_index: IntProperty()
+    config_index: bpy.props.IntProperty()
 
     def execute(self, context):
         rzm = context.scene.rzm
@@ -190,7 +190,7 @@ class RZM_OT_SetAllShapeExport(bpy.types.Operator):
     bl_label = "Set All Shape Export"
     bl_options = {'REGISTER', 'UNDO'}
     
-    state: BoolProperty(name="State", default=True)
+    state: bpy.props.BoolProperty(name="State", default=True)
 
     def execute(self, context):
         rzm = context.scene.rzm
@@ -205,12 +205,50 @@ class RZM_OT_SetAllShapeExport(bpy.types.Operator):
         self.report({'INFO'}, f"{status} export for {count} shapes.")
         return {'FINISHED'}
 
+class RZM_OT_SetAnimFrame(bpy.types.Operator):
+    """Set active shape config start/end frame from current timeline (normalized)."""
+    bl_idname = "rzm.set_anim_frame"
+    bl_label = "Set Frame"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    target: bpy.props.StringProperty() # 'start' or 'end'
+
+    def execute(self, context):
+        scene = context.scene
+        rzm = scene.rzm
+        idx = scene.rzm_active_shape_config_index
+        if not (0 <= idx < len(rzm.shape_configs)):
+            self.report({'WARNING'}, "No active shape configuration.")
+            return {'CANCELLED'}
+        
+        config = rzm.shape_configs[idx]
+        current = scene.frame_current
+        start = scene.frame_start
+        end = scene.frame_end
+        
+        if end == start:
+            normalized = 0.0
+        else:
+            normalized = (current - start) / (end - start)
+            normalized = max(0.0, min(1.0, normalized))
+        
+        if self.target == 'start':
+            config.anim_start_frame = normalized
+            self.report({'INFO'}, f"Set Start Frame to {normalized:.3f}")
+        else:
+            config.anim_end_frame = normalized
+            self.report({'INFO'}, f"Set End Frame to {normalized:.3f}")
+            
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_ShapeKeyExport,
     RZM_OT_SelectAffectedObjects,
     RZM_OT_AddShapeDiscoveryCollection,
     RZM_OT_RemoveShapeDiscoveryCollection,
     RZM_OT_SetAllShapeExport,
+    RZM_OT_SetAnimFrame,
 ]
 
 def register():
