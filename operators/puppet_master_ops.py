@@ -262,23 +262,45 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
                 sk_co = np.array([kp.co for kp in sk_blk.data], dtype=np.float32)
                 ba_co = np.array([kp.co for kp in ba_blk.data], dtype=np.float32)
                 
+                v_map_np = np.array(v_map, dtype=np.int32)
+                
+                # Use the loop-to-vertex mapping for EFMI (Topology based)
+                # or direct vertex mapping for XXMI (Spatial based)
+                is_loop_mapped = (len(v_map_np) == len(obj.data.loops))
+                
+                # Prepare transformed deltas for every map entry
+                if is_loop_mapped:
+                    v_indices = np.empty(len(obj.data.loops), dtype=np.int32)
+                    obj.data.loops.foreach_get('vertex_index', v_indices)
+                    delta_pre = (sk_co - ba_co)[v_indices]
+                else:
+                    delta_pre = sk_co - ba_co
+
+                # Apply rotation/scaling from the detected coordinate space
                 mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
-                delta_local = sk_co - ba_co
+                delta_transformed = (delta_pre @ mat_rot.T).astype(np.float32)
                 
-                # Apply the vertex_map safely
-                delta_mapped = (delta_local @ mat_rot.T)[v_map]
-                
-                nonzero = np.linalg.norm(delta_mapped, axis=1) > 1e-7
+                # Identify which vertices actually moved
+                nonzero = np.linalg.norm(delta_transformed, axis=1) > 1e-7
                 if not nonzero.any(): continue
                 
                 idx = np.where(nonzero)[0]
-                buf_indices = vb_off + idx
                 
-                new_xyz = (buf_f32[buf_indices, :3] + delta_mapped[idx]).astype(np.float32)
-                buf_f32[buf_indices, 0] = new_xyz[:, 0]
-                buf_f32[buf_indices, 1] = new_xyz[:, 1]
-                buf_f32[buf_indices, 2] = new_xyz[:, 2]
-                matched_count += len(idx)
+                # v_map_np contains ABSOLUTE indices in the buffer
+                buf_indices = vb_off + v_map_np[idx]
+                
+                # Safety check to avoid out of bounds
+                valid_mask = (buf_indices >= 0) & (buf_indices < buf_v_count)
+                if not valid_mask.any(): continue
+                
+                target_indices = buf_indices[valid_mask]
+                source_indices = idx[valid_mask]
+                
+                new_xyz = (buf_f32[target_indices, :3] + delta_transformed[source_indices]).astype(np.float32)
+                buf_f32[target_indices, 0] = new_xyz[:, 0]
+                buf_f32[target_indices, 1] = new_xyz[:, 1]
+                buf_f32[target_indices, 2] = new_xyz[:, 2]
+                matched_count += len(target_indices)
             else:
                 # No valid mapping or count mismatch -> Fallback to Slow Path (KD-Tree)
                 fallback_this.append(obj)
