@@ -31,7 +31,7 @@ class RZ_PT_DependenciesPanel(bpy.types.Panel):
 
         # Если список пуст (еще не проверили), пишем "Checking..." вместо пустоты
         if not rzm.dependency_statuses:
-            box.label(text="Initializing...", icon='None')
+            box.label(text="Initializing...", icon='NONE')
             return
 
         installing = is_installing()
@@ -45,7 +45,7 @@ class RZ_PT_DependenciesPanel(bpy.types.Panel):
             elif dep.status == 'NOT_FOUND': icon = 'CANCEL' # Красный крест
             elif dep.status == 'OUTDATED': icon = 'ERROR' # Желтый восклицательный знак (в Blender 4+ ERROR часто оранжевый)
             elif dep.status == 'NEWER': icon = 'INFO'
-            elif dep.status == 'INSTALLING': icon = 'None'
+            elif dep.status == 'INSTALLING': icon = 'NONE'
             else: icon = 'QUESTION'
             
             row.label(text="", icon=icon)

@@ -382,22 +382,57 @@ class RZM_OT_ResetScene(bpy.types.Operator):
 
     def execute(self, context):
         rzm = context.scene.rzm
+        
+        # 1. Clear Global Collections in RZM
         collections_to_clear = [
             rzm.elements, rzm.rzm_values, rzm.toggle_definitions, rzm.images, 
             rzm.conditions, rzm.shapes, rzm.dependency_statuses,
             rzm.tw_resources, rzm.tw_overrides,
-            rzm.tw_materials, rzm.tw_blocks
+            rzm.tw_materials, rzm.tw_blocks,
+            rzm.fonts,      # NEW
+            rzm.run_links,  # NEW
+            rzm.keybinds    # NEW
         ]
         for coll in collections_to_clear:
             coll.clear()
         
-        # Reset indices
+        # 2. Clear Nested Collections
+        rzm.meta_data.credits_list.clear() # NEW
+        rzm.meta_data.features_list.clear() # NEW
+        rzm.export_settings.custom_scripts.clear() # NEW
+        
+        # 3. Clear tiers on ALL objects in the file
+        # We search through bpy.data.objects instead of context.scene.objects
+        # to ensure even hidden/unassigned objects are cleaned if they have RZM data.
+        for obj in bpy.data.objects:
+            if hasattr(obj, "rzm_tier_list"):
+                obj.rzm_tier_list.clear()
+
+        # 4. Reset All Active Indices on Scene
         context.scene.rzm_active_element_index = 0
         context.scene.rzm_active_value_index = 0
         context.scene.rzm_active_toggle_def_index = 0
         context.scene.rzm_active_image_index = 0
         
-        self.report({'INFO'}, "RZM scene has been reset.")
+        # New indices from 3.5.0+
+        if hasattr(context.scene, "rzm_active_shape_index"):
+            context.scene.rzm_active_shape_index = 0
+        if hasattr(context.scene, "rzm_active_shape_key_index"):
+            context.scene.rzm_active_shape_key_index = 0
+        if hasattr(context.scene, "rzm_active_run_link_index"):
+            context.scene.rzm_active_run_link_index = 0
+        if hasattr(context.scene, "rzm_active_keybind_index"):
+            context.scene.rzm_active_keybind_index = 0
+            
+        # Reset nested indices
+        rzm.meta_data.credits_list_index = 0
+        rzm.meta_data.features_list_index = 0
+        rzm.export_settings.custom_scripts_index = 0
+        
+        # Reset capture helper
+        context.scene.rzm_capture_overwrite_id = -1
+        
+        self.report({'INFO'}, "RZM scene has been completely reset.")
         return {'FINISHED'}
     
 class RZM_OT_ExportPartialTemplate(bpy.types.Operator):
