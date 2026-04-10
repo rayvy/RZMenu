@@ -285,10 +285,10 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
                 continue
 
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
-        
         if matched_count > 0:
             with open(os.path.join(output_dir, out_name), 'wb') as f:
                 f.write(buf_f32.tobytes())
+            print(f"    -> [DONE] {out_name} ({matched_count} verts merged via Fast Path)")
                 
         fallback_objs_per_sk[sk_name] = fallback_this
 
@@ -332,6 +332,7 @@ def _scan_sk_owners(comp_objects, all_keys):
 
 # --- CORE BAKE ---
 def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, single_shape_name=None, full_export_mode=False):
+    t_start = time.time()
     vb0_path = None
     dump_name = (os.path.basename(os.path.normpath(bpy.path.abspath(context.scene.xxmi.dump_path)))
                  if hasattr(context.scene, "xxmi") else "")
@@ -400,7 +401,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
             sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
         )
         
-        # Route objects with modifiers (and fallbacks) to Slow Path seamlessly
+        # Gather objects for Slow Path (via_target or failed Fast Path)
         for sk_name, owners in sk_owner_map.items():
             fb = fallback_map.get(sk_name, [])
             via = owners.get('via_target', []) 
@@ -408,8 +409,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
             if fb or via:
                 sk_owner_map_slow[sk_name] = {'direct': fb, 'via_target': via}
                 need_slow_path = True
-                if via:
-                    print(f"  [ROUTE] Modifiers detected. Routing to Spatial Path for precision.")
                     
         if not need_slow_path:
             return True
@@ -586,6 +585,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
                     if sk.name in states:
                         sk.value = states[sk.name]
         set_armature_visibility(all_involved, True)
+        
+        print(f"  [TIME] Puppet Master baking finished in {time.time() - t_start:.3f}s")
         for obj, mods in mirror_states.items():
             for mod, merge, clip in mods:
                 mod.use_mirror_merge, mod.use_clip = merge, clip
