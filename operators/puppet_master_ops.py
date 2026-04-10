@@ -206,19 +206,18 @@ def _idw_delta_batch(buf_verts_np, owner_data, target_data):
             out[n]     = (w[:, None] * deltas_np[face_v_idx]).sum(axis=0) / w.sum()
         return out
 
-# --- FILENAMING (RESTORED) ---
+# --- FILENAMING ---
 def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
     raw_base   = (dump_name + base_name) if is_xxmi else base_name
     clean_base = re.sub(r'[\\/:*?"<>|]', '_', raw_base).replace(' ', '_').replace('.', '_')
     clean_sk   = re.sub(r'[\\/:*?"<>|]', '_', sk_name).replace(' ', '_').replace('.', '_')
     return f"{clean_base}_{clean_sk}.buf"
 
-# --- PHASE 2 FAST PATH (RESTORED PARTIAL FALLBACK) ---
+# --- PHASE 2 FAST PATH ---
 def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi):
     stride_f32  = stride // 4
     cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])}
     
-    # Track which objects succeed and which fail
     fallback_objs_per_sk = {} 
 
     for sk_name in list(sk_owner_map.keys()):
@@ -226,8 +225,9 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
         matched_count = 0
         fallback_this = []
 
-        sk_direct     = sk_owner_map[sk_name]['direct']
-        sk_via_target = sk_owner_map[sk_name]['via_target']
+        # Only process Direct Shape Keys here. 
+        # via_target (Surface Deform) MUST go to Slow Path because it needs depsgraph evaluation.
+        sk_direct = sk_owner_map[sk_name]['direct']
 
         for obj in sk_direct:
             entry = cache_objects.get(obj.name)
@@ -297,16 +297,13 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
 
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         
-        # Only write if we matched something or if we don't have ANY fallbacks for this key
         if matched_count > 0:
             with open(os.path.join(output_dir, out_name), 'wb') as f:
                 f.write(buf_f32.tobytes())
                 
         fallback_objs_per_sk[sk_name] = fallback_this
 
-    # True only if absolutely NO objects fell back across ALL shapekeys
-    all_ok = all(len(v) == 0 for v in fallback_objs_per_sk.values())
-    return all_ok, fallback_objs_per_sk
+    return fallback_objs_per_sk
 
 def _scan_sk_owners(comp_objects, all_keys):
     result = {}
@@ -353,7 +350,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
     game = context.scene.rzm.game.name
     is_xxmi = game in {'GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail'}
 
-    # Path Search
     patterns = [f"{base_name}Position.buf", f"{base_name}_VB0.buf", f"{base_name}.buf"]
     if dump_name:
         patterns.insert(0, f"{dump_name}{base_name}Position.buf")
@@ -379,6 +375,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
         original_bytes = f.read()
     original_data = bytearray(original_bytes)
 
+    # Note: Export Cache has strict stride logic for EFMI now, 
+    # but we ensure it matches here for the float buffer reshape.
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
     buf_v_count = len(original_data) // stride
     
@@ -388,8 +386,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
 
     sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
 
-    # RESTORED: FILTERED PLACEHOLDERS
-    # Creates zero-delta .buf files for keys so the engine does not complain about missing files.
     for sk_name in sk_owner_map.keys() if sk_owner_map else all_keys:
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         with open(os.path.join(output_dir, out_name), "wb") as f:
@@ -405,28 +401,35 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
     except Exception:
         comp_cache = None
 
-    # FAST PATH with Fallback evaluation
-    sk_owner_map_slow = sk_owner_map
+    sk_owner_map_slow = {}
+    need_slow_path = False
+
     if comp_cache is not None:
         print(f"  [CACHE] HIT — using direct offset write")
-        fast_ok, fallback_map = _bake_with_direct_offsets(
+        fallback_map = _bake_with_direct_offsets(
             sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
         )
-        if fast_ok:
-            return True # Everything worked perfectly in Fast Path!
-            
-        print(f"  [CACHE] Some objects missed mapping, falling back to Spatial Path")
-        # Isolate ONLY the objects that failed Fast Path
-        sk_owner_map_slow = {}
+        
+        # FIX: Explicitly send modified objects AND fallbacks to Slow Path
         for sk_name, owners in sk_owner_map.items():
             fb = fallback_map.get(sk_name, [])
-            if fb:
-                sk_owner_map_slow[sk_name] = {'direct': fb, 'via_target': owners['via_target']}
-        
-        if not sk_owner_map_slow:
+            via = owners.get('via_target', []) # Surface Deform targets!
+            
+            if fb or via:
+                sk_owner_map_slow[sk_name] = {'direct': fb, 'via_target': via}
+                need_slow_path = True
+                if via:
+                    print(f"  [ROUTE] Modifiers detected on {len(via)} object(s). Routing to Spatial Path.")
+                    
+        if not need_slow_path:
             return True
+    else:
+        sk_owner_map_slow = sk_owner_map
+        need_slow_path = True
 
-    # SLOW PATH (Spatial IDW for fallbacks)
+    if not need_slow_path:
+        return True
+
     print(f"  [PHASE 1] Spatial Matching (Slow Path)")
     raw_np     = np.frombuffer(original_bytes, dtype=np.uint8)
     float_view = raw_np.reshape(buf_v_count, stride).view(np.float32).reshape(buf_v_count, stride // 4)
@@ -469,7 +472,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
             eval_obj  = obj.evaluated_get(depsgraph)
             b_eval    = eval_obj.to_mesh()
             
-            # Align evaluated mesh to buffer orientation based on Cache (if available)
             import mathutils
             m_idx = 0
             if comp_cache:

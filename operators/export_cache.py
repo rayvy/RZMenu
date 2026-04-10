@@ -27,17 +27,22 @@ def component_cache(comp_name: str) -> dict | None:
 
 def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int, vb_count: int, root_obj=None) -> list[int] | None:
     """Reads the exported target buffer from disk and builds a spatial 1:1 topological map."""
-    if vb_count == 0 or stride == 0 or not os.path.exists(buf_path):
+    # Guard against bad stride calculation that causes reshape array errors
+    if vb_count == 0 or stride == 0 or stride % 4 != 0 or not os.path.exists(buf_path):
         return None, -1
         
     obj = bpy.data.objects.get(obj_name)
     if not obj or not obj.data:
         return None, -1
         
-    # FIX: Don't fail if no shape keys. Use base vertices so modifier targets map correctly.
-    if getattr(obj.data, 'shape_keys', None) and obj.data.shape_keys.reference_key:
-        base_coords = [kp.co for kp in obj.data.shape_keys.reference_key.data]
-    else:
+    # FIX: Evaluate modifiers (Mirror, Surface Deform) so coords perfectly match exported buffers
+    try:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(depsgraph)
+        b_eval = eval_obj.to_mesh()
+        base_coords = [v.co for v in b_eval.vertices]
+        eval_obj.to_mesh_clear()
+    except Exception:
         base_coords = [v.co for v in obj.data.vertices]
         
     try:
@@ -46,6 +51,8 @@ def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int
         stride_f32 = stride // 4
         with open(buf_path, 'rb') as f:
             buf_bytes = bytearray(f.read())
+        
+        # Read the float buffer safely now that stride is strictly validated
         buf_f32    = np.frombuffer(buf_bytes, dtype=np.float32).reshape(-1, stride_f32)
         buf_slice  = buf_f32[vb_offset : vb_offset + vb_count, :3]
 
@@ -79,7 +86,6 @@ def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int
             if max_d <= 1e-4: 
                 break
 
-        # FIX: Relaxed distance from 1e-4 to 1e-3 due to float precision loss during exporter packing
         if best_d <= 1e-3:
             print(f"[RZM] [CACHE] {obj_name}: Spatial map OK (Space {best_mat_idx}, dist {best_d:.6f})")
             return best_v_map, best_mat_idx
@@ -166,9 +172,13 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
             buf_name  = f'Component{comp_id}_VB0.buf'
             buf_path  = os.path.join(meshes_dir, buf_name)
 
-            stride = 0
+            # FIX: Force strict 16-byte stride for Endfield (X Y Z + Pad). 
+            # Prevents 'cannot reshape array into shape (7)' errors caused by bad file division.
+            stride = 16 
             if os.path.exists(buf_path) and comp.vertex_count > 0:
-                stride = os.path.getsize(buf_path) // comp.vertex_count
+                calc_stride = os.path.getsize(buf_path) // comp.vertex_count
+                if calc_stride in (16, 32, 40):
+                    stride = calc_stride
 
             root_obj = None
             if comp.objects:
