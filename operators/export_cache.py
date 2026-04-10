@@ -29,55 +29,63 @@ def component_cache(comp_name: str) -> dict | None:
 
 # ── Builder: XXMI (SPATIAL MAPPING) ───────────────────────────────────────────
 
-def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int, vb_count: int, root_obj=None) -> list[int] | None:
-    """Reads the exported target buffer from disk and builds a spatial map (Used mainly by XXMI)."""
-    if vb_count == 0 or stride == 0 or stride % 4 != 0 or not os.path.exists(buf_path):
-        return None, -1
-        
-    obj = bpy.data.objects.get(obj_name)
-    if not obj or not obj.data:
-        return None, -1
-        
+def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int, vb_count: int, root_obj=None, v_map=None) -> tuple[list[int] | None, int]:
+    """Tries to find which coordinate space (Local, World, Root) matches the buffer data."""
+    if not os.path.exists(buf_path): return None, -1
     try:
-        depsgraph = bpy.context.evaluated_depsgraph_get()
-        eval_obj = obj.evaluated_get(depsgraph)
-        b_eval = eval_obj.to_mesh()
-        base_coords = [v.co for v in b_eval.vertices]
-        eval_obj.to_mesh_clear()
-    except Exception:
-        base_coords = [v.co for v in obj.data.vertices]
-        
-    try:
-        import mathutils
-        
+        with open(buf_path, 'rb') as f: buf_bytes = f.read()
         stride_f32 = stride // 4
-        with open(buf_path, 'rb') as f:
-            buf_bytes = bytearray(f.read())
-        
         buf_f32    = np.frombuffer(buf_bytes, dtype=np.float32).reshape(-1, stride_f32)
-        buf_slice  = buf_f32[vb_offset : vb_offset + vb_count, :3]
-
+        
+        # Determine deduplicated count if v_map is present
+        dedup_count = (max(v_map) + 1) if v_map else vb_count
+        buf_slice  = buf_f32[vb_offset : vb_offset + dedup_count, :3]
+        
+        obj = bpy.data.objects.get(obj_name)
+        if not obj: return None, -1
+        
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        b_eval    = obj.evaluated_get(depsgraph).to_mesh()
+        base_coords = [v.co for v in b_eval.vertices]
+        
+        import mathutils
         mats_to_try = [mathutils.Matrix.Identity(4), obj.matrix_world]
         if root_obj and root_obj != obj:
             mats_to_try.append(root_obj.matrix_world.inverted() @ obj.matrix_world)
 
+        best_d = 1e9
         best_v_map = None
-        best_d     = 1e8
         best_mat_idx = -1
 
         for m_idx, mat in enumerate(mats_to_try):
             ba_co = np.array([np.array(mat @ co, dtype=np.float32) for co in base_coords], dtype=np.float32)
-            tree  = mathutils.kdtree.KDTree(len(ba_co))
-            for idx, co in enumerate(ba_co):
-                tree.insert(co, idx)
-            tree.balance()
+            
+            if v_map:
+                # EFMI Mode: We have a topology-based map, we just need to verify spatial alignment
+                current_dists = []
+                # Check a sample of vertices for speed, but verify enough to be sure
+                check_indices = range(0, len(v_map), max(1, len(v_map) // 100))
+                for l_idx in check_indices:
+                    blender_v_idx = b_eval.loops[l_idx].vertex_index
+                    b_pos = ba_co[blender_v_idx]
+                    buf_pos = buf_slice[v_map[l_idx]]
+                    current_dists.append(np.linalg.norm(b_pos - buf_pos))
+                
+                max_d = max(current_dists) if current_dists else 0
+                current_idx = v_map
+            else:
+                # XXMI Mode: Linear mapping, search using KD-Tree
+                tree  = mathutils.kdtree.KDTree(len(ba_co))
+                for idx, co in enumerate(ba_co):
+                    tree.insert(co, idx)
+                tree.balance()
 
-            current_idx = []
-            max_d = 0
-            for i in range(vb_count):
-                _, index, dist = tree.find(buf_slice[i])
-                current_idx.append(index)
-                if dist > max_d: max_d = dist
+                current_idx = []
+                max_d = 0
+                for i in range(vb_count):
+                    _, index, dist = tree.find(buf_slice[i])
+                    current_idx.append(index)
+                    if dist > max_d: max_d = dist
             
             if max_d < best_d:
                 best_d = max_d
@@ -85,6 +93,8 @@ def _build_spatial_map(obj_name: str, buf_path: str, stride: int, vb_offset: int
                 best_mat_idx = m_idx
             
             if max_d <= 1e-4: break
+        
+        obj.evaluated_get(depsgraph).to_mesh_clear()
 
         if best_d <= 1e-3:
             print(f"[RZM] [CACHE] {obj_name}: Spatial map OK (Space {best_mat_idx}, dist {best_d:.6f})")
@@ -285,28 +295,48 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                 if calc_stride in (16, 32, 40):
                     stride = calc_stride
 
+            root_obj = None
+            if comp.objects:
+                root_obj = bpy.data.objects.get(comp.objects[0].name)
+
             objects   = []
             vb_offset = 0
             for tmp in comp.objects:
                 if tmp.vertex_count == 0: continue
                 
                 efmi_obj = bpy.data.objects.get(tmp.name)
-                # EFMI uses PERFECT topological mapping, no spatial guessing!
+                # EFMI uses PERFECT topological mapping for deltas
                 v_map = reconstruct_vertex_map_from_mesh(efmi_obj.data, efmi_obj) if efmi_obj else None
                 
+                # Detect the correct Coordinate Space for Spatial Matching (m_idx)
+                # Use v_map to handle deduplicated buffer offsets correctly
+                v_map, m_idx = _build_spatial_map(tmp.name, buf_path, stride, vb_offset, tmp.vertex_count, root_obj=root_obj, v_map=v_map)
+                
+                # If spatial map failed, vertex_map MUST be None to trigger Slow Path fallback
+                if m_idx == -1: 
+                    v_map = None
+                    m_idx = 0
+
                 objects.append({
                     'name':       tmp.name,
                     'vb_offset':  vb_offset,
                     'vb_count':   tmp.vertex_count,
                     'vertex_map': v_map,
-                    'mat_idx':    0, # EFMI strictly requires local Identity space!
+                    'mat_idx':    m_idx,
                 })
-                vb_offset += tmp.vertex_count
+                
+                # In EFMI, vb_offset grows by DEDUPLICATED count, not blender count
+                if v_map:
+                    vb_offset += (max(v_map) + 1)
+                else:
+                    # Fallback guess if mapping failed (might be wrong, but we'll hit Slow Path anyway)
+                    vb_offset += tmp.vertex_count
 
             components[f'Component{comp_id}'] = {
                 'buf_path': buf_path,
                 'stride':   stride,
                 'n_verts':  comp.vertex_count,
+                'root_obj': root_obj.name if root_obj else None,
                 'objects':  objects,
             }
 

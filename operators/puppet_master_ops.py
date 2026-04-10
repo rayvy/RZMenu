@@ -247,7 +247,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
             v_map = entry.get('vertex_map')
             m_idx = entry.get('mat_idx', 0)
             
-            # FAST PATH NOW SUPPORTS EFMI (Since v_map correctly links topological indices)
+            # FAST PATH: Requires valid v_map from cache
             if v_map and len(v_map) == vb_cnt:
                 import mathutils
                 if m_idx == 1:   
@@ -279,24 +279,10 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
                 buf_f32[buf_indices, 1] = new_xyz[:, 1]
                 buf_f32[buf_indices, 2] = new_xyz[:, 2]
                 matched_count += len(idx)
-
-            elif n == vb_cnt:
-                sk_co = np.array([kp.co for kp in sk_blk.data], dtype=np.float32)
-                ba_co = np.array([kp.co for kp in ba_blk.data], dtype=np.float32)
-                delta = sk_co - ba_co
-                nonzero = np.linalg.norm(delta, axis=1) > 1e-7
-                if not nonzero.any(): continue
-                    
-                idx = np.where(nonzero)[0]
-                buf_indices = vb_off + idx
-                new_xyz = (buf_f32[buf_indices, :3] + delta[idx]).astype(np.float32)
-                buf_f32[buf_indices, 0] = new_xyz[:, 0]
-                buf_f32[buf_indices, 1] = new_xyz[:, 1]
-                buf_f32[buf_indices, 2] = new_xyz[:, 2]
-                matched_count += len(idx)
-                
             else:
+                # No valid mapping or count mismatch -> Fallback to Slow Path (KD-Tree)
                 fallback_this.append(obj)
+                continue
 
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         
@@ -378,8 +364,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
         original_bytes = f.read()
     original_data = bytearray(original_bytes)
 
+    # Stride will be finalized after cache check
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
-    buf_v_count = len(original_data) // stride
     
     rzm = context.scene.rzm
     all_keys = {single_shape_name} if single_shape_name else {c.shape_name for c in rzm.shape_configs if not c.disable_export}
@@ -407,6 +393,9 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
 
     if comp_cache is not None:
         print(f"  [CACHE] HIT — using direct offset write")
+        stride = comp_cache.get('stride', stride)
+        buf_v_count = len(original_data) // stride
+
         fallback_map = _bake_with_direct_offsets(
             sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
         )
@@ -425,6 +414,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
         if not need_slow_path:
             return True
     else:
+        buf_v_count = len(original_data) // stride
         sk_owner_map_slow = sk_owner_map
         need_slow_path = True
 
@@ -501,7 +491,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
             
             base_cache[obj] = {
                 'coords': coords, 'tri_verts': tri_verts, 'polys': polys,
-                'kd': kd, 'centroids': centroids, 'bvh': bvh, 'mat_rot': mat_rot
+                'kd': kd, 'centroids': centroids, 'bvh': bvh, 'mat': mat
             }
 
         def _assign_owners_bulk(buf_xyz, base_cache, limit):
@@ -545,8 +535,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
                 eval_obj = obj.evaluated_get(depsgraph)
                 t_eval   = eval_obj.to_mesh()
                 
-                mat_rot = base_cache[obj]['mat_rot']
-                t_coords = np.array([np.array(mat_rot @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
+                mat = base_cache[obj]['mat']
+                t_coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
                 
                 eval_obj.to_mesh_clear()
                 if len(t_coords) == len(base_cache[obj]['coords']):
