@@ -832,6 +832,7 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                 box.separator()
                 row = box.row(align=True)
                 row.operator("rzm.shape_key_export", text="Discover", icon='FILE_REFRESH')
+                row.operator("rzm.cleanup_trash_shapes", text="Cleanup Trash", icon='TRASH')
                 
                 # Bulk Toggles
                 en = row.operator("rzm.set_all_shape_export", text="All ON", icon='CHECKBOX_HLT')

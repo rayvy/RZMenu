@@ -1,6 +1,16 @@
 import bpy
+import numpy as np
 from bpy.props import StringProperty, BoolProperty, IntProperty
 from ..data.p_logic import ShapeKeyConfig, RZMObjectRef
+
+def get_all_objects_recursive(context, collection, obj_set):
+    """Helper to collect all mesh objects from a collection and its children."""
+    view_objects = context.view_layer.objects
+    for obj in collection.objects:
+        if obj.name in view_objects:
+            obj_set.add(obj)
+    for child in collection.children:
+        get_all_objects_recursive(context, child, obj_set)
 
 class RZM_OT_ShapeKeyExport(bpy.types.Operator):
     """Scan collections and discover shape keys to generate ShapeKeyConfig."""
@@ -15,7 +25,7 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
         target_objects = set()
         for coll_ptr in rzm.shape_discovery_collections:
             if coll_ptr.collection:
-                self.get_all_objects_recursive(context, coll_ptr.collection, target_objects)
+                get_all_objects_recursive(context, coll_ptr.collection, target_objects)
         
         if not target_objects:
             self.report({'WARNING'}, "No objects found in discovery collections.")
@@ -118,14 +128,6 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
 
         self.report({'INFO'}, f"Discovered {len(rzm.shape_configs)} shape configurations.")
         return {'FINISHED'}
-
-    def get_all_objects_recursive(self, context, collection, obj_set):
-        view_objects = context.view_layer.objects
-        for obj in collection.objects:
-            if obj.name in view_objects:
-                obj_set.add(obj)
-        for child in collection.children:
-            self.get_all_objects_recursive(context, child, obj_set)
 
     def add_to_discovered(self, discovered_shapes, name, obj):
         if name not in discovered_shapes:
@@ -260,6 +262,60 @@ class RZM_OT_GlobalShapeMaster(bpy.types.Operator):
         self.report({'INFO'}, f"Applied {self.value} to {count} shape configurations.")
         return {'FINISHED'}
 
+class RZM_OT_CleanupTrashShapes(bpy.types.Operator):
+    """Scan discovery collections and delete shape keys that are identical to the Basis."""
+    bl_idname = "rzm.cleanup_trash_shapes"
+    bl_label = "Cleanup Trash Shapes"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        
+        # 1. Collect all objects from discovery collections
+        target_objects = set()
+        for coll_ptr in rzm.shape_discovery_collections:
+            if coll_ptr.collection:
+                get_all_objects_recursive(context, coll_ptr.collection, target_objects)
+        
+        if not target_objects:
+            self.report({'WARNING'}, "No objects found in discovery collections.")
+            return {'CANCELLED'}
+
+        deleted_count = 0
+        objects_processed = 0
+        
+        for obj in target_objects:
+            if obj.type != 'MESH' or not obj.data.shape_keys:
+                continue
+            
+            objects_processed += 1
+            basis = obj.data.shape_keys.reference_key
+            num_points = len(basis.data)
+            
+            # Get Basis coordinates
+            basis_co = np.empty(num_points * 3, dtype=np.float32)
+            basis.data.foreach_get("co", basis_co)
+            
+            # Find shapes to remove
+            to_remove = []
+            for kb in obj.data.shape_keys.key_blocks:
+                if kb == basis:
+                    continue
+                
+                kb_co = np.empty(num_points * 3, dtype=np.float32)
+                kb.data.foreach_get("co", kb_co)
+                
+                # Compare arrays (atol=1e-6 as proposed)
+                if np.allclose(kb_co, basis_co, atol=1e-6):
+                    to_remove.append(kb)
+            
+            # Execute removal
+            for kb in to_remove:
+                obj.shape_key_remove(kb)
+                deleted_count += 1
+        
+        self.report({'INFO'}, f"Deleted {deleted_count} empty shape keys across {objects_processed} objects.")
+        return {'FINISHED'}
 
 classes_to_register = [
     RZM_OT_ShapeKeyExport,
@@ -269,6 +325,7 @@ classes_to_register = [
     RZM_OT_SetAllShapeExport,
     RZM_OT_SetAnimFrame,
     RZM_OT_GlobalShapeMaster,
+    RZM_OT_CleanupTrashShapes,
 ]
 
 def register():
