@@ -185,7 +185,7 @@ cs-u5 = copy Resource{{ comp_name }}_Base
         {% endif %}
         cs-t50 = copy Resource{{ comp_name }}_Base
         cs-t51 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}
-        Resource{% if rzm.game.selection == "ArknightsEndfield" %}_{% endif %}{{ comp_name }}{% if rzm.game.selection != "ArknightsEndfield" %}Position{% endif %} = ref cs-u5
+        Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_VB0{% else %}Position{% endif %} = ref cs-u5
         Dispatch = {{ vertex_count }}, 1, 1
     {% endif %}
 {% endfor %}
@@ -264,9 +264,9 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
 {% elif extracted_object and merged_object %}
     {# Логика EFMI формата #}
     {% for id, component in enumerate(extracted_object.components) %}
-        {% set vb0_key = 'Component' ~ id ~ '_VB0' %}
-        {% if vb0_key in buffers and merged_object.components[id].vertex_count > 0 %}
-    run = CustomShaderComputeShapes.{{ vb0_key }}
+        {% set vb0_lookup = 'Component' ~ id ~ '_VB0' %}
+        {% if vb0_lookup in buffers and merged_object.components[id].vertex_count > 0 %}
+    run = CustomShaderComputeShapes.Component{{ id }}
         {% endif %}
     {% endfor %}
 {% endif %}
@@ -309,11 +309,11 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
 {% elif extracted_object and merged_object %}
     {# --- Обработка EFMI --- #}
     {% for id, component in enumerate(extracted_object.components) %}
-        {% set vb0_key = 'Component' ~ id ~ '_VB0' %}
-        {% if vb0_key in buffers and merged_object.components[id].vertex_count > 0 %}
-            {% set comp_name = vb0_key %}
+        {% set vb0_lookup = 'Component' ~ id ~ '_VB0' %}
+        {% if vb0_lookup in buffers and merged_object.components[id].vertex_count > 0 %}
+            {% set comp_name = 'Component' ~ id %}
             {% set vertex_count = merged_object.components[id].vertex_count %}
-            {% set base_filename = props.path_prefix ~ comp_name ~ props.path_suffix %}
+            {% set base_filename = props.path_prefix ~ comp_name ~ '_VB0' ~ props.path_suffix %}
             
             {# Собираем имена объектов компонента #}
             {% set affected_names = [] %}
