@@ -1,6 +1,20 @@
-# RZMenu/data/p_logic.py
 import bpy
 from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, PointerProperty
+
+def update_native_shape_sync(self, context):
+    """Updates Blender shape key values across all affected objects in real-time."""
+    val = self.sync_value
+    sk_name = self.shape_name
+    
+    for ref in self.affected_objects:
+        obj = ref.obj
+        if not obj and ref.obj_name:
+            obj = bpy.data.objects.get(ref.obj_name)
+        
+        if obj and obj.data and hasattr(obj.data, 'shape_keys') and obj.data.shape_keys:
+            kb = obj.data.shape_keys.key_blocks.get(sk_name)
+            if kb:
+                kb.value = val
 
 class RZMTierRef(bpy.types.PropertyGroup):
     """A single tier reference stored as part of a CollectionProperty on elements/shapes/values."""
@@ -254,6 +268,13 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         name="Type",
         items=[('Linear', "Linear", ""), ('Anim', "Anim", "")],
         default='Linear'
+    )
+    sync_value: FloatProperty(
+        name="Global Sync",
+        description="Force this value on all Blender objects containing this shape key",
+        min=0.0, max=1.0,
+        default=0.0,
+        update=update_native_shape_sync
     )
     condition: StringProperty(
         name="Condition",

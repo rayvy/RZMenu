@@ -66,6 +66,13 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     dependency_statuses: CollectionProperty(type=DependencyStatus)
     fonts: CollectionProperty(type=RZFontSlotSettings)
 
+    master_shape_value: FloatProperty(
+        name="Master Shape Value",
+        description="Value to apply globally to all discovered shape keys",
+        min=0.0, max=1.0,
+        default=0.0
+    )
+
     # ─── Run Links (named CommandLists / API actions) ───────────────────────────
     run_links: CollectionProperty(
         type=RZMRunLink,

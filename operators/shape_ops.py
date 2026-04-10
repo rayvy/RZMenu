@@ -241,6 +241,25 @@ class RZM_OT_SetAnimFrame(bpy.types.Operator):
             
         return {'FINISHED'}
 
+class RZM_OT_GlobalShapeMaster(bpy.types.Operator):
+    """Apply a value to all discovered shape configurations and their objects."""
+    bl_idname = "rzm.global_shape_master"
+    bl_label = "Apply Global Shape Value"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    value: bpy.props.FloatProperty(name="Value", default=0.0)
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        count = 0
+        for config in rzm.shape_configs:
+            # Setting this triggers the update_native_shape_sync callback in p_logic.py
+            config.sync_value = self.value
+            count += 1
+        
+        self.report({'INFO'}, f"Applied {self.value} to {count} shape configurations.")
+        return {'FINISHED'}
+
 
 classes_to_register = [
     RZM_OT_ShapeKeyExport,
@@ -249,6 +268,7 @@ classes_to_register = [
     RZM_OT_RemoveShapeDiscoveryCollection,
     RZM_OT_SetAllShapeExport,
     RZM_OT_SetAnimFrame,
+    RZM_OT_GlobalShapeMaster,
 ]
 
 def register():

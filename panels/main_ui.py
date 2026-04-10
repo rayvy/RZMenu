@@ -842,6 +842,18 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                 row.operator("rzm.puppet_master_bake", text="Bake ALL", icon='NONE')
                 row.operator("rzm.puppet_master_bake_single", text="Bake THIS", icon='SHAPEKEY_DATA')
                 
+                # --- GLOBAL VIEWPORT MASTER ---
+                gm_box = box.box()
+                gm_box.label(text="Global Sync Controls (Viewport Only):", icon='VIEW3D')
+                row_g = gm_box.row(align=True)
+                row_g.prop(rzm, "master_shape_value", text="Master Value")
+                op_apply = row_g.operator("rzm.global_shape_master", text="Force All", icon='PLAY')
+                op_apply.value = rzm.master_shape_value
+                
+                op_reset = gm_box.row().operator("rzm.global_shape_master", text="Reset All Configurations to 0.0", icon='X')
+                op_reset.value = 0.0
+
+                box.separator()
                 box.label(text="Discovered Configurations:", icon='SHAPEKEY_DATA')
                 box.template_list("RZM_UL_ShapeConfigs", "", rzm, "shape_configs", scene, "rzm_active_shape_config_index")
                 
@@ -857,6 +869,7 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                     c_box.prop(active_conf, "shape_type")
                     
                     # Core values for all types
+                    c_box.prop(active_conf, "sync_value", text="Sync Value (Global Name)", slider=True)
                     m_row = c_box.row(align=True)
                     m_row.prop(active_conf, "multiplier")
                     m_row.prop(active_conf, "inverse")
