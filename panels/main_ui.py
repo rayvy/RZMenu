@@ -320,6 +320,11 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         # Единая кнопка экспорта для всех игр
         row = box.row(align=True)
         row.scale_y = 1.5
+        
+        # Fast Path Toggle
+        icon = 'TRIA_RIGHT_BAR' if settings.force_fast_path else 'TRIA_RIGHT'
+        row.prop(settings, "force_fast_path", text="", icon=icon, toggle=True)
+        
         row.operator("rzm.full_export", text="Full Export", icon='EXPORT')
         row.operator("rzm.quick_export_menu", text="⚡ Quick Update", icon='FILE_REFRESH')
         row.operator("rzm.complete_export", text="Complete Export", icon='SEQ_STRIP_DUPLICATE')

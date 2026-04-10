@@ -228,79 +228,113 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
         # Only process direct Shape Keys.
         # via_target (Surface Deform) automatically skipped and forwarded to Slow Path
         sk_direct = sk_owner_map[sk_name]['direct']
+        
+        # Modifier Categories from User List
+        GENERATIVE_MODS = {
+            'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD', 'DECIMATE', 'EDGE_SPLIT', 'GEOMETRY_NODES',
+            'MASK', 'MESH_TO_VOLUME', 'MIRROR', 'MULTIRES', 'REMESH', 'SCREW', 'SKIN',
+            'SOLIDIFY', 'SUBSURF', 'TRIANGULATE', 'VOLUME_TO_MESH', 'WELD', 'WIREFRAME',
+            'CLOTH', 'COLLISION', 'DYNAMIC_PAINT', 'EXPLODE', 'FLUID', 'OCEAN', 
+            'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SOFT_BODY'
+        }
 
+        force_fast = bpy.context.scene.rzm.export_settings.force_fast_path
+        
         for obj in sk_direct:
             entry = cache_objects.get(obj.name)
             if entry is None:
                 fallback_this.append(obj)
                 continue
 
-            vb_off = entry['vb_offset']
+            is_absolute = entry.get('is_absolute', False)
+            vb_off = 0 if is_absolute else entry['vb_offset']
             vb_cnt = entry['vb_count']
+            
+            map_type = "Absolute" if is_absolute else "Relative"
 
+            active_gen_mods = [m.name for m in obj.modifiers if m.show_viewport and m.type in GENERATIVE_MODS]
+            
+            if active_gen_mods and not force_fast:
+                print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:2])}) -> Slow Path.")
+                fallback_this.append(obj)
+                continue
+                
             if not (obj.data and obj.data.shape_keys): continue
             sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
             ba_blk = obj.data.shape_keys.reference_key
-            if sk_blk is None or not sk_blk.data or not ba_blk.data: continue
-
-            n = len(sk_blk.data)
+            if not sk_blk or not ba_blk: continue
+            
             v_map = entry.get('vertex_map')
             m_idx = entry.get('mat_idx', 0)
+            is_robust = entry.get('is_robust', False)
             
             # FAST PATH: Requires valid v_map from cache
-            if v_map and len(v_map) == vb_cnt:
+            # Validation: v_map length must match Blender mesh granularity (Loops for EFMI, Vertices for Legacy XXMI)
+            # OR Buffer size for Robust XXMI
+            if is_robust:
+                is_valid_map = (v_map and len(v_map) == vb_cnt)
+            else:
+                blender_v_count = len(obj.data.loops) if (v_map and len(v_map) == len(obj.data.loops)) else len(obj.data.vertices)
+                is_valid_map = (v_map and len(v_map) == blender_v_count)
+            
+            if is_valid_map:
                 import mathutils
-                if m_idx == 1:   
-                    mat = obj.matrix_world
+                mat = mathutils.Matrix.Identity(4)
+                if m_idx == 1: mat = obj.matrix_world
                 elif m_idx == 2: 
                     root_obj_name = comp_cache.get('root_obj')
                     root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
                     mat = root_obj.matrix_world.inverted() @ obj.matrix_world if root_obj else mathutils.Matrix.Identity(4)
-                else:            
-                    mat = mathutils.Matrix.Identity(4)
                 
-                sk_co = np.array([kp.co for kp in sk_blk.data], dtype=np.float32)
-                ba_co = np.array([kp.co for kp in ba_blk.data], dtype=np.float32)
+                sk_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
+                ba_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
+                sk_blk.data.foreach_get('co', sk_co)
+                ba_blk.data.foreach_get('co', ba_co)
+                sk_co = sk_co.reshape(-1, 3)
+                ba_co = ba_co.reshape(-1, 3)
                 
-                v_map_np = np.array(v_map, dtype=np.int32)
-                
-                # Use the loop-to-vertex mapping for EFMI (Topology based)
-                # or direct vertex mapping for XXMI (Spatial based)
-                is_loop_mapped = (len(v_map_np) == len(obj.data.loops))
-                
-                # Prepare transformed deltas for every map entry
-                if is_loop_mapped:
-                    v_indices = np.empty(len(obj.data.loops), dtype=np.int32)
-                    obj.data.loops.foreach_get('vertex_index', v_indices)
-                    delta_pre = (sk_co - ba_co)[v_indices]
-                else:
-                    delta_pre = sk_co - ba_co
-
-                # Apply rotation/scaling from the detected coordinate space
                 mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
-                delta_transformed = (delta_pre @ mat_rot.T).astype(np.float32)
-                
-                # Identify which vertices actually moved
-                nonzero = np.linalg.norm(delta_transformed, axis=1) > 1e-7
-                if not nonzero.any(): continue
-                
-                idx = np.where(nonzero)[0]
-                
-                # v_map_np contains ABSOLUTE indices in the buffer
-                buf_indices = vb_off + v_map_np[idx]
-                
-                # Safety check to avoid out of bounds
-                valid_mask = (buf_indices >= 0) & (buf_indices < buf_v_count)
-                if not valid_mask.any(): continue
-                
-                target_indices = buf_indices[valid_mask]
-                source_indices = idx[valid_mask]
-                
-                new_xyz = (buf_f32[target_indices, :3] + delta_transformed[source_indices]).astype(np.float32)
-                buf_f32[target_indices, 0] = new_xyz[:, 0]
-                buf_f32[target_indices, 1] = new_xyz[:, 1]
-                buf_f32[target_indices, 2] = new_xyz[:, 2]
-                matched_count += len(target_indices)
+                v_map_np = np.array(v_map, dtype=np.int32)
+
+                if is_robust:
+                    # MANY-TO-1 MAPPING (Robust XXMI)
+                    # Every buffer vertex knows exactly which Blender vertex it belongs to.
+                    # All split vertices move together automatically.
+                    deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
+                    
+                    # High-speed NumPy Vectorization: buf[slice] += deltas_all[v_map]
+                    # This updates the entire object in the buffer in one go.
+                    obj_slice = buf_f32[vb_off : vb_off + vb_cnt, :3]
+                    buf_f32[vb_off : vb_off + vb_cnt, :3] = obj_slice + deltas_all[v_map_np]
+                    matched_count += vb_cnt
+                else:
+                    # 1-TO-1 OR LOOP-TO-VERTEX MAPPING (EFMI/Legacy)
+                    is_loop_mapped = (len(v_map_np) == len(obj.data.loops))
+                    if is_loop_mapped:
+                        v_indices = np.empty(len(obj.data.loops), dtype=np.int32)
+                        obj.data.loops.foreach_get('vertex_index', v_indices)
+                        delta_pre = (sk_co - ba_co)[v_indices]
+                    else:
+                        delta_pre = sk_co - ba_co
+
+                    delta_transformed = (delta_pre @ mat_rot.T).astype(np.float32)
+                    nonzero = np.linalg.norm(delta_transformed, axis=1) > 1e-7
+                    if not nonzero.any(): continue
+                    
+                    idx = np.where(nonzero)[0]
+                    buf_indices = vb_off + v_map_np[idx]
+                    
+                    valid_mask = (buf_indices >= 0) & (buf_indices < buf_v_count)
+                    if not valid_mask.any(): continue
+                    
+                    target_indices = buf_indices[valid_mask]
+                    source_indices = idx[valid_mask]
+                    
+                    new_xyz = (buf_f32[target_indices, :3] + delta_transformed[source_indices]).astype(np.float32)
+                    buf_f32[target_indices, 0] = new_xyz[:, 0]
+                    buf_f32[target_indices, 1] = new_xyz[:, 1]
+                    buf_f32[target_indices, 2] = new_xyz[:, 2]
+                    matched_count += len(target_indices)
             else:
                 # No valid mapping or count mismatch -> Fallback to Slow Path (KD-Tree)
                 fallback_this.append(obj)
@@ -310,7 +344,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
         if matched_count > 0:
             with open(os.path.join(output_dir, out_name), 'wb') as f:
                 f.write(buf_f32.tobytes())
-            print(f"    -> [DONE] {out_name} ({matched_count} verts merged via Fast Path)")
+            print(f"    -> [DONE] {out_name} ({matched_count} verts merged via {map_type} Fast Path)")
                 
         fallback_objs_per_sk[sk_name] = fallback_this
 

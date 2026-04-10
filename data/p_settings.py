@@ -149,6 +149,11 @@ class RZMExportSettings(bpy.types.PropertyGroup):
         default=False,
         description="ВНИМАНИЕ: Перезапишет скрипты (ini/py) в целевой папке"
     )
+    force_fast_path: BoolProperty(
+        name="Trust Cache Mapping",
+        default=False,
+        description="Ignore modifiers and trust the cache mapping for high-speed export (FAST PATH)"
+    )
 
     # --- Custom Scripts ---
     show_custom_scripts: BoolProperty(
