@@ -472,3 +472,57 @@ class RZTemplateEngine:
             if original_pid not in id_map:
                 cur_x, cur_y = new_el.position
                 new_el.position = (int(cur_x - origin[0] + offset[0]), int(cur_y - origin[1] + offset[1]))
+
+    def export_config(self, filepath, config_type, target_prop):
+        print(f"[RZM] Exporting Config '{config_type}' to {filepath}...")
+        
+        data = {
+            "meta": {"version": "1.0", "format": "RZMC", "type": config_type},
+            "data": rzm_to_dict(target_prop),
+            "assets_map": {},
+            "dependencies": {"images": []}
+        }
+        
+        try:
+            with zipfile.ZipFile(filepath, 'w', zipfile.ZIP_DEFLATED) as zf:
+                json_str = json.dumps(data, indent=2, ensure_ascii=False)
+                zf.writestr('config_data.json', json_str)
+                print(f"[RZM] config_data.json written ({len(json_str)} bytes)")
+        except Exception as e:
+            print(f"[RZM] Config Export Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+            
+        print("[RZM] Config Export finished successfully.")
+        return True
+
+    def import_config(self, filepath):
+        if not os.path.exists(filepath): return False
+        
+        try:
+            with zipfile.ZipFile(filepath, 'r') as zf:
+                if 'config_data.json' not in zf.namelist():
+                    print("[RZM] Invalid RZMC: config_data.json not found.")
+                    return False
+                data = json.loads(zf.read('config_data.json'))
+                
+                meta = data.get("meta", {})
+                config_type = meta.get("type", "")
+                
+                if config_type == "BLEND_RESIZE":
+                    print("[RZM] Restoring BLEND_RESIZE configuration...")
+                    br = self.context.scene.rzm.addons.blend_resize
+                    br.groups.clear()
+                    br.component_mappings.clear()
+                    dict_to_rzm(data.get("data", {}), br)
+                    return True
+                else:
+                    print(f"[RZM] Unknown configuration type: {config_type}")
+                    # We can support returning the type so UI can display what it imported
+                    return False
+        except Exception as e:
+            print(f"[RZM] Config Import Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False

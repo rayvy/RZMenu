@@ -517,10 +517,70 @@ class RZM_OT_ImportPartialTemplate(bpy.types.Operator):
             self.report({'ERROR'}, "Import failed.")
             return {'CANCELLED'}
 
+class RZM_OT_ExportConfig(bpy.types.Operator):
+    """Экспортирует конфигурационный блок в формате .rzmc"""
+    bl_idname = "rzm.export_config"
+    bl_label = "Export Configuration (.rzmc)"
+    
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.rzmc", options={'HIDDEN'})
+    
+    config_type: bpy.props.EnumProperty(
+        name="Configuration Type",
+        items=[('BLEND_RESIZE', "Blend Resize", "")]
+    )
+    
+    def invoke(self, context, event):
+        self.filepath = f"config_{self.config_type.lower()}.rzmc"
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+        
+    def execute(self, context):
+        engine = RZTemplateEngine(context)
+        
+        target_prop = None
+        if self.config_type == 'BLEND_RESIZE':
+            target_prop = context.scene.rzm.addons.blend_resize
+            
+        if not target_prop:
+            self.report({'ERROR'}, f"Target property for {self.config_type} not found.")
+            return {'CANCELLED'}
+            
+        if engine.export_config(self.filepath, self.config_type, target_prop):
+            self.report({'INFO'}, f"Config {self.config_type} exported successfully.")
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, "Config export failed.")
+            return {'CANCELLED'}
+
+class RZM_OT_ImportConfig(bpy.types.Operator):
+    """Импортирует конфигурационный блок из формата .rzmc"""
+    bl_idname = "rzm.import_config"
+    bl_label = "Import Configuration (.rzmc)"
+    
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.rzmc", options={'HIDDEN'})
+    
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+        
+    def execute(self, context):
+        engine = RZTemplateEngine(context)
+        
+        if engine.import_config(self.filepath):
+            self.report({'INFO'}, "Configuration imported successfully.")
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, "Configuration import failed or was invalid type.")
+            return {'CANCELLED'}
+
 classes_to_register = [
     RZM_OT_SaveTemplate,
     RZM_OT_LoadTemplate,
     RZM_OT_ResetScene,
     RZM_OT_ExportPartialTemplate,
-    RZM_OT_ImportPartialTemplate
+    RZM_OT_ImportPartialTemplate,
+    RZM_OT_ExportConfig,
+    RZM_OT_ImportConfig
 ]

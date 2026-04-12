@@ -979,7 +979,17 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
             # --- BLEND RESIZE SYSTEM ---
             br = rzm.addons.blend_resize
             
-            box.prop(br, "is_enabled", text="Active", toggle=True)
+            header_row = box.row()
+            # Left side: Active toggle
+            header_row.prop(br, "is_enabled", text="Active", toggle=True)
+            
+            # Right side: Config Import/Export
+            config_row = header_row.row(align=True)
+            config_row.alignment = 'RIGHT'
+            config_row.operator("rzm.import_config", text="", icon='IMPORT')
+            op_exp = config_row.operator("rzm.export_config", text="", icon='EXPORT')
+            op_exp.config_type = 'BLEND_RESIZE'
+
             if br.is_enabled:
                 # 1. Master Groups (12 Slots)
                 m_box = box.box()
