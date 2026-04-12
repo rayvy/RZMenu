@@ -2,6 +2,7 @@
 import bpy
 from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, IntVectorProperty, PointerProperty, FloatVectorProperty
 from .constants import DEFAULT_MOD_INFO_TEXT
+from .p_blend_resize import RZMBResizeSettings
 
 # Импорт зависимостей для CollectionProperty
 # from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
@@ -250,6 +251,8 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     debug_var_5: StringProperty(name="Debug Var 5", default="")
     debug_var_6: StringProperty(name="Debug Var 6", default="")
     debug_var_7: StringProperty(name="Debug Var 7", default="")
+
+    blend_resize: PointerProperty(type=RZMBResizeSettings)
 
     # ─── In-Game Profile System ────────────────────────────────────────────
     use_in_game_profiles: BoolProperty(

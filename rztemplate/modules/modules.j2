@@ -149,5 +149,67 @@ stride = 40
 ;VertexCount * $Sandevistan_length
 array = 1327104
 {% endif %}
+{{ generate_blend_resize(mod_file, scene) }}
 {% endif %}
 {%endmacro%}
+
+{# --- BLEND RESIZE ADDON --- #}
+{% macro generate_blend_resize(mod_file, scene) %}
+{% if scene.rzm.addons.blend_resize and scene.rzm.addons.blend_resize.is_enabled %}
+[Constants]
+{# Define 12 master slots #}
+{% for group in scene.rzm.addons.blend_resize.groups %}
+    {% set var_name = "BR_SLOT_" ~ group.slot_id %}
+    global persist ${{ var_name }} = 0
+{% endfor %}
+
+[Present]
+{% for group in scene.rzm.addons.blend_resize.groups %}
+    {% set var_name = "BR_SLOT_" ~ group.slot_id %}
+    {% if group.value_link %}
+        ${{ var_name }} = ${{ utils.format_var(group.value_link) | trim }}
+    {% else %}
+        ${{ var_name }} = 0
+    {% endif %}
+{% endfor %}
+
+[CustomShaderBlendResize]
+vs = ./modules/BlendResize.hlsl
+{# Pass the 12 slots as scalars in registers 88, 87, 86 #}
+{% set groups_by_slot = {} %}
+{% for group in scene.rzm.addons.blend_resize.groups %}
+    {% set _ = groups_by_slot.update({group.slot_id: group}) %}
+{% endfor %}
+
+{# Register 86 (Slots 0-3) #}
+x86 = ${{ "BR_SLOT_0" if 0 in groups_by_slot else "PV" }}
+y86 = ${{ "BR_SLOT_1" if 1 in groups_by_slot else "PV" }}
+z86 = ${{ "BR_SLOT_2" if 2 in groups_by_slot else "PV" }}
+w86 = ${{ "BR_SLOT_3" if 3 in groups_by_slot else "PV" }}
+
+{# Register 87 (Slots 4-7) #}
+x87 = ${{ "BR_SLOT_4" if 4 in groups_by_slot else "PV" }}
+y87 = ${{ "BR_SLOT_5" if 5 in groups_by_slot else "PV" }}
+z87 = ${{ "BR_SLOT_6" if 6 in groups_by_slot else "PV" }}
+w87 = ${{ "BR_SLOT_7" if 7 in groups_by_slot else "PV" }}
+
+{# Register 88 (Slots 8-11) #}
+x88 = ${{ "BR_SLOT_8" if 8 in groups_by_slot else "PV" }}
+y88 = ${{ "BR_SLOT_9" if 9 in groups_by_slot else "PV" }}
+z88 = ${{ "BR_SLOT_10" if 10 in groups_by_slot else "PV" }}
+w88 = ${{ "BR_SLOT_11" if 11 in groups_by_slot else "PV" }}
+
+{# Register 89 (Slots 12-15) #}
+x89 = ${{ "BR_SLOT_12" if 12 in groups_by_slot else "PV" }}
+y89 = ${{ "BR_SLOT_13" if 13 in groups_by_slot else "PV" }}
+z89 = ${{ "BR_SLOT_14" if 14 in groups_by_slot else "PV" }}
+w89 = ${{ "BR_SLOT_15" if 15 in groups_by_slot else "PV" }}
+
+ResourceTempT1 = copy vs-t1
+{# vs-t1 will be set per-component in rz_MERGED_HOYO.j2 #}
+handling = skip
+draw = auto
+post vs-t1 = ResourceTempT1
+[ResourceTempT1]
+{% endif %}
+{% endmacro %}

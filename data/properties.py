@@ -26,6 +26,7 @@ from .p_settings import (
     RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition,
     RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer
 )
+from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
 from ..operators import custom_draw_ops
 
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
@@ -136,6 +137,8 @@ classes_to_register = [
     # ─ New API classes: RunLink and Keybind AFTER RZMShape ───────────────────────────
     RZMRunLink,
     RZMKeybind,
+    # --- Register BlendResize before settings that point to it ---
+    RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings,
     RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings,
     # ─ Tier system: RZMTierDefinition must be registered BEFORE RZM_AddonPreferences ─
     RZMTierDefinition,
@@ -170,6 +173,11 @@ def register():
     bpy.types.Scene.rzm_active_shape_coll_index = IntProperty(name="Active Shape Collection Index")
     bpy.types.Scene.rzm_active_run_link_index = IntProperty(name="Active Run Link Index")
     bpy.types.Scene.rzm_active_keybind_index = IntProperty(name="Active Keybind Index")
+    
+    # --- BlendResize Active Indices ---
+    bpy.types.Scene.rzm_active_br_group_index = IntProperty(name="Active BR Group Index", default=-1)
+    bpy.types.Scene.rzm_active_br_comp_index = IntProperty(name="Active BR Component Index", default=-1)
+    bpy.types.Scene.rzm_active_br_bone_index = IntProperty(name="Active BR Bone Index", default=-1)
     bpy.types.Scene.rzm_editor_mode = EnumProperty(name="Editor Mode", items=[('LIGHT', "Light", ""), ('PRO', "Pro", "")], default='LIGHT')
     bpy.types.Scene.rzm_show_debug_panel = BoolProperty(name="Show Debug Panel", default=False)
     bpy.types.Scene.rzm_capture_settings = PointerProperty(type=RZMCaptureSettings)
@@ -184,6 +192,7 @@ def register():
             ('SHAPES',    "Shapes (Legacy)", "Manage legacy manual shape keys"),
             ('NATIVE_SHAPES', "Native Shapes", "Manage discovered Blender shape keys"),
             ('KEYBINDS',  "Keybinds",  "Manage in-game hotkeys and RunLinks"),
+            ('BLEND_RESIZE', "Blend Resize", "Manage bone-based resizing"),
         ],
         default='TOGGLES'
     )

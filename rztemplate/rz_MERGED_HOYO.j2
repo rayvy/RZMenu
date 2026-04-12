@@ -32,6 +32,13 @@
             stride = 40
         {% elif mod_file.game.name == "GenshinImpact" %}
             vb1 = Resource{{ component.fullname }}Blend
+            {% if scene.rzm.addons.blend_resize and scene.rzm.addons.blend_resize.is_enabled %}
+                {% set br = scene.rzm.addons.blend_resize %}
+                {% for mapping in br.component_mappings if mapping.name == component.fullname and (mapping.layers | length) > 0 %}
+            vs-t69 = ResourceBlendResize.{{ component.fullname }}Blend.Data
+            run = CustomShaderBlendResize
+                {% endfor %}
+            {% endif %}
             draw = {{ component.vertex_count }}, 0
         {% endif %}
 
@@ -179,6 +186,20 @@
             type = Buffer
             stride = {{ component.strides.blend }}
             filename = {{ component.fullname }}Blend.buf
+
+            {% if scene.rzm.addons.blend_resize.is_enabled %}
+                {% set br = scene.rzm.addons.blend_resize %}
+                {% for mapping in br.component_mappings %}
+                    {% if mapping.name == component.fullname and (mapping.layers | length) > 0 %}
+                        [ResourceBlendResize.{{ component.fullname }}Blend.Data]
+                        type = Buffer
+                        format = R32G32B32A32_FLOAT
+                        data = {% for layer in mapping.layers -%}
+                            69 {{ layer.bone_count }} {{ layer.slot_id }} 0   {{ layer.head_mapped[0] | round(4) }} {{ layer.head_mapped[1] | round(4) }} {{ layer.head_mapped[2] | round(4) }} 0   {{ layer.tail_mapped[0] | round(4) }} {{ layer.tail_mapped[1] | round(4) }} {{ layer.tail_mapped[2] | round(4) }} 0   {% for b in layer.bones %}{{ b.scale_mapped[0] | round(4) }} {{ b.scale_mapped[1] | round(4) }} {{ b.scale_mapped[2] | round(4) }} {{ b.bone_index }}  {% endfor -%}
+                        {%- endfor %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
 
             [Resource{{ component.fullname }}Texcoord]
             type = Buffer

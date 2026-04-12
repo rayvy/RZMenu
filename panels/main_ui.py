@@ -975,6 +975,98 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                 c2.prop(active_kb, "transition")
                 c2.prop(active_kb, "transition_type")
 
+        elif tab == 'BLEND_RESIZE':
+            # --- BLEND RESIZE SYSTEM ---
+            br = rzm.addons.blend_resize
+            
+            box.prop(br, "is_enabled", text="Active", toggle=True)
+            if br.is_enabled:
+                # 1. Master Groups (12 Slots)
+                m_box = box.box()
+                m_box.label(text="Master Resize Groups (12 Slots)", icon='GROUP_BONE')
+                
+                row = m_box.row()
+                row.operator("rzm.br_add_group", text="Add Group", icon='ADD')
+                
+                for i, group in enumerate(br.groups):
+                    row = m_box.row(align=True)
+                    row.prop(group, "slot_id", text="")
+                    row.prop(group, "name", text="")
+                    row.prop(group, "value_link", text="Link")
+                    op = row.operator("rzm.br_remove_group", text="", icon='REMOVE')
+                    op.index = i
+                    
+                # 2. Component Mappings
+                c_box = box.box()
+                c_box.label(text="Component Mappings", icon='NONE')
+                
+                row = c_box.row()
+                row.operator("rzm.br_add_comp", text="Add Component", icon='ADD')
+                
+                col = c_box.column(align=True)
+                for i, comp in enumerate(br.component_mappings):
+                    row = col.row(align=True)
+                    row.prop(comp, "name", text="")
+                    
+                    if scene.rzm_active_br_comp_index == i:
+                        row.label(icon='CHECKMARK')
+                    else:
+                        op = row.operator("rzm.br_select_comp", text="Select")
+                        op.index = i
+                        
+                    op = row.operator("rzm.br_remove_comp", text="", icon='REMOVE')
+                    op.index = i
+
+                # 3. Baked Layers for active component
+                if 0 <= scene.rzm_active_br_comp_index < len(br.component_mappings):
+                    comp_idx = scene.rzm_active_br_comp_index
+                    active_comp = br.component_mappings[comp_idx]
+                    
+                    l_box_root = box.box()
+                    header = l_box_root.row()
+                    header.label(text=f"Baked Layers: {active_comp.name}", icon='RENDER_ANIMATION')
+                    
+                    op_bake = header.operator("rzm.br_bake_layer", text="Bake from Active Bones", icon='FILE_REFRESH')
+                    op_bake.comp_index = comp_idx
+                    
+                    row = l_box_root.row()
+                    row.operator("rzm.br_add_layer", text="Add Empty Layer", icon='ADD')
+                    
+                    for i, layer in enumerate(active_comp.layers):
+                        l_box = l_box_root.box()
+                        row = l_box.row()
+                        row.prop(layer, "name", text="")
+                        row.prop(layer, "slot_id", text="Slot ID")
+                        row.label(text=f"Bones: {layer.bone_count}")
+                        op = row.operator("rzm.br_remove_layer", text="", icon='REMOVE')
+                        op.comp_index = comp_idx
+                        op.layer_index = i
+                        
+                        # Layer Details (Coordinates)
+                        flow = l_box.grid_flow(columns=2, align=True)
+                        flow.prop(layer, "head_mapped", text="Map Head")
+                        flow.prop(layer, "tail_mapped", text="Map Tail")
+                        
+                        # Bones inside layer
+                        b_row = l_box.row()
+                        b_row.label(text="Bones:")
+                        b_op = b_row.operator("rzm.br_add_layer_bone", text="", icon='ADD')
+                        b_op.comp_index = comp_idx
+                        b_op.layer_index = i
+                        
+                        for j, bone in enumerate(layer.bones):
+                            b_r = l_box.row(align=True)
+                            b_r.prop(bone, "bone_name", text="")
+                            b_r.prop(bone, "bone_index", text="ID")
+                            b_r.prop(bone, "scale_mapped", text="")
+                            b_rm = b_r.operator("rzm.br_remove_layer_bone", text="", icon='REMOVE')
+                            b_rm.comp_index = comp_idx
+                            b_rm.layer_index = i
+                            b_rm.bone_index = j
+
+                box.separator()
+                box.label(text="Export saves configurations inside the addon's .ini output. No external buffers needed.", icon='INFO')
+
 
 
 class VIEW3D_PT_RZModProducerBuild(bpy.types.Panel):
