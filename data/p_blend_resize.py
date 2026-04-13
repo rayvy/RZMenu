@@ -3,7 +3,6 @@ import bpy
 from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, EnumProperty, CollectionProperty, FloatVectorProperty
 
 class RZMBResizeBakedBone(bpy.types.PropertyGroup):
-    bone_name: StringProperty(name="Bone Name", default="")
     bone_index: IntProperty(name="Bone Index", default=0, min=0)
     scale_mapped: FloatVectorProperty(name="Scale (Mapped)", size=3, default=(1.0, 1.0, 1.0))
 
@@ -13,7 +12,8 @@ class RZMBResizeBakedLayer(bpy.types.PropertyGroup):
     bone_count: IntProperty(name="Bone Count", default=0, min=0)
     
     head_mapped: FloatVectorProperty(name="Head (Mapped)", size=3, default=(0.0, 0.0, 0.0))
-    tail_mapped: FloatVectorProperty(name="Tail (Mapped)", size=3, default=(0.0, 0.0, 0.0))
+    bone_x_mapped: FloatVectorProperty(name="Bone X (Mapped)", size=3, default=(1.0, 0.0, 0.0))
+    bone_y_mapped: FloatVectorProperty(name="Bone Y (Mapped)", size=3, default=(0.0, 1.0, 0.0))
     
     bones: CollectionProperty(type=RZMBResizeBakedBone)
     active_bone_index: IntProperty(default=-1)

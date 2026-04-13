@@ -1053,9 +1053,20 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         op.layer_index = i
                         
                         # Layer Details (Coordinates)
-                        flow = l_box.grid_flow(columns=2, align=True)
-                        flow.prop(layer, "head_mapped", text="Map Head")
-                        flow.prop(layer, "tail_mapped", text="Map Tail")
+                        header_c = l_box.row()
+                        header_c.label(text="Spatial Anchor (Coordinates)", icon='EMPTY_AXIS')
+                        cop_row = header_c.row(align=True)
+                        op_c = cop_row.operator("rzm.br_copy_coords", icon='COPYDOWN', text="")
+                        op_c.comp_index = comp_idx
+                        op_c.layer_index = i
+                        op_p = cop_row.operator("rzm.br_paste_coords", icon='PASTEDOWN', text="")
+                        op_p.comp_index = comp_idx
+                        op_p.layer_index = i
+
+                        flow = l_box.grid_flow(columns=3, align=True)
+                        flow.prop(layer, "head_mapped", text="Head")
+                        flow.prop(layer, "bone_x_mapped", text="X Axis")
+                        flow.prop(layer, "bone_y_mapped", text="Y Axis")
                         
                         # Bones inside layer
                         b_row = l_box.row()
@@ -1066,7 +1077,6 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         
                         for j, bone in enumerate(layer.bones):
                             b_r = l_box.row(align=True)
-                            b_r.prop(bone, "bone_name", text="")
                             b_r.prop(bone, "bone_index", text="ID")
                             b_r.prop(bone, "scale_mapped", text="")
                             b_rm = b_r.operator("rzm.br_remove_layer_bone", text="", icon='REMOVE')

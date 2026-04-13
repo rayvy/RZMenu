@@ -117,11 +117,14 @@ class RZM_OT_BRBakeLayer(bpy.types.Operator):
             active_bone = selected[0]
 
         head = active_bone.bone.head_local
-        tail = active_bone.bone.tail_local
+        mat = active_bone.bone.matrix_local.to_3x3()
+        x_axis = mat.col[0]
+        y_axis = mat.col[1]
 
         game = context.scene.rzm.game.selection
         g_head = remap_pos(head, game)
-        g_tail = remap_pos(tail, game)
+        g_x_axis = remap_pos(x_axis, game)
+        g_y_axis = remap_pos(y_axis, game)
 
         valid_bones = [pb for pb in selected if pb.name.isdigit()]
         count = len(valid_bones)
@@ -137,11 +140,11 @@ class RZM_OT_BRBakeLayer(bpy.types.Operator):
         layer.slot_id = 0 # Default to 0, user can change manually in UI
         layer.bone_count = count
         layer.head_mapped = g_head
-        layer.tail_mapped = g_tail
+        layer.bone_x_mapped = g_x_axis
+        layer.bone_y_mapped = g_y_axis
 
         for pb in valid_bones:
             b = layer.bones.add()
-            b.bone_name = pb.name
             b.bone_index = int(pb.name)
             # Apply scale mapping according to the python script: scl.x, scl.z, scl.y
             scl = pb.scale
@@ -181,9 +184,13 @@ class RZM_OT_BlendResizeExport(bpy.types.Operator):
                 h2 = struct.pack('4f', layer.head_mapped[0], layer.head_mapped[1], layer.head_mapped[2], 0.0)
                 buffer_data.extend(h2)
                 
-                # [2] Tail XYZ, (0.0 padding)
-                h3 = struct.pack('4f', layer.tail_mapped[0], layer.tail_mapped[1], layer.tail_mapped[2], 0.0)
+                # [2] Bone X XYZ, (0.0 padding)
+                h3 = struct.pack('4f', layer.bone_x_mapped[0], layer.bone_x_mapped[1], layer.bone_x_mapped[2], 0.0)
                 buffer_data.extend(h3)
+                
+                # [3] Bone Y XYZ, (0.0 padding)
+                h4 = struct.pack('4f', layer.bone_y_mapped[0], layer.bone_y_mapped[1], layer.bone_y_mapped[2], 0.0)
+                buffer_data.extend(h4)
                 
                 # [N] Bones: Scale X/Z/Y, BoneID
                 for bone in layer.bones:
@@ -195,6 +202,50 @@ class RZM_OT_BlendResizeExport(bpy.types.Operator):
                 f.write(buffer_data)
                 
         self.report({'INFO'}, "BlendResize layers exported successfully to binary buffers.")
+        return {'FINISHED'}
+
+BR_CLIPBOARD = {
+    "head": None,
+    "x": None,
+    "y": None
+}
+
+class RZM_OT_BRCopyCoords(bpy.types.Operator):
+    bl_idname = "rzm.br_copy_coords"
+    bl_label = "Copy Local Anchor"
+    bl_description = "Copy spatial anchor data to clipboard to sync multiple scaling parts"
+    
+    comp_index: bpy.props.IntProperty(default=-1)
+    layer_index: bpy.props.IntProperty(default=-1)
+    
+    def execute(self, context):
+        comp = context.scene.rzm.addons.blend_resize.component_mappings[self.comp_index]
+        layer = comp.layers[self.layer_index]
+        BR_CLIPBOARD["head"] = list(layer.head_mapped)
+        BR_CLIPBOARD["x"] = list(layer.bone_x_mapped)
+        BR_CLIPBOARD["y"] = list(layer.bone_y_mapped)
+        self.report({'INFO'}, "Coordinate Space Anchor Copied!")
+        return {'FINISHED'}
+
+class RZM_OT_BRPasteCoords(bpy.types.Operator):
+    bl_idname = "rzm.br_paste_coords"
+    bl_label = "Paste Local Anchor"
+    bl_description = "Paste spatial anchor data to ensure contiguous deformation"
+    
+    comp_index: bpy.props.IntProperty(default=-1)
+    layer_index: bpy.props.IntProperty(default=-1)
+    
+    @classmethod
+    def poll(cls, context):
+        return BR_CLIPBOARD["head"] is not None
+        
+    def execute(self, context):
+        comp = context.scene.rzm.addons.blend_resize.component_mappings[self.comp_index]
+        layer = comp.layers[self.layer_index]
+        layer.head_mapped = BR_CLIPBOARD["head"]
+        layer.bone_x_mapped = BR_CLIPBOARD["x"]
+        layer.bone_y_mapped = BR_CLIPBOARD["y"]
+        self.report({'INFO'}, "Coordinate Space Anchor Pasted!")
         return {'FINISHED'}
 
 classes_to_register = (
@@ -209,5 +260,6 @@ classes_to_register = (
     RZM_OT_BRRemoveLayerBone,
     RZM_OT_BRBakeLayer,
     RZM_OT_BlendResizeExport,
+    RZM_OT_BRCopyCoords,
+    RZM_OT_BRPasteCoords,
 )
-

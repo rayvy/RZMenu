@@ -45,24 +45,16 @@ void main(
             float varSlot = header.z;
 
             float3 globalHead = DataBuffer.Load(ptr + 1).xyz;
-            float3 globalTail = DataBuffer.Load(ptr + 2).xyz;
+            float3 bone_X = DataBuffer.Load(ptr + 2).xyz;
+            float3 bone_Y = DataBuffer.Load(ptr + 3).xyz;
+            float3 bone_Z = normalize(cross(bone_X, bone_Y));
             
             // ВОЗВРАЩАЕМ: теперь масштаб снова зависит от IniParams
             float lerpFact = GetVar((int)varSlot);
 
-            float3 dir = globalTail - globalHead;
-            float len = length(dir);
-            
-            if (len > 0.0001) 
-            {
-                float3 bone_Y = dir / len;
-                float3 up = abs(bone_Y.y) > 0.999 ? float3(0, 0, 1) : float3(0, 1, 0);
-                float3 bone_X = normalize(cross(up, bone_Y));
-                float3 bone_Z = normalize(cross(bone_X, bone_Y));
-
                 for (uint j = 0; j < boneCount; j++)
                 {
-                    float4 boneData = DataBuffer.Load(ptr + 3 + j);
+                    float4 boneData = DataBuffer.Load(ptr + 4 + j);
 
                     // Защита: мягкое сравнение ID кости
                     if (abs(boneData.w - (float)bID) < 0.1)
@@ -84,8 +76,7 @@ void main(
                         break; 
                     }
                 }
-            }
-            ptr += 3 + boneCount; 
+            ptr += 4 + boneCount; 
         }
 
         // Стандартный скиннинг
