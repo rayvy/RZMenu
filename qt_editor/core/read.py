@@ -119,6 +119,14 @@ def get_variable_suggestions():
     suggestions.append("~PT")
     suggestions.append("~PHover")
     suggestions.append("~PH")
+    suggestions.append("~PColor.r")
+    suggestions.append("~PC.r")
+    suggestions.append("~PColor.g")
+    suggestions.append("~PC.g")
+    suggestions.append("~PColor.b")
+    suggestions.append("~PC.b")
+    suggestions.append("~PColor.a")
+    suggestions.append("~PC.a")
     suggestions.append("~PColor")
     suggestions.append("~PC")
 
@@ -145,7 +153,9 @@ def get_metadata_suggestions():
         "~version_num", "~mod_name", "~game_name",
         "~menu_keybind", "~requirements",
         "~community_respect", "~description",
-        "~PName", "~PN", "~PText", "~PT", "~PHover", "~PH", "~PColor", "~PC"
+        "~PName", "~PN", "~PText", "~PT", "~PHover", "~PH", 
+        "~PColor.r", "~PC.r", "~PColor.g", "~PC.g", "~PColor.b", "~PC.b", "~PColor.a", "~PC.a",
+        "~PColor", "~PC"
     ]
     
     return sorted(meta_tags + system_vars)
@@ -229,9 +239,15 @@ def evaluate_text_id(text_id, highlight=False, item_uid=-1):
                 sys_vars["~ph"] = sys_vars["~PHover"]
                 if hasattr(parent, "color"):
                     c = parent.color
-                    color_str = f"{c[0]},{c[1]},{c[2]},{c[3]}"
                 else:
-                    color_str = "1.0,1.0,1.0,1.0"
+                    c = (1.0, 1.0, 1.0, 1.0)
+                
+                sys_vars["~PColor.r"] = sys_vars["~PColor.R"] = sys_vars["~PC.r"] = sys_vars["~PC.R"] = str(c[0])
+                sys_vars["~PColor.g"] = sys_vars["~PColor.G"] = sys_vars["~PC.g"] = sys_vars["~PC.G"] = str(c[1])
+                sys_vars["~PColor.b"] = sys_vars["~PColor.B"] = sys_vars["~PC.b"] = sys_vars["~PC.B"] = str(c[2])
+                sys_vars["~PColor.a"] = sys_vars["~PColor.A"] = sys_vars["~PC.a"] = sys_vars["~PC.A"] = str(c[3])
+                
+                color_str = f"{c[0]},{c[1]},{c[2]},{c[3]}"
                 sys_vars["~PColor"] = color_str
                 sys_vars["~Pcolor"] = color_str
                 sys_vars["~PC"] = color_str

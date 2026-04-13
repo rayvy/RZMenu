@@ -20,6 +20,8 @@ global persist $SKC_LastTime = 0
 {% endfor %}
 
 [Present]
+run = CommandListSKPresent
+[CommandListSKPresent]
 local $shape_changed = 0
 local $pi
 $pi = 3.14159265

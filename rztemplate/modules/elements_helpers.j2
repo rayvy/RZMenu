@@ -11,7 +11,7 @@
     
     {# --- Инициализация переменных --- #}
     {# Resolve ~meta_var system variables at export time (e.g. ~author_name → RAYVICH) #}
-    {% set fallback_text = utils.resolve_meta_var(element.text_id | default("NO_TEXT"), scene) %}
+    {% set fallback_text = utils.resolve_meta_var(element.text_id | default("NO_TEXT"), scene, element) %}
     {% set resources_to_generate = [] %}
     
     [CommandListGetTextElement{{ element.id }}]
@@ -21,7 +21,7 @@
         
         {% for item in element.conditional_texts %}
             {# Считаем смещения для текущего условия #}
-            {% set txt_content = utils.resolve_meta_var(item.text_id, scene) %}
+            {% set txt_content = utils.resolve_meta_var(item.text_id, scene, element) %}
             {% set txt_len = txt_content | length %}
             {% set current_offset = text_offset_tracker[0] %}
             
@@ -109,7 +109,7 @@ endif
 {% endif %}
 
         {% if element.hover_text_id and element.id not in processed_ids['hover_text_elements'] %}
-            {% set text_content = utils.resolve_meta_var(element.hover_text_id, scene) %}
+            {% set text_content = utils.resolve_meta_var(element.hover_text_id, scene, element) %}
             {% set text_length = text_content | length %}
             {% set current_offset = text_offset_tracker[0] %}
 

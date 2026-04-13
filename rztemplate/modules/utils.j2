@@ -149,7 +149,11 @@
             {%- set p_name = element.element_name | default('') | string -%}
             {%- set p_text = element.text_id | default('') | string -%}
             {%- set p_hover = element.hover_text_id | default('') | string -%}
-            {%- set p_color = (element.color[0]|string ~ ',' ~ element.color[1]|string ~ ',' ~ element.color[2]|string ~ ',' ~ element.color[3]|string) if element.color else '1.0,1.0,1.0,1.0' -%}
+            {%- set p_color_r = element.color[0]|string if element.color else '1.0' -%}
+            {%- set p_color_g = element.color[1]|string if element.color else '1.0' -%}
+            {%- set p_color_b = element.color[2]|string if element.color else '1.0' -%}
+            {%- set p_color_a = element.color[3]|string if element.color else '1.0' -%}
+            {%- set p_color = p_color_r ~ ',' ~ p_color_g ~ ',' ~ p_color_b ~ ',' ~ p_color_a -%}
             
             {%- set result = result 
                 | replace('~ParentValueMin', p_min) | replace('~PVMin', p_min) | replace('~PVmin', p_min) | replace('~pvmin', p_min) | replace('~PVMIN', p_min)
@@ -158,6 +162,10 @@
                 | replace('~PName', p_name) | replace('~Pname', p_name) | replace('~PN', p_name) | replace('~pn', p_name)
                 | replace('~PText', p_text) | replace('~Ptext', p_text) | replace('~PT', p_text) | replace('~pt', p_text)
                 | replace('~PHover', p_hover) | replace('~Phover', p_hover) | replace('~PH', p_hover) | replace('~ph', p_hover)
+                | replace('~PColor.r', p_color_r) | replace('~PColor.R', p_color_r) | replace('~PC.r', p_color_r) | replace('~PC.R', p_color_r)
+                | replace('~PColor.g', p_color_g) | replace('~PColor.G', p_color_g) | replace('~PC.g', p_color_g) | replace('~PC.G', p_color_g)
+                | replace('~PColor.b', p_color_b) | replace('~PColor.B', p_color_b) | replace('~PC.b', p_color_b) | replace('~PC.B', p_color_b)
+                | replace('~PColor.a', p_color_a) | replace('~PColor.A', p_color_a) | replace('~PC.a', p_color_a) | replace('~PC.A', p_color_a)
                 | replace('~PColor', p_color) | replace('~Pcolor', p_color) | replace('~PC', p_color) | replace('~pc', p_color)
             -%}
         {%- endif -%}
@@ -179,13 +187,21 @@
             {%- set p_name = element.element_name | default('') | string -%}
             {%- set p_text = element.text_id | default('') | string -%}
             {%- set p_hover = element.hover_text_id | default('') | string -%}
-            {%- set p_color = (element.color[0]|string ~ ',' ~ element.color[1]|string ~ ',' ~ element.color[2]|string ~ ',' ~ element.color[3]|string) if element.color else '1.0,1.0,1.0,1.0' -%}
+            {%- set p_color_r = element.color[0]|string if element.color else '1.0' -%}
+            {%- set p_color_g = element.color[1]|string if element.color else '1.0' -%}
+            {%- set p_color_b = element.color[2]|string if element.color else '1.0' -%}
+            {%- set p_color_a = element.color[3]|string if element.color else '1.0' -%}
+            {%- set p_color = p_color_r ~ ',' ~ p_color_g ~ ',' ~ p_color_b ~ ',' ~ p_color_a -%}
             {%- set result = result | replace('~ParentValueMin', p_min) | replace('~PVMin', p_min) | replace('~PVmin', p_min) | replace('~pvmin', p_min) | replace('~PVMIN', p_min)
                                     | replace('~ParentValueMax', p_max) | replace('~PVMax', p_max) | replace('~PVmax', p_max) | replace('~pvmax', p_max) | replace('~PVMAX', p_max)
                                     | replace('~ParentValue', p_val)    | replace('~PV', p_val)    | replace('~pv', p_val) 
                                     | replace('~PName', p_name) | replace('~Pname', p_name) | replace('~PN', p_name) | replace('~pn', p_name)
                                     | replace('~PText', p_text) | replace('~Ptext', p_text) | replace('~PT', p_text) | replace('~pt', p_text)
                                     | replace('~PHover', p_hover) | replace('~Phover', p_hover) | replace('~PH', p_hover) | replace('~ph', p_hover)
+                                    | replace('~PColor.r', p_color_r) | replace('~PColor.R', p_color_r) | replace('~PC.r', p_color_r) | replace('~PC.R', p_color_r)
+                                    | replace('~PColor.g', p_color_g) | replace('~PColor.G', p_color_g) | replace('~PC.g', p_color_g) | replace('~PC.G', p_color_g)
+                                    | replace('~PColor.b', p_color_b) | replace('~PColor.B', p_color_b) | replace('~PC.b', p_color_b) | replace('~PC.B', p_color_b)
+                                    | replace('~PColor.a', p_color_a) | replace('~PColor.A', p_color_a) | replace('~PC.a', p_color_a) | replace('~PC.A', p_color_a)
                                     | replace('~PColor', p_color) | replace('~Pcolor', p_color) | replace('~PC', p_color) | replace('~pc', p_color) -%}
         {%- endif -%}
         
@@ -246,7 +262,7 @@
     If the entire text_id is a single ~var, returns just the resolved value.
     If no ~ is present, returns the input unchanged (zero overhead).
 #}
-{%- macro resolve_meta_var(text_id, scene) -%}
+{%- macro resolve_meta_var(text_id, scene, element=none) -%}
     {%- if "~" not in text_id -%}
         {{- text_id -}}
     {%- else -%}
@@ -265,6 +281,36 @@
             '~community_respect': meta.community_respect,
             '~description':       meta.description
         } -%}
+        
+        {%- if element and element.parent_id != -1 -%}
+            {%- set ns = {'parent': none} -%}
+            {%- for el in scene.rzm.elements if el.id == element.parent_id -%}
+                {%- set _ = ns.update({'parent': el}) -%}
+            {%- endfor -%}
+            {%- set parent = ns.parent -%}
+            {%- if parent -%}
+                {%- set p_name = parent.element_name | default('') | string -%}
+                {%- set p_text = parent.text_id | default('') | string -%}
+                {%- set p_hover = parent.hover_text_id | default('') | string -%}
+                {%- set p_color_r = parent.color[0]|string if parent.color else '1.0' -%}
+                {%- set p_color_g = parent.color[1]|string if parent.color else '1.0' -%}
+                {%- set p_color_b = parent.color[2]|string if parent.color else '1.0' -%}
+                {%- set p_color_a = parent.color[3]|string if parent.color else '1.0' -%}
+                {%- set p_color = p_color_r ~ ',' ~ p_color_g ~ ',' ~ p_color_b ~ ',' ~ p_color_a -%}
+                
+                {%- set _ = vars_map.update({
+                    '~PColor.r': p_color_r, '~PColor.R': p_color_r, '~PC.r': p_color_r, '~PC.R': p_color_r,
+                    '~PColor.g': p_color_g, '~PColor.G': p_color_g, '~PC.g': p_color_g, '~PC.G': p_color_g,
+                    '~PColor.b': p_color_b, '~PColor.B': p_color_b, '~PC.b': p_color_b, '~PC.B': p_color_b,
+                    '~PColor.a': p_color_a, '~PColor.A': p_color_a, '~PC.a': p_color_a, '~PC.A': p_color_a,
+                    '~PColor': p_color, '~Pcolor': p_color, '~PC': p_color, '~pc': p_color,
+                    '~PName': p_name, '~Pname': p_name, '~PN': p_name, '~pn': p_name,
+                    '~PText': p_text, '~Ptext': p_text, '~PT': p_text, '~pt': p_text,
+                    '~PHover': p_hover, '~Phover': p_hover, '~PH': p_hover, '~ph': p_hover
+                }) -%}
+            {%- endif -%}
+        {%- endif -%}
+        
         {%- set res = {'v': text_id} -%}
         {%- for var_key, var_val in vars_map.items() -%}
             {%- if var_key in res.v -%}
