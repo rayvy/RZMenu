@@ -299,7 +299,7 @@
                     {%- endfor -%}
                 {%- endif -%}
             {%- endfor -%}
-            {%- set parent = ns.parent -%}
+            {%- set parent = ns.parent if ns.parent else element -%}
             {%- if parent -%}
                 {%- set p_name = parent.element_name | default('') | string -%}
                 {%- set p_text = parent.text_id | default('') | string -%}

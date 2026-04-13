@@ -223,11 +223,20 @@ def evaluate_text_id(text_id, highlight=False, item_uid=-1):
     if item_uid != -1:
         elem = get_element_by_id(item_uid)
         parent = None
+        
+        # Unpack Qt virtual ID to find exact host element if this is a preset/helper instance
+        host_id = -1
+        if item_uid >= 100000:
+            current_id = item_uid
+            while current_id >= 100000000: # It's a recursive child
+                current_id = current_id // 1000
+            host_id = current_id // 100000
+        
         if elem:
             if getattr(elem, "parent_id", -1) != -1:
                 parent = get_element_by_id(elem.parent_id)
             if not parent:
-                # Find owner among helpers and presets
+                # Origin element fallback - only used if not virtual
                 for el in bpy.context.scene.rzm.elements:
                     if hasattr(el, "helper_ids") and any(h.helper_id == item_uid for h in el.helper_ids):
                         parent = el
@@ -238,6 +247,13 @@ def evaluate_text_id(text_id, highlight=False, item_uid=-1):
                     if hasattr(el, "underlayer_preset_ids") and any(u.preset_id == item_uid for u in el.underlayer_preset_ids):
                         parent = el
                         break
+        elif host_id != -1:
+             # Virtual element (preset/helper instance) resolving to its exact host!
+             parent = get_element_by_id(host_id)
+             
+        if parent is None and elem:
+            parent = elem
+            
         if parent:
                 sys_vars["~PName"] = parent.element_name
                 sys_vars["~Pname"] = parent.element_name
