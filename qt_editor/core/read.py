@@ -177,9 +177,9 @@ def evaluate_mod_info(text, highlight=False):
         "{{description}}": meta.description,
         "{{menu_keybind}}": meta.menu_keybind,
         "{{requirements}}": meta.requirements,
-        "{{author_name}}": meta.author_name,
+        "{{author_name}}": getattr(meta, "author_name", "UNKNOWN"),
         "{{community_respect}}": meta.community_respect,
-        "{{mod_name}}": rzm.export_settings.mod_name,
+        "{{mod_name}}": f"{meta.character_name} ({meta.outfit_name})",
         "{{game_name}}": rzm.game.name
     }
     
@@ -208,11 +208,11 @@ def evaluate_text_id(text_id, highlight=False, item_uid=-1):
     meta = rzm.meta_data
     
     sys_vars = {
-        "~author_name":       meta.author_name,
+        "~author_name":       getattr(meta, "author_name", "UNKNOWN"),
         "~character_name":    meta.character_name,
         "~outfit_name":       meta.outfit_name,
         "~version_num":       meta.version_num,
-        "~mod_name":          rzm.export_settings.mod_name,
+        "~mod_name":          f"{meta.character_name} ({meta.outfit_name})",
         "~game_name":         rzm.game.name,
         "~menu_keybind":      meta.menu_keybind,
         "~requirements":      meta.requirements,
@@ -222,9 +222,23 @@ def evaluate_text_id(text_id, highlight=False, item_uid=-1):
     
     if item_uid != -1:
         elem = get_element_by_id(item_uid)
-        if elem and getattr(elem, "parent_id", -1) != -1:
-            parent = get_element_by_id(elem.parent_id)
-            if parent:
+        parent = None
+        if elem:
+            if getattr(elem, "parent_id", -1) != -1:
+                parent = get_element_by_id(elem.parent_id)
+            if not parent:
+                # Find owner among helpers and presets
+                for el in bpy.context.scene.rzm.elements:
+                    if hasattr(el, "helper_ids") and any(h.helper_id == item_uid for h in el.helper_ids):
+                        parent = el
+                        break
+                    if hasattr(el, "preset_ids") and any(p.preset_id == item_uid for p in el.preset_ids):
+                        parent = el
+                        break
+                    if hasattr(el, "underlayer_preset_ids") and any(u.preset_id == item_uid for u in el.underlayer_preset_ids):
+                        parent = el
+                        break
+        if parent:
                 sys_vars["~PName"] = parent.element_name
                 sys_vars["~Pname"] = parent.element_name
                 sys_vars["~PN"] = parent.element_name

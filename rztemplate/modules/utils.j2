@@ -282,10 +282,22 @@
             '~description':       meta.description
         } -%}
         
-        {%- if element and element.parent_id != -1 -%}
+        {%- if element -%}
             {%- set ns = {'parent': none} -%}
-            {%- for el in scene.rzm.elements if el.id == element.parent_id -%}
-                {%- set _ = ns.update({'parent': el}) -%}
+            {%- for el in scene.rzm.elements -%}
+                {%- if el.id == element.parent_id -%}
+                    {%- set _ = ns.update({'parent': el}) -%}
+                {%- else -%}
+                    {%- for h in el.helper_ids | default([]) if h.helper_id == element.id -%}
+                        {%- set _ = ns.update({'parent': el}) -%}
+                    {%- endfor -%}
+                    {%- for p in el.preset_ids | default([]) if p.preset_id == element.id -%}
+                        {%- set _ = ns.update({'parent': el}) -%}
+                    {%- endfor -%}
+                    {%- for u in el.underlayer_preset_ids | default([]) if u.preset_id == element.id -%}
+                        {%- set _ = ns.update({'parent': el}) -%}
+                    {%- endfor -%}
+                {%- endif -%}
             {%- endfor -%}
             {%- set parent = ns.parent -%}
             {%- if parent -%}
