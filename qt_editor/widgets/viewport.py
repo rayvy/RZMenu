@@ -697,7 +697,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             # Inspector shows the raw ~author_name; viewport shows resolved value (e.g. RAYVICH).
             try:
                 from ..core.read import evaluate_text_id
-                text = evaluate_text_id(raw_text_id, highlight=False)
+                text = evaluate_text_id(raw_text_id, highlight=False, item_uid=self.uid)
             except Exception:
                 text = raw_text_id
             if not text: return

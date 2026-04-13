@@ -113,6 +113,14 @@ def get_variable_suggestions():
     # 5. System variables (~) — processed on exporter side
     suggestions.append("~ParentValue")
     suggestions.append("~PV")          # Short alias for ~ParentValue
+    suggestions.append("~PName")
+    suggestions.append("~PN")
+    suggestions.append("~PText")
+    suggestions.append("~PT")
+    suggestions.append("~PHover")
+    suggestions.append("~PH")
+    suggestions.append("~PColor")
+    suggestions.append("~PC")
 
     return sorted(suggestions)
 
@@ -136,7 +144,8 @@ def get_metadata_suggestions():
         "~author_name", "~character_name", "~outfit_name",
         "~version_num", "~mod_name", "~game_name",
         "~menu_keybind", "~requirements",
-        "~community_respect", "~description"
+        "~community_respect", "~description",
+        "~PName", "~PN", "~PText", "~PT", "~PHover", "~PH", "~PColor", "~PC"
     ]
     
     return sorted(meta_tags + system_vars)
@@ -173,7 +182,7 @@ def evaluate_mod_info(text, highlight=False):
     return result
 
 
-def evaluate_text_id(text_id, highlight=False):
+def evaluate_text_id(text_id, highlight=False, item_uid=-1):
     """
     Resolves ~system_var placeholders in element text_id for Qt viewport preview.
     In inspector the raw text_id stays as-is; viewport renders the resolved value.
@@ -200,6 +209,34 @@ def evaluate_text_id(text_id, highlight=False):
         "~community_respect": meta.community_respect,
         "~description":       meta.description,
     }
+    
+    if item_uid != -1:
+        elem = get_element_by_id(item_uid)
+        if elem and getattr(elem, "parent_id", -1) != -1:
+            parent = get_element_by_id(elem.parent_id)
+            if parent:
+                sys_vars["~PName"] = parent.element_name
+                sys_vars["~Pname"] = parent.element_name
+                sys_vars["~PN"] = parent.element_name
+                sys_vars["~pn"] = parent.element_name
+                sys_vars["~PText"] = getattr(parent, "text_id", "")
+                sys_vars["~Ptext"] = sys_vars["~PText"]
+                sys_vars["~PT"] = sys_vars["~PText"]
+                sys_vars["~pt"] = sys_vars["~PText"]
+                sys_vars["~PHover"] = getattr(parent, "hover_text_id", "")
+                sys_vars["~Phover"] = sys_vars["~PHover"]
+                sys_vars["~PH"] = sys_vars["~PHover"]
+                sys_vars["~ph"] = sys_vars["~PHover"]
+                if hasattr(parent, "color"):
+                    c = parent.color
+                    color_str = f"{c[0]},{c[1]},{c[2]},{c[3]}"
+                else:
+                    color_str = "1.0,1.0,1.0,1.0"
+                sys_vars["~PColor"] = color_str
+                sys_vars["~Pcolor"] = color_str
+                sys_vars["~PC"] = color_str
+                sys_vars["~pc"] = color_str
+
     
     result = text_id
     for var_key, var_val in sys_vars.items():
