@@ -54,13 +54,22 @@ void main(
 
                 for (uint j = 0; j < boneCount; j++)
                 {
-                    float4 boneData = DataBuffer.Load(ptr + 4 + j);
+                    uint bPtr = ptr + 4 + j * 3;
+                    float4 bData1 = DataBuffer.Load(bPtr);
 
                     // Защита: мягкое сравнение ID кости
-                    if (abs(boneData.w - (float)bID) < 0.1)
+                    if (abs(bData1.w - (float)bID) < 0.1)
                     {
-                        float3 targetScale = boneData.xyz;
+                        float4 bData2 = DataBuffer.Load(bPtr + 1);
+                        float4 bData3 = DataBuffer.Load(bPtr + 2);
+
+                        float3 targetScale = bData1.xyz;
+                        float3 targetOffset = bData2.xyz;
+                        float3 targetRot = bData3.xyz;
+
                         float3 s = lerp(float3(1,1,1), targetScale, lerpFact);
+                        float3 tOffset = lerp(float3(0,0,0), targetOffset, lerpFact);
+                        float3 tRot = lerp(float3(0,0,0), targetRot, lerpFact);
 
                         float3 p = modPos - globalHead;
                         
@@ -69,14 +78,41 @@ void main(
                         local_p.y = dot(p, bone_Y);
                         local_p.z = dot(p, bone_Z);
 
+                        // 1. Scale
                         local_p *= s;
 
+                        // 2. Rotate (Euler)
+                        float cx = cos(tRot.x), sx = sin(tRot.x);
+                        float cy = cos(tRot.y), sy = sin(tRot.y);
+                        float cz = cos(tRot.z), sz = sin(tRot.z);
+
+                        // X-axis rot
+                        float3 p1 = local_p;
+                        p1.y = local_p.y * cx - local_p.z * sx;
+                        p1.z = local_p.y * sx + local_p.z * cx;
+
+                        // Y-axis rot
+                        float3 p2 = p1;
+                        p2.x = p1.x * cy + p1.z * sy;
+                        p2.z = -p1.x * sy + p1.z * cy;
+
+                        // Z-axis rot
+                        float3 p3 = p2;
+                        p3.x = p2.x * cz - p2.y * sz;
+                        p3.y = p2.x * sz + p2.y * cz;
+
+                        local_p = p3;
+
+                        // 3. Offset
+                        local_p += tOffset;
+
+                        // Project back
                         modPos = globalHead + (local_p.x * bone_X) + (local_p.y * bone_Y) + (local_p.z * bone_Z);
                         
                         break; 
                     }
                 }
-            ptr += 4 + boneCount; 
+            ptr += 4 + boneCount * 3; 
         }
 
         // Стандартный скиннинг

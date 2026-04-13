@@ -1046,7 +1046,15 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         l_box = l_box_root.box()
                         row = l_box.row()
                         row.prop(layer, "name", text="")
-                        row.prop(layer, "slot_id", text="Slot ID")
+                        
+                        group_name = "None"
+                        for g in br.groups:
+                            if g.slot_id == layer.slot_id:
+                                group_name = g.name
+                                break
+                        
+                        row.prop(layer, "slot_id", text="Slot")
+                        row.label(text=group_name)
                         row.label(text=f"Bones: {layer.bone_count}")
                         op = row.operator("rzm.br_remove_layer", text="", icon='REMOVE')
                         op.comp_index = comp_idx
@@ -1078,7 +1086,21 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                         for j, bone in enumerate(layer.bones):
                             b_r = l_box.row(align=True)
                             b_r.prop(bone, "bone_index", text="ID")
-                            b_r.prop(bone, "scale_mapped", text="")
+                            
+                            b_r.prop(bone, "scale_mapped", text="S")
+                            b_r.prop(bone, "offset_mapped", text="T")
+                            b_r.prop(bone, "rotation_euler_mapped", text="R")
+
+                            c_op = b_r.operator("rzm.br_copy_bone_coords", text="", icon='COPYDOWN')
+                            c_op.comp_index = comp_idx
+                            c_op.layer_index = i
+                            c_op.bone_index = j
+                            
+                            p_op = b_r.operator("rzm.br_paste_bone_coords", text="", icon='PASTEDOWN')
+                            p_op.comp_index = comp_idx
+                            p_op.layer_index = i
+                            p_op.bone_index = j
+
                             b_rm = b_r.operator("rzm.br_remove_layer_bone", text="", icon='REMOVE')
                             b_rm.comp_index = comp_idx
                             b_rm.layer_index = i

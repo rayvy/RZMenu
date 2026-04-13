@@ -5,6 +5,8 @@ from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, 
 class RZMBResizeBakedBone(bpy.types.PropertyGroup):
     bone_index: IntProperty(name="Bone Index", default=0, min=0)
     scale_mapped: FloatVectorProperty(name="Scale (Mapped)", size=3, default=(1.0, 1.0, 1.0))
+    offset_mapped: FloatVectorProperty(name="Offset (Mapped)", size=3, default=(0.0, 0.0, 0.0))
+    rotation_euler_mapped: FloatVectorProperty(name="Rotation (Mapped)", subtype='EULER', size=3, default=(0.0, 0.0, 0.0))
 
 class RZMBResizeBakedLayer(bpy.types.PropertyGroup):
     name: StringProperty(name="Layer Name", default="Layer")

@@ -135,22 +135,44 @@ class RZM_OT_BRBakeLayer(bpy.types.Operator):
 
         br = context.scene.rzm.addons.blend_resize
         comp = br.component_mappings[self.comp_index]
-        layer = comp.layers.add()
-        layer.name = active_bone.name
-        layer.slot_id = 0 # Default to 0, user can change manually in UI
-        layer.bone_count = count
+        
+        # Smart Bake Layer Look-up
+        layer = None
+        for l in comp.layers:
+            if l.name == active_bone.name:
+                layer = l
+                break
+                
+        if layer is None:
+            layer = comp.layers.add()
+            layer.name = active_bone.name
+            layer.slot_id = 0 # Default to 0, user can change manually in UI
+            
         layer.head_mapped = g_head
         layer.bone_x_mapped = g_x_axis
         layer.bone_y_mapped = g_y_axis
 
         for pb in valid_bones:
-            b = layer.bones.add()
-            b.bone_index = int(pb.name)
-            # Apply scale mapping according to the python script: scl.x, scl.z, scl.y
-            scl = pb.scale
-            b.scale_mapped = (scl.x, scl.z, scl.y)
+            b_idx = int(pb.name)
+            
+            # Check if bone already exists
+            bone_obj = None
+            for b in layer.bones:
+                if b.bone_index == b_idx:
+                    bone_obj = b
+                    break
+                    
+            if bone_obj is None:
+                bone_obj = layer.bones.add()
+                bone_obj.bone_index = b_idx
+                
+            # Apply transforms in pure local bone space (No mapping needed because axes are mapped natively in shader)
+            bone_obj.scale_mapped = (pb.scale.x, pb.scale.y, pb.scale.z)
+            bone_obj.offset_mapped = (pb.location.x, pb.location.y, pb.location.z)
+            bone_obj.rotation_euler_mapped = (pb.rotation_euler.x, pb.rotation_euler.y, pb.rotation_euler.z)
 
-        self.report({'INFO'}, f"Baked {count} bones successfully.")
+        layer.bone_count = len(layer.bones)
+        self.report({'INFO'}, f"Smart Baked/Updated {count} bones successfully.")
         return {'FINISHED'}
 
 class RZM_OT_BlendResizeExport(bpy.types.Operator):
@@ -192,10 +214,17 @@ class RZM_OT_BlendResizeExport(bpy.types.Operator):
                 h4 = struct.pack('4f', layer.bone_y_mapped[0], layer.bone_y_mapped[1], layer.bone_y_mapped[2], 0.0)
                 buffer_data.extend(h4)
                 
-                # [N] Bones: Scale X/Z/Y, BoneID
+                # [N] Bones: Scale/BoneID, Offset, Rotation (3 float4 instances)
                 for bone in layer.bones:
-                    b_data = struct.pack('4f', bone.scale_mapped[0], bone.scale_mapped[1], bone.scale_mapped[2], float(bone.bone_index))
-                    buffer_data.extend(b_data)
+                    # 1. Scale X/Y/Z, BoneID
+                    b_data1 = struct.pack('4f', bone.scale_mapped[0], bone.scale_mapped[1], bone.scale_mapped[2], float(bone.bone_index))
+                    buffer_data.extend(b_data1)
+                    # 2. Offset X/Y/Z, Pad
+                    b_data2 = struct.pack('4f', bone.offset_mapped[0], bone.offset_mapped[1], bone.offset_mapped[2], 0.0)
+                    buffer_data.extend(b_data2)
+                    # 3. Rotation Euler X/Y/Z, Pad
+                    b_data3 = struct.pack('4f', bone.rotation_euler_mapped[0], bone.rotation_euler_mapped[1], bone.rotation_euler_mapped[2], 0.0)
+                    buffer_data.extend(b_data3)
             
             file_name = f"{comp.name}Data.buf"
             with open(os.path.join(output_dir, file_name), 'wb') as f:
@@ -207,7 +236,10 @@ class RZM_OT_BlendResizeExport(bpy.types.Operator):
 BR_CLIPBOARD = {
     "head": None,
     "x": None,
-    "y": None
+    "y": None,
+    "b_scale": None,
+    "b_offset": None,
+    "b_rot": None
 }
 
 class RZM_OT_BRCopyCoords(bpy.types.Operator):
@@ -248,6 +280,47 @@ class RZM_OT_BRPasteCoords(bpy.types.Operator):
         self.report({'INFO'}, "Coordinate Space Anchor Pasted!")
         return {'FINISHED'}
 
+class RZM_OT_BRCopyBoneCoords(bpy.types.Operator):
+    bl_idname = "rzm.br_copy_bone_coords"
+    bl_label = "Copy Bone Transform"
+    bl_description = "Copy bone transformation values (Scale, Offset, Rotation)"
+    
+    comp_index: bpy.props.IntProperty(default=-1)
+    layer_index: bpy.props.IntProperty(default=-1)
+    bone_index: bpy.props.IntProperty(default=-1)
+    
+    def execute(self, context):
+        comp = context.scene.rzm.addons.blend_resize.component_mappings[self.comp_index]
+        layer = comp.layers[self.layer_index]
+        bone = layer.bones[self.bone_index]
+        BR_CLIPBOARD["b_scale"] = list(bone.scale_mapped)
+        BR_CLIPBOARD["b_offset"] = list(bone.offset_mapped)
+        BR_CLIPBOARD["b_rot"] = list(bone.rotation_euler_mapped)
+        self.report({'INFO'}, "Bone Transformations Copied!")
+        return {'FINISHED'}
+
+class RZM_OT_BRPasteBoneCoords(bpy.types.Operator):
+    bl_idname = "rzm.br_paste_bone_coords"
+    bl_label = "Paste Bone Transform"
+    bl_description = "Paste bone transformation values"
+    
+    comp_index: bpy.props.IntProperty(default=-1)
+    layer_index: bpy.props.IntProperty(default=-1)
+    bone_index: bpy.props.IntProperty(default=-1)
+    
+    @classmethod
+    def poll(cls, context):
+        return BR_CLIPBOARD["b_scale"] is not None
+        
+    def execute(self, context):
+        comp = context.scene.rzm.addons.blend_resize.component_mappings[self.comp_index]
+        layer = comp.layers[self.layer_index]
+        bone = layer.bones[self.bone_index]
+        bone.scale_mapped = BR_CLIPBOARD["b_scale"]
+        bone.offset_mapped = BR_CLIPBOARD["b_offset"]
+        bone.rotation_euler_mapped = BR_CLIPBOARD["b_rot"]
+        self.report({'INFO'}, "Bone Transformations Pasted!")
+        return {'FINISHED'}
 classes_to_register = (
     RZM_OT_BRAddGroup,
     RZM_OT_BRRemoveGroup,
@@ -262,4 +335,6 @@ classes_to_register = (
     RZM_OT_BlendResizeExport,
     RZM_OT_BRCopyCoords,
     RZM_OT_BRPasteCoords,
+    RZM_OT_BRCopyBoneCoords,
+    RZM_OT_BRPasteBoneCoords,
 )
