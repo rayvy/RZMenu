@@ -508,7 +508,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             if intended_format == 'DDS':
                 from ..core.dds_packer import pack_to_dds
                 final_filepath = os.path.join(export_path, "icons.dds")
-                success, msg = pack_to_dds(atlas_pixels, atlas_w, atlas_h, final_filepath, format=export_settings.dds_profile)
+                success, msg = pack_to_dds(atlas_pixels, atlas_w, atlas_h, final_filepath, dds_format=export_settings.dds_profile)
                 if success:
                     exported_success = True
                     export_settings.last_exported_format = "DDS"

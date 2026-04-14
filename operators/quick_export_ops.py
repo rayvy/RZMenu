@@ -3,13 +3,13 @@ import os
 import re
 from pathlib import Path
 from ..core.j2_exporter import RZMenuJ2Exporter
-from .export_manager import get_target_path
+from .export_manager import get_target_path, run_custom_scripts
 
 class RZM_OT_QuickExportMenu(bpy.types.Operator):
     """Regenerate only UI and logic sections of the .ini file without re-exporting geometry."""
     bl_idname = "rzm.quick_export_menu"
-    bl_label = "Quick Update (UI Only)"
-    bl_description = "Regenerate UI sections of the .ini while preserving the existing MOD-BLOCK"
+    bl_label = "Quick Update"
+    bl_description = "Regenerate UI sections, export fonts/atlas, and run scripts while preserving geometry"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -18,7 +18,17 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
             self.report({'ERROR'}, "Export path not set or invalid! Set it in Export Manager first.")
             return {'CANCELLED'}
 
-        # 1. Find the target .ini using heuristic
+        # 1. Resource Export (Atlas & Fonts)
+        settings = context.scene.rzm.export_settings
+        if settings.quick_update_resources:
+            print("RZMenu Quick Update: Exporting resources (Atlas & Fonts)...")
+            try:
+                bpy.ops.rzm.export_atlas()
+                bpy.ops.rzm.export_fonts()
+            except Exception as e:
+                self.report({'WARNING'}, f"Resource export failed: {e}")
+
+        # 2. Find the target .ini using heuristic
         ini_path = self.find_target_ini(target_dir)
         if not ini_path:
             self.report({'ERROR'}, "Suitable .ini file not found in export directory (skipping DISABLED/ARCHIVED).")
@@ -60,6 +70,12 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
             return {'CANCELLED'}
 
         self.report({'INFO'}, f"⚡ Quick Update Successful: {os.path.basename(ini_path)}")
+
+        # 6. Post-Export Scripts
+        if settings.quick_update_run_scripts:
+            print("RZMenu Quick Update: Executing post-export scripts...")
+            run_custom_scripts(context, target_dir)
+
         return {'FINISHED'}
 
     def find_target_ini(self, directory):

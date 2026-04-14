@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from .export_manager import get_target_path
+from .export_manager import get_target_path, run_custom_scripts
 from ..utils.texture_collector import collect_missing_textures
 
 # Kill-switch: Set to False once EFMI-Tools ships a native batch_export (v2.0+).
@@ -216,63 +216,8 @@ class RZM_OT_FullExport(bpy.types.Operator):
                 self.report({'WARNING'}, f"Puppet Master bake failed: {e}")
         
         # 4. Custom Scripts Execution
-        settings = rzm.export_settings
-        if settings.show_custom_scripts:
-            import shlex
-            print(f"DEBUG: Running custom post-export scripts...")
-            for script in settings.custom_scripts:
-                if not script.enabled or not script.path:
-                    continue
-                
-                script_path = bpy.path.abspath(script.path)
-                if not os.path.exists(script_path):
-                    print(f"DEBUG WARNING: Script not found: {script_path}")
-                    continue
-                
-                print(f"DEBUG: Executing: {os.path.basename(script_path)}")
-                
-                try:
-                    # Construct command
-                    if script_path.lower().endswith(".py"):
-                        cmd = ["python", script_path]
-                    else:
-                        cmd = [script_path]
-                    
-                    # Add arguments
-                    if script.args:
-                        try:
-                            cmd.extend(shlex.split(script.args))
-                        except Exception as e:
-                            print(f"DEBUG WARNING: Argument splitting failed: {e}. Using raw split.")
-                            cmd.extend(script.args.split())
-                    
-                    # Prepare Popen
-                    proc = subprocess.Popen(
-                        cmd, 
-                        cwd=target_path, 
-                        stdin=subprocess.PIPE if script.auto_input else None,
-                        stdout=None, # Show in Blender console
-                        stderr=None
-                    )
-                    
-                    # Manage execution
-                    try:
-                        timeout = script.timeout if script.use_timeout else None
-                        
-                        if script.auto_input:
-                            # Send Enter (\n), Space, and 123 sequence
-                            input_seq = b"\n \n123\n"
-                            proc.communicate(input=input_seq, timeout=timeout)
-                        else:
-                            proc.wait(timeout=timeout)
-                            
-                    except subprocess.TimeoutExpired:
-                        print(f"DEBUG ERROR: Script '{os.path.basename(script_path)}' timed out ({script.timeout}s). Killing process!")
-                        proc.kill()
-                        proc.wait() # Ensure it's cleaned up
-                        
-                except Exception as e:
-                    print(f"DEBUG ERROR: Runtime error for script {script_path}: {e}")
+        if self.execute_post:
+            run_custom_scripts(context, target_path)
         else:
             print("DEBUG: Skipping custom post-export scripts (execute_post=False)")
 

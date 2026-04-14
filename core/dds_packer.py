@@ -9,7 +9,7 @@ def get_texconv_path():
     """Returns the path to texconv.exe if found in libs/tools or system PATH."""
     addon_dir = os.path.dirname(os.path.dirname(__file__))
     potential_paths = [
-        os.path.join(addon_dir, "libs", "tools", "texconv.exe"),
+        os.path.join(addon_dir, "libs", "texconv.exe"),
         os.path.join(addon_dir, "tools", "texconv.exe"),
         os.path.join(addon_dir, "texconv.exe"),
     ]

@@ -156,6 +156,17 @@ class RZMExportSettings(bpy.types.PropertyGroup):
         description="Ignore modifiers and trust the cache mapping for high-speed export (FAST PATH)"
     )
 
+    quick_update_resources: BoolProperty(
+        name="Export Resources (Quick)",
+        default=True,
+        description="Export Altas and Fonts during Quick Update"
+    )
+    quick_update_run_scripts: BoolProperty(
+        name="Run Scripts (Quick)",
+        default=True,
+        description="Execute custom post-export scripts during Quick Update"
+    )
+
     # --- Custom Scripts ---
     show_custom_scripts: BoolProperty(
         name="Show Custom Scripts",

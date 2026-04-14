@@ -2,6 +2,8 @@
 import bpy
 import os
 import shutil
+import shlex
+import subprocess
 from pathlib import Path
 
 def get_target_path(context, is_full=False):
@@ -45,6 +47,70 @@ def get_target_path(context, is_full=False):
         abs_path = str(p.parent / (p.name + "_RZM"))
 
     return abs_path
+
+def run_custom_scripts(context, target_path):
+    """Executes post-export scripts defined in RZM settings."""
+    rzm = context.scene.rzm
+    settings = rzm.export_settings
+    
+    if not settings.show_custom_scripts:
+        print("DEBUG: Skipping custom post-export scripts (show_custom_scripts=False)")
+        return
+        
+    print(f"DEBUG: Running custom post-export scripts...")
+    for script in settings.custom_scripts:
+        if not script.enabled or not script.path:
+            continue
+        
+        script_path = bpy.path.abspath(script.path)
+        if not os.path.exists(script_path):
+            print(f"DEBUG WARNING: Script not found: {script_path}")
+            continue
+        
+        print(f"DEBUG: Executing: {os.path.basename(script_path)}")
+        
+        try:
+            # Construct command
+            if script_path.lower().endswith(".py"):
+                cmd = ["python", script_path]
+            else:
+                cmd = [script_path]
+            
+            # Add arguments
+            if script.args:
+                try:
+                    cmd.extend(shlex.split(script.args))
+                except Exception as e:
+                    print(f"DEBUG WARNING: Argument splitting failed: {e}. Using raw split.")
+                    cmd.extend(script.args.split())
+            
+            # Prepare Popen
+            proc = subprocess.Popen(
+                cmd, 
+                cwd=target_path, 
+                stdin=subprocess.PIPE if script.auto_input else None,
+                stdout=None, # Show in Blender console
+                stderr=None
+            )
+            
+            # Manage execution
+            try:
+                timeout = script.timeout if script.use_timeout else None
+                
+                if script.auto_input:
+                    # Send Enter (\n), Space, and 123 sequence
+                    input_seq = b"\n \n123\n"
+                    proc.communicate(input=input_seq, timeout=timeout)
+                else:
+                    proc.wait(timeout=timeout)
+                    
+            except subprocess.TimeoutExpired:
+                print(f"DEBUG ERROR: Script '{os.path.basename(script_path)}' timed out ({script.timeout}s). Killing process!")
+                proc.kill()
+                proc.wait() # Ensure it's cleaned up
+                
+        except Exception as e:
+            print(f"DEBUG ERROR: Runtime error for script {script_path}: {e}")
 
 def generate_readme(context, target_path):
     """Generates a ReadMe.txt using the 3-part description system."""
