@@ -9,7 +9,6 @@ from pathlib import Path
 # 'LINEAR' -> Добавляет только gAMA 1.0 (говорит софту, что это линейное пространство)
 
 class PackerNode:
-    # ... (класс PackerNode остается без изменений) ...
     def __init__(self, x=0, y=0, w=0, h=0): self.x, self.y, self.w, self.h, self.down, self.right, self.used = x, y, w, h, None, None, False
     def find_space(self, w, h):
         if self.used:
@@ -91,33 +90,6 @@ def calculate_atlas_layout(image_sizes_dict: dict, margin: int = ATLAS_MARGIN):
 
     return (atlas_w, atlas_h), uv_data
 
-def apply_gamma_correction(atlas_pixels, width, height):
-    """
-    Применяет гамма-коррекцию 1/2.2 к RGB каналам, не трогая Alpha.
-    Это делает "белесые" линейные пиксели сочными (sRGB).
-    """
-    print("DEBUG: Applying mathematical Gamma 2.2 correction...")
-    
-    # Решейп в 3D массив (H, W, 4)
-    buffer = atlas_pixels.reshape((height, width, 4))
-    
-    # Разделяем каналы
-    rgb = buffer[:, :, :3]
-    alpha = buffer[:, :, 3:]
-    
-    # Защита от NaN и вылетов
-    rgb = np.clip(rgb, 0.0, 1.0)
-    
-    # === ГЛАВНАЯ МАГИЯ ===
-    # Paint.NET использует простую гамму 2.2 (gAMA 45455)
-    # Формула: Color_New = Color_Old ^ (1 / 2.2)
-    rgb_corrected = np.power(rgb, 1.0 / 2.2)
-    
-    # Собираем обратно
-    buffer[:, :, :3] = rgb_corrected
-    
-    return buffer.flatten()
-
 # --- ЧАСТЬ 2: РАБОТА С ФАЙЛОМ (ИНЪЕКЦИЯ ЧАНКОВ) ---
 def inject_paintnet_metadata(filepath):
     """
@@ -168,6 +140,7 @@ def inject_metadata_profile(filepath, profile='LINEAR'):
     """
     Вставляет метаданные (sRGB или gAMA) в зависимости от выбранного профиля.
     НЕ МЕНЯЕТ ПИКСЕЛИ. Работает с бинарным файлом.
+    Обеспечивает идентичность пикселей за счет указания профиля движку.
     """
     profile = profile.upper()
     print(f"DEBUG INJECTION: Injecting metadata for profile: {profile}")
@@ -227,6 +200,11 @@ def inject_metadata_profile(filepath, profile='LINEAR'):
         print(f"Injection Failed: {e}")
 
 def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: dict, profile='LINEAR'):
+    """
+    Создает буфер пикселей атласа. 
+    Никакая гамма-коррекция не применяется к пикселям. 
+    Пиксели всегда идентичны источнику в Blender.
+    """
     if not image_dict or atlas_w == 0 or atlas_h == 0:
         return np.array([])
         
@@ -242,16 +220,9 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
         if len(img.pixels) > 0:
             try:
                 # Blender pixels are in bottom-up order, but our packer/numpy expects top-down
-                # Actually create_atlas_pixels seems to assume top-down y
                 img_pixels = np.array(img.pixels[:]).reshape((h, w, 4))
                 atlas_pixels[y:y+h, x:x+w] = img_pixels
             except:
                 pass
     
-    # ПРИМЕНЯЕМ ГАММУ СРАЗУ ПОСЛЕ СБОРКИ, если выбран SRGB
-    if profile.upper() == 'SRGB':
-        atlas_pixels_flat = apply_gamma_correction(atlas_pixels, atlas_w, atlas_h)
-    else:
-        atlas_pixels_flat = atlas_pixels.flatten()
-    
-    return atlas_pixels_flat
+    return atlas_pixels.flatten()

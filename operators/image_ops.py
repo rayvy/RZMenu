@@ -520,6 +520,11 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             # Export as PNG (either by choice or fallback)
             if intended_format == 'PNG':
                 temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
+                
+                # Ensure bit-accurate export BEFORE filling: no color management on save
+                # Blender uses this setting to determine how to handle the provided pixels
+                temp_image.colorspace_settings.name = 'Non-Color'
+                
                 temp_image.pixels.foreach_set(atlas_pixels)
                 
                 final_filepath = os.path.join(export_path, "icons.png")
