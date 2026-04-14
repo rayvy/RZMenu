@@ -62,6 +62,19 @@
                     {% endif %}
                 {% endfor %}
             {% endif %}
+
+            {# --- PROGENITOR TRAVERSAL (TEST PHASE) --- #}
+            {% set prog_ns = namespace(item=element) %}
+            {% for i in range(10) %}
+                {% if prog_ns.item.parent_id > -1 %}
+                    {% for p in scene.rzm.elements %}
+                        {% if p.id == prog_ns.item.parent_id %}
+                            {% set prog_ns.item = p %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endfor %}
+            {% set progenitor_element = prog_ns.item %}
             {#MainClass#}
             ;{{element.elem_class}}
             {#%if CLASS_NAME_MAP[element.elem_class] == 'BUTTON'%}
@@ -87,11 +100,11 @@
             {%endif%#}
             ;{{element.tag}}
             {% if element.tag == 'ControllerCursor'%}
-            {{class_container.ControllerCursor(element,parent_element,mod_file,scene)}}
+            {{class_container.ControllerCursor(element,parent_element,mod_file,scene,progenitor_element)}}
             {% elif element.tag == 'HSVColorPicker' %}
-            {{class_container.HSVColorPicker(element,parent_element,mod_file,scene)}}
+            {{class_container.HSVColorPicker(element,parent_element,mod_file,scene,progenitor_element)}}
             {% else %}
-            {% if element.is_helper %}{%else%}{{class_container.main(element,parent_element,mod_file,scene)}}{%endif%}
+            {% if element.is_helper %}{%else%}{{class_container.main(element,parent_element,mod_file,scene,progenitor_element)}}{%endif%}
             {% endif %}
             {% endif %}
         {% endfor %}
@@ -102,7 +115,6 @@
 
 
 {%macro elements_additional_generate(mod_file,scene)%}
-;DEBUG HELPER: ADDITIONAL GENERATE
 {% for element in scene.rzm.elements %}
     {% if not (element.disable_export and not element.is_preset) %}
     ;{{element.elem_class}}
@@ -119,10 +131,22 @@
 {% for host_element in scene.rzm.elements %}
     {% if not host_element.is_preset and not host_element.is_helper and not host_element.disable_export %}
         {% if host_element.helper_ids %}
+            {# --- PROGENITOR TRAVERSAL FOR HELPERS (TEST PHASE) --- #}
+            {% set h_prog_ns = namespace(item=host_element) %}
+            {% for i in range(10) %}
+                {% if h_prog_ns.item.parent_id > -1 %}
+                    {% for p in scene.rzm.elements %}
+                        {% if p.id == h_prog_ns.item.parent_id %}
+                            {% set h_prog_ns.item = p %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endfor %}
+            {% set host_progenitor = h_prog_ns.item %}
             {% for ref in host_element.helper_ids %}
                 {% set helper_item = scene.rzm.elements | selectattr('id', 'equalto', ref.helper_id) | first %}
                 {% if helper_item %}
-{{ class_container.generate_helper_definition(helper_item, host_element, mod_file, scene) }}
+{{ class_container.generate_helper_definition(helper_item, host_element, mod_file, scene, host_progenitor) }}
                 {% endif %}
             {% endfor %}
         {% endif %}

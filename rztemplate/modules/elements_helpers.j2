@@ -356,8 +356,6 @@ $sizeY = $LocalSizeY
 
 {% macro grid_helpers_generate(mod_file,scene) %}
     {% for grid in scene.rzm.elements %}
-        {# FIX: Используем utils.get_cls вместо прямого обращения к словарю #}
-        ;DEBUG HELPER: {{ grid.grid_wrap_mode }}
         {% if utils.get_cls(grid)|trim == 'GRID_CONTAINER' %}
             {% if grid.grid_wrap_mode == "SCROLL" %}
                 {{ generate_grid_logic_mode_0(grid) }}

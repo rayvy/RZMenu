@@ -365,7 +365,6 @@ global $rayvich_back_values_w110
             {% if utils.get_cls(element)|trim == 'GRID_CONTAINER'%}
             global persist ${{element.element_name}}scroll = 0
             {% endif%}
-            ;Вот Сюда проверку на трекинг
             {% if element.trackable or utils.get_cls(element)|trim in ['GRID_CONTAINER', 'ANCHOR'] %}
             global persist ${{element.element_name}}PositionX = {{ (element.position | default([0,0]))[0] }}
             global persist ${{element.element_name}}PositionY = {{ (element.position | default([0,0]))[1] }}
