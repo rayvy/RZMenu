@@ -490,13 +490,30 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                 'uv_size': list(elem.uv_size)
             }
 
-        # 3. Генерируем пиксели С УЧЕТОМ ГАММЫ (если SRGB)
+        # 3. Determine effective profiles based on game presets
+        # Genshin/ZZZ/HSR -> Forced sRGB
+        # Arknights -> Forced Linear
+        # Others (WW, Emulator) -> Manual (Plan B)
+        game_selection = rzm.game.selection
+        effective_icc = export_settings.icc_profile
+        effective_dds = export_settings.dds_profile
+        preset_tag = ""
+
+        if game_selection in ('GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail'):
+            effective_icc = 'SRGB'
+            effective_dds = 'BC7_UNORM_SRGB'
+            preset_tag = " (Hoyo sRGB Preset)"
+        elif game_selection == 'ArknightsEndfield':
+            effective_icc = 'LINEAR'
+            effective_dds = 'BC7_UNORM'
+            preset_tag = " (Endfield Linear Preset)"
+
+        # 4. Генерируем пиксели
         atlas_pixels = create_atlas_pixels(
             images_to_render, 
             atlas_w, 
             atlas_h, 
-            uv_data, 
-            profile=export_settings.icc_profile
+            uv_data
         )
 
         if atlas_pixels.size > 0:
@@ -508,11 +525,11 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             if intended_format == 'DDS':
                 from ..core.dds_packer import pack_to_dds
                 final_filepath = os.path.join(export_path, "icons.dds")
-                success, msg = pack_to_dds(atlas_pixels, atlas_w, atlas_h, final_filepath, dds_format=export_settings.dds_profile)
+                success, msg = pack_to_dds(atlas_pixels, atlas_w, atlas_h, final_filepath, dds_format=effective_dds)
                 if success:
                     exported_success = True
                     export_settings.last_exported_format = "DDS"
-                    self.report({'INFO'}, f"Atlas exported as DDS: {final_filepath}")
+                    self.report({'INFO'}, f"Atlas exported as DDS{preset_tag}: {final_filepath}")
                 else:
                     self.report({'WARNING'}, f"DDS Export failed: {msg}. Falling back to PNG.")
                     intended_format = 'PNG' # Fallback
@@ -521,8 +538,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             if intended_format == 'PNG':
                 temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
                 
-                # Ensure bit-accurate export BEFORE filling: no color management on save
-                # Blender uses this setting to determine how to handle the provided pixels
+                # Use Non-Color space to ensure bit-exact saving without Blender's gamma correction
                 temp_image.colorspace_settings.name = 'Non-Color'
                 
                 temp_image.pixels.foreach_set(atlas_pixels)
@@ -535,12 +551,11 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                 bpy.data.images.remove(temp_image)
                 
                 # Inject metadata for PNG
-                # inject_paintnet_metadata(final_filepath)
-                inject_metadata_profile(final_filepath, profile=export_settings.icc_profile)
+                inject_metadata_profile(final_filepath, profile=effective_icc)
                 
                 export_settings.last_exported_format = "PNG"
                 exported_success = True
-                self.report({'INFO'}, f"Atlas exported as PNG: {final_filepath}")
+                self.report({'INFO'}, f"Atlas exported as PNG{preset_tag}: {final_filepath}")
 
             # Clean up temporary frames anyway
             for bl_img in temp_bl_images:

@@ -1,12 +1,35 @@
-import bpy
+import struct
+import os
 
-def test():
-    fbx_path = r"C:\Users\Rayvy\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\RZMenu\test_stuff\MavuikaBodyBody.fbx"
-    bpy.ops.object.select_all(action='SELECT')
-    bpy.ops.object.delete()
-    bpy.ops.import_scene.fbx(filepath=fbx_path)
-    obj = bpy.context.selected_objects[0]
-    for key, value in obj.items():
-        print(f"{key}: {value}")
+def analyze(p):
+    print(f"--- {p} ---")
+    if not os.path.exists(p):
+        print("Not found")
+        return
+    with open(p, 'rb') as f:
+        f.seek(8)
+        while True:
+            try:
+                l_raw = f.read(4)
+                if not l_raw: break
+                l = struct.unpack('>I', l_raw)[0]
+                t = f.read(4)
+                d = f.read(l)
+                f.read(4) # crc
+                if t == b'sRGB':
+                    print(f"sRGB intent: {struct.unpack('>B', d)[0]}")
+                elif t == b'gAMA':
+                    print(f"gAMA: {struct.unpack('>I', d)[0]}")
+                elif t == b'tEXt':
+                    print(f"tEXt: {d[:50]}...")
+                elif t == b'eXIf':
+                    print(f"eXIf: {d[:50].hex()}...")
+                    if b'ColorSpace' in d or b'icc' in d.lower():
+                        print("Found color related string in EXIF")
+            except:
+                break
 
-test()
+analyze('iconsLinearBeforePaintNet.png')
+analyze('iconsLinearAfterPaintNet.png')
+analyze('iconsSRGB.png')
+analyze('iconsLINEAR.png')

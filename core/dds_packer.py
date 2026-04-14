@@ -57,17 +57,19 @@ def pack_to_dds(pixels, width, height, output_path, dds_format='BC7_UNORM'):
     # 2. Run texconv
     # Command: texconv.exe -f <format> -y -o <out_dir> <temp_input>
     out_dir = os.path.dirname(output_path)
-    out_filename = os.path.basename(output_path)
     
-    # texconv always names the output same as input but with .dds
-    # so we might need to rename it later if target name is different.
     cmd = [
         texconv,
         "-f", dds_format,
         "-y", # overwrite
-        "-o", out_dir,
-        temp_input
+        "-o", out_dir
     ]
+
+    # If target is sRGB, tell texconv input is also sRGB to avoid "whitening" (double-gamma)
+    if "SRGB" in dds_format.upper():
+        cmd.append("-srgbi")
+    
+    cmd.append(temp_input)
     
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)

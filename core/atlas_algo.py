@@ -142,8 +142,9 @@ def inject_metadata_profile(filepath, profile='LINEAR'):
     НЕ МЕНЯЕТ ПИКСЕЛИ. Работает с бинарным файлом.
     Обеспечивает идентичность пикселей за счет указания профиля движку.
     """
+    import zlib
     profile = profile.upper()
-    print(f"DEBUG INJECTION: Injecting metadata for profile: {profile}")
+    print(f"DEBUG INJECTION: Injecting metadata for profile: {profile} (Robust Mode)")
 
     try:
         with open(filepath, 'rb') as f:
@@ -153,53 +154,65 @@ def inject_metadata_profile(filepath, profile='LINEAR'):
             print("ERROR: Not a valid PNG file.")
             return
 
-        # Ищем позицию для вставки (сразу после IHDR)
-        # IHDR (13 байт) + CRC (4) + Len (4) + Type (4) = 25 байт.
-        # Заголовок файла = 8 байт.
-        # 8 + 25 = 33. Вставляем на 33-й байт.
-        insert_pos = 33 
-        
-        chunks_to_add = b''
+        # Разбираем PNG на чанки и фильтруем старые цветовые метаданные
+        chunks = []
+        pos = 8
+        while pos < len(data):
+            try:
+                length = struct.unpack('>I', data[pos:pos+4])[0]
+                chunk_type = data[pos+4:pos+8]
+                full_chunk_len = 12 + length
+                chunk_total_data = data[pos : pos + full_chunk_len]
+                
+                # Логика фильтрации зависит от профиля
+                if profile == 'SRGB':
+                    # Для sRGB (Genshin) нам нужен максимально "стерильный" файл как в Paint.NET.
+                    # Удаляем EXIF и весь мусор Блендера, который может конфликтовать.
+                    if chunk_type not in (b'sRGB', b'gAMA', b'iCCP', b'cHRM', b'eXIf', b'oFFs', b'tEXt', b'zTXt', b'iTXt'):
+                        chunks.append(chunk_total_data)
+                else: # LINEAR
+                    # Для LINEAR (Arknights/Photoshop) оставляем метаданные (EXIF/Offset/Phys),
+                    # но удаляем только явные теги управления цветом.
+                    if chunk_type not in (b'sRGB', b'gAMA', b'iCCP', b'cHRM'):
+                        chunks.append(chunk_total_data)
+                
+                pos += full_chunk_len
+            except:
+                break
 
+        if not chunks:
+            return
+
+        # Создаем новые чанки
+        new_meta_chunks = []
         if profile == 'SRGB':
-            # === ВАРИАНТ 1: SRGB (Как в Paint.NET) ===
-            # Вставляем sRGB чанк
-            if b'sRGB' not in data:
-                # Intent 0 (Perceptual)
-                srgb_payload = b'\x00'
-                chunks_to_add += create_png_chunk(b'sRGB', srgb_payload)
-            
-            # Вставляем gAMA чанк (1 / 2.2 = 0.45455)
-            if b'gAMA' not in data:
-                gama_payload = struct.pack('>I', 45455)
-                chunks_to_add += create_png_chunk(b'gAMA', gama_payload)
-
+            # Intent 0 (Perceptual) + gAMA (0.45455). Очищенный файл будет как в Paint.NET.
+            new_meta_chunks.append(create_png_chunk(b'sRGB', b'\x00'))
+            new_meta_chunks.append(create_png_chunk(b'gAMA', struct.pack('>I', 45455)))
         elif profile == 'LINEAR':
-            # === ВАРИАНТ 2: LINEAR ===
-            # sRGB чанк НЕ вставляем (так как это Linear)
-            
-            # Вставляем gAMA чанк (1.0 = 100000)
-            if b'gAMA' not in data:
-                gama_payload = struct.pack('>I', 100000)
-                chunks_to_add += create_png_chunk(b'gAMA', gama_payload)
-        
+            # В режиме LINEAR мы ничего не вставляем. 
+            # Файл остается с метаданными Blender (eXIf/pHYs), но без гаммы, как в Photoshop.
+            pass
         else:
             print(f"WARNING: Unknown profile mode '{profile}', skipping injection.")
             return
 
-        # Если есть что добавить - добавляем
-        if chunks_to_add:
-            new_data = data[:insert_pos] + chunks_to_add + data[insert_pos:]
-            with open(filepath, 'wb') as f:
-                f.write(new_data)
-            print(f"SUCCESS: Injected {profile} chunks.")
-        else:
-            print("INFO: Relevant metadata already present.")
-            
+        # Собираем файл обратно: Header + IHDR + Наши чанки + Все остальные
+        # chunks[0] - это всегда IHDR
+        final_data = b'\x89PNG\r\n\x1a\n' + chunks[0]
+        for nc in new_meta_chunks:
+            final_data += nc
+        for i in range(1, len(chunks)):
+            final_data += chunks[i]
+
+        with open(filepath, 'wb') as f:
+            f.write(final_data)
+        print(f"SUCCESS: Metadata replaced for {profile}.")
+
     except Exception as e:
         print(f"Injection Failed: {e}")
 
-def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: dict, profile='LINEAR'):
+def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: dict):
     """
     Создает буфер пикселей атласа. 
     Никакая гамма-коррекция не применяется к пикселям. 
@@ -208,7 +221,7 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
     if not image_dict or atlas_w == 0 or atlas_h == 0:
         return np.array([])
         
-    print(f"DEBUG EXPORT: Creating {atlas_w}x{atlas_h} pixel buffer. Profile: {profile}")
+    print(f"DEBUG EXPORT: Creating {atlas_w}x{atlas_h} pixel buffer.")
     atlas_pixels = np.zeros((atlas_h, atlas_w, 4), dtype=np.float32)
 
     for name, img in image_dict.items():
@@ -217,12 +230,16 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
         x, y = uv_data[name]['uv_coords']
         w, h = uv_data[name]['uv_size']
         
-        if len(img.pixels) > 0:
+        if hasattr(img, 'pixels'):
+            # Temporarily switch to Non-Color to get raw bits without Blender's linearization
+            old_colorspace = img.colorspace_settings.name
+            img.colorspace_settings.name = 'Non-Color'
             try:
-                # Blender pixels are in bottom-up order, but our packer/numpy expects top-down
-                img_pixels = np.array(img.pixels[:]).reshape((h, w, 4))
+                img_pixels = np.empty(w * h * 4, dtype=np.float32)
+                img.pixels.foreach_get(img_pixels)
+                img_pixels = img_pixels.reshape((h, w, 4))
                 atlas_pixels[y:y+h, x:x+w] = img_pixels
-            except:
-                pass
+            finally:
+                img.colorspace_settings.name = old_colorspace
     
     return atlas_pixels.flatten()
