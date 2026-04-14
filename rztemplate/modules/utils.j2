@@ -493,9 +493,3 @@
         ; -------------------------------------
     {%- endif -%}
 {%- endmacro %}
-
-{%- macro get_progenitor_info(progenitor) -%}
-    {%- if progenitor -%}
-        ; [PROGENITOR-INFO] Name: {{ progenitor.element_name }} | ID: {{ progenitor.id }} | Class: {{ get_cls(progenitor)|trim }} | Pos: {{ progenitor.position }} | Size: {{ progenitor.size }}
-    {%- endif -%}
-{%- endmacro -%}

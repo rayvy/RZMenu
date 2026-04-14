@@ -1,127 +1,114 @@
 {% set DEBUG = true %}
-{% import "modules/utils.j2" as utils with context %}
+
+{% set CLASS_NAME_MAP = {
+    0: 'CONTAINER',
+    1: 'GRID_CONTAINER',
+    2: 'ANCHOR',
+    3: 'BUTTON',
+    4: 'SLIDER',
+    5: 'TEXT',
+} %}
+
+{% set CLASS_ATTRIBUTES = {
+    'ANCHOR': ['isMovable'],
+    'GRID_CONTAINER': ['isResizable'],
+    'BUTTON': ['isClickable', 'isHoldable', 'hadPopup'],
+    'SLIDER': ['isClickable', 'isHoldable']
+} %}
+
+{% set FN_MAP = {
+    0: 'AlignCenterXY',
+    1: 'AlignCenterX',
+    2: 'AlignCenterY',
+    3: 'AlignLeft',
+    4: 'AlignRight',
+    5: 'AlignBottom',
+    6: 'AlignTop',
+    7: 'FixAspectRatio',
+} %}
+
+{% set FX_MAP = {
+    'CommandListCoreFxBoxRound': 'BoxRound',
+    'CommandListCoreFxBoxCircle': 'BoxCircle',
+    'CommandListCoreFxGradient': 'Gradient',
+    'CommandListCoreFxShadow': 'Shadow',
+    'CommandListCoreFxBlur': 'Blur',
+    'CommandListCoreFxOutline': 'Outline',
+    'CommandListCoreFxHover': 'Hover',
+    'CommandListCoreFxHover3D': 'Hover3D',
+    'CommandListCoreFxGpuAnimRotate': 'GpuAnimRotate'
+} %}
+
+{# --- FIX: УМНЫЙ МАКРОС С ЗАЩИТОЙ ОТ ПУСТЫХ СПИСКОВ --- #}
+{% macro get_cls(elem) -%}
+    {%- if elem.elem_class is defined -%}
+        {%- if elem.elem_class is string -%}
+            {{ elem.elem_class }}
+        {%- elif elem.elem_class is number -%}
+            {{ CLASS_NAME_MAP.get(elem.elem_class) }}
+        {%- elif elem.elem_class is iterable -%}
+            {%- if elem.elem_class|length > 0 -%}
+                {%- set raw_val = elem.elem_class[0] -%}
+                {%- if raw_val is string -%}
+                    {{ raw_val }}
+                {%- else -%}
+                    {{ CLASS_NAME_MAP.get(raw_val|int) }}
+                {%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro has_attribute(element, attribute_name) %}
+    {% set class_name = get_cls(element)|trim %}
+    {% if class_name and attribute_name in CLASS_ATTRIBUTES.get(class_name, []) %}
+        true
+    {% endif %}
+{% endmacro %}
+
+{% macro format_var(input_string) -%}
+    {%- if input_string -%}
+        {%- set chars_to_strip = '$@#%' -%}
+        {{- '$' ~ input_string.lstrip(chars_to_strip) -}}
+    {%- endif -%}
+{%- endmacro %}
 
 {% macro resources_generate(mod_file,scene) %}
 {% set text_offset_tracker = [0] %}
-{% set processed_ids = {'text_elements': [], 'hover_text_elements': [], 'images': []} %}
+{% set processed_ids = namespace(
+    text_elements=[],
+    hover_text_elements=[],
+    images=[]
+) %}
 
 {% if scene.rzm and scene.rzm.elements %}
     {% for element in scene.rzm.elements %}
-        {% if element.text_id and element.id not in processed_ids['text_elements'] %}
-    
-    {# --- Инициализация переменных --- #}
-    {# Resolve ~meta_var system variables at export time (e.g. ~author_name → RAYVICH) #}
-    {% set fallback_text = utils.resolve_meta_var(element.text_id | default("NO_TEXT"), scene, element) %}
-    {% set resources_to_generate = [] %}
-    
-    [CommandListGetTextElement{{ element.id }}]
-
-    {# --- Логика для CONDITIONAL_LIST --- #}
-    {% if element.text_mode == 'CONDITIONAL_LIST' and element.conditional_texts %}
-        
-        {% for item in element.conditional_texts %}
-            {# Считаем смещения для текущего условия #}
-            {% set txt_content = utils.resolve_meta_var(item.text_id, scene, element) %}
-            {% set txt_len = txt_content | length %}
+        {% if element.text_id and element.id not in processed_ids.text_elements %}
+            {% set text_content = element.text_id %}
+            {% set text_length = text_content | length %}
             {% set current_offset = text_offset_tracker[0] %}
-            
-            {# Обновляем глобальный трекер (сдвигаем каретку буфера) #}
+
+            [CommandListGetTextElement{{ element.id }}]
+            $texPosX = {{ current_offset }}
+            $texPosY = {{ text_length }}
+            cs-t24 = ResourceTextElement{{ element.id }}
+            [ResourceTextElement{{ element.id }}]
+            type = Buffer
+            data = "{{ text_content }}"
+
             {% set _ = text_offset_tracker.pop(0) %}
-            {% set _ = text_offset_tracker.append(current_offset + txt_len) %}
-            
-            {# Сохраняем данные #}
-            {% set _ = resources_to_generate.append({
-                'sub_id': loop.index, 
-                'content': txt_content
-            }) %}
-
-            {# Генерируем if/elif #}
-            {% if loop.first %}
-if {{ utils.normalize_all_vars(item.condition, element, scene) }}
-            {% else %}
-elif {{ utils.normalize_all_vars(item.condition, element, scene) }}
-            {% endif %}
-            {% if element.text_id_is_data %}
-    $TextIsData = 1
-    $texPosX = {{ item.text_id }}
-    $texPosY = {{ element.text_id_data_length | default(1) }}
-            {% else %}
-    $texPosX = {{ current_offset }}
-    $texPosY = {{ txt_len }}
-            {% endif %}
-    cs-t24 = ResourceTextElement{{ element.id }}.{{ loop.index }}
-        {% endfor %}
-
-        {# --- Блок ELSE (Страховка) --- #}
-else
-        {% set txt_len = fallback_text | length %}
-        {% set current_offset = text_offset_tracker[0] %}
-        
-        {% set _ = text_offset_tracker.pop(0) %}
-        {% set _ = text_offset_tracker.append(current_offset + txt_len) %}
-        {% set _ = resources_to_generate.append({
-            'sub_id': 0, 
-            'content': fallback_text
-        }) %}
-        
-        {% if element.text_id_is_data %}
-    $TextIsData = 1
-    $texPosX = {{ fallback_text }}
-    $texPosY = {{ element.text_id_data_length | default(1) }}
-        {% else %}
-    $texPosX = {{ current_offset }}
-    $texPosY = {{ txt_len }}
+            {% set _ = text_offset_tracker.append(current_offset + text_length) %}
+            {% set _ = processed_ids.text_elements.append(element.id) %}
         {% endif %}
-    cs-t24 = ResourceTextElement{{ element.id }}.0
-endif
 
-    {# --- Логика для SINGLE (Обычный режим) --- #}
-    {% else %}
-        {% set txt_len = fallback_text | length %}
-        {% set current_offset = text_offset_tracker[0] %}
-        
-        {% set _ = text_offset_tracker.pop(0) %}
-        {% set _ = text_offset_tracker.append(current_offset + txt_len) %}
-        {% set _ = resources_to_generate.append({
-            'sub_id': 0, 
-            'content': fallback_text
-        }) %}
-
-    {% if element.text_id_is_data %}
-    $TextIsData = 1
-    $texPosX = {{ fallback_text }}
-    $texPosY = {{ element.text_id_data_length | default(1) }}
-    {% else %}
-    $texPosX = {{ current_offset }}
-    $texPosY = {{ txt_len }}
-    {% endif %}
-    cs-t24 = ResourceTextElement{{ element.id }}.0
-    {% endif %}
-
-    {# --- Генерация блоков ресурсов --- #}
-    {% for res in resources_to_generate %}
-    [ResourceTextElement{{ element.id }}.{{ res.sub_id }}]
-    type = Buffer
-    data = "{{ res.content }}"
-    {% endfor %}
-
-    {% set _ = processed_ids['text_elements'].append(element.id) %}
-{% endif %}
-
-        {% if element.hover_text_id and element.id not in processed_ids['hover_text_elements'] %}
-            {% set text_content = utils.resolve_meta_var(element.hover_text_id, scene, element) %}
+        {% if element.hover_text_id and element.id not in processed_ids.hover_text_elements %}
+            {% set text_content = element.hover_text_id %}
             {% set text_length = text_content | length %}
             {% set current_offset = text_offset_tracker[0] %}
 
             [CommandListGetTextHoverElement{{ element.id }}]
-            {% if element.hover_text_id_is_data %}
-            $TextIsData = 1
-            $textOffset = {{ element.hover_text_id }}
-            $textLength = {{ element.hover_text_id_data_length | default(1) }}
-            {% else %}
             $textOffset = {{ current_offset }}
             $textLength = {{ text_length }}
-            {% endif %}
             cs-t24 = ResourceTextHoverElement{{ element.id }}
             run = CustomShaderRCI2D_HOVERTEXT
             [ResourceTextHoverElement{{ element.id }}]
@@ -130,80 +117,20 @@ endif
 
             {% set _ = text_offset_tracker.pop(0) %}
             {% set _ = text_offset_tracker.append(current_offset + text_length) %}
-            {% set _ = processed_ids['hover_text_elements'].append(element.id) %}
+            {% set _ = processed_ids.hover_text_elements.append(element.id) %}
         {% endif %}
 
     {% endfor %}
     [CommandListGetImageCords-1]
     {% for image in scene.rzm.images %}
-        {% if image.id not in processed_ids['images'] %}
-
-        {% if image.source_type == 'ANIMATED' and image.anim_sequence | length > 0 %}
-            {# ─── ANIMATED: генерируем if/elif цепочку по time ─────────────── #}
-            {% set sequence = image.anim_sequence %}
-            {% set frames = image.anim_frames %}
-            {% set speed = image.anim_speed_multiplier if image.anim_speed_multiplier is defined else 1.0 %}
-            {% set total_dur = image.anim_total_duration / speed if speed > 0 else image.anim_total_duration %}
-            [CommandListGetImageCords{{ image.id }}]
-            $drawType = 1
-            local $anim_t = time % {{ "%.6f" | format(total_dur) }}
-            {%- set ns = {'t': 0.0} %}
-            {% for seq in sequence %}
-                {%- set frame = frames[seq.frame_index] %}
-                {%- set t_start = ns['t'] %}
-                {%- set t_end = t_start + seq.duration / speed %}
-                {% if loop.first %}
-            if $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
-                {% else %}
-            elif $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
-                {% endif %}
-            $texPosX = {{ frame.x }}
-            $texPosY = {{ frame.y }}
-            $texSizeX = {{ frame.w }}
-            $texSizeY = {{ frame.h }}
-                {%- if ns.update({'t': t_end}) %}{% endif %}
-            {% endfor %}
-            endif
-
-        {% elif image.source_type == 'VECTOR' %}
-            {# ─── VECTOR: ID-based variations ───────────────────────────── #}
-            [CommandListGetImageCords{{ image.id }}]
-            $drawType = 1
-            {% for var in image.svg_variations %}
-            {% set id_list = var.element_ids_str.split(',') %}
-            {% if loop.first %}
-            if {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}
-            {% else %}
-            elif {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}
-            {% endif %}
-            
-            $texPosX = {{ var.uv_coords[0] }}
-            $texPosY = {{ var.uv_coords[1] }}
-            $texSizeX = {{ var.uv_size[0] }}
-            $texSizeY = {{ var.uv_size[1] }}
-            {% endfor %}
-            {% if (image.svg_variations | length) > 0 %}
-            else
-            $texPosX = {{ image.svg_variations[0].uv_coords[0] }}
-            $texPosY = {{ image.svg_variations[0].uv_coords[1] }}
-            $texSizeX = {{ image.svg_variations[0].uv_size[0] }}
-            $texSizeY = {{ image.svg_variations[0].uv_size[1] }}
-            endif
-            {% else %}
-            $drawType = 0
-            {% endif %}
-
-        {% else %}
-            {# ─── STANDARD: static fallback ───────────────────────────── #}
+        {% if image.id not in processed_ids.images %}
             [CommandListGetImageCords{{ image.id }}]
             $drawType = 1
             $texPosX = {{ image.uv_coords[0] }}
             $texPosY = {{ image.uv_coords[1] }}
             $texSizeX = {{ image.uv_size[0] }}
             $texSizeY = {{ image.uv_size[1] }}
-        {% endif %}
-
-        {% set _ = processed_ids['images'].append(image.id) %}
+        {% set _ = processed_ids.images.append(image.id) %}
         {% endif %}
     {% endfor %}
 {% endif %}
@@ -211,13 +138,13 @@ endif
 
 {% macro popup_helpers_generate(mod_file,scene) %}
     {% for element in scene.rzm.elements %}
-        {% if utils.has_attribute(element, 'hadPopup') and not element.is_helper and (element.value_link is defined and (element.value_link|length) > 0) %}
+        {% if has_attribute(element, 'hadPopup') and (element.value_link is defined and (element.value_link|length) > 0) %}
 
             {# ------------------ MASTER/SLAVE Init ------------------ #}
-            {% set popup_elements_count = {'elements': [2]} %}
+            {% set popup_elements_count = namespace(elements=[2]) %}
             {% set master_link = element.value_link[0] %}
             {% set master_name = master_link.value_name | default('') %}
-            {% set target_variable_str = utils.format_var(master_name) %}
+            {% set target_variable_str = format_var(master_name) %}
 
             {# Получаем Min и Max из UI. Приводим к int, так как popup работает с целыми шагами #}
             {% set val_min = master_link.value_min | default(0.0) | int %}
@@ -229,8 +156,8 @@ endif
                 {% set target_toggle_name = master_name[1:] %}
                 {% for toggle_def in scene.rzm.toggle_definitions or [] %}
                     {% if toggle_def.toggle_name == target_toggle_name %}
-                        {% set _ = popup_elements_count['elements'].pop(0) %}
-                        {% set _ = popup_elements_count['elements'].insert(0, toggle_def.toggle_length|int) %}
+                        {% set _ = popup_elements_count.elements.pop(0) %}
+                        {% set _ = popup_elements_count.elements.insert(0, toggle_def.toggle_length|int) %}
                     {% endif %}
                 {% endfor %}
             {% else %}
@@ -242,8 +169,8 @@ endif
                 {# Защита от дурака: минимум 2 элемента #}
                 {% if calc_count < 2 %}{% set calc_count = 2 %}{% endif %}
 
-                {% set _ = popup_elements_count['elements'].pop(0) %}
-                {% set _ = popup_elements_count['elements'].insert(0, calc_count) %}
+                {% set _ = popup_elements_count.elements.pop(0) %}
+                {% set _ = popup_elements_count.elements.insert(0, calc_count) %}
             {% endif %}
 
 [CommandListElement{{ element.element_name }}Popup]
@@ -256,9 +183,9 @@ endif
 $id = 12
 $drawType = 0
 ; Центрируем Popup относительно кнопки
-$positionX = ($positionX + ($SizeX/2)) - ($popupIconSize * {{ popup_elements_count['elements'][0] }})/2
+$positionX = ($positionX + ($SizeX/2)) - ($popupIconSize * {{ popup_elements_count.elements[0] }})/2
 $positionY = $positionY + ($SizeY * 1.1 * ($popupShown))
-$sizeX = $popupIconSize * {{ popup_elements_count['elements'][0] }}
+$sizeX = $popupIconSize * {{ popup_elements_count.elements[0] }}
 if $popupShown < 0.8
     $sizeY = 0
 else
@@ -281,7 +208,7 @@ local $LocalPosX
 local $LocalPosY
 local $LocalSizeX
 local $LocalSizeY
-local $popupElements = {{ popup_elements_count['elements'][0] }}
+local $popupElements = {{ popup_elements_count.elements[0] }}
 local $segmentSize
 ; Min Value для смещения (если диапазон начинается не с 0)
 local $valMin = {{ val_min }}
@@ -295,10 +222,10 @@ $segmentSize = $LocalSizeX / $popupElements
 
 ; --- Обработка клика мыши ---
 if $cursorX > $LocalPosX && $cursorX < ($LocalPosX + $LocalSizeX) && $cursorY > $LocalPosY && $cursorY < ($LocalPosY + $LocalSizeY)
-    {% for i in range(popup_elements_count['elements'][0]) %}
+    {% for i in range(popup_elements_count.elements[0]) %}
     if $cursorX >= ($LocalPosX + $segmentSize * {{ i }}) && $cursorX < ($LocalPosX + $segmentSize * ({{ i }} + 1))
         ; Присваиваем индекс + минимальное смещение
-        ${{ target_variable_str }} = {{ val_min + i }}
+        {{ target_variable_str }} = {{ val_min + i }}
     endif
     {% endfor %}
 endif
@@ -308,9 +235,9 @@ if $isGamepadEditing == 1 && $GamepadEditedID == {{ element.id }}
     if $Gamepad_Interaction_Type == 1
         ; Используем формулу со смещением, чтобы не вылететь за границы Min/Max
         if $Gamepad_Interaction_Increase == 1
-            ${{ target_variable_str }} = $valMin + ((${{ target_variable_str }} - $valMin + 1) % $popupElements)
+            {{ target_variable_str }} = $valMin + (({{ target_variable_str }} - $valMin + 1) % $popupElements)
         else if $Gamepad_Interaction_Decrease == 1
-            ${{ target_variable_str }} = $valMin + ((${{ target_variable_str }} - $valMin - 1 + $popupElements) % $popupElements)
+            {{ target_variable_str }} = $valMin + (({{ target_variable_str }} - $valMin - 1 + $popupElements) % $popupElements)
         endif
     endif
 endif
@@ -324,7 +251,7 @@ $positionY = $PositionY + ($SizeY * 0.15)
 $SizeY = $SizeY * 0.75
 
 ; --- Отрисовка иконок ---
-{% for i in range(popup_elements_count['elements'][0]) %}
+{% for i in range(popup_elements_count.elements[0]) %}
 $positionX = $LocalPosX + ($segmentSize * {{ i }})
 $sizeX = ($segmentSize)
 ; Индекс текстуры обычно равен индексу шага (0, 1, 2...), даже если значение переменной другое
@@ -339,7 +266,7 @@ run = CustomShaderRCI2D_POPUP
     {% for slave in element.value_link[1:] %}
         {% set slave_name = slave.value_name | default('') %}
         {% if slave_name %}
-{{ utils.format_var(slave_name) }} = {{ target_variable_str }}
+{{ format_var(slave_name) }} = {{ target_variable_str }}
         {% endif %}
     {% endfor %}
 {% endif %}
@@ -356,9 +283,9 @@ $sizeY = $LocalSizeY
 
 {% macro grid_helpers_generate(mod_file,scene) %}
     {% for grid in scene.rzm.elements %}
-        {# FIX: Используем utils.get_cls вместо прямого обращения к словарю #}
+        {# FIX: Используем get_cls вместо прямого обращения к словарю #}
         ;DEBUG HELPER: {{ grid.grid_wrap_mode }}
-        {% if utils.get_cls(grid)|trim == 'GRID_CONTAINER' %}
+        {% if get_cls(grid)|trim == 'GRID_CONTAINER' %}
             {% if grid.grid_wrap_mode == "SCROLL" %}
                 {{ generate_grid_logic_mode_0(grid) }}
             {% elif grid.grid_wrap_mode == "PAGINATE" | default("SCROLL") %}
@@ -620,7 +547,7 @@ run = CustomShaderRCI2D
 {% endmacro %}
 
 {%macro interactive_elements_in_adaptive_grid(element,parent_element,mod_file,scene)%}
-$request_weight = {{ 4 if utils.get_cls(element)|trim == 'SLIDER' else 1 }}
+$request_weight = {{ 4 if get_cls(element)|trim == 'SLIDER' else 1 }}
             {% if parent_element.grid_wrap_mode[0] == "SCROLL" %}
                 run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedSizeAndScroll
             {% else %}

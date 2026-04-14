@@ -1,0 +1,411 @@
+{%macro Base()%}
+[CommandListCoreAlignment.Check]
+if $element_align == 0
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentBottom
+elif $element_align == 1
+	run = CommandListCoreAlignmentCenterX
+	run = CommandListCoreAlignmentBottom
+elif $element_align == 2
+	run = CommandListCoreAlignmentRight
+	run = CommandListCoreAlignmentBottom
+elif $element_align == 3
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentCenterY
+elif $element_align == 4
+	run = CommandListCoreAlignmentCenterX
+	run = CommandListCoreAlignmentCenterY
+elif $element_align == 5
+	run = CommandListCoreAlignmentRight
+	run = CommandListCoreAlignmentCenterY
+elif $element_align == 6
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentTop
+elif $element_align == 7
+	run = CommandListCoreAlignmentCenterX
+	run = CommandListCoreAlignmentTop
+elif $element_align == 8
+	run = CommandListCoreAlignmentRight
+	run = CommandListCoreAlignmentTop
+else
+	run = CommandListCoreAlignmentLeft
+	run = CommandListCoreAlignmentBottom
+endif
+
+[CommandListCoreAlignment.ANTICHECK]
+if $element_align == 0
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiBottom
+elif $element_align == 1
+	run = CommandListCoreAlignmentAntiCenterX
+	run = CommandListCoreAlignmentAntiBottom
+elif $element_align == 2
+	run = CommandListCoreAlignmentAntiRight
+	run = CommandListCoreAlignmentAntiBottom
+elif $element_align == 3
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiCenterY
+elif $element_align == 4
+	run = CommandListCoreAlignmentAntiCenterX
+	run = CommandListCoreAlignmentAntiCenterY
+elif $element_align == 5
+	run = CommandListCoreAlignmentAntiRight
+	run = CommandListCoreAlignmentAntiCenterY
+elif $element_align == 6
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiTop
+elif $element_align == 7
+	run = CommandListCoreAlignmentAntiCenterX
+	run = CommandListCoreAlignmentAntiTop
+elif $element_align == 8
+	run = CommandListCoreAlignmentAntiRight
+	run = CommandListCoreAlignmentAntiTop
+else
+	run = CommandListCoreAlignmentAntiLeft
+	run = CommandListCoreAlignmentAntiBottom
+endif
+
+[CommandListCoreAlignmentLeft]
+
+[CommandListCoreAlignmentCenterX]
+$PositionX = $PositionX - ($sizeX / 2.0)
+
+[CommandListCoreAlignmentRight]
+$PositionX = $PositionX - $sizeX
+
+[CommandListCoreAlignmentBottom]
+
+[CommandListCoreAlignmentCenterY]
+$PositionY = $PositionY - ($sizeY/2)
+
+[CommandListCoreAlignmentTop]
+$PositionY = $PositionY - $sizeY
+
+[CommandListCoreFnFixAspectRatio]
+if $screenW > $screenH
+	$sizeX = $sizeX * ($screenH / $screenW)
+else
+	$sizeY = $sizeY * ($screenW / $screenH)
+endif
+
+[CommandListCoreAlignmentAntiLeft]
+
+[CommandListCoreAlignmentAntiCenterX]
+$PositionX = $PositionX + ($sizeX / 2.0)
+
+[CommandListCoreAlignmentAntiRight]
+$PositionX = $PositionX + $sizeX
+
+[CommandListCoreAlignmentAntiBottom]
+
+[CommandListCoreAlignmentAntiCenterY]
+$PositionY = $PositionY + ($sizeY/2)
+
+[CommandListCoreAlignmentAntiTop]
+$PositionY = $PositionY + $sizeY
+
+[CommandListShaderPreset0]
+;HOVER UPSCALE
+x110 = 0
+y110 = 4
+
+[CommandListShaderPreset1]
+;HOVER UPSCALE 3D
+x110 = 2
+y110 = 4
+
+[CommandListShaderPreset2]
+;METALLIC HOVER OUTLINE SHINE
+x110 = 0
+y110 = 3
+
+[CommandListShaderPreset3]
+;WHITE OUTLINE
+x110 = 0
+y110 = 1
+
+[CommandListShaderPreset4]
+;SHADOW SHADER
+x110 = 0
+y110 = 2
+
+[CommandListShaderPreset5]
+;CHROMMATIC ABBERATION
+x110 = 3
+y110 = 6
+
+[CommandListShaderPreset6]
+;NOTHING
+x110 = 0
+y110 = 7
+
+[CommandListShaderPreset7]
+;WHITE OUTLINE
+x110 = 0
+y110 = 1
+
+[CommandListShaderPreset8]
+;Metallic SHINE
+x110 = 0
+y110 = 8
+
+[CommandListShaderPreset9]
+;Metallic Sticker ROTATED
+x110 = 2
+y110 = 8
+
+[CommandListShaderPreset10]
+;Rotate
+x110 = 1
+
+[CommandListShaderPreset11]
+;BlurMask
+y110 = 9000
+
+{{ButtonNumbers()}}
+{{mouseInteraction()}}
+{% endmacro %}
+
+{%macro FixRatio()%}
+run = CommandListCoreFnFixAspectRatio
+{%endmacro%}
+{%macro AdaptiveSlots()%}
+{%endmacro%}
+{%macro Center()%}
+run = CommandListCoreFnCenterXY
+{%endmacro%}
+
+{%macro CenterXY()%}
+run = CommandListCoreFnCenterXY
+{%endmacro%}
+
+{%macro CenterX()%}
+run = CommandListCoreFnCenterX
+{%endmacro%}
+
+{%macro CenterY()%}
+run = CommandListCoreFnCenterY
+{%endmacro%}
+
+{%macro Left()%}
+run = CommandListCoreFnLeft
+{%endmacro%}
+
+{%macro Right()%}
+run = CommandListCoreFnRight
+{%endmacro%}
+
+{%macro Top()%}
+run = CommandListCoreFnTop
+{%endmacro%}
+
+{%macro Bottom()%}
+run = CommandListCoreFnBottom
+{%endmacro%}
+
+{%macro ButtonNumbers()%}
+[CommandListCoreFXRenderButtonNumbers]
+if $rzmUIRenderSettings_ButtonNumbers == 1
+	local $LocalPosX
+	local $LocalPosY
+	local $LocalSizeX
+	local $LocalSizeY
+	$LocalPosX = $positionX
+	$LocalPosY = $positionY
+	$LocalSizeX = $sizeX
+	$LocalSizeY = $sizeY
+	$drawType = 4
+	$TexPosX = x24
+	$TexPosY = 0
+
+	$positionX = $LocalPosX + ($LocalSizeX * 0.75) - 4
+	$positionY = $LocalPosY + ($LocalSizeY * 0.75)
+	$sizeX = $LocalSizeX * 0.25
+	$sizeY = $LocalSizeY * 0.25
+	run = CommandListCoreAlignmentCenterX
+
+	$colorR = $colorR + ($colorR * 3) + (0.1)
+	$colorG = $colorG + ($colorG * 3) + (0.1)
+	$colorB = $colorB + ($colorB * 3) + (0.1)
+	$colorA = 1.0
+
+
+	run = CustomShaderRCI2D
+
+	$positionX = $LocalPosX
+	$positionY = $LocalPosY
+	$sizeX = $LocalSizeX
+	$sizeY = $LocalSizeY
+endif
+
+[CommandListCoreFXRenderSliderText]
+local $BackColorR
+local $BackColorG
+local $BackColorB
+local $BackColorA
+$BackColorR = $colorR
+$BackColorG = $colorG
+$BackColorB = $colorB
+$BackColorA = $colorA
+if $rzmUIRenderSettings_SliderNumbers == 1
+	local $LocalPosX
+	local $LocalPosY
+	local $LocalSizeX
+	local $LocalSizeY
+	$LocalPosX = $positionX
+	$LocalPosY = $positionY
+	$LocalSizeX = $sizeX
+	$LocalSizeY = $sizeY
+	$TexSizeX = 1
+	$sizeX = $LocalSizeY * 0.75
+	$sizeY = $LocalSizeY * 0.75
+	$positionX = $LocalPosX + ($LocalSizeX * 0.5)
+	$positionY = $LocalPosY + ($LocalSizeY * 0.5) - ($sizeY * 0.5)
+
+	$colorR = 1
+	$colorG = 1
+	$colorB = 1
+	$colorA = 0.1
+	x110 = 0
+	y110 = 0
+
+	run = CustomShaderRCI2D_TEXT
+
+	$positionX = $LocalPosX
+	$positionY = $LocalPosY
+	$sizeX = $LocalSizeX
+	$sizeY = $LocalSizeY
+endif
+$colorR = $BackColorR
+$colorG = $BackColorG
+$colorB = $BackColorB
+$colorA = $BackColorA
+
+[CommandListCoreFXRenderSliderNumbers]
+if $rzmUIRenderSettings_SliderNumbers == 1
+	local $LocalPosX
+	local $LocalPosY
+	local $LocalSizeX
+	local $LocalSizeY
+	$LocalPosX = $positionX
+	$LocalPosY = $positionY
+	$LocalSizeX = $sizeX
+	$LocalSizeY = $sizeY
+	$drawType = 4
+	$TexPosX = x24*100
+	$TexPosY = 1
+	$TexSizeX = 1
+
+	$sizeX = $LocalSizeY * 0.5
+	$sizeY = $LocalSizeY * 0.5
+	$positionX = $LocalPosX + ($LocalSizeX * 0.5)
+	$positionY = $LocalPosY + ($LocalSizeY * 0.5) - ($sizeY * 0.5)
+
+	$colorR = $colorR
+	$colorG = $colorG
+	$colorB = $colorB
+	$colorA = 1.0
+	x110 = 0
+	y110 = 0
+
+	run = CustomShaderRCI2D
+
+	$positionX = $LocalPosX
+	$positionY = $LocalPosY
+	$sizeX = $LocalSizeX
+	$sizeY = $LocalSizeY
+endif
+
+[CommandListCoreMathABS]
+$oVal = $iVal
+if $oVAL < 0
+$oVal = -$oVal
+endif
+{%endmacro%}
+
+{%macro mouseInteraction()%}
+[CommandListCoreFNUpdateHoverState]
+if $cursorX > $positionX && $cursorX < ($positionX+$SizeX) && $cursorY > $positionY && $cursorY < ($positionY+$SizeY)
+	$hoveredID = $id
+endif
+
+
+[CommandListCoreFNHandleClick]
+;Этот коммандлист теперь пустышка, раньше он нужен был для дебага, сейчас просто лежит
+;как документация что для интеграции работы клика нужно всего лишь в основном блоке ввести 
+; if $clickTriggerID == $id
+; и необходимую логику, больше ничего не нужно, вся основная работа в инпут менеджере
+;local $r
+;local $g
+;local $b
+
+if $clickTriggerID == $id
+    ;$r = $r + time
+    ;$g = $g + time*12
+    ;$b = $b + time*3
+
+endif
+;$colorR = $r % 1
+;$colorG = $g % 1
+;$colorB = $b % 1
+
+[CommandListCoreFNComputeMouseInteractions.Move]
+local $loordsX
+local $loordsY
+
+if $capturedID == $id
+    if $dragState == 0
+			$dragState = 1
+			$loordsX = $cursorX - $positionX
+			$loordsY = $cursorY - $positionY
+	else if $dragState == 1
+		$positionX = $cursorX - $loordsX
+		$positionY = $cursorY - $loordsY
+	endif
+endif
+
+[CommandListCoreFNComputeMouseInteractions.GridScroll]
+local $loordsX
+local $loordsY
+
+if $capturedID == $id
+	if $dragState == 0
+		$dragState = 1
+		$loordsX = $cursorX - $positionX
+	else if $dragState == 1
+		$RZM_OUT_VAL = ($cursorX - $loordsX * 0.1)
+	endif
+endif
+
+
+[CommandListCoreFNComputeMouseInteractions.Resize]
+local $local_ResizeOffsetX
+local $local_ResizeOffsetY
+
+if $capturedID == $id
+	if $dragState == 0
+		if $cursorX > ($positionX+$sizeX*0.9) && $cursorX < ($positionX+$sizeX) && $cursorY > ($positionY+$sizeY*0.9) && $cursorY < ($positionY+$sizeY)
+			$dragState = 2
+			$local_ResizeOffsetX = $cursorX - ($positionX + $sizeX)
+			$local_ResizeOffsetY = $cursorY - ($positionY + $sizeY)
+		endif
+	else if $dragState == 2
+		$sizeX = ($cursorX - $local_ResizeOffsetX) - $positionX
+		$sizeY = ($cursorY - $local_ResizeOffsetY) - $positionY
+	endif
+endif
+
+[CommandListCoreFNHandleHold]
+local $TimeHoldCounter
+
+if $capturedID == $id
+    if $holdTimer > $holdThreshold && $dragState == 0
+        $dragState = 3
+        $TimeHoldCounter = $holdTimer
+    endif
+    if $dragState == 3
+    $TimeHoldCounter = $TimeHoldCounter + $dt
+    w33 = $holdTimer
+    endif
+endif
+{%endmacro%}

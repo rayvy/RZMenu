@@ -1,9 +1,8 @@
 {% import "modules/base.j2" as base with context %}
 {% import "modules/utils.j2" as utils with context %}
 
-{%macro base(element,parent_element,mod_file,scene,progenitor_element)%}
+{%macro base(element,parent_element,mod_file,scene)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
-{{ utils.get_progenitor_info(progenitor_element) }}
 ;parent_elem_name: {{parent_element.element_name}}
 ;parent_elem_value: {{utils.get_first_value_link_var(parent_element)}}
 {% if parent_element.value_link %}
@@ -64,7 +63,7 @@ Local $current_sizeY
 {%endmacro%}
 
 {#MAINSTUFF#}
-{%macro main(element,parent_element,mod_file,scene,progenitor_element)%}
+{%macro main(element,parent_element,mod_file,scene)%}
     {% set class_name = utils.get_cls(element)|trim %}
     {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
     {% set element_tags = utils.tier_tags(element) %}
@@ -72,7 +71,7 @@ Local $current_sizeY
     ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ element.element_name }}] {{ element_tags }}
     {% endif %}
     [CommandListElement{{ element.element_name }}]
-    {{base(element,parent_element,mod_file,scene,progenitor_element)}}
+    {{base(element,parent_element,mod_file,scene)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
     {% else %}
         {{generate_position_and_size(element,parent_element,mod_file,scene)}}
@@ -232,7 +231,7 @@ Local $current_sizeY
   Нейминг: host_element_name + '_' + helper_element_name.lstrip('_')
   ID: helper_item.id + 3500  (оффсет для уникальности в 3DMigoto)
 #}
-{%macro generate_helper_definition(helper_item, host_item, mod_file, scene, progenitor_element)%}
+{%macro generate_helper_definition(helper_item, host_item, mod_file, scene)%}
     {%- set h_raw_name = helper_item.element_name -%}
     {%- set h_clean = h_raw_name.lstrip('_') -%}
     {%- set h_name = host_item.element_name ~ '_' ~ h_clean -%}
@@ -242,7 +241,6 @@ Local $current_sizeY
     ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ h_name }}] {{ utils.tier_tags(helper_item) }}
     {% endif %}
 [CommandListElement{{h_name}}]
-{{ utils.get_progenitor_info(progenitor_element) }}
 $id = {{h_id}}
 local $LocalVisibility
     {% if helper_item.visibility_mode == 'CONDITIONAL' %}
@@ -842,9 +840,8 @@ endif
 {% endif %}
 {% endmacro %}
 
-{%macro ControllerCursor(element,parent_element,mod_file,scene,progenitor_element)%}
+{%macro ControllerCursor(element,parent_element,mod_file,scene)%}
     [CommandListElement{{ element.element_name }}]
-    {{ utils.get_progenitor_info(progenitor_element) }}
     $id = {{ element.id }}
     local $LocalVisibility
     if $inputMode
@@ -882,7 +879,7 @@ endif
         run = CustomShaderRCI2D
     endif
 {%endmacro%}
-{% macro HSVColorPicker(element, parent_element, mod_file, scene, progenitor_element) %}
+{% macro HSVColorPicker(element, parent_element, mod_file, scene) %}
     {# --- НАСТРОЙКА ИМЕН И ПЕРЕМЕННЫХ --- #}
     {% set element_id_name = element.element_name %}
     
@@ -917,7 +914,6 @@ endif
     
     ; --- ГЛАВНЫЙ ЭЛЕМЕНТ (Квадрат Saturation/Value) ---
     [CommandListElement{{ element_id_name }}]
-    {{ utils.get_progenitor_info(progenitor_element) }}
     $id = {{ element.id }}
     local $LocalVisibility
     {% if element.visibility_mode == 'CONDITIONAL' %}
