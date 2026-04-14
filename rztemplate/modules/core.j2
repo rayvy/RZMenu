@@ -1043,12 +1043,18 @@ w99 = $ScreenH
 ps-t80 = ResourceIcons
 vs-t82 = ResourceFont0
 ps-t82 = ResourceFont0
+{% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
 vs-t83 = ResourceFont1
 ps-t83 = ResourceFont1
+{% endif -%}
+{% if scene.rzm.fonts and scene.rzm.fonts|length > 2 and (scene.rzm.fonts[2].custom_path or scene.rzm.fonts[2].font_source != 'DEFAULT') -%}
 vs-t84 = ResourceFont2
 ps-t84 = ResourceFont2
+{% endif -%}
+{% if scene.rzm.fonts and scene.rzm.fonts|length > 3 and (scene.rzm.fonts[3].custom_path or scene.rzm.fonts[3].font_source != 'DEFAULT') -%}
 vs-t85 = ResourceFont3
 ps-t85 = ResourceFont3
+{% endif -%}
 run = CustomShaderDI2D.PASS0.BLUR
 run = CustomShaderDI2D.PASS.MAIN
 clear = ResourceBuffer100
@@ -1212,15 +1218,21 @@ post $debugTexShow = 0
 {% macro menu_resource_ui(mod_file,scene)%}
 ;MenuIcons
 [ResourceIcons]
-filename = .\res\icons.png
+filename = .\res\icons.{{ scene.rzm.export_settings.atlas_format.lower() | default('png') }}
 [ResourceFont0]
 filename = .\res\font_atlas_0.png
+{% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
 [ResourceFont1]
 filename = .\res\font_atlas_1.png
+{% endif -%}
+{% if scene.rzm.fonts and scene.rzm.fonts|length > 2 and (scene.rzm.fonts[2].custom_path or scene.rzm.fonts[2].font_source != 'DEFAULT') -%}
 [ResourceFont2]
 filename = .\res\font_atlas_2.png
+{% endif -%}
+{% if scene.rzm.fonts and scene.rzm.fonts|length > 3 and (scene.rzm.fonts[3].custom_path or scene.rzm.fonts[3].font_source != 'DEFAULT') -%}
 [ResourceFont3]
 filename = .\res\font_atlas_3.png
+{% endif -%}
 [ResourceModNameText]
 filename = .\res\mod_name.png
 {% endmacro %}
