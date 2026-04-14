@@ -1219,22 +1219,23 @@ post $debugTexShow = 0
 ;MenuIcons
 [ResourceIcons]
 filename = .\res\icons.{{ scene.rzm.export_settings.atlas_format.lower() | default('png') }}
+{% set font_ext = scene.rzm.export_settings.atlas_format.lower() | default('png') -%}
 [ResourceFont0]
-filename = .\res\font_atlas_0.png
+filename = .\res\font_atlas_0.{{ font_ext }}
 {% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
 [ResourceFont1]
-filename = .\res\font_atlas_1.png
+filename = .\res\font_atlas_1.{{ font_ext }}
 {% endif -%}
 {% if scene.rzm.fonts and scene.rzm.fonts|length > 2 and (scene.rzm.fonts[2].custom_path or scene.rzm.fonts[2].font_source != 'DEFAULT') -%}
 [ResourceFont2]
-filename = .\res\font_atlas_2.png
+filename = .\res\font_atlas_2.{{ font_ext }}
 {% endif -%}
 {% if scene.rzm.fonts and scene.rzm.fonts|length > 3 and (scene.rzm.fonts[3].custom_path or scene.rzm.fonts[3].font_source != 'DEFAULT') -%}
 [ResourceFont3]
-filename = .\res\font_atlas_3.png
+filename = .\res\font_atlas_3.{{ font_ext }}
 {% endif -%}
 [ResourceModNameText]
-filename = .\res\mod_name.png
+filename = .\res\mod_name.{{ font_ext }}
 {% endmacro %}
 
 {% macro shape_generate(mod_file, scene) %}

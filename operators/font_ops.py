@@ -49,6 +49,10 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
         # Also always gen slot 0 as fallback just in case
         used_slots.add(0)
 
+        # Determine output format and extension
+        atlas_format = rzm.export_settings.atlas_format
+        ext = atlas_format.lower()
+        
         created_files = []
         res_dir = os.path.join(out_dir, "res")
         os.makedirs(res_dir, exist_ok=True)
@@ -74,10 +78,42 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
                     self.report({'ERROR'}, f"Arial fallback font not found in Windows/Fonts. Generation failed for slot {i}.")
                     continue
 
-            output_file = os.path.join(res_dir, f"font_atlas_{i}.png")
+            output_file = os.path.join(res_dir, f"font_atlas_{i}.{ext}")
             try:
-                self.create_font_atlas(font_path, output_file, slot.cell_size, slot.density, font_index, Image, ImageDraw, ImageFont)
-                created_files.append(output_file)
+                if atlas_format == 'DDS':
+                    # Export as temporary PNG first
+                    import tempfile
+                    temp_png = os.path.join(tempfile.gettempdir(), f"rzm_font_temp_{i}_{os.getpid()}.png")
+                    self.create_font_atlas(slot, font_path, temp_png, font_index, Image, ImageDraw, ImageFont)
+                    
+                    # Convert to DDS
+                    from ..core.dds_packer import get_texconv_path
+                    texconv = get_texconv_path()
+                    if texconv:
+                        import subprocess
+                        # Use R8G8B8A8_UNORM for fonts! 
+                        # BC7 is lossy and corrupts the metadata pixels in the bottom rows.
+                        cmd = [texconv, "-f", "R8G8B8A8_UNORM", "-y", "-o", res_dir, temp_png]
+                        subprocess.run(cmd, capture_output=True, check=True)
+                        
+                        # texconv creates <basename_of_temp_png>.dds in res_dir
+                        generated_dds = os.path.join(res_dir, os.path.splitext(os.path.basename(temp_png))[0] + ".dds")
+                        
+                        if os.path.exists(generated_dds):
+                            if os.path.exists(output_file):
+                                os.remove(output_file)
+                            os.rename(generated_dds, output_file)
+                            created_files.append(output_file)
+                        
+                        # Cleanup temp png
+                        if os.path.exists(temp_png):
+                            os.remove(temp_png)
+                    else:
+                        self.report({'ERROR'}, "texconv.exe not found. Font DDS export failed.")
+                else:
+                    # Standard PNG export
+                    self.create_font_atlas(slot, font_path, output_file, font_index, Image, ImageDraw, ImageFont)
+                    created_files.append(output_file)
             except Exception as e:
                 self.report({'ERROR'}, f"Failed to generate atlas for slot {i}: {e}")
                 import traceback
@@ -88,7 +124,10 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
             
         return {'FINISHED'}
 
-    def create_font_atlas(self, font_path, output_path, cell_size, density, font_index=0, Image=None, ImageDraw=None, ImageFont=None):
+    def create_font_atlas(self, slot, font_path, output_path, font_index=0, Image=None, ImageDraw=None, ImageFont=None):
+        cell_size = slot.cell_size
+        density = slot.density
+        
         grid_size = 16
         num_chars = 95
         rows_glyphs = 6
