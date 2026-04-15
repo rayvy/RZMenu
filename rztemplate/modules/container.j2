@@ -3,13 +3,12 @@
 
 {%macro base(element,parent_element,mod_file,scene)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
-;parent_elem_name: {{parent_element.element_name}}
-;parent_elem_value: {{utils.get_first_value_link_var(parent_element)}}
-{% if parent_element.value_link %}
-;parent_elem_value: {{parent_element.value_link}}
-{% endif %}
+$classType = {{ utils.get_cls_id(element) }}
 {% if not element.is_preset %}
 $id = {{ element.id }}
+$isPreset = 0
+{% else %}
+$isPreset = 1
 {% endif %}
 local $LocalVisibility
 {% if not element.is_preset %}
@@ -18,10 +17,6 @@ local $ValueX24Interpolated
 $LocalVisibility = 0
 local $hoverInterpolate
 local $clickInterpolate
-$scissorX = 0
-$scissorY = 0
-$scissorZ = 0
-$scissorW = 0
 $fontSlot = {{ element.font_slot | default(0) }}
 {% if element.visibility_mode == 'CONDITIONAL' %}
 if {{ utils.normalize_all_vars(element.visibility_condition, element, scene) }}
@@ -32,13 +27,8 @@ endif
 {% else %}
     $LocalVisibility = 1
 {% endif %}
+run = CommandListRestoreElement
 if $LocalVisibility
-$drawType = 0
-{% if not element.is_preset %}
-w33 = 0
-{% endif %}
-x110 = 0
-y110 = 0
 local $LocalHoverTimer
 local $LocalHoldTimer
 if $LocalHoldTimer > 0
@@ -155,16 +145,12 @@ Local $current_sizeY
     z23 = $clickInterpolate
     {% endif %}
     {{generate_presets(element,mod_file,scene)}}
-    ;Helpers (Obsolete - use Presets instead)
     ;{{generate_helpers(element,mod_file,scene)}}
-    ;Childs
     z23 = 0
     w23 = 0
     {{generate_child(element,mod_file,scene)}}
     endif
     endif
-    $hoverInterpolate = $hoverInterpolate
-    $clickInterpolate = $clickInterpolate
     {% if element_tags %}
     ;[META-INFO] [END] [DELETE] [ELEMENT] [{{ element.element_name }}] {{ element_tags }}
     {% endif %}
@@ -173,7 +159,6 @@ Local $current_sizeY
 
 {%macro generate_presets(element, mod_file, scene)%}
     {% for ref in element.preset_ids %}
-    ;{{ref.preset_id}}
         {% set preset_item = scene.rzm.elements | selectattr('id', 'equalto', ref.preset_id) | first %}
         {% if preset_item %}
             $positionX = $P_PX
@@ -250,6 +235,7 @@ Local $current_sizeY
     {% endif %}
 [CommandListElement{{h_name}}]
 $id = {{h_id}}
+$classType = {{ utils.get_cls_id(helper_item) }}
 local $LocalVisibility
     {% if helper_item.visibility_mode == 'CONDITIONAL' %}
 if {{ utils.normalize_all_vars(helper_item.visibility_condition, host_item, scene) }}
@@ -321,29 +307,30 @@ endif
         {# ЛОГИКА ДЛЯ ПРЕСЕТОВ: Либо наследуют всё, либо применяют формулу поверх наследства #}
         
         {% if element.position_is_formula %}
-        ; Preset Position Formula
         $positionX = {{ element.position_formula_x }}
         $positionY = {{ element.position_formula_y }}
         {% endif %}
 
         {% if element.size_is_formula %}
-        ; Preset Size Formula
         $sizeX = {{ element.size_formula_x | default('$sizeX') }}
         $sizeY = {{ element.size_formula_y | default('$sizeY') }}
         {% endif %}
         {% if element.rotation_is_formula %}
         $rotation = {{ element.rotation_formula | default('0') }}
-        {% else %}
-        $rotation = {{ element.rotation | default(0.0) }}
+        {% elif element.rotation != 0.0 %}
+        $rotation = {{ element.rotation }}
         {% endif %}
-        $flipX = {{ 1 if element.flip_x else 0 }}
-        $flipY = {{ 1 if element.flip_y else 0 }}
+        {% if element.flip_x == 1%}
+        $flipX = 1
+        {% endif %}
+        {% if element.flip_y == 1%}
+        $flipY = 1
+        {% endif %}
     {% else %}
         {# СТАНДАРТНАЯ ЛОГИКА ДЛЯ ОБЫЧНЫХ ЭЛЕМЕНТОВ #}
         {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
         {% set grid_child = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
         
-        ;POSITION
         {% if element.position_is_formula %}
             $positionX = ({{ element.position_formula_x }})
             $positionY = ({{ element.position_formula_y }})
@@ -363,7 +350,6 @@ endif
             ${{element.element_name}}PositionY = $positionY
         {%endif%}
 
-        ;SIZE
         {% if class_name == 'ANCHOR' and grid_child %}
             ${{ element.element_name }}SizeX = ${{grid_child.element_name}}SizeX
             $sizeX = ${{ element.element_name }}SizeX
@@ -382,20 +368,22 @@ endif
             $sizeY = (100) * $sizeMultiplier
         {% endif %}
 
-        ;ROTATION
         {% if element.rotation_is_formula %}
         $rotation = {{ element.rotation_formula | default('0') }}
-        {% else %}
-        $rotation = {{ element.rotation | default(0.0) }}
+        {% elif element.rotation != 0.0 %}
+        $rotation = {{ element.rotation }}
         {% endif %}
-        $flipX = {{ 1 if element.flip_x else 0 }}
-        $flipY = {{ 1 if element.flip_y else 0 }}
+        {% if element.flip_x == 1%}
+        $flipX = 1
+        {% endif %}
+        {% if element.flip_y == 1%}
+        $flipY = 1
+        {% endif %}
     {% endif %}
 
     {% if element.transform_is_formula %}
     {{element.transform_formula}}
     {% else %}
-    ;No Transform Formula
     {% endif %}
 {%endmacro%}
 {%macro generate_interactions(element, parent_element, scene)%}
@@ -524,7 +512,6 @@ endif
 
     {# --- Часть 2: Conditional List (ID: 1) --- #}
     {% if element.image_mode == "CONDITIONAL_LIST" and element.conditional_images %}
-        ;TestVarCond
         {% for item in element.conditional_images %}
         {% if loop.index-1 == 0 %} 
         if {{ item.condition }}
@@ -593,13 +580,7 @@ endif
         run = CommandListGetTextElement{{ element.id }}{{ h_suffix }}
     {% endif %}
     
-    {% if element.text_align == 1 %}
-        $texSizeX = 1
-    {% elif element.text_align == 2 %}
-        $texSizeX = 2
-    {% else %}
-        $texSizeX = 0
-    {% endif %}
+    $texSizeX = {{ utils.TEXT_ALIGN_MAP.get(element.text_align, 0) }}
 {% endmacro %}
 
 {%macro generate_hovertext(element, host_element=none)%}
@@ -767,7 +748,6 @@ endif
     {% else %}
         {# --- Логика для простой кнопки БЕЗ value_link --- #}
         if $id == $clickTriggerID
-            ; Click registered for simple action button: {{ element.element_name }}
             
             {# Здесь просто выполняем формулу, так как переменных нет #}
             {% if element.value_link_is_formula %}
@@ -810,7 +790,6 @@ $current_sizeY     = $current_sizeY     + ($target_sizeY     - $current_sizeY) *
 {% else %}
     run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedCount
 {% endif %}
-;Изменить нижние 4 строки
 $target_positionX = $PositionX
 $target_positionY = $PositionY
 $target_sizeX = $SizeX
@@ -864,6 +843,7 @@ endif
 {%macro ControllerCursor(element,parent_element,mod_file,scene)%}
     [CommandListElement{{ element.element_name }}]
     $id = {{ element.id }}
+    $classType = {{ utils.get_cls_id(element) }}
     local $LocalVisibility
     if $inputMode
     $LocalVisibility = 1
@@ -936,6 +916,7 @@ endif
     ; --- ГЛАВНЫЙ ЭЛЕМЕНТ (Квадрат Saturation/Value) ---
     [CommandListElement{{ element_id_name }}]
     $id = {{ element.id }}
+    $classType = {{ utils.get_cls_id(element) }}
     local $LocalVisibility
     {% if element.visibility_mode == 'CONDITIONAL' %}
     $LocalVisibility = 0
@@ -1109,6 +1090,7 @@ endif
     ; --- ЭЛЕМЕНТ: СЛАЙДЕР HUE ---
     [CommandListElement{{ element_id_name }}_HueSlider]
     $id = {{ element.id + 10000 }}
+    $classType = 4
     local $LocalVisibility
     $LocalVisibility = 1
 

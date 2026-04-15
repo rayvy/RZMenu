@@ -1,4 +1,20 @@
 {%macro Base()%}
+[CommandListRestoreElement]
+if $isPreset != 1
+$scissorX = 0
+$scissorY = 0
+$scissorZ = 0
+$scissorW = 0
+$fontSlot = 0
+$drawType = 0
+w33 = 0
+x110 = 0
+y110 = 0
+$rotation = 0.0
+$flipX = 0
+$flipY = 0
+endif
+
 [CommandListCoreAlignment.Check]
 if $element_align == 0
 	run = CommandListCoreAlignmentLeft
@@ -304,6 +320,7 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 	$LocalPosY = $positionY
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
+	$classType = 5
 	$drawType = 4
 	$TexPosX = x24
 	$TexPosY = 0
@@ -329,6 +346,7 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 endif
 
 [CommandListCoreFXRenderSliderText]
+$classType = 5
 local $BackColorR
 local $BackColorG
 local $BackColorB
@@ -359,7 +377,7 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	x110 = 0
 	y110 = 0
 
-	run = CustomShaderRCI2D_TEXT
+	run = CustomShaderRCI2D
 
 	$positionX = $LocalPosX
 	$positionY = $LocalPosY
@@ -381,6 +399,7 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	$LocalPosY = $positionY
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
+	$classType = 5
 	$drawType = 4
 	$TexPosX = x24*100
 	$TexPosY = 1

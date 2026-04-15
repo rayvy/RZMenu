@@ -9,6 +9,15 @@
     5: 'TEXT',
 } %}
 
+{% set CLASS_ID_MAP = {
+    'CONTAINER': 0,
+    'GRID_CONTAINER': 1,
+    'ANCHOR': 2,
+    'BUTTON': 3,
+    'SLIDER': 4,
+    'TEXT': 5
+} %}
+
 {% set CLASS_ATTRIBUTES = {
     'ANCHOR': ['isMovable'],
     'GRID_CONTAINER': ['isResizable'],
@@ -39,6 +48,12 @@
     'TOP_RIGHT': 8
 } %}
 
+{% set TEXT_ALIGN_MAP = {
+    'LEFT': 0,
+    'CENTER': 1,
+    'RIGHT': 2
+} %}
+
 {% set FX_MAP = {
     'CommandListCoreFxBoxRound': 'BoxRound',
     'CommandListCoreFxBoxCircle': 'BoxCircle',
@@ -52,6 +67,10 @@
 } %}
 
 {# --- УМНЫЕ МАКРОСЫ (С ЗАЩИТОЙ ОТ ПРОБЕЛОВ) --- #}
+
+{%- macro get_cls_id(element) -%}
+    {{- CLASS_ID_MAP.get(get_cls(element)|trim, 0) -}}
+{%- endmacro -%}
 
 {%- macro get_cls(element) -%}
     {%- if element.elem_class is defined -%}
