@@ -1,6 +1,7 @@
 import bpy
 from . import signals
 from . import blender_bridge
+from .read import get_element_by_id
 from ..utils.string_utils import find_common_pattern, apply_pattern_change
 
 # Centralized property mapping to reduce duplication (DRY)
@@ -448,6 +449,24 @@ def remove_fx(target_ids, index):
         
         if changed:
             blender_bridge.safe_undo_push("RZM: Remove FX")
+            signals.SIGNALS.data_changed.emit()
+
+def update_fx(target_ids, index, value):
+    """Updates an FX entry in the collection."""
+    if not target_ids or index < 0: return
+    
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem_id in target_ids:
+            elem = get_element_by_id(elem_id)
+            if elem and index < len(elem.fx):
+                if elem.fx[index].value != value:
+                    elem.fx[index].value = value
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update FX {value}")
             signals.SIGNALS.data_changed.emit()
 
 def find_longest_common_subsequence(lists):

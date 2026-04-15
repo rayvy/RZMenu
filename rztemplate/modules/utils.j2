@@ -262,7 +262,7 @@
     If the entire text_id is a single ~var, returns just the resolved value.
     If no ~ is present, returns the input unchanged (zero overhead).
 #}
-{%- macro resolve_meta_var(text_id, scene, element=none) -%}
+{%- macro resolve_meta_var(text_id, scene, element=none, parent_override=none) -%}
     {%- if "~" not in text_id -%}
         {{- text_id -}}
     {%- else -%}
@@ -282,23 +282,25 @@
             '~description':       meta.description
         } -%}
         
-        {%- if element -%}
-            {%- set ns = {'parent': none} -%}
-            {%- for el in scene.rzm.elements -%}
-                {%- if el.id == element.parent_id -%}
-                    {%- set _ = ns.update({'parent': el}) -%}
-                {%- else -%}
-                    {%- for h in el.helper_ids | default([]) if h.helper_id == element.id -%}
+        {%- if element or parent_override -%}
+            {%- set ns = {'parent': parent_override} -%}
+            {%- if not ns.parent -%}
+                {%- for el in scene.rzm.elements -%}
+                    {%- if el.id == element.parent_id -%}
                         {%- set _ = ns.update({'parent': el}) -%}
-                    {%- endfor -%}
-                    {%- for p in el.preset_ids | default([]) if p.preset_id == element.id -%}
-                        {%- set _ = ns.update({'parent': el}) -%}
-                    {%- endfor -%}
-                    {%- for u in el.underlayer_preset_ids | default([]) if u.preset_id == element.id -%}
-                        {%- set _ = ns.update({'parent': el}) -%}
-                    {%- endfor -%}
-                {%- endif -%}
-            {%- endfor -%}
+                    {%- else -%}
+                        {%- for h in el.helper_ids | default([]) if h.helper_id == element.id -%}
+                            {%- set _ = ns.update({'parent': el}) -%}
+                        {%- endfor -%}
+                        {%- for p in el.preset_ids | default([]) if p.preset_id == element.id -%}
+                            {%- set _ = ns.update({'parent': el}) -%}
+                        {%- endfor -%}
+                        {%- for u in el.underlayer_preset_ids | default([]) if u.preset_id == element.id -%}
+                            {%- set _ = ns.update({'parent': el}) -%}
+                        {%- endfor -%}
+                    {%- endif -%}
+                {%- endfor -%}
+            {%- endif -%}
             {%- set parent = ns.parent if ns.parent else element -%}
             {%- if parent -%}
                 {%- set p_name = parent.element_name | default('') | string -%}
@@ -490,6 +492,5 @@
         {%- else -%}
             ; Шейпкеи отсутствуют.
         {%- endif -%}
-        ; -------------------------------------
     {%- endif -%}
-{%- endmacro %}
+{%- endmacro -%}

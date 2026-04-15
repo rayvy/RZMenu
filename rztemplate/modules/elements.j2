@@ -62,6 +62,7 @@
                     {% endif %}
                 {% endfor %}
             {% endif %}
+
             {#MainClass#}
             ;{{element.elem_class}}
             {#%if CLASS_NAME_MAP[element.elem_class] == 'BUTTON'%}
@@ -102,7 +103,6 @@
 
 
 {%macro elements_additional_generate(mod_file,scene)%}
-;DEBUG HELPER: ADDITIONAL GENERATE
 {% for element in scene.rzm.elements %}
     {% if not (element.disable_export and not element.is_preset) %}
     ;{{element.elem_class}}
@@ -119,6 +119,7 @@
 {% for host_element in scene.rzm.elements %}
     {% if not host_element.is_preset and not host_element.is_helper and not host_element.disable_export %}
         {% if host_element.helper_ids %}
+            {# --- HELPER GENERATION --- #}
             {% for ref in host_element.helper_ids %}
                 {% set helper_item = scene.rzm.elements | selectattr('id', 'equalto', ref.helper_id) | first %}
                 {% if helper_item %}
@@ -140,8 +141,8 @@ local $thumb_width = 50
 
 ;local $container_pos_x = ${{ grid.element_name }}PositionX
 ;local $container_pos_y = ${{ grid.element_name }}PositionY
-local $container_pos_x = $PositionX
-local $container_pos_y = $PositionY
+local $container_pos_x = $positionX
+local $container_pos_y = $positionY
 local $container_width = ${{ grid.element_name }}SizeX
 local $container_height = ${{ grid.element_name }}SizeY
 
@@ -187,8 +188,8 @@ local $track_width = $sizeX - $thumb_width
 if $track_width < 0
 	$track_width = 0
 endif
-$PositionX = $positionX + (${{ grid.element_name }}scroll * $track_width)
-$SizeX = $thumb_width
+$positionX = $positionX + (${{ grid.element_name }}scroll * $track_width)
+$sizeX = $thumb_width
 $colorR = 0.8
 $colorG = 0.8
 $colorB = 0.8

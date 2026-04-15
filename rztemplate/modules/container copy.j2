@@ -1,8 +1,9 @@
 {% import "modules/base.j2" as base with context %}
 {% import "modules/utils.j2" as utils with context %}
 
-{%macro base(element,parent_element,mod_file,scene)%}
+{%macro base(element,parent_element,mod_file,scene,progenitor_element)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
+{{ utils.get_progenitor_info(progenitor_element) }}
 ;parent_elem_name: {{parent_element.element_name}}
 ;parent_elem_value: {{utils.get_first_value_link_var(parent_element)}}
 {% if parent_element.value_link %}
@@ -63,7 +64,7 @@ Local $current_sizeY
 {%endmacro%}
 
 {#MAINSTUFF#}
-{%macro main(element,parent_element,mod_file,scene)%}
+{%macro main(element,parent_element,mod_file,scene,progenitor_element)%}
     {% set class_name = utils.get_cls(element)|trim %}
     {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
     {% set element_tags = utils.tier_tags(element) %}
@@ -71,15 +72,11 @@ Local $current_sizeY
     ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ element.element_name }}] {{ element_tags }}
     {% endif %}
     [CommandListElement{{ element.element_name }}]
-    {{base(element,parent_element,mod_file,scene)}}
+    {{base(element,parent_element,mod_file,scene,progenitor_element)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
     {% else %}
-        {{generate_position_and_size(element,parent_element,mod_file,scene)}}
+        {{generate_position_and_size(element,parent_element,mod_file,scene,progenitor_element)}}
     {% endif %}
-    $P_PX = $PositionX
-    $P_PY = $PositionY
-    $P_SX = $SizeX
-    $P_SY = $SizeY
     ;Underlayer Presets
     {% if not element.is_preset%}
     w23 = $hoverInterpolate
@@ -98,10 +95,6 @@ Local $current_sizeY
         {%endfor%}
     {%endif%}
     if $LocalVisibility
-    $positionX = $P_PX
-    $positionY = $P_PY
-    $sizeX = $P_SX
-    $sizeY = $P_SY
     $element_align = {{ utils.ALIGNMENT_MAP.get(element.alignment, 0) }}
     run = CommandListCoreAlignment.Check
     {{generate_interactions(element, parent_element, scene)}}
@@ -140,6 +133,10 @@ Local $current_sizeY
     ${{element.element_name}}SizeX = $SizeX
     ${{element.element_name}}SizeY = $SizeY
     {% endif %}
+    $P_PX = $PositionX
+    $P_PY = $PositionY
+    $P_SX = $SizeX
+    $P_SY = $SizeY
     if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
     $hoverInterpolate = $hoverInterpolate + (1 - $hoverInterpolate) * ($dtCustom + 0.0069)
     else
@@ -190,10 +187,6 @@ Local $current_sizeY
     ;Underlayer: {{ref.preset_id}}
         {% set preset_item = scene.rzm.elements | selectattr('id', 'equalto', ref.preset_id) | first %}
         {% if preset_item %}
-            $positionX = $P_PX
-            $positionY = $P_PY
-            $sizeX = $P_SX
-            $sizeY = $P_SY
             run = CommandListElement{{preset_item.element_name}}
         {% endif %}
     {% endfor %}
@@ -239,7 +232,7 @@ Local $current_sizeY
   Нейминг: host_element_name + '_' + helper_element_name.lstrip('_')
   ID: helper_item.id + 3500  (оффсет для уникальности в 3DMigoto)
 #}
-{%macro generate_helper_definition(helper_item, host_item, mod_file, scene)%}
+{%macro generate_helper_definition(helper_item, host_item, mod_file, scene, progenitor_element)%}
     {%- set h_raw_name = helper_item.element_name -%}
     {%- set h_clean = h_raw_name.lstrip('_') -%}
     {%- set h_name = host_item.element_name ~ '_' ~ h_clean -%}
@@ -249,6 +242,7 @@ Local $current_sizeY
     ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ h_name }}] {{ utils.tier_tags(helper_item) }}
     {% endif %}
 [CommandListElement{{h_name}}]
+{{ utils.get_progenitor_info(progenitor_element) }}
 $id = {{h_id}}
 local $LocalVisibility
     {% if helper_item.visibility_mode == 'CONDITIONAL' %}
@@ -262,7 +256,7 @@ endif
     {% endif %}
     $drawType = 0
 if $LocalVisibility
-    {{generate_position_and_size(helper_item, host_item, mod_file, scene)}}
+    {{generate_position_and_size(helper_item, host_item, mod_file, scene, progenitor_element)}}
     {{generate_interactions_for_helper(helper_item, host_item, scene)}}
     {%if helper_item.color%}{{generate_color(helper_item)}}{%endif%}
     {{generate_image(helper_item, host_item, scene)}}
@@ -272,12 +266,11 @@ if $LocalVisibility
         {{ handle_slider_logic(helper_item, host_item, mod_file, scene) }}
         run = CustomShaderRCI2D_SLIDER
     {% elif h_cls == 'TEXT' %}
-        {{generate_text(helper_item, host_item)}}
+        {{generate_text(helper_item)}}
         run = CustomShaderRCI2D_TEXT_{{helper_item.text_align | default('LEFT')}}
     {% else %}
         run = CustomShaderRCI2D
     {% endif %}
-    {{generate_hovertext(helper_item, host_item)}}
 endif
     {% if helper_item.export_tiers | length > 0 %}
     ;[META-INFO] [END] [DELETE] [ELEMENT] [{{ h_name }}] {{ utils.tier_tags(helper_item) }}
@@ -314,10 +307,39 @@ endif
 
 
 {# OTHER STUFF#}
-{%macro generate_position_and_size(element,parent_element,mod_file,scene)%}
+{%macro generate_position_and_size(element,parent_element,mod_file,scene, progenitor_element)%}
     {% set class_name = utils.get_cls(element)|trim %}
+    {% set prog_class = utils.get_cls(progenitor_element)|trim if progenitor_element else none %}
     
-    {% if element.is_preset %}
+    {# --- EXPERIMENT: RELATIVE POSITIONING --- #}
+    {% if utils.rzm_experiment_relative_mode and prog_class == 'ANCHOR' and element.id != progenitor_element.id and not element.is_preset %}
+        {% set prog_w = progenitor_element.size[0] | default(1) | float %}
+        {% set prog_h = progenitor_element.size[1] | default(1) | float %}
+        {% if prog_w == 0 %}{% set prog_w = 1.0 %}{% endif %}
+        {% if prog_h == 0 %}{% set prog_h = 1.0 %}{% endif %}
+        
+        {% set rel_x = (element.position[0] - progenitor_element.position[0]) / prog_w %}
+        {% set rel_y = (element.position[1] - progenitor_element.position[1]) / prog_h %}
+        {% set rel_w = (element.size[0] | default(100)) / prog_w %}
+        {% set rel_h = (element.size[1] | default(100)) / prog_h %}
+        
+        ; RELATIVE POSITION (Experiment)
+        $positionX = ${{ progenitor_element.element_name }}PositionX + ({{ "%.4f"|format(rel_x) }} * ${{ progenitor_element.element_name }}SizeX)
+        $positionY = ${{ progenitor_element.element_name }}PositionY + ({{ "%.4f"|format(rel_y) }} * ${{ progenitor_element.element_name }}SizeY)
+        
+        ; RELATIVE SIZE (Experiment)
+        $sizeX = ({{ "%.4f"|format(rel_w) }} * ${{ progenitor_element.element_name }}SizeX)
+        $sizeY = ({{ "%.4f"|format(rel_h) }} * ${{ progenitor_element.element_name }}SizeY)
+        
+        ; Persistence (if trackable)
+        {% if element.trackable or class_name in ['GRID_CONTAINER', 'ANCHOR'] %}
+        ${{element.element_name}}PositionX = $positionX
+        ${{element.element_name}}PositionY = $positionY
+        ${{element.element_name}}SizeX = $sizeX
+        ${{element.element_name}}SizeY = $sizeY
+        {% endif %}
+
+    {% elif element.is_preset %}
         {# ЛОГИКА ДЛЯ ПРЕСЕТОВ: Либо наследуют всё, либо применяют формулу поверх наследства #}
         
         {% if element.position_is_formula %}
@@ -374,6 +396,25 @@ endif
         {% elif utils.has_attribute(element, 'isResizable')%}
             $sizeX = (${{ element.element_name | default('noname') }}SizeX) * $sizeMultiplier
             $sizeY = (${{ element.element_name | default('noname') }}SizeY) * $sizeMultiplier
+            
+            {# --- EXPERIMENT: ANCHOR CONSTRAINTS --- #}
+            {% if class_name == 'ANCHOR' and element.id == progenitor_element.id %}
+            ; ANCHOR CONSTRAINTS & PROPORTIONS
+            if $sizeX < {{ utils.rzm_anchor_min_size[0] }}
+                $sizeX = {{ utils.rzm_anchor_min_size[0] }}
+                ${{ element.element_name }}SizeX = $sizeX
+            endif
+            if $sizeX > {{ utils.rzm_anchor_max_size[0] }}
+                $sizeX = {{ utils.rzm_anchor_max_size[0] }}
+                ${{ element.element_name }}SizeX = $sizeX
+            endif
+            {% if utils.rzm_anchor_preserve_proportions %}
+            local $scale_factor = $sizeX / {{ element.size[0] | default(1.0) }}
+            $sizeY = {{ element.size[1] | default(1.0) }} * $scale_factor
+            ${{ element.element_name }}SizeY = $sizeY
+            {% endif %}
+            {% endif %}
+
         {% elif element.size and element.size|length == 2 %}
             $sizeX = ({{ element.size[0] }}) * $sizeMultiplier
             $sizeY = ({{ element.size[1] }}) * $sizeMultiplier
@@ -583,14 +624,9 @@ endif
     {% endfor %}
 {%endmacro%}
 
-{% macro generate_text(element, host_element=none) %}
-    {% set t_id = element.text_id | default('') | string %}
-    {# Редирект для ~PT: если хелпер просто хочет текст родителя, берем CommandList родителя (ORIGINALS) #}
-    {% if (t_id == "~PT" or t_id == "~pt" or t_id == "~PText") and host_element %}
-        run = CommandListGetTextElement{{ host_element.id }}
-    {% elif element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
-        {%- set h_suffix = "_" ~ host_element.id if host_element and element.is_helper else "" -%}
-        run = CommandListGetTextElement{{ element.id }}{{ h_suffix }}
+{% macro generate_text(element) %}
+    {% if element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
+        run = CommandListGetTextElement{{ element.id }}
     {% endif %}
     
     {% if element.text_align == 1 %}
@@ -602,18 +638,11 @@ endif
     {% endif %}
 {% endmacro %}
 
-{%macro generate_hovertext(element, host_element=none)%}
+{%macro generate_hovertext(element)%}
     {% if element.hover_text_id %}
-        {% set h_id = element.hover_text_id | default('') | string %}
         if $CursorX > $PositionX && $CursorX < ($PositionX + $SizeX) && $CursorY > $PositionY && $CursorY < ($PositionY + $SizeY)
         y24 = 1
-        {# Редирект для ~PH (Hover): берем CommandList родителя #}
-        {% if (h_id == "~PH" or h_id == "~ph" or h_id == "~PHover") and host_element %}
-            run = CommandListGetTextHoverElement{{ host_element.id }}
-        {% else %}
-            {%- set h_suffix = "_" ~ host_element.id if host_element and element.is_helper else "" -%}
-            run = CommandListGetTextHoverElement{{ element.id }}{{ h_suffix }}
-        {% endif %}
+        run  = CommandListGetTextHoverElement{{ element.id }}
         endif
     {%endif%}
 {%endmacro%}
@@ -861,8 +890,9 @@ endif
 {% endif %}
 {% endmacro %}
 
-{%macro ControllerCursor(element,parent_element,mod_file,scene)%}
+{%macro ControllerCursor(element,parent_element,mod_file,scene,progenitor_element)%}
     [CommandListElement{{ element.element_name }}]
+    {{ utils.get_progenitor_info(progenitor_element) }}
     $id = {{ element.id }}
     local $LocalVisibility
     if $inputMode
@@ -900,7 +930,7 @@ endif
         run = CustomShaderRCI2D
     endif
 {%endmacro%}
-{% macro HSVColorPicker(element, parent_element, mod_file, scene) %}
+{% macro HSVColorPicker(element, parent_element, mod_file, scene, progenitor_element) %}
     {# --- НАСТРОЙКА ИМЕН И ПЕРЕМЕННЫХ --- #}
     {% set element_id_name = element.element_name %}
     
@@ -935,6 +965,7 @@ endif
     
     ; --- ГЛАВНЫЙ ЭЛЕМЕНТ (Квадрат Saturation/Value) ---
     [CommandListElement{{ element_id_name }}]
+    {{ utils.get_progenitor_info(progenitor_element) }}
     $id = {{ element.id }}
     local $LocalVisibility
     {% if element.visibility_mode == 'CONDITIONAL' %}
