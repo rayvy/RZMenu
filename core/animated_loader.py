@@ -207,7 +207,7 @@ def load_video(filepath: str, max_frames: int = 64) -> list:
 
 # ─── Blender Images ───────────────────────────────────────────────────────────
 
-def frames_to_blender_images(frames: list, base_name: str) -> list:
+def frames_to_blender_images(frames: list, base_name: str, colorspace: str = 'sRGB') -> list:
     """
     Конвертирует список кадров в bpy.data.images.
     Именование: "{base_name}_anim_{idx:04d}"
@@ -217,6 +217,7 @@ def frames_to_blender_images(frames: list, base_name: str) -> list:
     Args:
         frames: список dict с 'pixels', 'size'
         base_name: базовое имя изображения (display_name RZMenuImage)
+        colorspace: 'sRGB' или 'Non-Color'. Для SVG рендеров лучше сразу Non-Color.
 
     Returns:
         Список созданных bpy.data.Image.
@@ -236,11 +237,14 @@ def frames_to_blender_images(frames: list, base_name: str) -> list:
 
         img = bpy.data.images.new(name=name, width=w, height=h, alpha=True)
         img.file_format = 'PNG'
+        img.colorspace_settings.name = colorspace
 
         # Blender ожидает плоский (W*H*4,) float32 в порядке bottom-up.
         # Наши пиксели хранятся top-down (row 0 = top), поэтому переворачиваем по Y.
-        flipped = np.flipud(pixels).flatten().tolist()
-        img.pixels[:] = flipped
+        # Используем foreach_set для скорости и стабильности.
+        flipped = np.ascontiguousarray(np.flipud(pixels), dtype=np.float32)
+        img.pixels.foreach_set(flipped.ravel())
+        img.update()
 
         created.append(img)
 

@@ -189,6 +189,7 @@
                     {% set id_list = var.element_ids_str.split(',') %}
                     {% if loop.first %}if {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}
                     {% else %}elif {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}{% endif %}
+                    
                     $texPosX = {{ var.uv_coords[0] }}
                     $texPosY = {{ var.uv_coords[1] }}
                     $texSizeX = {{ var.uv_size[0] }}

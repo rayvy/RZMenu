@@ -361,7 +361,7 @@ post $isMouseButtonDown = 0
 {%endmacro%}
 
 {% macro generate_keybinds(mod_file, scene) %}
-{%- if scene.rzm and scene.rzm.keybinds %}
+{% if scene.rzm and scene.rzm.keybinds %}
 ; ─── USER KEYBINDS ───────────────────────────────────────────────────────────
 {% for kb in scene.rzm.keybinds if kb.name %}
 [Key{{ utils.format_var(kb.name) }}]
@@ -377,6 +377,7 @@ type = {{ kb.type | default('cycle') }}
 {% if kb.only_menu_active %}{% set _ = cond_parts.append('$active == 1') %}{% endif %}
 {% if kb.condition %}{% set _ = cond_parts.append(kb.condition) %}{% endif %}
 {% if cond_parts %}
+
 condition = {{ cond_parts | join(' && ') }}
 {% endif %}
 {% if kb.delay and kb.delay > 0 %}
@@ -399,5 +400,5 @@ transition_type = {{ kb.transition_type | default('linear') }}
 run = CommandList{{ utils.format_var(kb.run_id) }}
 {% endif %}
 {% endfor %}
-{%- endif %}
+{% endif %}
 {% endmacro %}

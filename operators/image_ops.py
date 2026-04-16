@@ -161,27 +161,33 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                 if img.source_type == 'VECTOR':
                     # SVGs are tracked strictly by Element ID grouping + Resolution
                     res_w, res_h = elem.size
+                    render_w = int(min(res_w, 1024))
+                    render_h = int(min(res_h, 1024))
+                    
                     scale = round(elem.svg_scale, 2)
-                    off_x = round(elem.svg_offset[0], 2)
-                    off_y = round(elem.svg_offset[1], 2)
+                    # Convert normalized offset to pixels to match svg_loader and viewport logic
+                    off_x_px = round(elem.svg_offset[0] * render_w, 2)
+                    off_y_px = round(elem.svg_offset[1] * render_h, 2)
                     
                     color_key = "ORIG"
                     if not img.svg_preserve_color:
-                        r, g, b = [int(elem.color[i] * 255) for i in range(3)]
-                        color_key = f"{r:02x}{g:02x}{b:02x}"
+                        # Smart Tint: only apply if alpha is high enough
+                        if elem.color[3] > 0.01:
+                            r, g, b = [int(elem.color[i] * 255) for i in range(3)]
+                            color_key = f"{r:02x}{g:02x}{b:02x}"
                     
                     # Variation identity includes the image ID and target Resolution
-                    var_tuple = (img_id, res_w, res_h, scale, off_x, off_y, color_key)
-                    config_key = f"SVG_{img_id}_{res_w}x{res_h}_{scale}_{off_x}_{off_y}_{color_key}"
+                    var_tuple = (img_id, render_w, render_h, scale, off_x_px, off_y_px, color_key)
+                    config_key = f"SVG_{img_id}_{render_w}x{render_h}_{scale}_{off_x_px}_{off_y_px}_{color_key}"
                     
                     if var_tuple not in svg_render_configs:
                         svg_render_configs[var_tuple] = {
                             'element_ids': set(),
                             'config_key': config_key,
                             'img_id': img_id,
-                            'res': (res_w, res_h),
+                            'res': (render_w, render_h),
                             'scale': scale,
-                            'offset': (off_x, off_y),
+                            'offset': (off_x_px, off_y_px),
                             'color_key': color_key
                         }
                     svg_render_configs[var_tuple]['element_ids'].add(elem.id)
@@ -379,25 +385,30 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                 
                 if img.source_type == 'VECTOR':
                     res_w, res_h = elem.size
+                    render_w = int(min(res_w, 1024))
+                    render_h = int(min(res_h, 1024))
+                    
                     scale = round(elem.svg_scale, 2)
-                    off_x = round(elem.svg_offset[0], 2)
-                    off_y = round(elem.svg_offset[1], 2)
+                    off_x_px = round(elem.svg_offset[0] * render_w, 2)
+                    off_y_px = round(elem.svg_offset[1] * render_h, 2)
                     
                     color_key = "ORIG"
                     tint_color = None
                     if not img.svg_preserve_color:
-                        r, g, b = [int(elem.color[i] * 255) for i in range(3)]
-                        color_key = f"{r:02x}{g:02x}{b:02x}"
-                        tint_color = f"#{color_key}"
+                        # Smart Tint: match viewport fallback
+                        if elem.color[3] > 0.01:
+                            r, g, b = [int(elem.color[i] * 255) for i in range(3)]
+                            color_key = f"{r:02x}{g:02x}{b:02x}"
+                            tint_color = f"#{color_key}"
                     
-                    config_key = f"SVG_{img_id}_{res_w}x{res_h}_{scale}_{off_x}_{off_y}_{color_key}"
+                    config_key = f"SVG_{img_id}_{render_w}x{render_h}_{scale}_{off_x_px}_{off_y_px}_{color_key}"
                     if config_key not in svg_render_configs:
                         svg_render_configs[config_key] = {
                             'elem': elem, 
                             'image_id': img_id,
-                            'res': (res_w, res_h),
+                            'res': (render_w, render_h),
                             'scale': scale, 
-                            'offset': (off_x, off_y),
+                            'offset': (off_x_px, off_y_px),
                             'tint': tint_color,
                             'path': img.anim_source_path or ""
                         }
@@ -456,9 +467,8 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             )
             
             if pixels is not None:
-                bl_svg_list = frames_to_blender_images([{'pixels': pixels, 'size': (render_w, render_h)}], f"TEMP_{config_key}")
-                temp_bl_images.extend(bl_svg_list)
-                images_to_render[config_key] = bl_svg_list[0]
+                # Direct pixel ingestion bypassing Blender temporary image overhead
+                images_to_render[config_key] = pixels
         
         if not images_to_render:
             return {'CANCELLED'}
@@ -606,8 +616,12 @@ class RZM_OT_AddImage(bpy.types.Operator):
                 self.report({'ERROR'}, "Failed to render SVG preview.")
                 return {'CANCELLED'}
             
-            # Создаем Blender Image для превью в редакторе
-            bl_preview_list = frames_to_blender_images([{'pixels': pixels, 'size': (res, res)}], display_name + "_svg_preview")
+            # Создаем Blender Image для превью в редакторе (используем Non-Color для точности)
+            bl_preview_list = frames_to_blender_images(
+                [{'pixels': pixels, 'size': (res, res)}], 
+                display_name + "_svg_preview",
+                colorspace='Non-Color'
+            )
             bl_image = bl_preview_list[0]
             bl_image.pack()
 

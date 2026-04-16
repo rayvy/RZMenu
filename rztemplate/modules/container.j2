@@ -17,7 +17,6 @@ local $ValueX24Interpolated
 $LocalVisibility = 0
 local $hoverInterpolate
 local $clickInterpolate
-$fontSlot = {{ element.font_slot | default(0) }}
 {% if element.visibility_mode == 'CONDITIONAL' %}
 if {{ utils.normalize_all_vars(element.visibility_condition, element, scene) }}
     $LocalVisibility = 1
@@ -28,6 +27,9 @@ endif
     $LocalVisibility = 1
 {% endif %}
 run = CommandListRestoreElement
+{% if element.font_slot != 0 %}
+$fontSlot = {{ element.font_slot | default(0) }}
+{% endif %}
 if $LocalVisibility
 local $LocalHoverTimer
 local $LocalHoldTimer

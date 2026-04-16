@@ -50,10 +50,25 @@ def render_svg_to_pixels(filepath: str, width: int, height: int, tint_color: str
             
         painter.end()
         
-        # Convert QImage to numpy array
-        ptr = image.bits()
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))
+        # Convert QImage to numpy array safely
+        # Ensure we use constBits to get a read-only pointer to the data
+        ptr = image.constBits()
+        # bytesPerLine is crucial if the image is not 32-bit aligned (though RGBA8888 usually is)
+        stride = image.bytesPerLine()
         
+        # Create a view from the buffer
+        # Note: image.bits() returns a buffer that depends on the QImage's lifetime.
+        # We immediately copy it with .astype() or np.array()
+        raw_data = np.frombuffer(ptr, dtype=np.uint8)
+        
+        # Reshape considering the stride (bytes per line)
+        # ch=4 for RGBA8888
+        arr = raw_data.reshape((height, stride // 4, 4))
+        # Crop potential padding at the end of scanlines
+        if stride // 4 > width:
+            arr = arr[:, :width, :]
+        
+        # Create an owned copy as float32 in [0..1] range
         return arr.astype(np.float32) / 255.0
 
     except Exception as e:

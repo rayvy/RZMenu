@@ -230,16 +230,26 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
         x, y = uv_data[name]['uv_coords']
         w, h = uv_data[name]['uv_size']
         
-        if hasattr(img, 'pixels'):
+        if isinstance(img, np.ndarray):
+            # Direct NumPy support (for SVG renders)
+            # Input is (H, W, 4) float32, top-down.
+            # We must flip it to bottom-up to match the atlas/Blender orientation.
+            img_pixels = np.ascontiguousarray(np.flipud(img), dtype=np.float32)
+            atlas_pixels[y:y+h, x:x+w] = img_pixels
+            
+        elif hasattr(img, 'pixels'):
+            # Blender Image support (for Raster icons)
             # Temporarily switch to Non-Color to get raw bits without Blender's linearization
             old_colorspace = img.colorspace_settings.name
-            img.colorspace_settings.name = 'Non-Color'
+            if old_colorspace != 'Non-Color':
+                img.colorspace_settings.name = 'Non-Color'
             try:
                 img_pixels = np.empty(w * h * 4, dtype=np.float32)
                 img.pixels.foreach_get(img_pixels)
                 img_pixels = img_pixels.reshape((h, w, 4))
                 atlas_pixels[y:y+h, x:x+w] = img_pixels
             finally:
-                img.colorspace_settings.name = old_colorspace
+                if old_colorspace != 'Non-Color':
+                    img.colorspace_settings.name = old_colorspace
     
     return atlas_pixels.flatten()
