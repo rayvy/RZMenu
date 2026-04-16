@@ -329,6 +329,15 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         row.operator("rzm.quick_export_menu", text="⚡ Quick Update", icon='FILE_REFRESH')
         row.operator("rzm.complete_export", text="Complete Export", icon='SEQ_STRIP_DUPLICATE')
         
+        # --- EXPERIMENTAL OPTIMIZATION (Development) ---
+        box.separator()
+        exp_box = box.box()
+        exp_box.label(text="Experimental Optimization", icon='MODIFIER')
+        row = exp_box.row(align=True)
+        row.operator("rzm.inquisitor_cleanup", text="Clean Up", icon='BRUSH_DATA')
+        row.operator("rzm.real_compression", text="Compress", icon='SEQ_STRIP_DUPLICATE')
+        exp_box.label(text="Use with caution! Backups (.bak) will be created.", icon='INFO')
+
         # Quick Update Toggles (Below the buttons for clarity)
         q_row = box.row(align=True)
         q_row.prop(settings, "quick_update_resources", text="Res", icon='IMAGE_DATA', toggle=True)
