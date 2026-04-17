@@ -31,6 +31,7 @@ import bpy
 from PySide6 import QtWidgets, QtCore, QtGui
 from .panel_base import RZEditorPanel
 from .lib.theme import get_current_theme
+from .lib.inputs import RZCodeTextEdit, RZIniHighlighter
 from ..core.signals import SIGNALS
 
 
@@ -128,16 +129,15 @@ class RunLinksSection(QtWidgets.QWidget):
         form.addRow("Description:", self.inp_desc)
         props_layout.addLayout(form)
 
-        # Body — multiline QPlainTextEdit
+        # Body — multiline RZCodeTextEdit with highlighter and AC
         props_layout.addWidget(QtWidgets.QLabel("Body (CommandList lines):"))
-        self.inp_body = QtWidgets.QPlainTextEdit()
+        self.inp_body = RZCodeTextEdit()
+        self.inp_body.set_highlighter(RZIniHighlighter)
         self.inp_body.setPlaceholderText(
             "$var = 0,1,2,3\n$other = 1,0,1,0\n; This will generate body as-is"
         )
-        self.inp_body.setMinimumHeight(100)
-        font = QtGui.QFont("Consolas", 10)
-        self.inp_body.setFont(font)
-        self.inp_body.textChanged.connect(self._sync_body)
+        self.inp_body.setMinimumHeight(150)
+        self.inp_body.editingFinished.connect(self._sync_body)
         props_layout.addWidget(self.inp_body)
 
         self.props_box.hide()

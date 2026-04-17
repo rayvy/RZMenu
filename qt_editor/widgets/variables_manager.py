@@ -58,6 +58,107 @@ class RZVariablesManager(QtWidgets.QWidget):
         self.tab_toggles.refresh()
         self.tab_shapes.refresh()
 
+# --- NEW HELPERS ---
+
+class RZDiceButton(QtWidgets.QToolButton):
+    """Sleek dice button for mark_random toggle."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setText("🎲")
+        self.setFixedSize(28, 28)
+        self.setToolTip("Mark for Randomization: Include this variable in the $RZRandomize logic.")
+        self.apply_style()
+
+    def apply_style(self):
+        t = get_current_theme()
+        acc = t.get('accent', '#5298D4')
+        if self.isChecked():
+            self.setStyleSheet(f"""
+                QToolButton {{
+                    color: {acc}; 
+                    background: {acc}33; /* 20% opacity hex */
+                    border: 2px solid {acc}; 
+                    border-radius: 4px; 
+                    font-size: 16px;
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QToolButton {{
+                    color: {t.get('text_dim', '#888')}; 
+                    background: transparent; 
+                    border: 1px solid {t['border_main']}; 
+                    border-radius: 4px; 
+                    font-size: 16px;
+                }}
+            """)
+
+    def nextCheckState(self):
+        super().nextCheckState()
+        self.apply_style()
+
+class RZMProfileTable(QtWidgets.QGroupBox):
+    """
+    Compact table-like panel to edit in_game_profiles.
+    Each row is [Profile Name] [Input Field].
+    """
+    valueModified = QtCore.Signal(int, str) # slot_idx, val_str
+
+    def __init__(self, title="In-Game Profiles", parent=None):
+        super().__init__(title, parent)
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(8, 24, 8, 8) # Extra top for title
+        self.layout.setSpacing(4)
+        self.rows = [] # List of (label, input_widget)
+        self._block = False
+
+    def setup(self, count, var_type='FLOAT'):
+        """Rebuild rows based on the current profile count."""
+        # Cleanup
+        for lbl, inp in self.rows:
+            self.layout.removeWidget(lbl)
+            self.layout.removeWidget(inp)
+            lbl.deleteLater()
+            inp.deleteLater()
+        self.rows.clear()
+
+        for i in range(count):
+            h = QtWidgets.QHBoxLayout()
+            lbl = QtWidgets.QLabel(f"Slot {i+1}:")
+            lbl.setFixedWidth(50)
+            
+            if var_type == 'INT':
+                inp = QtWidgets.QSpinBox()
+                inp.setRange(-999999, 999999)
+                inp.valueChanged.connect(lambda v, idx=i: self._on_changed(idx, str(v)))
+            else:
+                inp = QtWidgets.QDoubleSpinBox()
+                inp.setRange(-999999.0, 999999.0)
+                inp.setSingleStep(0.1)
+                inp.valueChanged.connect(lambda v, idx=i: self._on_changed(idx, str(v)))
+            
+            h.addWidget(lbl)
+            h.addWidget(inp)
+            self.layout.addLayout(h)
+            self.rows.append((lbl, inp))
+
+    def _on_changed(self, idx, val_str):
+        if self._block: return
+        self.valueModified.emit(idx, val_str)
+
+    def update_values(self, profiles_collection, var_type='FLOAT'):
+        self._block = True
+        try:
+            for i, slot in enumerate(profiles_collection):
+                if i >= len(self.rows): break
+                _, inp = self.rows[i]
+                val = slot.int_value if var_type == 'INT' else slot.float_value
+                if inp.value() != val:
+                    inp.setValue(val)
+        finally:
+            self._block = False
+
 class RZDraggableVariableList(QtWidgets.QListWidget):
     def __init__(self, prefix="", parent=None):
         super().__init__(parent)
@@ -277,13 +378,39 @@ class ValuesTab(BaseListTab):
         self.props_layout.addRow("Float Value:", self.inp_val_float)
         self.props_layout.addRow("Vector:", self.inp_val_vector_widget)
 
+        h_opts = QtWidgets.QHBoxLayout()
+        self.chk_mark_random = RZDiceButton()
+        self.chk_mark_random.clicked.connect(self.synch_mark_random)
+        h_opts.addWidget(self.chk_mark_random)
+        
         self.chk_force_export = QtWidgets.QToolButton()
         self.chk_force_export.setCheckable(True)
         self.chk_force_export.setText("★")
         self.chk_force_export.setToolTip("Force Export: Always include this variable in templates/partial exports")
-        self.chk_force_export.setFixedSize(24, 24)
+        self.chk_force_export.setFixedSize(28, 28)
         self.chk_force_export.clicked.connect(self.synch_force_export)
-        self.props_layout.addRow("Force Export:", self.chk_force_export)
+        h_opts.addWidget(self.chk_force_export)
+        h_opts.addStretch()
+        self.props_layout.addRow("Flags:", h_opts)
+
+        h_range = QtWidgets.QHBoxLayout()
+        self.inp_val_min = QtWidgets.QDoubleSpinBox()
+        self.inp_val_min.setRange(-999999.0, 999999.0)
+        self.inp_val_min.valueChanged.connect(self.synch_val_min)
+        self.inp_val_max = QtWidgets.QDoubleSpinBox()
+        self.inp_val_max.setRange(-999999.0, 999999.0)
+        self.inp_val_max.setValue(100.0)
+        self.inp_val_max.valueChanged.connect(self.synch_val_max)
+        h_range.addWidget(QtWidgets.QLabel("Min:"))
+        h_range.addWidget(self.inp_val_min)
+        h_range.addWidget(QtWidgets.QLabel("Max:"))
+        h_range.addWidget(self.inp_val_max)
+        self.props_layout.addRow("Range:", h_range)
+
+        # Profile Table
+        self.profile_table = RZMProfileTable()
+        self.profile_table.valueModified.connect(self.synch_profile)
+        self.props_layout.addRow(self.profile_table)
 
     def refresh(self):
         if not bpy.context: return
@@ -340,6 +467,26 @@ class ValuesTab(BaseListTab):
             self.chk_force_export.setChecked(val.force_export)
             self._update_star_style(self.chk_force_export)
             self.chk_force_export.blockSignals(False)
+
+            self.chk_mark_random.blockSignals(True)
+            self.chk_mark_random.setChecked(val.mark_random)
+            self.chk_mark_random.apply_style()
+            self.chk_mark_random.blockSignals(False)
+
+            if self.inp_val_min.value() != val.val_min:
+                self.inp_val_min.setValue(val.val_min)
+            if self.inp_val_max.value() != val.val_max:
+                self.inp_val_max.setValue(val.val_max)
+
+            # Profile Sync
+            cfg = bpy.context.scene.rzm.addons
+            if cfg.use_in_game_profiles:
+                self.profile_table.show()
+                self.profile_table.setup(cfg.in_game_profile_count, val.value_type)
+                self.profile_table.update_values(val.in_game_profiles, val.value_type)
+            else:
+                self.profile_table.hide()
+
         finally:
             self.is_updating_ui = False
 
@@ -355,6 +502,7 @@ class ValuesTab(BaseListTab):
                 font-size: 18px;
                 font-weight: bold;
             """)
+        else:
             btn.setStyleSheet(f"""
                 color: {t.get('text_dark', '#666')}; 
                 background: transparent; 
@@ -425,10 +573,37 @@ class ValuesTab(BaseListTab):
 
     def synch_color_picker(self, color_data):
         if self.is_updating_ui: return
-        # Setting values will trigger synch_val_vector
         for i in range(4):
             if i < len(color_data):
                 self.inp_vecs[i].setValue(color_data[i])
+
+    def synch_mark_random(self, checked):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="mark_random", val_str=str(checked))
+
+    def synch_val_min(self, v):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="val_min", val_str=str(v))
+
+    def synch_val_max(self, v):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_value(index=orig_idx, prop_name="val_max", val_str=str(v))
+
+    def synch_profile(self, slot_idx, val_str):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_profile_slot(var_type='VALUE', var_index=orig_idx, slot_index=slot_idx, val_str=val_str)
 
     def add_item(self):
         bpy.ops.rzm.add_value()
@@ -461,13 +636,25 @@ class TogglesTab(BaseListTab):
         self.props_layout.addRow("Length:", self.inp_len)
         self.props_layout.addRow("Start Index:", self.inp_start_idx)
 
+        h_opts = QtWidgets.QHBoxLayout()
+        self.chk_mark_random = RZDiceButton()
+        self.chk_mark_random.clicked.connect(self.synch_mark_random)
+        h_opts.addWidget(self.chk_mark_random)
+
         self.chk_force_export = QtWidgets.QToolButton()
         self.chk_force_export.setCheckable(True)
         self.chk_force_export.setText("★")
         self.chk_force_export.setToolTip("Force Export: Always include this toggle in templates")
-        self.chk_force_export.setFixedSize(24, 24)
+        self.chk_force_export.setFixedSize(28, 28)
         self.chk_force_export.clicked.connect(self.synch_force_export)
-        self.props_layout.addRow("Force Export:", self.chk_force_export)
+        h_opts.addWidget(self.chk_force_export)
+        h_opts.addStretch()
+        self.props_layout.addRow("Flags:", h_opts)
+
+        # Profile Table (Toggles use INT profile slots)
+        self.profile_table = RZMProfileTable()
+        self.profile_table.valueModified.connect(self.synch_profile)
+        self.props_layout.addRow(self.profile_table)
 
     def refresh(self):
         if not bpy.context: return
@@ -504,28 +691,22 @@ class TogglesTab(BaseListTab):
             self.chk_force_export.setChecked(t.force_export)
             self._update_star_style(self.chk_force_export)
             self.chk_force_export.blockSignals(False)
+
+            self.chk_mark_random.blockSignals(True)
+            self.chk_mark_random.setChecked(t.mark_random)
+            self.chk_mark_random.apply_style()
+            self.chk_mark_random.blockSignals(False)
+
+            cfg = bpy.context.scene.rzm.addons
+            if cfg.use_in_game_profiles:
+                self.profile_table.show()
+                self.profile_table.setup(cfg.in_game_profile_count, 'INT')
+                self.profile_table.update_values(t.in_game_profiles, 'INT')
+            else:
+                self.profile_table.hide()
+
         finally:
             self.is_updating_ui = False
-
-    def _update_star_style(self, btn):
-        t = get_current_theme()
-        if btn.isChecked():
-            btn.setStyleSheet(f"""
-                color: #FFD700; 
-                background: rgba(255, 215, 0, 40); 
-                border: 2px solid #FFD700; 
-                border-radius: 4px; 
-                font-size: 18px;
-                font-weight: bold;
-            """)
-        else:
-            btn.setStyleSheet(f"""
-                color: {t.get('text_dark', '#666')}; 
-                background: transparent; 
-                border: 1px solid {t['border_main']}; 
-                border-radius: 4px; 
-                font-size: 16px;
-            """)
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return
@@ -533,7 +714,22 @@ class TogglesTab(BaseListTab):
         if not item: return
         orig_idx = item.data(QtCore.Qt.UserRole)
         bpy.ops.rzm.update_project_toggle(index=orig_idx, prop_name="force_export", val_str=str(checked))
+        self._update_star_style(self.chk_force_export)
         self.refresh()
+
+    def synch_mark_random(self, checked):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_project_toggle(index=orig_idx, prop_name="mark_random", val_str=str(checked))
+
+    def synch_profile(self, slot_idx, val_str):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_profile_slot(var_type='TOGGLE', var_index=orig_idx, slot_index=slot_idx, val_str=val_str)
 
     def synch_name(self):
         if self.is_updating_ui: return
@@ -603,14 +799,38 @@ class ShapesTab(BaseListTab):
         self.chk_force_export = QtWidgets.QToolButton()
         self.chk_force_export.setCheckable(True)
         self.chk_force_export.setText("★")
-        self.chk_force_export.setToolTip("Force Export: Always include this shape in templates")
-        self.chk_force_export.setFixedSize(24, 24)
+        self.chk_force_export.setFixedSize(28, 28)
         self.chk_force_export.clicked.connect(self.synch_force_export)
         h_export.addWidget(self.chk_force_export)
         h_export.addWidget(QtWidgets.QLabel("Force Export"))
+        
+        self.chk_mark_random = RZDiceButton()
+        self.chk_mark_random.clicked.connect(self.synch_mark_random)
+        h_export.addWidget(self.chk_mark_random)
+        h_export.addWidget(QtWidgets.QLabel("Random"))
+
         h_export.addStretch()
 
         self.props_layout.addRow("Export Options:", h_export)
+        
+        h_range = QtWidgets.QHBoxLayout()
+        self.inp_val_min = QtWidgets.QDoubleSpinBox()
+        self.inp_val_min.setRange(-999999.0, 999999.0)
+        self.inp_val_min.valueChanged.connect(self.synch_val_min)
+        self.inp_val_max = QtWidgets.QDoubleSpinBox()
+        self.inp_val_max.setRange(-999999.0, 999999.0)
+        self.inp_val_max.setValue(100.0)
+        self.inp_val_max.valueChanged.connect(self.synch_val_max)
+        h_range.addWidget(QtWidgets.QLabel("Min:"))
+        h_range.addWidget(self.inp_val_min)
+        h_range.addWidget(QtWidgets.QLabel("Max:"))
+        h_range.addWidget(self.inp_val_max)
+        self.props_layout.addRow("Range:", h_range)
+
+        # Profile Table
+        self.profile_table = RZMProfileTable()
+        self.profile_table.valueModified.connect(self.synch_profile)
+        self.props_layout.addRow(self.profile_table)
         
         # Tier assignment — chip buttons for each configured tier
         self.tiers_group = QtWidgets.QGroupBox("Mod Producer Tiers")
@@ -697,6 +917,24 @@ class ShapesTab(BaseListTab):
             self.chk_force_export.setChecked(shape.force_export)
             self._update_star_style(self.chk_force_export)
             self.chk_force_export.blockSignals(False)
+
+            self.chk_mark_random.blockSignals(True)
+            self.chk_mark_random.setChecked(shape.mark_random)
+            self.chk_mark_random.apply_style()
+            self.chk_mark_random.blockSignals(False)
+
+            if self.inp_val_min.value() != shape.val_min:
+                self.inp_val_min.setValue(shape.val_min)
+            if self.inp_val_max.value() != shape.val_max:
+                self.inp_val_max.setValue(shape.val_max)
+
+            cfg = bpy.context.scene.rzm.addons
+            if cfg.use_in_game_profiles:
+                self.profile_table.show()
+                self.profile_table.setup(cfg.in_game_profile_count, 'FLOAT')
+                self.profile_table.update_values(shape.in_game_profiles, 'FLOAT')
+            else:
+                self.profile_table.hide()
             
             self._update_tier_chips(orig_idx, shape)
 
@@ -797,21 +1035,35 @@ class ShapesTab(BaseListTab):
             bpy.ops.rzm.add_shape_tier(shape_index=value_index, tier_id=tier_id)
         else:
             bpy.ops.rzm.remove_shape_tier(shape_index=value_index, tier_id=tier_id)
-            
-        btn = self._tier_buttons.get(tier_id)
-        if btn:
-            t = get_current_theme()
-            if checked:
-                btn.setStyleSheet(
-                    "QPushButton { background: #1a6ea8; color: #fff; border: 1px solid #3b9de0; "
-                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; font-weight: bold; }"
-                )
-            else:
-                btn.setStyleSheet(
-                    f"QPushButton {{ background: transparent; color: {t.get('text_dark', '#888')}; "
-                    f"border: 1px solid {t.get('border_main', '#555')}; "
-                    "border-radius: 3px; padding: 1px 8px; font-size: 11px; }"
-                )
+
+    def synch_mark_random(self, checked):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        # Using the generic update_shape op
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="mark_random", val_str=str(checked))
+
+    def synch_val_min(self, v):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="val_min", val_str=str(v))
+
+    def synch_val_max(self, v):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_shape(shape_index=orig_idx, prop_name="val_max", val_str=str(v))
+
+    def synch_profile(self, slot_idx, val_str):
+        if self.is_updating_ui: return
+        item = self.list_widget.currentItem()
+        if not item: return
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        bpy.ops.rzm.update_profile_slot(var_type='SHAPE', var_index=orig_idx, slot_index=slot_idx, val_str=val_str)
 
     def synch_force_export(self, checked):
         if self.is_updating_ui: return

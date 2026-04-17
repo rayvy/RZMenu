@@ -130,6 +130,65 @@ class RZM_OT_RemoveValueLink(bpy.types.Operator):
                 
         return {'FINISHED'}
 
+class RZM_OT_UpdateProfileSlot(bpy.types.Operator):
+    """Updates a specific slot in the in_game_profiles collection."""
+    bl_idname = "rzm.update_profile_slot"
+    bl_label = "Update Profile Slot"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    var_type: bpy.props.EnumProperty(items=(
+        ('VALUE', 'Value', ''),
+        ('TOGGLE', 'Toggle', ''),
+        ('SHAPE', 'Shape', '')
+    ))
+    var_index: bpy.props.IntProperty()
+    slot_index: bpy.props.IntProperty()
+    val_str: bpy.props.StringProperty()
+    is_bool: bpy.props.BoolProperty(default=False)
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        
+        # 1. Resolve Parent Variable
+        parent = None
+        if self.var_type == 'VALUE':
+            if 0 <= self.var_index < len(rzm.rzm_values):
+                parent = rzm.rzm_values[self.var_index]
+        elif self.var_type == 'TOGGLE':
+            if 0 <= self.var_index < len(rzm.toggle_definitions):
+                parent = rzm.toggle_definitions[self.var_index]
+        elif self.var_type == 'SHAPE':
+            if 0 <= self.var_index < len(rzm.shapes):
+                parent = rzm.shapes[self.var_index]
+        
+        if not parent:
+            return {'CANCELLED'}
+            
+        # 2. Resolve Profile Slot
+        if self.slot_index < 0 or self.slot_index >= len(parent.in_game_profiles):
+            # Try to sync if missing? (Should be handled by sync button, but let's be safe)
+            return {'CANCELLED'}
+            
+        slot = parent.in_game_profiles[self.slot_index]
+        
+        # 3. Apply Value
+        try:
+            if self.is_bool:
+                slot.int_value = 1 if self.val_str == "True" else 0
+            else:
+                # Store as int or float based on what's provided
+                if "." in self.val_str:
+                    slot.float_value = float(self.val_str)
+                    slot.int_value = int(slot.float_value)
+                else:
+                    slot.int_value = int(self.val_str)
+                    slot.float_value = float(slot.int_value)
+        except Exception as e:
+            print(f"UpdateProfileSlot Error: {e}")
+            return {'CANCELLED'}
+            
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_ListAction,
     RZM_OT_AddConditionalImage,
@@ -138,4 +197,5 @@ classes_to_register = [
     RZM_OT_RemoveValue,
     RZM_OT_SetValueLink,
     RZM_OT_RemoveValueLink,
+    RZM_OT_UpdateProfileSlot,
 ]
