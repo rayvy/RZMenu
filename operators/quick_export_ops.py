@@ -37,10 +37,10 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
         print(f"RZMenu Quick Update: Target file identified as {os.path.basename(ini_path)}")
 
         # 2. Extract MOD-BLOCK from existing file
-        mod_block_content = self.extract_mod_block(ini_path)
-        if mod_block_content is None:
-            self.report({'ERROR'}, "MOD-BLOCK tags not found in existing .ini. Please perform a Full Export first to initialize the file structure.")
-            return {'CANCELLED'}
+        mod_block_content, has_tags = self.extract_mod_block(ini_path)
+        if not has_tags:
+            self.report({'WARNING'}, "MOD-BLOCK tags not found. Geometry/Mesh data will NOT be preserved in this update.")
+            mod_block_content = "; [MOD-BLOCK NOT FOUND - Standalone UI Mode]"
 
         # 3. Render new .ini with menu_only=True
         exporter = RZMenuJ2Exporter(context)
@@ -103,9 +103,12 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
     def extract_mod_block(self, ini_path):
         """
         Extracts content strictly BETWEEN the MOD-BLOCK tags.
-        Returns None if tags are missing or malformed.
+        Returns (content, has_tags).
         """
         try:
+            if not os.path.exists(ini_path):
+                return "", False
+
             with open(ini_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
@@ -116,15 +119,15 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
             end_idx = content.find(end_tag)
             
             if start_idx == -1 or end_idx == -1:
-                return None
+                return "", False
             
             # Content starts after the start tag
             block_start = start_idx + len(start_tag)
             # And ends before the end tag
-            return content[block_start : end_idx]
+            return content[block_start : end_idx], True
             
         except Exception as e:
             print(f"RZMenu Error during mod block extraction: {e}")
-            return None
+            return "", False
 
 classes_to_register = [RZM_OT_QuickExportMenu]

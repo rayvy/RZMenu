@@ -49,6 +49,7 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
         // Если клиппинг не нужен, записываем нули.
         ClippingDataBuffer[BUFFER_INDEX] = float4(0, 0, 0, 0);
     }
+    /*
     if (IN_DRAW_MODE == 3) // Режим текста
     {
         // +++ ИСПРАВЛЕННАЯ ЛОГИКА +++
@@ -66,6 +67,7 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
             TextPoolBuffer[source_offset + i] = InputTextBuffer[i];
         }
     }
+    */
     
     DrawParamsBuffer[BUFFER_INDEX] = float4(IN_FN_TYPE, IN_FX_TYPE, IN_TEX_ID, IN_DRAW_MODE);
 }
