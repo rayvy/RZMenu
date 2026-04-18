@@ -2,6 +2,7 @@
 // == cs.hlsl - Версия "Бригадир" (Исправленная)
 // ==================================================================
 RWBuffer<float4> DataBuffer           : register(u0);
+RWBuffer<uint>   IndexBuffer          : register(u1);
 
 Texture1D<float4> IniParams : register(t120);
 Buffer<uint>      InputTextBuffer : register(t24);
@@ -22,28 +23,32 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define IN_TEX_ID      IniParams[110].z
 #define IN_DRAW_MODE   IniParams[110].w
 #define BUFFER_INDEX   (int)IniParams[111].y
+#define IN_BUFFER_OFFSET (uint)IniParams[111].z
+#define IN_FLAGS       (uint)IniParams[111].x
 
 [numthreads(1, 1, 1)]
 void main(uint3 ThreadId : SV_DispatchThreadID)
 {
-    uint base_idx = BUFFER_INDEX * 6;
+    uint base_idx = IN_BUFFER_OFFSET;
+    IndexBuffer[BUFFER_INDEX] = base_idx;
     
-    DataBuffer[base_idx + 0] = float4(IN_POS, IN_SIZE);
-    DataBuffer[base_idx + 1] = IN_COLOR;
-    DataBuffer[base_idx + 2] = IN_TILE_DATA;
-    DataBuffer[base_idx + 3] = float4(IN_MIRROR_MODE, IN_FONT_SLOT, 0, IN_ROT);
+    DataBuffer[base_idx + 0] = float4(asfloat(IN_FLAGS), 0, 0, 0);
+    DataBuffer[base_idx + 1] = float4(IN_POS, IN_SIZE);
+    DataBuffer[base_idx + 2] = IN_COLOR;
+    DataBuffer[base_idx + 3] = IN_TILE_DATA;
+    DataBuffer[base_idx + 4] = float4(IN_MIRROR_MODE, IN_FONT_SLOT, 0, IN_ROT);
     
     // Проверяем, нужно ли вообще применять клиппинг (если не 0,0,0,0)
     if (any(IN_CLIP_RECT))
     {
         // Прямоугольник уже в пикселях, просто записываем его в буфер как есть.
-        DataBuffer[base_idx + 4] = IN_CLIP_RECT;
+        DataBuffer[base_idx + 5] = IN_CLIP_RECT;
     }
     else
     {
         // Если клиппинг не нужен, записываем нули.
-        DataBuffer[base_idx + 4] = float4(0, 0, 0, 0);
+        DataBuffer[base_idx + 5] = float4(0, 0, 0, 0);
     }
     
-    DataBuffer[base_idx + 5] = float4(IN_FN_TYPE, IN_FX_TYPE, IN_TEX_ID, IN_DRAW_MODE);
+    DataBuffer[base_idx + 6] = float4(IN_FN_TYPE, IN_FX_TYPE, IN_TEX_ID, IN_DRAW_MODE);
 }

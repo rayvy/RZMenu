@@ -4,9 +4,21 @@ SHADER: UI COMPOSITOR v3.3 (AUTO-FIT TEXT ADDED)
 ================================================================================
 */
 
+// --- RZMENU FIXED-SLOT PIPELINE CONSTANTS ---
+#define BASE_SLOT_COUNT 7
+
+#define SLOT_SHADOW  7
+#define SLOT_GLOW    8
+#define SLOT_LIVE2D  9
+
+#define BIT_SHADOW  (1u << 0)
+#define BIT_GLOW    (1u << 1)
+#define BIT_LIVE2D  (1u << 2)
+
 // --- RESOURCES ---
 Texture1D<float4> GlobalParams : register(t120);
 Buffer<float4>    DataBuffer : register(t100);
+Buffer<uint>      IndexBuffer : register(t104);
 Buffer<uint>      TextPoolBuffer : register(t103);
 
 Texture2D<float4> AtlasIcons : register(t80);
@@ -239,23 +251,27 @@ float2 ApplyAnimation(float type, float2 pos, float2 size, float2 uv) {
 void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput output) {
     output = (VertexOutput)0;
     
-    uint base_idx = iID * 6;
-    float4 params = DataBuffer[base_idx + 5];
+    uint base_idx = IndexBuffer[iID];
+    
+    float4 header = DataBuffer[base_idx + 0];
+    uint flags = asuint(header.x);
+
+    float4 params = DataBuffer[base_idx + 6];
     output.drawMode = (int)params.w;
     output.animType = params.x;
     output.fxType = params.y;
-    output.color = DataBuffer[base_idx + 1];
-    output.clipRect = DataBuffer[base_idx + 4];
+    output.color = DataBuffer[base_idx + 2];
+    output.clipRect = DataBuffer[base_idx + 5];
     
-    float4 tileData = DataBuffer[base_idx + 2];
-    float4 mirrorData = DataBuffer[base_idx + 3];
+    float4 tileData = DataBuffer[base_idx + 3];
+    float4 mirrorData = DataBuffer[base_idx + 4];
     
     output.extraData.x = tileData.x;
     output.extraData.y = mirrorData.y; // fontSlot passed through G channel
     output.mirrorMode = (int)mirrorData.x;
 
-    float2 pos = DataBuffer[base_idx + 0].xy;
-    float2 size = DataBuffer[base_idx + 0].zw;
+    float2 pos = DataBuffer[base_idx + 1].xy;
+    float2 size = DataBuffer[base_idx + 1].zw;
 
     if (output.drawMode != MODE_TEXT && output.drawMode != MODE_NUMBER && vID >= 6) { output.position = 0; return; }
     if ((output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER) && (vID/6) >= MAX_CHARS) { output.position = 0; return; }

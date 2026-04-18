@@ -383,6 +383,7 @@ endif
 
 post $active = 0
 post $di_count = 0
+post $data_offset = 10
 
 [CommandListEntryPoint]
 if $menu
@@ -598,6 +599,7 @@ $ts = time
 {% macro menuDrawUi(mod_file,scene)%}
 [CustomShaderRCI2D_POPUP]
 cs-u0 = ResourceDataBuffer
+cs-u1 = ResourceIndexBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -640,6 +642,10 @@ y110 = y110
 z110 = 0
 w110 = $drawType
 y111 = 768 + $di_count
+$slot_count = 7
+z111 = $data_offset
+x111 = 0
+
 if $flipX == 1 && $flipY == 1
     x105 = 3 
 elif $flipX == 1
@@ -651,10 +657,12 @@ else
 endif
 dispatch = 1, 1, 1
 x105 = 0
+$data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
 $drawType = 0
 [CustomShaderRCI2D_SLIDER]
 cs-u0 = ResourceDataBuffer
+cs-u1 = ResourceIndexBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -701,6 +709,10 @@ else
 w110 = 0
 endif
 y111 = $di_count
+$slot_count = 7
+z111 = $data_offset
+x111 = 0
+
 
 if $flipX == 1 && $flipY == 1
     x105 = 3 
@@ -713,6 +725,7 @@ else
 endif
 dispatch = 1, 1, 1
 x105 = 0
+$data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
 if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
@@ -721,6 +734,7 @@ $drawType = 0
 
 [CustomShaderRCI2D_SLIDER.TEXT]
 cs-u0 = ResourceDataBuffer
+cs-u1 = ResourceIndexBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -767,6 +781,10 @@ else
     w110 = 0
 endif
 y111 = $di_count
+$slot_count = 7
+z111 = $data_offset
+x111 = 0
+
 
 if $flipX == 1 && $flipY == 1
     x105 = 3 
@@ -779,6 +797,7 @@ else
 endif
 dispatch = 1, 1, 1
 x105 = 0
+$data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
 run = CommandListCoreFXRenderSliderText
 if $slider_node_disable_nums == 0
@@ -808,6 +827,7 @@ if $TextIsData == 1
 $drawType = 4
 endif
 cs-u0 = ResourceDataBuffer
+cs-u1 = ResourceIndexBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -844,13 +864,19 @@ y110 = y110
 z110 = 0
 w110 = $drawType
 y111 = $di_count
+$slot_count = 7
+z111 = $data_offset
+x111 = 0
+
 
 dispatch = 1, 1, 1
+$data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
 $TextIsData = 0
 $drawType = 0
 [CustomShaderRCI2D_HOVERTEXT]
 cs-u0 = ResourceDataBuffer
+cs-u1 = ResourceIndexBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -876,6 +902,10 @@ y110 = 0
 z110 = 0
 w110 = 0
 y111 = 510
+$slot_count = 7
+z111 = $data_offset
+x111 = 0
+
 if $flipX == 1 && $flipY == 1
     x105 = 3 
 elif $flipX == 1
@@ -887,6 +917,7 @@ else
 endif
 dispatch = 1, 1, 1
 x105 = 0
+$data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
 
 z99 = $ScreenW
@@ -912,6 +943,10 @@ y110 = 0
 z110 = 0
 w110 = 3
 y111 = 511
+$slot_count = 7
+z111 = $data_offset
+x111 = 0
+
 if $flipX == 1 && $flipY == 1
     x105 = 3 
 elif $flipX == 1
@@ -925,10 +960,12 @@ y105 = $fontSlot
 w105 = $rotation
 
 dispatch = 1, 1, 1
+$data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
 $drawType = 0
 [CustomShaderRCI2D]
 cs-u0 = ResourceDataBuffer
+cs-u1 = ResourceIndexBuffer
 
 cs = /modules/draw_controller.hlsl
 
@@ -982,6 +1019,10 @@ y110 = y110
 z110 = 0
 w110 = $drawType
 y111 = $di_count
+$slot_count = 7
+z111 = $data_offset
+x111 = 0
+
 
 if $flipX == 1 && $flipY == 1
     x105 = 3 
@@ -995,6 +1036,7 @@ endif
 w105 = $rotation
 
 dispatch = 1, 1, 1
+$data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
 
 x110 = 0
@@ -1004,6 +1046,7 @@ $drawType = 0
 [CustomShaderDI2D]
 ResourceBB = copy_desc bb
 vs-t100 = ref ResourceDataBuffer
+vs-t104 = ref ResourceIndexBuffer
 vs-t103 = ref ResourceText
 
 w98 = time % 1
@@ -1029,6 +1072,7 @@ ps-t85 = ResourceFont3
 run = CustomShaderDI2D.PASS0.BLUR
 run = CustomShaderDI2D.PASS.MAIN
 clear = ResourceDataBuffer
+clear = ResourceIndexBuffer
 
 
 [CustomShaderDI2D.PASS0.BLUR]
@@ -1123,6 +1167,11 @@ topology = triangle_list
 o0 = set_viewport no_view_cache bb
 DrawInstanced = 192, 1024, 0, 0
 
+
+[ResourceIndexBuffer]
+type = RWBuffer
+format = R32_UINT
+array = 2048
 
 [ResourceDataBuffer]
 type = RWBuffer
