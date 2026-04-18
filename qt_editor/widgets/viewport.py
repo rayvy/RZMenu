@@ -730,13 +730,24 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             current_px = total_w * base_scale
             squeeze = 1.0
             
-            if limit_px > 1.0 and current_px > limit_px:
+            # 4. Squeeze Logic (Auto-Fit)
+            # Shader: if (currentTextWidth > inputLimitWidth) squeeze...
+            limit_px = rect.width()
+            current_px = total_w * base_scale
+            squeeze = 1.0
+            
+            # 5. Alignment & Mode calculation
+            align_map = {
+                "LEFT": 0, "CENTER": 1, "RIGHT": 2,
+                "FREE_LEFT": 3, "FREE_CENTER": 4, "FREE_RIGHT": 5
+            }
+            align_idx = align_map.get(self.text_align, 0)
+            is_free = align_idx >= 3
+            align = align_idx - 3 if is_free else align_idx
+
+            if not is_free and limit_px > 1.0 and current_px > limit_px:
                 squeeze = limit_px / current_px
 
-            # 5. Alignment Shift calculation
-            align_map = {"LEFT": 0, "CENTER": 1, "RIGHT": 2}
-            align = align_map.get(self.text_align, 0)
-            
             shift_128 = 0.0
             if align == 1: # Center
                 shift_128 = (first_off * 2.0 + total_w) * 0.5

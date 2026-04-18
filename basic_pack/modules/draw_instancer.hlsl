@@ -169,14 +169,17 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
         float currentTextWidth = totalW * scale;      // Реальная ширина текста
         float squeeze = 1.0;
 
-        // Если задан лимит (> 1px) И текст шире лимита -> сжимаем
-        if (inputLimitWidth > 1.0 && currentTextWidth > inputLimitWidth) {
+        int align = (int)tile.z;
+        bool isFree = align >= 3;
+        if (isFree) align -= 3;
+
+        // Если задан лимит (> 1px) И текст шире лимита -> сжимаем (только если не FREE mode)
+        if (!isFree && inputLimitWidth > 1.0 && currentTextWidth > inputLimitWidth) {
             squeeze = inputLimitWidth / currentTextWidth;
         }
         // -------------------------------
         
         float shift = 0;
-        int align = (int)tile.z;
         if (align == 1) shift = (firstOff*2.0 + totalW)*0.5;
         if (align == 2) shift = firstOff + totalW;
         

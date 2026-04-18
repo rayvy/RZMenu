@@ -1335,7 +1335,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.cb_anchor.addItems(["BOTTOM_LEFT", "BOTTOM_CENTER", "BOTTOM_RIGHT", "CENTER_LEFT", "CENTER", "CENTER_RIGHT", "TOP_LEFT", "TOP_CENTER", "TOP_RIGHT"])
             
             self.cb_text_align = self._add_row(layout, "Text Align:", RZComboBox(), 'text_align')
-            self.cb_text_align.addItems(["LEFT", "CENTER", "RIGHT"])
+            self.cb_text_align.addItems(["LEFT", "CENTER", "RIGHT", "FREE_LEFT", "FREE_CENTER", "FREE_RIGHT"])
             
             self.layout_props.addWidget(self.grp_anchor)
         except Exception as e: print(f"[INSPECTOR] Error Layout: {e}")
