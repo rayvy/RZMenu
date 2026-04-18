@@ -6,13 +6,8 @@ SHADER: UI COMPOSITOR v3.3 (AUTO-FIT TEXT ADDED)
 
 // --- RESOURCES ---
 Texture1D<float4> GlobalParams : register(t120);
-Buffer<float4>    PosSizeBuffer : register(t100);
-Buffer<float4>    ColorBuffer : register(t101);
-Buffer<float4>    TileDataBuffer : register(t102); 
+Buffer<float4>    DataBuffer : register(t100);
 Buffer<uint>      TextPoolBuffer : register(t103);
-Buffer<float4>    MirrorBuffer : register(t105);
-Buffer<float4>    ClippingBuffer : register(t109);
-Buffer<float4>    DrawParamsBuffer : register(t110);
 
 Texture2D<float4> AtlasIcons : register(t80);
 Texture2D<float4> AtlasFont0 : register(t82);
@@ -243,18 +238,24 @@ float2 ApplyAnimation(float type, float2 pos, float2 size, float2 uv) {
 #ifdef VERTEX_SHADER
 void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput output) {
     output = (VertexOutput)0;
-    float4 params = DrawParamsBuffer[iID];
+    
+    uint base_idx = iID * 6;
+    float4 params = DataBuffer[base_idx + 5];
     output.drawMode = (int)params.w;
     output.animType = params.x;
     output.fxType = params.y;
-    output.color = ColorBuffer[iID];
-    output.clipRect = ClippingBuffer[iID];
-    output.extraData.x = TileDataBuffer[iID].x;
-    output.extraData.y = MirrorBuffer[iID].y; // fontSlot passed through G channel
-    output.mirrorMode = (int)MirrorBuffer[iID].x;
+    output.color = DataBuffer[base_idx + 1];
+    output.clipRect = DataBuffer[base_idx + 4];
+    
+    float4 tileData = DataBuffer[base_idx + 2];
+    float4 mirrorData = DataBuffer[base_idx + 3];
+    
+    output.extraData.x = tileData.x;
+    output.extraData.y = mirrorData.y; // fontSlot passed through G channel
+    output.mirrorMode = (int)mirrorData.x;
 
-    float2 pos = PosSizeBuffer[iID].xy;
-    float2 size = PosSizeBuffer[iID].zw;
+    float2 pos = DataBuffer[base_idx + 0].xy;
+    float2 size = DataBuffer[base_idx + 0].zw;
 
     if (output.drawMode != MODE_TEXT && output.drawMode != MODE_NUMBER && vID >= 6) { output.position = 0; return; }
     if ((output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER) && (vID/6) >= MAX_CHARS) { output.position = 0; return; }
@@ -275,7 +276,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     else if (lID == 2) quadUv = float2(0,1);
     else quadUv = float2(1,0);
 
-    output.atlasRect = ComputeLayout(output.drawMode, vID, TileDataBuffer[iID], (uint)output.extraData.y, pos, size);
+    output.atlasRect = ComputeLayout(output.drawMode, vID, tileData, (uint)output.extraData.y, pos, size);
 
     bool allowExpand = (output.drawMode < MODE_BLUR_BG_START && output.drawMode != MODE_MASKED_BLUR);
     float2 expandVec = allowExpand ? (EXPAND_PX / ScreenRes) : float2(0,0);
@@ -290,7 +291,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     }
 
     float2 finalPos = ApplyAnimation(output.animType, expandedPos, expandedSize, quadUv);
-    float rotationTurns = MirrorBuffer[iID].w;
+    float rotationTurns = mirrorData.w;
     if (rotationTurns != 0.0) {
         // Конвертируем обороты (0.0 - 1.0) в радианы
         float a = rotationTurns * 6.2831853;

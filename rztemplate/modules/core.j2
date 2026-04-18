@@ -597,12 +597,7 @@ $ts = time
 
 {% macro menuDrawUi(mod_file,scene)%}
 [CustomShaderRCI2D_POPUP]
-cs-u0 = ResourceBuffer100
-cs-u1 = ResourceBuffer101
-cs-u2 = ResourceBuffer102
-
-cs-u6 = ResourceBuffer109
-cs-u7 = ResourceBuffer110
+cs-u0 = ResourceDataBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -659,12 +654,7 @@ x105 = 0
 $di_count = $di_count + 1
 $drawType = 0
 [CustomShaderRCI2D_SLIDER]
-cs-u0 = ResourceBuffer100
-cs-u1 = ResourceBuffer101
-cs-u2 = ResourceBuffer102
-
-cs-u6 = ResourceBuffer109
-cs-u7 = ResourceBuffer110
+cs-u0 = ResourceDataBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -730,12 +720,7 @@ endif
 $drawType = 0
 
 [CustomShaderRCI2D_SLIDER.TEXT]
-cs-u0 = ResourceBuffer100
-cs-u1 = ResourceBuffer101
-cs-u2 = ResourceBuffer102
-
-cs-u6 = ResourceBuffer109
-cs-u7 = ResourceBuffer110
+cs-u0 = ResourceDataBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -822,12 +807,7 @@ $drawType = 3
 if $TextIsData == 1
 $drawType = 4
 endif
-cs-u0 = ResourceBuffer100
-cs-u1 = ResourceBuffer101
-cs-u2 = ResourceBuffer102
-
-cs-u6 = ResourceBuffer109
-cs-u7 = ResourceBuffer110
+cs-u0 = ResourceDataBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -870,12 +850,7 @@ $di_count = $di_count + 1
 $TextIsData = 0
 $drawType = 0
 [CustomShaderRCI2D_HOVERTEXT]
-cs-u0 = ResourceBuffer100
-cs-u1 = ResourceBuffer101
-cs-u2 = ResourceBuffer102
-
-cs-u6 = ResourceBuffer109
-cs-u7 = ResourceBuffer110
+cs-u0 = ResourceDataBuffer
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -953,13 +928,7 @@ dispatch = 1, 1, 1
 $di_count = $di_count + 1
 $drawType = 0
 [CustomShaderRCI2D]
-cs-u0 = ResourceBuffer100
-cs-u1 = ResourceBuffer101
-cs-u2 = ResourceBuffer102
-
-cs-u5 = ResourceBuffer105
-cs-u6 = ResourceBuffer109
-cs-u7 = ResourceBuffer110
+cs-u0 = ResourceDataBuffer
 
 cs = /modules/draw_controller.hlsl
 
@@ -1034,13 +1003,8 @@ $drawType = 0
 [ResourceBB]
 [CustomShaderDI2D]
 ResourceBB = copy_desc bb
-vs-t100 = ref ResourceBuffer100
-vs-t101 = ref ResourceBuffer101
-vs-t102 = ref ResourceBuffer102
+vs-t100 = ref ResourceDataBuffer
 vs-t103 = ref ResourceText
-vs-t105 = ref ResourceBuffer105
-vs-t109 = ref ResourceBuffer109
-vs-t110 = ref ResourceBuffer110
 
 w98 = time % 1
 x99 = $cursorX / $ScreenW
@@ -1064,12 +1028,7 @@ ps-t85 = ResourceFont3
 {% endif -%}
 run = CustomShaderDI2D.PASS0.BLUR
 run = CustomShaderDI2D.PASS.MAIN
-clear = ResourceBuffer100
-clear = ResourceBuffer101
-clear = ResourceBuffer102
-clear = ResourceBuffer105
-clear = ResourceBuffer109
-clear = ResourceBuffer110
+clear = ResourceDataBuffer
 
 
 [CustomShaderDI2D.PASS0.BLUR]
@@ -1165,31 +1124,10 @@ o0 = set_viewport no_view_cache bb
 DrawInstanced = 192, 1024, 0, 0
 
 
-[ResourceBuffer100]
+[ResourceDataBuffer]
 type = RWBuffer
 format = R32G32B32A32_FLOAT
-array = 1024
-[ResourceBuffer101]
-type = RWBuffer
-format = R32G32B32A32_FLOAT
-array = 1024
-[ResourceBuffer102]
-type = RWBuffer
-format = R32G32B32A32_FLOAT
-array = 1024
-
-[ResourceBuffer105]
-type = RWBuffer
-format = R32G32B32A32_FLOAT
-array = 1024
-[ResourceBuffer109]
-type = RWBuffer
-format = R32G32B32A32_FLOAT
-array = 1024
-[ResourceBuffer110]
-type = RWBuffer
-format = R32G32B32A32_FLOAT
-array = 1024
+array = 8192
 
 [ResourceText]
 type = Buffer
