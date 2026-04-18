@@ -90,7 +90,7 @@ struct CharMetrics {
 
 CharMetrics FetchCharMetrics(uint c, uint fontSlot) {
     CharMetrics m = (CharMetrics)0;
-    if (c < 32 || c >= 127) c = 32;
+    if (c < 32) c = 32;
     uint w = 0, h = 0; 
     
     if (fontSlot == 1) AtlasFont1.GetDimensions(w, h);
@@ -102,8 +102,7 @@ CharMetrics FetchCharMetrics(uint c, uint fontSlot) {
 
     float cs = (float)(w / FONT_GRID_SIZE);
     uint idx = c - 32;
-    uint metaH = h / (uint)cs - 6; 
-    uint metaY = (h / (uint)cs - metaH) * (uint)cs;
+    uint metaY = h - (uint)cs;
     
     int3 p1 = int3(idx % w, metaY + (idx/w)*2, 0);
     int3 p2 = int3(idx % w, metaY + (idx/w)*2 + 1, 0);

@@ -40,6 +40,13 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
                 self.report({'ERROR'}, f"Could not create output directory: {e}")
                 return {'CANCELLED'}
 
+        # Force text pack to build the character map cache BEFORE fonts are generated
+        try:
+            from ..core.text_packer import pack_project_text
+            pack_project_text(scene, out_dir)
+        except Exception as e:
+            self.report({'WARNING'}, f"Failed to pre-pack text for font mapping: {e}")
+
         # Determine which slots are actually used in the UI
         used_slots = set()
         for elem in rzm.elements:
@@ -129,8 +136,14 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
         density = slot.density
         
         grid_size = 16
-        num_chars = 95
-        rows_glyphs = 6
+        
+        from ..core.text_packer import RZMTextMapCache
+        import math, os
+        custom_chars = RZMTextMapCache.custom_chars
+                
+        base_ascii_len = 96 # 32 to 127 inclusive
+        num_chars = base_ascii_len + len(custom_chars)
+        rows_glyphs = math.ceil(num_chars / grid_size)
         rows_meta = 1
         
         img_w = int(grid_size * cell_size)
@@ -171,8 +184,10 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
         pen_y = int(cell_size * 0.75)
         
         for i in range(num_chars):
-            char_code = i + 32
-            char = chr(char_code)
+            if i < base_ascii_len:
+                char = chr(i + 32)
+            else:
+                char = custom_chars[i - base_ascii_len]
             
             col = i % grid_size
             row = i // grid_size
@@ -205,8 +220,11 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
             d1_r, d1_g, d1_b, d1_a = [max(0, min(255, v)) for v in (d1_r, d1_g, d1_b, d1_a)]
             d2_r = max(0, min(255, d2_r))
             
-            atlas.putpixel((i, meta_y), (d1_r, d1_g, d1_b, d1_a))
-            atlas.putpixel((i, meta_y + 1), (d2_r, d2_g, d2_b, d2_a))
+            meta_x = i % img_w
+            meta_y_offset = (i // img_w) * 2
+            
+            atlas.putpixel((meta_x, meta_y + meta_y_offset), (d1_r, d1_g, d1_b, d1_a))
+            atlas.putpixel((meta_x, meta_y + meta_y_offset + 1), (d2_r, d2_g, d2_b, d2_a))
             
         atlas.save(output_path)
 

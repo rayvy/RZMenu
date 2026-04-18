@@ -3,6 +3,11 @@ import os
 import struct
 import bpy
 
+import struct
+
+class RZMTextMapCache:
+    custom_chars = []
+    
 def resolve_meta_text(text, scene, element, host=None):
     """
     Replicates the logic of resolve_meta_var from utils.j2 in Python.
@@ -89,50 +94,35 @@ def resolve_meta_text(text, scene, element, host=None):
         
     return resolved_text
 
+import json
+
 def pack_project_text(scene, export_dir):
     """
     Collects all text from the scene elements, resolves meta-variables,
-    packs it into a binary file, and returns a mapping.
+    builds a dynamic character map, packs it into a 16-bit binary file,
+    and returns a mapping of element IDs to (offset, length).
     """
     rzm = scene.rzm
-    text_buffer = []
-    current_offset = 0
-    mapping = {
-        'single': {}, # (element_id, host_id) -> (offset, length)
-        'conditional': {} # (element_id, host_id, index) -> (offset, length)
-    }
-
-    def add_to_buffer(text, key, subgroup, element, host=None):
-        nonlocal current_offset
-        
-        # Resolve meta-variables (~PT, etc.)
+    
+    # Pass 1: Collect resolved strings
+    collected_strings = []
+    
+    def collect(text, key, subgroup, element, host=None):
         resolved = resolve_meta_text(text, scene, element, host)
-        
-        # For Stage 1: ASCII
-        try:
-            encoded_text = resolved.encode('ascii', errors='ignore')
-        except:
-            encoded_text = b"ERROR"
-
-        length = len(encoded_text)
-        offset = current_offset
-        text_buffer.append(encoded_text)
-        current_offset += length
-        mapping[subgroup][key] = (offset, length)
-        return offset, length
+        collected_strings.append({'resolved': resolved, 'key': key, 'subgroup': subgroup})
 
     # 1. Regular Elements
     for element in rzm.elements:
         if not element.is_helper and not element.disable_export:
             if element.text_id:
-                add_to_buffer(element.text_id, (element.id, -1), 'single', element)
+                collect(element.text_id, (element.id, -1), 'single', element)
             
             if element.text_mode == 'CONDITIONAL_LIST':
                 for i, item in enumerate(element.conditional_texts):
-                    add_to_buffer(item.text_id, (element.id, -1, i), 'conditional', element)
+                    collect(item.text_id, (element.id, -1, i), 'conditional', element)
 
             if element.hover_text_id:
-                add_to_buffer(element.hover_text_id, (element.id, -1, 'hover'), 'single', element)
+                collect(element.hover_text_id, (element.id, -1, 'hover'), 'single', element)
 
     # 2. Helpers
     for host in rzm.elements:
@@ -141,23 +131,71 @@ def pack_project_text(scene, export_dir):
                 helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
                 if helper:
                     if helper.text_id:
-                        add_to_buffer(helper.text_id, (helper.id, host.id), 'single', helper, host)
+                        collect(helper.text_id, (helper.id, host.id), 'single', helper, host)
                     
                     if helper.text_mode == 'CONDITIONAL_LIST':
                         for i, item in enumerate(helper.conditional_texts):
-                            add_to_buffer(item.text_id, (helper.id, host.id, i), 'conditional', helper, host)
+                            collect(item.text_id, (helper.id, host.id, i), 'conditional', helper, host)
                             
                     if helper.hover_text_id:
-                        add_to_buffer(helper.hover_text_id, (helper.id, host.id, 'hover'), 'single', helper, host)
+                        collect(helper.hover_text_id, (helper.id, host.id, 'hover'), 'single', helper, host)
 
-    # Save to file
+    # Pass 2: Build Char Map
+    custom_chars = []
+    seen_chars = set()
+    for item in collected_strings:
+        for c in item['resolved']:
+            ord_c = ord(c)
+            # Use standard ASCII 32-126. Anything outside needs a mapping slot.
+            if ord_c < 32 or ord_c > 126:
+                if c not in seen_chars:
+                    seen_chars.add(c)
+                    custom_chars.append(c)
+
+    # Sort to ensure determinism across exports with same chars
+    custom_chars.sort()
+
+    char_to_code = {}
+    for i in range(32, 128):
+        char_to_code[chr(i)] = i
+    
+    for i, c in enumerate(custom_chars):
+        char_to_code[c] = 128 + i
+
+    # Store in memory for font generator
+    RZMTextMapCache.custom_chars = custom_chars
+
+    # Pass 3: Encode and Pack (16-bit uints)
+    mapping = {
+        'single': {}, 
+        'conditional': {} 
+    }
+    
+    text_buffer = bytearray()
+    current_offset = 0  # Offset in elements (characters), not bytes
+
+    for item in collected_strings:
+        resolved = item['resolved']
+        key = item['key']
+        subgroup = item['subgroup']
+        
+        encoded_len = len(resolved)
+        for c in resolved:
+            code = char_to_code.get(c, 32) # Space fallback
+            # Pack as 16-bit unsigned integer (little-endian)
+            text_buffer.extend(struct.pack('<H', code))
+            
+        offset = current_offset
+        current_offset += encoded_len
+        mapping[subgroup][key] = (offset, encoded_len)
+
+    # Save to files
     res_dir = os.path.join(export_dir, "res")
     os.makedirs(res_dir, exist_ok=True)
+    
     bin_path = os.path.join(res_dir, "texts.bin")
-
     with open(bin_path, 'wb') as f:
-        for chunk in text_buffer:
-            f.write(chunk)
+        f.write(text_buffer)
 
     return mapping
 
