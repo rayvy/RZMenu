@@ -600,7 +600,7 @@ $ts = time
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
-;cs-u3 = ResourceBuffer103
+
 cs-u6 = ResourceBuffer109
 cs-u7 = ResourceBuffer110
 cs = /modules/draw_controller.hlsl
@@ -662,7 +662,7 @@ $drawType = 0
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
-;cs-u3 = ResourceBuffer103
+
 cs-u6 = ResourceBuffer109
 cs-u7 = ResourceBuffer110
 cs = /modules/draw_controller.hlsl
@@ -733,7 +733,7 @@ $drawType = 0
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
-;cs-u3 = ResourceBuffer103
+
 cs-u6 = ResourceBuffer109
 cs-u7 = ResourceBuffer110
 cs = /modules/draw_controller.hlsl
@@ -825,7 +825,7 @@ endif
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
-;cs-u3 = ResourceBuffer103
+
 cs-u6 = ResourceBuffer109
 cs-u7 = ResourceBuffer110
 cs = /modules/draw_controller.hlsl
@@ -873,7 +873,7 @@ $drawType = 0
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
-;cs-u3 = ResourceBuffer103
+
 cs-u6 = ResourceBuffer109
 cs-u7 = ResourceBuffer110
 cs = /modules/draw_controller.hlsl
@@ -956,7 +956,7 @@ $drawType = 0
 cs-u0 = ResourceBuffer100
 cs-u1 = ResourceBuffer101
 cs-u2 = ResourceBuffer102
-;cs-u3 = ResourceBuffer103
+
 cs-u5 = ResourceBuffer105
 cs-u6 = ResourceBuffer109
 cs-u7 = ResourceBuffer110
@@ -1037,7 +1037,7 @@ ResourceBB = copy_desc bb
 vs-t100 = ref ResourceBuffer100
 vs-t101 = ref ResourceBuffer101
 vs-t102 = ref ResourceBuffer102
-vs-t103 = ref ResourceBuffer103
+vs-t103 = ref ResourceText
 vs-t105 = ref ResourceBuffer105
 vs-t109 = ref ResourceBuffer109
 vs-t110 = ref ResourceBuffer110
@@ -1067,7 +1067,6 @@ run = CustomShaderDI2D.PASS.MAIN
 clear = ResourceBuffer100
 clear = ResourceBuffer101
 clear = ResourceBuffer102
-;clear = ResourceBuffer103
 clear = ResourceBuffer105
 clear = ResourceBuffer109
 clear = ResourceBuffer110
@@ -1178,10 +1177,7 @@ array = 1024
 type = RWBuffer
 format = R32G32B32A32_FLOAT
 array = 1024
-[ResourceBuffer103]
-type = Buffer
-format = R16_UINT
-filename = .\res\texts.bin
+
 [ResourceBuffer105]
 type = RWBuffer
 format = R32G32B32A32_FLOAT
@@ -1195,6 +1191,10 @@ type = RWBuffer
 format = R32G32B32A32_FLOAT
 array = 1024
 
+[ResourceText]
+type = Buffer
+format = R16_UINT
+filename = .\res\texts.bin
 
 [Constants]
 global $debugTexShow = 0
