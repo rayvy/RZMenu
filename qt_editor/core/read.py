@@ -319,11 +319,23 @@ def get_selection_details(selected_ids, active_id):
             if not selection: return default
             vals = []
             for e in selection:
-                if not hasattr(e, prop_name): 
-                    vals.append(default)
-                    continue
-                raw = getattr(e, prop_name)
-                val = raw[sub_idx] if sub_idx is not None else raw
+                # Handle nested properties like "mesh.mesh_offset"
+                if "." in prop_name:
+                    parts = prop_name.split(".")
+                    obj = e
+                    for p in parts[:-1]:
+                        obj = getattr(obj, p, None)
+                    if obj is None or not hasattr(obj, parts[-1]):
+                        vals.append(default)
+                        continue
+                    val = getattr(obj, parts[-1])
+                else:
+                    if not hasattr(e, prop_name): 
+                        vals.append(default)
+                        continue
+                    raw = getattr(e, prop_name)
+                    val = raw[sub_idx] if sub_idx is not None else raw
+                
                 # Handle special types like color
                 if prop_name == "color": val = tuple(val)
                 vals.append(val)
@@ -507,7 +519,12 @@ def get_selection_details(selected_ids, active_id):
             "template_prefab": get_uniform("template_prefab", default="MAIN_BLOCK"),
 
             # Run Link binding (per-element, not per-variable)
+            # Run Link binding (per-element, not per-variable)
             "run_link_id": get_uniform("run_link_id", default=-1),
+
+            # Live2D Mesh & Skeleton
+            "mesh_offset": get_uniform("mesh.mesh_offset", default=0),
+            "skeleton_name": getattr(bpy.context.scene.rzm.skeleton, "skeleton_name", "") if hasattr(bpy.context.scene.rzm, "skeleton") else "",
         }
 
         return data

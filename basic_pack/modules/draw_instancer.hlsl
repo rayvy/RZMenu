@@ -21,6 +21,9 @@ Buffer<float4>    DataBuffer : register(t100);
 Buffer<uint>      IndexBuffer : register(t104);
 Buffer<uint>      TextPoolBuffer : register(t103);
 Buffer<float4>    ResourceStyleBuffer : register(t105);
+Buffer<float4>    BoneBuffer : register(t106);
+Buffer<float4>    MeshVertexBuffer : register(t107);
+Buffer<float4>    SkinWeightBuffer : register(t108);
 
 Texture2D<float4> AtlasIcons : register(t80);
 Texture2D<float4> AtlasFont0 : register(t82);
@@ -42,6 +45,7 @@ static const int MODE_TEX_OVERLAY = 1;
 static const int MODE_TEX_MULTIPLY = 2;
 static const int MODE_TEXT = 3;
 static const int MODE_NUMBER = 4;
+static const int MODE_LIVE2D = 9;
 
 // --- NEW MODES ---
 static const int MODE_COLOR_REPLACE = 21; 
@@ -71,6 +75,7 @@ static const int ANIM_DISINTEGRATE = 3;
 #define BIT_BLUR_MASK   (1u << 11)
 
 static const uint MAX_CHARS = 32;
+static const uint MAX_LIVE2D_CELLS = 256;
 static const uint FONT_GRID_SIZE = 16;
 static const float EXPAND_PX = 30.0; 
 
@@ -80,6 +85,58 @@ float3 HsvToRgb(float3 c) {
     float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
     float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
     return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+// --- LIVE2D SKINNING ---
+
+float2 ApplyLive2DSkinning(uint vID, uint iID, uint base_idx, float2 size) {
+    uint cellIdx = vID / 6;
+    // Найти element mesh offset из DataBuffer (8-й слот, x)
+    uint meshOffset = asuint(DataBuffer[base_idx + 7].x);
+    uint vBase = meshOffset + cellIdx;
+    uint wBase = vBase * 2; // 2 float4 на вершину в SkinWeightBuffer
+    
+    // Читаем rest position и UV для этой вершины
+    float4 meshData = MeshVertexBuffer[vBase];
+    float2 restPos = meshData.xy; // В координатах 0-1 относительно элемента
+    
+    // Читаем skinning weights
+    float4 skin0 = SkinWeightBuffer[wBase + 0]; // [b0, w0, b1, w1]
+    float4 skin1 = SkinWeightBuffer[wBase + 1]; // [b2, w2, b3, w3]
+    
+    float2 deformed = float2(0, 0);
+    bool anyWeight = false;
+
+    [unroll]
+    for (int i = 0; i < 4; i++) {
+        float boneId = (i < 2) ? skin0[i*2] : skin1[(i-2)*2];
+        float weight = (i < 2) ? skin0[i*2+1] : skin1[(i-2)*2+1];
+        
+        if (boneId >= 0 && weight > 0.001) {
+            int bi = (int)boneId * 3;
+            float4 bm0 = BoneBuffer[bi + 0]; // (wx, wy, cos, sin)
+            float4 bm1 = BoneBuffer[bi + 1]; // (sx, sy, parentID, flags)
+            float4 bm2 = BoneBuffer[bi + 2]; // (pivotX, pivotY, restX, restY)
+            
+            // 1. Координата относительно "покоя" кости
+            float2 local = restPos - bm2.zw; 
+            // 2. Относительно пивота
+            local -= bm2.xy;
+            
+            // 3. Масштаб и вращение
+            float2 s = local * bm1.xy;
+            float2 r = float2(
+                s.x * bm0.z - s.y * bm0.w,
+                s.x * bm0.w + s.y * bm0.z
+            );
+            
+            // 4. Мировая позиция кости + пивот + вращенная дельта
+            deformed += (bm0.xy + bm2.xy + r) * weight;
+            anyWeight = true;
+        }
+    }
+    
+    return anyWeight ? deformed : restPos;
 }
 
 // --- STRUCTURES ---
@@ -282,8 +339,12 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     float2 pos = DataBuffer[base_idx + 1].xy;
     float2 size = DataBuffer[base_idx + 1].zw;
 
-    if (output.drawMode != MODE_TEXT && output.drawMode != MODE_NUMBER && vID >= 6) { output.position = 0; return; }
-    if ((output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER) && (vID/6) >= MAX_CHARS) { output.position = 0; return; }
+    bool isText = (output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER);
+    bool isLive2D = (output.drawMode == MODE_LIVE2D);
+
+    if (!isText && !isLive2D && vID >= 6) { output.position = 0; return; }
+    if (isText && (vID/6) >= MAX_CHARS) { output.position = 0; return; }
+    if (isLive2D && (vID/6) >= MAX_LIVE2D_CELLS) { output.position = 0; return; }
 
     uint styleFlags = 0;
     int styleBaseIdx = -1;
@@ -311,7 +372,16 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     else if (lID == 2) quadUv = float2(0,1);
     else quadUv = float2(1,0);
 
-    output.atlasRect = ComputeLayout(output.drawMode, vID, tileData, (uint)output.extraData.y, pos, size);
+    if (isLive2D) {
+        float2 skinPos = ApplyLive2DSkinning(vID, iID, base_idx, size);
+        // Live2D возвращает координаты в нормализованном пространстве экрана или элемента?
+        // Будем считать что в координатах экрана (0-1), как и обычный pos
+        pos = skinPos;
+        output.atlasRect = float4(MeshVertexBuffer[asuint(DataBuffer[base_idx+7].x) + (vID/6)].zw, 1, 1); 
+        // В Live2D режиме atlasRect.xy — это UV из буфера меша
+    } else {
+        output.atlasRect = ComputeLayout(output.drawMode, vID, tileData, (uint)output.extraData.y, pos, size);
+    }
 
     bool allowExpand = (output.drawMode < MODE_BLUR_BG_START && output.drawMode != MODE_MASKED_BLUR);
     float2 expandVec = allowExpand ? (EXPAND_PX / ScreenRes) : float2(0,0);
@@ -321,7 +391,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
 
     output.contentUV = (quadUv * expandedSize - expandVec) / size;
 
-    if (output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER) {
+    if (isText) {
         output.contentUV.y = 1.0 - output.contentUV.y;
     }
 

@@ -4,6 +4,7 @@ import bpy
 from pathlib import Path
 from .text_packer import get_text_mapping_for_j2
 from .style_packer import pack_styles
+from .live2d.exporter import pack_live2d_data
 
 # Add libs to sys.path so we can import jinja2
 ADDON_DIR = Path(__file__).parent.parent
@@ -75,6 +76,7 @@ class RZMenuJ2Exporter:
             if export_path:
                 text_map = get_text_mapping_for_j2(scene, export_path)
                 pack_styles(scene, export_path)
+                num_bones, max_mesh_v = pack_live2d_data(scene, export_path)
             else:
                 text_map = {'single': {}, 'conditional': {}}
         except Exception as e:

@@ -1062,6 +1062,12 @@ vs-t104 = ref ResourceIndexBuffer
 vs-t103 = ref ResourceText
 vs-t105 = ref ResourceStyleBuffer
 ps-t105 = ref ResourceStyleBuffer
+vs-t106 = ref ResourceBoneBuffer
+vs-t107 = ref ResourceMeshVertexBuffer
+vs-t108 = ref ResourceSkinWeightBuffer
+vs-t109 = ref ResourceAnimatedBoneBuffer
+
+run = CustomShaderDI2D.PASS.ANIMATE
 
 
 w98 = time % 1
@@ -1172,15 +1178,22 @@ topology = triangle_list
 o0 = set_viewport no_view_cache ResourceBB
 Draw = 6,0
 ps-t90 = copy o0
+
+[CustomShaderDI2D.PASS.ANIMATE]
+cs = /modules/animate_bones.hlsl
+cs-t106 = ref ResourceBoneBuffer
+cs-u7 = ref ResourceAnimatedBoneBuffer
+dispatch = 1, 1, 1
+
 [CustomShaderDI2D.PASS.MAIN]
-vs = /modules/draw_instancer.hlsl
-ps = /modules/draw_instancer.hlsl
+vs = /modules/draw_instancer_vs.hlsl
+ps = /modules/draw_instancer_ps.hlsl
 run = BuiltInCommandListUnbindAllRenderTargets
 blend = ADD SRC_ALPHA INV_SRC_ALPHA
 cull = none
 topology = triangle_list
 o0 = set_viewport no_view_cache bb
-DrawInstanced = 192, 1024, 0, 0
+DrawInstanced = 1536, 1024, 0, 0
 
 
 [ResourceIndexBuffer]
@@ -1196,12 +1209,37 @@ array = 8192
 [ResourceText]
 type = Buffer
 format = R16_UINT
-filename = .\res\texts.bin
+filename = texts.bin
 
 [ResourceStyleBuffer]
 type = Buffer
 format = R32G32B32A32_FLOAT
-filename = .\res\styles.bin
+filename = styles.bin
+
+[ResourceBoneBuffer]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\bones.bin
+
+[ResourceMeshVertexBuffer]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\mesh.bin
+
+[ResourceSkinWeightBuffer]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\weights.bin
+
+[ResourceAnimatedBoneBuffer]
+type = RWBuffer
+format = R32G32B32A32_FLOAT
+array = 512
+
+[ResourceAnimationBuffer]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\animations.bin
 
 [Constants]
 global $debugTexShow = 0

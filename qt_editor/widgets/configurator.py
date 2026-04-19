@@ -916,6 +916,203 @@ class ProfilesTab(BaseConfigTab):
         self._call_op("sync_profile_slots")
 
 
+class SkeletonTab(BaseConfigTab):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_ui()
+
+    def _init_ui(self):
+        l_skeleton = self.add_section("Skeleton Management")
+        
+        h_ctrl = QtWidgets.QHBoxLayout()
+        btn_add = RZPushButton("✚ Add Bone")
+        btn_add.clicked.connect(lambda: self._call_op("add_bone"))
+        btn_rem = RZPushButton("✖ Remove Bone")
+        btn_rem.clicked.connect(lambda: self._call_op("remove_bone"))
+        h_ctrl.addWidget(btn_add); h_ctrl.addWidget(btn_rem)
+        l_skeleton.addLayout(h_ctrl)
+
+        self.bone_list = QtWidgets.QListWidget()
+        self.bone_list.setFixedHeight(150)
+        self.bone_list.currentRowChanged.connect(self._on_bone_selected)
+        l_skeleton.addWidget(self.bone_list)
+
+        # Bone Properties
+        self.grp_bone = RZGroupBox("Bone Properties")
+        l_bone = QtWidgets.QVBoxLayout(self.grp_bone)
+        
+        self.inp_name = RZLineEdit()
+        self.inp_name.editingFinished.connect(self._on_bone_data_changed)
+        l_bone.addWidget(RZLabel("Name:"))
+        l_bone.addWidget(self.inp_name)
+
+        self.inp_parent = RZLineEdit()
+        self.inp_parent.editingFinished.connect(self._on_bone_data_changed)
+        l_bone.addWidget(RZLabel("Parent Name:"))
+        l_bone.addWidget(self.inp_parent)
+
+        from .lib.base import RZSmartSlider
+        self.sl_pos_x = RZSmartSlider(label_text="Pos X", is_int=False)
+        self.sl_pos_y = RZSmartSlider(label_text="Pos Y", is_int=False)
+        self.sl_rot = RZSmartSlider(label_text="Rotation", is_int=False)
+        self.sl_rot.spin.setRange(-360.0, 360.0)
+        
+        self.sl_pos_x.value_changed.connect(self._on_bone_data_changed)
+        self.sl_pos_y.value_changed.connect(self._on_bone_data_changed)
+        self.sl_rot.value_changed.connect(self._on_bone_data_changed)
+        
+        l_bone.addWidget(self.sl_pos_x); l_bone.addWidget(self.sl_pos_y); l_bone.addWidget(self.sl_rot)
+        
+        l_skeleton.addWidget(self.grp_bone)
+        self.scroll_layout.addStretch()
+
+    def update_ui(self):
+        self._block = True
+        try:
+            if not bpy.context or not bpy.context.scene: return
+            skel = bpy.context.scene.rzm.skeleton
+            
+            # Sync List
+            if self.bone_list.count() != len(skel.bones):
+                self.bone_list.clear()
+                for b in skel.bones:
+                    self.bone_list.addItem(b.name or "Unnamed Bone")
+            
+            active_idx = skel.active_bone_index
+            if self.bone_list.currentRow() != active_idx:
+                self.bone_list.blockSignals(True)
+                self.bone_list.setCurrentRow(active_idx)
+                self.bone_list.blockSignals(False)
+            
+            # Sync Fields
+            self.grp_bone.setVisible(0 <= active_idx < len(skel.bones))
+            if 0 <= active_idx < len(skel.bones):
+                b = skel.bones[active_idx]
+                if not self.inp_name.hasFocus(): self.inp_name.setText(b.name)
+                if not self.inp_parent.hasFocus(): self.inp_parent.setText(b.parent_name)
+                self.sl_pos_x.set_value(b.pos[0], emit_signal=False)
+                self.sl_pos_y.set_value(b.pos[1], emit_signal=False)
+                self.sl_rot.set_value(b.rot, emit_signal=False)
+        finally:
+            self._block = False
+
+    def _on_bone_selected(self, idx):
+        if self._block: return
+        try:
+            bpy.context.scene.rzm.skeleton.active_bone_index = idx
+        except: pass
+
+    def _on_bone_data_changed(self, *args):
+        if self._block: return
+        idx = self.bone_list.currentRow()
+        if idx < 0: return
+        
+        b = bpy.context.scene.rzm.skeleton.bones[idx]
+        b.name = self.inp_name.text()
+        b.parent_name = self.inp_parent.text()
+        b.pos[0] = self.sl_pos_x.get_value()
+        b.pos[1] = self.sl_pos_y.get_value()
+        b.rot = self.sl_rot.get_value()
+        # Force redraw list items if name changed
+        self.update_ui()
+
+
+class AnimationTab(BaseConfigTab):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_ui()
+
+    def _init_ui(self):
+        l_anim = self.add_section("Animations")
+        
+        h_ctrl = QtWidgets.QHBoxLayout()
+        btn_add = RZPushButton("✚ Add Anim")
+        btn_add.clicked.connect(lambda: self._call_op("add_animation"))
+        btn_rem = RZPushButton("✖ Remove Anim")
+        btn_rem.clicked.connect(lambda: self._call_op("remove_animation"))
+        h_ctrl.addWidget(btn_add); h_ctrl.addWidget(btn_rem)
+        l_anim.addLayout(h_ctrl)
+
+        self.anim_list = QtWidgets.QListWidget()
+        self.anim_list.setFixedHeight(100)
+        self.anim_list.currentRowChanged.connect(self._on_anim_selected)
+        l_anim.addWidget(self.anim_list)
+
+        self.grp_tracks = RZGroupBox("Animation Properties")
+        l_tracks = QtWidgets.QVBoxLayout(self.grp_tracks)
+        
+        h_dur = QtWidgets.QHBoxLayout()
+        h_dur.addWidget(RZLabel("Duration:"))
+        self.spin_dur = RZDoubleSpinBox()
+        self.spin_dur.setRange(0.01, 60.0)
+        self.spin_dur.valueChanged.connect(self._on_anim_data_changed)
+        h_dur.addWidget(self.spin_dur)
+        l_tracks.addLayout(h_dur)
+
+        self.chk_loop = RZCheckBox("Looping")
+        self.chk_loop.toggled.connect(self._on_anim_data_changed)
+        l_tracks.addWidget(self.chk_loop)
+        
+        l_tracks.addWidget(RZLabel("Bone Tracks:"))
+        self.track_list = QtWidgets.QListWidget()
+        self.track_list.setFixedHeight(100)
+        l_tracks.addWidget(self.track_list)
+        
+        btn_add_track = RZPushButton("✚ Add Bone Track")
+        l_tracks.addWidget(btn_add_track)
+        
+        l_anim.addWidget(self.grp_tracks)
+        self.scroll_layout.addStretch()
+
+    def update_ui(self):
+        self._block = True
+        try:
+            if not bpy.context or not bpy.context.scene: return
+            skel = bpy.context.scene.rzm.skeleton
+            
+            # Sync Animation List
+            if self.anim_list.count() != len(skel.animations):
+                self.anim_list.clear()
+                for a in skel.animations:
+                    self.anim_list.addItem(a.name or "Unnamed Anim")
+            
+            active_idx = skel.active_anim_index
+            if self.anim_list.currentRow() != active_idx:
+                self.anim_list.blockSignals(True)
+                self.anim_list.setCurrentRow(active_idx)
+                self.anim_list.blockSignals(False)
+            
+            # Sync Fields
+            self.grp_tracks.setVisible(active_idx >= 0)
+            if active_idx >= 0:
+                a = skel.animations[active_idx]
+                if not self.spin_dur.hasFocus(): self.spin_dur.setValue(a.duration)
+                if not self.chk_loop.hasFocus(): self.chk_loop.setChecked(a.loop)
+                
+                # Sync Track List
+                if self.track_list.count() != len(a.tracks):
+                    self.track_list.clear()
+                    for t in a.tracks:
+                        self.track_list.addItem(t.bone_name or "Unknown Bone")
+        finally:
+            self._block = False
+
+    def _on_anim_selected(self, idx):
+        if self._block: return
+        try:
+            bpy.context.scene.rzm.skeleton.active_anim_index = idx
+            self.update_ui()
+        except: pass
+
+    def _on_anim_data_changed(self, *args):
+        if self._block: return
+        idx = self.anim_list.currentRow()
+        if idx < 0: return
+        a = bpy.context.scene.rzm.skeleton.animations[idx]
+        a.duration = self.spin_dur.value()
+        a.loop = self.chk_loop.isChecked()
+
+
 class RZConfiguratorManager(QtWidgets.QWidget):
     """
     Main widget for the Configurator Panel.
@@ -942,6 +1139,8 @@ class RZConfiguratorManager(QtWidgets.QWidget):
         self.tabs = [] # List of (Name, WidgetInstance)
         
         self.add_tab("General", GeneralTab())
+        self.add_tab("Skeleton", SkeletonTab())
+        self.add_tab("Animations", AnimationTab())
         self.add_tab("Fonts", FontsTab())
         self.add_tab("Mod Info", ModInfoTab())
         self.add_tab("Profiles", ProfilesTab())

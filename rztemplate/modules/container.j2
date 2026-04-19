@@ -112,6 +112,11 @@ Local $current_sizeY
     {%elif class_name == 'VECTOR_BOX'%}
         run = CommandList{{ element.element_name }}Helper
         run = CustomShaderRCI2D
+    {%elif class_name == 'LIVE2D'%}
+        z110 = {{ element.mesh.mesh_offset | default(0) }}
+        w110 = 9
+        {{generate_image(element,parent_element,scene)}}
+        run = CustomShaderRCI2D
     {%elif class_name == 'TEXT'%}
         {{generate_text(element)}}
         {{generate_fx(element)}}

@@ -121,11 +121,11 @@ PROP_MAP = {
     "trackable": ("trackable", None, 'D'),
     "run_link_id": ("run_link_id",None, 'D'),
 
-    # SVG Modifiers
-    "svg_scale": ("svg_scale", None, 'T'),
     "svg_offset_x": ("svg_offset", 0, 'T'),
     "svg_offset_y": ("svg_offset", 1, 'T'),
 
+    # Live2D
+    "mesh_offset": ("mesh.mesh_offset", None, 'D'),
 }
 
 from ..utils import logger
@@ -193,6 +193,28 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
 
         changed = False
         for elem in targets:
+            # Handle nested pointer properties
+            if "." in bl_prop:
+                parts = bl_prop.split(".")
+                obj = elem
+                for p in parts[:-1]:
+                    obj = getattr(obj, p, None)
+                
+                if obj and hasattr(obj, parts[-1]):
+                    raw_val = getattr(obj, parts[-1])
+                    target_val = value
+                    
+                    # Auto-cast
+                    if isinstance(raw_val, int) and not isinstance(raw_val, bool):
+                        try: target_val = int(value)
+                        except: pass
+                    
+                    if raw_val != target_val:
+                        setattr(obj, parts[-1], target_val)
+                        changed = True
+                continue
+
+            # Standard properties
             if not hasattr(elem, bl_prop):
                 continue
             
@@ -224,10 +246,9 @@ def update_property_multi(target_ids, prop_name, value, sub_index=None, fast_mod
                 target_val = value
                 
                 # Check if it's an Int type property in Blender
-                # We can detect this if raw_val is int or if the property is known to be int
                 if isinstance(raw_val, int) and not isinstance(raw_val, bool):
-                    try: target_val = int(value)
-                    except: pass
+                     try: target_val = int(value)
+                     except: pass
 
                 if raw_val != target_val:
                     setattr(elem, bl_prop, target_val)

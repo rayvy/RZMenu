@@ -89,7 +89,7 @@ def pack_styles(scene, export_dir):
     res_dir = os.path.join(export_dir, "res")
     os.makedirs(res_dir, exist_ok=True)
 
-    bin_path = os.path.join(res_dir, "styles.bin")
+    bin_path = os.path.join(export_dir, "styles.bin")
     with open(bin_path, 'wb') as f:
         f.write(style_buffer)
 

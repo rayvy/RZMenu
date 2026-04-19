@@ -992,6 +992,8 @@ class RZMInspectorPanel(RZEditorPanel):
             ("Identity", "grp_ident"),
             ("Transform", "grp_trans"),
             ("Appearance", "grp_style"),
+            ("Vector", "grp_vector"),
+            ("Mesh", "grp_mesh"),
             ("Text", "grp_text"),
             ("Logic", "grp_logic"),
             ("Events", "grp_events"),
@@ -1276,6 +1278,7 @@ class RZMInspectorPanel(RZEditorPanel):
             ("Grid Settings", self._init_grid_ui),
             ("Appearance", self._init_style_ui),
             ("Vector Modifiers", self._init_vector_ui),
+            ("Mesh & Skeleton", self._init_mesh_ui),
             ("Text content", self._init_text_ui),
             # LOGIC GROUP (All under Logic Anchor)
             ("Visibility", self._init_visibility_ui),
@@ -1309,7 +1312,7 @@ class RZMInspectorPanel(RZEditorPanel):
         layout.addRow(tier_label, self.tier_tags)
         
         self.cb_class = self._add_row(layout, "Class:", RZComboBox(), 'class_type')
-        self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR", "VECTOR_BOX"])
+        self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR", "VECTOR_BOX", "LIVE2D"])
         
         self.spin_priority = self._add_row(layout, "Priority:", RZSpinBox(), 'priority')
         self.spin_priority.setRange(-100, 100)
@@ -1597,6 +1600,22 @@ class RZMInspectorPanel(RZEditorPanel):
             
             self.layout_props.addWidget(self.grp_vector)
         except Exception as e: print(f"[INSPECTOR] Error Vector: {e}")
+
+    def _init_mesh_ui(self):
+        try:
+            self.grp_mesh = RZGroupBox("Mesh & Skeleton")
+            layout = QtWidgets.QFormLayout(self.grp_mesh)
+            layout.setSpacing(6)
+            
+            self.lbl_skeleton = RZLabel("None")
+            self.lbl_skeleton.setStyleSheet("color: #7ec8e3; font-weight: bold;")
+            layout.addRow("Active Skeleton:", self.lbl_skeleton)
+            
+            self.sl_mesh_off = self._add_row(layout, "Mesh Offset:", RZSmartSlider(is_int=True), 'mesh_offset', 'value_changed')
+            self.sl_mesh_off.setRange(0, 1000000)
+            
+            self.layout_props.addWidget(self.grp_mesh)
+        except Exception as e: print(f"[INSPECTOR] Error Mesh: {e}")
 
     def _init_text_ui(self):
         try:
@@ -1979,6 +1998,16 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'grp_grid'): self.grp_grid.setVisible(is_grid)
             if hasattr(self, 'grp_tile'): self.grp_tile.setVisible(is_grid)
             
+            # --- Live2D Mesh & Skeleton ---
+            is_live2d = (class_type == "LIVE2D")
+            if hasattr(self, 'grp_mesh'):
+                self.grp_mesh.setVisible(is_live2d)
+                if is_live2d:
+                    if hasattr(self, 'lbl_skeleton'): 
+                        self.lbl_skeleton.setText(str(props.get('skeleton_name', 'None')))
+                    if hasattr(self, 'sl_mesh_off'):
+                        self.sl_mesh_off.set_value_from_backend(props.get('mesh_offset', 0))
+
             if is_grid:
                 if hasattr(self, 'sl_cell'): self.sl_cell.set_value_from_backend(props.get('grid_cell_size'))
                 if hasattr(self, 'sl_min_c'): self.sl_min_c.set_value_from_backend(props.get('grid_min_cells_x'))
@@ -2144,6 +2173,16 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'btn_page_color'):
                 self.btn_page_color.set_color(props.get('page_color'))
                 self.set_row_visible(self.btn_page_color, props.get('is_tab_container') is True)
+
+            # --- Mesh & Skeleton ---
+            is_live2d = (class_type == "LIVE2D")
+            if hasattr(self, 'grp_mesh'):
+                self.grp_mesh.setVisible(is_live2d)
+                if is_live2d:
+                    if hasattr(self, 'lbl_skeleton'):
+                        self.lbl_skeleton.setText(props.get('skeleton_name') or "(No Global Skeleton)")
+                    if hasattr(self, 'sl_mesh_off'):
+                        self.sl_mesh_off.set_value_from_backend(props.get('mesh_offset', 0))
             
             # --- Raw Data Table ---
             if hasattr(self, 'table_raw'):

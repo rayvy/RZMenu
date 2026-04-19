@@ -27,6 +27,7 @@ from .p_settings import (
     RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
+from ..core.live2d import blender_props
 from ..operators import custom_draw_ops
 
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
@@ -49,6 +50,9 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     export_texture_slots: BoolProperty(name="textureSlots", default=True)
     export_toggle_swap_mode: EnumProperty(name="toggleSwapMode", items=[('None', "None", ""), ('DToggle', "DToggle", ""), ('RToggle', "RToggle", "")], default='None')
     addons: PointerProperty(type=RZMenuAddonSettings)
+
+    # --- Live2D Skeletal System ---
+    skeleton: PointerProperty(type=blender_props.RZSkeletonProp)
 
     @property
     def author_name_global(self):
@@ -153,6 +157,7 @@ classes_to_register = [
 ]
 
 def register():
+    blender_props.register()
     for cls in classes_to_register:
         bpy.utils.register_class(cls)
         

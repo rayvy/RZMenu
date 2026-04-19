@@ -190,10 +190,7 @@ def pack_project_text(scene, export_dir):
         mapping[subgroup][key] = (offset, encoded_len)
 
     # Save to files
-    res_dir = os.path.join(export_dir, "res")
-    os.makedirs(res_dir, exist_ok=True)
-    
-    bin_path = os.path.join(res_dir, "texts.bin")
+    bin_path = os.path.join(export_dir, "texts.bin")
     with open(bin_path, 'wb') as f:
         f.write(text_buffer)
 

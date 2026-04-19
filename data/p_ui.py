@@ -6,6 +6,7 @@ from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, 
 from .constants import FX_COMMANDS, FN_COMMANDS
 from .p_images import ConditionalImage, mark_atlas_dirty_img
 from .p_logic import ValueLinkProperty, AssignedToggle, RZMTierRef
+from ..core.live2d.blender_props import RZMeshProp
 
 class FXProperty(bpy.types.PropertyGroup): value: EnumProperty(name="Effect", items=FX_COMMANDS)
 class FNProperty(bpy.types.PropertyGroup): function_name: EnumProperty(name="Function", items=FN_COMMANDS)
@@ -107,7 +108,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     ], default='MAIN_BLOCK')
     priority: IntProperty(name="Priority", default=0); tag: StringProperty(name="Tag")
     qt_priority: IntProperty(name="QT Priority", default=0)
-    elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", ""), ('VECTOR_BOX', "Vector Box", "")], default='CONTAINER')
+    elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", ""), ('VECTOR_BOX', "Vector Box", ""), ('LIVE2D', "Live2D Mesh", "")], default='CONTAINER')
     visibility_mode: EnumProperty(name="Visibility", items=[('ALWAYS', "Always Visible", ""), ('CONDITIONAL', "Conditional", ""), ('HIDED', "Hided", "")], default='ALWAYS')
     visibility_condition: StringProperty(name="Condition", description="e.g., $var > 0 or @ToggleA[1]")
     # Transform - Formula flags
@@ -217,3 +218,6 @@ class RZMenuElement(bpy.types.PropertyGroup):
     # SVG Modifiers (Element-level)
     svg_scale: FloatProperty(name="SVG Scale", default=1.0, min=0.01, max=10.0, update=mark_atlas_dirty)
     svg_offset: FloatVectorProperty(name="SVG Offset", size=2, default=(0.0, 0.0), update=mark_atlas_dirty)
+
+    # ── Live2D Mesh Data ──────────────────────────────────────────────────────
+    mesh: bpy.props.PointerProperty(type=RZMeshProp)
