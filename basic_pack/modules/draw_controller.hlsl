@@ -3,6 +3,8 @@
 // ==================================================================
 RWBuffer<float4> DataBuffer           : register(u0);
 RWBuffer<uint>   IndexBuffer          : register(u1);
+Buffer<float4>   ResourceStyleBuffer  : register(t105);
+
 
 Texture1D<float4> IniParams : register(t120);
 Buffer<uint>      InputTextBuffer : register(t24);
@@ -19,7 +21,7 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define IN_ROT         IniParams[105].w
 #define IN_CLIP_RECT   IniParams[109].xyzw
 #define IN_FN_TYPE     IniParams[110].x
-#define IN_FX_TYPE     IniParams[110].y
+#define IN_STYLE_ID    IniParams[110].y
 #define IN_TEX_ID      IniParams[110].z
 #define IN_DRAW_MODE   IniParams[110].w
 #define BUFFER_INDEX   (int)IniParams[111].y
@@ -50,5 +52,5 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
         DataBuffer[base_idx + 5] = float4(0, 0, 0, 0);
     }
     
-    DataBuffer[base_idx + 6] = float4(IN_FN_TYPE, IN_FX_TYPE, IN_TEX_ID, IN_DRAW_MODE);
+    DataBuffer[base_idx + 6] = float4(IN_FN_TYPE, IN_STYLE_ID, IN_TEX_ID, IN_DRAW_MODE);
 }

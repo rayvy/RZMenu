@@ -49,6 +49,52 @@ class ConditionalText(bpy.types.PropertyGroup):
     text_id: StringProperty(name="Text", default="New Text")
     condition: StringProperty(name="Condition", description="Condition to show this text (e.g. $var > 0)")
 
+class RZMenuStyle(bpy.types.PropertyGroup):
+    name: StringProperty(name="Style Name", default="New Style")
+    
+    use_shadow: BoolProperty(name="Drop Shadow", default=False)
+    shadow_offset: FloatVectorProperty(name="Offset X/Y", size=2, default=(2.0, 2.0))
+    shadow_blur: FloatProperty(name="Blur", default=4.0)
+    shadow_color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(0.0, 0.0, 0.0, 0.8))
+
+    use_glow: BoolProperty(name="Outer Glow", default=False)
+    glow_radius: FloatProperty(name="Radius", default=10.0)
+    glow_intensity: FloatProperty(name="Intensity", default=2.0)
+    glow_color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(0.0, 0.5, 1.0, 1.0))
+
+    use_outline: BoolProperty(name="Outline", default=False)
+    outline_thickness: FloatProperty(name="Thickness", default=1.0)
+    outline_color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(1.0, 1.0, 1.0, 1.0))
+
+    use_grayscale: BoolProperty(name="Grayscale", default=False)
+    grayscale_amount: FloatProperty(name="Amount", default=1.0, min=0.0, max=1.0)
+
+    use_chromatic: BoolProperty(name="Chromatic Aberration", default=False)
+    chromatic_offset: FloatProperty(name="Offset", default=2.0)
+
+    use_gradient: BoolProperty(name="Gradient Overlay", default=False)
+    grad_color_1: FloatVectorProperty(name="Color 1", subtype='COLOR', size=4, min=0, max=1, default=(1.0, 1.0, 1.0, 1.0))
+    grad_color_2: FloatVectorProperty(name="Color 2", subtype='COLOR', size=4, min=0, max=1, default=(0.0, 0.0, 0.0, 0.8))
+    grad_angle: FloatProperty(name="Angle (Deg)", default=90.0)
+
+    anim_hover_resize: BoolProperty(name="Hover Resize", default=False)
+    hover_scale_factor: FloatProperty(name="Expand Scale", default=1.125)
+
+    anim_hover_sheen: BoolProperty(name="Hover Sheen", default=False)
+    sheen_speed: FloatProperty(name="Speed", default=1.0)
+    sheen_width: FloatProperty(name="Width", default=0.2)
+    sheen_color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(1.0, 1.0, 1.0, 0.5))
+
+    anim_rotate: BoolProperty(name="Constant Map Rotation", default=False)
+    rotate_speed: FloatProperty(name="Speed", default=1.0)
+
+    use_blur: BoolProperty(name="Enable Blur", default=False)
+    blur_strength: FloatProperty(name="Blur Strength", default=1.0, min=0.0, max=10.0)
+    use_blur_mask: BoolProperty(name="Blur Mask Mode", default=False)
+
+    fn_fix_ratio: BoolProperty(name="Fix Image Aspect Ratio", default=False)
+
+
 class RZMenuElement(bpy.types.PropertyGroup):
     element_name: StringProperty(name="Name"); id: IntProperty(name="Unique ID"); parent_id: IntProperty(name="Parent ID", default=-1)
     is_preset: BoolProperty(name="Is Preset", default=False)
@@ -130,6 +176,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     grid_wrap_mode: EnumProperty(name="Wrap Mode", items=[('SCROLL', "Scroll", ""), ('PAGINATE', "Paginate", "")], default='SCROLL')
     toggles: CollectionProperty(type=AssignedToggle)
     fx: CollectionProperty(type=FXProperty); fn: CollectionProperty(type=FNProperty); properties: CollectionProperty(type=CustomProperty)
+    style_id: IntProperty(name="Style ID", description="Стиль из глобального реестра (-1 = нет)", default=-1)
     preset_ids: CollectionProperty(type=RZPresetReference)
     underlayer_preset_ids: CollectionProperty(type=RZPresetReference)
     helper_ids: CollectionProperty(type=RZHelperReference)

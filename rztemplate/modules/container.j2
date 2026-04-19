@@ -555,21 +555,16 @@ endif
 {% endmacro %}
 
 {%macro generate_fn(element)%}
-    ;generate_fn
-    {% for fn_item in element.fn %}
-    {#{fn_item.function_name}}
-    ;run = CommandListCoreFn{{ current_fn }#}
-    ;run = {{fn_item.function_name}}
-    {% endfor %}
+    ;generate_fn legacy
 {%endmacro%}
 
 {%macro generate_fx(element)%}
-    ;generate_fx
-    {% for fx_item in element.fx %}
-    run = {{fx_item.value}}
-    {#% set current_fx = FX_MAP.get(fx_item.function_name, 'UNKNOWN') %}
-    ;fx = CommandListCoreFx{{ current_fx }#}
-    {% endfor %}
+    ; style allocation
+    {% if element.style_id > -1 %}
+    y110 = {{ element.style_id }}
+    {% else %}
+    y110 = 0
+    {% endif %}
 {%endmacro%}
 
 {% macro generate_text(element, host_element=none) %}

@@ -20,6 +20,7 @@ Texture1D<float4> GlobalParams : register(t120);
 Buffer<float4>    DataBuffer : register(t100);
 Buffer<uint>      IndexBuffer : register(t104);
 Buffer<uint>      TextPoolBuffer : register(t103);
+Buffer<float4>    ResourceStyleBuffer : register(t105);
 
 Texture2D<float4> AtlasIcons : register(t80);
 Texture2D<float4> AtlasFont0 : register(t82);
@@ -55,13 +56,19 @@ static const int ANIM_ROTATE = 1;
 static const int ANIM_HOVER_TURN = 2;
 static const int ANIM_DISINTEGRATE = 3; 
 
-// --- FX CONSTANTS ---
-static const int FX_OUTLINE = 1;
-static const int FX_DROP_SHADOW = 2;
-static const int FX_HOVER_SHEEN = 3; 
-static const int FX_HOVER_RESIZE = 4;
-static const int FX_GRAYSCALE = 5;
-static const int FX_HOVER_SHINE = 8; 
+// --- STYLE CONSTANTS ---
+#define BIT_SHADOW      (1u << 0)
+#define BIT_GLOW        (1u << 1)
+#define BIT_OUTLINE     (1u << 2)
+#define BIT_GRAYSCALE   (1u << 3)
+#define BIT_CHROMATIC   (1u << 4)
+#define BIT_GRADIENT    (1u << 5)
+#define BIT_ANIM_RESIZE (1u << 6)
+#define BIT_ANIM_SHEEN  (1u << 7)
+#define BIT_ANIM_ROTATE (1u << 8)
+#define BIT_FN_FIXRATIO (1u << 9)
+#define BIT_BLUR        (1u << 10)
+#define BIT_BLUR_MASK   (1u << 11)
 
 static const uint MAX_CHARS = 32;
 static const uint FONT_GRID_SIZE = 16;
@@ -86,7 +93,7 @@ struct VertexOutput {
     float4 clipRect : TEXCOORD4;
     int    drawMode : TEXCOORD5;
     float  animType : TEXCOORD6;
-    float  fxType : TEXCOORD7;
+    float  styleId : TEXCOORD7;
     float4 extraData : TEXCOORD8; 
     float    mirrorMode : TEXCOORD9;
 };
@@ -227,7 +234,7 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
     return float4(0,0,1,1);
 }
 
-float2 ApplyAnimation(float type, float2 pos, float2 size, float2 uv) {
+float2 ApplyAnimation(float type, uint styleFlags, int styleBaseIdx, float2 pos, float2 size, float2 uv) {
     float2 center = pos + size * 0.5;
     float2 local = uv - 0.5;
     
@@ -239,8 +246,10 @@ float2 ApplyAnimation(float type, float2 pos, float2 size, float2 uv) {
         local -= tilt * dot(local, tilt); 
         return center + local * size;
     }
-    if (type == ANIM_ROTATE) {
-        float a = 6.28 * GlobalTime;
+    if (styleFlags & BIT_ANIM_ROTATE) {
+        float speed = ResourceStyleBuffer[styleBaseIdx + 10].z;
+        if (speed == 0.0) speed = 1.0;
+        float a = 6.28 * GlobalTime * speed;
         float s = sin(a), c = cos(a);
         return center + mul(float2x2(c, -s, s, c), local) * size;
     }
@@ -259,7 +268,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     float4 params = DataBuffer[base_idx + 6];
     output.drawMode = (int)params.w;
     output.animType = params.x;
-    output.fxType = params.y;
+    output.styleId = params.y;
     output.color = DataBuffer[base_idx + 2];
     output.clipRect = DataBuffer[base_idx + 5];
     
@@ -276,11 +285,21 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     if (output.drawMode != MODE_TEXT && output.drawMode != MODE_NUMBER && vID >= 6) { output.position = 0; return; }
     if ((output.drawMode == MODE_TEXT || output.drawMode == MODE_NUMBER) && (vID/6) >= MAX_CHARS) { output.position = 0; return; }
 
-    if (output.fxType == FX_HOVER_RESIZE) {
+    uint styleFlags = 0;
+    int styleBaseIdx = -1;
+    if (output.styleId >= 0) {
+        styleBaseIdx = (int)output.styleId * 12;
+        styleFlags = asuint(ResourceStyleBuffer[styleBaseIdx + 0].x);
+
+    }
+
+    if (styleFlags & BIT_ANIM_RESIZE) {
+        float scaleFactor = ResourceStyleBuffer[styleBaseIdx + 7].w;
+        if (scaleFactor <= 0.01) scaleFactor = 1.125;
         float2 c = pos + size * 0.5;
         float2 d = CursorPos - c; d.x *= ScreenRes.x/ScreenRes.y;
         float prox = 1.0 - pow(1.0 - saturate(1.0 - length(d)/0.008), 2);
-        float s = 1.0 + (0.125 * prox);
+        float s = 1.0 + ((scaleFactor - 1.0) * prox);
         pos = c - size*s*0.5; size *= s;
     }
     output.objectRect = float4(pos, size);
@@ -306,7 +325,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
         output.contentUV.y = 1.0 - output.contentUV.y;
     }
 
-    float2 finalPos = ApplyAnimation(output.animType, expandedPos, expandedSize, quadUv);
+    float2 finalPos = ApplyAnimation(output.animType, styleFlags, styleBaseIdx, expandedPos, expandedSize, quadUv);
     float rotationTurns = mirrorData.w;
     if (rotationTurns != 0.0) {
         // Конвертируем обороты (0.0 - 1.0) в радианы
@@ -397,11 +416,20 @@ float4 main(VertexOutput input) : SV_Target0 {
         }
     }
 
+    uint styleFlags = 0;
+    int baseIdx = -1;
+    if (input.styleId >= 0) {
+        baseIdx = (int)input.styleId * 12;
+        styleFlags = asuint(ResourceStyleBuffer[baseIdx + 0].x);
+
+    }
+
     // 3. Shadow Layer
     float4 shadowLayer = float4(0,0,0,0);
-    if (input.fxType == FX_DROP_SHADOW && input.drawMode != MODE_MASKED_BLUR && !isBlurBg) {
+    if ((styleFlags & BIT_SHADOW) && input.drawMode != MODE_MASKED_BLUR && !isBlurBg) {
         if (rawTexture.a > 0.0) {
-            shadowLayer = float4(0, 0, 0, rawTexture.a * 0.5 * input.color.a);
+            float4 shadowColor = ResourceStyleBuffer[baseIdx + 2];
+            shadowLayer = float4(shadowColor.rgb, rawTexture.a * shadowColor.a * input.color.a);
         }
     }
 
@@ -411,19 +439,25 @@ float4 main(VertexOutput input) : SV_Target0 {
     if (insideBounds || isBlurBg) {
         
         // --- SMART BLUR LOGIC ---
-        if (input.drawMode == MODE_MASKED_BLUR || isBlurBg) {
+        if (input.drawMode == MODE_MASKED_BLUR || isBlurBg || (styleFlags & BIT_BLUR)) {
             
             float targetStrength = 0.0;
             float layerOpacity = 0.0;
             
-            if (input.drawMode == MODE_MASKED_BLUR) {
+            if (isBlurBg) {
+                targetStrength = 0.5 + (float)(input.drawMode - 90) * 0.6;
+                layerOpacity = input.color.a;
+            }
+            else if (input.drawMode == MODE_MASKED_BLUR) {
                 float maskVal = rawTexture.r; 
                 targetStrength = maskVal * 8.25; 
                 layerOpacity = maskVal; 
-            } 
-            else {
-                targetStrength = 0.5 + (float)(input.drawMode - 90) * 0.6;
-                layerOpacity = input.color.a;
+            }
+            else if (styleFlags & BIT_BLUR) {
+                float strength = ResourceStyleBuffer[baseIdx + 10].w;
+                float maskVal = (styleFlags & BIT_BLUR_MASK) ? rawTexture.r : 1.0;
+                targetStrength = strength * maskVal;
+                layerOpacity = maskVal * input.color.a;
             }
 
             if (layerOpacity > 0.001) {
@@ -460,15 +494,29 @@ float4 main(VertexOutput input) : SV_Target0 {
             objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
         }
 
-        if (input.fxType == FX_GRAYSCALE && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
+        if ((styleFlags & BIT_GRAYSCALE) && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
+            float amount = ResourceStyleBuffer[baseIdx + 7].x;
             float g = dot(objectLayer.rgb, float3(0.3, 0.59, 0.11));
-            objectLayer.rgb = float3(g,g,g);
+            objectLayer.rgb = lerp(objectLayer.rgb, float3(g,g,g), amount);
+        }
+        
+        if ((styleFlags & BIT_GRADIENT) && !isBlurBg && input.drawMode != MODE_MASKED_BLUR && objectLayer.a > 0.0) {
+            float4 grad1 = ResourceStyleBuffer[baseIdx + 8];
+            float4 grad2 = ResourceStyleBuffer[baseIdx + 9];
+            float angle = ResourceStyleBuffer[baseIdx + 7].z * (3.14159 / 180.0);
+            float2 dir = float2(cos(angle), sin(angle));
+            float t = saturate(dot(input.contentUV - 0.5, dir) + 0.5);
+            float4 gCol = lerp(grad1, grad2, t);
+            objectLayer.rgb = lerp(objectLayer.rgb, gCol.rgb, gCol.a);
         }
     }
 
     // 5. Outline Effect
-    if (input.fxType == FX_OUTLINE && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
-         float2 px = 1.0 / (input.objectRect.zw * ScreenRes);
+    if ((styleFlags & BIT_OUTLINE) && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
+         float thickness = ResourceStyleBuffer[baseIdx + 5].x;
+         if (thickness <= 0.0) thickness = 1.0;
+         float4 outlineCol = ResourceStyleBuffer[baseIdx + 6];
+         float2 px = thickness / (input.objectRect.zw * ScreenRes);
          float2 uvBase = input.atlasRect.xy; 
          float2 uvSz = input.atlasRect.zw;
          float a = 0;
@@ -501,31 +549,24 @@ float4 main(VertexOutput input) : SV_Target0 {
                      a += AtlasIcons.Sample(LinearSampler, float2(fUV.x, 1.0-fUV.y)).a;
              }
          }
-         if (a > 0.0 && objectLayer.a < 0.9) objectLayer = float4(0,0,0,1);
+         if (a > 0.0 && objectLayer.a < 0.9) objectLayer = float4(outlineCol.rgb, outlineCol.a);
     }
 
     // 6. HIGHLIGHT EFFECTS
     if (objectLayer.a > 0.01) 
     {
-        if (input.fxType == FX_HOVER_SHEEN) {
-            float speed = 2.5;
+        if ((styleFlags & BIT_ANIM_SHEEN)) {
+            float speed = ResourceStyleBuffer[baseIdx + 10].x;
+            if (speed == 0.0) speed = 1.0;
+            float sheenWidth = ResourceStyleBuffer[baseIdx + 10].y;
+            if (sheenWidth == 0.0) sheenWidth = 0.2;
+            float4 sheenCol = ResourceStyleBuffer[baseIdx + 11];
+
             float val = (input.contentUV.x + input.contentUV.y * 0.5) * 2.0; 
             float sheenPos = frac(val - GlobalTime * speed * 0.5);
-            float sheen = smoothstep(0.4, 0.5, sheenPos) * (1.0 - smoothstep(0.5, 0.6, sheenPos));
+            float sheen = smoothstep(0.5 - sheenWidth, 0.5, sheenPos) * (1.0 - smoothstep(0.5, 0.5 + sheenWidth, sheenPos));
             sheen = pow(sheen, 3.0); 
-            objectLayer.rgb += float3(1.0, 1.0, 1.0) * sheen * 0.8 * objectLayer.a;
-        }
-        if (input.fxType == FX_HOVER_SHINE) {
-            float2 object_pos = input.objectRect.xy;
-            float2 object_size = input.objectRect.zw;
-            float2 cursor_relative_to_object = (CursorPos - object_pos) / object_size;
-            float2 shine_dir = normalize(float2(1.0, -1.0));
-            float2 local_uv = input.contentUV - 0.5;
-            float projection = dot(local_uv, shine_dir);
-            float shine_pos = (cursor_relative_to_object.x - 0.5) * 1.2;
-            const float stripe_width = 0.15;
-            float intensity = pow(saturate(1.0 - abs(projection - shine_pos) / stripe_width), 3.0);
-            objectLayer.rgb += float3(1.0, 1.0, 1.0) * intensity * 0.7 * objectLayer.a;
+            objectLayer.rgb += sheenCol.rgb * sheen * sheenCol.a * objectLayer.a;
         }
     }
 

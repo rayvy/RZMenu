@@ -19,6 +19,8 @@ class RZSignalManager(QObject):
     theme_changed_signal = Signal() # Explicit signal for theme editor updates
     
     status_message = Signal(str)  # General status updates for the UI
+    styles_changed = Signal()    # NEW: Emits when global styles collection or specific style changes
+    panel_switch_request = Signal(str, object) # NEW: Request UI to switch to a specific panel (ID, context_data)
 
 SIGNALS = RZSignalManager()
 IS_UPDATING_FROM_QT = False

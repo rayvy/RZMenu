@@ -18,7 +18,7 @@ from .widgets import preferences
 from .widgets import (
     outliner, inspector, viewport, asset_browser,
     variables_panel, configurator_panel, texworks_panel, texworks,
-    run_links_editor_panel,
+    run_links_editor_panel, styles_manager,
     PanelFactory
 )
 from .widgets.area import RZAreaWidget
@@ -96,6 +96,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         SIGNALS.context_updated.connect(self.on_context_area_changed)
         SIGNALS.config_changed.connect(self.on_config_changed)
         SIGNALS.selection_changed.connect(self._on_selection_changed)
+        SIGNALS.panel_switch_request.connect(self.on_panel_switch_request)
         
         # --- DEBUG OVERLAY ---
         self.setup_debug_overlay()
@@ -114,6 +115,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         PanelFactory.register(texworks_panel.RZMTexWorksPanel)
         PanelFactory.register(texworks.RZMTexWorksPanel)
         PanelFactory.register(run_links_editor_panel.RZMRunLinksPanel)
+        PanelFactory.register(styles_manager.RZMStylesPanel)
 
     def _trigger_initial_refresh(self):
         SIGNALS.structure_changed.emit()
@@ -184,6 +186,43 @@ class RZMEditorWindow(QtWidgets.QWidget):
             # If everything fails, try to restore a safe default
             if layout_name != "Default":
                 self.apply_layout("Default")
+
+    def on_panel_switch_request(self, panel_type_id, context_data=None):
+        """
+        Request from a widget to switch to another panel (e.g. Jump to style).
+        """
+        print(f"[WINDOW] Switch request: {panel_type_id} with {context_data}")
+        
+        # 1. Search for an area already hosting this panel
+        target_area = None
+        for area in self._get_all_areas():
+            if area.current_panel_type == panel_type_id:
+                target_area = area
+                break
+        
+        # 2. If not found, find a 'secondary' area (not Viewport or Outliner)
+        if not target_area:
+            priority_types = ["INSPECTOR", "ASSETS", "VARIABLES"]
+            for area in self._get_all_areas():
+                if area.current_panel_type in priority_types:
+                    target_area = area
+                    area.on_switch_panel_event(panel_type_id)
+                    break
+        
+        # 3. Fallback: use any area if still none found
+        if not target_area:
+            areas = self._get_all_areas()
+            if areas:
+                target_area = areas[0]
+                target_area.on_switch_panel_event(panel_type_id)
+        
+        # 4. Apply context data (if any)
+        if target_area:
+            panel = target_area.get_current_panel()
+            if panel:
+                if panel_type_id == "STYLES" and context_data and "style_id" in context_data:
+                    if hasattr(panel, 'focus_style'):
+                        panel.focus_style(context_data["style_id"])
 
     def _on_full_export(self):
         """Triggers the full export operator in Blender."""

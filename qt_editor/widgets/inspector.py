@@ -138,6 +138,56 @@ class RZFontSlotComboBox(RZComboBox):
         
         self.blockSignals(False)
 
+class RZStyleSelector(QtWidgets.QWidget):
+    """
+    ComboBox for selecting RZMenuStyle + 'Edit' button to jump to manager.
+    """
+    styleChanged = QtCore.Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        
+        self.cb = RZComboBox()
+        self.cb.currentIndexChanged.connect(self._on_changed)
+        layout.addWidget(self.cb, 1)
+        
+        self.btn_edit = RZPushButton("✎")
+        self.btn_edit.setFixedWidth(26)
+        self.btn_edit.setToolTip("Edit selected style in Style Manager")
+        self.btn_edit.clicked.connect(self._jump_to_style)
+        layout.addWidget(self.btn_edit)
+        
+        self._block = False
+
+    def refresh(self):
+        self._block = True
+        self.cb.clear()
+        self.cb.addItem("(None)", -1)
+        
+        styles = core.read.get_all_styles()
+        for s in styles:
+            self.cb.addItem(s['name'], s['id'])
+        self._block = False
+
+    def set_value(self, style_id):
+        self._block = True
+        idx = self.cb.findData(style_id)
+        self.cb.setCurrentIndex(idx if idx >= 0 else 0)
+        self._block = False
+
+    def _on_changed(self, idx):
+        if self._block: return
+        style_id = self.cb.itemData(idx)
+        self.styleChanged.emit(style_id)
+
+    def _jump_to_style(self):
+        style_id = self.cb.currentData()
+        if style_id != -1:
+            SIGNALS.panel_switch_request.emit("STYLES", {"style_id": style_id})
+
 class RZInspectorAnchorBar(QtWidgets.QWidget):
     """
     Sticky navigation bar for the monolithic Inspector.
@@ -1485,6 +1535,12 @@ class RZMInspectorPanel(RZEditorPanel):
             layout.addLayout(self.stack_color)
             self.chk_color_formula.toggled.connect(lambda v: self.stack_color.setCurrentIndex(1 if v else 0))
             
+            # --- STYLES ---
+            layout.addWidget(RZLabel("Global Style:"))
+            self.sel_style = RZStyleSelector()
+            self.sel_style.styleChanged.connect(lambda v: self._emit_change('style_id', int(v)))
+            layout.addWidget(self.sel_style)
+
             self.cb_img_mode = self._add_row(layout, "Image Mode:", RZComboBox(), 'image_mode')
             self.cb_img_mode.addItems(["SINGLE", "CONDITIONAL_LIST", "INDEX_LIST"])
             
@@ -1943,6 +1999,11 @@ class RZMInspectorPanel(RZEditorPanel):
             else:
                 if hasattr(self, 'btn_color'): self.btn_color.set_color(props.get('color'))
             
+            # --- Style ---
+            if hasattr(self, 'sel_style'):
+                self.sel_style.refresh()
+                self.sel_style.set_value(props.get('style_id', -1))
+
             # --- Image ---
             img_mode = props.get('image_mode', 'SINGLE')
             if hasattr(self, 'cb_img_mode'): self.cb_img_mode.setCurrentText(img_mode)

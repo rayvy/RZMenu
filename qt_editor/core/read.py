@@ -390,6 +390,7 @@ def get_selection_details(selected_ids, active_id):
             "text_align": get_uniform("text_align"),
             
             # Style & Content
+            "style_id": get_uniform("style_id", default=-1),
             "color": color_vals,
             "color_is_formula": get_uniform("color_is_formula", default=False),
             "color_formula_r": get_uniform("color_formula_r", default="1"),
@@ -593,7 +594,8 @@ def get_viewport_data():
             
             # Grid props
             "grid_cell_size": getattr(elem, "grid_cell_size", 50),
-            "grid_cols": getattr(elem, "grid_min_cells", [1,1])[0]
+            "grid_cols": getattr(elem, "grid_min_cells", [1,1])[0],
+            "style_id": getattr(elem, "style_id", -1)
         }
         results.append(item)
 
@@ -865,4 +867,67 @@ def get_available_images() -> list[dict]:
             })
         
         results.append(img_dict)
+    return results
+def get_style_properties(style_id):
+    if not bpy.context or not bpy.context.scene: return None
+    styles = bpy.context.scene.rzm.styles
+    if style_id < 0 or style_id >= len(styles): return None
+    style = styles[style_id]
+    
+    return {
+        'style_id': style_id,
+        'name': style.name,
+        'use_shadow': style.use_shadow,
+        'shadow_offset': list(style.shadow_offset),
+        'shadow_blur': style.shadow_blur,
+        'shadow_color': list(style.shadow_color),
+        
+        'use_glow': style.use_glow,
+        'glow_radius': style.glow_radius,
+        'glow_intensity': style.glow_intensity,
+        'glow_color': list(style.glow_color),
+        
+        'use_outline': style.use_outline,
+        'outline_thickness': style.outline_thickness,
+        'outline_color': list(style.outline_color),
+        
+        'use_grayscale': style.use_grayscale,
+        'grayscale_amount': style.grayscale_amount,
+        
+        'use_chromatic': style.use_chromatic,
+        'chromatic_offset': style.chromatic_offset,
+        
+        'use_gradient': style.use_gradient,
+        'grad_color_1': list(style.grad_color_1),
+        'grad_color_2': list(style.grad_color_2),
+        'grad_angle': style.grad_angle,
+        
+        'anim_hover_resize': style.anim_hover_resize,
+        'hover_scale_factor': style.hover_scale_factor,
+        
+        'anim_hover_sheen': style.anim_hover_sheen,
+        'sheen_speed': style.sheen_speed,
+        'sheen_width': style.sheen_width,
+        'sheen_color': list(style.sheen_color),
+        
+        'anim_rotate': style.anim_rotate,
+        'rotate_speed': style.rotate_speed,
+        
+        'use_blur': style.use_blur,
+        'blur_strength': style.blur_strength,
+        'use_blur_mask': style.use_blur_mask,
+
+        'fn_fix_ratio': style.fn_fix_ratio,
+    }
+
+def get_all_styles():
+    """Returns a list of all style names and their IDs."""
+    results = []
+    if not bpy.context or not bpy.context.scene: return results
+    styles = bpy.context.scene.rzm.styles
+    for i, style in enumerate(styles):
+        results.append({
+            'id': i,
+            'name': style.name
+        })
     return results

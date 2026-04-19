@@ -44,6 +44,7 @@ PROP_MAP = {
     "qt_lock_size": ("qt_lock_size", None, 'S'),
     "is_locked_size": ("qt_lock_size", None, 'S'), # Alias
     "qt_lock_ratio": ("qt_lock_ratio", None, 'S'),
+    "style_id": ("style_id", None, 'D'),
     
     "qt_selectable": ("qt_selectable", None, 'D'),
     "is_selectable": ("qt_selectable", None, 'D'), # Alias
@@ -995,3 +996,72 @@ def reset_element_ratio(target_ids):
             blender_bridge.safe_undo_push("RZM: Reset Ratio")
             signals.SIGNALS.transform_changed.emit()
             signals.SIGNALS.data_changed.emit()
+
+
+def update_global_style_property(style_id, prop_name, value, sub_index=None):
+    if not bpy.context or not bpy.context.scene: return
+    styles = bpy.context.scene.rzm.styles
+    if style_id < 0 or style_id >= len(styles): return
+    style = styles[style_id]
+    
+    with signals.qt_update_guard():
+        changed = False
+        if hasattr(style, prop_name):
+            raw_val = getattr(style, prop_name)
+            
+            # Handle Vector/Color types
+            if hasattr(raw_val, "__len__") and not isinstance(raw_val, (str, bytes)):
+                if sub_index is not None:
+                    if raw_val[sub_index] != value:
+                        raw_val[sub_index] = value
+                        setattr(style, prop_name, raw_val)
+                        changed = True
+                else:
+                    # Full vector replacement
+                    try:
+                        new_val = value[:len(raw_val)]
+                        if list(raw_val) != list(new_val):
+                            setattr(style, prop_name, new_val)
+                            changed = True
+                    except: pass
+            else:
+                # Basic types
+                if raw_val != value:
+                    setattr(style, prop_name, value)
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update Style {prop_name}")
+            signals.SIGNALS.styles_changed.emit()
+            signals.SIGNALS.transform_changed.emit() # Redraw viewport
+
+def add_global_style():
+    if not bpy.context or not bpy.context.scene: return -1
+    with signals.qt_update_guard():
+        styles = bpy.context.scene.rzm.styles
+        new_style = styles.add()
+        new_style.name = f"Style {len(styles)}"
+        
+        blender_bridge.safe_undo_push("RZM: Add Style")
+        signals.SIGNALS.styles_changed.emit()
+        signals.SIGNALS.structure_changed.emit()
+        return len(styles) - 1
+
+def remove_global_style(style_id):
+    if not bpy.context or not bpy.context.scene: return
+    styles = bpy.context.scene.rzm.styles
+    if style_id < 0 or style_id >= len(styles): return
+    
+    with signals.qt_update_guard():
+        styles.remove(style_id)
+        # Update element references to maintain integrity
+        for elem in bpy.context.scene.rzm.elements:
+            if elem.style_id == style_id:
+                elem.style_id = -1
+            elif elem.style_id > style_id:
+                elem.style_id -= 1
+        
+        blender_bridge.safe_undo_push("RZM: Remove Style")
+        signals.SIGNALS.styles_changed.emit()
+        signals.SIGNALS.structure_changed.emit()
+        signals.SIGNALS.data_changed.emit()

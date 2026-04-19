@@ -19,6 +19,32 @@ from .panel_base import RZEditorPanel
 from ..core.logic import FormulaEvaluator
 from .lib.animations import SpringAnimation, LiquidFillEffect
 
+class RZStyleCache:
+    """
+    Cache for global style properties (RZMenuStyle). 
+    Fetches data from Blender once and updates on signals.
+    """
+    _instance = None
+    def __init__(self):
+        self._cache = {} # id -> style_dict
+    
+    @classmethod
+    def instance(cls):
+        if cls._instance is None: cls._instance = cls()
+        return cls._instance
+    
+    def refresh(self):
+        self._cache.clear()
+        styles = core.read.get_all_styles()
+        for s in styles:
+            self._cache[s['id']] = core.read.get_style_properties(s['id'])
+            
+    def get(self, style_id):
+        return self._cache.get(style_id)
+
+    def on_structure_changed(self):
+        self.refresh()
+
 HANDLE_SIZE = 8
 
 class RZFontManager:
@@ -585,7 +611,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
 
     # Обновили сигнатуру: добавлена ротация, лок пропорций и параметры SVG
-    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0, lock_ratio=False, image_source_type='CUSTOM', svg_scale=1.0, svg_offset_x=0.0, svg_offset_y=0.0, svg_preserve_color=True):
+    def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0, lock_ratio=False, image_source_type='CUSTOM', svg_scale=1.0, svg_offset_x=0.0, svg_offset_y=0.0, svg_preserve_color=True, style_id=-1):
+        self.style_id = style_id
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
         self.qt_lock_ratio = lock_ratio
@@ -667,16 +694,40 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             painter.rotate(self.rotation * 360.0)
             painter.translate(-center)
 
+        # --- PHASE 1.5: GLOBAL STYLES (Outer Shadow/Glow) ---
+        style = RZStyleCache.instance().get(getattr(self, 'style_id', -1))
+        if style:
+            # 1. Shadow (Outer)
+            if style.get('use_shadow'):
+                s_off = style.get('shadow_offset', (0,0))
+                s_blur = style.get('shadow_blur', 5.0)
+                s_col = style.get('shadow_color', (0,0,0,1))
+                painter.save()
+                painter.setPen(QtCore.Qt.NoPen)
+                shadow_color = QtGui.QColor(*[int(min(max(0,c),1)*255) for c in s_col])
+                painter.setBrush(shadow_color)
+                painter.drawRect(rect.translated(s_off[0], s_off[1]))
+                painter.restore()
+
+            # 2. Glow (Outer)
+            if style.get('use_glow'):
+                g_radius = style.get('glow_radius', 5.0)
+                g_intensity = style.get('glow_intensity', 1.0)
+                g_col = style.get('glow_color', (1,1,1,1))
+                painter.save()
+                glow_color = QtGui.QColor(*[int(min(max(0,c),1)*255) for c in g_col])
+                glow_color.setAlpha(int(glow_color.alpha() * g_intensity))
+                painter.setPen(QtGui.QPen(glow_color, g_radius*2))
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.drawRect(rect)
+                painter.restore()
+
         # --- PHASE 2.4: MICRO-ANIMATIONS (HOVER/PRESSED) ---
         if self._is_pressed_state:
-            # Subtle "pressed" fill
             press_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
             press_col.setAlpha(40)
-            painter.setBrush(press_col)
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.drawRect(rect)
+            painter.fillRect(rect, press_col)
         elif self._is_hovered_state and not self._is_selected_state:
-            # Hover glow/highlight
             hover_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
             hover_col.setAlpha(20)
             painter.setBrush(hover_col)
@@ -686,146 +737,23 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         # --- PHASE 2.2: SELECTION FILL (LIQUID) ---
         if self._is_selected_state:
             select_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
-            select_col.setAlpha(60) # Soft underwater feel
+            select_col.setAlpha(60)
             self._select_fill.draw(painter, QtCore.QRectF(rect), select_col)
 
-        # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3) ---
-        # --- ОТРИСОВКА ТЕКСТА (WYSIWYG v3.3 - SHADER MATCH) ---
-        if self.elem_type == 'TEXT':
-            raw_text_id = self.text_id if self.text_id else self.name
-            # Resolve ~meta_var system variables for viewport preview.
-            # Inspector shows the raw ~author_name; viewport shows resolved value (e.g. RAYVICH).
-            try:
-                from ..core.read import evaluate_text_id
-                text = evaluate_text_id(raw_text_id, highlight=False, item_uid=self.uid)
-            except Exception:
-                text = raw_text_id
-            if not text: return
-
-            # 1. Init Metrics & Font
-            metrics, density = RZFontManager.instance().get_metrics(self.font_slot)
-            chars = list(text)[:32]
-
-            # 2. Scale Calculation (HEIGHT BASED)
-            # Shader: scale = (size.y * ScreenRes.y) / cs;
-            # Qt: rect.height() is already (size.y * ScreenRes.y) in pixels
-            safe_cs = metrics.cell_size if metrics.cell_size > 0 else 1.0
-            base_scale = rect.height() / safe_cs
-
-            # 3. Calculate Raw Content Width (in 128px space)
-            total_w = 0.0
-            first_off = 0.0
-            if chars:
-                first_m = metrics.get(chars[0])
-                first_off = first_m.offX
-                for i in range(len(chars) - 1):
-                    total_w += metrics.get(chars[i]).advance
-                last_m = metrics.get(chars[-1])
-                # Shader logic for last char width
-                total_w += last_m.offX + last_m.glyphW - first_off
-
-            # 4. Squeeze Logic (Auto-Fit)
-            # Shader: if (currentTextWidth > inputLimitWidth) squeeze...
-            limit_px = rect.width()
-            current_px = total_w * base_scale
-            squeeze = 1.0
-            
-            # 4. Squeeze Logic (Auto-Fit)
-            # Shader: if (currentTextWidth > inputLimitWidth) squeeze...
-            limit_px = rect.width()
-            current_px = total_w * base_scale
-            squeeze = 1.0
-            
-            # 5. Alignment & Mode calculation
-            align_map = {
-                "LEFT": 0, "CENTER": 1, "RIGHT": 2,
-                "FREE_LEFT": 3, "FREE_CENTER": 4, "FREE_RIGHT": 5
-            }
-            align_idx = align_map.get(self.text_align, 0)
-            is_free = align_idx >= 3
-            align = align_idx - 3 if is_free else align_idx
-
-            if not is_free and limit_px > 1.0 and current_px > limit_px:
-                squeeze = limit_px / current_px
-
-            shift_128 = 0.0
-            if align == 1: # Center
-                shift_128 = (first_off * 2.0 + total_w) * 0.5
-            elif align == 2: # Right
-                shift_128 = first_off + total_w
-
-            # 6. Drawing
-            painter.save()
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            
-            # Color
-            text_color = QtGui.QColor(t.get('text_bright', '#FFF'))
-            if self.custom_color and len(self.custom_color) >= 3:
-                r, g, b = [int(c*255) for c in self.custom_color[:3]]
-                text_color = QtGui.QColor(r, g, b)
-            painter.setPen(text_color)
-            
-            # Apply Transform:
-            # We translate to the Start Point, then Scale the coordinate system.
-            # This allows us to draw using 128px metrics directly and get the "Squished" glyph look correctly.
-            
-            # X start: rect.left() - (shift converted to pixels)
-            # But since we will scale X by (base_scale * squeeze), we apply shift in local space
-            
-            painter.translate(rect.left(), rect.top())
-            painter.scale(base_scale * squeeze * density, base_scale * density)
-            
-            # Translate inside the matrix to account for cell centering
-            painter.translate(
-                metrics.cell_size * (1.0 - density) * 0.5,
-                metrics.cell_size * (1.0 - density) * 0.5
-            )
-            
-            # Font setup (use the large 128px font from metrics)
-            painter.setFont(metrics.font)
-
-            cur_x_128 = 0.0
-            # Baseline is consistently at 75% of cell size (matches pen_y in exporter)
-            baseline_y = metrics.cell_size * 0.75 
-            
-            # Draw Loop
-            for char in chars:
-                m = metrics.get(char)
-                
-                # Coordinates in 128px space
-                # X: Current cursor - Alignment Shift + Char Offset
-                draw_x = cur_x_128 - shift_128 + m.offX
-                
-                # Y: Align top of glyph to (baseline + offY)
-                # Since offY is negative from baseline to top-edge of glyph
-                draw_y = baseline_y + m.offY
-                
-                # Draw
-                target_rect = QtCore.QRectF(draw_x, draw_y, m.glyphW, m.glyphH)
-                painter.drawText(target_rect, QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft | QtCore.Qt.TextDontClip, char)
-                
-                cur_x_128 += m.advance
-
-            painter.restore()
+        # --- PHASE 3: BACKGROUND / IMAGE ---
         has_image = False
         if self.image_id != -1:
             pix = ImageCache.instance().get_pixmap(self.image_id)
             if pix and not pix.isNull():
                 painter.save()
-                
-                # Apply SVG Tint ONLY for VECTOR source type
                 if self.image_source_type == 'VECTOR' and not self.svg_preserve_color:
-                    # Use element's explicit color if set (non-zero alpha), else fall back to theme icon_color
-                    has_elem_color = (self.custom_color and 
-                                      len(self.custom_color) > 3 and 
-                                      self.custom_color[3] > 0.01)
+                    has_elem_color = (self.custom_color and len(self.custom_color) > 3 and self.custom_color[3] > 0.01)
                     if has_elem_color:
                         tint_r, tint_g, tint_b = [int(max(0,min(255, x*255))) for x in self.custom_color[:3]]
                         tint_color = QtGui.QColor(tint_r, tint_g, tint_b)
                     else:
                         icon_col_str = t.get('icon_color', '')
                         tint_color = QtGui.QColor(icon_col_str) if icon_col_str else QtGui.QColor(255, 255, 255)
-                    
                     if tint_color.isValid():
                         temp_pix = QtGui.QPixmap(pix.size())
                         temp_pix.fill(QtCore.Qt.transparent)
@@ -835,40 +763,24 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                         p_tint.fillRect(temp_pix.rect(), tint_color)
                         p_tint.end()
                         pix = temp_pix
-                # Regular images (non-VECTOR) with NONE blend mode: draw as-is, no tinting ever.
-                # OVERLAY/COLOR blending is applied separately in the bg fill phase below.
-
-                # Calculate target rect
+                
                 target_rect = rect
                 if self.image_source_type == 'VECTOR':
-                    sw = rect.width() * self.svg_scale
-                    sh = rect.height() * self.svg_scale
-                    target_rect = QtCore.QRectF(
-                        rect.center().x() - sw/2.0,
-                        rect.center().y() - sh/2.0,
-                        sw, sh
-                    )
-                    # Normalize offset: 1.0 = 100% of element size, moves icon off-screen
-                    offset_px_x = self.svg_offset_x * rect.width()
-                    offset_px_y = self.svg_offset_y * rect.height()
-                    target_rect.translate(offset_px_x, offset_px_y)
+                    sw, sh = rect.width() * self.svg_scale, rect.height() * self.svg_scale
+                    target_rect = QtCore.QRectF(rect.center().x() - sw/2.0, rect.center().y() - sh/2.0, sw, sh)
+                    target_rect.translate(self.svg_offset_x * rect.width(), self.svg_offset_y * rect.height())
 
-                # Handle Flip
                 if self.flip_x or self.flip_y:
-                    sx = -1 if self.flip_x else 1
-                    sy = -1 if self.flip_y else 1
+                    sx, sy = (-1 if self.flip_x else 1), (-1 if self.flip_y else 1)
                     cx, cy = target_rect.center().x(), target_rect.center().y()
-                    painter.translate(cx, cy)
-                    painter.scale(sx, sy)
-                    painter.translate(-cx, -cy)
+                    painter.translate(cx, cy); painter.scale(sx, sy); painter.translate(-cx, -cy)
                 
                 painter.drawPixmap(target_rect, pix, QtCore.QRectF(pix.rect()))
                 painter.restore()
                 has_image = True
 
-        # TEXT elements have transparent bg by design
+        # BG Color calculation
         is_text = (self.elem_type == 'TEXT')
-        
         if self.custom_color and len(self.custom_color) >= 3:
             r, g, b = [int(c*255) for c in self.custom_color[:3]]
             a = int(self.custom_color[3]*255) if len(self.custom_color) > 3 else 255
@@ -879,28 +791,74 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         
         if has_image and not self.custom_color: bg_color.setAlpha(30)
         if self.is_locked_pos or self.is_locked_size: bg_color = bg_color.darker(120)
-        
-        # --- BLENDING RENDERING ---
-        if is_text:
-            pass  # TEXT background is always transparent — no fill
-        elif has_image:
+
+        # Fill background
+        if not is_text:
             mode = getattr(self, "image_blending_mode", "NONE")
-            if mode == "OVERLAY":
-                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Overlay)
+            if has_image and mode != "NONE":
+                if mode == "OVERLAY": painter.setCompositionMode(QtGui.QPainter.CompositionMode_Overlay)
+                elif mode == "COLOR_HUE": painter.setCompositionMode(QtGui.QPainter.CompositionMode_Hue)
                 painter.fillRect(rect, bg_color)
                 painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-            elif mode == "COLOR_HUE":
-                painter.setCompositionMode(QtGui.QPainter.CompositionMode_Hue)
-                painter.fillRect(rect, bg_color)
-                painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-            elif mode == "NONE":
-                # Only rgba from texture, skip color fill
-                pass
+            elif mode == "NONE" and has_image:
+                pass # skip
             else:
-                # Fallback to normal (legacy behavior)
                 painter.fillRect(rect, bg_color)
-        else:
-            painter.fillRect(rect, bg_color)
+
+        # --- PHASE 4: STYLES OVERLAY (Outline/Gradient) ---
+        if style:
+            # 3. Outline
+            if style.get('use_outline'):
+                o_thick, o_col = style.get('outline_thickness', 1.0), style.get('outline_color', (1,1,1,1))
+                painter.save()
+                painter.setPen(QtGui.QPen(QtGui.QColor(*[int(min(max(0,c),1)*255) for c in o_col]), o_thick))
+                painter.setBrush(QtCore.Qt.NoBrush); painter.drawRect(rect); painter.restore()
+
+            # 4. Gradient Overlay
+            if style.get('use_gradient'):
+                g_c1, g_c2 = style.get('grad_color_1', (1,1,1,1)), style.get('grad_color_2', (0,0,0,1))
+                grad = QtGui.QLinearGradient(rect.topLeft(), rect.bottomLeft())
+                grad.setColorAt(0, QtGui.QColor(*[int(min(max(0,c),1)*255) for c in g_c1]))
+                grad.setColorAt(1, QtGui.QColor(*[int(min(max(0,c),1)*255) for c in g_c2]))
+                painter.save(); painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceAtop)
+                painter.fillRect(rect, grad); painter.restore()
+
+        # --- PHASE 5: TEXT (v3.3 Match) ---
+        if is_text:
+            raw_text_id = self.text_id if self.text_id else self.name
+            try:
+                from ..core.read import evaluate_text_id
+                text = evaluate_text_id(raw_text_id, highlight=False, item_uid=self.uid)
+            except: text = raw_text_id
+            if text:
+                metrics, density = RZFontManager.instance().get_metrics(self.font_slot)
+                chars = list(text)[:32]
+                safe_cs = metrics.cell_size if metrics.cell_size > 0 else 1.0
+                base_scale = rect.height() / safe_cs
+                total_w, first_off = 0.0, 0.0
+                if chars:
+                    first_m = metrics.get(chars[0]); first_off = first_m.offX
+                    for i in range(len(chars) - 1): total_w += metrics.get(chars[i]).advance
+                    last_m = metrics.get(chars[-1]); total_w += last_m.offX + last_m.glyphW - first_off
+                limit_px, current_px = rect.width(), total_w * base_scale
+                squeeze = limit_px / current_px if limit_px > 1.0 and current_px > limit_px else 1.0
+                align_map = {"LEFT":0,"CENTER":1,"RIGHT":2,"FREE_LEFT":3,"FREE_CENTER":4,"FREE_RIGHT":5}
+                align_idx = align_map.get(self.text_align, 0)
+                align = align_idx - 3 if align_idx >= 3 else align_idx
+                shift_128 = (first_off * 2.0 + total_w) * 0.5 if align == 1 else (first_off + total_w) if align == 2 else 0.0
+                painter.save()
+                text_color = QtGui.QColor(t.get('text_bright', '#FFF'))
+                if self.custom_color and len(self.custom_color) >= 3:
+                    text_color = QtGui.QColor(*[int(c*255) for c in self.custom_color[:3]])
+                painter.setPen(text_color); painter.translate(rect.left(), rect.top())
+                painter.scale(base_scale * squeeze * density, base_scale * density)
+                painter.translate(metrics.cell_size * (1.0 - density) * 0.5, metrics.cell_size * (1.0 - density) * 0.5)
+                painter.setFont(metrics.font); cur_x_128, baseline_y = 0.0, metrics.cell_size * 0.75
+                for char in chars:
+                    m = metrics.get(char)
+                    painter.drawText(QtCore.QRectF(cur_x_128-shift_128+m.offX, baseline_y+m.offY, m.glyphW, m.glyphH), QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft | QtCore.Qt.TextDontClip, char)
+                    cur_x_128 += m.advance
+                painter.restore()
         
         border_width, border_color_str = 1.0, t.get('vp_handle_border', '#000')
         if self.is_active:
@@ -970,6 +928,10 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self._last_drag_pos = None
         self._drag_velocity = QtCore.QPointF(0, 0)
         self._velocity_smooth = 0.7 
+
+        # Connect signals for style cache
+        SIGNALS.styles_changed.connect(RZStyleCache.instance().on_structure_changed)
+        SIGNALS.structure_changed.connect(RZStyleCache.instance().refresh)
 
     def prepare_smart_snap(self, exclude_items):
         """Called on interaction start to cache possible targets."""
@@ -1430,7 +1392,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 svg_scale=data.get('svg_scale', 1.0),
                 svg_offset_x=data.get('svg_offset_x', 0.0),
                 svg_offset_y=data.get('svg_offset_y', 0.0),
-                svg_preserve_color=data.get('svg_preserve_color', True)
+                svg_preserve_color=data.get('svg_preserve_color', True),
+                style_id=data.get('style_id', -1)
             )
 
             

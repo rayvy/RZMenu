@@ -19,7 +19,7 @@ from .p_texworks import (
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock
 )
 from .p_ui import (
-    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings
+    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuStyle
 )
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
@@ -42,6 +42,8 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     atlas_size: IntVectorProperty(name="Atlas Size", size=2)
     rzm_values: CollectionProperty(type=ValueProperty)
     toggle_definitions: CollectionProperty(type=ToggleDefinition)
+    styles: CollectionProperty(type=RZMenuStyle)
+    styles_index: IntProperty(default=0)
     elements: CollectionProperty(type=RZMenuElement)
     element_to_add_class: EnumProperty(name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", "")], default='CONTAINER')
     export_texture_slots: BoolProperty(name="textureSlots", default=True)
@@ -127,7 +129,7 @@ classes_to_register = [
     RZMTierRef,
     # ─ RZMProfileValue BEFORE ValueProperty / ToggleDefinition / RZMShape ──────────────────
     RZMProfileValue,
-    RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig,
+    RZMenuStyle, RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig,
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
     ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement,
     TexResource, TexOverride, TexWorksMaterial,

@@ -3,6 +3,7 @@ import sys
 import bpy
 from pathlib import Path
 from .text_packer import get_text_mapping_for_j2
+from .style_packer import pack_styles
 
 # Add libs to sys.path so we can import jinja2
 ADDON_DIR = Path(__file__).parent.parent
@@ -67,12 +68,13 @@ class RZMenuJ2Exporter:
         except Exception:
             export_cache = None
 
-        # 1. Pack Texts and get mapping
+        # 1. Pack Texts & Styles
         try:
             from ..operators.export_manager import get_target_path
             export_path = get_target_path(self.context)
             if export_path:
                 text_map = get_text_mapping_for_j2(scene, export_path)
+                pack_styles(scene, export_path)
             else:
                 text_map = {'single': {}, 'conditional': {}}
         except Exception as e:

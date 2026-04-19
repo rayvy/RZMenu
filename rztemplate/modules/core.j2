@@ -600,6 +600,8 @@ $ts = time
 [CustomShaderRCI2D_POPUP]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
+cs-t105 = ResourceStyleBuffer
+
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -663,6 +665,8 @@ $drawType = 0
 [CustomShaderRCI2D_SLIDER]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
+cs-t105 = ResourceStyleBuffer
+
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -735,6 +739,8 @@ $drawType = 0
 [CustomShaderRCI2D_SLIDER.TEXT]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
+cs-t105 = ResourceStyleBuffer
+
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -828,6 +834,8 @@ $drawType = 4
 endif
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
+cs-t105 = ResourceStyleBuffer
+
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -877,6 +885,8 @@ $drawType = 0
 [CustomShaderRCI2D_HOVERTEXT]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
+cs-t105 = ResourceStyleBuffer
+
 cs = /modules/draw_controller.hlsl
 
 z99 = $ScreenW
@@ -966,6 +976,8 @@ $drawType = 0
 [CustomShaderRCI2D]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
+cs-t105 = ResourceStyleBuffer
+
 
 cs = /modules/draw_controller.hlsl
 
@@ -1048,6 +1060,9 @@ ResourceBB = copy_desc bb
 vs-t100 = ref ResourceDataBuffer
 vs-t104 = ref ResourceIndexBuffer
 vs-t103 = ref ResourceText
+vs-t105 = ref ResourceStyleBuffer
+ps-t105 = ref ResourceStyleBuffer
+
 
 w98 = time % 1
 x99 = $cursorX / $ScreenW
@@ -1182,6 +1197,11 @@ array = 8192
 type = Buffer
 format = R16_UINT
 filename = .\res\texts.bin
+
+[ResourceStyleBuffer]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\styles.bin
 
 [Constants]
 global $debugTexShow = 0
