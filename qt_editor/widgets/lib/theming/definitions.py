@@ -68,6 +68,7 @@ THEME_DARK = {
     "vp_type_button": "rgba(70, 90, 110, 255)",
     "vp_type_slider": "rgba(70, 110, 90, 255)",
     "vp_type_anchor": "rgba(255, 0, 0, 100)",
+    "vp_type_vector_box": "rgba(100, 70, 140, 255)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
     "icon_color": "#C8C8C8",  # Default icon tint
 
@@ -136,6 +137,7 @@ THEME_LIGHT = {
     "vp_type_button": "rgba(225, 245, 254, 255)",
     "vp_type_slider": "rgba(224, 242, 241, 255)",
     "vp_type_anchor": "rgba(239, 83, 80, 100)",
+    "vp_type_vector_box": "rgba(130, 100, 180, 200)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
     "icon_color": "#505050",  # Default icon tint (dark for light bg)
 
@@ -200,6 +202,7 @@ THEME_BLUE = {
     "vp_type_button": "rgba(50, 70, 90, 255)",
     "vp_type_slider": "rgba(50, 90, 70, 255)",
     "vp_type_anchor": "rgba(255, 0, 0, 100)",
+    "vp_type_vector_box": "rgba(120, 90, 160, 255)",
     "vp_type_text": "rgba(0, 0, 0, 0)",
     "icon_color": "#AADDFF",  # Default icon tint (blue flavor)
 

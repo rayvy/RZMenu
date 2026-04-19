@@ -109,14 +109,17 @@ Local $current_sizeY
             {% else %}
             run = CustomShaderRCI2D_SLIDER
             {% endif %}
+    {%elif class_name == 'VECTOR_BOX'%}
+        run = CommandList{{ element.element_name }}Helper
+        run = CustomShaderRCI2D
     {%elif class_name == 'TEXT'%}
         {{generate_text(element)}}
-        {%if element.fx%}{{generate_fx(element)}}{%endif%}
+        {{generate_fx(element)}}
         run = CustomShaderRCI2D_TEXT_{{element.text_align | default ('LEFT')}}
         ;run = CustomShaderRCI2D_TEXT
     {%else%}
         {{generate_image(element,parent_element,scene)}}
-        {%if element.fx%}{{generate_fx(element)}}{%endif%}
+        {{generate_fx(element)}}
         ;val {{utils.format_var("~PV",parent_element, scene)}}
         run = CustomShaderRCI2D
     {%endif%}
@@ -559,12 +562,8 @@ endif
 {%endmacro%}
 
 {%macro generate_fx(element)%}
-    ; style allocation
-    {% if element.style_id > -1 %}
-    y110 = {{ element.style_id }}
-    {% else %}
-    y110 = 0
-    {% endif %}
+    ; style allocation (ID +1 offset: 0 = no style, 1+ = actual styles)
+    y110 = {{ element.style_id + 1 }}
 {%endmacro%}
 
 {% macro generate_text(element, host_element=none) %}

@@ -277,6 +277,7 @@ class RZMOutlinerPanel(RZEditorPanel):
                 "TEXT": "text-t",
                 "SLIDER": "sliders",
                 "GRID_CONTAINER": "grid-four",
+                "VECTOR_BOX": "grid-four",
             }
             
             # Page Indication Highlight

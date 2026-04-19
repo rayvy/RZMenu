@@ -45,7 +45,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     styles: CollectionProperty(type=RZMenuStyle)
     styles_index: IntProperty(default=0)
     elements: CollectionProperty(type=RZMenuElement)
-    element_to_add_class: EnumProperty(name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", "")], default='CONTAINER')
+    element_to_add_class: EnumProperty(name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", ""), ('VECTOR_BOX', "Vector Box", "")], default='CONTAINER')
     export_texture_slots: BoolProperty(name="textureSlots", default=True)
     export_toggle_swap_mode: EnumProperty(name="toggleSwapMode", items=[('None', "None", ""), ('DToggle', "DToggle", ""), ('RToggle', "RToggle", "")], default='None')
     addons: PointerProperty(type=RZMenuAddonSettings)

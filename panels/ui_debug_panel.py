@@ -11,6 +11,7 @@ class RZM_UL_Elements(bpy.types.UIList):
         elif item.elem_class == 'SLIDER': icon_val = 'ARROW_LEFTRIGHT'
         elif item.elem_class == 'GRID_CONTAINER': icon_val = 'GRID'
         elif item.elem_class == 'TEXT': icon_val = 'TEXT'
+        elif item.elem_class == 'VECTOR_BOX': icon_val = 'MESH_GRID'
         row = layout.row(align=True)
         row.label(text=f"ID: {item.id}", icon=icon_val)
         row.prop(item, "element_name", text="", emboss=False)
@@ -271,7 +272,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             link_row = link_box.row(align=True)
             link_row.prop(v_link, "value_name", text=f"[{i}]")
             
-            if item.elem_class == 'SLIDER':
+            if item.elem_class in {'SLIDER', 'VECTOR_BOX'}:
                 sub_row = link_row.row(align=True)
                 sub_row.prop(v_link, "value_min", text="Min")
                 sub_row.prop(v_link, "value_max", text="Max")
@@ -291,6 +292,11 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             behavior_box.prop(item, "disable_slider_nums")
             behavior_box.prop(item, "disable_slider_blur")
             behavior_box.prop(item, "disable_slider_prebuild_render")
+
+        if item.elem_class == 'VECTOR_BOX':
+            behavior_box = sub.box()
+            behavior_box.label(text="Vector Box Behavior:")
+            behavior_box.prop(item, "disable_default_xy")
 
     def draw_collection_ui(self, layout, item, name, prop_name):
         box = layout.box()

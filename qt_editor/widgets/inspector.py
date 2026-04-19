@@ -1309,7 +1309,7 @@ class RZMInspectorPanel(RZEditorPanel):
         layout.addRow(tier_label, self.tier_tags)
         
         self.cb_class = self._add_row(layout, "Class:", RZComboBox(), 'class_type')
-        self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR"])
+        self.cb_class.addItems(["CONTAINER", "GRID_CONTAINER", "BUTTON", "TEXT", "SLIDER", "ANCHOR", "VECTOR_BOX"])
         
         self.spin_priority = self._add_row(layout, "Priority:", RZSpinBox(), 'priority')
         self.spin_priority.setRange(-100, 100)
@@ -1731,6 +1731,9 @@ class RZMInspectorPanel(RZEditorPanel):
             self.chk_no_slider_blur = self._add_row(layout, "", RZCheckBox("Disable Slider Blur"), 'disable_slider_blur')
             self.chk_force_std = self._add_row(layout, "", RZCheckBox("Force Standard Render"), 'disable_slider_prebuild_render')
             
+            # Vector Box
+            self.chk_disable_xy = self._add_row(layout, "", RZCheckBox("Disable Default X/Y"), 'disable_default_xy')
+            
             self.layout_props.addWidget(self.grp_special)
         except Exception as e: print(f"[INSPECTOR] Error Special UI: {e}")
 
@@ -2074,7 +2077,7 @@ class RZMInspectorPanel(RZEditorPanel):
             # --- Logic ---
             vl_is_form = props.get('value_link_is_formula') is True
             if hasattr(self, 'chk_vl_formula'): self.chk_vl_formula.setChecked(vl_is_form)
-            if hasattr(self, 'list_links'): self.list_links.update_data(props.get('value_links', []), class_type == 'SLIDER')
+            if hasattr(self, 'list_links'): self.list_links.update_data(props.get('value_links', []), class_type in ['SLIDER', 'VECTOR_BOX'])
             if hasattr(self, 'edit_vl_formula'):
                 self.edit_vl_formula.set_text_silent(props.get('value_link_formula', ''))
                 self.edit_vl_formula.setVisible(vl_is_form)
@@ -2108,7 +2111,8 @@ class RZMInspectorPanel(RZEditorPanel):
             # --- Special Options (Button/Slider) ---
             is_btn = (class_type == "BUTTON")
             is_slider = (class_type == "SLIDER")
-            if hasattr(self, 'grp_special'): self.grp_special.setVisible(is_btn or is_slider)
+            is_vector_box = (class_type == "VECTOR_BOX")
+            if hasattr(self, 'grp_special'): self.grp_special.setVisible(is_btn or is_slider or is_vector_box)
             
             if hasattr(self, 'chk_no_nums'): self.set_row_visible(self.chk_no_nums, is_btn)
             if hasattr(self, 'chk_no_popup'): self.set_row_visible(self.chk_no_popup, is_btn)
@@ -2116,6 +2120,7 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'chk_no_slider_nums'): self.set_row_visible(self.chk_no_slider_nums, is_slider)
             if hasattr(self, 'chk_no_slider_blur'): self.set_row_visible(self.chk_no_slider_blur, is_slider)
             if hasattr(self, 'chk_force_std'): self.set_row_visible(self.chk_force_std, is_slider)
+            if hasattr(self, 'chk_disable_xy'): self.set_row_visible(self.chk_disable_xy, is_vector_box)
 
             if is_btn:
                 if hasattr(self, 'chk_no_nums'): self.chk_no_nums.setChecked(props.get('disable_button_nums') is True)
@@ -2125,6 +2130,9 @@ class RZMInspectorPanel(RZEditorPanel):
                 if hasattr(self, 'chk_no_slider_nums'): self.chk_no_slider_nums.setChecked(props.get('disable_slider_nums') is True)
                 if hasattr(self, 'chk_no_slider_blur'): self.chk_no_slider_blur.setChecked(props.get('disable_slider_blur') is True)
                 if hasattr(self, 'chk_force_std'): self.chk_force_std.setChecked(props.get('disable_slider_prebuild_render') is True)
+
+            if is_vector_box:
+                if hasattr(self, 'chk_disable_xy'): self.chk_disable_xy.setChecked(props.get('disable_default_xy') is True)
 
             # --- Flags ---
             if hasattr(self, 'chk_hide'): self.chk_hide.setChecked(props.get('qt_hide') is True or props.get('is_hidden') is True)

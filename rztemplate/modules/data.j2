@@ -385,6 +385,13 @@ global $rayvich_back_values_w110
         global persist ${{element.element_name}}_X = 0.0
         global persist ${{element.element_name}}_Y = 1.0
         global persist ${{element.element_name}}_Z = 1.0
+        {% elif utils.get_cls(element)|trim == 'VECTOR_BOX' and not (element.disable_export and not element.is_preset) %}
+        {% if element.value_link|length > 3 %}
+        global persist ${{element.element_name}}_X = 0.0
+        global persist ${{element.element_name}}_Y = 0.0
+        global persist ${{element.element_name}}_Z = 0.0
+        global persist ${{element.element_name}}_W = 0.0
+        {% endif %}
         {% endif %}
     {% endfor %}
 {% endif %}

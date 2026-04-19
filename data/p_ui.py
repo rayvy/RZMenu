@@ -107,7 +107,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     ], default='MAIN_BLOCK')
     priority: IntProperty(name="Priority", default=0); tag: StringProperty(name="Tag")
     qt_priority: IntProperty(name="QT Priority", default=0)
-    elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", "")], default='CONTAINER')
+    elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", ""), ('VECTOR_BOX', "Vector Box", "")], default='CONTAINER')
     visibility_mode: EnumProperty(name="Visibility", items=[('ALWAYS', "Always Visible", ""), ('CONDITIONAL', "Conditional", ""), ('HIDED', "Hided", "")], default='ALWAYS')
     visibility_condition: StringProperty(name="Condition", description="e.g., $var > 0 or @ToggleA[1]")
     # Transform - Formula flags
@@ -115,6 +115,9 @@ class RZMenuElement(bpy.types.PropertyGroup):
     size_is_formula: BoolProperty(name="Size Formula Mode")
     rotation_is_formula: BoolProperty(name="Rotation Formula Mode")
     transform_is_formula: BoolProperty(name="Transform Formula Mode")
+
+    # Vector Box Options
+    disable_default_xy: BoolProperty(name="Disable Default XY", description="Disables default X/Y slider-like logic for Vector Box tracker", default=False)
 
     # Transform - Static Values
     position: IntVectorProperty(name="Position", size=2, default=(0, 0))
