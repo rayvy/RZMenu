@@ -22,7 +22,8 @@ from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuStyle
 )
 from .p_settings import (
-    RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
+    RZMenuConfig, RZMLanguageItem, RZMLocKey, RZMTranslationEntry,
+    DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
     RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition,
     RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer
 )
@@ -125,31 +126,74 @@ class RZModProducerSettings(bpy.types.PropertyGroup):
     )
 
 classes_to_register = [
-    # ─ RZMTierRef FIRST: used by CollectionProperty in ValueProperty, RZMShape, RZMenuElement ─
+    # ── 1. ATOMS (No dependencies or absolute foundation) ────────────────
     RZMTierRef,
-    # ─ RZMProfileValue BEFORE ValueProperty / ToggleDefinition / RZMShape ──────────────────
     RZMProfileValue,
-    RZMenuStyle, RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig,
-    ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
-    ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement,
-    TexResource, TexOverride, TexWorksMaterial,
-    TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
-    RZMShapeKey, RZMShape,
-    RZMObjectRef, ShapeKeyConfig,
-    # ─ New API classes: RunLink and Keybind AFTER RZMShape ───────────────────────────
-    RZMRunLink,
-    RZMKeybind,
-    # --- Register BlendResize before settings that point to it ---
-    RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings,
-    RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings,
-    # ─ Tier system: RZMTierDefinition must be registered BEFORE RZM_AddonPreferences ─
-    RZMTierDefinition,
+    BitProperty,
+    RZMCaptureSettings,
+    RZMenuAnimationFrame,
+    RZMenuSVGVariation,
+    RZMenuAnimationSequence,
+    RZMCollectionPointer,
+    DependencyStatus,
+    RZMCustomScript,
+    RZMCreditItem,
+    RZMFeatureItem,
     RZM_ContactItem,
     RZM_BuildProfile,
-    RZMCollectionPointer,
-    RZM_AddonPreferences,
-    RZMAutoMenuSettings, RZMenuProperties,
+    RZMTierDefinition,
+    RZMLanguageItem,
+    RZMTranslationEntry,
+    RZMShapeKey,
+    RZMCondition,
+    RZMObjectRef,
+    FXProperty,
+    FNProperty,
+    CustomProperty,
+    ValueLinkProperty,
+    RZPresetReference,
+    RZHelperReference,
+    ConditionalText,
+    ConditionalImage,
+    RZFontSlotSettings,
+    RZMBResizeBakedBone,
+    RZMBResizeBakedLayer,
+
+    # ── 2. MOLECULES (Depend on Atoms) ──────────────────────────────────
+    ValueProperty,
+    ToggleDefinition,
+    AssignedToggle,
+    RZMShape,
+    ShapeKeyConfig,
+    RZMLocKey,
+    RZMenuImage,
+    RZMenuStyle,
+    RZMComponentMapping,
+    RZMBoneResizeGroup,
+    TexWorksDecalLayer,
+    RZMRunLink,
+    RZMKeybind,
+
+    # ── 3. COMPONENTS (Complex Items for Root) ──────────────────────────
+    RZMenuElement,
+    RZMenuConfig,
+    RZMExportSettings,
+    RZMMetaDataSettings,
+    RZMBResizeSettings,
+    RZMAutoMenuSettings,
+    RZMGameSettings,
     RZModProducerSettings,
+    TexWorksSlot,
+    TexWorksComponent,
+    TexWorksMainBlock,
+    TexResource,
+    TexOverride,
+    TexWorksMaterial,
+
+    # ── 4. SYSTEM & ROOT ──────────────────────────────────────────────────
+    RZMenuAddonSettings,
+    RZM_AddonPreferences,
+    RZMenuProperties,
 ]
 
 def register():

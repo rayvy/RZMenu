@@ -18,7 +18,7 @@ from .widgets import preferences
 from .widgets import (
     outliner, inspector, viewport, asset_browser,
     variables_panel, configurator_panel, texworks_panel, texworks,
-    run_links_editor_panel, styles_manager,
+    run_links_editor_panel, styles_manager, localization_manager,
     PanelFactory
 )
 from .widgets.area import RZAreaWidget
@@ -116,6 +116,7 @@ class RZMEditorWindow(QtWidgets.QWidget):
         PanelFactory.register(texworks.RZMTexWorksPanel)
         PanelFactory.register(run_links_editor_panel.RZMRunLinksPanel)
         PanelFactory.register(styles_manager.RZMStylesPanel)
+        PanelFactory.register(localization_manager.RZMLocalizationPanel)
 
     def _trigger_initial_refresh(self):
         SIGNALS.structure_changed.emit()

@@ -2,12 +2,11 @@
 import os
 import struct
 import bpy
-
-import struct
+import json
 
 class RZMTextMapCache:
     custom_chars = []
-    
+
 def resolve_meta_text(text, scene, element, host=None):
     """
     Replicates the logic of resolve_meta_var from utils.j2 in Python.
@@ -36,8 +35,7 @@ def resolve_meta_text(text, scene, element, host=None):
     
     # 2. Parent (Host) Data
     parent = host
-    # If no explicit host, try to find parent by ID (for nested elements)
-    if not parent and hasattr(element, 'parent_id') and element.parent_id:
+    if not parent and hasattr(element, 'parent_id') and element.parent_id != -1:
         parent = next((e for e in rzm.elements if e.id == element.parent_id), None)
         
     if parent:
@@ -45,29 +43,18 @@ def resolve_meta_text(text, scene, element, host=None):
         p_text = getattr(parent, 'text_id', "")
         p_hover = getattr(parent, 'hover_text_id', "")
         
-        # Color string processing
         p_color_r, p_color_g, p_color_b, p_color_a = "1.0", "1.0", "1.0", "1.0"
         if hasattr(parent, 'color') and parent.color:
-            p_color_r = str(round(parent.color[0], 3))
-            p_color_g = str(round(parent.color[1], 3))
-            p_color_b = str(round(parent.color[2], 3))
-            p_color_a = str(round(parent.color[3], 3))
+            p_color_r = str(round(parent.color[0], 3)); p_color_g = str(round(parent.color[1], 3))
+            p_color_b = str(round(parent.color[2], 3)); p_color_a = str(round(parent.color[3], 3))
         p_color = f"{p_color_r},{p_color_g},{p_color_b},{p_color_a}"
 
-        # Parent Value link logic
-        p_val = ""
-        p_min = "0.0"
-        p_max = "1.0"
+        p_val = ""; p_min = "0.0"; p_max = "1.0"
         if hasattr(parent, 'value_link') and parent.value_link:
             first_link = parent.value_link[0]
-            if isinstance(first_link, str):
-                v_name = first_link.lstrip('$@#~')
-            elif hasattr(first_link, 'value_name'):
-                v_name = first_link.value_name.lstrip('$@#~')
-                p_min = str(getattr(first_link, 'value_min', 0.0))
-                p_max = str(getattr(first_link, 'value_max', 1.0))
-            else:
-                v_name = ""
+            v_name = first_link.value_name.lstrip('$@#~') if hasattr(first_link, 'value_name') else ""
+            p_min = str(getattr(first_link, 'value_min', 0.0))
+            p_max = str(getattr(first_link, 'value_max', 1.0))
             p_val = "$" + v_name
 
         vars_map.update({
@@ -75,127 +62,145 @@ def resolve_meta_text(text, scene, element, host=None):
             '~PText': p_text, '~Ptext': p_text, '~PT': p_text, '~pt': p_text,
             '~PHover': p_hover, '~Phover': p_hover, '~PH': p_hover, '~ph': p_hover,
             '~PColor': p_color, '~PC': p_color,
-            '~PColor.r': p_color_r, '~PColor.R': p_color_r, '~PC.r': p_color_r, '~PC.R': p_color_r,
-            '~PColor.g': p_color_g, '~PColor.G': p_color_g, '~PC.g': p_color_g, '~PC.G': p_color_g,
-            '~PColor.b': p_color_b, '~PColor.B': p_color_b, '~PC.b': p_color_b, '~PC.B': p_color_b,
-            '~PColor.a': p_color_a, '~PColor.A': p_color_a, '~PC.a': p_color_a, '~PC.A': p_color_a,
+            '~PColor.r': p_color_r, '~PC.r': p_color_r, '~PColor.g': p_color_g, '~PC.g': p_color_g,
+            '~PColor.b': p_color_b, '~PC.b': p_color_b, '~PColor.a': p_color_a, '~PC.a': p_color_a,
             '~ParentValue': p_val, '~PV': p_val, '~pv': p_val,
-            '~ParentValueMin': p_min, '~PVMin': p_min, '~PVmin': p_min, '~pvmin': p_min,
-            '~ParentValueMax': p_max, '~PVMax': p_max, '~PVmax': p_max, '~pvmax': p_max,
         })
 
-    # 3. Perform replacements (longest keys first to avoid partial matches)
     sorted_keys = sorted(vars_map.keys(), key=len, reverse=True)
     resolved_text = text
     for key in sorted_keys:
         val = vars_map[key]
-        if val is None: val = ""
-        resolved_text = resolved_text.replace(key, str(val))
+        resolved_text = resolved_text.replace(key, str(val) if val is not None else "")
         
     return resolved_text
 
-import json
-
 def pack_project_text(scene, export_dir):
     """
-    Collects all text from the scene elements, resolves meta-variables,
-    builds a dynamic character map, packs it into a 16-bit binary file,
-    and returns a mapping of element IDs to (offset, length).
+    Unified text packer using the internal Blender loc_database.
+    Static Indexing: Each unique (Resolved Text, Loc Key) pair gets a fixed index.
     """
     rzm = scene.rzm
-    
-    # Pass 1: Collect resolved strings
-    collected_strings = []
-    
-    def collect(text, key, subgroup, element, host=None):
-        resolved = resolve_meta_text(text, scene, element, host)
-        collected_strings.append({'resolved': resolved, 'key': key, 'subgroup': subgroup})
-
-    # 1. Regular Elements
-    for element in rzm.elements:
-        if not element.is_helper and not element.disable_export:
-            if element.text_id:
-                collect(element.text_id, (element.id, -1), 'single', element)
-            
-            if element.text_mode == 'CONDITIONAL_LIST':
-                for i, item in enumerate(element.conditional_texts):
-                    collect(item.text_id, (element.id, -1, i), 'conditional', element)
-
-            if element.hover_text_id:
-                collect(element.hover_text_id, (element.id, -1, 'hover'), 'single', element)
-
-    # 2. Helpers
-    for host in rzm.elements:
-        if not host.disable_export and host.helper_ids:
-            for ref in host.helper_ids:
-                helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
-                if helper:
-                    if helper.text_id:
-                        collect(helper.text_id, (helper.id, host.id), 'single', helper, host)
-                    
-                    if helper.text_mode == 'CONDITIONAL_LIST':
-                        for i, item in enumerate(helper.conditional_texts):
-                            collect(item.text_id, (helper.id, host.id, i), 'conditional', helper, host)
-                            
-                    if helper.hover_text_id:
-                        collect(helper.hover_text_id, (helper.id, host.id, 'hover'), 'single', helper, host)
-
-    # Pass 2: Build Char Map
-    custom_chars = []
-    seen_chars = set()
-    for item in collected_strings:
-        for c in item['resolved']:
-            ord_c = ord(c)
-            # Use standard ASCII 32-126. Anything outside needs a mapping slot.
-            if ord_c < 32 or ord_c > 126:
-                if c not in seen_chars:
-                    seen_chars.add(c)
-                    custom_chars.append(c)
-
-    # Sort to ensure determinism across exports with same chars
-    custom_chars.sort()
-
-    char_to_code = {}
-    for i in range(32, 128):
-        char_to_code[chr(i)] = i
-    
-    for i, c in enumerate(custom_chars):
-        char_to_code[c] = 128 + i
-
-    # Store in memory for font generator
-    RZMTextMapCache.custom_chars = custom_chars
-
-    # Pass 3: Encode and Pack (16-bit uints)
-    mapping = {
-        'single': {}, 
-        'conditional': {} 
-    }
-    
-    text_buffer = bytearray()
-    current_offset = 0  # Offset in elements (characters), not bytes
-
-    for item in collected_strings:
-        resolved = item['resolved']
-        key = item['key']
-        subgroup = item['subgroup']
-        
-        encoded_len = len(resolved)
-        for c in resolved:
-            code = char_to_code.get(c, 32) # Space fallback
-            # Pack as 16-bit unsigned integer (little-endian)
-            text_buffer.extend(struct.pack('<H', code))
-            
-        offset = current_offset
-        current_offset += encoded_len
-        mapping[subgroup][key] = (offset, encoded_len)
-
-    # Save to files
     res_dir = os.path.join(export_dir, "res")
     os.makedirs(res_dir, exist_ok=True)
     
-    bin_path = os.path.join(res_dir, "texts.bin")
-    with open(bin_path, 'wb') as f:
-        f.write(text_buffer)
+    # 1. Collect all translatable units from all elements
+    units = [] # List of {'text': resolved_val, 'key': loc_key, 'id_key': (elem_id, host_id, type)}
+    
+    def add_unit(text, loc_key, elem, host, unit_type):
+        """Helper to resolve and add a text unit with context."""
+        resolved = resolve_meta_text(text, scene, elem, host)
+        units.append({
+            'text': resolved,
+            'loc_key': loc_key,
+            'id_key': (int(elem.id) if elem else -1, int(host.id) if host else -1, str(unit_type))
+        })
+
+    for elem in rzm.elements:
+        if elem.disable_export: continue
+        # Main text
+        if elem.text_id: add_unit(elem.text_id, elem.loc_key, elem, None, 'main')
+        # Hover text
+        if elem.hover_text_id: add_unit(elem.hover_text_id, elem.hover_loc_key, elem, None, 'hover')
+        # Conditional texts
+        if elem.text_mode == 'CONDITIONAL_LIST':
+            for i, ct in enumerate(elem.conditional_texts):
+                add_unit(ct.text_id, ct.loc_key, elem, None, f"cond_{i}")
+
+        # If it's a host, process helper instances
+        if elem.helper_ids:
+            for ref in elem.helper_ids:
+                h = next((e for e in rzm.elements if e.id == ref.helper_id), None)
+                if h:
+                    if h.text_id: add_unit(h.text_id, h.loc_key, h, elem, 'main')
+                    if h.hover_text_id: add_unit(h.hover_text_id, h.hover_loc_key, h, elem, 'hover')
+                    if h.text_mode == 'CONDITIONAL_LIST':
+                        for i, ct in enumerate(h.conditional_texts):
+                            add_unit(ct.text_id, ct.loc_key, h, elem, f"cond_{i}")
+
+    # 2. Build unique master list and mapping
+    master_list = [] # List of {'default': text, 'loc_key': key}
+    identity_to_index = {}
+    mapping = {'single': {}, 'conditional': {}} # For Jinja templates
+    
+    # Reserve Index 0 for empty/unknown
+    master_list.append({'default': "", 'loc_key': ""})
+    
+    for u in units:
+        identity = (u['text'], u['loc_key'])
+        if identity not in identity_to_index:
+            identity_to_index[identity] = len(master_list)
+            master_list.append({'default': u['text'], 'loc_key': u['loc_key']})
+        
+        idx = identity_to_index[identity]
+        elem_id, host_id, u_type = u['id_key']
+        
+        # Use string keys for reliable Jinja lookup: "elemId_hostId_type"
+        mapping_key = f"{elem_id}_{host_id}_{u_type}"
+        
+        if u_type.startswith('cond_'):
+            # For conditional, we also store in a sub-dict for easier access
+            mapping['conditional'][mapping_key] = idx
+        else:
+            mapping['single'][mapping_key] = idx
+
+    # 3. Process Languages
+    db_map = {} # loc_key -> {lang_id: text}
+    for entry in rzm.loc_database:
+        db_map[entry.name] = {t.lang_id: t.text for t in entry.translations}
+        
+    languages = rzm.languages if rzm.languages else [None]
+    all_translated_texts = [] # List of Lists: [lang_idx][unit_idx]
+    
+    for lang in languages:
+        lang_id = lang.lang_id if lang else ""
+        lang_texts = []
+        for unit in master_list:
+            text = unit['default']
+            l_key = unit['loc_key']
+            if l_key and l_key in db_map:
+                translated = db_map[l_key].get(lang_id, "")
+                if translated: text = translated
+            lang_texts.append(text)
+        all_translated_texts.append(lang_texts)
+
+    # 4. Global Character Union for Font Atlas
+    total_chars = set()
+    for lang_set in all_translated_texts:
+        for s in lang_set:
+            if s:
+                for c in s:
+                    if ord(c) > 126: total_chars.add(c)
+    custom_chars = sorted(list(total_chars))
+    RZMTextMapCache.custom_chars = custom_chars
+    
+    char_to_code = {chr(i): i for i in range(32, 128)}
+    for i, c in enumerate(custom_chars): char_to_code[c] = 128 + i
+
+    # 5. Pack Buffers
+    for i, lang in enumerate(languages):
+        lang_id = lang.lang_id if lang else ""
+        lang_texts = all_translated_texts[i]
+        
+        text_buffer = bytearray()
+        meta_buffer = bytearray()
+        curr_off = 0
+        
+        for s in lang_texts:
+            s_len = len(s)
+            meta_buffer.extend(struct.pack('<II', curr_off, s_len))
+            for c in s:
+                text_buffer.extend(struct.pack('<H', char_to_code.get(c, 32)))
+            curr_off += s_len
+            
+        suffix = f"_{lang_id}" if lang_id else ""
+        with open(os.path.join(res_dir, f"texts{suffix}.bin"), 'wb') as f: f.write(text_buffer)
+        with open(os.path.join(res_dir, f"texts_meta{suffix}.bin"), 'wb') as f: f.write(meta_buffer)
+        
+        # Save as main if active
+        if lang and rzm.active_language_index < len(rzm.languages) and rzm.languages[rzm.active_language_index] == lang:
+             with open(os.path.join(res_dir, "texts.bin"), 'wb') as f: f.write(text_buffer)
+             with open(os.path.join(res_dir, "texts_meta.bin"), 'wb') as f: f.write(meta_buffer)
 
     return mapping
 

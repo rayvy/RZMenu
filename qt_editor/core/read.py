@@ -67,6 +67,55 @@ def get_all_elements_list():
         })
     return results
 
+def get_all_localized_texts():
+    """
+    Returns a flat list of all text entries in the project for the Localization Manager.
+    Scans: text_id, hover_text_id, and conditional_texts.
+    """
+    results = []
+    if not bpy.context or not bpy.context.scene: return results
+    
+    for elem in bpy.context.scene.rzm.elements:
+        # 1. Main Text
+        if elem.text_id:
+            results.append({
+                "element_id": elem.id,
+                "name": elem.element_name,
+                "type": "SINGLE",
+                "text": elem.text_id,
+                "loc_key": getattr(elem, "loc_key", ""),
+                "prop_name": "loc_key"
+            })
+            
+        # 2. Hover Text
+        if getattr(elem, "hover_text_id", ""):
+            results.append({
+                "element_id": elem.id,
+                "name": elem.element_name,
+                "type": "HOVER",
+                "text": elem.hover_text_id,
+                "loc_key": getattr(elem, "hover_loc_key", ""),
+                "prop_name": "hover_loc_key"
+            })
+            
+        # 3. Conditional Texts
+        if hasattr(elem, "conditional_texts"):
+            for i, ct in enumerate(elem.conditional_texts):
+                if ct.text_id:
+                    results.append({
+                        "element_id": elem.id,
+                        "name": elem.element_name,
+                        "type": f"CONDITIONAL [{i}]",
+                        "condition": ct.condition,
+                        "text": ct.text_id,
+                        "loc_key": ct.loc_key,
+                        "prop_name": "conditional_texts",
+                        "prop_index": i,
+                        "sub_prop": "loc_key"
+                    })
+                    
+    return results
+
 def get_variable_suggestions():
     """
     Returns a list of suggestion strings for formula autocomplete.
@@ -399,18 +448,20 @@ def get_selection_details(selected_ids, active_id):
             "color_formula_a": get_uniform("color_formula_a", default="1"),
             "font_slot": get_uniform("font_slot", default=0),
             "text_id": get_uniform("text_id", default=""),
+            "loc_key": get_uniform("loc_key", default=""),
             "text_id_is_data": get_uniform("text_id_is_data", default=False),
             "text_id_data_length": get_uniform("text_id_data_length", default=1),
             "text_id_pattern": find_common_pattern([e.text_id for e in selection])[0] if len(selection) > 1 else "",
             "original_text_ids": [e.text_id for e in selection] if len(selection) > 1 else [],
             "hover_text_id": get_uniform("hover_text_id", default=""),
+            "hover_loc_key": get_uniform("hover_loc_key", default=""),
             "hover_text_id_is_data": get_uniform("hover_text_id_is_data", default=False),
             "hover_text_id_data_length": get_uniform("hover_text_id_data_length", default=1),
             "hover_text_id_pattern": find_common_pattern([e.hover_text_id for e in selection])[0] if len(selection) > 1 else "",
             "original_hover_text_ids": [e.hover_text_id for e in selection] if len(selection) > 1 else [],
             "text_mode": get_uniform("text_mode", default="SINGLE"),
             "conditional_texts": [
-                {"condition": ct.condition, "text_id": ct.text_id} 
+                {"condition": ct.condition, "text_id": ct.text_id, "loc_key": ct.loc_key} 
                 for ct in target.conditional_texts
             ] if target else [],
             
@@ -568,6 +619,8 @@ def get_viewport_data():
             "svg_offset_y": getattr(elem, "svg_offset", [0, 0])[1],
             "font_slot": getattr(elem, "font_slot", 0),
             "text_id": getattr(elem, "text_id", ""),
+            "loc_key": getattr(elem, "loc_key", ""),
+            "hover_loc_key": getattr(elem, "hover_loc_key", ""),
             "color": color_list,
             "is_hidden": getattr(elem, "qt_hide", False),
             "is_selectable": getattr(elem, "qt_selectable", True),

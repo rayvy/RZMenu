@@ -568,12 +568,30 @@ endif
 
 {% macro generate_text(element, host_element=none) %}
     {% set t_id = element.text_id | default('') | string %}
-    {# Редирект для ~PT: если хелпер просто хочет текст родителя, берем CommandList родителя (ORIGINALS) #}
+    {% set host_id = host_element.id if (host_element and element.is_helper) else -1 %}
+    
+    {# Handle Redirects for Helpers #}
     {% if (t_id == "~PT" or t_id == "~pt" or t_id == "~PText") and host_element %}
-        run = CommandListGetTextElement{{ host_element.id }}
-    {% elif element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
-        {%- set h_suffix = "_" ~ host_element.id if host_element and element.is_helper else "" -%}
-        run = CommandListGetTextElement{{ element.id }}{{ h_suffix }}
+        {% set map_key = host_element.id|string ~ "_-1_main" %}
+        {% set txt_id = rzm_text_map.single.get(map_key, 0) %}
+        $TextID = {{ txt_id }}
+    {% elif element.text_mode == 'CONDITIONAL_LIST' and element.conditional_texts %}
+        {% for item in element.conditional_texts %}
+            {% set map_key = element.id|string ~ "_" ~ host_id|string ~ "_cond_" ~ loop.index0|string %}
+            {% set txt_id = rzm_text_map.conditional.get(map_key, 0) %}
+            {% if loop.first %}if {{ utils.normalize_all_vars(item.condition, element, scene) }}
+            {% else %}elif {{ utils.normalize_all_vars(item.condition, element, scene) }}{% endif %}
+                $TextID = {{ txt_id }}
+        {% endfor %}
+        else
+            {% set map_key = element.id|string ~ "_" ~ host_id|string ~ "_main" %}
+            {% set txt_id = rzm_text_map.single.get(map_key, 0) %}
+            $TextID = {{ txt_id }}
+        endif
+    {% elif element.text_id %}
+        {% set map_key = element.id|string ~ "_" ~ host_id|string ~ "_main" %}
+        {% set txt_id = rzm_text_map.single.get(map_key, 0) %}
+        $TextID = {{ txt_id }}
     {% endif %}
     
     $texSizeX = {{ utils.TEXT_ALIGN_MAP.get(element.text_align, 0) }}
@@ -582,15 +600,20 @@ endif
 {%macro generate_hovertext(element, host_element=none)%}
     {% if element.hover_text_id %}
         {% set h_id = element.hover_text_id | default('') | string %}
-        if $CursorX > $PositionX && $CursorX < ($PositionX + $SizeX) && $CursorY > $PositionY && $CursorY < ($PositionY + $SizeY)
-        y24 = 1
-        {# Редирект для ~PH (Hover): берем CommandList родителя #}
-        {% if (h_id == "~PH" or h_id == "~ph" or h_id == "~PHover") and host_element %}
-            run = CommandListGetTextHoverElement{{ host_element.id }}
-        {% else %}
-            {%- set h_suffix = "_" ~ host_element.id if host_element and element.is_helper else "" -%}
-            run = CommandListGetTextHoverElement{{ element.id }}{{ h_suffix }}
-        {% endif %}
+        {% set host_id = host_element.id if (host_element and element.is_helper) else -1 %}
+        if $cursorX > $positionX && $cursorX < ($positionX + $sizeX) && $cursorY > $positionY && $cursorY < ($positionY + $sizeY)
+            y24 = 1
+            {# Редирект для ~PH (Hover): берем ID родителя #}
+            {% if (h_id == "~PH" or h_id == "~ph" or h_id == "~PHover") and host_element %}
+                {% set map_key = host_element.id|string ~ "_-1_hover" %}
+                {% set txt_id = rzm_text_map.single.get(map_key, 0) %}
+                $HoverTextID = {{ txt_id }}
+            {% else %}
+                {% set map_key = element.id|string ~ "_" ~ host_id|string ~ "_hover" %}
+                {% set txt_id = rzm_text_map.single.get(map_key, 0) %}
+                $HoverTextID = {{ txt_id }}
+            {% endif %}
+            run = CustomShaderRCI2D_HOVERTEXT
         endif
     {%endif%}
 {%endmacro%}

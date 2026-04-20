@@ -64,7 +64,6 @@ PROP_MAP = {
     "color": ("color", None, 'D'),
     "tag": ("tag", None, 'D'),
     "priority": ("priority", None, 'D'),
-    "qt_priority": ("qt_priority", None, 'D'),
     "is_main_window": ("is_main_window", None, 'D'),
     "is_tab_container": ("is_tab_container", None, 'S'),
     "page_color": ("page_color", None, 'D'),
@@ -73,6 +72,8 @@ PROP_MAP = {
     "font_slot": ("font_slot", None, 'D'),
     "text_id": ("text_id", None, 'D'),
     "hover_text_id": ("hover_text_id", None, 'D'),
+    "loc_key": ("loc_key", None, 'D'),
+    "hover_loc_key": ("hover_loc_key", None, 'D'),
     "text_align": ("text_align", None, 'D'),
     "image_id": ("image_id", None, 'D'),
     "hover_image_id": ("hover_image_id", None, 'D'),
@@ -88,8 +89,6 @@ PROP_MAP = {
     "disable_slider_blur": ("disable_slider_blur", None, 'D'),
     "disable_slider_prebuild_render": ("disable_slider_prebuild_render", None, 'D'),
     "text_mode": ("text_mode", None, 'D'),
-    "text_id": ("text_id", None, 'D'),
-    "hover_text_id": ("hover_text_id", None, 'D'),
     "text_id_is_data": ("text_id_is_data", None, 'D'),
     "hover_text_id_is_data": ("hover_text_id_is_data", None, 'D'),
     "text_id_data_length": ("text_id_data_length", None, 'D'),
@@ -109,9 +108,9 @@ PROP_MAP = {
     "color_formula_a": ("color_formula_a", None, 'D'),
 
     # Vector Modifiers (SVG)
-    "svg_scale": ("svg_scale", None, 'D'),
-    "svg_offset_x": ("svg_offset", 0, 'D'),
-    "svg_offset_y": ("svg_offset", 1, 'D'),
+    "svg_scale": ("svg_scale", None, 'T'),
+    "svg_offset_x": ("svg_offset", 0, 'T'),
+    "svg_offset_y": ("svg_offset", 1, 'T'),
 
     # Value Link Formula
     "value_link_is_formula": ("value_link_is_formula", None, 'D'),
@@ -120,11 +119,6 @@ PROP_MAP = {
     "class_type": ("elem_class", None, 'S'),
     "trackable": ("trackable", None, 'D'),
     "run_link_id": ("run_link_id",None, 'D'),
-
-    # SVG Modifiers
-    "svg_scale": ("svg_scale", None, 'T'),
-    "svg_offset_x": ("svg_offset", 0, 'T'),
-    "svg_offset_y": ("svg_offset", 1, 'T'),
 
 }
 

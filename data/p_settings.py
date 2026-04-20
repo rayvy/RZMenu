@@ -70,12 +70,35 @@ def on_snippet_update(self, context):
     except:
         pass
 
+class RZMLanguageItem(bpy.types.PropertyGroup):
+    """Represents a supported language in the project."""
+    name: StringProperty(name="Language Name", default="English")
+    lang_id: StringProperty(name="Language ID", default="en", description="Unique ID for the language (e.g. en, ru, de)")
+
+class RZMTranslationEntry(bpy.types.PropertyGroup):
+    """A single translation for a specific language ID."""
+    lang_id: StringProperty(name="Language ID")
+    text: StringProperty(name="Translation")
+
+class RZMLocKey(bpy.types.PropertyGroup):
+    """A unique localization key and its translations across all languages."""
+    name: StringProperty(name="Key Name", description="The loc_key used by elements (e.g. L_START_BTN)")
+    translations: CollectionProperty(type=RZMTranslationEntry)
+
 class RZMenuConfig(bpy.types.PropertyGroup): 
     canvas_size: IntVectorProperty(name="Canvas Size", size=2, default=(1920, 1080))
     pre_snippet: StringProperty(name="Pre Snippet", default="", update=on_snippet_update)
     post_snippet: StringProperty(name="Post Snippet", default="", update=on_snippet_update)
     mod_info: StringProperty(name="Mod Info", default=DEFAULT_MOD_INFO_TEXT, description="Custom mod metadata for meta.j2")
     custom_interpolation_speed: FloatProperty(name="Interpolation Speed", default=16.0, min=0.001, max=100.0)
+    
+    # --- Localization ---
+    languages: CollectionProperty(type=RZMLanguageItem)
+    active_language_index: IntProperty(name="Active Language", default=0)
+    
+    # The central database of all translatable keys
+    loc_database: CollectionProperty(type=RZMLocKey)
+    loc_database_index: IntProperty(default=0)
     
 
 
@@ -118,7 +141,7 @@ class RZMCustomScript(bpy.types.PropertyGroup):
     )
     auto_input: BoolProperty(
         name="Auto Input",
-        description="Automatically send Enter (\\n), Space, and '123' to stdin to bypass prompts",
+        description="Automatically send Enter (\n), Space, and '123' to stdin to bypass prompts",
         default=True
     )
     use_timeout: BoolProperty(

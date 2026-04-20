@@ -7,8 +7,11 @@ from .constants import FX_COMMANDS, FN_COMMANDS
 from .p_images import ConditionalImage, mark_atlas_dirty_img
 from .p_logic import ValueLinkProperty, AssignedToggle, RZMTierRef
 
-class FXProperty(bpy.types.PropertyGroup): value: EnumProperty(name="Effect", items=FX_COMMANDS)
-class FNProperty(bpy.types.PropertyGroup): function_name: EnumProperty(name="Function", items=FN_COMMANDS)
+class FXProperty(bpy.types.PropertyGroup):
+    value: EnumProperty(name="Effect", items=FX_COMMANDS)
+
+class FNProperty(bpy.types.PropertyGroup):
+    function_name: EnumProperty(name="Function", items=FN_COMMANDS)
 
 def mark_atlas_dirty(self, context):
     """Sets the atlas dirty flag to True when an image-related property changes."""
@@ -36,8 +39,11 @@ class RZFontSlotSettings(bpy.types.PropertyGroup):
     density: FloatProperty(name="Density", min=0.1, max=1.0, default=0.88)
 
 class CustomProperty(bpy.types.PropertyGroup):
-    key: StringProperty(name="Key"); value_type: EnumProperty(name="Type", items=[('STRING', "String", ""), ('INT', "Integer", ""), ('FLOAT', "Float", "")], default='STRING')
-    string_value: StringProperty(name="String Value"); int_value: IntProperty(name="Int Value"); float_value: FloatProperty(name="Float Value")
+    key: StringProperty(name="Key")
+    value_type: EnumProperty(name="Type", items=[('STRING', "String", ""), ('INT', "Integer", ""), ('FLOAT', "Float", "")], default='STRING')
+    string_value: StringProperty(name="String Value")
+    int_value: IntProperty(name="Int Value")
+    float_value: FloatProperty(name="Float Value")
 
 class RZPresetReference(bpy.types.PropertyGroup):
     preset_id: IntProperty(name="Preset ID")
@@ -47,6 +53,7 @@ class RZHelperReference(bpy.types.PropertyGroup):
 
 class ConditionalText(bpy.types.PropertyGroup):
     text_id: StringProperty(name="Text", default="New Text")
+    loc_key: StringProperty(name="Loc Key", description="Localization key (optional)")
     condition: StringProperty(name="Condition", description="Condition to show this text (e.g. $var > 0)")
 
 class RZMenuStyle(bpy.types.PropertyGroup):
@@ -96,7 +103,9 @@ class RZMenuStyle(bpy.types.PropertyGroup):
 
 
 class RZMenuElement(bpy.types.PropertyGroup):
-    element_name: StringProperty(name="Name"); id: IntProperty(name="Unique ID"); parent_id: IntProperty(name="Parent ID", default=-1)
+    element_name: StringProperty(name="Name")
+    id: IntProperty(name="Unique ID")
+    parent_id: IntProperty(name="Parent ID", default=-1)
     is_preset: BoolProperty(name="Is Preset", default=False)
     is_helper: BoolProperty(name="Is Helper", default=False, description="Marks this element as a helper (functional supplement, not just visual). Helpers are exported as full elements with offset IDs and support ~ParentValue substitution")
     is_template_prefab: BoolProperty(name="Is Template Prefab", default=False, description="Marks this element as a template prefab for menu auto-generation")
@@ -105,7 +114,8 @@ class RZMenuElement(bpy.types.PropertyGroup):
         ('PAGE_BLOCK', "Page Block", "Container prefab for a page/tab block"),
         ('BUTTONS', "Buttons", "Prefab for a button group or single button"),
     ], default='MAIN_BLOCK')
-    priority: IntProperty(name="Priority", default=0); tag: StringProperty(name="Tag")
+    priority: IntProperty(name="Priority", default=0)
+    tag: StringProperty(name="Tag")
     qt_priority: IntProperty(name="QT Priority", default=0)
     elem_class: EnumProperty( name="Class", items=[('CONTAINER', "Container", ""), ('GRID_CONTAINER', "Grid Container", ""), ('ANCHOR', "Anchor", ""), ('BUTTON', "Button", ""), ('SLIDER', "Slider", ""), ('TEXT', "Text", ""), ('VECTOR_BOX', "Vector Box", "")], default='CONTAINER')
     visibility_mode: EnumProperty(name="Visibility", items=[('ALWAYS', "Always Visible", ""), ('CONDITIONAL', "Conditional", ""), ('HIDED', "Hided", "")], default='ALWAYS')
@@ -151,13 +161,17 @@ class RZMenuElement(bpy.types.PropertyGroup):
 
     conditional_images: CollectionProperty(type=ConditionalImage)
     text_mode: EnumProperty(name="Text Mode",items=[('SINGLE', "Single", "Обычный одиночный текст"),('CONDITIONAL_LIST', "Conditional List", "Список текстов, меняющихся по условию"),('INDEX_LIST', "Index List", "Список, выбираемый по индексу (пока резерв)")],default='SINGLE')
-    text_id: StringProperty(name="Text ID"); hover_text_id: StringProperty(name="Hover Text ID")
+    text_id: StringProperty(name="Text ID")
+    hover_text_id: StringProperty(name="Hover Text ID")
+    loc_key: StringProperty(name="Loc Key", description="Global localization key (optional)")
+    hover_loc_key: StringProperty(name="Hover Loc Key", description="Global localization key for hover text (optional)")
     text_id_is_data: BoolProperty(name="Text ID is Data Key", description="If true, text_id is treated as a runtime data key (e.g. a variable name) rather than a literal string", default=False)
     text_id_data_length: IntProperty(name="Text Data Length", default=1, min=0, max=1024)
     hover_text_id_is_data: BoolProperty(name="Hover Text ID is Data Key", description="If true, hover_text_id is treated as a runtime data key rather than a literal string", default=False)
     hover_text_id_data_length: IntProperty(name="Hover Data Length", default=1, min=0, max=1024)
     conditional_texts: CollectionProperty(type=ConditionalText)
-    tile_uv: IntVectorProperty(name="Tile UV", size=2); tile_size: IntVectorProperty(name="Tile Size", size=2)
+    tile_uv: IntVectorProperty(name="Tile UV", size=2)
+    tile_size: IntVectorProperty(name="Tile Size", size=2)
     color_is_formula: BoolProperty(name="Color Formula Mode", default=False)
     color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(1.0, 1.0, 1.0, 1.0))
     color_formula_r: StringProperty(name="Color R Formula", default="1")
@@ -174,11 +188,14 @@ class RZMenuElement(bpy.types.PropertyGroup):
     is_main_window: BoolProperty(name="Is Main Window")
     is_tab_container: BoolProperty(name="Is Page (Isolation)", description="Treat this as an isolation root (page) in the viewport", default=False)
     page_color: FloatVectorProperty(name="Page Color", subtype='COLOR', size=4, min=0, max=1, default=(0.5, 0.5, 0.5, 1.0))
-    grid_cell_size: IntProperty(name="Cell Size", default=64); grid_min_cells: IntVectorProperty(name="Min Cells (X, Y)", size=2, default=(1, 1))
+    grid_cell_size: IntProperty(name="Cell Size", default=64)
+    grid_min_cells: IntVectorProperty(name="Min Cells (X, Y)", size=2, default=(1, 1))
     grid_max_cells: IntVectorProperty(name="Max Cells (X, Y)", size=2, default=(10, 10))
     grid_wrap_mode: EnumProperty(name="Wrap Mode", items=[('SCROLL', "Scroll", ""), ('PAGINATE', "Paginate", "")], default='SCROLL')
     toggles: CollectionProperty(type=AssignedToggle)
-    fx: CollectionProperty(type=FXProperty); fn: CollectionProperty(type=FNProperty); properties: CollectionProperty(type=CustomProperty)
+    fx: CollectionProperty(type=FXProperty)
+    fn: CollectionProperty(type=FNProperty)
+    properties: CollectionProperty(type=CustomProperty)
     style_id: IntProperty(name="Style ID", description="Стиль из глобального реестра (-1 = нет)", default=-1)
     preset_ids: CollectionProperty(type=RZPresetReference)
     underlayer_preset_ids: CollectionProperty(type=RZPresetReference)
@@ -214,6 +231,3 @@ class RZMenuElement(bpy.types.PropertyGroup):
                     "-1 = no run link. Stable across RunLink renames."
     )
 
-    # SVG Modifiers (Element-level)
-    svg_scale: FloatProperty(name="SVG Scale", default=1.0, min=0.01, max=10.0, update=mark_atlas_dirty)
-    svg_offset: FloatVectorProperty(name="SVG Offset", size=2, default=(0.0, 0.0), update=mark_atlas_dirty)

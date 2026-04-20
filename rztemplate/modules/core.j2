@@ -859,8 +859,8 @@ x105 = 0
 endif
 y105 = $fontSlot
 w105 = $rotation
-x102 = $texPosX
-y102 = $texPosY
+x102 = $TextID
+y102 = 0
 z102 = $texSizeX
 w102 = $texSizeY
 x109 = $scissorX
@@ -940,8 +940,8 @@ x101 = 1
 y101 = 1
 z101 = 1
 w101 = y24 * 2
-x102 = $textOffset
-y102 = $textLength
+x102 = $HoverTextID
+y102 = 0
 z102 = 0
 w102 = 0
 x109 = $scissorX
@@ -1060,6 +1060,7 @@ ResourceBB = copy_desc bb
 vs-t100 = ref ResourceDataBuffer
 vs-t104 = ref ResourceIndexBuffer
 vs-t103 = ref ResourceText
+vs-t106 = ref ResourceTextMeta
 vs-t105 = ref ResourceStyleBuffer
 ps-t105 = ref ResourceStyleBuffer
 
@@ -1085,6 +1086,7 @@ vs-t85 = ResourceFont3
 ps-t85 = ResourceFont3
 {% endif -%}
 run = CustomShaderDI2D.PASS0.BLUR
+run = CommandListSwapLanguage
 run = CustomShaderDI2D.PASS.MAIN
 clear = ResourceDataBuffer
 clear = ResourceIndexBuffer
@@ -1198,6 +1200,39 @@ type = Buffer
 format = R16_UINT
 filename = .\res\texts.bin
 
+[ResourceTextMeta]
+type = Buffer
+format = R32G32_UINT
+filename = .\res\texts_meta.bin
+
+{# -- Language Suffixes -- #}
+{% if scene.rzm and scene.rzm.config and scene.rzm.config.languages %}
+{% for lang in scene.rzm.config.languages %}
+[ResourceText.{{ loop.index }}]
+type = Buffer
+format = R16_UINT
+filename = .\res\texts_{{ lang.id }}.bin
+
+[ResourceTextMeta.{{ loop.index }}]
+type = Buffer
+format = R32G32_UINT
+filename = .\res\texts_meta_{{ lang.id }}.bin
+{% endfor %}
+{% endif %}
+
+[CommandListSwapLanguage]
+if $loc_index == 0
+    ResourceText = ref ResourceText
+    ResourceTextMeta = ref ResourceTextMeta
+{% if scene.rzm and scene.rzm.config and scene.rzm.config.languages %}
+{% for lang in scene.rzm.config.languages %}
+elif $loc_index == {{ loop.index }}
+    ResourceText = ref ResourceText.{{ loop.index }}
+    ResourceTextMeta = ref ResourceTextMeta.{{ loop.index }}
+{% endfor %}
+{% endif %}
+endif
+
 [ResourceStyleBuffer]
 type = Buffer
 format = R32G32B32A32_FLOAT
@@ -1205,6 +1240,7 @@ filename = .\res\styles.bin
 
 [Constants]
 global $debugTexShow = 0
+global persist $loc_index = 0
 [KeyShowTexDebug]
 key = L
 type = hold

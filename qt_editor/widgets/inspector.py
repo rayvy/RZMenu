@@ -503,15 +503,25 @@ class RZConditionalTextItem(RZInspectorItem):
         self.edit_txt.editingFinished.connect(self._on_txt_changed)
         self.v_content.addWidget(self.edit_txt)
 
+        self.edit_loc = RZLineEdit()
+        self.edit_loc.setPlaceholderText("Loc Key (optional)...")
+        self.edit_loc.setText(data.get('loc_key', ''))
+        self.edit_loc.editingFinished.connect(self._on_loc_changed)
+        self.v_content.addWidget(self.edit_loc)
+
     def _on_cond_changed(self):
         self.parent_list.item_changed(self.index, 'condition', self.edit_cond.text())
 
     def _on_txt_changed(self):
         self.parent_list.item_changed(self.index, 'text_id', self.edit_txt.text())
 
+    def _on_loc_changed(self):
+        self.parent_list.item_changed(self.index, 'loc_key', self.edit_loc.text())
+
     def update_data(self, data):
         self.edit_cond.setText(data.get('condition', ''))
         self.edit_txt.setText(data.get('text_id', ''))
+        self.edit_loc.setText(data.get('loc_key', ''))
 
     def set_cond_visible(self, visible):
         self.edit_cond.setVisible(visible)
@@ -1619,6 +1629,7 @@ class RZMInspectorPanel(RZEditorPanel):
             
             h_txt = QtWidgets.QHBoxLayout()
             self.edit_txt_id = self._add_row(h_txt, "Text ID:", RZLineEdit(), 'text_id')
+            self.edit_loc_key = self._add_row(h_txt, "Loc Key:", RZLineEdit(), 'loc_key')
             self.chk_txt_is_data = self._add_row(h_txt, "", RZCheckBox("Is Data"), 'text_id_is_data')
             self.spin_txt_data_len = self._add_row(h_txt, "Len:", RZSpinBox(), 'text_id_data_length')
             self.spin_txt_data_len.setFixedWidth(50)
@@ -1626,6 +1637,7 @@ class RZMInspectorPanel(RZEditorPanel):
             
             h_hov = QtWidgets.QHBoxLayout()
             self.edit_hov_txt = self._add_row(h_hov, "Hover ID:", RZLineEdit(), 'hover_text_id')
+            self.edit_hov_loc = self._add_row(h_hov, "Hover Loc:", RZLineEdit(), 'hover_loc_key')
             self.chk_hov_is_data = self._add_row(h_hov, "", RZCheckBox("Is Data"), 'hover_text_id_is_data')
             self.spin_hov_data_len = self._add_row(h_hov, "Len:", RZSpinBox(), 'hover_text_id_data_length')
             self.spin_hov_data_len.setFixedWidth(50)
@@ -1779,6 +1791,10 @@ class RZMInspectorPanel(RZEditorPanel):
                 originals = self.edit_hov_txt.get_originals()
                 print(f"[INSPECTOR] Pattern edit for 'hover_text_id'. Originals ({len(originals)}): {originals}")
                 core.props.update_property_multi_pattern(ctx.selected_ids, key, val, sub, originals)
+            elif key in ['loc_key', 'hover_loc_key']:
+                print(f"[INSPECTOR] Localization key update for '{key}': {val}")
+                core.update_property_multi(ctx.selected_ids, key, val, sub)
+                return
             
             if is_pattern_edit:
                 return
@@ -2060,6 +2076,10 @@ class RZMInspectorPanel(RZEditorPanel):
                     else:
                         self.edit_txt_id.clear_pattern()
                         self.edit_txt_id.set_text_silent(props.get('text_id', ''))
+                
+                if hasattr(self, 'edit_loc_key'):
+                    self.edit_loc_key.set_text_silent(props.get('loc_key', ''))
+
                 if hasattr(self, 'chk_txt_is_data'):
                     self.chk_txt_is_data.setChecked(props.get('text_id_is_data', False))
                         
@@ -2069,6 +2089,10 @@ class RZMInspectorPanel(RZEditorPanel):
                     else:
                         self.edit_hov_txt.clear_pattern()
                         self.edit_hov_txt.set_text_silent(props.get('hover_text_id', ''))
+                
+                if hasattr(self, 'edit_hov_loc'):
+                    self.edit_hov_loc.set_text_silent(props.get('hover_loc_key', ''))
+
                 if hasattr(self, 'chk_hov_is_data'):
                     self.chk_hov_is_data.setChecked(props.get('hover_text_id_is_data', False))
             else:

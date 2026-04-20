@@ -21,6 +21,7 @@ Buffer<float4>    DataBuffer : register(t100);
 Buffer<uint>      IndexBuffer : register(t104);
 Buffer<uint>      TextPoolBuffer : register(t103);
 Buffer<float4>    ResourceStyleBuffer : register(t105);
+Buffer<uint2>     TextMetaBuffer : register(t106);
 
 Texture2D<float4> AtlasIcons : register(t80);
 Texture2D<float4> AtlasFont0 : register(t82);
@@ -156,7 +157,10 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
     if (mode == MODE_TEXT || mode == MODE_NUMBER) {
         uint chars[MAX_CHARS]; uint count = 0;
         if (mode == MODE_TEXT) {
-            uint off = (uint)tile.x; count = min((uint)tile.y, MAX_CHARS);
+            uint textID = (uint)tile.x;
+            uint2 meta = TextMetaBuffer[textID];
+            uint off = meta.x;
+            count = min(meta.y, MAX_CHARS);
             for(uint i=0; i<count; ++i) chars[i] = TextPoolBuffer[off+i];
         } else ParseNumber(tile.x, clamp((int)tile.y,0,9), chars, count);
 
