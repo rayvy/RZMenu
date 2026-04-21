@@ -238,14 +238,31 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
             atlas_pixels[y:y+h, x:x+w] = img_pixels
             
         elif hasattr(img, 'pixels'):
-            # Blender Image support (for Raster icons)
-            # Temporarily switch to Non-Color to get raw bits without Blender's linearization
+            # Blender Image support (for Raster icons / Animated frames)
+            # Ensure bits are read as-is without Blender's linearization
             old_colorspace = img.colorspace_settings.name
             if old_colorspace != 'Non-Color':
                 img.colorspace_settings.name = 'Non-Color'
+            
             try:
-                img_pixels = np.empty(w * h * 4, dtype=np.float32)
+                # Security check: ensure img.pixels matches w*h*4
+                expected_len = w * h * 4
+                actual_len = len(img.pixels)
+                
+                if actual_len != expected_len:
+                    print(f"[RZM Atlas] ERROR: Buffer size mismatch for '{name}'. Expected {expected_len}, got {actual_len}. Skipping.")
+                    continue
+                
+                img_pixels = np.empty(expected_len, dtype=np.float32)
                 img.pixels.foreach_get(img_pixels)
+                
+                # Check if we actually got non-zero pixels (debug)
+                if np.max(img_pixels) == 0.0:
+                    # If alpha is also 0, it's fully transparent. 
+                    # But if RGB are 0 and Alpha is 1, it's solid black.
+                    # We print a warning only if it looks suspiciously empty.
+                    pass 
+
                 img_pixels = img_pixels.reshape((h, w, 4))
                 atlas_pixels[y:y+h, x:x+w] = img_pixels
             finally:

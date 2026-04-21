@@ -435,7 +435,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                 )
                 
                 # Создаем временные Blender-картинки для рендера
-                bl_frames = frames_to_blender_images(unique_frames, f"TEMP_{img.display_name}")
+                bl_frames = frames_to_blender_images(unique_frames, f"TEMP_{img.display_name}", colorspace='Non-Color')
                 temp_bl_images.extend(bl_frames)
                 
                 for n, bl_img in enumerate(bl_frames):
