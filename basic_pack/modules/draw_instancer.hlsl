@@ -1,6 +1,6 @@
 /* 
 ================================================================================
-SHADER: UI COMPOSITOR v3.3 (AUTO-FIT TEXT ADDED)
+SHADER: UI COMPOSITOR v3.3 (AUTO-FIT TEXT ADDED + TEXT_ID SYSTEM)
 ================================================================================
 */
 
@@ -19,7 +19,10 @@ SHADER: UI COMPOSITOR v3.3 (AUTO-FIT TEXT ADDED)
 Texture1D<float4> GlobalParams : register(t120);
 Buffer<float4>    DataBuffer : register(t100);
 Buffer<uint>      IndexBuffer : register(t104);
-Buffer<uint>      TextPoolBuffer : register(t103);
+
+// [ИЗМЕНЕНО] Теперь буфер формата uint4 (R16G16B16A16_UINT расширяется до uint4)
+Buffer<uint4>     TextPoolBuffer : register(t103);
+
 Buffer<float4>    ResourceStyleBuffer : register(t105);
 
 Texture2D<float4> AtlasIcons : register(t80);
@@ -155,10 +158,25 @@ void ParseNumber(float val, int prec, inout uint buf[MAX_CHARS], inout uint cnt)
 float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float2 pos, inout float2 size) {
     if (mode == MODE_TEXT || mode == MODE_NUMBER) {
         uint chars[MAX_CHARS]; uint count = 0;
+        int align = 0; // [ИЗМЕНЕНО] Переменная выравнивания объявляется здесь
+        
         if (mode == MODE_TEXT) {
-            uint off = (uint)tile.x; count = min((uint)tile.y, MAX_CHARS);
-            for(uint i=0; i<count; ++i) chars[i] = TextPoolBuffer[off+i];
-        } else ParseNumber(tile.x, clamp((int)tile.y,0,9), chars, count);
+            // [ИЗМЕНЕНО] Новая логика чтения метаданных текста
+            uint text_id = (uint)tile.x;
+            uint4 textMeta = TextPoolBuffer[text_id];
+            
+            uint off = textMeta.x;               // 1-ый канал (R): offset
+            count = min(textMeta.y, MAX_CHARS);  // 2-ой канал (G): length
+            align = (int)textMeta.z;             // 3-ий канал (B): alignment
+            
+            for(uint i=0; i<count; ++i) {
+                chars[i] = TextPoolBuffer[off+i].w; // 4-ый канал (A): сам символ
+            }
+        } else {
+            // Для чисел оставляем старую логику чтения
+            ParseNumber(tile.x, clamp((int)tile.y,0,9), chars, count);
+            align = (int)tile.z; 
+        }
 
         uint w = 0, h = 0; 
         if (fontSlot == 1) AtlasFont1.GetDimensions(w, h);
@@ -179,11 +197,11 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
         }
 
         // --- AUTO-FIT LOGIC (SQUISH) ---
-        float inputLimitWidth = size.x * ScreenRes.x; // Лимит ширины из $sizeX
-        float currentTextWidth = totalW * scale;      // Реальная ширина текста
+        float inputLimitWidth = size.x * ScreenRes.x;
+        float currentTextWidth = totalW * scale;      
         float squeeze = 1.0;
 
-        int align = (int)tile.z;
+        // [ИЗМЕНЕНО] Используем уже извлеченный align
         bool isFree = align >= 3;
         if (isFree) align -= 3;
 
@@ -198,7 +216,6 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
         if (align == 2) shift = firstOff + totalW;
         
         float2 basePos = pos;
-        // Применяем squeeze к сдвигу выравнивания
         basePos.x -= (shift / ScreenRes.x) * scale * squeeze;
         
         uint idx = vID / 6;
@@ -212,10 +229,7 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
         float baseAdj = (ref.offY + ref.glyphH + (128.0/7.5) - (m.offY + m.glyphH));
         pos.y = basePos.y + (baseAdj / ScreenRes.y) * scale;
         
-        // Применяем squeeze к позиции буквы (уменьшаем расстояние между буквами)
         pos.x = basePos.x + ((curX + m.offX) / ScreenRes.x) * scale * squeeze;
-        
-        // Применяем squeeze к ширине самой буквы (сплющиваем букву)
         size.x = (m.glyphW / ScreenRes.x) * scale * squeeze;
         size.y = (m.glyphH / ScreenRes.y) * scale;
         
@@ -276,7 +290,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     float4 mirrorData = DataBuffer[base_idx + 4];
     
     output.extraData.x = tileData.x;
-    output.extraData.y = mirrorData.y; // fontSlot passed through G channel
+    output.extraData.y = mirrorData.y; 
     output.mirrorMode = (int)mirrorData.x;
 
     float2 pos = DataBuffer[base_idx + 1].xy;
@@ -290,7 +304,6 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     if (output.styleId >= 0) {
         styleBaseIdx = (int)output.styleId * 12;
         styleFlags = asuint(ResourceStyleBuffer[styleBaseIdx + 0].x);
-
     }
 
     if (styleFlags & BIT_ANIM_RESIZE) {
@@ -328,27 +341,16 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     float2 finalPos = ApplyAnimation(output.animType, styleFlags, styleBaseIdx, expandedPos, expandedSize, quadUv);
     float rotationTurns = mirrorData.w;
     if (rotationTurns != 0.0) {
-        // Конвертируем обороты (0.0 - 1.0) в радианы
         float a = rotationTurns * 6.2831853;
         float s = sin(a), c = cos(a);
-        
-        // Центр вращения (оригинальный центр элемента)
         float2 center = pos + size * 0.5;
-        
-        // Смещаем координату в 0 относительно центра
         float2 p = finalPos - center;
-        
-        // Корректируем aspect ratio экрана, чтобы квадрат оставался квадратом при повороте
         p.x *= ScreenRes.x / ScreenRes.y;
         
-        // Вращаем 2D вектор
         float2 rotated;
         rotated.x = p.x * c - p.y * s;
         rotated.y = p.x * s + p.y * c;
-        
-        // Возвращаем aspect ratio обратно
         rotated.x *= ScreenRes.y / ScreenRes.x;
-        
         finalPos = center + rotated;
     }
     output.position = float4(finalPos * 2.0 - 1.0, 0.5, 1.0);
@@ -403,14 +405,10 @@ float4 main(VertexOutput input) : SV_Target0 {
             else rawTexture = AtlasFont0.Sample(LinearSampler, uv);
         } else {
             float2 finalUV = input.contentUV;
-            
-            // Надежное извлечение режима зеркалирования (спасает от потери точности)
             int mMode = (int)round(input.mirrorMode); 
-            
             if (mMode == 1 || mMode == 3) finalUV.x = 1.0 - finalUV.x;
             if (mMode == 2 || mMode == 3) finalUV.y = 1.0 - finalUV.y;
             
-            // Используем новое имя переменной (uvSample), чтобы не было конфликтов
             float2 uvSample = input.atlasRect.xy + finalUV * input.atlasRect.zw;
             rawTexture = AtlasIcons.Sample(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y));
         }
@@ -421,7 +419,6 @@ float4 main(VertexOutput input) : SV_Target0 {
     if (input.styleId >= 0) {
         baseIdx = (int)input.styleId * 12;
         styleFlags = asuint(ResourceStyleBuffer[baseIdx + 0].x);
-
     }
 
     // 3. Shadow Layer
@@ -437,7 +434,6 @@ float4 main(VertexOutput input) : SV_Target0 {
     float4 objectLayer = float4(0,0,0,0);
 
     if (insideBounds || isBlurBg) {
-        
         // --- SMART BLUR LOGIC ---
         if (input.drawMode == MODE_MASKED_BLUR || isBlurBg || (styleFlags & BIT_BLUR)) {
             
@@ -528,8 +524,6 @@ float4 main(VertexOutput input) : SV_Target0 {
          for(int k=0; k<4; k++) {
              float2 cUV = input.contentUV + offs[k];
              if(cUV.x>0 && cUV.x<1 && cUV.y>0 && cUV.y<1) {
-                 
-                 // ПРИМЕНЯЕМ ЗЕРКАЛИРОВАНИЕ ДЛЯ ОБВОДКИ
                  float2 outlineUV = cUV;
                  if (input.drawMode != MODE_TEXT && input.drawMode != MODE_NUMBER) {
                      if (mMode == 1 || mMode == 3) outlineUV.x = 1.0 - outlineUV.x;

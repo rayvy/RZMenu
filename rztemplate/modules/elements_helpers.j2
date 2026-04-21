@@ -15,60 +15,51 @@
             {% set fallback_text = utils.resolve_meta_var(element.text_id | default("NO_TEXT"), scene, element, host) %}
             {% set resources_to_generate = [] %}
             
-            [CommandListGetTextElement{{ combined_id }}]
-
             {# --- Логика для CONDITIONAL_LIST --- #}
             {% if element.text_mode == 'CONDITIONAL_LIST' and element.conditional_texts %}
                 {% set host_id = host.id if host else -1 %}
                 {% for item in element.conditional_texts %}
-                    {% set txt_info = rzm_text_map['conditional'].get((element.id, host_id, loop.index0), (0, 0)) %}
-                    {% set current_offset = txt_info[0] %}
-                    {% set txt_len = txt_info[1] %}
+                    {% set text_info = rzm_text_map['conditional'].get((element.id, host_id, loop.index0), (0, 0)) %}
+                    {% set text_id = text_info[0] %}
 
                     {% if loop.first %}if {{ utils.normalize_all_vars(item.condition, element, scene) }}
                     {% else %}elif {{ utils.normalize_all_vars(item.condition, element, scene) }}{% endif %}
                     {% if element.text_id_is_data %}
                         $TextIsData = 1
-                        $texPosX = {{ item.text_id }}
+                        $TextID = {{ item.text_id }}
                         $texPosY = {{ element.text_id_data_length | default(1) }}
                     {% else %}
-                        $texPosX = {{ current_offset }}
-                        $texPosY = {{ txt_len }}
+                        
+                        $TextID = {{ text_id }}
                     {% endif %}
-                    ;cs-t24 = ResourceTextElement{{ combined_id }}.{{ loop.index }}
                 {% endfor %}
                 else
-                    {% set txt_info = rzm_text_map['single'].get((element.id, host_id), (0, 0)) %}
-                    {% set current_offset = txt_info[0] %}
-                    {% set txt_len = txt_info[1] %}
+                    {% set text_info = rzm_text_map['single'].get((element.id, host_id), (0, 0)) %}
+                    {% set text_id = text_info[0] %}
 
                     {% if element.text_id_is_data %}
                         $TextIsData = 1
-                        $texPosX = {{ fallback_text }}
+                        $TextID = {{ fallback_text }}
                         $texPosY = {{ element.text_id_data_length | default(1) }}
                     {% else %}
-                        $texPosX = {{ current_offset }}
-                        $texPosY = {{ txt_len }}
+                        $TextID = {{ text_id }}
                     {% endif %}
-                    ;cs-t24 = ResourceTextElement{{ combined_id }}.0
                 endif
 
             {# --- Логика для SINGLE --- #}
             {% else %}
                 {% set host_id = host.id if host else -1 %}
-                {% set txt_info = rzm_text_map['single'].get((element.id, host_id), (0, 0)) %}
-                {% set current_offset = txt_info[0] %}
-                {% set txt_len = txt_info[1] %}
+                {% set text_info = rzm_text_map['single'].get((element.id, host_id), (0, 0)) %}
+                {% set text_id = text_info[0] %}
 
                 {% if element.text_id_is_data %}
                     $TextIsData = 1
-                    $texPosX = {{ fallback_text }}
+                    $TextID = {{ fallback_text }}
                     $texPosY = {{ element.text_id_data_length | default(1) }}
                 {% else %}
-                    $texPosX = {{ current_offset }}
-                    $texPosY = {{ txt_len }}
+
+                    $TextID = {{ text_id }}
                 {% endif %}
-                ;cs-t24 = ResourceTextElement{{ combined_id }}.0
             {% endif %}
 
             {# --- Ресурсы (ОТКЛЮЧЕНЫ - используем texts.bin) --- #}
@@ -96,21 +87,20 @@
             {% set text_length = text_content | length %}
             {% set current_offset = text_offset_tracker[0] %}
 
-            [CommandListGetTextHoverElement{{ combined_id }}]
+            ;[CommandListGetTextHoverElement{{ combined_id }}]
             {% set host_id = host.id if host else -1 %}
-            {% set txt_info = rzm_text_map['single'].get((element.id, host_id, 'hover'), (0, 0)) %}
-            {% set current_offset = txt_info[0] %}
-            {% set text_length = txt_info[1] %}
+            {% set text_info = rzm_text_map['single'].get((element.id, host_id, 'hover'), (0, 0)) %}
+            {% set text_id = text_info[0] %}
+            {% set text_len = text_info[1] %}
 
             {% if element.hover_text_id_is_data %}
                 $TextIsData = 1
-                $textOffset = {{ element.hover_text_id }}
+                $TextID = {{ element.hover_text_id }}
                 $textLength = {{ element.hover_text_id_data_length | default(1) }}
             {% else %}
-                $textOffset = {{ current_offset }}
-                $textLength = {{ text_length }}
+                $TextID = {{ text_id }}
+                $textLength = {{ text_len }}
             {% endif %}
-            ;cs-t24 = ResourceTextHoverElement{{ combined_id }}
             run = CustomShaderRCI2D_HOVERTEXT
             ;[ResourceTextHoverElement{{ combined_id }}]
             ;type = Buffer

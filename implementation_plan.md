@@ -2,13 +2,18 @@
 
 ## Обзор
 
-Цель — реализовать **быстрый экспорт только меню**: перегенерировать «графическую оболочку» (логику RZMenu) без повторного экспорта геометрии (mesh/buffers). 
-Это позволит быстро тестировать изменения в UI, анимациях и логике, не тратя время на тяжелый процесс экспорта .buf/.ib файлов.
+Цель — реализовать **быстрый экспорт только меню**: перегенерировать «графическую оболочку» (логику RZMenu) без повторного экспорта геометрии# Simplify Text System Architecture (Revised)
+
+This plan simplifies the text system while maintaining backward compatibility and avoiding radical deletions.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> **Принцип патчинга "наизнанку"**: Вместо того чтобы вставлять меню в мод, мы генерируем весь .ini заново (с заглушкой вместо мешей), но **подставляем** в него сохраненный блок мешей из старого файла. 
+> This revision avoids Python changes and uses comments (`;`) instead of deletions in templates.
+
+> [!IMPORTANT]
+> The `run = CommandListGetTextElement...` calls are being replaced by inline variable assignments within the element's existing command list.
+ 
 > Это гарантирует, что структура .ini останется актуальной для RZMenu, но тяжелые данные мешей не потеряются.
 
 > [!WARNING]
@@ -18,50 +23,29 @@
 
 ## Предложенные изменения
 
-### 1. Standalone Jinja2 Интеграция
-Используем библиотеку Jinja2, находящуюся в `libs/jinja2`.
+### [Component] Template Logic
 
-#### [NEW] [j2_exporter.py](file:///c:/Users/Rayvy/AppData/Roaming/Blender%20Foundation/Blender/5.0/scripts/addons/RZMenu/core/j2_exporter.py)
-Создадим класс `RZMenuJ2Exporter`, который:
-- Инициализирует Environment из `libs/jinja2`.
-- Собирает контекст (scene, rzm, и т.д.).
-- Предоставляет метод `render(template_name, menu_only=False)`.
-- Для `mod_file` возвращает `StubModFile`, который не падает при обращении к `.components`.
+#### [MODIFY] [elements_helpers.j2](file:///c:/Users/Rayvy/AppData/Roaming/Blender%20Foundation/Blender/5.0/scripts/addons/RZMenu/rztemplate/modules/elements_helpers.j2)
+- Comment out `[CommandList...]` headers in `generate_text_resource_block` and `generate_hover_text_resource_block`.
+- In those macros, set `$TextID = {{ text_id }}` (from `text_info[0]`).
+- Ensure `$TextIsData` logic sets `$TextID`.
 
----
+#### [MODIFY] [core.j2](file:///c:/Users/Rayvy/AppData/Roaming/Blender%20Foundation/Blender/5.0/scripts/addons/RZMenu/rztemplate/modules/core.j2)
+- **Comment out** (do not delete) all `[CustomShaderRCI2D_TEXT_...]` blocks.
+- Update `[CustomShaderRCI2D_TEXT]` to use `x102 = $TextID`.
+- Update `[CustomShaderRCI2D_HOVERTEXT]` to use `x102 = $TextID`.
 
-### 2. Обновление шаблона
-
-#### [MODIFY] [rz_uni.j2](file:///c:/Users/Rayvy/AppData/Roaming/Blender%20Foundation/Blender/5.0/scripts/addons/RZMenu/rztemplate/rz_uni.j2)
-Добавим поддержку флага `menu_only`:
-```jinja2
-{% if not menu_only %}
-;[META-INFO] [START] [MOD-BLOCK]
-... (весь блок с hoyo.overridesbuffers и т.д.) ...
-;[META-INFO] [END] [MOD-BLOCK]
-{% else %}
-;[META-INFO] [START] [MOD-BLOCK]
-;[RZM-QUICK-UPDATE-PLACEHOLDER]
-;[META-INFO] [END] [MOD-BLOCK]
-{% endif %}
-```
-
----
-
-### 3. Оператор быстрого экспорта
-
-#### [NEW] [quick_export_ops.py](file:///c:/Users/Rayvy/AppData/Roaming/Blender%20Foundation/Blender/5.0/scripts/addons/RZMenu/operators/quick_export_ops.py)
-Реализует `RZM_OT_QuickExportMenu`:
-1. **Поиск .ini**: 
-   - Сканирует все `.ini` в папке экспорта.
-   - Игнорирует те, чьи имена начинаются на `DISABLED` или `ARCHIVED` (регистр не важен).
-   - Выбирает **самый большой** по размеру файл (эвристика на основной мод).
+#### [MODIFY] [container.j2](file:///c:/Users/Rayvy/AppData/Roaming/Blender%20Foundation/Blender/5.0/scripts/addons/RZMenu/rztemplate/modules/container.j2)
+- Update `generate_text`:
+    - Replace `run = CommandListGetTextElement...` with a direct call to `generate_text_resource_block`.
+    - Change any alignment-specific `CustomShader` runs to `run = CustomShaderRCI2D_TEXT`.
+- Update `generate_hovertext`:
+    - Replace `run = CommandListGetTextHoverElement...` with a direct call to `generate_hover_text_resource_block`.
 2. **Патчинг**:
    - Читает старый `.ini`, извлекает контент между `;[META-INFO] [START] [MOD-BLOCK]` и `;[META-INFO] [END] [MOD-BLOCK]`.
    - Рендерит новый `.ini` через `RZMenuJ2Exporter` с флагом `menu_only=True`.
    - Заменяет `;[RZM-QUICK-UPDATE-PLACEHOLDER]` на извлеченный ранее контент мешей.
    - Перезаписывает файл.
-
 ---
 
 ### 4. Интерфейс

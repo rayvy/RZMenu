@@ -1,5 +1,6 @@
 {% import "modules/base.j2" as base with context %}
 {% import "modules/utils.j2" as utils with context %}
+{% import "modules/elements_helpers.j2" as elements_helpers with context %}
 
 {%macro base(element,parent_element,mod_file,scene)%}
 {% if debug == true%}{{base.debug_info(element)}}{% endif%}
@@ -115,8 +116,8 @@ Local $current_sizeY
     {%elif class_name == 'TEXT'%}
         {{generate_text(element)}}
         {{generate_fx(element)}}
-        run = CustomShaderRCI2D_TEXT_{{element.text_align | default ('LEFT')}}
-        ;run = CustomShaderRCI2D_TEXT
+        ;run = CustomShaderRCI2D_TEXT_{{element.text_align | default ('LEFT')}}
+        run = CustomShaderRCI2D_TEXT
     {%else%}
         {{generate_image(element,parent_element,scene)}}
         {{generate_fx(element)}}
@@ -264,7 +265,7 @@ if $LocalVisibility
         run = CustomShaderRCI2D_SLIDER
     {% elif h_cls == 'TEXT' %}
         {{generate_text(helper_item, host_item)}}
-        run = CustomShaderRCI2D_TEXT_{{helper_item.text_align | default('LEFT')}}
+        ;run = CustomShaderRCI2D_TEXT_{{helper_item.text_align | default('LEFT')}}
     {% else %}
         run = CustomShaderRCI2D
     {% endif %}
@@ -321,7 +322,7 @@ endif
         $sizeY = {{ element.size_formula_y | default('$sizeY') }}
         {% endif %}
         {% if element.rotation_is_formula %}
-        $rotation = {{ element.rotation_formula | default('0') }}
+        $rotation = {{ utils.format_var(element.rotation_formula,parent_element, scene) }}
         {% elif element.rotation != 0.0 %}
         $rotation = {{ element.rotation }}
         {% endif %}
@@ -374,7 +375,7 @@ endif
         {% endif %}
 
         {% if element.rotation_is_formula %}
-        $rotation = {{ element.rotation_formula | default('0') }}
+        $rotation = {{ utils.format_var(element.rotation_formula,parent_element, scene)}}
         {% elif element.rotation != 0.0 %}
         $rotation = {{ element.rotation }}
         {% endif %}
@@ -570,13 +571,12 @@ endif
     {% set t_id = element.text_id | default('') | string %}
     {# Редирект для ~PT: если хелпер просто хочет текст родителя, берем CommandList родителя (ORIGINALS) #}
     {% if (t_id == "~PT" or t_id == "~pt" or t_id == "~PText") and host_element %}
-        run = CommandListGetTextElement{{ host_element.id }}
+        {{ elements_helpers.generate_text_resource_block(host_element, scene, [], {'text_elements': []}) }}
     {% elif element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
-        {%- set h_suffix = "_" ~ host_element.id if host_element and element.is_helper else "" -%}
-        run = CommandListGetTextElement{{ element.id }}{{ h_suffix }}
+        {{ elements_helpers.generate_text_resource_block(element, scene, [], {'text_elements': []}, host_element) }}
     {% endif %}
     
-    $texSizeX = {{ utils.TEXT_ALIGN_MAP.get(element.text_align, 0) }}
+    run = CustomShaderRCI2D_TEXT
 {% endmacro %}
 
 {%macro generate_hovertext(element, host_element=none)%}
@@ -586,10 +586,9 @@ endif
         y24 = 1
         {# Редирект для ~PH (Hover): берем CommandList родителя #}
         {% if (h_id == "~PH" or h_id == "~ph" or h_id == "~PHover") and host_element %}
-            run = CommandListGetTextHoverElement{{ host_element.id }}
+            {{ elements_helpers.generate_hover_text_resource_block(host_element, scene, [0], {'hover_text_elements': []}) }}
         {% else %}
-            {%- set h_suffix = "_" ~ host_element.id if host_element and element.is_helper else "" -%}
-            run = CommandListGetTextHoverElement{{ element.id }}{{ h_suffix }}
+            {{ elements_helpers.generate_hover_text_resource_block(element, scene, [0], {'hover_text_elements': []}, host_element) }}
         {% endif %}
         endif
     {%endif%}

@@ -99,30 +99,46 @@ import json
 def pack_project_text(scene, export_dir):
     """
     Collects all text from the scene elements, resolves meta-variables,
-    builds a dynamic character map, packs it into a 16-bit binary file,
-    and returns a mapping of element IDs to (offset, length).
+    builds a dynamic character map, packs it into a 4-channel R16G16B16A16_UINT
+    binary file, and returns a mapping of element IDs to text_id.
     """
     rzm = scene.rzm
     
-    # Pass 1: Collect resolved strings
-    collected_strings = []
+    # Text alignments mapping for the shader
+    ALIGN_MAP = {
+        'LEFT': 0, 'CENTER': 1, 'RIGHT': 2,
+        'FREE_LEFT': 3, 'FREE_CENTER': 4, 'FREE_RIGHT': 5
+    }
     
-    def collect(text, key, subgroup, element, host=None):
+    # Pass 1: Collect resolved strings with alignment
+    collected_items = []
+    
+    def collect(text, align, key, subgroup, element, host=None):
+        if not text:
+            return
         resolved = resolve_meta_text(text, scene, element, host)
-        collected_strings.append({'resolved': resolved, 'key': key, 'subgroup': subgroup})
+        # Convert align enum to int
+        align_int = ALIGN_MAP.get(align, 0)
+        collected_items.append({
+            'resolved': resolved, 
+            'align': align_int,
+            'key': key, 
+            'subgroup': subgroup
+        })
 
     # 1. Regular Elements
     for element in rzm.elements:
         if not element.is_helper and not element.disable_export:
             if element.text_id:
-                collect(element.text_id, (element.id, -1), 'single', element)
+                collect(element.text_id, element.text_align, (element.id, -1), 'single', element)
             
             if element.text_mode == 'CONDITIONAL_LIST':
                 for i, item in enumerate(element.conditional_texts):
-                    collect(item.text_id, (element.id, -1, i), 'conditional', element)
+                    collect(item.text_id, element.text_align, (element.id, -1, i), 'conditional', element)
 
             if element.hover_text_id:
-                collect(element.hover_text_id, (element.id, -1, 'hover'), 'single', element)
+                # Hover text uses the same alignment for now
+                collect(element.hover_text_id, element.text_align, (element.id, -1, 'hover'), 'single', element)
 
     # 2. Helpers
     for host in rzm.elements:
@@ -131,19 +147,19 @@ def pack_project_text(scene, export_dir):
                 helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
                 if helper:
                     if helper.text_id:
-                        collect(helper.text_id, (helper.id, host.id), 'single', helper, host)
+                        collect(helper.text_id, helper.text_align, (helper.id, host.id), 'single', helper, host)
                     
                     if helper.text_mode == 'CONDITIONAL_LIST':
                         for i, item in enumerate(helper.conditional_texts):
-                            collect(item.text_id, (helper.id, host.id, i), 'conditional', helper, host)
+                            collect(item.text_id, helper.text_align, (helper.id, host.id, i), 'conditional', helper, host)
                             
                     if helper.hover_text_id:
-                        collect(helper.hover_text_id, (helper.id, host.id, 'hover'), 'single', helper, host)
+                        collect(helper.hover_text_id, helper.text_align, (helper.id, host.id, 'hover'), 'single', helper, host)
 
-    # Pass 2: Build Char Map
+    # Pass 2: Build Char Map (needed for custom font generation)
     custom_chars = []
     seen_chars = set()
-    for item in collected_strings:
+    for item in collected_items:
         for c in item['resolved']:
             ord_c = ord(c)
             # Use standard ASCII 32-126. Anything outside needs a mapping slot.
@@ -152,42 +168,72 @@ def pack_project_text(scene, export_dir):
                     seen_chars.add(c)
                     custom_chars.append(c)
 
-    # Sort to ensure determinism across exports with same chars
     custom_chars.sort()
-
-    char_to_code = {}
-    for i in range(32, 128):
-        char_to_code[chr(i)] = i
-    
+    char_to_code = {chr(i): i for i in range(32, 128)}
     for i, c in enumerate(custom_chars):
         char_to_code[c] = 128 + i
 
     # Store in memory for font generator
     RZMTextMapCache.custom_chars = custom_chars
 
-    # Pass 3: Encode and Pack (16-bit uints)
+    # Pass 3: Group Unique Text + Align combinations and pack
+    # mapping is now element_key -> (text_id, length)
     mapping = {
         'single': {}, 
         'conditional': {} 
     }
     
-    text_buffer = bytearray()
-    current_offset = 0  # Offset in elements (characters), not bytes
-
-    for item in collected_strings:
-        resolved = item['resolved']
-        key = item['key']
-        subgroup = item['subgroup']
+    unique_texts = [] # List of (resolved_text, align_int)
+    text_to_id = {}   # (resolved_text, align_int) -> text_id
+    
+    unique_texts.append((None, 0)) 
+    
+    # Collect unique (text, align) pairs
+    for item in collected_items:
+        pair = (item['resolved'], item['align'])
+        if pair not in text_to_id:
+            text_to_id[pair] = len(unique_texts)
+            unique_texts.append(pair)
         
+        # We return a tuple (text_id, length) for the template to use
+        mapping[item['subgroup']][item['key']] = (text_to_id[pair], len(item['resolved']))
+
+    num_meta_slots = len(unique_texts)
+    
+    # We need to compute offsets for characters. Characters follow metadata slots.
+    current_char_offset = num_meta_slots
+    
+    # Preparation for buffer
+    # slot_data[index] = (R, G, B, A)
+    slots = {} # index -> (R, G, B, A)
+    
+    # Slot 0 is always empty (already handled by unique_texts[0] = (None, 0))
+    slots[0] = (0, 0, 0, 0)
+
+    for i in range(1, len(unique_texts)):
+        resolved, align = unique_texts[i]
         encoded_len = len(resolved)
-        for c in resolved:
+        
+        # Write metadata slot
+        # R=offset, G=length, B=alignment, A=0
+        slots[i] = (current_char_offset, encoded_len, align, 0)
+        
+        # Write character slots
+        for j, c in enumerate(resolved):
             code = char_to_code.get(c, 32) # Space fallback
-            # Pack as 16-bit unsigned integer (little-endian)
-            text_buffer.extend(struct.pack('<H', code))
+            # R=0, G=0, B=0, A=character_code
+            slots[current_char_offset + j] = (0, 0, 0, code)
             
-        offset = current_offset
-        current_offset += encoded_len
-        mapping[subgroup][key] = (offset, encoded_len)
+        current_char_offset += encoded_len
+
+    # Pack buffer
+    text_buffer = bytearray()
+    max_index = max(slots.keys()) if slots else -1
+    
+    for i in range(max_index + 1):
+        r, g, b, a = slots.get(i, (0, 0, 0, 0))
+        # Pack as 4x 16-bit unsigned integers (little-endian)
+        text_buffer.extend(struct.pack('<HHHH', r, g, b, a))
 
     # Save to files
     res_dir = os.path.join(export_dir, "res")
