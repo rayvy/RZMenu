@@ -152,15 +152,20 @@
                 [CommandListGetImageCords{{ image.id }}]
                 $drawType = 1
                 local $anim_t = time % {{ "%.6f" | format(image.anim_total_duration / (image.anim_speed_multiplier|default(1.0))) }}
-                {%- set ns = {'t': 0.0, 'is_first': true} %}
+
+                {% set ns = {'t': 0.0, 'is_first': true} %}
                 {% for seq in image.anim_sequence %}
-                    {%- set frame = image.anim_frames[seq.frame_index] %}
-                    {%- set t_start = ns['t'] %}
-                    {%- set t_end = t_start + seq.duration / (image.anim_speed_multiplier|default(1.0)) %}
+
+                    {% set frame = image.anim_frames[seq.frame_index] %}
+                    {% set t_start = ns['t'] %}
+                    {% set t_end = t_start + seq.duration / (image.anim_speed_multiplier|default(1.0)) %}
                     {% if frame.x != 0 or frame.y != 0 or frame.w != 0 or frame.h != 0 %}
                         {% if ns['is_first'] %}if $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
-                            {%- if ns.update({'is_first': false}) %}{% endif %}
-                        {% else %}elif $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}{% endif %}
+                            {% if ns.update({'is_first': false}) %}
+                        {% endif %}
+                        {% else %}
+                        elif $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
+                        {% endif %}
                         $texPosX = {{ frame.x }}
                         $texPosY = {{ frame.y }}
                         $texSizeX = {{ frame.w }}
