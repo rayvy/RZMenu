@@ -19,7 +19,8 @@
             {% if element.text_mode == 'CONDITIONAL_LIST' and element.conditional_texts %}
                 {% set host_id = host.id if host else -1 %}
                 {% for item in element.conditional_texts %}
-                    {% set text_info = rzm_text_map['conditional'].get((element.id, host_id, loop.index0), (0, 0)) %}
+                    {% set lookup_key = element.id ~ ":" ~ host_id ~ ":" ~ loop.index0 %}
+                    {% set text_info = scene.rzm.text_mapping['conditional'].get(lookup_key, [0, 0]) %}
                     {% set text_id = text_info[0] %}
 
                     {% if loop.first %}if {{ utils.normalize_all_vars(item.condition, element, scene) }}
@@ -34,8 +35,9 @@
                     {% endif %}
                 {% endfor %}
                 else
-                    {% set text_info = rzm_text_map['single'].get((element.id, host_id), (0, 0)) %}
-                    {% set text_id = text_info[0] %}
+                {% set lookup_key = element.id ~ ":" ~ host_id %}
+                {% set text_info = scene.rzm.text_mapping['single'].get(lookup_key, [0, 0]) %}
+                {% set text_id = text_info[0] %}
 
                     {% if element.text_id_is_data %}
                         $TextIsData = 1
@@ -49,7 +51,8 @@
             {# --- Логика для SINGLE --- #}
             {% else %}
                 {% set host_id = host.id if host else -1 %}
-                {% set text_info = rzm_text_map['single'].get((element.id, host_id), (0, 0)) %}
+                {% set lookup_key = element.id ~ ":" ~ host_id %}
+                {% set text_info = scene.rzm.text_mapping['single'].get(lookup_key, [0, 0]) %}
                 {% set text_id = text_info[0] %}
 
                 {% if element.text_id_is_data %}
@@ -89,7 +92,8 @@
 
             ;[CommandListGetTextHoverElement{{ combined_id }}]
             {% set host_id = host.id if host else -1 %}
-            {% set text_info = rzm_text_map['single'].get((element.id, host_id, 'hover'), (0, 0)) %}
+            {% set lookup_key = element.id ~ ":" ~ host_id ~ ":hover" %}
+            {% set text_info = scene.rzm.text_mapping['single'].get(lookup_key, [0, 0]) %}
             {% set text_id = text_info[0] %}
             {% set text_len = text_info[1] %}
 

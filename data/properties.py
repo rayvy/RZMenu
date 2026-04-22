@@ -112,6 +112,18 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     tw_show_tags: BoolProperty(name="Show Tags", default=True)
     tw_show_res_details: BoolProperty(name="Show Details", default=False)
 
+    # ─── Text Mapping (Persistent) ───
+    # Stores JSON-serialized mapping of element keys to (text_id, length)
+    text_mapping_json: StringProperty(name="Text Mapping JSON", default="{}")
+
+    @property
+    def text_mapping(self):
+        import json
+        try:
+            return json.loads(self.text_mapping_json)
+        except:
+            return {"single": {}, "conditional": {}}
+
 class RZModProducerSettings(bpy.types.PropertyGroup):
     build_suffix: StringProperty(
         name="Build Suffix",

@@ -243,6 +243,16 @@ def pack_project_text(scene, export_dir):
     with open(bin_path, 'wb') as f:
         f.write(text_buffer)
 
+    # Save to scene for Jinja2 access (persistent)
+    def stringify_key(k):
+        return ":".join(str(x) for x in k)
+
+    json_mapping = {
+        'single': {stringify_key(k): v for k, v in mapping['single'].items()},
+        'conditional': {stringify_key(k): v for k, v in mapping['conditional'].items()}
+    }
+    scene.rzm.text_mapping_json = json.dumps(json_mapping)
+
     return mapping
 
 def get_text_mapping_for_j2(scene, export_dir):

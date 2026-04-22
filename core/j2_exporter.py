@@ -73,20 +73,17 @@ class RZMenuJ2Exporter:
             from ..operators.export_manager import get_target_path
             export_path = get_target_path(self.context)
             if export_path:
-                text_map = get_text_mapping_for_j2(scene, export_path)
+                # This now updates scene.rzm.text_mapping_json internally
+                get_text_mapping_for_j2(scene, export_path)
                 pack_styles(scene, export_path)
-            else:
-                text_map = {'single': {}, 'conditional': {}}
         except Exception as e:
             print(f"RZMenu Text Packing Error: {e}")
-            text_map = {'single': {}, 'conditional': {}}
 
         ctx = {
             'scene': scene,
             'mod_file': mod_file,
             'rzm_is_quick_export': menu_only,
             'rzm_export_cache': export_cache,
-            'rzm_text_map': text_map,
             # Placeholder variables for EFMI/XXMI specific logic
             'extracted_object': None,
             'merged_object': None,
