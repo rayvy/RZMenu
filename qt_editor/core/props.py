@@ -87,6 +87,8 @@ PROP_MAP = {
     "disable_slider_nums": ("disable_slider_nums", None, 'D'),
     "disable_slider_blur": ("disable_slider_blur", None, 'D'),
     "disable_slider_prebuild_render": ("disable_slider_prebuild_render", None, 'D'),
+    "slider_logic_invert_x": ("slider_logic_invert_x", None, 'D'),
+    "slider_logic_invert_y": ("slider_logic_invert_y", None, 'D'),
     "text_mode": ("text_mode", None, 'D'),
     "text_id": ("text_id", None, 'D'),
     "hover_text_id": ("hover_text_id", None, 'D'),

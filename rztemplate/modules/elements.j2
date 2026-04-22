@@ -195,7 +195,14 @@ local $range_span = {{ master_max }} - {{ master_min }}
 
 if $capturedID == $id || $clickTriggerID == $id
     if $range_span > 0.0001
-        $TargetValue = {{ master_min }} + (($cursorX - $positionX) / $sizeX) * $range_span
+        {% set progress = "(($cursorX - $positionX) / $sizeX)" %}
+        {% if element.slider_logic_invert_y %}
+            {% set progress = "(1.0 - ($cursorY - $positionY) / $sizeY)" %}
+        {% endif %}
+        {% if element.slider_logic_invert_x %}
+            {% set progress = "(1.0 - " ~ progress ~ ")" %}
+        {% endif %}
+        $TargetValue = {{ master_min }} + {{ progress }} * $range_span
     else
         $TargetValue = {{ master_min }}
     endif

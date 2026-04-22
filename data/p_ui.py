@@ -210,6 +210,8 @@ class RZMenuElement(bpy.types.PropertyGroup):
     disable_slider_nums: BoolProperty(name="Disable Slider Nums", default=False)
     disable_slider_blur: BoolProperty(name="Disable Slider Blur", default=False)
     disable_slider_prebuild_render: BoolProperty(name="Force Standard Render", default=False)
+    slider_logic_invert_x: BoolProperty(name="Invert X Logic", default=False)
+    slider_logic_invert_y: BoolProperty(name="Invert Y Logic", default=False)
     disable_export: BoolProperty(name="Disable Export", description="If active, this element will not be exported to templates", default=False)
     trackable: BoolProperty(name="Trackable", description="Enable tracking/persistence for this element", default=False)
     export_tiers: CollectionProperty(

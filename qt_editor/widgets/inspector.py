@@ -1730,6 +1730,8 @@ class RZMInspectorPanel(RZEditorPanel):
             self.chk_no_slider_nums = self._add_row(layout, "", RZCheckBox("Disable Slider Nums"), 'disable_slider_nums')
             self.chk_no_slider_blur = self._add_row(layout, "", RZCheckBox("Disable Slider Blur"), 'disable_slider_blur')
             self.chk_force_std = self._add_row(layout, "", RZCheckBox("Force Standard Render"), 'disable_slider_prebuild_render')
+            self.chk_invert_x = self._add_row(layout, "", RZCheckBox("Invert X Logic"), 'slider_logic_invert_x')
+            self.chk_invert_y = self._add_row(layout, "", RZCheckBox("Invert Y Logic"), 'slider_logic_invert_y')
             
             # Vector Box
             self.chk_disable_xy = self._add_row(layout, "", RZCheckBox("Disable Default X/Y"), 'disable_default_xy')
@@ -2130,6 +2132,20 @@ class RZMInspectorPanel(RZEditorPanel):
                 if hasattr(self, 'chk_no_slider_nums'): self.chk_no_slider_nums.setChecked(props.get('disable_slider_nums') is True)
                 if hasattr(self, 'chk_no_slider_blur'): self.chk_no_slider_blur.setChecked(props.get('disable_slider_blur') is True)
                 if hasattr(self, 'chk_force_std'): self.chk_force_std.setChecked(props.get('disable_slider_prebuild_render') is True)
+                if hasattr(self, 'chk_invert_x'): self.chk_invert_x.setChecked(props.get('slider_logic_invert_x') is True)
+                if hasattr(self, 'chk_invert_y'): self.chk_invert_y.setChecked(props.get('slider_logic_invert_y') is True)
+                
+                self.set_row_visible(self.chk_no_slider_nums, True)
+                self.set_row_visible(self.chk_no_slider_blur, True)
+                self.set_row_visible(self.chk_force_std, True)
+                self.set_row_visible(self.chk_invert_x, True)
+                self.set_row_visible(self.chk_invert_y, True)
+            else:
+                if hasattr(self, 'chk_no_slider_nums'): self.set_row_visible(self.chk_no_slider_nums, False)
+                if hasattr(self, 'chk_no_slider_blur'): self.set_row_visible(self.chk_no_slider_blur, False)
+                if hasattr(self, 'chk_force_std'): self.set_row_visible(self.chk_force_std, False)
+                if hasattr(self, 'chk_invert_x'): self.set_row_visible(self.chk_invert_x, False)
+                if hasattr(self, 'chk_invert_y'): self.set_row_visible(self.chk_invert_y, False)
 
             if is_vector_box:
                 if hasattr(self, 'chk_disable_xy'): self.chk_disable_xy.setChecked(props.get('disable_default_xy') is True)
