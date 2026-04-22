@@ -159,7 +159,8 @@ class RZMenuElement(bpy.types.PropertyGroup):
     conditional_texts: CollectionProperty(type=ConditionalText)
     tile_uv: IntVectorProperty(name="Tile UV", size=2); tile_size: IntVectorProperty(name="Tile Size", size=2)
     color_is_formula: BoolProperty(name="Color Formula Mode", default=False)
-    color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(1.0, 1.0, 1.0, 1.0))
+    color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(1.0, 1.0, 1.0, 1.0), update=mark_atlas_dirty)
+
     color_formula_r: StringProperty(name="Color R Formula", default="1")
     color_formula_g: StringProperty(name="Color G Formula", default="1")
     color_formula_b: StringProperty(name="Color B Formula", default="1")

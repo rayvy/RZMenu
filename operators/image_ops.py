@@ -171,26 +171,32 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                     
                     color_key = "ORIG"
                     if not img.svg_preserve_color:
-                        # Smart Tint: only apply if alpha is high enough
                         if elem.color[3] > 0.01:
                             r, g, b = [int(elem.color[i] * 255) for i in range(3)]
                             color_key = f"{r:02x}{g:02x}{b:02x}"
                     
-                    # Variation identity includes the image ID and target Resolution
-                    var_tuple = (img_id, render_w, render_h, scale, off_x_px, off_y_px, color_key)
+                    # Unified config_key (Param-aware)
                     config_key = f"SVG_{img_id}_{render_w}x{render_h}_{scale}_{off_x_px}_{off_y_px}_{color_key}"
                     
-                    if var_tuple not in svg_render_configs:
-                        svg_render_configs[var_tuple] = {
+                    # For grouping in the image library, we must decide if we group across different source tags.
+                    # Usually, if visual parameters are same, they can share the atlas spot.
+                    # BUT for Element ID mapping, we need to know WHICH elements use WHICH variation.
+                    
+                    if config_key not in svg_render_configs:
+                        print(f"  [DEBUG] New Variation Config: {config_key} (Color: {color_key})")
+                        svg_render_configs[config_key] = {
                             'element_ids': set(),
-                            'config_key': config_key,
                             'img_id': img_id,
                             'res': (render_w, render_h),
                             'scale': scale,
                             'offset': (off_x_px, off_y_px),
-                            'color_key': color_key
+                            'color_key': color_key,
+                            'config_key': config_key
                         }
-                    svg_render_configs[var_tuple]['element_ids'].add(elem.id)
+                    svg_render_configs[config_key]['element_ids'].add(elem.id)
+                    print(f"    - Adding element {elem.id} to {config_key}")
+
+
                 else:
                     used_image_ids.add(img_id)
 
@@ -304,7 +310,16 @@ class RZM_OT_UpdateAtlasLayout(bpy.types.Operator):
                         var.element_ids_str = ",".join(map(str, sorted(list(cfg['element_ids']))))
                         var.uv_coords = data['uv_coords']
                         var.uv_size = data['uv_size']
-                        print(f"  > Linked variation for ImageID {img_id} to elements: {var.element_ids_str}")
+                        
+                        # Save variation parameters for persistence
+                        var.scale = cfg['scale']
+                        var.offset_x = cfg['offset'][0]
+                        var.offset_y = cfg['offset'][1]
+                        var.color_key = cfg['color_key']
+                        var.config_key = cfg['config_key']
+                        
+                        print(f"  > Linked variation {config_key} for ImageID {img_id} to elements: {var.element_ids_str}")
+
                 
                 # Backwards compat for element viewport
                 for elem_id in cfg['element_ids']:

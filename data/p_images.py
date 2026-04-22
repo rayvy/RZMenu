@@ -14,6 +14,14 @@ class RZMenuSVGVariation(bpy.types.PropertyGroup):
     element_ids_str: StringProperty(name="Element IDs", description="Comma separated element IDs")
     uv_coords: IntVectorProperty(name="UV Coords", size=2)
     uv_size: IntVectorProperty(name="UV Size", size=2)
+    
+    # Variation parameters (Persistent)
+    scale: FloatProperty(name="Scale", default=1.0)
+    offset_x: FloatProperty(name="Offset X", default=0.0)
+    offset_y: FloatProperty(name="Offset Y", default=0.0)
+    color_key: StringProperty(name="Color Key", default="ORIG")
+    config_key: StringProperty(name="Config Key", default="")
+
 
 class RZMenuAnimationFrame(bpy.types.PropertyGroup):
     """Уникальный текстурный кадр в атласе."""
