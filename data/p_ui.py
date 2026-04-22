@@ -134,7 +134,19 @@ class RZMenuElement(bpy.types.PropertyGroup):
     alignment: EnumProperty(name="Alignment", items=[('BOTTOM_LEFT', "Bottom Left", ""), ('BOTTOM_CENTER', "Bottom Center", ""), ('BOTTOM_RIGHT', "Bottom Right", ""), ('CENTER_LEFT', "Center Left", ""), ('CENTER', "Center", ""), ('CENTER_RIGHT', "Center Right", ""), ('TOP_LEFT', "Top Left", ""), ('TOP_CENTER', "Top Center", ""), ('TOP_RIGHT', "Top Right", "")], default='BOTTOM_LEFT')
     text_align: EnumProperty(name="Text Align", items=[('LEFT', "Left", ""), ('CENTER', "Center", ""), ('RIGHT', "Right", ""), ('FREE_LEFT', "Free Left", ""), ('FREE_CENTER', "Free Center", ""), ('FREE_RIGHT', "Free Right", "")], default='LEFT')
     image_mode: EnumProperty(name="Image Mode", items=[('SINGLE', "Single", ""), ('CONDITIONAL_LIST', "Conditional List", ""), ('INDEX_LIST', "Index List", "")], default='SINGLE')
-    image_blending_mode: EnumProperty(name="Blending Mode",description="Determines how color parameters affect the image",items=[('NONE', "None", "Color parameters have no effect on the image"),('OVERLAY', "Overlay", "Standard Overlay blending (Photoshop style)"),('COLOR', "Color_HUE", "Forces target Hue while preserving Saturation and Value (similar to Blender Color mode)")],default='NONE')
+    image_blending_mode: EnumProperty(
+        name="Blending Mode",
+        description="Determines how color parameters affect the image",
+        items=[
+            ('NONE',          "None",            "Takes atlas color as is, no alpha influence from element color"),
+            ('OVERLAY',       "Overlay",         "Multiplies atlas color by element color (Tint)"),
+            ('OVERLAY_ALPHA', "Overlay (Alpha)", "Overlay vertex color considering texture alpha"),
+            ('COLOR_REPLACE', "Color Replace",   "Forces target color replacing greyscale intensity"),
+            ('HSV',           "HSV Shift",       "Vertex R=H, G=S, B=V offsets for atlas colors"),
+            ('INVERSION',     "Invert",          "Inverts atlas colors")
+        ],
+        default='NONE'
+    )
     image_id: IntProperty(name="Image ID",description="ID изображения (-1 = нет)",default=-1, update=mark_atlas_dirty)
     hover_image_id: IntProperty(name="Hover Image ID", description="ID изображения при наведении (-1 = нет). Имеет высокий приоритет — заменяет любой image_mode при ховере.", default=-1, update=mark_atlas_dirty)
     extramap_image_id: IntProperty(name="ExtraMap Image ID", description="ID изображения для extra map (-1 = нет). Функционал шейдера в разработке.", default=-1, update=mark_atlas_dirty)

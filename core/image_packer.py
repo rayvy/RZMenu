@@ -19,8 +19,15 @@ def pack_project_images(scene, export_dir):
         'vector': {} # ДОБАВЛЕНО ДЛЯ СОВМЕСТИМОСТИ
     }
 
-    # ДОБАВЛЕН MULTIPLY = 2
-    mode_map = {'NONE': 0, 'OVERLAY': 1, 'MULTIPLY': 2, 'COLOR': 3} 
+    # New Unified Mode Map (0-5)
+    mode_map = {
+        'NONE': 0, 
+        'OVERLAY': 1, 
+        'OVERLAY_ALPHA': 2, 
+        'COLOR_REPLACE': 3, 
+        'HSV': 4,
+        'INVERSION': 5
+    }
 
     def create_instance(x, y, w, h, mode_str, is_anim=0, flip_x=False, flip_y=False):
         sub_mode = mode_map.get(mode_str, 1)

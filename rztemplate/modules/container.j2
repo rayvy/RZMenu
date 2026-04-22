@@ -79,7 +79,7 @@ Local $current_sizeY
     z23 = $clickInterpolate
     {% endif %}
     {{generate_underlayer_presets(element,mod_file,scene)}}
-    {%if element.color%}{{generate_color(element)}}{%endif%}
+    {%if element.color%}{{generate_color(element,parent_element, scene)}}{%endif%}
     {%if element.fn%}{{generate_fn(element)}}{%endif%}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
         {{ handle_element_in_grid(element, parent_element, mod_file,scene) }}
@@ -256,7 +256,7 @@ endif
 if $LocalVisibility
     {{generate_position_and_size(helper_item, host_item, mod_file, scene)}}
     {{generate_interactions_for_helper(helper_item, host_item, scene)}}
-    {%if helper_item.color%}{{generate_color(helper_item)}}{%endif%}
+    {%if helper_item.color%}{{generate_color(helper_item,parent_element, scene)}}{%endif%}
     {{generate_image(helper_item, host_item, scene)}}
     {%if helper_item.fx%}{{generate_fx(helper_item)}}{%endif%}
     {%- set h_cls = utils.get_cls(helper_item)|trim -%}
@@ -322,7 +322,7 @@ endif
         $sizeY = {{ element.size_formula_y | default('$sizeY') }}
         {% endif %}
         {% if element.rotation_is_formula %}
-        $rotation = {{ utils.format_var(element.rotation_formula,parent_element, scene) }}
+        $rotation = {{ utils.normalize_all_vars(element.rotation_formula,parent_element, scene) }}
         {% elif element.rotation != 0.0 %}
         $rotation = {{ element.rotation }}
         {% endif %}
@@ -375,7 +375,7 @@ endif
         {% endif %}
 
         {% if element.rotation_is_formula %}
-        $rotation = {{ utils.format_var(element.rotation_formula,parent_element, scene)}}
+        $rotation = {{ utils.normalize_all_vars(element.rotation_formula,parent_element, scene)}}
         {% elif element.rotation != 0.0 %}
         $rotation = {{ element.rotation }}
         {% endif %}
@@ -446,13 +446,13 @@ endif
     {% endif %}
 {%endmacro%}
 
-{%macro generate_color(element)%}
+{%macro generate_color(element,parent_element, scene)%}
     {% if element.color_is_formula %}
     {# Режим формулы: полная свобода #}
-    $colorR = {{ element.color_formula_r }}
-    $colorG = {{ element.color_formula_g }}
-    $colorB = {{ element.color_formula_b }}
-    $colorA = {{ element.color_formula_a }}
+    $colorR = {{ utils.normalize_all_vars(element.color_formula_r,parent_element, scene) }}
+    $colorG = {{ utils.normalize_all_vars(element.color_formula_g,parent_element, scene) }}
+    $colorB = {{ utils.normalize_all_vars(element.color_formula_b,parent_element, scene) }}
+    $colorA = {{ utils.normalize_all_vars(element.color_formula_a,parent_element, scene) }}
     {% else %}
     {# Старый режим: статические значения #}
     {% if element.color and element.color|length == 4 %}

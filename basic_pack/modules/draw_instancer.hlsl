@@ -391,8 +391,9 @@ float4 main(VertexOutput input) : SV_Target0 {
     if (input.drawMode == MODE_CURSOR) return length(input.contentUV * 2.0 - 1.0) > 1.0 ? 0 : input.color;
     if (input.drawMode == MODE_GRADIENT) return float4(HsvToRgb(float3(input.contentUV.x, 1, 1)), input.color.a);
 
-    // UNIFIED SAMPLING
+    // --- UNIFIED RESOUCE SAMPLING ---
     float4 rawTexture = float4(1, 1, 1, 1);
+    uint imageID = (uint)input.atlasRect.x;
     
     bool isBlurBg = (input.drawMode >= MODE_BLUR_BG_START && input.drawMode <= 99);
     bool insideBounds = (input.contentUV.x >= 0.0 && input.contentUV.x <= 1.0 && 
@@ -401,47 +402,29 @@ float4 main(VertexOutput input) : SV_Target0 {
     if (!insideBounds && !isBlurBg) {
         rawTexture = float4(0, 0, 0, 0); 
     } 
-    else if (input.drawMode != MODE_SOLID && !isBlurBg) {
+    else if (input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
+        float2 uv = input.atlasRect.xy + input.contentUV * input.atlasRect.zw;
+        uint fontSlot = (uint)input.extraData.y;
+        if (fontSlot == 1) rawTexture = AtlasFont1.Sample(LinearSampler, uv);
+        else if (fontSlot == 2) rawTexture = AtlasFont2.Sample(LinearSampler, uv);
+        else if (fontSlot == 3) rawTexture = AtlasFont3.Sample(LinearSampler, uv);
+        else rawTexture = AtlasFont0.Sample(LinearSampler, uv);
+    } 
+    else if (imageID > 0) {
+        uint base = imageID * 2;
+        uint4 meta0 = ImagePoolBuffer[base];     // [SubMode, IsAnim, FlipX, FlipY]
+        uint4 rect = ImagePoolBuffer[base + 1];  // [TexX, TexY, Width, Height]
         
-        if (input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
-            float2 uv = input.atlasRect.xy + input.contentUV * input.atlasRect.zw;
-            uint fontSlot = (uint)input.extraData.y;
-            if (fontSlot == 1) rawTexture = AtlasFont1.Sample(LinearSampler, uv);
-            else if (fontSlot == 2) rawTexture = AtlasFont2.Sample(LinearSampler, uv);
-            else if (fontSlot == 3) rawTexture = AtlasFont3.Sample(LinearSampler, uv);
-            else rawTexture = AtlasFont0.Sample(LinearSampler, uv);
-        } else {
-            // --- Phase 2: Изображения читаются ТОЛЬКО из Буфера ---
-            uint imageID = (uint)input.atlasRect.x;
-            uint base = imageID * 2;
-            
-            uint4 meta0 = ImagePoolBuffer[base];     // Слот 0: [SubMode, IsAnim, FlipX, FlipY]
-            uint4 rect = ImagePoolBuffer[base + 1];  // Слот 1: [TexX, TexY, Width, Height]
-            
-            uint sub_mode = meta0.x;
-            
-            float2 finalUV = input.contentUV;
-            
-            // Истина флипов теперь в Буфере
-            if (meta0.z > 0) finalUV.x = 1.0 - finalUV.x;
-            if (meta0.w > 0) finalUV.y = 1.0 - finalUV.y;
+        float2 finalUV = input.contentUV;
+        if (meta0.z > 0) finalUV.x = 1.0 - finalUV.x;
+        if (meta0.w > 0) finalUV.y = 1.0 - finalUV.y;
 
-            float2 texPos = (float2)rect.xy;
-            float2 texSize = (float2)rect.zw;
-
-            uint w, h; AtlasIcons.GetDimensions(w, h);
-            float2 dim = float2(max(1, w), max(1, h));
-            float2 uvSample = (texPos + finalUV * texSize) / dim;
-            
-            rawTexture = AtlasIcons.Sample(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y));
-
-            // Sub-Mode эффекты (если 0 - просто пропускаем, картинка остается оригинальной)
-            if (sub_mode == 3) { // COLOR_REPLACE logic
-                float3 hsv = RgbToHsv(rawTexture.rgb);
-                hsv.x = frac(hsv.x + input.extraData.x); // Hue shift
-                rawTexture.rgb = HsvToRgb(hsv);
-            }
-        }
+        float2 texPos = (float2)rect.xy;
+        float2 texSize = (float2)rect.zw;
+        uint w, h; AtlasIcons.GetDimensions(w, h);
+        float2 uvSample = (texPos + finalUV * texSize) / float2(max(1, w), max(1, h));
+        
+        rawTexture = AtlasIcons.Sample(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y));
     }
 
     uint styleFlags = 0;
@@ -495,29 +478,47 @@ float4 main(VertexOutput input) : SV_Target0 {
                 objectLayer = float4(blurredColor, correctedOpacity);
             }
         }
-        else if (input.drawMode == MODE_TEX_OVERLAY) { 
-            // --- УМНАЯ ОБРАБОТКА ДАННЫХ ИЗ БУФЕРА ---
-            uint imageID = (uint)input.atlasRect.x;
-            uint base = imageID * 2;
-            uint sub_mode = ImagePoolBuffer[base].x;
-
-            if (sub_mode == 2) { // MULTIPLY
+        else if (input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
+            objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
+        }
+        else if (imageID > 0) {
+            uint sub_mode = ImagePoolBuffer[imageID * 2].x;
+            
+            if (sub_mode == 0) { // --- NONE ---
+                // Raw atlas color. No vertex color influence (as requested).
+                objectLayer = rawTexture;
+            }
+            else if (sub_mode == 1) { // --- OVERLAY ---
+                // Simple color overlay (multiply)
                 objectLayer = rawTexture * input.color;
-            } 
-            else if (sub_mode == 3) { // COLOR_REPLACE (цвет был заменен выше)
-                // Для color replace применяем альфу цвета интерфейса
-                objectLayer = float4(rawTexture.rgb, rawTexture.a * input.color.a);
-            } 
-            else { // 1 = OVERLAY (DEFAULT)
+            }
+            else if (sub_mode == 2) { // --- OVERLAY_ALPHA ---
+                // Overlay considering alpha
+                objectLayer = float4(rawTexture.rgb * input.color.rgb, rawTexture.a * input.color.a);
+            }
+            else if (sub_mode == 3) { // --- COLOR_REPLACE ---
+                // Forces colors to input color while preserving greyscale intensity
+                float grey = dot(rawTexture.rgb, float3(0.299, 0.587, 0.114));
+                objectLayer = float4(input.color.rgb * grey, rawTexture.a * input.color.a);
+            }
+            else if (sub_mode == 4) { // --- HSV ---
+                // R=H, G=S, B=V offsets
+                float3 hsv = RgbToHsv(rawTexture.rgb);
+                hsv.x = frac(hsv.x + input.color.r);
+                hsv.y = saturate(hsv.y + input.color.g);
+                hsv.z = saturate(hsv.z + input.color.b);
+                objectLayer = float4(HsvToRgb(hsv), rawTexture.a * input.color.a);
+            }
+            else if (sub_mode == 5) { // --- INVERSION ---
+                objectLayer = float4(1.0 - rawTexture.rgb, rawTexture.a * input.color.a);
+            }
+            else {
                 objectLayer = rawTexture;
             }
         }
-        else if (input.drawMode == MODE_TEX_MULTIPLY) { 
-            // Оставляем для обратной совместимости старых ручных команд
-            objectLayer = rawTexture * input.color;
-        }
-        else { // Text/Number
-            objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
+        else {
+            // Pure SOLID color
+            objectLayer = input.color;
         }
 
         if ((styleFlags & BIT_GRAYSCALE) && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
