@@ -615,10 +615,10 @@ y101 = $colorG
 z101 = $colorB
 w101 = $colorA
 if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-	x102 = $texPosX / 256
-	y102 = $texPosY / 128
-	z102 = $texSizeX / 256
-	w102 = $texSizeY / 128
+    x102 = $imageID
+    y102 = 0
+    z102 = 0
+    w102 = 0
 elif $drawType == 3
 	x102 = $texPosX
 	y102 = $texPosY
@@ -680,10 +680,10 @@ y101 = 0.0
 z101 = 0.0
 w101 = 0.75
 if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-	x102 = $texPosX / 256
-	y102 = $texPosY / 128
-	z102 = $texSizeX / 256
-	w102 = $texSizeY / 128
+    x102 = $imageID
+    y102 = 0
+    z102 = 0
+    w102 = 0
 elif $drawType == 3
 	x102 = $texPosX
 	y102 = $texPosY
@@ -754,10 +754,10 @@ y101 = 0.0
 z101 = 0.0
 w101 = 0.75
 if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-	x102 = $texPosX / 256
-	y102 = $texPosY / 128
-	z102 = $texSizeX / 256
-	w102 = $texSizeY / 128
+    x102 = $imageID
+    y102 = 0
+    z102 = 0
+    w102 = 0
 elif $drawType == 3
 	x102 = $texPosX
 	y102 = $texPosY
@@ -992,20 +992,10 @@ y101 = $colorG
 z101 = $colorB
 w101 = $colorA
 if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-{% if scene.rzm %}
-    {% if scene.rzm.atlas_size %}
-    x102 = $texPosX / {{scene.rzm.atlas_size[0] | int}}
-    y102 = $texPosY / {{scene.rzm.atlas_size[1] | int}}
-    z102 = $texSizeX / {{scene.rzm.atlas_size[0] | int}}
-    w102 = $texSizeY / {{scene.rzm.atlas_size[1] | int}}
-    {% else %}
-    ;ERROR: размеры атласа не были предопределены
-    x102 = $texPosX / 0
-    y102 = $texPosY / 0
-    z102 = $texSizeX / 0
-    w102 = $texSizeY / 0
-    {%endif%}
-{% endif %}
+    x102 = $imageID
+    y102 = 0
+    z102 = 0
+    w102 = 0
 elif $drawType == 3
 x102 = $texPosX
 y102 = $texPosY
@@ -1061,6 +1051,7 @@ vs-t100 = ref ResourceDataBuffer
 vs-t104 = ref ResourceIndexBuffer
 vs-t103 = ref ResourceText
 vs-t105 = ref ResourceStyleBuffer
+vs-t107 = ref ResourceImageBuffer
 ps-t105 = ref ResourceStyleBuffer
 
 
@@ -1070,6 +1061,8 @@ y99 = $cursorY / $ScreenH
 z99 = $ScreenW
 w99 = $ScreenH
 ps-t80 = ResourceIcons
+ps-t107 = ResourceImageBuffer
+vs-t103 = ResourceText
 vs-t82 = ResourceFont0
 ps-t82 = ResourceFont0
 {% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
@@ -1197,6 +1190,11 @@ array = 8192
 type = Buffer
 format = R16G16B16A16_UINT
 filename = .\res\texts.bin
+
+[ResourceImageBuffer]
+type = Buffer
+format = R16G16B16A16_UINT
+filename = .\res\images.bin
 
 [ResourceStyleBuffer]
 type = Buffer

@@ -3,6 +3,7 @@ import sys
 import bpy
 from pathlib import Path
 from .text_packer import get_text_mapping_for_j2
+from .image_packer import get_image_mapping_for_j2
 from .style_packer import pack_styles
 
 # Add libs to sys.path so we can import jinja2
@@ -75,7 +76,9 @@ class RZMenuJ2Exporter:
             if export_path:
                 # This now updates scene.rzm.text_mapping_json internally
                 get_text_mapping_for_j2(scene, export_path)
+                get_image_mapping_for_j2(scene, export_path)
                 pack_styles(scene, export_path)
+                print(f"RZMenu: All resource buffers (text, images, styles) packed to {export_path}")
         except Exception as e:
             print(f"RZMenu Text Packing Error: {e}")
 

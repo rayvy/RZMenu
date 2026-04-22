@@ -140,84 +140,61 @@
         {% endfor %}
     {% endfor %}
 
-    {# 3. Картинки (стандартная логика) #}
-    [CommandListGetImageCords-1]
+    {# 3. Картинки (буферная логика) #}
+    {% set img_map = scene.rzm.image_mapping %}
     {% for image in scene.rzm.images %}
         {% if image.id not in processed_ids['images'] %}
-            {% if image.source_type == 'ANIMATED' and image.anim_sequence | length > 0 %}
-                {%- set ns_check = {'has_valid': false} %}
-                {%- for seq in image.anim_sequence %}
-                    {%- set frame = image.anim_frames[seq.frame_index] %}
-                    {%- if frame.x != 0 or frame.y != 0 or frame.w != 0 or frame.h != 0 %}
-                        {%- if ns_check.update({'has_valid': true}) %}{% endif %}
-                    {%- endif %}
-                {%- endfor %}
-                {% if ns_check['has_valid'] %}
+            {% set img_id_str = image.id | string %}
+            {% if image.source_type == 'ANIMATED' %}
+                {% set frame_indices = img_map['animated'].get(img_id_str, []) %}
+                {% if frame_indices | length > 0 %}
                 [CommandListGetImageCords{{ image.id }}]
                 $drawType = 1
                 local $anim_t = time % {{ "%.6f" | format(image.anim_total_duration / (image.anim_speed_multiplier|default(1.0))) }}
 
                 {% set ns = {'t': 0.0, 'is_first': true} %}
                 {% for seq in image.anim_sequence %}
-
-                    {% set frame = image.anim_frames[seq.frame_index] %}
                     {% set t_start = ns['t'] %}
                     {% set t_end = t_start + seq.duration / (image.anim_speed_multiplier|default(1.0)) %}
-                    {% if frame.x != 0 or frame.y != 0 or frame.w != 0 or frame.h != 0 %}
-                        {% if ns['is_first'] %}if $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
-                            {% if ns.update({'is_first': false}) %}
-                        {% endif %}
-                        {% else %}
-                        elif $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
-                        {% endif %}
-                        $texPosX = {{ frame.x }}
-                        $texPosY = {{ frame.y }}
-                        $texSizeX = {{ frame.w }}
-                        $texSizeY = {{ frame.h }}
+                    {% set img_idx = frame_indices[loop.index0] | default(0) %}
+                    
+                    {% if ns['is_first'] %}if $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
+                        {% if ns.update({'is_first': false}) %}{% endif %}
+                    {% else %}
+                    elif $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
                     {% endif %}
-                    {%- if ns.update({'t': t_end}) %}{% endif %}
+                        $imageID = {{ img_idx }}
+                    {% if ns.update({'t': t_end}) %}{% endif %}
                 {% endfor %}
                 endif
                 {% endif %}
             {% elif image.source_type == 'VECTOR' %}
-                {%- set valid_variations = [] %}
-                {%- for var in image.svg_variations %}
-                    {%- if var.uv_coords[0] != 0 or var.uv_coords[1] != 0 or var.uv_size[0] != 0 or var.uv_size[1] != 0 %}
-                        {%- set _ = valid_variations.append(var) %}
-                    {%- endif %}
-                {%- endfor %}
-
+                {% set var_map = img_map['vector'].get(img_id_str, {}) %}
+                {% if var_map %}
                 [CommandListGetImageCords{{ image.id }}]
-                {% if valid_variations | length > 0 %}
                 $drawType = 1
-                {% for var in valid_variations %}
-                    {% set id_list = var.element_ids_str.split(',') %}
-                    {% if loop.first %}if {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}
-                    {% else %}elif {% for id in id_list %}$id == {{ id }}{% if not loop.last %} || {% endif %}{% endfor %}{% endif %}
-                    
-                    $texPosX = {{ var.uv_coords[0] }}
-                    $texPosY = {{ var.uv_coords[1] }}
-                    $texSizeX = {{ var.uv_size[0] }}
-                    $texSizeY = {{ var.uv_size[1] }}
+                {% set ns = {'is_first': true} %}
+                {% for eid, img_idx in var_map.items() %}
+                    {% if ns['is_first'] %}if $id == {{ eid }}
+                        {% if ns.update({'is_first': false}) %}{% endif %}
+                    {% else %}
+                    elif $id == {{ eid }}
+                    {% endif %}
+                    $imageID = {{ img_idx }}
                 {% endfor %}
                 else
-                    $texPosX = {{ valid_variations[0].uv_coords[0] }}
-                    $texPosY = {{ valid_variations[0].uv_coords[1] }}
-                    $texSizeX = {{ valid_variations[0].uv_size[0] }}
-                    $texSizeY = {{ valid_variations[0].uv_size[1] }}
+                    {# Fallback to first available variation #}
+                    $imageID = {{ var_map.values() | first | default(0) }}
                 endif
                 {% else %}
+                [CommandListGetImageCords{{ image.id }}]
                 $drawType = 0
                 {% endif %}
             {% else %}
-                {% if image.uv_coords[0] != 0 or image.uv_coords[1] != 0 or image.uv_size[0] != 0 or image.uv_size[1] != 0 %}
+                {% set img_idx = img_map['static'].get(img_id_str, 0) %}
                 [CommandListGetImageCords{{ image.id }}]
                 $drawType = 1
-                $texPosX = {{ image.uv_coords[0] }}
-                $texPosY = {{ image.uv_coords[1] }}
-                $texSizeX = {{ image.uv_size[0] }}
-                $texSizeY = {{ image.uv_size[1] }}
-                {% endif %}
+                $imageID = {{ img_idx }}
             {% endif %}
             {% set _ = processed_ids['images'].append(image.id) %}
         {% endif %}
@@ -344,7 +321,7 @@ $SizeY = $SizeY * 0.75
 $positionX = $LocalPosX + ($segmentSize * {{ i }})
 $sizeX = ($segmentSize)
 ; Индекс текстуры обычно равен индексу шага (0, 1, 2...), даже если значение переменной другое
-$texPosX = {{ i }}
+$imageID = {{ i }}
 $PositionX = $positionX
 $PositionY = $positionY
 run = CustomShaderRCI2D_POPUP

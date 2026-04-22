@@ -116,13 +116,33 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     # Stores JSON-serialized mapping of element keys to (text_id, length)
     text_mapping_json: StringProperty(name="Text Mapping JSON", default="{}")
 
+    # ─── Image Mapping (Persistent) ───
+    # Stores JSON-serialized mapping of image sources (ID/Animation/SVG) to buffer indices
+    image_mapping_json: StringProperty(name="Image Mapping JSON", default="{}")
+
     @property
     def text_mapping(self):
         import json
+        defaults = {"single": {}, "conditional": {}}
         try:
-            return json.loads(self.text_mapping_json)
+            data = json.loads(self.text_mapping_json)
+            if isinstance(data, dict):
+                defaults.update(data)
         except:
-            return {"single": {}, "conditional": {}}
+            pass
+        return defaults
+
+    @property
+    def image_mapping(self):
+        import json
+        defaults = {"static": {}, "animated": {}, "vector": {}}
+        try:
+            data = json.loads(self.image_mapping_json)
+            if isinstance(data, dict):
+                defaults.update(data)
+        except:
+            pass
+        return defaults
 
 class RZModProducerSettings(bpy.types.PropertyGroup):
     build_suffix: StringProperty(

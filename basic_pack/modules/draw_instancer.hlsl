@@ -22,6 +22,7 @@ Buffer<uint>      IndexBuffer : register(t104);
 
 // [ИЗМЕНЕНО] Теперь буфер формата uint4 (R16G16B16A16_UINT расширяется до uint4)
 Buffer<uint4>     TextPoolBuffer : register(t103);
+Buffer<uint4>     ImagePoolBuffer : register(t107);
 
 Buffer<float4>    ResourceStyleBuffer : register(t105);
 
@@ -241,9 +242,7 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
         );
     } 
     else if (mode >= MODE_TEX_OVERLAY) { 
-        uint w, h; AtlasIcons.GetDimensions(w, h);
-        float2 dim = float2(max(1, w), max(1, h));
-        return float4(tile.xy / dim, tile.zw / dim);
+        return float4(tile.x, 0, 0, 0); // Передаем только imageID для обработки в Pixel Shader
     }
     return float4(0,0,1,1);
 }
@@ -409,7 +408,14 @@ float4 main(VertexOutput input) : SV_Target0 {
             if (mMode == 1 || mMode == 3) finalUV.x = 1.0 - finalUV.x;
             if (mMode == 2 || mMode == 3) finalUV.y = 1.0 - finalUV.y;
             
-            float2 uvSample = input.atlasRect.xy + finalUV * input.atlasRect.zw;
+            uint imageID = (uint)input.atlasRect.x;
+            uint4 rect = ImagePoolBuffer[imageID];
+            float2 texPos = (float2)rect.xy;
+            float2 texSize = (float2)rect.zw;
+
+            uint w, h; AtlasIcons.GetDimensions(w, h);
+            float2 dim = float2(max(1, w), max(1, h));
+            float2 uvSample = (texPos + finalUV * texSize) / dim;
             rawTexture = AtlasIcons.Sample(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y));
         }
     }
