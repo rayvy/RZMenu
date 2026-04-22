@@ -20,7 +20,7 @@ Texture1D<float4> GlobalParams : register(t120);
 Buffer<float4>    DataBuffer : register(t100);
 Buffer<uint>      IndexBuffer : register(t104);
 
-// [ИЗМЕНЕНО] Теперь буфер формата uint4 (R16G16B16A16_UINT расширяется до uint4)
+// Буферы пулов
 Buffer<uint4>     TextPoolBuffer : register(t103);
 Buffer<uint4>     ImagePoolBuffer : register(t107);
 
@@ -86,6 +86,16 @@ float3 HsvToRgb(float3 c) {
     return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
+float3 RgbToHsv(float3 c) {
+    float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    float4 p = lerp(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
+    float4 q = lerp(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
+
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
 // --- STRUCTURES ---
 
 struct VertexOutput {
@@ -99,7 +109,7 @@ struct VertexOutput {
     float  animType : TEXCOORD6;
     float  styleId : TEXCOORD7;
     float4 extraData : TEXCOORD8; 
-    float    mirrorMode : TEXCOORD9;
+    float  mirrorMode : TEXCOORD9; // Оставлено только для текста
 };
 
 struct CharMetrics {
@@ -159,22 +169,20 @@ void ParseNumber(float val, int prec, inout uint buf[MAX_CHARS], inout uint cnt)
 float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float2 pos, inout float2 size) {
     if (mode == MODE_TEXT || mode == MODE_NUMBER) {
         uint chars[MAX_CHARS]; uint count = 0;
-        int align = 0; // [ИЗМЕНЕНО] Переменная выравнивания объявляется здесь
+        int align = 0;
         
         if (mode == MODE_TEXT) {
-            // [ИЗМЕНЕНО] Новая логика чтения метаданных текста
             uint text_id = (uint)tile.x;
             uint4 textMeta = TextPoolBuffer[text_id];
             
-            uint off = textMeta.x;               // 1-ый канал (R): offset
-            count = min(textMeta.y, MAX_CHARS);  // 2-ой канал (G): length
-            align = (int)textMeta.z;             // 3-ий канал (B): alignment
+            uint off = textMeta.x;              
+            count = min(textMeta.y, MAX_CHARS); 
+            align = (int)textMeta.z;            
             
             for(uint i=0; i<count; ++i) {
-                chars[i] = TextPoolBuffer[off+i].w; // 4-ый канал (A): сам символ
+                chars[i] = TextPoolBuffer[off+i].w; 
             }
         } else {
-            // Для чисел оставляем старую логику чтения
             ParseNumber(tile.x, clamp((int)tile.y,0,9), chars, count);
             align = (int)tile.z; 
         }
@@ -197,20 +205,16 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
             totalW += last.offX + last.glyphW - firstOff;
         }
 
-        // --- AUTO-FIT LOGIC (SQUISH) ---
         float inputLimitWidth = size.x * ScreenRes.x;
         float currentTextWidth = totalW * scale;      
         float squeeze = 1.0;
 
-        // [ИЗМЕНЕНО] Используем уже извлеченный align
         bool isFree = align >= 3;
         if (isFree) align -= 3;
 
-        // Если задан лимит (> 1px) И текст шире лимита -> сжимаем (только если не FREE mode)
         if (!isFree && inputLimitWidth > 1.0 && currentTextWidth > inputLimitWidth) {
             squeeze = inputLimitWidth / currentTextWidth;
         }
-        // -------------------------------
         
         float shift = 0;
         if (align == 1) shift = (firstOff*2.0 + totalW)*0.5;
@@ -242,7 +246,8 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
         );
     } 
     else if (mode >= MODE_TEX_OVERLAY) { 
-        return float4(tile.x, 0, 0, 0); // Передаем только imageID для обработки в Pixel Shader
+        // Фаза 2: Для изображений передаем только imageID в X. YZW не используются.
+        return float4(tile.x, 0, 0, 0); 
     }
     return float4(0,0,1,1);
 }
@@ -290,7 +295,7 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
     
     output.extraData.x = tileData.x;
     output.extraData.y = mirrorData.y; 
-    output.mirrorMode = (int)mirrorData.x;
+    output.mirrorMode = (int)mirrorData.x; // Оставлено только для текстов
 
     float2 pos = DataBuffer[base_idx + 1].xy;
     float2 size = DataBuffer[base_idx + 1].zw;
@@ -339,6 +344,8 @@ void main(uint vID : SV_VertexID, uint iID : SV_InstanceID, out VertexOutput out
 
     float2 finalPos = ApplyAnimation(output.animType, styleFlags, styleBaseIdx, expandedPos, expandedSize, quadUv);
     float rotationTurns = mirrorData.w;
+    
+    // Вращение (Остается на уровне объекта в INI, так как буфер отвечает только за спрайт в атласе)
     if (rotationTurns != 0.0) {
         float a = rotationTurns * 6.2831853;
         float s = sin(a), c = cos(a);
@@ -395,6 +402,7 @@ float4 main(VertexOutput input) : SV_Target0 {
         rawTexture = float4(0, 0, 0, 0); 
     } 
     else if (input.drawMode != MODE_SOLID && !isBlurBg) {
+        
         if (input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
             float2 uv = input.atlasRect.xy + input.contentUV * input.atlasRect.zw;
             uint fontSlot = (uint)input.extraData.y;
@@ -403,20 +411,36 @@ float4 main(VertexOutput input) : SV_Target0 {
             else if (fontSlot == 3) rawTexture = AtlasFont3.Sample(LinearSampler, uv);
             else rawTexture = AtlasFont0.Sample(LinearSampler, uv);
         } else {
-            float2 finalUV = input.contentUV;
-            int mMode = (int)round(input.mirrorMode); 
-            if (mMode == 1 || mMode == 3) finalUV.x = 1.0 - finalUV.x;
-            if (mMode == 2 || mMode == 3) finalUV.y = 1.0 - finalUV.y;
-            
+            // --- Phase 2: Изображения читаются ТОЛЬКО из Буфера ---
             uint imageID = (uint)input.atlasRect.x;
-            uint4 rect = ImagePoolBuffer[imageID];
+            uint base = imageID * 2;
+            
+            uint4 meta0 = ImagePoolBuffer[base];     // Слот 0: [SubMode, IsAnim, FlipX, FlipY]
+            uint4 rect = ImagePoolBuffer[base + 1];  // Слот 1: [TexX, TexY, Width, Height]
+            
+            uint sub_mode = meta0.x;
+            
+            float2 finalUV = input.contentUV;
+            
+            // Истина флипов теперь в Буфере
+            if (meta0.z > 0) finalUV.x = 1.0 - finalUV.x;
+            if (meta0.w > 0) finalUV.y = 1.0 - finalUV.y;
+
             float2 texPos = (float2)rect.xy;
             float2 texSize = (float2)rect.zw;
 
             uint w, h; AtlasIcons.GetDimensions(w, h);
             float2 dim = float2(max(1, w), max(1, h));
             float2 uvSample = (texPos + finalUV * texSize) / dim;
+            
             rawTexture = AtlasIcons.Sample(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y));
+
+            // Sub-Mode эффекты (если 0 - просто пропускаем, картинка остается оригинальной)
+            if (sub_mode == 3) { // COLOR_REPLACE logic
+                float3 hsv = RgbToHsv(rawTexture.rgb);
+                hsv.x = frac(hsv.x + input.extraData.x); // Hue shift
+                rawTexture.rgb = HsvToRgb(hsv);
+            }
         }
     }
 
@@ -440,7 +464,6 @@ float4 main(VertexOutput input) : SV_Target0 {
     float4 objectLayer = float4(0,0,0,0);
 
     if (insideBounds || isBlurBg) {
-        // --- SMART BLUR LOGIC ---
         if (input.drawMode == MODE_MASKED_BLUR || isBlurBg || (styleFlags & BIT_BLUR)) {
             
             float targetStrength = 0.0;
@@ -472,25 +495,26 @@ float4 main(VertexOutput input) : SV_Target0 {
                 objectLayer = float4(blurredColor, correctedOpacity);
             }
         }
-        else if (input.drawMode == MODE_COLOR_REPLACE) {
-            float maxC = max(rawTexture.r, max(rawTexture.g, rawTexture.b));
-            float minC = min(rawTexture.r, min(rawTexture.g, rawTexture.b));
-            float texSat = maxC - minC; 
-            float texLuma = dot(rawTexture.rgb, float3(0.299, 0.587, 0.114));
-            float inputLuma = dot(input.color.rgb, float3(0.299, 0.587, 0.114));
-            float3 retargetedColor = input.color.rgb * (texLuma / max(0.01, inputLuma));
-            float mixFactor = saturate(texSat * 10.0);
-            float3 finalRGB = lerp(rawTexture.rgb, retargetedColor, mixFactor);
-            objectLayer = float4(finalRGB, rawTexture.a * input.color.a);
-        }
-        else if (input.drawMode == MODE_SOLID) {
-            objectLayer = input.color;
+        else if (input.drawMode == MODE_TEX_OVERLAY) { 
+            // --- УМНАЯ ОБРАБОТКА ДАННЫХ ИЗ БУФЕРА ---
+            uint imageID = (uint)input.atlasRect.x;
+            uint base = imageID * 2;
+            uint sub_mode = ImagePoolBuffer[base].x;
+
+            if (sub_mode == 2) { // MULTIPLY
+                objectLayer = rawTexture * input.color;
+            } 
+            else if (sub_mode == 3) { // COLOR_REPLACE (цвет был заменен выше)
+                // Для color replace применяем альфу цвета интерфейса
+                objectLayer = float4(rawTexture.rgb, rawTexture.a * input.color.a);
+            } 
+            else { // 1 = OVERLAY (DEFAULT)
+                objectLayer = rawTexture;
+            }
         }
         else if (input.drawMode == MODE_TEX_MULTIPLY) { 
+            // Оставляем для обратной совместимости старых ручных команд
             objectLayer = rawTexture * input.color;
-        }
-        else if (input.drawMode == MODE_TEX_OVERLAY) { 
-            objectLayer = rawTexture;
         }
         else { // Text/Number
             objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
@@ -513,40 +537,55 @@ float4 main(VertexOutput input) : SV_Target0 {
         }
     }
 
-    // 5. Outline Effect
+    // 5. Outline Effect (ИСПРАВЛЕНО ДЛЯ ФАЗЫ 2)
     if ((styleFlags & BIT_OUTLINE) && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
          float thickness = ResourceStyleBuffer[baseIdx + 5].x;
          if (thickness <= 0.0) thickness = 1.0;
          float4 outlineCol = ResourceStyleBuffer[baseIdx + 6];
          float2 px = thickness / (input.objectRect.zw * ScreenRes);
-         float2 uvBase = input.atlasRect.xy; 
-         float2 uvSz = input.atlasRect.zw;
          float a = 0;
          float2 offs[4] = { float2(px.x,0), float2(-px.x,0), float2(0,px.y), float2(0,-px.y) };
-         
-         int mMode = (int)round(input.mirrorMode);
 
          [unroll]
          for(int k=0; k<4; k++) {
              float2 cUV = input.contentUV + offs[k];
              if(cUV.x>0 && cUV.x<1 && cUV.y>0 && cUV.y<1) {
-                 float2 outlineUV = cUV;
-                 if (input.drawMode != MODE_TEXT && input.drawMode != MODE_NUMBER) {
-                     if (mMode == 1 || mMode == 3) outlineUV.x = 1.0 - outlineUV.x;
-                     if (mMode == 2 || mMode == 3) outlineUV.y = 1.0 - outlineUV.y;
-                 }
-
-                 float2 fUV = uvBase + outlineUV * uvSz;
                  
                  if(input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
+                     // Логика обводки текста (использует старые параметры INI)
+                     int mMode = (int)round(input.mirrorMode);
+                     float2 outlineUV = cUV;
+                     float2 uvBase = input.atlasRect.xy; 
+                     float2 uvSz = input.atlasRect.zw;
+                     
+                     float2 fUV = uvBase + outlineUV * uvSz;
+                     
                      uint fontSlot = (uint)input.extraData.y;
                      if (fontSlot == 1) a += AtlasFont1.Sample(LinearSampler, fUV).r;
                      else if (fontSlot == 2) a += AtlasFont2.Sample(LinearSampler, fUV).r;
                      else if (fontSlot == 3) a += AtlasFont3.Sample(LinearSampler, fUV).r;
                      else a += AtlasFont0.Sample(LinearSampler, fUV).r;
                  }
-                 else 
-                     a += AtlasIcons.Sample(LinearSampler, float2(fUV.x, 1.0-fUV.y)).a;
+                 else {
+                     // Логика обводки изображений (Читает ИЗ БУФЕРА ФАЗЫ 2)
+                     uint imageID = (uint)input.atlasRect.x;
+                     uint base = imageID * 2;
+                     uint4 meta0 = ImagePoolBuffer[base]; 
+                     uint4 rect = ImagePoolBuffer[base + 1]; 
+                     
+                     float2 outlineUV = cUV;
+                     if (meta0.z > 0) outlineUV.x = 1.0 - outlineUV.x;
+                     if (meta0.w > 0) outlineUV.y = 1.0 - outlineUV.y;
+                     
+                     float2 texPos = (float2)rect.xy;
+                     float2 texSize = (float2)rect.zw;
+                     
+                     uint w, h; AtlasIcons.GetDimensions(w, h);
+                     float2 dim = float2(max(1, w), max(1, h));
+                     float2 fUV_img = (texPos + outlineUV * texSize) / dim;
+                     
+                     a += AtlasIcons.Sample(LinearSampler, float2(fUV_img.x, 1.0 - fUV_img.y)).a;
+                 }
              }
          }
          if (a > 0.0 && objectLayer.a < 0.9) objectLayer = float4(outlineCol.rgb, outlineCol.a);

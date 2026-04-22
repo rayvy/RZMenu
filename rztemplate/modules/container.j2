@@ -327,10 +327,10 @@ endif
         $rotation = {{ element.rotation }}
         {% endif %}
         {% if element.flip_x == 1%}
-        $flipX = 1
+        ;$flipX = 1
         {% endif %}
         {% if element.flip_y == 1%}
-        $flipY = 1
+        ;$flipY = 1
         {% endif %}
     {% else %}
         {# СТАНДАРТНАЯ ЛОГИКА ДЛЯ ОБЫЧНЫХ ЭЛЕМЕНТОВ #}
@@ -508,9 +508,9 @@ endif
         {% endif %}
         run = CommandList{{ utils.get_image_cords_name(element, element.image_id, scene) }}
         {% if element.image_blending_mode == "OVERLAY" %}
-        $drawtype = 2
+        $drawtype = 1
         {% elif element.image_blending_mode == "COLOR"%}
-        $drawtype = 21
+        $drawtype = 1
         {% else %}
         ;NO BLEND
         {% endif %}
