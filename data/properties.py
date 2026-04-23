@@ -135,7 +135,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     @property
     def image_mapping(self):
         import json
-        defaults = {"static": {}, "animated": {}, "vector": {}}
+        defaults = {"static": {}, "animated": {}, "vector": {}, "elements": {}}
         try:
             data = json.loads(self.image_mapping_json)
             if isinstance(data, dict):

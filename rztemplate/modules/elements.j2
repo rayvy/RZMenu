@@ -356,10 +356,10 @@ ${{ utils.get_var_name(slave_name, scene) }} = {{ master_var }}
         {% if index_var %}
     if {{ index_var }} == {{ loop.index0 }}
         {% endif %}
-    ${{ target_base }}_X = $VB_X
-    ${{ target_base }}_Y = $VB_Y
-    ${{ target_base }}_Z = $VB_Z
-    ${{ target_base }}_W = $VB_W
+    ${{ target_base }} = $VB_X
+    ${{ target_base }} = $VB_Y
+    ${{ target_base }} = $VB_Z
+    ${{ target_base }} = $VB_W
         {% if index_var %}
     endif
         {% endif %}
