@@ -614,27 +614,10 @@ x101 = $colorR
 y101 = $colorG
 z101 = $colorB
 w101 = $colorA
-if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-    x102 = $imageID
-    y102 = 0
-    z102 = 0
-    w102 = 0
-elif $drawType == 3
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-elif $drawType == 5
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-else
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-endif
+x102 = $imageID
+y102 = 0
+z102 = 0
+w102 = 0
 x109 = 0
 y109 = 0
 z109 = 0
@@ -642,7 +625,7 @@ w109 = 0
 x110 = x110
 y110 = y110
 z110 = 0
-w110 = $drawType
+w110 = 0
 y111 = 768 + $di_count
 $slot_count = 7
 z111 = $data_offset
@@ -661,7 +644,6 @@ dispatch = 1, 1, 1
 x105 = 0
 $data_offset = $data_offset + $slot_count
 $di_count = $di_count + 1
-$drawType = 0
 [CustomShaderRCI2D_SLIDER]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
@@ -679,27 +661,10 @@ x101 = 0.0
 y101 = 0.0
 z101 = 0.0
 w101 = 0.75
-if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-    x102 = $imageID
-    y102 = 0
-    z102 = 0
-    w102 = 0
-elif $drawType == 3
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-elif $drawType == 5
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-else
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-endif
+x102 = $imageID
+y102 = 0
+z102 = 0
+w102 = 0
 x109 = $scissorX
 y109 = $scissorY
 z109 = $scissorZ
@@ -734,7 +699,6 @@ $di_count = $di_count + 1
 if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
 endif
-$drawType = 0
 
 [CustomShaderRCI2D_SLIDER.TEXT]
 cs-u0 = ResourceDataBuffer
@@ -753,27 +717,10 @@ x101 = 0.0
 y101 = 0.0
 z101 = 0.0
 w101 = 0.75
-if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-    x102 = $imageID
-    y102 = 0
-    z102 = 0
-    w102 = 0
-elif $drawType == 3
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-elif $drawType == 5
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-else
-	x102 = $texPosX
-	y102 = $texPosY
-	z102 = $texSizeX
-	w102 = $texSizeY
-endif
+x102 = $imageID
+y102 = 0
+z102 = 0
+w102 = 0
 x109 = $scissorX
 y109 = $scissorY
 z109 = $scissorZ
@@ -809,7 +756,6 @@ run = CommandListCoreFXRenderSliderText
 if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
 endif
-$drawType = 0
 ;;[CustomShaderRCI2D_TEXT_LEFT]
 ;$texSizeX = 0
 ;run = CustomShaderRCI2D_TEXT
@@ -992,27 +938,10 @@ x101 = $colorR
 y101 = $colorG
 z101 = $colorB
 w101 = $colorA
-if $drawType == 1 || $drawType == 2 || $drawtype == 21 ||  $drawtype == 20 ||  $drawtype == 9000
-    x102 = $imageID
-    y102 = 0
-    z102 = 0
-    w102 = 0
-elif $drawType == 3
-x102 = $texPosX
-y102 = $texPosY
-z102 = $texSizeX
-w102 = $texSizeY
-elif $drawType == 5
-x102 = $texPosX
-y102 = $texPosY
-z102 = $texSizeX
-w102 = $texSizeY
-else
-x102 = $texPosX
-y102 = $texPosY
-z102 = $texSizeX
-w102 = $texSizeY
-endif
+x102 = $imageID
+y102 = 0
+z102 = 0
+w102 = 0
 x109 = $scissorX
 y109 = $scissorY
 z109 = $scissorZ
@@ -1020,7 +949,7 @@ w109 = $scissorW
 x110 = x110
 y110 = y110
 z110 = 0
-w110 = $drawType
+w110 = 0
 y111 = $di_count
 $slot_count = 7
 z111 = $data_offset
@@ -1045,7 +974,6 @@ $di_count = $di_count + 1
 
 x110 = 0
 y110 = 0
-$drawType = 0
 [ResourceBB]
 [CustomShaderDI2D]
 ResourceBB = copy_desc bb
@@ -1058,6 +986,7 @@ vs-t108 = ref ResourceAnimFrames
 ps-t105 = ref ResourceStyleBuffer
 
 
+x98 = time
 w98 = time % 1
 x99 = $cursorX / $ScreenW
 y99 = $cursorY / $ScreenH

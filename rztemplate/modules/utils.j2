@@ -417,39 +417,6 @@
     {%- endif -%}
 {%- endmacro -%}
 
-{%- macro get_svg_config_key(element, image_id, scene) -%}
-    {%- set img = none -%}
-    {%- if scene.rzm and scene.rzm.images -%}
-        {%- for i in scene.rzm.images if i.id == image_id -%}{%- set img = i -%}{%- endfor -%}
-    {%- endif -%}
-    
-    {%- if img and img.source_type == 'VECTOR' -%}
-        {%- set scale = element.svg_scale | round(2) -%}
-        {%- set off_x = element.svg_offset[0] | round(2) -%}
-        {%- set off_y = element.svg_offset[1] | round(2) -%}
-        {%- set color_key = "ORIG" -%}
-        {%- if not img.svg_preserve_color -%}
-            {%- set r = (element.color[0] * 255) | int -%}
-            {%- set g = (element.color[1] * 255) | int -%}
-            {%- set b = (element.color[2] * 255) | int -%}
-            {%- set color_key = "%02x%02x%02x" | format(r, g, b) -%}
-        {%- endif -%}
-        {{- "SVG_" ~ image_id ~ "_" ~ scale ~ "_" ~ off_x ~ "_" ~ off_y ~ "_" ~ color_key -}}
-    {%- endif -%}
-{%- endmacro -%}
-
-{%- macro get_image_cords_name(element, image_id, scene) -%}
-    {%- set img = none -%}
-    {%- if scene.rzm and scene.rzm.images -%}
-        {%- for i in scene.rzm.images if i.id == image_id -%}{%- set img = i -%}{%- endfor -%}
-    {%- endif -%}
-    
-    {%- if img and img.source_type == 'VECTOR' -%}
-        {{- "GetImageCords_" ~ get_svg_config_key(element, image_id, scene) -}}
-    {%- else -%}
-        {{- "GetImageCords" ~ image_id -}}
-    {%- endif -%}
-{%- endmacro -%}
 
 {% macro tier_tags(entity, scene=none) -%}
     {%- set tags = [] -%}

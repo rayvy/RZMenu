@@ -197,6 +197,69 @@ def pack_project_images(scene, export_dir):
             mapping['elements'][str(elem.id)]  = inst_id
             mapping['static'][str(img.id)]     = inst_id
 
+    # ── SECOND PASS: conditional_images + hover_image ─────────────────────────
+    # Stores instIDs for every (element, image_id) pair that may be used in
+    # CONDITIONAL_LIST / INDEX_LIST / hover logic.
+    # Key format: "{elem_id}_img_{image_id}"
+    for elem in rzm.elements:
+        all_extra_image_ids = set()
+        if hasattr(elem, 'conditional_images'):
+            for ci in elem.conditional_images:
+                if ci.image_id != -1:
+                    all_extra_image_ids.add(ci.image_id)
+        if hasattr(elem, 'hover_image_id') and elem.hover_image_id != -1:
+            all_extra_image_ids.add(elem.hover_image_id)
+
+        for extra_img_id in all_extra_image_ids:
+            composite_key = f"{elem.id}_img_{extra_img_id}"
+            if composite_key in mapping['elements']:
+                continue  # already packed
+
+            img = img_lib.get(extra_img_id)
+            if not img:
+                continue
+
+            mode   = getattr(elem, 'image_blending_mode', 'OVERLAY')
+            flip_x = getattr(elem, 'flip_x', False)
+            flip_y = getattr(elem, 'flip_y', False)
+
+            if img.source_type == 'ANIMATED':
+                seq_key = ('ASEQ', img.id, mode, flip_x, flip_y)
+                if seq_key in usage_cache:
+                    mapping['elements'][composite_key] = usage_cache[seq_key]
+                # else: anim not packed (no primary usage) – skip
+
+            elif img.source_type == 'VECTOR':
+                # SVG: find best matching variation for this element
+                res_w, res_h  = elem.size
+                render_w      = int(min(res_w, 1024))
+                render_h      = int(min(res_h, 1024))
+                scale         = round(elem.svg_scale, 2)
+                off_x_px      = round(elem.svg_offset[0] * render_w, 2)
+                off_y_px      = round(elem.svg_offset[1] * render_h, 2)
+                color_key_svg = "ORIG"
+                if not img.svg_preserve_color and elem.color[3] > 0.01:
+                    r, g, b       = [int(elem.color[i] * 255) for i in range(3)]
+                    color_key_svg = f"{r:02x}{g:02x}{b:02x}"
+                target_key = f"SVG_{img.id}_{render_w}x{render_h}_{scale}_{off_x_px}_{off_y_px}_{color_key_svg}"
+                var = next((v for v in img.svg_variations if v.config_key == target_key), None)
+                if var:
+                    v_id = create_static_instance(
+                        var.uv_coords[0], var.uv_coords[1],
+                        var.uv_size[0],   var.uv_size[1],
+                        mode, flip_x=flip_x, flip_y=flip_y
+                    )
+                    mapping['elements'][composite_key] = v_id
+
+            else:
+                # STATIC
+                inst_id = create_static_instance(
+                    img.uv_coords[0], img.uv_coords[1],
+                    img.uv_size[0],   img.uv_size[1],
+                    mode, flip_x=flip_x, flip_y=flip_y
+                )
+                mapping['elements'][composite_key] = inst_id
+
     # ─── WRITE FILES ──────────────────────────────────────────────────────────
 
     res_dir = os.path.join(export_dir, "res")

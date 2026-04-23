@@ -6,7 +6,7 @@ $scissorY = 0
 $scissorZ = 0
 $scissorW = 0
 $fontSlot = 0
-$drawType = 0
+$imageID = 0
 w33 = 0
 x110 = 0
 y110 = 0
@@ -152,11 +152,11 @@ y110 = 6
 
 [CommandListShaderPreset6]
 ;BLUR MASK
-$drawtype = 9000
+w110 = 9000
 
 [CommandListShaderPreset7]
-;WHITE OUTLINE
-$drawtype = 99
+;BG BLUR
+w110 = 99
 
 [CommandListShaderPreset8]
 ;Metallic SHINE
@@ -174,7 +174,7 @@ x110 = 1
 
 [CommandListShaderPreset11]
 ;BlurMask
-$drawtype = 9000
+w110 = 9000
 
 ;Copy Pasted from https://github.com/SinsOfSeven/3dmigoto_math_lib
 [Constants]
@@ -321,7 +321,7 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
 	$classType = 5
-	$drawType = 4
+	w110 = 4
 	$TexPosX = x24
 	$TexPosY = 0
 
@@ -338,6 +338,7 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 
 
 	run = CustomShaderRCI2D
+	w110 = 0
 
 	$positionX = $LocalPosX
 	$positionY = $LocalPosY
@@ -400,7 +401,7 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
 	$classType = 5
-	$drawType = 4
+	w110 = 4
 	$TexPosX = x24*100
 	$TexPosY = 1
 	$TexSizeX = 1
@@ -418,6 +419,7 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	y110 = 0
 
 	run = CustomShaderRCI2D
+	w110 = 0
 
 	$positionX = $LocalPosX
 	$positionY = $LocalPosY

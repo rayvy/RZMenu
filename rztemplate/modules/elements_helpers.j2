@@ -140,58 +140,6 @@
         {% endfor %}
     {% endfor %}
 
-    {# 3. Картинки (буферная логика) #}
-    {% set img_map = scene.rzm.image_mapping %}
-    {% for image in scene.rzm.images %}
-        {% if image.id not in processed_ids['images'] %}
-            {% set img_id_str = image.id | string %}
-            
-            [CommandListGetImageCords{{ image.id }}]
-            $drawType = 1
-            
-            {% if image.source_type == 'ANIMATED' %}
-                {# GPU-driven animation: shader reads anim_header from ImagePoolBuffer
-                   and picks the correct frame via AnimFramesBuffer + GlobalTime.
-                   We just assign the static animInstID per element — no INI frame tables. #}
-                {% set ns = {'is_first_elem': true} %}
-                {% for elem in scene.rzm.elements if elem.image_id == image.id %}
-                    {% set inst_id = img_map['elements'].get(elem.id | string) %}
-                    {% if inst_id is not none %}
-                        {% if ns['is_first_elem'] %}if $id == {{ elem.id }}{% if ns.update({'is_first_elem': false}) %}{% endif %}
-                        {% else %}elif $id == {{ elem.id }}
-                        {% endif %}
-                            $imageID = {{ inst_id }}
-                    {% endif %}
-                {% endfor %}
-                {% if not ns['is_first_elem'] %}endif{% endif %}
-
-            {% else %}
-                {# STATIC & VECTOR (per-element inst_id) #}
-                {% set ns = {'is_first_elem': true} %}
-                {% for elem in scene.rzm.elements if elem.image_id == image.id %}
-                    {% set inst_id = img_map['elements'].get(elem.id | string) %}
-                    {% if inst_id is not none %}
-                        {% if ns['is_first_elem'] %}if $id == {{ elem.id }}{% if ns.update({'is_first_elem': false}) %}{% endif %}
-                        {% else %}elif $id == {{ elem.id }}
-                        {% endif %}
-
-                        $imageID = {{ inst_id }}
-                    {% endif %}
-                {% endfor %}
-                
-                {% if not ns['is_first_elem'] %}
-                else
-                    $imageID = {{ img_map['static'].get(img_id_str, 0) }}
-                endif
-                {% else %}
-                
-                    $imageID = {{ img_map['static'].get(img_id_str, 0) }}
-                {% endif %}
-            {% endif %}
-            
-            {% set _ = processed_ids['images'].append(image.id) %}
-        {% endif %}
-    {% endfor %}
 {% endif %}
 {% endmacro %}
 

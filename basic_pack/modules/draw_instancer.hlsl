@@ -39,12 +39,11 @@ SamplerState      LinearSampler : register(s0);
 // --- GLOBAL VARS ---
 static float2 ScreenRes = GlobalParams[99].zw;
 static float2 CursorPos = GlobalParams[99].xy;
-static float  GlobalTime = GlobalParams[98].w;
+static float  GlobalTime = GlobalParams[98].w;  // time % 1 — for periodic effects
+static float  AnimTime   = GlobalParams[98].x;  // full time — for image animation playback
 
 // --- CONSTANTS ---
-static const int MODE_SOLID = 0;
-static const int MODE_TEX_OVERLAY = 1;
-static const int MODE_TEX_MULTIPLY = 2;
+static const int MODE_SOLID = 0;         // imageID == 0 → pure color
 static const int MODE_TEXT = 3;
 static const int MODE_NUMBER = 4;
 
@@ -246,7 +245,7 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
             float2(m.glyphW, m.glyphH)/cs*uvCell 
         );
     } 
-    else if (mode >= MODE_TEX_OVERLAY) { 
+    else { 
         // Для изображений передаем только imageID в X.
         return float4(tile.x, 0, 0, 0); 
     }
@@ -267,7 +266,7 @@ uint GetAnimFrame(uint imageID) {
     float fps        = (float)animHdr.w / 100.0;
     if (anim_count == 0 || fps <= 0.0) return imageID;
 
-    uint frame_idx = (uint)(GlobalTime * fps) % anim_count;
+    uint frame_idx = (uint)(AnimTime * fps) % anim_count;
     return (uint)AnimFramesBuffer[anim_start + frame_idx];
 }
 // ─────────────────────────────────────────────────────────────────────────────

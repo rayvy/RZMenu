@@ -252,7 +252,6 @@ endif
     {% else %}
     $LocalVisibility = 1
     {% endif %}
-    $drawType = 0
 if $LocalVisibility
     {{generate_position_and_size(helper_item, host_item, mod_file, scene)}}
     {{generate_interactions_for_helper(helper_item, host_item, scene)}}
@@ -469,92 +468,75 @@ endif
     {% endif %}
 {%endmacro%}
 
-{% macro generate_image(element, parent_element,scene) %}
-    {% set class_name = utils.get_cls(element)|trim %}
-    {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
+{% macro generate_image(element, parent_element, scene) %}
+    {% set img_map = scene.rzm.image_mapping %}
+    {% set eid = element.id | string %}
 
-    {# --- 1. ДОСТАЕМ СЫРОЕ ЗНАЧЕНИЕ (защита от списков) --- #}
+    {# --- Resolve safe_img_mode --- #}
     {% set raw_mode = element.image_mode[0] if element.image_mode is iterable and element.image_mode is not string else element.image_mode %}
-
-    {# --- 2. КОНВЕРТИРУЕМ СТРОКИ В ЧИСЛА --- #}
-    {# Blender 5.0 шлет строки, переводим их обратно в ID #}
     {% if raw_mode == 'SINGLE' %}
         {% set safe_img_mode = 0 %}
-    {% elif raw_mode == 'CONDITIONAL' or raw_mode == 'LIST' %} 
+    {% elif raw_mode == 'CONDITIONAL' or raw_mode == 'LIST' or raw_mode == 'CONDITIONAL_LIST' %}
         {% set safe_img_mode = 1 %}
-    {% elif raw_mode == 'INDEX' %}
+    {% elif raw_mode == 'INDEX' or raw_mode == 'INDEX_LIST' %}
         {% set safe_img_mode = 2 %}
     {% else %}
-        {# Если пришло число или что-то неизвестное, оставляем как есть #}
-        {% set safe_img_mode = raw_mode %}
+        {% set safe_img_mode = 0 %}
     {% endif %}
 
-    {# --- DEBUG START --- #}
+    {# --- DEBUG --- #}
     {% if scene.rzm.addons.debugger_info == 1 %}
-    ; ================= IMAGE DEBUG =================
-    ; Element: {{ element.element_name }}
-    ; Raw Mode: {{ raw_mode }}
-    ; Converted Mode: {{ safe_img_mode }}
-    ; Image ID: {{ element.image_id }}
-    ; ===============================================
+    ; ===IMAGE=== elem={{ element.element_name }} mode={{ raw_mode }} img={{ element.image_id }}
     {% endif %}
-    {# --- DEBUG END --- #}
 
-    {# --- Часть 1: ВСЕГДА отрисовываем базовый image_id, если он указан. --- #}
+    {# ── SINGLE ── #}
     {% if safe_img_mode == 0 and element.image_id is defined and element.image_id != -1 %}
-        {% if parent_class_name == 'GRID_CONTAINER' and class_name == 'BUTTON'%}
-        $drawType = 0
-        run = CustomShaderRCI2D
+        {% set inst_id = img_map['elements'].get(eid) %}
+        {% if inst_id is not none %}
+$imageID = {{ inst_id }}
         {% endif %}
-        run = CommandList{{ utils.get_image_cords_name(element, element.image_id, scene) }}
-        {% if element.image_blending_mode == "OVERLAY" %}
-        $drawtype = 1
-        {% elif element.image_blending_mode == "COLOR"%}
-        $drawtype = 1
-        {% else %}
-        ;NO BLEND
-        {% endif %}
-    {% endif %}
 
-    {# --- Часть 2: Conditional List (ID: 1) --- #}
-    {% if element.image_mode == "CONDITIONAL_LIST" and element.conditional_images %}
+    {# ── CONDITIONAL_LIST ── #}
+    {% elif safe_img_mode == 1 and element.conditional_images %}
         {% for item in element.conditional_images %}
-        {% if loop.index-1 == 0 %} 
-        if {{ item.condition }}
-        {% else %}
-        elif {{ item.condition }}
+            {% set ckey = eid ~ '_img_' ~ item.image_id %}
+            {% set inst_id = img_map['elements'].get(ckey, img_map['elements'].get(eid)) %}
+        {% if loop.first %}if {{ item.condition }}
+        {% else %}elif {{ item.condition }}
         {% endif %}
-            run = CommandList{{ utils.get_image_cords_name(element, item.image_id, scene) }}
+            $imageID = {{ inst_id if inst_id is not none else 0 }}
         {% endfor %}
-        else
-        run = CommandList{{ utils.get_image_cords_name(element, element.conditional_images[0].image_id, scene) }}
-        endif
+    else
+        {% set fb = img_map['elements'].get(eid ~ '_img_' ~ element.conditional_images[0].image_id, img_map['elements'].get(eid)) %}
+        $imageID = {{ fb if fb is not none else 0 }}
+    endif
 
-    {# --- Часть 3: Index List (ID: 2) --- #}
-    {% elif element.image_mode == "INDEX_LIST" and element.conditional_images and element.value_link %}
+    {# ── INDEX_LIST ── #}
+    {% elif safe_img_mode == 2 and element.conditional_images and element.value_link %}
         {% set var_name = utils.format_var(element.value_link[0].value_name) %}
         {% for item in element.conditional_images %}
-        {% if loop.index-1 == 0 %}
-        if ${{ var_name }} == {{ loop.index0 }}
-        {% else %}
-        elif ${{ var_name }} == {{ loop.index0 }}
+            {% set ckey = eid ~ '_img_' ~ item.image_id %}
+            {% set inst_id = img_map['elements'].get(ckey, img_map['elements'].get(eid)) %}
+        {% if loop.first %}if ${{ var_name }} == {{ loop.index0 }}
+        {% else %}elif ${{ var_name }} == {{ loop.index0 }}
         {% endif %}
-            run = CommandList{{ utils.get_image_cords_name(element, item.image_id, scene) }}
+            $imageID = {{ inst_id if inst_id is not none else 0 }}
         {% endfor %}
-        else
-        run = CommandList{{ utils.get_image_cords_name(element, element.conditional_images[0].image_id, scene) }}
-        endif
+    else
+        {% set fb = img_map['elements'].get(eid ~ '_img_' ~ element.conditional_images[0].image_id, img_map['elements'].get(eid)) %}
+        $imageID = {{ fb if fb is not none else 0 }}
+    endif
     {% endif %}
 
-    {# ─── Hover Image ──────────────────────────────────────────────────────────
-         Генерируется ПОСЛЕДНИМ — перезаписывает $texPos*/texSize* при наведении.
-         Высокий приоритет = позиция в коде (последний win), без доп. draw calls.
-         Работает поверх любого image_mode (SINGLE / CONDITIONAL_LIST / INDEX_LIST).
-    #}
+    {# ── HOVER image (overrides $imageID when cursor is over element) ── #}
     {% if element.hover_image_id is defined and element.hover_image_id != -1 %}
+        {% set hkey = eid ~ '_img_' ~ element.hover_image_id %}
+        {% set h_inst = img_map['elements'].get(hkey, img_map['elements'].get(eid)) %}
+        {% if h_inst is not none %}
     if ($cursorX >= $positionX && $cursorX <= ($positionX + $sizeX) && $cursorY >= $positionY && $cursorY <= ($positionY + $sizeY))
-        run = CommandList{{ utils.get_image_cords_name(element, element.hover_image_id, scene) }}
+        $imageID = {{ h_inst }}
     endif
+        {% endif %}
     {% endif %}
 {% endmacro %}
 
