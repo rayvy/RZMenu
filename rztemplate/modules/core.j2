@@ -1054,6 +1054,7 @@ vs-t104 = ref ResourceIndexBuffer
 vs-t103 = ref ResourceText
 vs-t105 = ref ResourceStyleBuffer
 vs-t107 = ref ResourceImageBuffer
+vs-t108 = ref ResourceAnimFrames
 ps-t105 = ref ResourceStyleBuffer
 
 
@@ -1065,6 +1066,7 @@ w99 = $ScreenH
 ps-t80 = ResourceIcons
 ps-t107 = ResourceImageBuffer
 vs-t103 = ResourceText
+ps-t108 = ResourceAnimFrames
 vs-t82 = ResourceFont0
 ps-t82 = ResourceFont0
 {% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
@@ -1197,6 +1199,11 @@ filename = .\res\texts.bin
 type = Buffer
 format = R16G16B16A16_UINT
 filename = .\res\images.bin
+
+[ResourceAnimFrames]
+type = Buffer
+format = R16_UINT
+filename = .\res\anim_frames.bin
 
 [ResourceStyleBuffer]
 type = Buffer

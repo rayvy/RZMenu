@@ -23,6 +23,7 @@ Buffer<uint>      IndexBuffer : register(t104);
 // Буферы пулов
 Buffer<uint4>     TextPoolBuffer : register(t103);
 Buffer<uint4>     ImagePoolBuffer : register(t107);
+Buffer<uint>      AnimFramesBuffer : register(t108); // flat array of frame InstIDs
 
 Buffer<float4>    ResourceStyleBuffer : register(t105);
 
@@ -246,11 +247,31 @@ float4 ComputeLayout(int mode, uint vID, float4 tile, uint fontSlot, inout float
         );
     } 
     else if (mode >= MODE_TEX_OVERLAY) { 
-        // Фаза 2: Для изображений передаем только imageID в X. YZW не используются.
+        // Для изображений передаем только imageID в X.
         return float4(tile.x, 0, 0, 0); 
     }
     return float4(0,0,1,1);
 }
+
+// ─── ANIM FRAME RESOLVE ───────────────────────────────────────────────────────
+// Reads the anim header from ImagePoolBuffer record 2 and returns the real
+// InstID for the current frame. For non-animated (is_anim==0) returns imageID as-is.
+uint GetAnimFrame(uint imageID) {
+    uint base  = imageID * 3;           // 3 records per instance
+    uint4 meta = ImagePoolBuffer[base]; // record 0: [sub_mode, is_anim, flip_x, flip_y]
+    if (meta.y == 0) return imageID;    // not animated
+
+    uint4 animHdr  = ImagePoolBuffer[base + 2]; // record 2: [start, count, 0, fps_x100]
+    uint  anim_start = animHdr.x;
+    uint  anim_count = animHdr.y;
+    float fps        = (float)animHdr.w / 100.0;
+    if (anim_count == 0 || fps <= 0.0) return imageID;
+
+    uint frame_idx = (uint)(GlobalTime * fps) % anim_count;
+    return (uint)AnimFramesBuffer[anim_start + frame_idx];
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 
 float2 ApplyAnimation(float type, uint styleFlags, int styleBaseIdx, float2 pos, float2 size, float2 uv) {
     float2 center = pos + size * 0.5;
@@ -411,15 +432,17 @@ float4 main(VertexOutput input) : SV_Target0 {
         else rawTexture = AtlasFont0.Sample(LinearSampler, uv);
     } 
     else if (imageID > 0) {
-        uint base = imageID * 2;
+        // Resolve animated → actual frame InstID
+        uint realInstID = GetAnimFrame(imageID);
+        uint base = realInstID * 3;              // 3 records per instance
         uint4 meta0 = ImagePoolBuffer[base];     // [SubMode, IsAnim, FlipX, FlipY]
-        uint4 rect = ImagePoolBuffer[base + 1];  // [TexX, TexY, Width, Height]
+        uint4 rect  = ImagePoolBuffer[base + 1]; // [TexX, TexY, Width, Height]
         
         float2 finalUV = input.contentUV;
         if (meta0.z > 0) finalUV.x = 1.0 - finalUV.x;
         if (meta0.w > 0) finalUV.y = 1.0 - finalUV.y;
 
-        float2 texPos = (float2)rect.xy;
+        float2 texPos  = (float2)rect.xy;
         float2 texSize = (float2)rect.zw;
         uint w, h; AtlasIcons.GetDimensions(w, h);
         float2 uvSample = (texPos + finalUV * texSize) / float2(max(1, w), max(1, h));
@@ -482,34 +505,30 @@ float4 main(VertexOutput input) : SV_Target0 {
             objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
         }
         else if (imageID > 0) {
-            uint sub_mode = ImagePoolBuffer[imageID * 2].x;
+            uint realInstID = GetAnimFrame(imageID);
+            uint sub_mode = ImagePoolBuffer[realInstID * 3].x;
             
-            if (sub_mode == 0) { // --- NONE ---
-                // Raw atlas color. No vertex color influence (as requested).
+            if (sub_mode == 0) {
                 objectLayer = rawTexture;
             }
-            else if (sub_mode == 1) { // --- OVERLAY ---
-                // Simple color overlay (multiply)
+            else if (sub_mode == 1) {
                 objectLayer = rawTexture * input.color;
             }
-            else if (sub_mode == 2) { // --- OVERLAY_ALPHA ---
-                // Overlay considering alpha
+            else if (sub_mode == 2) {
                 objectLayer = float4(rawTexture.rgb * input.color.rgb, rawTexture.a * input.color.a);
             }
-            else if (sub_mode == 3) { // --- COLOR_REPLACE ---
-                // Forces colors to input color while preserving greyscale intensity
+            else if (sub_mode == 3) {
                 float grey = dot(rawTexture.rgb, float3(0.299, 0.587, 0.114));
                 objectLayer = float4(input.color.rgb * grey, rawTexture.a * input.color.a);
             }
-            else if (sub_mode == 4) { // --- HSV ---
-                // R=H, G=S, B=V offsets
+            else if (sub_mode == 4) {
                 float3 hsv = RgbToHsv(rawTexture.rgb);
                 hsv.x = frac(hsv.x + input.color.r);
                 hsv.y = saturate(hsv.y + input.color.g);
                 hsv.z = saturate(hsv.z + input.color.b);
                 objectLayer = float4(HsvToRgb(hsv), rawTexture.a * input.color.a);
             }
-            else if (sub_mode == 5) { // --- INVERSION ---
+            else if (sub_mode == 5) {
                 objectLayer = float4(1.0 - rawTexture.rgb, rawTexture.a * input.color.a);
             }
             else {
@@ -538,7 +557,7 @@ float4 main(VertexOutput input) : SV_Target0 {
         }
     }
 
-    // 5. Outline Effect (ИСПРАВЛЕНО ДЛЯ ФАЗЫ 2)
+    // 5. Outline Effect
     if ((styleFlags & BIT_OUTLINE) && !isBlurBg && input.drawMode != MODE_MASKED_BLUR) {
          float thickness = ResourceStyleBuffer[baseIdx + 5].x;
          if (thickness <= 0.0) thickness = 1.0;
@@ -551,40 +570,35 @@ float4 main(VertexOutput input) : SV_Target0 {
          for(int k=0; k<4; k++) {
              float2 cUV = input.contentUV + offs[k];
              if(cUV.x>0 && cUV.x<1 && cUV.y>0 && cUV.y<1) {
-                 
                  if(input.drawMode == MODE_TEXT || input.drawMode == MODE_NUMBER) {
-                     // Логика обводки текста (использует старые параметры INI)
-                     int mMode = (int)round(input.mirrorMode);
+                     // Text outline
                      float2 outlineUV = cUV;
                      float2 uvBase = input.atlasRect.xy; 
-                     float2 uvSz = input.atlasRect.zw;
-                     
-                     float2 fUV = uvBase + outlineUV * uvSz;
-                     
+                     float2 uvSz   = input.atlasRect.zw;
+                     float2 fUV    = uvBase + outlineUV * uvSz;
                      uint fontSlot = (uint)input.extraData.y;
-                     if (fontSlot == 1) a += AtlasFont1.Sample(LinearSampler, fUV).r;
+                     if (fontSlot == 1)      a += AtlasFont1.Sample(LinearSampler, fUV).r;
                      else if (fontSlot == 2) a += AtlasFont2.Sample(LinearSampler, fUV).r;
                      else if (fontSlot == 3) a += AtlasFont3.Sample(LinearSampler, fUV).r;
-                     else a += AtlasFont0.Sample(LinearSampler, fUV).r;
+                     else                    a += AtlasFont0.Sample(LinearSampler, fUV).r;
                  }
                  else {
-                     // Логика обводки изображений (Читает ИЗ БУФЕРА ФАЗЫ 2)
-                     uint imageID = (uint)input.atlasRect.x;
-                     uint base = imageID * 2;
-                     uint4 meta0 = ImagePoolBuffer[base]; 
-                     uint4 rect = ImagePoolBuffer[base + 1]; 
-                     
+                     // Image outline — stride=3, anim-aware
+                     uint imageID    = (uint)input.atlasRect.x;
+                     uint realInstID = GetAnimFrame(imageID);
+                     uint base       = realInstID * 3;
+                     uint4 meta0     = ImagePoolBuffer[base];
+                     uint4 rect      = ImagePoolBuffer[base + 1];
+
                      float2 outlineUV = cUV;
                      if (meta0.z > 0) outlineUV.x = 1.0 - outlineUV.x;
                      if (meta0.w > 0) outlineUV.y = 1.0 - outlineUV.y;
-                     
-                     float2 texPos = (float2)rect.xy;
+
+                     float2 texPos  = (float2)rect.xy;
                      float2 texSize = (float2)rect.zw;
-                     
                      uint w, h; AtlasIcons.GetDimensions(w, h);
-                     float2 dim = float2(max(1, w), max(1, h));
+                     float2 dim     = float2(max(1, w), max(1, h));
                      float2 fUV_img = (texPos + outlineUV * texSize) / dim;
-                     
                      a += AtlasIcons.Sample(LinearSampler, float2(fUV_img.x, 1.0 - fUV_img.y)).a;
                  }
              }

@@ -150,39 +150,23 @@
             $drawType = 1
             
             {% if image.source_type == 'ANIMATED' %}
-                local $anim_t = time % {{ "%.6f" | format(image.anim_total_duration / (image.anim_speed_multiplier|default(1.0))) }}
-                
+                {# GPU-driven animation: shader reads anim_header from ImagePoolBuffer
+                   and picks the correct frame via AnimFramesBuffer + GlobalTime.
+                   We just assign the static animInstID per element — no INI frame tables. #}
                 {% set ns = {'is_first_elem': true} %}
                 {% for elem in scene.rzm.elements if elem.image_id == image.id %}
-                    {% set frame_indices = img_map['elements'].get(elem.id | string, []) %}
-                    {% if frame_indices | length > 0 %}
+                    {% set inst_id = img_map['elements'].get(elem.id | string) %}
+                    {% if inst_id is not none %}
                         {% if ns['is_first_elem'] %}if $id == {{ elem.id }}{% if ns.update({'is_first_elem': false}) %}{% endif %}
-                        {% else %}
-                        elif $id == {{ elem.id }}
+                        {% else %}elif $id == {{ elem.id }}
                         {% endif %}
-                        
-                        {% set seq_ns = {'t': 0.0, 'is_first_seq': true} %}
-                        {% for seq in image.anim_sequence %}
-                            {% set t_start = seq_ns['t'] %}
-                            {% set t_end = t_start + seq.duration / (image.anim_speed_multiplier|default(1.0)) %}
-                            {% set img_idx = frame_indices[loop.index0] | default(0) %}
-                            
-                            {% if seq_ns['is_first_seq'] %}if $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}{% if seq_ns.update({'is_first_seq': false}) %}{% endif %}
-                            {% else %}
-                            elif $anim_t >= {{ "%.6f" | format(t_start) }} && $anim_t < {{ "%.6f" | format(t_end) }}
-                            {% endif %}
-
-                                $imageID = {{ img_idx }}
-                            {% if seq_ns.update({'t': t_end}) %}{% endif %}
-                        {% endfor %}
-                        endif
-                        
+                            $imageID = {{ inst_id }}
                     {% endif %}
                 {% endfor %}
                 {% if not ns['is_first_elem'] %}endif{% endif %}
 
             {% else %}
-                {# STATIC & VECTOR (Универсальная привязка к элементу) #}
+                {# STATIC & VECTOR (per-element inst_id) #}
                 {% set ns = {'is_first_elem': true} %}
                 {% for elem in scene.rzm.elements if elem.image_id == image.id %}
                     {% set inst_id = img_map['elements'].get(elem.id | string) %}
