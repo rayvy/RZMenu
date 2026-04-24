@@ -152,8 +152,10 @@ Local $current_sizeY
     {% endif %}
     {{generate_presets(element,mod_file,scene)}}
     ;{{generate_helpers(element,mod_file,scene)}}
+    {% if not element.is_preset%}
     z23 = 0
     w23 = 0
+    {% endif %}
     {{generate_child(element,mod_file,scene)}}
     endif
     endif

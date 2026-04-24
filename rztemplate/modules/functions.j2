@@ -1,18 +1,18 @@
 {%macro Base()%}
 [CommandListRestoreElement]
+$imageID = 0
+$rotation = 0.0
+; $flipX = 0
+; $flipY = 0
 if $isPreset != 1
 $scissorX = 0
 $scissorY = 0
 $scissorZ = 0
 $scissorW = 0
 $fontSlot = 0
-$imageID = 0
 w33 = 0
 x110 = 0
 y110 = 0
-$rotation = 0.0
-$flipX = 0
-$flipY = 0
 endif
 
 [CommandListCoreAlignment.Check]
