@@ -609,6 +609,29 @@ $ts = time
 {%endmacro%}
 
 {% macro menuDrawUi(mod_file,scene)%}
+{% set rzm = scene.rzm %}
+{% set has_anim_tracker = [false] %}
+{% if rzm %}
+    {% set anim_ids = [] %}
+    {% for img in rzm.images if img.source_type == 'ANIMATED' %}
+        {% set _ = anim_ids.append(img.id) %}
+    {% endfor %}
+    {% if anim_ids %}
+        {% for elem in rzm.elements %}
+            {% if elem.image_id in anim_ids or elem.hover_image_id in anim_ids or elem.extramap_image_id in anim_ids %}
+                {% set _ = has_anim_tracker.pop() %}{% set _ = has_anim_tracker.append(true) %}
+            {% else %}
+                {% for c_img in elem.conditional_images %}
+                    {% if c_img.image_id in anim_ids %}
+                        {% set _ = has_anim_tracker.pop() %}{% set _ = has_anim_tracker.append(true) %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{% endif %}
+{% set has_anim = has_anim_tracker[0] %}
+
 [CustomShaderRCI2D_POPUP]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
@@ -1009,7 +1032,9 @@ vs-t103 = ref ResourceText
 {% endif %}
 vs-t105 = ref ResourceStyleBuffer
 vs-t107 = ref ResourceImageBuffer
+{% if has_anim %}
 vs-t108 = ref ResourceAnimFrames
+{% endif %}
 ps-t105 = ref ResourceStyleBuffer
 
 
@@ -1021,7 +1046,9 @@ z99 = $ScreenW / $screen_modifier_scale
 w99 = $ScreenH / $screen_modifier_scale
 ps-t80 = ResourceIcons
 ps-t107 = ResourceImageBuffer
+{% if has_anim %}
 ps-t108 = ResourceAnimFrames
+{% endif %}
 vs-t82 = ResourceFont0
 ps-t82 = ResourceFont0
 {% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
@@ -1165,10 +1192,12 @@ type = Buffer
 format = R16G16B16A16_UINT
 filename = .\res\images.bin
 
+{% if has_anim %}
 [ResourceAnimFrames]
 type = Buffer
 format = R16_UINT
 filename = .\res\anim_frames.bin
+{% endif %}
 
 [ResourceStyleBuffer]
 type = Buffer

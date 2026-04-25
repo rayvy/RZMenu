@@ -326,6 +326,9 @@
             {%- endif -%}
             {%- set parent = ns.parent if ns.parent else element -%}
             {%- if parent -%}
+                {%- set p_val = '$' ~ get_first_value_link_var(parent)|trim -%}
+                {%- set p_min = resolve_parent_min_max(parent, scene, 'MIN')|trim -%}
+                {%- set p_max = resolve_parent_min_max(parent, scene, 'MAX')|trim -%}
                 {%- set p_name = parent.element_name | default('') | string -%}
                 {%- set p_text = parent.text_id | default('') | string -%}
                 {%- set p_hover = parent.hover_text_id | default('') | string -%}
@@ -336,6 +339,9 @@
                 {%- set p_color = p_color_r ~ ',' ~ p_color_g ~ ',' ~ p_color_b ~ ',' ~ p_color_a -%}
                 
                 {%- set _ = vars_map.update({
+                    '~ParentValueMin': p_min, '~PVMin': p_min, '~PVmin': p_min, '~pvmin': p_min, '~PVMIN': p_min,
+                    '~ParentValueMax': p_max, '~PVMax': p_max, '~PVmax': p_max, '~pvmax': p_max, '~PVMAX': p_max,
+                    '~ParentValue': p_val,    '~PV': p_val,    '~pv': p_val, 
                     '~PColor.r': p_color_r, '~PColor.R': p_color_r, '~PC.r': p_color_r, '~PC.R': p_color_r,
                     '~PColor.g': p_color_g, '~PColor.G': p_color_g, '~PC.g': p_color_g, '~PC.G': p_color_g,
                     '~PColor.b': p_color_b, '~PColor.B': p_color_b, '~PC.b': p_color_b, '~PC.B': p_color_b,

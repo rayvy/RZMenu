@@ -23,8 +23,8 @@
                     {% set text_info = scene.rzm.text_mapping['conditional'].get(lookup_key, [0, 0]) %}
                     {% set text_id = text_info[0] %}
 
-                    {% if loop.first %}if {{ utils.normalize_all_vars(item.condition, element, scene) }}
-                    {% else %}elif {{ utils.normalize_all_vars(item.condition, element, scene) }}{% endif %}
+                    {% if loop.first %}if {{ utils.normalize_all_vars(item.condition, host if host else element, scene) }}
+                    {% else %}elif {{ utils.normalize_all_vars(item.condition, host if host else element, scene) }}{% endif %}
                     {% if element.text_id_is_data %}
                         $TextIsData = 1
                         $TextID = {{ item.text_id }}

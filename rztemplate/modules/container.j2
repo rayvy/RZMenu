@@ -19,7 +19,7 @@ $LocalVisibility = 0
 local $hoverInterpolate
 local $clickInterpolate
 {% if element.visibility_mode == 'CONDITIONAL' %}
-if {{ utils.normalize_all_vars(element.visibility_condition, element, scene) }}
+if {{ utils.normalize_all_vars(element.visibility_condition, parent_element, scene) }}
     $LocalVisibility = 1
 endif
 {% elif element.visibility_mode == 'HIDED' %}
@@ -267,8 +267,16 @@ if $LocalVisibility
     {% elif h_cls == 'TEXT' %}
         {{generate_text(helper_item, host_item)}}
         ;run = CustomShaderRCI2D_TEXT_{{helper_item.text_align | default('LEFT')}}
+    {% elif h_cls == 'VECTOR_BOX' %}
+        run = CommandList{{ helper_item.element_name }}_{{ helper_item.id }}Helper
+        run = CustomShaderRCI2D
     {% else %}
         run = CustomShaderRCI2D
+    {% endif %}
+    {% if h_cls == 'GRID_CONTAINER' %}
+        {{ handle_grid_container_logic(helper_item, mod_file, scene) }}
+    {% elif h_cls == 'BUTTON' %}
+        {{ handle_button_logic(helper_item, host_item, mod_file, scene) }}
     {% endif %}
     {{generate_hovertext(helper_item, host_item)}}
 endif
@@ -314,13 +322,13 @@ endif
         {# ЛОГИКА ДЛЯ ПРЕСЕТОВ: Либо наследуют всё, либо применяют формулу поверх наследства #}
         
         {% if element.position_is_formula %}
-        $positionX = {{ element.position_formula_x }}
-        $positionY = {{ element.position_formula_y }}
+        $positionX = {{ utils.normalize_all_vars(element.position_formula_x, parent_element, scene) }}
+        $positionY = {{ utils.normalize_all_vars(element.position_formula_y, parent_element, scene) }}
         {% endif %}
 
         {% if element.size_is_formula %}
-        $sizeX = {{ element.size_formula_x | default('$sizeX') }}
-        $sizeY = {{ element.size_formula_y | default('$sizeY') }}
+        $sizeX = {{ utils.normalize_all_vars(element.size_formula_x, parent_element, scene) | default('$sizeX') }}
+        $sizeY = {{ utils.normalize_all_vars(element.size_formula_y, parent_element, scene) | default('$sizeY') }}
         {% endif %}
         {% if element.rotation_is_formula %}
         $rotation = {{ utils.normalize_all_vars(element.rotation_formula,parent_element, scene) }}
@@ -339,8 +347,8 @@ endif
         {% set grid_child = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | selectattr('elem_class', 'equalto', 1)) | first %}
         
         {% if element.position_is_formula %}
-            $positionX = ({{ element.position_formula_x }})
-            $positionY = ({{ element.position_formula_y }})
+            $positionX = ({{ utils.normalize_all_vars(element.position_formula_x, parent_element, scene) }})
+            $positionY = ({{ utils.normalize_all_vars(element.position_formula_y, parent_element, scene) }})
         {% elif element.parent_id > -1%}
             $positionX = $positionX + {{ element.position[0] if element.position else 0}}
             $positionY = $positionY + {{ element.position[1] if element.position else 0}}
@@ -362,8 +370,8 @@ endif
             $sizeX = ${{ element.element_name }}SizeX
             $sizeY = {{ element.size[1] | default(0) | int}}
         {% elif element.size_is_formula %}
-            $sizeX = ({{ element.size_formula_x | default('(100) * $sizeMultiplier')}}) * $sizeMultiplier
-            $sizeY = ({{ element.size_formula_y | default('(100) * $sizeMultiplier')}}) * $sizeMultiplier
+            $sizeX = ({{ utils.normalize_all_vars(element.size_formula_x, parent_element, scene) | default('(100) * $sizeMultiplier')}}) * $sizeMultiplier
+            $sizeY = ({{ utils.normalize_all_vars(element.size_formula_y, parent_element, scene) | default('(100) * $sizeMultiplier')}}) * $sizeMultiplier
         {% elif utils.has_attribute(element, 'isResizable')%}
             $sizeX = (${{ element.element_name | default('noname') }}SizeX) * $sizeMultiplier
             $sizeY = (${{ element.element_name | default('noname') }}SizeY) * $sizeMultiplier
@@ -389,7 +397,7 @@ endif
     {% endif %}
 
     {% if element.transform_is_formula %}
-    {{element.transform_formula}}
+    {{ utils.normalize_all_vars(element.transform_formula, parent_element, scene) }}
     {% else %}
     {% endif %}
 {%endmacro%}
@@ -503,8 +511,8 @@ $imageID = {{ inst_id }}
         {% for item in element.conditional_images %}
             {% set ckey = eid ~ '_img_' ~ item.image_id %}
             {% set inst_id = img_map['elements'].get(ckey, img_map['elements'].get(eid)) %}
-        {% if loop.first %}if {{ item.condition }}
-        {% else %}elif {{ item.condition }}
+        {% if loop.first %}if {{ utils.normalize_all_vars(item.condition, parent_element, scene) }}
+        {% else %}elif {{ utils.normalize_all_vars(item.condition, parent_element, scene) }}
         {% endif %}
             $imageID = {{ inst_id if inst_id is not none else 0 }}
         {% endfor %}
@@ -697,7 +705,7 @@ $imageID = {{ inst_id }}
 
             {# 2. ЛОГИКА ФОРМУЛЫ (Добавляется ПОСЛЕ стандартной логики) #}
             {% if element.value_link_is_formula %}
-                {{ element.value_link_formula }}
+                {{ utils.normalize_all_vars(element.value_link_formula, parent_element, scene) }}
             {% endif %}
             
             {# 3. ПРИВЯЗКА RUN LINK #}
@@ -730,7 +738,7 @@ $imageID = {{ inst_id }}
             
             {# Здесь просто выполняем формулу, так как переменных нет #}
             {% if element.value_link_is_formula %}
-                {{ element.value_link_formula }}
+                {{ utils.normalize_all_vars(element.value_link_formula, parent_element, scene) }}
             {% endif %}
             
             {# ПРИВЯЗКА RUN LINK #}
@@ -840,7 +848,7 @@ endif
     $sizeX = (32) * $sizeMultiplier
     $sizeY = (32) * $sizeMultiplier
     if $LocalVisibility
-        run = CommandListGetImageCords{{element.image_id}}
+        $imageID = {{element.image_id}}
         if $TexPosX + $TexPosY + $TexSizeX + $TexSizeY <= 0
             if $DrawType != 1
             $drawType = 0
@@ -899,7 +907,7 @@ endif
     local $LocalVisibility
     {% if element.visibility_mode == 'CONDITIONAL' %}
     $LocalVisibility = 0
-    if {{element.visibility_condition}}
+    if {{ utils.normalize_all_vars(element.visibility_condition, parent_element, scene) }}
         $LocalVisibility = 1
     endif
     {% elif element.visibility_mode == 'HIDED' %}

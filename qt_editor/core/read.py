@@ -478,6 +478,18 @@ def get_selection_details(selected_ids, active_id):
             "fx": [
                 item.value for item in target.fx
             ] if target else [],
+            "fn": [
+                item.function_name for item in target.fn
+            ] if target else [],
+            "properties": [
+                {"key": p.key, "type": p.value_type, "s": p.string_value, "i": p.int_value, "f": p.float_value} 
+                for p in target.properties
+            ] if target else [],
+            "toggles": [
+                {"name": t.toggle_name, "bits": [b.value for b in t.bits]} 
+                for t in target.toggles
+            ] if target else [],
+            "disable_default_xy": get_uniform("disable_default_xy", default=False),
 
             # Button Specifics
             "disable_button_nums": get_uniform("disable_button_nums", default=False),
@@ -577,6 +589,8 @@ def get_viewport_data():
             "svg_offset_x": getattr(elem, "svg_offset", [0, 0])[0],
             "svg_offset_y": getattr(elem, "svg_offset", [0, 0])[1],
             "font_slot": getattr(elem, "font_slot", 0),
+            "flip_x": getattr(elem, "flip_x", False),
+            "flip_y": getattr(elem, "flip_y", False),
             "text_id": getattr(elem, "text_id", ""),
             "color": color_list,
             "is_hidden": getattr(elem, "qt_hide", False),

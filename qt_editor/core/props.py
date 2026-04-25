@@ -80,6 +80,7 @@ PROP_MAP = {
     "flip_y": ("flip_y", None, 'D'),
     "image_mode": ("image_mode", None, 'D'),
     "image_blending_mode": ("image_blending_mode", None, 'D'),
+    "extramap_image_id": ("extramap_image_id", None, 'D'),
     "tile_uv": ("tile_uv", None, 'D'),
     "tile_size": ("tile_size", None, 'D'),
     "disable_button_nums": ("disable_button_nums", None, 'D'),
@@ -89,6 +90,7 @@ PROP_MAP = {
     "disable_slider_prebuild_render": ("disable_slider_prebuild_render", None, 'D'),
     "slider_logic_invert_x": ("slider_logic_invert_x", None, 'D'),
     "slider_logic_invert_y": ("slider_logic_invert_y", None, 'D'),
+    "disable_default_xy": ("disable_default_xy", None, 'D'),
     "text_mode": ("text_mode", None, 'D'),
     "text_id": ("text_id", None, 'D'),
     "hover_text_id": ("hover_text_id", None, 'D'),
@@ -317,6 +319,19 @@ def update_conditional_image(target_ids, index, field, value):
             blender_bridge.safe_undo_push(f"RZM: Update CI {field}")
             signals.SIGNALS.data_changed.emit()
 
+def reorder_conditional_image(target_ids, old_index, new_index):
+    if not target_ids or old_index < 0 or new_index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and old_index < len(elem.conditional_images) and new_index < len(elem.conditional_images):
+                elem.conditional_images.move(old_index, new_index)
+                changed = True
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Reorder Conditional Images")
+            signals.SIGNALS.data_changed.emit()
+
 def add_conditional_text(target_ids):
     if not target_ids: return
     with signals.qt_update_guard():
@@ -363,6 +378,19 @@ def update_conditional_text(target_ids, index, field, value):
             blender_bridge.safe_undo_push(f"RZM: Update CT {field}")
             signals.SIGNALS.data_changed.emit()
 
+def reorder_conditional_text(target_ids, old_index, new_index):
+    if not target_ids or old_index < 0 or new_index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and old_index < len(elem.conditional_texts) and new_index < len(elem.conditional_texts):
+                elem.conditional_texts.move(old_index, new_index)
+                changed = True
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Reorder Conditional Texts")
+            signals.SIGNALS.data_changed.emit()
+
 def add_localized_text(target_ids):
     if not target_ids: return
     with signals.qt_update_guard():
@@ -407,6 +435,52 @@ def update_localized_text(target_ids, index, field, value):
         
         if changed:
             blender_bridge.safe_undo_push(f"RZM: Update LT {field}")
+            signals.SIGNALS.data_changed.emit()
+
+def add_localized_text_to_ct(target_ids, ct_index):
+    if not target_ids or ct_index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and ct_index < len(elem.conditional_texts):
+                elem.conditional_texts[ct_index].localized_texts.add()
+                changed = True
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add CT Localized Text")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_localized_text_from_ct(target_ids, ct_index, index):
+    if not target_ids or ct_index < 0 or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and ct_index < len(elem.conditional_texts):
+                ct = elem.conditional_texts[ct_index]
+                if index < len(ct.localized_texts):
+                    ct.localized_texts.remove(index)
+                    changed = True
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove CT Localized Text")
+            signals.SIGNALS.data_changed.emit()
+
+def update_localized_text_in_ct(target_ids, ct_index, index, field, value):
+    if not target_ids or ct_index < 0 or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and ct_index < len(elem.conditional_texts):
+                ct = elem.conditional_texts[ct_index]
+                if index < len(ct.localized_texts):
+                    item = ct.localized_texts[index]
+                    if hasattr(item, field):
+                        if getattr(item, field) != value:
+                            setattr(item, field, value)
+                            changed = True
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update CT LT {field}")
             signals.SIGNALS.data_changed.emit()
 
 
@@ -501,6 +575,19 @@ def remove_fx(target_ids, index):
             blender_bridge.safe_undo_push("RZM: Remove FX")
             signals.SIGNALS.data_changed.emit()
 
+def reorder_fx(target_ids, old_index, new_index):
+    if not target_ids or old_index < 0 or new_index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and old_index < len(elem.fx) and new_index < len(elem.fx):
+                elem.fx.move(old_index, new_index)
+                changed = True
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Reorder FX")
+            signals.SIGNALS.data_changed.emit()
+
 def update_fx(target_ids, index, value):
     """Updates an FX entry in the collection."""
     if not target_ids or index < 0: return
@@ -517,6 +604,63 @@ def update_fx(target_ids, index, value):
         
         if changed:
             blender_bridge.safe_undo_push(f"RZM: Update FX {value}")
+            signals.SIGNALS.data_changed.emit()
+            
+def add_fn(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.fn.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Function")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_fn(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.fn):
+                elem.fn.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Function")
+            signals.SIGNALS.data_changed.emit()
+
+def reorder_fn(target_ids, old_index, new_index):
+    if not target_ids or old_index < 0 or new_index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and old_index < len(elem.fn) and new_index < len(elem.fn):
+                elem.fn.move(old_index, new_index)
+                changed = True
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Reorder Functions")
+            signals.SIGNALS.data_changed.emit()
+
+def update_fn(target_ids, index, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem_id in target_ids:
+            elem = get_element_by_id(elem_id)
+            if elem and index < len(elem.fn):
+                if elem.fn[index].function_name != value:
+                    elem.fn[index].function_name = value
+                    changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update Function {value}")
             signals.SIGNALS.data_changed.emit()
 
 def find_longest_common_subsequence(lists):

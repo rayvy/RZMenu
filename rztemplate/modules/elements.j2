@@ -333,7 +333,7 @@ ${{ utils.get_var_name(slave_name, scene) }} = {{ master_var }}
     local $_W = $VB_W
 
     {% if element.event_formula %}
-    {{ element.event_formula }}
+    {{ utils.normalize_all_vars(element.event_formula, element, scene) }}
     {% endif %}
 
     {# Sync back to working vars #}

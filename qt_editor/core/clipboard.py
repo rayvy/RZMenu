@@ -37,16 +37,29 @@ def copy_elements(target_ids):
                 
                 "pos_is_formula": elem.position_is_formula,
                 "size_is_formula": elem.size_is_formula,
+                "rotation_is_formula": getattr(elem, "rotation_is_formula", False),
+                "transform_is_formula": getattr(elem, "transform_is_formula", False),
+
                 "pos_formula_x": elem.position_formula_x,
                 "pos_formula_y": elem.position_formula_y,
                 "size_formula_x": elem.size_formula_x,
                 "size_formula_y": elem.size_formula_y,
+                "rotation": getattr(elem, "rotation", 0.0),
+                "rotation_formula": getattr(elem, "rotation_formula", ""),
+                "transform_formula": getattr(elem, "transform_formula", ""),
                 
                 "image_id": elem.image_id,
+                "hover_image_id": getattr(elem, "hover_image_id", -1),
+                "extramap_image_id": getattr(elem, "extramap_image_id", -1),
                 "image_mode": elem.image_mode,
                 "image_blending_mode": getattr(elem, "image_blending_mode", 'NONE'),
                 "tile_uv": list(elem.tile_uv),
                 "tile_size": list(elem.tile_size),
+                "flip_x": getattr(elem, "flip_x", False),
+                "flip_y": getattr(elem, "flip_y", False),
+
+                "svg_scale": getattr(elem, "svg_scale", 1.0),
+                "svg_offset": list(getattr(elem, "svg_offset", [0.0, 0.0])),
                 
                 "color_is_formula": elem.color_is_formula,
                 "color_formula_r": elem.color_formula_r,
@@ -56,20 +69,23 @@ def copy_elements(target_ids):
                 "value_link_is_formula": elem.value_link_is_formula,
                 "value_link_formula": elem.value_link_formula,
                 
-                "transform_is_formula": getattr(elem, "transform_is_formula", False),
-                "transform_formula": getattr(elem, "transform_formula", ""),
-                
                 "is_preset": getattr(elem, "is_preset", False),
+                "is_helper": getattr(elem, "is_helper", False),
+                "is_template_prefab": getattr(elem, "is_template_prefab", False),
+                "template_prefab": getattr(elem, "template_prefab", 'MAIN_BLOCK'),
+                
                 "qt_preset_hide": getattr(elem, "qt_preset_hide", False),
                 "preset_ids": [p.preset_id for p in elem.preset_ids] if hasattr(elem, "preset_ids") else [],
                 "underlayer_preset_ids": [p.preset_id for p in elem.underlayer_preset_ids] if hasattr(elem, "underlayer_preset_ids") else [],
+                "helper_ids": [h.helper_id for h in elem.helper_ids] if hasattr(elem, "helper_ids") else [],
+                "export_tiers": [t.tier_id for t in elem.export_tiers] if hasattr(elem, "export_tiers") else [],
 
-                
                 "visibility_mode": elem.visibility_mode,
                 "visibility_condition": elem.visibility_condition,
                 "hide": getattr(elem, "qt_hide", False),
                 "lock_pos": getattr(elem, "qt_lock_pos", False),
                 "lock_size": getattr(elem, "qt_lock_size", False),
+                "lock_ratio": getattr(elem, "qt_lock_ratio", False),
                 "selectable": getattr(elem, "qt_selectable", True),
                 
                 "grid_cell_size": elem.grid_cell_size,
@@ -82,6 +98,8 @@ def copy_elements(target_ids):
                 "disable_slider_nums": getattr(elem, "disable_slider_nums", False),
                 "disable_slider_blur": getattr(elem, "disable_slider_blur", False),
                 "disable_slider_prebuild_render": getattr(elem, "disable_slider_prebuild_render", False),
+                "slider_logic_invert_x": getattr(elem, "slider_logic_invert_x", False),
+                "slider_logic_invert_y": getattr(elem, "slider_logic_invert_y", False),
                 
                 "hover_event_enabled": elem.hover_event_enabled,
                 "hover_event_formula": elem.hover_event_formula,
@@ -90,9 +108,32 @@ def copy_elements(target_ids):
                 
                 "conditional_images": [{"condition": ci.condition, "image_id": ci.image_id} for ci in elem.conditional_images],
                 "text_mode": elem.text_mode,
-                "conditional_texts": [{"condition": ct.condition, "text_id": ct.text_id} for ct in elem.conditional_texts],
+                "text_id_is_data": getattr(elem, "text_id_is_data", False),
+                "text_id_data_length": getattr(elem, "text_id_data_length", 1),
+                "hover_text_id_is_data": getattr(elem, "hover_text_id_is_data", False),
+                "hover_text_id_data_length": getattr(elem, "hover_text_id_data_length", 1),
+                "conditional_texts": [
+                    {
+                        "condition": ct.condition, 
+                        "text_id": ct.text_id,
+                        "localized_texts": [{"lang": lt.language_index, "text": lt.text_id, "hover": lt.hover_text_id} for lt in ct.localized_texts]
+                    } for ct in elem.conditional_texts
+                ],
+                "localized_texts": [{"lang": lt.language_index, "text": lt.text_id, "hover": lt.hover_text_id} for lt in elem.localized_texts],
                 "value_links": [{"name": vl.value_name, "min": vl.value_min, "max": vl.value_max} for vl in elem.value_link],
-                "fx": [fx.value for fx in elem.fx]
+                "fx": [fx.value for fx in elem.fx],
+                "fn": [fn_item.function_name for fn_item in elem.fn],
+                "properties": [{"key": p.key, "type": p.value_type, "s": p.string_value, "i": p.int_value, "f": p.float_value} for p in elem.properties],
+                "toggles": [{"name": t.toggle_name, "bits": [b.value for b in t.bits]} for t in elem.toggles],
+                "disable_default_xy": getattr(elem, "disable_default_xy", False),
+                
+                "style_id": getattr(elem, "style_id", -1),
+                "font_slot": getattr(elem, "font_slot", 0),
+                "is_tab_container": getattr(elem, "is_tab_container", False),
+                "page_color": list(getattr(elem, "page_color", [0.5, 0.5, 0.5, 1.0])),
+                "disable_export": getattr(elem, "disable_export", False),
+                "trackable": getattr(elem, "trackable", False),
+                "run_link_id": getattr(elem, "run_link_id", -1),
             }
             _INTERNAL_CLIPBOARD.append(data)
 
@@ -155,6 +196,7 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
                     new_elem.position = (int(gx), int(gy))
             
             new_elem.size = item["size"]
+            new_elem.rotation = item.get("rotation", 0.0)
             
             # Simple Props
             new_elem.color = item.get("color", [1,1,1,1])
@@ -164,24 +206,36 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             new_elem.hover_text_id = item.get("hover_text_id", "")
             new_elem.tag = item.get("tag", "")
             new_elem.priority = item.get("priority", 0)
+            new_elem.qt_priority = item.get("qt_priority", 0)
             new_elem.is_main_window = item.get("is_main_window", False)
+            new_elem.is_tab_container = item.get("is_tab_container", False)
+            new_elem.page_color = item.get("page_color", [0.5, 0.5, 0.5, 1.0])
             
             new_elem.position_is_formula = item.get("pos_is_formula", False)
             new_elem.size_is_formula = item.get("size_is_formula", False)
+            new_elem.rotation_is_formula = item.get("rotation_is_formula", False)
+            new_elem.transform_is_formula = item.get("transform_is_formula", False)
+
             new_elem.position_formula_x = item.get("pos_formula_x", "")
             new_elem.position_formula_y = item.get("pos_formula_y", "")
             new_elem.size_formula_x = item.get("size_formula_x", "")
             new_elem.size_formula_y = item.get("size_formula_y", "")
+            new_elem.rotation_formula = item.get("rotation_formula", "")
+            new_elem.transform_formula = item.get("transform_formula", "")
             
-            new_elem.size_formula_y = item.get("size_formula_y", "")
-            
-            # (yellow) Clipboard issue: Потеря путей к изображениям?
-            # Если image_id ссылается на временный ресурс, он может быть утерян.
+            # Image Props
             new_elem.image_id = item.get("image_id", -1)
+            new_elem.hover_image_id = item.get("hover_image_id", -1)
+            new_elem.extramap_image_id = item.get("extramap_image_id", -1)
             new_elem.image_mode = item.get("image_mode", "SINGLE")
             new_elem.image_blending_mode = item.get("image_blending_mode", "NONE")
             new_elem.tile_uv = item.get("tile_uv", [0,0])
             new_elem.tile_size = item.get("tile_size", [1,1])
+            new_elem.flip_x = item.get("flip_x", False)
+            new_elem.flip_y = item.get("flip_y", False)
+
+            new_elem.svg_scale = item.get("svg_scale", 1.0)
+            new_elem.svg_offset = item.get("svg_offset", [0.0, 0.0])
             
             new_elem.color_is_formula = item.get("color_is_formula", False)
             new_elem.color_formula_r = item.get("color_formula_r", "1")
@@ -191,10 +245,10 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             new_elem.value_link_is_formula = item.get("value_link_is_formula", False)
             new_elem.value_link_formula = item.get("value_link_formula", "")
             
-            new_elem.transform_is_formula = item.get("transform_is_formula", False)
-            new_elem.transform_formula = item.get("transform_formula", "")
-            
             new_elem.is_preset = item.get("is_preset", False)
+            new_elem.is_helper = item.get("is_helper", False)
+            new_elem.is_template_prefab = item.get("is_template_prefab", False)
+            new_elem.template_prefab = item.get("template_prefab", 'MAIN_BLOCK')
             new_elem.qt_preset_hide = item.get("qt_preset_hide", False)
             
             new_elem.visibility_mode = item.get("visibility_mode", "ALWAYS")
@@ -202,6 +256,7 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             new_elem.qt_hide = item.get("hide", False)
             new_elem.qt_lock_pos = item.get("lock_pos", False)
             new_elem.qt_lock_size = item.get("lock_size", False)
+            new_elem.qt_lock_ratio = item.get("lock_ratio", False)
             new_elem.qt_selectable = item.get("selectable", True)
             
             new_elem.grid_cell_size = item.get("grid_cell_size", 50)
@@ -214,6 +269,8 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             new_elem.disable_slider_nums = item.get("disable_slider_nums", False)
             new_elem.disable_slider_blur = item.get("disable_slider_blur", False)
             new_elem.disable_slider_prebuild_render = item.get("disable_slider_prebuild_render", False)
+            new_elem.slider_logic_invert_x = item.get("slider_logic_invert_x", False)
+            new_elem.slider_logic_invert_y = item.get("slider_logic_invert_y", False)
             
             new_elem.hover_event_enabled = item.get("hover_event_enabled", False)
             new_elem.hover_event_formula = item.get("hover_event_formula", "")
@@ -221,6 +278,16 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             new_elem.click_event_formula = item.get("click_event_formula", "")
             
             new_elem.text_mode = item.get("text_mode", "SINGLE")
+            new_elem.text_id_is_data = item.get("text_id_is_data", False)
+            new_elem.text_id_data_length = item.get("text_id_data_length", 1)
+            new_elem.hover_text_id_is_data = item.get("hover_text_id_is_data", False)
+            new_elem.hover_text_id_data_length = item.get("hover_text_id_data_length", 1)
+            
+            new_elem.style_id = item.get("style_id", -1)
+            new_elem.font_slot = item.get("font_slot", 0)
+            new_elem.disable_export = item.get("disable_export", False)
+            new_elem.trackable = item.get("trackable", False)
+            new_elem.run_link_id = item.get("run_link_id", -1)
 
             # Collections
             if "preset_ids" in item:
@@ -231,6 +298,14 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
                 for pid in item["underlayer_preset_ids"]:
                     new_p = new_elem.underlayer_preset_ids.add()
                     new_p.preset_id = pid
+            if "helper_ids" in item:
+                for hid in item["helper_ids"]:
+                    new_h = new_elem.helper_ids.add()
+                    new_h.helper_id = hid
+            if "export_tiers" in item:
+                for tid in item["export_tiers"]:
+                    new_t = new_elem.export_tiers.add()
+                    new_t.tier_id = tid
 
             for ci in item.get("conditional_images", []):
                 new_ci = new_elem.conditional_images.add()
@@ -246,11 +321,47 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             for fx_val in item.get("fx", []):
                 new_fx = new_elem.fx.add()
                 new_fx.value = fx_val
+                
+            for fn_val in item.get("fn", []):
+                new_fn = new_elem.fn.add()
+                new_fn.function_name = fn_val
+                
+            for p_item in item.get("properties", []):
+                new_p = new_elem.properties.add()
+                new_p.key = p_item["key"]
+                new_p.value_type = p_item["type"]
+                new_p.string_value = p_item["s"]
+                new_p.int_value = p_item["i"]
+                new_p.float_value = p_item["f"]
+                
+            for t_item in item.get("toggles", []):
+                new_t = new_elem.toggles.add()
+                new_t.toggle_name = t_item["name"]
+                for b_val in t_item.get("bits", []):
+                    new_b = new_t.bits.add()
+                    new_b.value = b_val
+                
+            new_elem.disable_default_xy = item.get("disable_default_xy", False)
 
             for ct in item.get("conditional_texts", []):
                 new_ct = new_elem.conditional_texts.add()
                 new_ct.condition = ct["condition"]
                 new_ct.text_id = ct["text_id"]
+                if "localized_texts" in ct:
+                    for lt in ct["localized_texts"]:
+                        new_lt = new_ct.localized_texts.add()
+                        new_lt.language_index = lt["lang"]
+                        new_lt.text_id = lt["text"]
+                        new_lt.hover_text_id = lt["hover"]
+
+            for lt in item.get("localized_texts", []):
+                new_lt = new_elem.localized_texts.add()
+                new_lt.language_index = lt["lang"]
+                new_lt.text_id = lt["text"]
+                new_lt.hover_text_id = lt["hover"]
+            
+            new_ids.append(new_id)
+
             
             new_ids.append(new_id)
             

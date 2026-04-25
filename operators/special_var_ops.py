@@ -42,10 +42,10 @@ class RZM_OT_RemoveShape(bpy.types.Operator):
     bl_idname = "rzm.remove_shape"
     bl_label = "Remove Shape"
     bl_options = {'REGISTER', 'UNDO'}
-    index: bpy.props.IntProperty(default=-1)
+    shape_index: bpy.props.IntProperty(default=-1)
     def execute(self, context):
         coll = context.scene.rzm.shapes
-        idx = self.index if self.index >= 0 else len(coll) - 1
+        idx = self.shape_index if self.shape_index >= 0 else len(coll) - 1
         if 0 <= idx < len(coll):
             coll.remove(idx)
             return {'FINISHED'}

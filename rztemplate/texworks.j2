@@ -3,7 +3,7 @@
 {% macro generate_texworks(mod_file, scene) %}
 {% set rzm = scene.rzm %}
 
-{% call utils.clean_ws(max_empty=1) %}
+
 ; =======================================================================================
 ;                                     TEXWORKS CORE (v3.5.6)
 ; =======================================================================================
@@ -237,7 +237,8 @@ cs-t0 = Resource{{ utils.clean_resource(block.backdrop_resource_name) }}
 cs-t0 = null
 {% endif %}
 cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
-{# RZM_TEXMORPH: Добавляем текстуру для морфинга #}
+
+
 {% if comp.tex_morph_enabled and comp.tex_morph_resource_name %}
 cs-t2 = Resource{{ utils.clean_resource(comp.tex_morph_resource_name) }}
 {% else %}
@@ -265,8 +266,9 @@ cs-t2 = null
 x43 = ${{ v_name }}_X - {{ "%.3f"|format(v_base[0]) }}
 y43 = ${{ v_name }}_Y - {{ "%.3f"|format(v_base[1]) }}
 z43 = ${{ v_name }}_Z - {{ "%.3f"|format(v_base[2]) }}
-w43 = {{ "%.3f"|format(v_base[3]) }} {# HSV Enabled + Strength #}
+w43 = {{ "%.3f"|format(v_base[3]) }}
 {% endif %}
+
 x44 = {{ comp.rect[0] }}
 y44 = {{ comp.rect[1] }}
 z44 = {{ comp.rect[2] }}
@@ -282,7 +284,13 @@ x24 = ${{ utils.format_var(comp.tex_morph_link) }}
 {% else %}
 x24 = 0.0
 {% endif %}
-{% if comp.mask_enabled %}w24 = 1{% else %}w24 = 0{% endif %}
+
+{% if comp.mask_enabled %}
+w24 = 1
+{% else %}
+w24 = 0
+{% endif %}
+
 dispatch = ({{ comp.rect[2] }} + 31) // 32, ({{ comp.rect[3] }} + 31) // 32, 1
 run = CommandListTexWorks.RestoreTexWorksVALS
 
@@ -368,6 +376,7 @@ run = CommandListTexWorks.SaveTexWorksVALS
 cs = /modules/decal_draw_hsv.hlsl
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
+
 cs-t5 = {% if slot.hsv_mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% elif comp.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}Mask{% else %}null{% endif %}
 {% set v_name = utils.format_var(slot.hsv_link) %}
 {% set v_base = slot.hsv_base %}
@@ -387,11 +396,12 @@ cs-t5 = {% if slot.hsv_mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }
     {% endif %}
 {% endif %}
 {% set v_base = ns.v_base %}
+
 x43 = ${{ v_name }}_X - {{ "%.3f"|format(v_base[0]) }}
 y43 = ${{ v_name }}_Y - {{ "%.3f"|format(v_base[1]) }}
 z43 = ${{ v_name }}_Z - {{ "%.3f"|format(v_base[2]) }}
-w43 = {{ "%.3f"|format(v_base[3]) }} {# HSV Enabled + Strength #}
-x44 = {{ comp.rect[0] + slot.rect[0] }} {# USAGE: comp.rect and slot.rect #}
+w43 = {{ "%.3f"|format(v_base[3]) }}
+x44 = {{ comp.rect[0] + slot.rect[0] }}
 y44 = {{ comp.rect[1] + slot.rect[1] }}
 z44 = {{ slot.rect[2] }}
 w44 = {{ slot.rect[3] }}
@@ -400,7 +410,11 @@ y45 = 0.0
 z45 = 0.0
 w45 = 0.0
 
-{% if slot.hsv_mask_enabled %}w24 = 1 {% else %} w24 = 0{% endif %}
+{% if slot.hsv_mask_enabled %}
+w24 = 1 
+{% else %}
+w24 = 0
+{% endif %}
 dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
 run = CommandListTexWorks.RestoreTexWorksVALS
 {% endif %}
@@ -414,12 +428,16 @@ run = CommandListTexWorks.RestoreTexWorksVALS
 {% macro layer_shader_params(pass_idx) %}
 {% set warp_enabled = (pass_idx == 0 and slot.warp_p0_enabled) or (pass_idx == 1 and slot.warp_p1_enabled) %}
 cs = /modules/{% if warp_enabled %}decal_draw_wrap.hlsl{% else %}decal_draw.hlsl{% endif %}
+
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
 cs-t5 = {% if slot.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
+
 {% set cfg_block = comp.shared_config_block if comp.use_shared_config and comp.shared_config_block else block.name %}
 {% set cfg_comp = comp.shared_config_component if comp.use_shared_config and comp.shared_config_component else comp.name %}
+
 cs-t6 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.P{{ pass_idx }}
+
 {% if pass_idx == 0 and slot.warp_p0_enabled %}
 cs-t7 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P0
 {% elif pass_idx == 1 and slot.warp_p1_enabled %}
@@ -443,6 +461,7 @@ if ${{ l_var_base }}Index0 >= 0
     {# Index Switching Pass 0 #}
     {% for i in range(layer.count) %}
     {% if loop.first %}if ${{ l_var_base }}Index0 == {{ i }}{% else %}elif ${{ l_var_base }}Index0 == {{ i }}{% endif %}
+
         cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
@@ -459,6 +478,7 @@ if ${{ p1_idx_var }} >= 0
     {# Index Switching Pass 1 #}
     {% for i in range(layer.count) %}
     {% if loop.first %}if ${{ p1_idx_var }} == {{ i }}{% else %}elif ${{ p1_idx_var }} == {{ i }}{% endif %}
+
         cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
@@ -649,5 +669,5 @@ y47 = 0.0
 z47 = 0.0
 w47 = 0.0
 
-{% endcall %}
+
 {% endmacro %}
