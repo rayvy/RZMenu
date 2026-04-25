@@ -160,16 +160,45 @@ post $SKC_LastTime = time
 cs = {{ shader_path }}
 cs-u5 = copy Resource{{ comp_name }}_Base
 
+{% if rzm.addons.debugger_info %}
+; === DEBUG SHAPE MATCHING ===
+; comp_name: {{ comp_name }}
+; affected_names for this component: {{ affected_names }}
+{% endif %}
 {% for config in rzm.shape_configs if not config.disable_export %}
     {% set affected_list = [] %}
+{% if rzm.addons.debugger_info %}
+; --- Config: {{ config.shape_name }} ---
+{% endif %}
     {% for ref in config.affected_objects %}
-        {% set r_name = (ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "")) | lower %}
-        {% for a_name in affected_names %}
-            {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
-                {% set _ = affected_list.append(1) %}
+        {% set names_to_check = [] %}
+        {% if ref.obj_name %}
+            {% set _ = names_to_check.append(ref.obj_name | lower) %}
+        {% elif ref.obj %}
+            {% if ref.obj.type == 'MESH' and ref.obj.data %}
+                {% set _ = names_to_check.append(ref.obj.data.name | lower) %}
             {% endif %}
+            {% set _ = names_to_check.append(ref.obj.name | lower) %}
+        {% endif %}
+        
+{% if rzm.addons.debugger_info %}
+; Names to check: {{ names_to_check }}
+{% endif %}
+        {% for a_name in affected_names %}
+{% if rzm.addons.debugger_info %}
+;   Comparing with a_name: "{{ a_name }}"
+{% endif %}
+            {% for r_name in names_to_check %}
+                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+{% if rzm.addons.debugger_info %}
+;   >> MATCH FOUND! <<
+{% endif %}
+                    {% set _ = affected_list.append(1) %}
+                {% endif %}
+            {% endfor %}
         {% endfor %}
     {% endfor %}
+
     
     {% if affected_list | length > 0 %}
         {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
@@ -210,11 +239,22 @@ filename = {{ base_filename }}
 {% for config in rzm.shape_configs if not config.disable_export %}
     {% set affected_list = [] %}
     {% for ref in config.affected_objects %}
-        {% set r_name = (ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "")) | lower %}
-        {% for a_name in affected_names %}
-            {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
-                {% set _ = affected_list.append(1) %}
+        {% set names_to_check = [] %}
+        {% if ref.obj_name %}
+            {% set _ = names_to_check.append(ref.obj_name | lower) %}
+        {% elif ref.obj %}
+            {% if ref.obj.type == 'MESH' and ref.obj.data %}
+                {% set _ = names_to_check.append(ref.obj.data.name | lower) %}
             {% endif %}
+            {% set _ = names_to_check.append(ref.obj.name | lower) %}
+        {% endif %}
+        
+        {% for a_name in affected_names %}
+            {% for r_name in names_to_check %}
+                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+                    {% set _ = affected_list.append(1) %}
+                {% endif %}
+            {% endfor %}
         {% endfor %}
     {% endfor %}
     
@@ -300,6 +340,9 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
         {% set affected_names = [component.fullname | lower] %}
         {% for part in component.parts %}
             {% set _ = affected_names.append(part.fullname | lower) %}
+            {% for sub in part.objects %}
+                {% set _ = affected_names.append(sub.name | lower) %}
+            {% endfor %}
         {% endfor %}
         
         {% set base_filename = props.path_prefix ~ comp_name ~ props.path_suffix %}

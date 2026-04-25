@@ -49,12 +49,10 @@
         {# Общий блок для Draw/VertexLimitRaise #}
         [TextureOverride{{ component.fullname }}{% if mod_file.game.name == "HonkaiStarRail" %}Draw{% else %}VertexLimitRaise{% endif %}]
         hash = {{ component.draw_vb }}
-        ;override_vertex_count = {{ component.vertex_count }}
-        ;override_byte_stride = {{ component.strides.position }}
+        {% if mod_file.game.name == "GenshinImpact" %};{% endif %}override_vertex_count = {{ component.vertex_count }}
+        {% if mod_file.game.name == "GenshinImpact" %};{% endif %}override_byte_stride = {{ component.strides.position }}
         {% if mod_file.game.name == "HonkaiStarRail" %}
-        override_vertex_count = {{ component.vertex_count }}
-        override_byte_stride = {{ component.strides.position }}
-            uav_byte_stride = 4
+        uav_byte_stride = 4
         {% endif %}
         
         {# Блок Position для Genshin Impact #}
