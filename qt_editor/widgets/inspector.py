@@ -2114,6 +2114,7 @@ class RZMInspectorPanel(RZEditorPanel):
                 if hasattr(self, 'cb_hover_image'):
                     self.cb_hover_image.update_items(all_images)
                     self.cb_hover_image.set_value(props.get('hover_image_id', -1))
+            else:
                 if hasattr(self, 'list_images'):
                     self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)
             

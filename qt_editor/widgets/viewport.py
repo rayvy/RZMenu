@@ -771,9 +771,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                     target_rect.translate(self.svg_offset_x * rect.width(), self.svg_offset_y * rect.height())
 
                 if self.flip_x or self.flip_y:
-                    sx, sy = (-1 if self.flip_x else 1), (-1 if self.flip_y else 1)
-                    cx, cy = target_rect.center().x(), target_rect.center().y()
-                    painter.translate(cx, cy); painter.scale(sx, sy); painter.translate(-cx, -cy)
+                    sx = -1.0 if self.flip_x else 1.0
+                    sy = -1.0 if self.flip_y else 1.0
+                    tr = QtGui.QTransform().scale(sx, sy)
+                    pix = pix.transformed(tr, QtCore.Qt.SmoothTransformation)
                 
                 painter.drawPixmap(target_rect, pix, QtCore.QRectF(pix.rect()))
                 painter.restore()
