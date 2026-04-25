@@ -81,7 +81,9 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 'start': c.anim_start_frame,
                 'end': c.anim_end_frame,
                 'over_cond': c.override_switch_condition,
-                'over_link': c.override_switch_value_link
+                'over_link': c.override_switch_value_link,
+                'range_min': c.input_range_min,
+                'range_max': c.input_range_max,
             }
 
         legacy_settings = {s.shape_name: s for s in rzm.shapes if s.shape_name}
@@ -111,6 +113,8 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 config.anim_end_frame = s['end']
                 config.override_switch_condition = s['over_cond']
                 config.override_switch_value_link = s['over_link']
+                config.input_range_min = s['range_min']
+                config.input_range_max = s['range_max']
             # 2. Fallback to Legacy config if first time discovery
             elif name in legacy_settings:
                 legacy = legacy_settings[name]

@@ -430,7 +430,9 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
 
     sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
 
-    for sk_name in sk_owner_map.keys() if sk_owner_map else all_keys:
+    # Create dummy buffers for ALL configured shape keys.
+    # This prevents the game from crashing if the .ini references a file that wasn't modified.
+    for sk_name in all_keys:
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         with open(os.path.join(output_dir, out_name), "wb") as f:
             f.write(original_bytes)
