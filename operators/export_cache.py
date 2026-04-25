@@ -30,8 +30,13 @@ def component_cache(comp_name: str) -> dict | None:
 
 # ── Builder: XXMI (SPATIAL MAPPING) ───────────────────────────────────────────
 
-def _build_spatial_map_xxmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: mathutils.Matrix, buf_xyz: np.ndarray) -> tuple[list[int] | None, int]:
-    """Robust Many-to-1 Mapping for XXMI: Blender-centric search."""
+def _build_spatial_map_xxmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: mathutils.Matrix, buf_xyz: np.ndarray, max_dist_threshold: float = 0.5) -> tuple[list[int] | None, int]:
+    """Robust Many-to-1 Mapping for XXMI: Blender-centric search with quality validation.
+    
+    max_dist_threshold: maximum allowed distance between a buffer vertex and its mapped
+    Blender vertex. If any match exceeds this, the mapping is considered wrong-space
+    and None is returned so the caller can retry with a different matrix.
+    """
     try:
         v_cnt = len(blender_mesh.vertices)
         if v_cnt == 0: return None, -1
@@ -39,8 +44,16 @@ def _build_spatial_map_xxmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: ma
         for idx, v in enumerate(blender_mesh.vertices):
             blender_tree.insert(mat @ v.co, idx)
         blender_tree.balance()
-        v_map = [blender_tree.find(pos)[1] for pos in buf_xyz]
-        return v_map, 0 
+        v_map = []
+        max_dist = 0.0
+        for pos in buf_xyz:
+            _, idx, dist = blender_tree.find(pos)
+            v_map.append(idx)
+            if dist > max_dist:
+                max_dist = dist
+        if max_dist > max_dist_threshold:
+            return None, -1  # Quality too low — likely wrong coordinate space
+        return v_map, 0
     except Exception as e:
         print(f"[RZM] [CACHE] XXMI spatial map exception for {obj_name}: {e}")
         return None, -1
@@ -108,10 +121,16 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                         continue
                     if not sub.obj: continue
                     buf_slice = buf_xyz[vb_offset : vb_offset + sub.vertex_count]
-                    v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, mathutils.Matrix.Identity(4), buf_slice)
-                    if v_map is None:
-                        v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, sub.obj.matrix_world, buf_slice)
+                    # XXMI buffers are always in World Space.
+                    # Try matrix_world first — correct for objects with non-applied transforms.
+                    # Fall back to Identity only if world-space mapping quality is good enough
+                    # (i.e. the object already has its transform applied, making local == world).
+                    v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, sub.obj.matrix_world, buf_slice)
+                    if v_map is not None:
                         m_idx = 1
+                    else:
+                        v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, mathutils.Matrix.Identity(4), buf_slice)
+                        m_idx = 0
                     objects.append({
                         'name': sub.name, 'vb_offset': vb_offset, 'vb_count': sub.vertex_count,
                         'vertex_map': v_map, 'mat_idx': m_idx, 'is_absolute': False, 'is_robust': True
