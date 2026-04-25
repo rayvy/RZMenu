@@ -99,161 +99,174 @@ import json
 def pack_project_text(scene, export_dir):
     """
     Collects all text from the scene elements, resolves meta-variables,
-    builds a dynamic character map, packs it into a 4-channel R16G16B16A16_UINT
-    binary file, and returns a mapping of element IDs to text_id.
+    builds a dynamic character map across ALL languages, packs them into 
+    binary buffers (texts.bin, texts_1.bin, etc.), and returns mapping.
     """
     rzm = scene.rzm
     
-    # Text alignments mapping for the shader
     ALIGN_MAP = {
         'LEFT': 0, 'CENTER': 1, 'RIGHT': 2,
         'FREE_LEFT': 3, 'FREE_CENTER': 4, 'FREE_RIGHT': 5
     }
-    
-    # Pass 1: Collect resolved strings with alignment
-    collected_items = []
-    
-    def collect(text, align, key, subgroup, element, host=None):
-        if not text:
-            return
-        resolved = resolve_meta_text(text, scene, element, host)
-        # Convert align enum to int
-        align_int = ALIGN_MAP.get(align, 0)
-        collected_items.append({
-            'resolved': resolved, 
-            'align': align_int,
-            'key': key, 
-            'subgroup': subgroup
-        })
 
-    # 1. Regular Elements
-    for element in rzm.elements:
-        if not element.is_helper and not element.disable_export:
-            if element.text_id:
-                collect(element.text_id, element.text_align, (element.id, -1), 'single', element)
-            
-            if element.text_mode == 'CONDITIONAL_LIST':
-                for i, item in enumerate(element.conditional_texts):
-                    collect(item.text_id, element.text_align, (element.id, -1, i), 'conditional', element)
-
-            if element.hover_text_id:
-                # Hover text uses the same alignment for now
-                collect(element.hover_text_id, element.text_align, (element.id, -1, 'hover'), 'single', element)
-
-    # 2. Helpers
-    for host in rzm.elements:
-        if not host.disable_export and host.helper_ids:
-            for ref in host.helper_ids:
-                helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
-                if helper:
-                    if helper.text_id:
-                        collect(helper.text_id, helper.text_align, (helper.id, host.id), 'single', helper, host)
-                    
-                    if helper.text_mode == 'CONDITIONAL_LIST':
-                        for i, item in enumerate(helper.conditional_texts):
-                            collect(item.text_id, helper.text_align, (helper.id, host.id, i), 'conditional', helper, host)
-                            
-                    if helper.hover_text_id:
-                        collect(helper.hover_text_id, helper.text_align, (helper.id, host.id, 'hover'), 'single', helper, host)
-
-    # Pass 2: Build Char Map (needed for custom font generation)
+    # Pass 1: Global Character Survey
     custom_chars = []
     seen_chars = set()
-    for item in collected_items:
-        for c in item['resolved']:
+    
+    def survey_text(text, element, host=None):
+        if not text: return
+        resolved = resolve_meta_text(text, scene, element, host)
+        for c in resolved:
             ord_c = ord(c)
-            # Use standard ASCII 32-126. Anything outside needs a mapping slot.
             if ord_c < 32 or ord_c > 126:
                 if c not in seen_chars:
                     seen_chars.add(c)
                     custom_chars.append(c)
 
+    def survey_all(item, host=None):
+        # Survey base texts
+        if hasattr(item, 'text_id'): survey_text(item.text_id, item if not host else host, host)
+        if hasattr(item, 'hover_text_id'): survey_text(item.hover_text_id, item if not host else host, host)
+        # Survey sub-items for conditional text
+        if hasattr(item, 'text_mode') and item.text_mode == 'CONDITIONAL_LIST':
+            for cond in item.conditional_texts:
+                survey_all(cond, item if not host else host)
+        # Survey localized texts
+        if hasattr(item, 'localized_texts'):
+            for lt in item.localized_texts:
+                if lt.text_id: survey_text(lt.text_id, item if not host else host, host)
+                if lt.hover_text_id: survey_text(lt.hover_text_id, item if not host else host, host)
+
+    for element in rzm.elements:
+        if not element.is_helper and not element.disable_export:
+            survey_all(element)
+    for host in rzm.elements:
+        if not host.disable_export and host.helper_ids:
+            for ref in host.helper_ids:
+                helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
+                if helper: survey_all(helper, host)
+
     custom_chars.sort()
     char_to_code = {chr(i): i for i in range(32, 128)}
     for i, c in enumerate(custom_chars):
         char_to_code[c] = 128 + i
-
-    # Store in memory for font generator
     RZMTextMapCache.custom_chars = custom_chars
 
-    # Pass 3: Group Unique Text + Align combinations and pack
-    # mapping is now element_key -> (text_id, length)
-    mapping = {
-        'single': {}, 
-        'conditional': {} 
-    }
-    
-    unique_texts = [] # List of (resolved_text, align_int)
-    text_to_id = {}   # (resolved_text, align_int) -> text_id
-    
-    unique_texts.append((None, 0)) 
-    
-    # Collect unique (text, align) pairs
-    for item in collected_items:
-        pair = (item['resolved'], item['align'])
-        if pair not in text_to_id:
-            text_to_id[pair] = len(unique_texts)
-            unique_texts.append(pair)
-        
-        # We return a tuple (text_id, length) for the template to use
-        mapping[item['subgroup']][item['key']] = (text_to_id[pair], len(item['resolved']))
+    # Helper to get text with fallback
+    def get_loc_text(item, prop_name, lang_idx=None):
+        base_val = getattr(item, prop_name, "")
+        if lang_idx is None or lang_idx <= 0:
+            return base_val
+        if hasattr(item, 'localized_texts'):
+            for lt in item.localized_texts:
+                if lt.language_index == lang_idx:
+                    val = getattr(lt, prop_name, "")
+                    if val.strip():  # Only use valid override
+                        return val
+        return base_val
 
-    num_meta_slots = len(unique_texts)
-    
-    # We need to compute offsets for characters. Characters follow metadata slots.
-    current_char_offset = num_meta_slots
-    
-    # Preparation for buffer
-    # slot_data[index] = (R, G, B, A)
-    slots = {} # index -> (R, G, B, A)
-    
-    # Slot 0 is always empty (already handled by unique_texts[0] = (None, 0))
-    slots[0] = (0, 0, 0, 0)
-
-    for i in range(1, len(unique_texts)):
-        resolved, align = unique_texts[i]
-        encoded_len = len(resolved)
-        
-        # Write metadata slot
-        # R=offset, G=length, B=alignment, A=0
-        slots[i] = (current_char_offset, encoded_len, align, 0)
-        
-        # Write character slots
-        for j, c in enumerate(resolved):
-            code = char_to_code.get(c, 32) # Space fallback
-            # R=0, G=0, B=0, A=character_code
-            slots[current_char_offset + j] = (0, 0, 0, code)
-            
-        current_char_offset += encoded_len
-
-    # Pack buffer
-    text_buffer = bytearray()
-    max_index = max(slots.keys()) if slots else -1
-    
-    for i in range(max_index + 1):
-        r, g, b, a = slots.get(i, (0, 0, 0, 0))
-        # Pack as 4x 16-bit unsigned integers (little-endian)
-        text_buffer.extend(struct.pack('<HHHH', r, g, b, a))
-
-    # Save to files
+    # Pass 2: Generation Generator function
     res_dir = os.path.join(export_dir, "res")
     os.makedirs(res_dir, exist_ok=True)
     
-    bin_path = os.path.join(res_dir, "texts.bin")
-    with open(bin_path, 'wb') as f:
-        f.write(text_buffer)
+    base_mapping = None
 
-    # Save to scene for Jinja2 access (persistent)
+    def build_buffer_for_lang(lang_idx=None):
+        collected_items = []
+        
+        def collect(text, align, key, subgroup, element, host=None):
+            if not text: return
+            resolved = resolve_meta_text(text, scene, element, host)
+            collected_items.append({
+                'resolved': resolved, 
+                'align': ALIGN_MAP.get(align, 0),
+                'key': key, 
+                'subgroup': subgroup
+            })
+
+        for element in rzm.elements:
+            if not element.is_helper and not element.disable_export:
+                t = get_loc_text(element, 'text_id', lang_idx)
+                if t: collect(t, element.text_align, (element.id, -1), 'single', element)
+                
+                if element.text_mode == 'CONDITIONAL_LIST':
+                    for i, cond in enumerate(element.conditional_texts):
+                        ct = get_loc_text(cond, 'text_id', lang_idx)
+                        if ct: collect(ct, element.text_align, (element.id, -1, i), 'conditional', element)
+                
+                hov = get_loc_text(element, 'hover_text_id', lang_idx)
+                if hov: collect(hov, element.text_align, (element.id, -1, 'hover'), 'single', element)
+
+        for host in rzm.elements:
+            if not host.disable_export and host.helper_ids:
+                for ref in host.helper_ids:
+                    helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
+                    if helper:
+                        t = get_loc_text(helper, 'text_id', lang_idx)
+                        if t: collect(t, helper.text_align, (helper.id, host.id), 'single', helper, host)
+                        
+                        if helper.text_mode == 'CONDITIONAL_LIST':
+                            for i, cond in enumerate(helper.conditional_texts):
+                                ct = get_loc_text(cond, 'text_id', lang_idx)
+                                if ct: collect(ct, helper.text_align, (helper.id, host.id, i), 'conditional', helper, host)
+                        
+                        hov = get_loc_text(helper, 'hover_text_id', lang_idx)
+                        if hov: collect(hov, helper.text_align, (helper.id, host.id, 'hover'), 'single', helper, host)
+
+        # Build binary memory mapping
+        mapping = {'single': {}, 'conditional': {}}
+        unique_texts = [(None, 0)]
+        for item in collected_items:
+            slot_id = len(unique_texts)
+            unique_texts.append((item['resolved'], item['align']))
+            mapping[item['subgroup']][item['key']] = (slot_id, len(item['resolved']))
+
+        slots = {0: (0, 0, 0, 0)}
+        current_char_offset = len(unique_texts)
+
+        for i in range(1, len(unique_texts)):
+            resolved, align = unique_texts[i]
+            encoded_len = len(resolved)
+            slots[i] = (current_char_offset, encoded_len, align, 0)
+            for j, c in enumerate(resolved):
+                code = char_to_code.get(c, 32)
+                slots[current_char_offset + j] = (0, 0, 0, code)
+            current_char_offset += encoded_len
+
+        # Pack
+        text_buffer = bytearray()
+        max_idx = max(slots.keys()) if slots else -1
+        for i in range(max_idx + 1):
+            r, g, b, a = slots.get(i, (0, 0, 0, 0))
+            text_buffer.extend(struct.pack('<HHHH', r, g, b, a))
+            
+        file_name = "texts.bin" if lang_idx is None else f"texts_{lang_idx}.bin"
+        with open(os.path.join(res_dir, file_name), 'wb') as f:
+            f.write(text_buffer)
+            
+        return mapping
+
+    # Build default buffer
+    base_mapping = build_buffer_for_lang(None)
+
+    # Build language buffers if languages are defined
+    meta = scene.rzm.meta_data
+    if hasattr(meta, 'languages'):
+        for lang in meta.languages:
+            if lang.index > 0:
+                build_buffer_for_lang(lang.index)
+
+    # Save to scene for Jinja2 access (persistent representation uses Base mapping)
     def stringify_key(k):
         return ":".join(str(x) for x in k)
 
     json_mapping = {
-        'single': {stringify_key(k): v for k, v in mapping['single'].items()},
-        'conditional': {stringify_key(k): v for k, v in mapping['conditional'].items()}
+        'single': {stringify_key(k): v for k, v in base_mapping['single'].items()},
+        'conditional': {stringify_key(k): v for k, v in base_mapping['conditional'].items()}
     }
     scene.rzm.text_mapping_json = json.dumps(json_mapping)
 
-    return mapping
+    return base_mapping
 
 def get_text_mapping_for_j2(scene, export_dir):
     return pack_project_text(scene, export_dir)

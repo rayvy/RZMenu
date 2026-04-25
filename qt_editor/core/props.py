@@ -363,6 +363,53 @@ def update_conditional_text(target_ids, index, field, value):
             blender_bridge.safe_undo_push(f"RZM: Update CT {field}")
             signals.SIGNALS.data_changed.emit()
 
+def add_localized_text(target_ids):
+    if not target_ids: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids:
+                elem.localized_texts.add()
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Add Localized Text")
+            signals.SIGNALS.data_changed.emit()
+
+def remove_localized_text(target_ids, index):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.localized_texts):
+                elem.localized_texts.remove(index)
+                changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push("RZM: Remove Localized Text")
+            signals.SIGNALS.data_changed.emit()
+
+def update_localized_text(target_ids, index, field, value):
+    if not target_ids or index < 0: return
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        changed = False
+        for elem in elements:
+            if elem.id in target_ids and index < len(elem.localized_texts):
+                item = elem.localized_texts[index]
+                if hasattr(item, field):
+                    curr = getattr(item, field)
+                    if curr != value:
+                        setattr(item, field, value)
+                        changed = True
+        
+        if changed:
+            blender_bridge.safe_undo_push(f"RZM: Update LT {field}")
+            signals.SIGNALS.data_changed.emit()
+
+
 def add_value_link(target_ids):
     if not target_ids: return
     with signals.qt_update_guard():

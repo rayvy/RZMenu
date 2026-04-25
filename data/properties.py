@@ -19,12 +19,12 @@ from .p_texworks import (
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock
 )
 from .p_ui import (
-    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuStyle
+    FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuStyle, RZMLocalizedText
 )
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
     RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition,
-    RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer
+    RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer, RZMLanguage
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
 from ..operators import custom_draw_ops
@@ -163,7 +163,7 @@ classes_to_register = [
     RZMProfileValue,
     RZMenuStyle, RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig,
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
-    ValueLinkProperty, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuElement,
+    ValueLinkProperty, RZPresetReference, RZHelperReference, RZMLocalizedText, ConditionalText, RZFontSlotSettings, RZMenuElement,
     TexResource, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
     RZMShapeKey, RZMShape,
@@ -173,7 +173,7 @@ classes_to_register = [
     RZMKeybind,
     # --- Register BlendResize before settings that point to it ---
     RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings,
-    RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMMetaDataSettings,
+    RZMenuAddonSettings, RZMCondition, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMGameSettings, RZMCreditItem, RZMFeatureItem, RZMLanguage, RZMMetaDataSettings,
     # ─ Tier system: RZMTierDefinition must be registered BEFORE RZM_AddonPreferences ─
     RZMTierDefinition,
     RZM_ContactItem,

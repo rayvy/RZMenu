@@ -332,6 +332,21 @@ class RZMFeatureItem(bpy.types.PropertyGroup):
         default=""
     )
 
+class RZMLanguage(bpy.types.PropertyGroup):
+    """Класс для языка проекта"""
+    name: StringProperty(
+        name="Language Name",
+        description="Имя языка (например: English, Russian)",
+        default="New Language"
+    )
+    index: IntProperty(
+        name="Export Index",
+        description="Индекс для переменной $rzmUIRenderSettings_TextLanguage (от 1)",
+        default=1,
+        min=1
+    )
+
+
 # ─── TIER SYSTEM ─────────────────────────────────────────────────────────────
 
 class RZMTierDefinition(bpy.types.PropertyGroup):
@@ -424,6 +439,10 @@ class RZMMetaDataSettings(bpy.types.PropertyGroup):
     # Список фичей (Features: Body Engineering, Dirty Work и тд)
     features_list: CollectionProperty(type=RZMFeatureItem)
     features_list_index: IntProperty(default=0)
+
+    # Список языков проекта
+    languages: CollectionProperty(type=RZMLanguage)
+    languages_index: IntProperty(default=0)
 
 class RZMAutoMenuSettings(bpy.types.PropertyGroup):
     margin_x: IntProperty(name="Margin X", default=20, min=0)

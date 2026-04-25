@@ -45,9 +45,16 @@ class RZPresetReference(bpy.types.PropertyGroup):
 class RZHelperReference(bpy.types.PropertyGroup):
     helper_id: IntProperty(name="Helper ID")
 
+class RZMLocalizedText(bpy.types.PropertyGroup):
+    language_index: IntProperty(name="Language Index", default=1)
+    text_id: StringProperty(name="Text", default="")
+    hover_text_id: StringProperty(name="Hover Text", default="")
+
+
 class ConditionalText(bpy.types.PropertyGroup):
     text_id: StringProperty(name="Text", default="New Text")
     condition: StringProperty(name="Condition", description="Condition to show this text (e.g. $var > 0)")
+    localized_texts: CollectionProperty(type=RZMLocalizedText)
 
 class RZMenuStyle(bpy.types.PropertyGroup):
     name: StringProperty(name="Style Name", default="New Style")
@@ -169,6 +176,7 @@ class RZMenuElement(bpy.types.PropertyGroup):
     hover_text_id_is_data: BoolProperty(name="Hover Text ID is Data Key", description="If true, hover_text_id is treated as a runtime data key rather than a literal string", default=False)
     hover_text_id_data_length: IntProperty(name="Hover Data Length", default=1, min=0, max=1024)
     conditional_texts: CollectionProperty(type=ConditionalText)
+    localized_texts: CollectionProperty(type=RZMLocalizedText)
     tile_uv: IntVectorProperty(name="Tile UV", size=2); tile_size: IntVectorProperty(name="Tile Size", size=2)
     color_is_formula: BoolProperty(name="Color Formula Mode", default=False)
     color: FloatVectorProperty(name="Color", subtype='COLOR', size=4, min=0, max=1, default=(1.0, 1.0, 1.0, 1.0), update=mark_atlas_dirty)

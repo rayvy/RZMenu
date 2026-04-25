@@ -504,6 +504,114 @@ class ModInfoTab(BaseConfigTab):
         if self._block: return
         self._call_op("update_config_setting", prop_name="mod_info", val_str=self.editor.text(), is_int=False)
 
+class RZLanguageItemWidget(QtWidgets.QWidget):
+    """A row widget for managing a single RZMLanguage."""
+    def __init__(self, index, data, parent_tab, parent=None):
+        super().__init__(parent)
+        self.index = index
+        self.parent_tab = parent_tab
+        self.layout = QtWidgets.QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(5)
+
+        self.btn_del = RZPushButton("X")
+        self.btn_del.setFixedWidth(25)
+        self.btn_del.clicked.connect(self._on_del)
+        self.layout.addWidget(self.btn_del)
+
+        self.edit_name = RZLineEdit()
+        self.edit_name.setPlaceholderText("Language Name...")
+        self.edit_name.editingFinished.connect(self._on_edit)
+        self.layout.addWidget(self.edit_name)
+
+        self.layout.addWidget(RZLabel("Index:"))
+        self.spin_idx = RZSpinBox()
+        self.spin_idx.setRange(1, 100)
+        self.spin_idx.valueChanged.connect(self._on_edit)
+        self.layout.addWidget(self.spin_idx)
+        
+        self.update_data(data)
+
+    def update_data(self, data):
+        self.edit_name.blockSignals(True)
+        self.spin_idx.blockSignals(True)
+        self.edit_name.setText(data['name'])
+        self.spin_idx.setValue(data['index'])
+        self.edit_name.blockSignals(False)
+        self.spin_idx.blockSignals(False)
+
+    def _on_del(self):
+        self.parent_tab.remove_language(self.index)
+
+    def _on_edit(self):
+        self.parent_tab.update_language(self.index, self.edit_name.text(), self.spin_idx.value())
+
+class LanguagesTab(BaseConfigTab):
+    """Tab for managing project export languages."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.widgets = []
+        self._init_ui()
+
+    def _init_ui(self):
+        l_main = self.add_section("Export Languages")
+        
+        lbl_info = RZLabel("Configure language variations for text buffers.\n"
+                           "Index maps to $rzmUIRenderSettings_TextLanguage shader property.\n"
+                           "A fallback to default buffer (Index <=0) is always generated.")
+        lbl_info.setStyleSheet("color: #9DA5B4; font-size: 11px;")
+        l_main.addWidget(lbl_info)
+
+        self.btn_add = RZPushButton("+ Add Language")
+        self.btn_add.clicked.connect(self.add_language)
+        l_main.addWidget(self.btn_add)
+
+        self.w_list = QtWidgets.QWidget()
+        self.l_list = QtWidgets.QVBoxLayout(self.w_list)
+        self.l_list.setContentsMargins(0, 0, 0, 0)
+        self.l_list.setSpacing(4)
+        l_main.addWidget(self.w_list)
+        
+        self.scroll_layout.addStretch()
+
+    def update_ui(self):
+        self._block = True
+        try:
+            if not bpy.context or not bpy.context.scene: return
+            meta = bpy.context.scene.rzm.meta_data
+            
+            # Sync widgets
+            while len(self.widgets) < len(meta.languages):
+                idx = len(self.widgets)
+                w = RZLanguageItemWidget(idx, {'name': '', 'index': 1}, self)
+                self.widgets.append(w)
+                self.l_list.addWidget(w)
+                
+            while len(self.widgets) > len(meta.languages):
+                w = self.widgets.pop()
+                self.l_list.removeWidget(w)
+                w.deleteLater()
+                
+            for i, lang in enumerate(meta.languages):
+                data = {'name': lang.name, 'index': lang.index}
+                self.widgets[i].update_data(data)
+                
+        finally:
+            self._block = False
+
+    def add_language(self):
+        if self._block: return
+        self._call_op("add_language")
+        
+    def remove_language(self, index):
+        if self._block: return
+        self._call_op("remove_language", index_to_remove=index)
+        
+    def update_language(self, target_idx, name, lang_idx):
+        if self._block: return
+        self._call_op("update_language", target_index=target_idx, lang_name=name, lang_index=lang_idx)
+
+
 class FontsTab(BaseConfigTab):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -948,6 +1056,7 @@ class RZConfiguratorManager(QtWidgets.QWidget):
         self.add_tab("General", GeneralTab())
         self.add_tab("Fonts", FontsTab())
         self.add_tab("Mod Info", ModInfoTab())
+        self.add_tab("Languages", LanguagesTab())
         self.add_tab("Profiles", ProfilesTab())
         self.add_tab("PreSnippet", SnippetTab("pre_snippet", "Pre-Injection Code"))
 

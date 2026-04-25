@@ -555,6 +555,87 @@ class RZConditionalTextList(RZListEditor):
         if ctx.selected_ids:
             core.props.update_conditional_text(ctx.selected_ids, index, field, value)
 
+class RZLocalizedTextItem(RZInspectorItem):
+    """A single row in the localized text list."""
+    def __init__(self, index, data, languages, parent=None):
+        super().__init__(index, parent, parent=parent)
+        
+        self.v_content = QtWidgets.QVBoxLayout()
+        self.v_content.setSpacing(2)
+        self.content_layout.addLayout(self.v_content)
+        
+        self.cb_lang = RZComboBox()
+        for i, (idx, name) in enumerate(languages):
+            self.cb_lang.addItem(name, idx)
+        self.cb_lang.currentIndexChanged.connect(self._on_lang_changed)
+        self.v_content.addWidget(self.cb_lang)
+        
+        self.edit_txt = RZLineEdit()
+        self.edit_txt.setPlaceholderText("Localized Text...")
+        self.edit_txt.editingFinished.connect(self._on_txt_changed)
+        self.v_content.addWidget(self.edit_txt)
+
+        self.edit_hov = RZLineEdit()
+        self.edit_hov.setPlaceholderText("Localized Hover...")
+        self.edit_hov.editingFinished.connect(self._on_hov_changed)
+        self.v_content.addWidget(self.edit_hov)
+        
+        self.update_data(data, languages)
+
+    def _on_lang_changed(self, cb_idx):
+        lang_idx = self.cb_lang.itemData(cb_idx)
+        self.parent_list.item_changed(self.index, 'language_index', lang_idx)
+
+    def _on_txt_changed(self):
+        self.parent_list.item_changed(self.index, 'text_id', self.edit_txt.text())
+
+    def _on_hov_changed(self):
+        self.parent_list.item_changed(self.index, 'hover_text_id', self.edit_hov.text())
+
+    def update_data(self, data, languages):
+        idx = self.cb_lang.findData(data.get('language_index', 1))
+        if idx >= 0:
+            self.cb_lang.blockSignals(True)
+            self.cb_lang.setCurrentIndex(idx)
+            self.cb_lang.blockSignals(False)
+            
+        self.edit_txt.setText(data.get('text_id', ''))
+        self.edit_hov.setText(data.get('hover_text_id', ''))
+
+class RZLocalizedTextList(RZListEditor):
+    """A list-like widget to manage LocalizedText collection."""
+    def __init__(self, parent=None):
+        super().__init__("+ Add Localized Text", parent)
+
+    def update_data(self, data_list, available_languages):
+        def factory(i, data):
+            return RZLocalizedTextItem(i, data, available_languages, self)
+            
+        def updater(w, data):
+            w.blockSignals(True)
+            w.update_data(data, available_languages)
+            w.blockSignals(False)
+            
+        self.sync_widgets(data_list, factory, updater)
+
+    def add_item(self):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.add_localized_text(ctx.selected_ids)
+
+    def remove_item(self, index):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.remove_localized_text(ctx.selected_ids, index)
+
+    def item_changed(self, index, field, value):
+        if self._block: return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if ctx.selected_ids:
+            core.props.update_localized_text(ctx.selected_ids, index, field, value)
+
 
 class RZValueLinkItem(RZInspectorItem):
     """A single row in the value link list."""
@@ -1612,6 +1693,9 @@ class RZMInspectorPanel(RZEditorPanel):
             self.list_texts = RZConditionalTextList()
             layout.addWidget(self.list_texts)
             
+            self.list_localized = RZLocalizedTextList()
+            layout.addWidget(self.list_localized)
+            
             self.w_legacy_text = QtWidgets.QWidget()
             f_txt = QtWidgets.QVBoxLayout(self.w_legacy_text)
             f_txt.setContentsMargins(0, 0, 0, 0)
@@ -2075,6 +2159,13 @@ class RZMInspectorPanel(RZEditorPanel):
                     self.chk_hov_is_data.setChecked(props.get('hover_text_id_is_data', False))
             else:
                 if hasattr(self, 'list_texts'): self.list_texts.update_data(props.get('conditional_texts', []), txt_mode)
+
+            if hasattr(self, 'list_localized'):
+                langs = core.read.get_available_languages()
+                is_multi = len(langs) > 0
+                self.list_localized.setVisible(is_multi)
+                if is_multi:
+                    self.list_localized.update_data(props.get('localized_texts', []), langs)
 
             # --- Logic ---
             vl_is_form = props.get('value_link_is_formula') is True

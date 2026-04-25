@@ -293,6 +293,12 @@ def evaluate_text_id(text_id, highlight=False, item_uid=-1):
             result = result.replace(var_key, resolved)
     return result
 
+def get_available_languages():
+    if not bpy.context or not bpy.context.scene: return []
+    rzm = bpy.context.scene.rzm
+    if not hasattr(rzm, 'meta_data'): return []
+    return [(lang.index, lang.name) for lang in rzm.meta_data.languages]
+
 def get_selection_details(selected_ids, active_id):
 
     if not bpy.context or not bpy.context.scene: return None
@@ -413,6 +419,10 @@ def get_selection_details(selected_ids, active_id):
                 {"condition": ct.condition, "text_id": ct.text_id} 
                 for ct in target.conditional_texts
             ] if target else [],
+            "localized_texts": [
+                {"language_index": lt.language_index, "text_id": lt.text_id, "hover_text_id": lt.hover_text_id} 
+                for lt in target.localized_texts
+            ] if target and hasattr(target, 'localized_texts') else [],
             
             # Images
             "image_mode": get_uniform("image_mode", default="SINGLE"),

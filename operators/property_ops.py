@@ -189,6 +189,53 @@ class RZM_OT_UpdateProfileSlot(bpy.types.Operator):
             
         return {'FINISHED'}
 
+class RZM_OT_AddLanguage(bpy.types.Operator):
+    """Adds a new project language."""
+    bl_idname = "rzm.add_language"
+    bl_label = "Add Language"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        meta = context.scene.rzm.meta_data
+        new_lang = meta.languages.add()
+        new_lang.name = f"Language_{len(meta.languages)}"
+        new_lang.index = len(meta.languages)
+        return {'FINISHED'}
+
+class RZM_OT_RemoveLanguage(bpy.types.Operator):
+    """Removes a language by index."""
+    bl_idname = "rzm.remove_language"
+    bl_label = "Remove Language"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    index_to_remove: bpy.props.IntProperty()
+
+    def execute(self, context):
+        meta = context.scene.rzm.meta_data
+        if 0 <= self.index_to_remove < len(meta.languages):
+            meta.languages.remove(self.index_to_remove)
+        return {'FINISHED'}
+
+class RZM_OT_UpdateLanguage(bpy.types.Operator):
+    """Updates a language by index."""
+    bl_idname = "rzm.update_language"
+    bl_label = "Update Language"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    target_index: bpy.props.IntProperty()
+    lang_name: bpy.props.StringProperty()
+    lang_index: bpy.props.IntProperty()
+
+    def execute(self, context):
+        meta = context.scene.rzm.meta_data
+        if 0 <= self.target_index < len(meta.languages):
+            lang = meta.languages[self.target_index]
+            if self.lang_name:
+                lang.name = self.lang_name
+            if self.lang_index > 0:
+                lang.index = self.lang_index
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_ListAction,
     RZM_OT_AddConditionalImage,
@@ -198,4 +245,7 @@ classes_to_register = [
     RZM_OT_SetValueLink,
     RZM_OT_RemoveValueLink,
     RZM_OT_UpdateProfileSlot,
+    RZM_OT_AddLanguage,
+    RZM_OT_RemoveLanguage,
+    RZM_OT_UpdateLanguage,
 ]
