@@ -306,6 +306,20 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
     # ── Animation Settings ───────────────────────────────────────────────────
     multiplier: FloatProperty(name="Multiplier", default=1.0)
     inverse: BoolProperty(name="Inverse", description="If active, Final = 1.0 - (Value * Multiplier)", default=False)
+    input_range_min: FloatProperty(
+        name="Input Range Min",
+        description="Start of the input sub-range that maps to 0.0 output. "
+                    "Values below this are clamped to 0. "
+                    "Use together with Input Range Max to make this shape respond only to a portion of the shared variable.",
+        min=0.0, max=1.0, default=0.0, step=1, precision=3
+    )
+    input_range_max: FloatProperty(
+        name="Input Range Max",
+        description="End of the input sub-range that maps to 1.0 output. "
+                    "Values above this are clamped to 1. "
+                    "E.g. Min=0.5 Max=1.0 means 'only activate in the top half of the slider'.",
+        min=0.0, max=1.0, default=1.0, step=1, precision=3
+    )
     anim_type_index: IntProperty(name="Type Index", default=0)
     anim_start_frame: FloatProperty(name="Start Frame", default=0.0, min=0.0, max=1.0)
     anim_end_frame:   FloatProperty(name="End Frame",   default=1.0, min=0.0, max=1.0)

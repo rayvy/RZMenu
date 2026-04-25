@@ -132,10 +132,34 @@ $dt = time - $SKC_LastTime
         ${{ var_name }}Final = ${{ var_name }}Weight * {{ config.multiplier }}
         {% endif %}
     {% else %}
-        {% if config.inverse %}
-        ${{ var_name }} = 1.0 - (${{ var_name }}Input * {{ config.multiplier }})
+        {% set rmin = config.input_range_min %}
+        {% set rmax = config.input_range_max %}
+        {% set rspan = rmax - rmin %}
+        {% if rmin > 0.0001 or rmax < 0.9999 %}
+    ; Input range remap: [{{ "%.4f"|format(rmin) }}, {{ "%.4f"|format(rmax) }}] -> [0.0, 1.0]
+    local ${{ var_name }}Remapped
+            {% if rspan > 0.0001 %}
+    ${{ var_name }}Remapped = (${{ var_name }}Input - {{ "%.6f"|format(rmin) }}) / {{ "%.6f"|format(rspan) }}
+            {% else %}
+    ${{ var_name }}Remapped = 0
+            {% endif %}
+    if ${{ var_name }}Remapped < 0
+        ${{ var_name }}Remapped = 0
+    endif
+    if ${{ var_name }}Remapped > 1
+        ${{ var_name }}Remapped = 1
+    endif
+            {% if config.inverse %}
+    ${{ var_name }} = 1.0 - (${{ var_name }}Remapped * {{ config.multiplier }})
+            {% else %}
+    ${{ var_name }} = ${{ var_name }}Remapped * {{ config.multiplier }}
+            {% endif %}
         {% else %}
-        ${{ var_name }} = ${{ var_name }}Input * {{ config.multiplier }}
+            {% if config.inverse %}
+    ${{ var_name }} = 1.0 - (${{ var_name }}Input * {{ config.multiplier }})
+            {% else %}
+    ${{ var_name }} = ${{ var_name }}Input * {{ config.multiplier }}
+            {% endif %}
         {% endif %}
     {% endif %}
 

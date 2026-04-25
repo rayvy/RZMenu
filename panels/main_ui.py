@@ -890,6 +890,21 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                     m_row = c_box.row(align=True)
                     m_row.prop(active_conf, "multiplier")
                     m_row.prop(active_conf, "inverse")
+
+                    # --- Input Range Remap ---
+                    range_box = c_box.box()
+                    rmin = active_conf.input_range_min
+                    rmax = active_conf.input_range_max
+                    uses_range = (abs(rmin) > 0.001 or abs(rmax - 1.0) > 0.001)
+                    range_header = range_box.row(align=True)
+                    range_header.label(text="Input Range:", icon='ARROW_LEFTRIGHT')
+                    if uses_range:
+                        range_header.label(text=f"[{rmin:.3f} → {rmax:.3f}] ↦ [0, 1]", icon='INFO')
+                    else:
+                        range_header.label(text="Full Range (0 → 1)", icon='CHECKMARK')
+                    r_row = range_box.row(align=True)
+                    r_row.prop(active_conf, "input_range_min", text="From")
+                    r_row.prop(active_conf, "input_range_max", text="To")
                     
                     if active_conf.shape_type == 'Anim':
                         anim_box = c_box.box()
