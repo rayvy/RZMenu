@@ -2100,20 +2100,22 @@ class RZMInspectorPanel(RZEditorPanel):
             
             is_img_single = (img_mode == 'SINGLE')
             if hasattr(self, 'cb_image'): self.set_row_visible(self.cb_image, is_img_single)
-            if hasattr(self, 'cb_hover_image'): self.set_row_visible(self.cb_hover_image, is_img_single)
+            if hasattr(self, 'cb_hover_image'): self.set_row_visible(self.cb_hover_image, True)
             if hasattr(self, 'list_images'): self.list_images.setVisible(not is_img_single)
             
             if hasattr(self, 'chk_flip_x'): self.chk_flip_x.setChecked(props.get('flip_x') is True)
             if hasattr(self, 'chk_flip_y'): self.chk_flip_y.setChecked(props.get('flip_y') is True)
             
             all_images = core.read.get_available_images()
+            
+            if hasattr(self, 'cb_hover_image'):
+                self.cb_hover_image.update_items(all_images)
+                self.cb_hover_image.set_value(props.get('hover_image_id', -1))
+
             if is_img_single:
                 if hasattr(self, 'cb_image'):
                     self.cb_image.update_items(all_images)
                     self.cb_image.set_value(props.get('image_id', -1))
-                if hasattr(self, 'cb_hover_image'):
-                    self.cb_hover_image.update_items(all_images)
-                    self.cb_hover_image.set_value(props.get('hover_image_id', -1))
             else:
                 if hasattr(self, 'list_images'):
                     self.list_images.update_data(props.get('conditional_images', []), all_images, img_mode)

@@ -524,7 +524,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
         effective_dds = export_settings.dds_profile
         preset_tag = ""
 
-        if game_selection in ('GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail'):
+        if game_selection in ('GenshinImpact', 'HonkaiStarRail'):
             effective_icc = 'SRGB'
             effective_dds = 'BC7_UNORM_SRGB'
             preset_tag = " (Hoyo sRGB Preset)"
@@ -532,6 +532,14 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             effective_icc = 'LINEAR'
             effective_dds = 'BC7_UNORM'
             preset_tag = " (Endfield Linear Preset)"
+        elif game_selection == 'ZenlessZoneZero':
+            effective_icc = 'LINEAR'
+            effective_dds = 'BC7_UNORM'
+            preset_tag = " (ZZZ Linear Preset)"
+        else:
+            effective_icc = 'LINEAR'
+            effective_dds = 'BC7_UNORM'
+            preset_tag = " (UKNOWN-GAME LINEAR PRESET)"
 
         # 4. Генерируем пиксели
         atlas_pixels = create_atlas_pixels(
