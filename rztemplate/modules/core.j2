@@ -575,10 +575,22 @@ if $screenW > $screenH
 else 
 	$ratioCorrection = $screenW / $screenH
 endif
+
+if $screenW > $screenH
+    if $canvas_size_y != $screenH
+        $screen_modifier_scale = $canvas_size_y / $screenH
+    endif
+endif
+
 if $inputMode == 0
     $cursorX = $cursorX * $screenW
     $cursorY = $cursorY * $screenH
 endif
+
+$cursorX = $cursorX * $screen_modifier_scale
+$cursorY = $cursorY * $screen_modifier_scale
+$screenW = $screenW * $screen_modifier_scale
+$screenH = $screenH * $screen_modifier_scale
 {% if scene.rzm %}
     {% for grid in scene.rzm.elements %}
         {% if grid.elem_class == 'GRID_CONTAINER' and not (grid.disable_export and not grid.is_preset) %}
@@ -990,8 +1002,8 @@ x98 = time
 w98 = time % 1
 x99 = $cursorX / $ScreenW
 y99 = $cursorY / $ScreenH
-z99 = $ScreenW
-w99 = $ScreenH
+z99 = $ScreenW / $screen_modifier_scale
+w99 = $ScreenH / $screen_modifier_scale
 ps-t80 = ResourceIcons
 ps-t107 = ResourceImageBuffer
 vs-t103 = ResourceText
@@ -1209,11 +1221,11 @@ filename = .\res\mod_name.{{ font_ext }}
 {% if scene["rzm_missing_textures"] %}
 ; --- AUTO-GENERATED MISSING RESOURCES ---
     {% for tex_name in scene["rzm_missing_textures"].split(',') %}
-        {% if tex_name and tex_name|length > 0 -%}
+        {% if tex_name and tex_name|length > 0 %}
 [Resource{{ tex_name }}]
 filename = ./Textures/{{ tex_name }}{{ "" if tex_name.endswith(".dds") else ".dds" }}
 
-        {%- endif -%}
+        {% endif %}
     {% endfor %}
 {% endif %}
 {%- endmacro %}

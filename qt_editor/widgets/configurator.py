@@ -161,6 +161,10 @@ class GeneralTab(BaseConfigTab):
         self.spin_w = RZSpinBox()
         self.spin_w.setRange(0, 8192)
         self.spin_w.valueChanged.connect(lambda v: self.on_canvas_changed(0, v))
+        h_canvas.addWidget(self.spin_w)
+        
+        h_canvas.addWidget(RZLabel("x"))
+        
         self.spin_h = RZSpinBox()
         self.spin_h.setRange(0, 8192)
         self.spin_h.valueChanged.connect(lambda v: self.on_canvas_changed(1, v))

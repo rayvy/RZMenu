@@ -32,7 +32,7 @@ from ..operators import custom_draw_ops
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
 class RZMenuProperties(bpy.types.PropertyGroup):
     game: PointerProperty(type=RZMGameSettings)
-    version: StringProperty(name="Version", default="3.9.2")
+    version: StringProperty(name="Version", default="4.0.0")
     config: PointerProperty(type=RZMenuConfig)
     meta_data: PointerProperty(type=RZMMetaDataSettings)
     export_settings: PointerProperty(type=RZMExportSettings)
