@@ -8,7 +8,6 @@
 {# 1. Общие глобальные переменные и логика Present #}
 {% macro _macro_shared_constants_and_present(rzm) %}
 [Constants]
-global $shape_changed = 0
 global persist $SKC_LastTime = 0
 {% for config in rzm.shape_configs if not config.disable_export %}
     {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
@@ -23,9 +22,6 @@ global persist $SKC_LastTime = 0
 run = CommandListSKPresent
 [CommandListSKPresent]
 local $shape_changed = 0
-local $pi
-$pi = 3.14159265
-local $dt
 $dt = time - $SKC_LastTime
 
 {% for config in rzm.shape_configs if not config.disable_export %}

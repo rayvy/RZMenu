@@ -184,8 +184,6 @@ global $mathinC
 global $mathout
 
 [CommandListMathCos]
-local $pi
-$pi = 3.14159265
 if $mathinA == inf || $mathinA == -inf || $mathinA == NaN || $mathinA == null
     $mathout = NaN
 else
@@ -200,8 +198,6 @@ else
 endif
 
 [CommandListMathSin]
-local $pi
-$pi = 3.14159265
 $mathinA = $mathinA - $pi / 2
 run = CommandListMathCos
 $mathout = $mathout
