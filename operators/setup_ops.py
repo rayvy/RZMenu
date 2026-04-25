@@ -184,7 +184,22 @@ class RZM_OT_FullExport(bpy.types.Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Font export failed: {e}")
             return {'CANCELLED'}
-        
+
+        # 2.5 Pack resource buffers (images.bin, anim_frames.bin, styles.bin)
+        # NOTE: In quick_export these are packed inside j2_exporter.render().
+        # In full_export the template is rendered by XXMI/WWMI/EFMI directly,
+        # so we must pack them explicitly here before calling the game exporter.
+        try:
+            from ..core.image_packer import pack_project_images
+            from ..core.style_packer import pack_styles
+            pack_project_images(context.scene, target_path)
+            pack_styles(context.scene, target_path)
+            print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin).")
+        except Exception as e:
+            self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
+            import traceback
+            traceback.print_exc()
+
         # 3. Target Game Export
         if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
             if hasattr(bpy.ops, "xxmi"):
@@ -288,6 +303,18 @@ class RZM_OT_BatchExport(bpy.types.Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Font export failed: {e}")
             return False
+
+        # 2.5 Pack resource buffers (images.bin, anim_frames.bin, styles.bin)
+        try:
+            from ..core.image_packer import pack_project_images
+            from ..core.style_packer import pack_styles
+            pack_project_images(context.scene, target_path)
+            pack_styles(context.scene, target_path)
+            print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin).")
+        except Exception as e:
+            self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
+            import traceback
+            traceback.print_exc()
 
         return True
 
