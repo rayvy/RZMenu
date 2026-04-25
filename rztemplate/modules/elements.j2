@@ -108,7 +108,7 @@
 
 
 {% macro generate_grid_scroller(grid) %}
-[CommandList{{ grid.element_name }}Scroller]
+[CommandList{{ grid.element_name }}_{{ grid.id }}Scroller]
 $id = {{ grid.id }} + 1000
 local $thumb_width = 50
 
@@ -173,7 +173,7 @@ $sizeY = $container_height
 {% endmacro %}
 
 {% macro generate_slider_helper(element) %}
-[CommandList{{ element.element_name }}Helper]
+[CommandList{{ element.element_name }}_{{ element.id }}Helper]
 
 {# --- MASTER из element.value_link[0] (если есть) --- #}
 {% if element.value_link is defined and element.value_link|length > 0 %}
@@ -264,7 +264,7 @@ ${{ utils.get_var_name(slave_name, scene) }} = {{ master_var }}
 {% endmacro %}
 
 {% macro generate_vector_box_helper(element, scene) %}
-[CommandList{{ element.element_name }}Helper]
+[CommandList{{ element.element_name }}_{{ element.id }}Helper]
 {# --- VECTOR BOX LOGIC --- #}
 {% if element.value_link is defined and element.value_link|length > 0 %}
     {% set links = element.value_link %}

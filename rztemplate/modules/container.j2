@@ -61,9 +61,9 @@ Local $current_sizeY
     {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
     {% set element_tags = utils.tier_tags(element) %}
     {% if element_tags %}
-    ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ element.element_name }}] {{ element_tags }}
+    ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ element.element_name }}_{{ element.id }}] {{ element_tags }}
     {% endif %}
-    [CommandListElement{{ element.element_name }}]
+    [CommandListElement{{ element.element_name }}_{{ element.id }}]
     {{base(element,parent_element,mod_file,scene)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
     {% else %}
@@ -111,7 +111,7 @@ Local $current_sizeY
             run = CustomShaderRCI2D_SLIDER
             {% endif %}
     {%elif class_name == 'VECTOR_BOX'%}
-        run = CommandList{{ element.element_name }}Helper
+        run = CommandList{{ element.element_name }}_{{ element.id }}Helper
         run = CustomShaderRCI2D
     {%elif class_name == 'TEXT'%}
         {{generate_text(element)}}
@@ -160,7 +160,7 @@ Local $current_sizeY
     endif
     endif
     {% if element_tags %}
-    ;[META-INFO] [END] [DELETE] [ELEMENT] [{{ element.element_name }}] {{ element_tags }}
+    ;[META-INFO] [END] [DELETE] [ELEMENT] [{{ element.element_name }}_{{ element.id }}] {{ element_tags }}
     {% endif %}
 {%- endmacro -%}
 {#MAINSTUFF#}
@@ -173,7 +173,7 @@ Local $current_sizeY
             $positionY = $P_PY
             $sizeX = $P_SX
             $sizeY = $P_SY
-            run = CommandListElement{{preset_item.element_name}}
+            run = CommandListElement{{preset_item.element_name }}_{{ preset_item.id }}
         {% endif %}
     {% endfor %}
 {%endmacro%}
@@ -187,7 +187,7 @@ Local $current_sizeY
             $positionY = $P_PY
             $sizeX = $P_SX
             $sizeY = $P_SY
-            run = CommandListElement{{preset_item.element_name}}
+            run = CommandListElement{{preset_item.element_name }}_{{ preset_item.id }}
         {% endif %}
     {% endfor %}
 {%endmacro%}
@@ -207,7 +207,7 @@ Local $current_sizeY
             {% if helper_item %}
                 {%- set h_raw_name = helper_item.element_name -%}
                 {%- set h_clean = h_raw_name.lstrip('_') -%}
-                {%- set h_name = element.element_name ~ '_' ~ h_clean -%}
+                {%- set h_name = element.element_name ~ "_" ~ element.id ~ "_" ~ h_clean ~ "_" ~ helper_item.id -%}
                 $positionX = $P_PX
                 $positionY = $P_PY
                 $sizeX = $P_SX
@@ -235,7 +235,7 @@ Local $current_sizeY
 {%macro generate_helper_definition(helper_item, host_item, mod_file, scene)%}
     {%- set h_raw_name = helper_item.element_name -%}
     {%- set h_clean = h_raw_name.lstrip('_') -%}
-    {%- set h_name = host_item.element_name ~ '_' ~ h_clean -%}
+    {%- set h_name = host_item.element_name ~ "_" ~ host_item.id ~ "_" ~ h_clean ~ "_" ~ helper_item.id -%}
     {%- set h_id = helper_item.id + host_item.id + 3500 -%}
 
     {% if helper_item.export_tiers | length > 0 %}
@@ -588,7 +588,7 @@ $imageID = {{ inst_id }}
             $PositionY = $P_PY
             $SizeX = $P_SX
             $SizeY = $P_SY
-            run = CommandListElement{{child.element_name}}
+            run = CommandListElement{{child.element_name }}_{{ child.id }}
         {% endif %}
     {% endfor %}
 {%endmacro%}
@@ -630,7 +630,7 @@ $imageID = {{ inst_id }}
         endif
     endif
     if ${{ element.element_name }}ScrollActive == 1
-        run = CommandList{{element.element_name}}Scroller
+        run = CommandList{{element.element_name}}_{{element.id}}Scroller
     endif
     {% endif %}
 {% endmacro %}
@@ -714,7 +714,7 @@ $imageID = {{ inst_id }}
         {# Логика вызова попапа #}
         {% if utils.has_attribute(element, 'hadPopup') and not element.disable_button_popup %}
             if w33 > 0.4 || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
-                run = CommandListElement{{ element.element_name }}Popup
+                run = CommandListElement{{ element.element_name }}_{{ element.id }}Popup
             endif
         {# Логика для геймпада, если попап отключен #}
         {% else %}
@@ -765,9 +765,9 @@ $current_sizeX     = $current_sizeX     + ($target_sizeX     - $current_sizeX) *
 $current_sizeY     = $current_sizeY     + ($target_sizeY     - $current_sizeY) * ($dt*8)
 
 {% if parent_element.grid_wrap_mode[0] == "SCROLL" %}
-    run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedSizeAndScroll
+    run = CommandList{{parent_element.element_name[0]}}_{{parent_element.id[0]}}AdaptiveUnlimitedSizeAndScroll
 {% else %}
-    run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedCount
+    run = CommandList{{parent_element.element_name[0]}}_{{parent_element.id[0]}}AdaptiveUnlimitedCount
 {% endif %}
 $target_positionX = $PositionX
 $target_positionY = $PositionY
@@ -800,7 +800,7 @@ endif
 ;slider
 {% if element.value_link %}
     {% set first_link = element.value_link[0] %}
-    run = CommandList{{element.element_name}}Helper
+    run = CommandList{{element.element_name}}_{{element.id}}Helper
     {# RZM_SLIDER_LIMIT: Визуализация — приведение значения к 0.0-1.0 для отображения ползунка #}
     local $range_span_display = {{ (first_link.value_max | default(1.0) | float) }} - {{ (first_link.value_min| default(0.0) | float) }}
     if $range_span_display > 0.0001
@@ -820,7 +820,7 @@ endif
 {% endmacro %}
 
 {%macro ControllerCursor(element,parent_element,mod_file,scene)%}
-    [CommandListElement{{ element.element_name }}]
+    [CommandListElement{{ element.element_name }}_{{ element.id }}]
     $id = {{ element.id }}
     $classType = {{ utils.get_cls_id(element) }}
     local $LocalVisibility
@@ -861,7 +861,7 @@ endif
 {%endmacro%}
 {% macro HSVColorPicker(element, parent_element, mod_file, scene) %}
     {# --- НАСТРОЙКА ИМЕН И ПЕРЕМЕННЫХ --- #}
-    {% set element_id_name = element.element_name %}
+    {% set element_id_name = element.element_name ~ "_" ~ element.id %}
     
     {# Переменные для логики Multi-Link #}
     {% set is_multi_link = false %}

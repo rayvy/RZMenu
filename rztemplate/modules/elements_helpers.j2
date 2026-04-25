@@ -180,7 +180,7 @@
                 {% set _ = popup_elements_count['elements'].insert(0, calc_count) %}
             {% endif %}
 
-[CommandListElement{{ element.element_name }}Popup]
+[CommandListElement{{ element.element_name }}_{{ element.id }}Popup]
 local $popupShown
 local $popupIconSize = 50
 $popupShown = w33 * 2
@@ -208,9 +208,9 @@ y110 = 3
 $PositionX = $positionX
 $PositionY = $positionY
 run = CustomShaderRCI2D_POPUP
-run = CommandList{{ element.element_name }}PopupInteraction
+run = CommandList{{ element.element_name }}_{{ element.id }}PopupInteraction
 
-[CommandList{{ element.element_name }}PopupInteraction]
+[CommandList{{ element.element_name }}_{{ element.id }}PopupInteraction]
 local $LocalPosX
 local $LocalPosY
 local $LocalSizeX
@@ -303,7 +303,7 @@ $sizeY = $LocalSizeY
 {% macro generate_grid_logic_mode_0(grid) %}
 [Constants]
 global ${{ grid.element_name }}ScrollActive = 0
-[CommandList{{ grid.element_name }}AdaptiveUnlimitedSizeAndScroll]
+[CommandList{{ grid.element_name }}_{{ grid.id }}AdaptiveUnlimitedSizeAndScroll]
 local $final_cell_size
 local $actual_cols_that_fit
 local $actual_rows_that_fit
@@ -449,7 +449,7 @@ endif
 {% endmacro %}
 
 {% macro generate_grid_logic_mode_1(grid) %}
-[CommandList{{ grid.element_name }}AdaptiveUnlimitedCount]
+[CommandList{{ grid.element_name }}_{{ grid.id }}AdaptiveUnlimitedCount]
 local $distributor_next_slot_x
 local $distributor_next_slot_y
 local $grid_cols
@@ -490,7 +490,7 @@ endif
 {% endmacro %}
 
 {% macro generate_grid_scroller(grid) %}
-[CommandList{{ grid.element_name }}Scroller]
+[CommandList{{ grid.element_name }}_{{ grid.id }}Scroller]
 ; --- Фаза 1: Настройка и вычисление геометрии ---
 $id = {{ grid.id }} + 1000
 local $thumb_width = 50
@@ -554,9 +554,9 @@ run = CustomShaderRCI2D
 {%macro interactive_elements_in_adaptive_grid(element,parent_element,mod_file,scene)%}
 $request_weight = {{ 4 if utils.get_cls(element)|trim == 'SLIDER' else 1 }}
             {% if parent_element.grid_wrap_mode[0] == "SCROLL" %}
-                run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedSizeAndScroll
+                run = CommandList{{parent_element.element_name[0]}}_{{parent_element.id[0]}}AdaptiveUnlimitedSizeAndScroll
             {% else %}
-                run = CommandList{{parent_element.element_name[0]}}AdaptiveUnlimitedCount
+                run = CommandList{{parent_element.element_name[0]}}_{{parent_element.id[0]}}AdaptiveUnlimitedCount
             {% endif %}
             $target_positionX = $PositionX
             $target_positionY = $PositionY
