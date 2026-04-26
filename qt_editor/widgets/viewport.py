@@ -302,6 +302,10 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         # Инициализация шрифта
         self._ensure_font_loaded()
         self._is_drop_target = False
+        # GPU: Cache for processed pixmaps (tint + flip). Built once per unique
+        # state, never rebuilt unless the cache key changes. Max size guarded
+        # inline: avoids memory growth if element data cycles through many states.
+        self._pixmap_cache = {}
 
     def _on_tilt_changed(self, angle):
         self.setRotation(angle)
@@ -729,7 +733,13 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def _do_paint(self, painter, option, widget):
         rect = self.rect()
         t = get_current_theme()
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        # Antialiasing: smooth vector primitives (lines, curves).
+        # SmoothPixmapTransform: bilinear filtering for pixmaps on GPU — matches
+        # the in-game cheap texture filter (no MSAA, no supersampling).
+        painter.setRenderHints(
+            QtGui.QPainter.Antialiasing |
+            QtGui.QPainter.SmoothPixmapTransform
+        )
         
         # --- PHASE 1: ROTATION ---
         if self.rotation != 0:
@@ -790,15 +800,47 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             pix = ImageCache.instance().get_pixmap(self.image_id)
             if pix and not pix.isNull():
                 painter.save()
-                if self.image_source_type == 'VECTOR' and not self.svg_preserve_color:
+
+                # --- GPU PIXMAP CACHE ---
+                # Previously: tint (new QPixmap + QPainter + CompositionMode) and
+                # flip (pix.transformed) were executed every single paint call,
+                # allocating and copying pixel data on the CPU each frame.
+                # Now: we compute the processed pixmap once per unique (image,
+                # flip, tint) combination and store it. Subsequent paints are
+                # a dict lookup + drawPixmap — pure GPU blit.
+                needs_tint = (self.image_source_type == 'VECTOR' and not self.svg_preserve_color)
+                tint_color = None
+                tint_name = None  # Used as cache key component
+
+                if needs_tint:
                     has_elem_color = (self.custom_color and len(self.custom_color) > 3 and self.custom_color[3] > 0.01)
                     if has_elem_color:
-                        tint_r, tint_g, tint_b = [int(max(0,min(255, x*255))) for x in self.custom_color[:3]]
-                        tint_color = QtGui.QColor(tint_r, tint_g, tint_b)
+                        tint_color = QtGui.QColor(
+                            int(max(0, min(255, self.custom_color[0] * 255))),
+                            int(max(0, min(255, self.custom_color[1] * 255))),
+                            int(max(0, min(255, self.custom_color[2] * 255)))
+                        )
                     else:
                         icon_col_str = t.get('icon_color', '')
                         tint_color = QtGui.QColor(icon_col_str) if icon_col_str else QtGui.QColor(255, 255, 255)
-                    if tint_color.isValid():
+                    if tint_color and tint_color.isValid():
+                        tint_name = tint_color.name()  # e.g. '#ff8c00'
+
+                # Cache key: everything that affects the pixel content of the result
+                cache_key = (self.image_id, self.flip_x, self.flip_y, tint_name)
+
+                # Guard against unbounded growth if element cycles through states
+                # (e.g. animated tint). In practice most items have exactly 1 entry.
+                if len(self._pixmap_cache) > 8:
+                    self._pixmap_cache.clear()
+
+                processed_pix = self._pixmap_cache.get(cache_key)
+                if processed_pix is None:
+                    # --- Build processed pixmap (runs once per unique state) ---
+                    processed_pix = pix
+
+                    # 1. Tint (SVG color override)
+                    if needs_tint and tint_color and tint_color.isValid():
                         temp_pix = QtGui.QPixmap(pix.size())
                         temp_pix.fill(QtCore.Qt.transparent)
                         p_tint = QtGui.QPainter(temp_pix)
@@ -806,21 +848,25 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                         p_tint.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
                         p_tint.fillRect(temp_pix.rect(), tint_color)
                         p_tint.end()
-                        pix = temp_pix
-                
+                        processed_pix = temp_pix
+
+                    # 2. Flip
+                    if self.flip_x or self.flip_y:
+                        sx = -1.0 if self.flip_x else 1.0
+                        sy = -1.0 if self.flip_y else 1.0
+                        tr = QtGui.QTransform().scale(sx, sy)
+                        processed_pix = processed_pix.transformed(tr, QtCore.Qt.SmoothTransformation)
+
+                    self._pixmap_cache[cache_key] = processed_pix
+                # --- End cache block ---
+
                 target_rect = rect
                 if self.image_source_type == 'VECTOR':
                     sw, sh = rect.width() * self.svg_scale, rect.height() * self.svg_scale
                     target_rect = QtCore.QRectF(rect.center().x() - sw/2.0, rect.center().y() - sh/2.0, sw, sh)
                     target_rect.translate(self.svg_offset_x * rect.width(), self.svg_offset_y * rect.height())
 
-                if self.flip_x or self.flip_y:
-                    sx = -1.0 if self.flip_x else 1.0
-                    sy = -1.0 if self.flip_y else 1.0
-                    tr = QtGui.QTransform().scale(sx, sy)
-                    pix = pix.transformed(tr, QtCore.Qt.SmoothTransformation)
-                
-                painter.drawPixmap(target_rect, pix, QtCore.QRectF(pix.rect()))
+                painter.drawPixmap(target_rect, processed_pix, QtCore.QRectF(processed_pix.rect()))
                 painter.restore()
                 has_image = True
 
@@ -1027,13 +1073,25 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         major_step = step * 5
         
         # Level 1: Full Grid (Zoom >= 0.6)
+        # GPU: Replaced individual drawLine calls (N Python iterations) with a
+        # single drawLines(list) call. Building the list is still Python, but the
+        # actual rasterization is one batched GPU submission instead of N separate
+        # ones — dramatically cheaper on the driver side for large scenes.
         if current_zoom >= 0.6:
             painter.setPen(QtGui.QPen(grid_color, 0.5))
             first_x = left - (left % step); first_y = top - (top % step)
-            for x in range(first_x, right + step, step):
-                if x % major_step != 0: painter.drawLine(x, top, x, bottom)
-            for y in range(first_y, bottom + step, step):
-                if y % major_step != 0: painter.drawLine(left, y, right, y)
+            v_lines = [
+                QtCore.QLineF(x, top, x, bottom)
+                for x in range(first_x, right + step, step)
+                if x % major_step != 0
+            ]
+            h_lines = [
+                QtCore.QLineF(left, y, right, y)
+                for y in range(first_y, bottom + step, step)
+                if y % major_step != 0
+            ]
+            if v_lines: painter.drawLines(v_lines)
+            if h_lines: painter.drawLines(h_lines)
 
         # Level 2: Major Grid Only (Zoom >= 0.15)
         if current_zoom >= 0.15:
@@ -1041,10 +1099,16 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             major_color.setAlpha(min(grid_color.alpha() * 2, 255))
             painter.setPen(QtGui.QPen(major_color, 1.0))
             first_major_x = left - (left % major_step); first_major_y = top - (top % major_step)
-            for x in range(first_major_x, right + major_step, major_step): 
-                painter.drawLine(x, top, x, bottom)
-            for y in range(first_major_y, bottom + major_step, major_step): 
-                painter.drawLine(left, y, right, y)
+            mv_lines = [
+                QtCore.QLineF(x, top, x, bottom)
+                for x in range(first_major_x, right + major_step, major_step)
+            ]
+            mh_lines = [
+                QtCore.QLineF(left, y, right, y)
+                for y in range(first_major_y, bottom + major_step, major_step)
+            ]
+            if mv_lines: painter.drawLines(mv_lines)
+            if mh_lines: painter.drawLines(mh_lines)
         
         self._draw_axes(painter, rect)
 
@@ -1516,7 +1580,16 @@ class RZViewportView(QtWidgets.QGraphicsView):
         
         # Overlay UI
         self.setup_overlay_ui()
-        
+
+        # GPU: Switch the scene rendering pipeline to OpenGL.
+        # This replaces the software QPainter rasterizer with an OpenGL
+        # backend — all QPainter draw calls in _do_paint, drawBackground,
+        # drawForeground continue to work identically, but are now executed
+        # on the GPU. No other files are touched.
+        # Falls back silently to CPU if QOpenGLWidget is unavailable.
+        from .lib.gl_support import try_init_opengl_viewport
+        self._using_gl = try_init_opengl_viewport(self)
+
         self.rz_scene.interaction_start_signal.connect(self._on_interaction_start)
         self.rz_scene.interaction_end_signal.connect(self._on_interaction_end)
 
