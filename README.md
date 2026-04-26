@@ -37,12 +37,10 @@ This tool is currently in a **near Alpha/Beta** stage. Please use it at your own
 
 ---
 
-## 📖 What's Next?
+## 📖 Documentation & Guides
 
-There are currently **no guides**. You'll have to suffer on your own. Good luck!
-
-...Just kidding. Here is a link to a **Quick Start Guide (Temporary)**:
-👉 [Google Docs Guide](https://docs.google.com/document/d/19RNpMQVn_tSZ7FjX7ggFLNdNhG4fa-SVRfNrYVnXrkQ/edit?usp=sharing)
+For a detailed technical overview and element reference, please check the local documentation:
+👉 **[Technical Documentation (DOCUMENTATION.md)](./DOCUMENTATION.md)**
 
 ### 💎 Zero-Dependency Export
 When you export a mod, **end-users do not need to download any additional libraries**. 
