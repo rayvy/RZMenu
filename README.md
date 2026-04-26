@@ -4,7 +4,7 @@
 ![Version](https://img.shields.io/badge/version-4.0-blueviolet?style=for-the-badge)
 ![Blender](https://img.shields.io/badge/Blender-4.1%2B-orange?style=for-the-badge&logo=blender)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
-![Target](https://img.shields.io/badge/Games-Genshin%20%7C%20HSR%20%7C%20ZZZ%20%7C%20WuWa-success?style=for-the-badge)
+![Target](https://img.shields.io/badge/Games-GIMI/ZZMI/EFMI-success?style=for-the-badge)
 
 ---
 
