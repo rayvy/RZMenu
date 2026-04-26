@@ -1537,7 +1537,8 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             if hasattr(it, 'target_item'):
                 t_item = getattr(it, 'target_item', None)
                 if not t_item or not shiboken6.isValid(t_item) or t_item.uid not in incoming_ids:
-                    self.removeItem(it)
+                    if it.scene() is self:
+                        self.removeItem(it)
 
     def _update_items_state(self, elements_data, resolved_layout, selected_ids, active_id):
         for data in elements_data:
