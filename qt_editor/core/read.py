@@ -500,8 +500,8 @@ def get_selection_details(selected_ids, active_id):
 
             # Editor Flags
             "is_hidden": get_uniform("qt_hide"),
-            "qt_lock_pos": get_uniform("qt_lock_pos", default=False),
-            "qt_lock_size": get_uniform("qt_lock_size", default=False),
+            "is_locked_pos": get_uniform("qt_lock_pos", default=False),
+            "is_locked_size": get_uniform("qt_lock_size", default=False),
             "qt_lock_ratio": get_uniform("qt_lock_ratio", default=False),
             
             # Computed Helpers

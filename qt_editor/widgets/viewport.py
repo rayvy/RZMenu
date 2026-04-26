@@ -484,6 +484,8 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def finalize_resize(self):
         self._initial_rect = None
         self._initial_pos = None
+        if hasattr(self, '_descendants_initial'):
+            del self._descendants_initial
 
     def handle_resize(self, h_type, total_delta):
         if self.is_locked_size or self.size_is_formula: return
@@ -497,6 +499,20 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             self._initial_rect = self.rect()
             self._initial_pos = self.pos()
             self._aspect_ratio = self._initial_rect.width() / max(self._initial_rect.height(), 1)
+            
+            # --- Initialize Descendant Cache for Recursive Scaling ---
+            self._descendants_initial = []
+            def collect_descendants(parent_item):
+                for child in parent_item.childItems():
+                    if isinstance(child, RZElementItem):
+                        if not getattr(child, 'is_locked_pos', False) and not getattr(child, 'is_locked_size', False):
+                            self._descendants_initial.append({
+                                'item': child,
+                                'pos': child.pos(),
+                                'rect': child.rect()
+                            })
+                        collect_descendants(child)
+            collect_descendants(self)
 
         init_ax, init_ay = self._initial_pos.x(), self._initial_pos.y()
         vr = self._initial_rect
@@ -609,6 +625,34 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         
         bx, by = core.to_qt_coords(new_anchor_x, new_anchor_y)
         scene.element_resized_signal.emit(self.uid, bx, by, int(new_w), int(new_h))
+
+        # --- Scale Descendants ---
+        if hasattr(self, '_descendants_initial') and self._descendants_initial:
+            init_w = max(1, self._initial_rect.width())
+            init_h = max(1, self._initial_rect.height())
+            scale_x = new_w / init_w
+            scale_y = new_h / init_h
+            
+            for cdata in self._descendants_initial:
+                child = cdata['item']
+                
+                # Skip layout controlled or formula elements
+                if getattr(child, 'pos_is_formula', False) or getattr(child, 'size_is_formula', False) or getattr(child, '_is_layout_controlled', False):
+                    continue
+                    
+                c_pos = cdata['pos']
+                c_rect = cdata['rect']
+                
+                cx = c_pos.x() * scale_x
+                cy = c_pos.y() * scale_y
+                cw = max(MIN_SIZE, c_rect.width() * scale_x)
+                ch = max(MIN_SIZE, c_rect.height() * scale_y)
+                
+                child.setPos(cx, cy)
+                child.update_visual_rect(cw, ch)
+                
+                cbx, cby = core.to_qt_coords(cx, cy)
+                scene.element_resized_signal.emit(child.uid, cbx, cby, int(cw), int(ch))
 
     # Обновили сигнатуру: добавлена ротация, лок пропорций и параметры SVG
     def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0, lock_ratio=False, image_source_type='CUSTOM', svg_scale=1.0, svg_offset_x=0.0, svg_offset_y=0.0, svg_preserve_color=True, style_id=-1):
