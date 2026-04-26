@@ -538,8 +538,17 @@ def get_selection_details(selected_ids, active_id):
 def get_viewport_data():
     results = []
     if not bpy.context or not bpy.context.scene: return results
-    
+
     rzm = bpy.context.scene.rzm
+
+    # PERF: Build image lookup once per call (O(M)) instead of running a
+    # linear search through rzm.images for every element (was O(N×M)).
+    # With 147 images and 158 elements this was ~23k iterations per 16ms tick.
+    _img_source_type   = {}  # image_id -> source_type
+    _img_svg_preserve  = {}  # image_id -> svg_preserve_color
+    for img in rzm.images:
+        _img_source_type[img.id]  = getattr(img, 'source_type', 'STATIC')
+        _img_svg_preserve[img.id] = getattr(img, 'svg_preserve_color', True)
 
     for idx, elem in enumerate(rzm.elements):
         color_list = None
@@ -583,8 +592,8 @@ def get_viewport_data():
             "image_id": elem.image_id,
             "hover_image_id": getattr(elem, "hover_image_id", -1),
             "image_blending_mode": getattr(elem, "image_blending_mode", 'NONE'),
-            "image_source_type": next((img.source_type for img in rzm.images if img.id == elem.image_id), 'STATIC') if elem.image_id != -1 else 'NONE',
-            "svg_preserve_color": next((img.svg_preserve_color for img in rzm.images if img.id == elem.image_id), True) if elem.image_id != -1 else True,
+            "image_source_type": _img_source_type.get(elem.image_id, 'STATIC') if elem.image_id != -1 else 'NONE',
+            "svg_preserve_color": _img_svg_preserve.get(elem.image_id, True) if elem.image_id != -1 else True,
             "svg_scale": getattr(elem, "svg_scale", 1.0),
             "svg_offset_x": getattr(elem, "svg_offset", [0, 0])[0],
             "svg_offset_y": getattr(elem, "svg_offset", [0, 0])[1],

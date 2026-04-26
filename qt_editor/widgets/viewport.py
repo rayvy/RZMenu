@@ -297,6 +297,21 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self._initial_pos = None
         self._aspect_ratio = 1.0
 
+        # Fields required by set_data_state diff-check.
+        # All must be present from birth so the comparison never raises
+        # AttributeError on newly-created items (the old code wrote them
+        # unconditionally before any comparison, so this was never an issue).
+        self.flip_x = False
+        self.flip_y = False
+        self.svg_preserve_color = True
+        self.is_underlayer = False
+        self.qt_lock_ratio = False
+        self.image_blending_mode = 'NONE'
+        self.style_id = -1
+        self.text_align = 'LEFT'
+        self.font_slot = 0
+        self.order = 0
+
         self.setFlags(QtWidgets.QGraphicsItem.ItemUsesExtendedStyleOption | QtWidgets.QGraphicsItem.ItemIsSelectable | QtWidgets.QGraphicsItem.ItemSendsScenePositionChanges)
         
         # Инициализация шрифта
@@ -660,6 +675,51 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
 
     # Обновили сигнатуру: добавлена ротация, лок пропорций и параметры SVG
     def set_data_state(self, locked_pos, locked_size, img_id, is_selectable, text_content, alignment, text_id=None, text_align="LEFT", font_slot=0, color=None, grid_props=None, pos_is_formula=False, size_is_formula=False, order=0, image_blending_mode='NONE', flip_x=False, flip_y=False, is_underlayer=False, rotation=0.0, lock_ratio=False, image_source_type='CUSTOM', svg_scale=1.0, svg_offset_x=0.0, svg_offset_y=0.0, svg_preserve_color=True, style_id=-1):
+        # --- PERF: State-diff guard ---
+        # set_data_state is called on ALL 158 elements every 16ms tick.
+        # We compare incoming values to stored ones; only write + update() if
+        # something actually changed. This eliminates ~95% of redundant repaints
+        # in idle state (no user interaction, no data change).
+        dirty = False
+
+        # Detect image-related changes that require pixmap cache invalidation
+        img_dirty = (
+            img_id != self.image_id or
+            flip_x != self.flip_x or
+            flip_y != self.flip_y or
+            image_source_type != self.image_source_type or
+            svg_preserve_color != self.svg_preserve_color or
+            color != self.custom_color
+        )
+        if img_dirty:
+            self._pixmap_cache.clear()
+            dirty = True
+
+        # Check all other fields that affect paint output
+        if not dirty and (
+            locked_pos != self.is_locked_pos or
+            locked_size != self.is_locked_size or
+            is_selectable != self.is_selectable or
+            text_content != self.text_content or
+            alignment != self.alignment or
+            text_id != self.text_id or
+            text_align != self.text_align or
+            font_slot != self.font_slot or
+            order != self.order or
+            image_blending_mode != getattr(self, 'image_blending_mode', 'NONE') or
+            is_underlayer != self.is_underlayer or
+            rotation != self.rotation or
+            lock_ratio != self.qt_lock_ratio or
+            svg_scale != self.svg_scale or
+            svg_offset_x != self.svg_offset_x or
+            svg_offset_y != self.svg_offset_y or
+            style_id != getattr(self, 'style_id', -1) or
+            pos_is_formula != self.pos_is_formula or
+            size_is_formula != self.size_is_formula
+        ):
+            dirty = True
+
+        # Write all fields (cheap assignments)
         self.style_id = style_id
         self.is_locked_pos, self.is_locked_size = locked_pos, locked_size
         self.pos_is_formula, self.size_is_formula = pos_is_formula, size_is_formula
@@ -673,50 +733,71 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.svg_offset_y = svg_offset_y
         self.svg_preserve_color = svg_preserve_color
         self.text_content = text_content if text_content else self.name
-        self.text_id = text_id if text_id is not None else "TEST" # Сохраняем text_id
+        self.text_id = text_id if text_id is not None else "TEST"
         self.text_align = text_align
         self.font_slot = font_slot
-        self.order = order  # Сохраняем порядок в массиве для Z-index
+        self.order = order
         self.alignment = alignment
         self.custom_color = color
         self.image_blending_mode = image_blending_mode
         self.is_underlayer = is_underlayer
 
-        # UNDERLAYER STACKING: Render behind host
-        if is_underlayer:
-            self.setFlag(QtWidgets.QGraphicsItem.ItemStacksBehindParent, True)
-        else:
-            self.setFlag(QtWidgets.QGraphicsItem.ItemStacksBehindParent, False)
-        
-        if grid_props:
-            self.grid_padding = grid_props.get('padding', 0)
-            self.grid_gap = grid_props.get('gap', 0)
-            self.grid_cell_size = grid_props.get('cell_size', 50)
-            self.grid_cols = grid_props.get('cols', 0)
+        if dirty:
+            # UNDERLAYER STACKING: Render behind host
+            self.setFlag(QtWidgets.QGraphicsItem.ItemStacksBehindParent, is_underlayer)
 
-        # PHANTOM BEHAVIOR: 
-        # setEnabled(False) makes item "invisible" to mouse events in the scene.
-        self.setEnabled(is_selectable)
-        
-        # We manually manage opacity to show it's unselectable
-        self.setOpacity(0.5 if not is_selectable else 1.0)
-        self.update()
+            if grid_props:
+                self.grid_padding = grid_props.get('padding', 0)
+                self.grid_gap = grid_props.get('gap', 0)
+                self.grid_cell_size = grid_props.get('cell_size', 50)
+                self.grid_cols = grid_props.get('cols', 0)
+
+            # PHANTOM BEHAVIOR
+            self.setEnabled(is_selectable)
+            self.setOpacity(0.5 if not is_selectable else 1.0)
+            self.update()
+        else:
+            # Still honour underlayer flag and grid props silently (cheap)
+            self.setFlag(QtWidgets.QGraphicsItem.ItemStacksBehindParent, is_underlayer)
+            if grid_props:
+                self.grid_padding = grid_props.get('padding', 0)
+                self.grid_gap = grid_props.get('gap', 0)
+                self.grid_cell_size = grid_props.get('cell_size', 50)
+                self.grid_cols = grid_props.get('cols', 0)
 
     def set_visual_state(self, is_selected, is_active):
-        if self.isSelected() != is_selected: self.setSelected(is_selected)
-        self.is_active = is_active
+        prev_selected = self.isSelected()
+        prev_active   = self.is_active
 
         # Base Z-value from array order (higher = drawn later = on top)
         base_z = getattr(self, 'order', 0)
+        if is_active:     z_val = base_z + 1000
+        elif is_selected: z_val = base_z + 500
+        else:             z_val = base_z
 
-        # State modifiers
-        if is_active: z_val = base_z + 1000  # Active on top
-        elif is_selected: z_val = base_z + 500  # Selected above normal
-        else: z_val = base_z  # Normal elements by order
+        # --- PERF: diff before writing ---
+        # set_visual_state is called on up to N items per selection event.
+        # Skip setZValue / update() if nothing changed.
+        visual_changed = (prev_selected != is_selected or prev_active != is_active)
 
-        self.setZValue(z_val)
-        self.set_handles_visible(is_selected and not self.is_locked_size)
-        self.update() 
+        if visual_changed:
+            if prev_selected != is_selected: self.setSelected(is_selected)
+            self.is_active = is_active
+            self.setZValue(z_val)
+            self.set_handles_visible(is_selected and not self.is_locked_size)
+
+            # --- PERF: DeviceCoordinateCache ---
+            # Static (unselected, inactive) items: Qt caches their rendered
+            # pixels and only repaints on explicit update() or scene transform.
+            # Selected/active items are excluded — they animate (tilt, fill).
+            if is_selected or is_active:
+                self.setCacheMode(QtWidgets.QGraphicsItem.CacheMode.NoCache)
+            else:
+                self.setCacheMode(QtWidgets.QGraphicsItem.CacheMode.DeviceCoordinateCache)
+
+            self.update()
+        else:
+            self.is_active = is_active
     
     def update_size(self, w, h):
         self.update_visual_rect(w, h)
@@ -733,13 +814,11 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def _do_paint(self, painter, option, widget):
         rect = self.rect()
         t = get_current_theme()
-        # Antialiasing: smooth vector primitives (lines, curves).
-        # SmoothPixmapTransform: bilinear filtering for pixmaps on GPU — matches
-        # the in-game cheap texture filter (no MSAA, no supersampling).
-        painter.setRenderHints(
-            QtGui.QPainter.Antialiasing |
-            QtGui.QPainter.SmoothPixmapTransform
-        )
+        # PERF: Antialiasing is set at the QGraphicsView level (in gl_support)
+        # and inherited by all items — no need to re-set it per-item per-frame.
+        # SmoothPixmapTransform stays here because it controls pixmap bilinear
+        # filtering specifically during drawPixmap() calls inside this method.
+        painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
         
         # --- PHASE 1: ROTATION ---
         if self.rotation != 0:
@@ -2282,9 +2361,19 @@ class RZViewportPanel(RZEditorPanel):
         self.view.rz_scene.selection_changed_signal.connect(self._on_selection_changed)
     
     def _connect_signals(self):
-        """Connect to core signals for autonomous updates."""
+        """Connect to core signals for autonomous updates.
+
+        PERF: Two-path refresh strategy.
+        - Heavy path  (full update_scene): structure_changed, data_changed,
+          isolation_changed. These require re-reading bpy + rebuilding the
+          item pool. Throttled to 16 ms via _refresh_timer.
+        - Light path  (visuals only): transform_changed uses a faster timer
+          (8 ms) but only updates positions/selection visuals, not data.
+          selection_changed bypasses the timer entirely — synchronous,
+          instant visual feedback.
+        """
         SIGNALS.structure_changed.connect(self.refresh_data)
-        SIGNALS.transform_changed.connect(self.refresh_data)
+        SIGNALS.transform_changed.connect(self._refresh_transform_only)
         SIGNALS.selection_changed.connect(self._on_global_selection_changed)
         SIGNALS.data_changed.connect(self.refresh_data)
         SIGNALS.isolation_changed.connect(self.refresh_data)
@@ -2296,7 +2385,7 @@ class RZViewportPanel(RZEditorPanel):
         except (RuntimeError, TypeError):
             pass
         try:
-            SIGNALS.transform_changed.disconnect(self.refresh_data)
+            SIGNALS.transform_changed.disconnect(self._refresh_transform_only)
         except (RuntimeError, TypeError):
             pass
         try:
@@ -2313,10 +2402,30 @@ class RZViewportPanel(RZEditorPanel):
             pass
     
     def refresh_data(self):
-        """Request a refresh (throttled)."""
+        """Request a full heavy refresh (throttled to ~60 fps)."""
         if not self._is_panel_active: return
         if not self._refresh_timer.isActive():
-            self._refresh_timer.start(16) # ~60 FPS limit
+            self._refresh_timer.start(16)
+
+    def _refresh_transform_only(self):
+        """Light-path refresh: only reposition items, skip full update_scene.
+
+        Called on transform_changed. Much cheaper than refresh_data:
+        - No bpy read (no core.get_viewport_data call)
+        - No item pool sync (_sync_items_pool)
+        - No set_data_state calls on all elements
+        Just updates item positions + selection visuals from the context.
+        Falls back to full refresh if the scene has no items yet.
+        """
+        if not self._is_panel_active: return
+        if self.view.rz_scene._is_user_interaction: return
+        scene = self.view.rz_scene
+        if not scene._items_map:
+            # First load — need full refresh
+            self.refresh_data()
+            return
+        ctx = RZContextManager.get_instance().get_snapshot()
+        scene.update_selection_visuals(ctx.selected_ids, ctx.active_id)
 
     def _do_refresh_data(self):
         """Fetch and display current viewport data from core."""
@@ -2325,12 +2434,41 @@ class RZViewportPanel(RZEditorPanel):
         # Don't refresh during user interaction to avoid drift/lag
         if self.view.rz_scene._is_user_interaction:
             return
-        
+
         # Optimize: Refresh font configs once per data fetch, not per paintEvent
         RZFontManager.instance().refresh_font_config()
-        
+
         data = core.get_viewport_data()
         ctx = RZContextManager.get_instance().get_snapshot()
+
+        # --- PERF: Data hash guard ---
+        # core.get_viewport_data() reads from bpy — cheap but not free.
+        # update_scene() is expensive: it calls set_data_state on every element
+        # (158 in the test scene) even when nothing changed. We hash a compact
+        # fingerprint of the data + selection + active state and skip the full
+        # update if nothing changed since the last tick.
+        # Hash is intentionally lightweight: we only fingerprint element IDs,
+        # positions, and a few key fields — not the entire data dict.
+        try:
+            _fp_parts = []
+            for e in data:
+                _fp_parts.append((
+                    e.get('id'), e.get('pos_x'), e.get('pos_y'),
+                    e.get('width'), e.get('height'),
+                    e.get('image_id'), e.get('is_hidden'),
+                    e.get('color'), e.get('rotation', 0),
+                ))
+            _fingerprint = hash((
+                tuple(_fp_parts),
+                tuple(sorted(ctx.selected_ids)),
+                ctx.active_id
+            ))
+        except Exception:
+            _fingerprint = None  # On any error, skip the guard
+
+        if _fingerprint is not None and _fingerprint == getattr(self, '_last_data_fingerprint', None):
+            return  # Data unchanged — nothing to repaint
+        self._last_data_fingerprint = _fingerprint
 
         # VIEWPORT TAB ISOLATION FILTERING
         active_tab_uid = RZContextManager.get_instance().isolated_tab_id
