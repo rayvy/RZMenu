@@ -287,34 +287,40 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Export Management", icon='INFO')
         
-        # Единая кнопка экспорта для всех игр
+        is_pro = (scene.rzm_editor_mode == 'PRO')
+        
+        # --- PRIMARY EXPORT ---
         row = box.row(align=True)
         row.scale_y = 1.5
         
-        # Fast Path Toggle
-        icon = 'TRIA_RIGHT_BAR' if settings.force_fast_path else 'TRIA_RIGHT'
-        row.prop(settings, "force_fast_path", text="", icon=icon, toggle=True)
-        
+        if is_pro:
+            # Fast Path Toggle next to Full Export
+            icon = 'TRIA_RIGHT_BAR' if settings.force_fast_path else 'TRIA_RIGHT'
+            row.prop(settings, "force_fast_path", text="", icon=icon, toggle=True)
+            
         row.operator("rzm.full_export", text="Full Export", icon='EXPORT')
-        row.operator("rzm.quick_export_menu", text="⚡ Quick Update", icon='FILE_REFRESH')
-        #row.operator("rzm.complete_export", text="Complete Export", icon='SEQ_STRIP_DUPLICATE')
         
-        # --- EXPERIMENTAL OPTIMIZATION (Development) ---
-        if scene.rzm_editor_mode == 'PRO':
+        # --- QUICK UPDATE GROUP ---
+        q_col = box.column(align=True)
+        q_row = q_col.row(align=True)
+        q_row.scale_y = 1.5
+        q_row.operator("rzm.quick_export_menu", text="⚡ Quick Update", icon='FILE_REFRESH')
+        
+        if is_pro:
+            # Options immediately below the button
+            opts_row = q_col.row(align=True)
+            opts_row.prop(settings, "quick_update_resources", text="Resources", icon='IMAGE_DATA', toggle=True)
+            opts_row.prop(settings, "quick_update_run_scripts", text="Scripts", icon='FILE_SCRIPT', toggle=True)
+        
+        # --- EXPERIMENTAL OPTIMIZATION ---
+        if is_pro:
             box.separator()
             exp_box = box.box()
             exp_box.label(text="Experimental Optimization", icon='MODIFIER')
-            row = exp_box.row(align=True)
-            row.operator("rzm.inquisitor_cleanup", text="Clean Up", icon='BRUSH_DATA')
-            row.operator("rzm.real_compression", text="Compress", icon='SEQ_STRIP_DUPLICATE')
-            exp_box.label(text="Use with caution! Backups (.bak) will be created.", icon='INFO')
-
-            # Quick Update Toggles (Below the buttons for clarity)
-            q_row = box.row(align=True)
-            q_row.prop(settings, "quick_update_resources", text="Res", icon='IMAGE_DATA', toggle=True)
-            q_row.prop(settings, "quick_update_run_scripts", text="Scripts", icon='FILE_SCRIPT', toggle=True)
-            q_row.label(text="", icon='BLANK1') # Spacer
-            q_row.label(text=" (Quick Update Options)", icon='INFO')
+            exp_row = exp_box.row(align=True)
+            exp_row.operator("rzm.inquisitor_cleanup", text="Clean Up", icon='BRUSH_DATA')
+            exp_row.operator("rzm.real_compression", text="Compress", icon='SEQ_STRIP_DUPLICATE')
+            exp_box.label(text="Caution: Backups (.bak) will be created.", icon='INFO')
 
 
 
