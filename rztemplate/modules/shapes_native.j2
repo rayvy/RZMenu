@@ -341,7 +341,8 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
         {% set raw_comp_name = rzm_export_cache.mod_name ~ base_name if rzm_export_cache.source == 'xxmi' else base_name %}
         {% set comp_name = utils.format_from_idiot(raw_comp_name) %}
         {% set vertex_count = comp_data.n_verts %}
-        {% set base_filename = props.path_prefix ~ comp_name ~ props.path_suffix %}
+        {% set vb0_suff = '_VB0' if game_name in ["ArknightsEndfield", "WutheringWaves"] else '' %}
+        {% set base_filename = props.path_prefix ~ comp_name ~ vb0_suff ~ props.path_suffix %}
         
         {# Собираем имена объектов компонента из кэша #}
         {% set affected_names = [raw_comp_name | lower] %}
@@ -365,7 +366,8 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
             {% endfor %}
         {% endfor %}
         
-        {% set base_filename = props.path_prefix ~ comp_name ~ props.path_suffix %}
+        {% set vb0_suff = '_VB0' if game_name in ["ArknightsEndfield", "WutheringWaves"] else '' %}
+        {% set base_filename = props.path_prefix ~ comp_name ~ vb0_suff ~ props.path_suffix %}
         
         {{ _macro_compute_section(rzm, comp_name, component.vertex_count, props.shader, affected_names) }}
         {{ _macro_resources(rzm, comp_name, props.stride, base_filename, affected_names) }}
