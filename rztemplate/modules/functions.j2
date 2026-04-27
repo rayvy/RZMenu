@@ -316,9 +316,10 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 	$LocalPosY = $positionY
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
-	$classType = 5
-	w110 = 4
-	$TexPosX = x24
+	;$classType = 5
+	;w110 = 4
+	$TextIsData = 1
+	$TextID = x24
 	$TexPosY = 0
 
 	$positionX = $LocalPosX + ($LocalSizeX * 0.75) - 4
@@ -333,7 +334,7 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 	$colorA = 1.0
 
 
-	run = CustomShaderRCI2D
+	run = CustomShaderRCI2D_TEXT
 	w110 = 0
 
 	$positionX = $LocalPosX
@@ -396,8 +397,7 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	$LocalPosY = $positionY
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
-	$classType = 5
-	w110 = 4
+	$TextIsData = 1
 	$TexPosX = x24*100
 	$TexPosY = 1
 	$TexSizeX = 1
@@ -414,7 +414,7 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	x110 = 0
 	y110 = 0
 
-	run = CustomShaderRCI2D
+	run = CustomShaderRCI2D_TEXT
 	w110 = 0
 
 	$positionX = $LocalPosX
