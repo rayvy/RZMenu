@@ -183,9 +183,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         row.label(text="Target Game:", icon='COLOR_RED') 
         row.prop(rzm.game, "selection", text="")
 
-        # 3. SETUP & INFO BLOCKS
+        # 3. SETUP & EXPORT BLOCKS
         self.draw_setup_block(context, layout)
-        self.draw_info_block(context, layout)
+        self.draw_export_management(context, layout)
 
         layout.separator()
 
@@ -238,13 +238,14 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         scene = context.scene
         rzm = scene.rzm
         game = rzm.game.selection
-        
         box = layout.box()
         box.label(text="Setup: Addon Configuration", icon='SETTINGS')
         
         row = box.row(align=True)
-        row.operator("rzm.autosetup_game", text="Auto-Setup Addon", icon='AUTO')
-        row.operator("rzm.refresh_addon_data", text="Sync Data", icon='FILE_REFRESH')
+        if scene.rzm_editor_mode == 'PRO':
+
+            row.operator("rzm.autosetup_game", text="Auto-Setup Addon", icon='AUTO')
+            row.operator("rzm.refresh_addon_data", text="Sync Data", icon='FILE_REFRESH')
         
         # Отображение путей целевого аддона
         if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
@@ -277,46 +278,15 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             else:
                 box.label(text="WWMI Tools Not Active", icon='ERROR')
 
-    def draw_info_block(self, context, layout):
+    def draw_export_management(self, context, layout):
         scene = context.scene
         rzm = scene.rzm
-        game = rzm.game.selection
         settings = rzm.export_settings
+        if not settings: return
         
         box = layout.box()
         box.label(text="Export Management", icon='INFO')
         
-        # --- GLOBAL ARTIST INFO ---
-        from ..operators.tier_ops import get_prefs
-        prefs = get_prefs(context)
-        if prefs:
-            row = box.row()
-            row.label(text=f"Author: {prefs.author_name}", icon='USER')
-            row.operator("wm.url_open", text="Logo", icon='IMAGE_DATA').url = prefs.mod_logo_url
-            row.operator("wm.url_open", text="Banner", icon='IMAGE_DATA').url = prefs.mod_banner_url
-
-        # --- MOD INFO / METADATA ---
-        meta_box = layout.box()
-        meta_box.label(text="Mod Details (Meta Data)", icon='GREASEPENCIL')
-        
-        meta = rzm.meta_data
-        col = meta_box.column(align=True)
-        col.prop(meta, "character_name")
-        col.prop(meta, "outfit_name")
-        col.prop(meta, "version_num")
-        
-        # Author stays global, but we show it here for context
-        col.separator()
-        row = col.row()
-        row.label(text=f"Global Author: {prefs.author_name}" if prefs else "Author: UNKNOWN", icon='USER')
-        row.operator("wm.url_open", text="Edit Profile", icon='PREFERENCES').url = "bpy.context.preferences.addons['RZMenu'].preferences" # This won't work as a URL, but it's a hint. In Blender we usually just tell them to check prefs.
-        
-        col.separator()
-        col.prop(meta, "requirements")
-        col.prop(meta, "description", text="Lore")
-        col.prop(meta, "menu_keybind")
-        col.prop(meta, "community_respect")
-
         # Единая кнопка экспорта для всех игр
         row = box.row(align=True)
         row.scale_y = 1.5
@@ -327,66 +297,25 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         
         row.operator("rzm.full_export", text="Full Export", icon='EXPORT')
         row.operator("rzm.quick_export_menu", text="⚡ Quick Update", icon='FILE_REFRESH')
-        row.operator("rzm.complete_export", text="Complete Export", icon='SEQ_STRIP_DUPLICATE')
+        #row.operator("rzm.complete_export", text="Complete Export", icon='SEQ_STRIP_DUPLICATE')
         
         # --- EXPERIMENTAL OPTIMIZATION (Development) ---
-        box.separator()
-        exp_box = box.box()
-        exp_box.label(text="Experimental Optimization", icon='MODIFIER')
-        row = exp_box.row(align=True)
-        row.operator("rzm.inquisitor_cleanup", text="Clean Up", icon='BRUSH_DATA')
-        row.operator("rzm.real_compression", text="Compress", icon='SEQ_STRIP_DUPLICATE')
-        exp_box.label(text="Use with caution! Backups (.bak) will be created.", icon='INFO')
+        if scene.rzm_editor_mode == 'PRO':
+            box.separator()
+            exp_box = box.box()
+            exp_box.label(text="Experimental Optimization", icon='MODIFIER')
+            row = exp_box.row(align=True)
+            row.operator("rzm.inquisitor_cleanup", text="Clean Up", icon='BRUSH_DATA')
+            row.operator("rzm.real_compression", text="Compress", icon='SEQ_STRIP_DUPLICATE')
+            exp_box.label(text="Use with caution! Backups (.bak) will be created.", icon='INFO')
 
-        # Quick Update Toggles (Below the buttons for clarity)
-        q_row = box.row(align=True)
-        q_row.prop(settings, "quick_update_resources", text="Res", icon='IMAGE_DATA', toggle=True)
-        q_row.prop(settings, "quick_update_run_scripts", text="Scripts", icon='FILE_SCRIPT', toggle=True)
-        q_row.label(text="", icon='BLANK1') # Spacer
-        q_row.label(text=" (Quick Update Options)", icon='INFO')
-        
-        # --- Custom Scripts Management ---
-        script_box = box.column(align=True)
-        row = script_box.row(align=True)
-        icon = 'TRIA_DOWN' if settings.show_custom_scripts else 'TRIA_RIGHT'
-        row.prop(settings, "show_custom_scripts", text="POST-EXPORT SCRIPTS", icon=icon, toggle=True, emboss=False)
-        
-        if settings.show_custom_scripts:
-            # List of scripts
-            row = script_box.row()
-            row.template_list("RZM_UL_CustomScriptList", "", settings, "custom_scripts", settings, "custom_scripts_index", rows=3)
-            
-            # Side buttons
-            col = row.column(align=True)
-            col.operator("rzm.add_custom_script", text="", icon='ADD')
-            col.operator("rzm.remove_custom_script", text="", icon='REMOVE').index = settings.custom_scripts_index
-            col.separator()
-            op_up = col.operator("rzm.move_custom_script", text="", icon='TRIA_UP')
-            op_up.index = settings.custom_scripts_index
-            op_up.direction = 'UP'
-            op_down = col.operator("rzm.move_custom_script", text="", icon='TRIA_DOWN')
-            op_down.index = settings.custom_scripts_index
-            op_down.direction = 'DOWN'
-            
-            # Details for active script
-            if settings.custom_scripts and settings.custom_scripts_index >= 0:
-                try:
-                    active_script = settings.custom_scripts[settings.custom_scripts_index]
-                    script_box.prop(active_script, "path", text="")
-                    
-                    details = script_box.column(align=True)
-                    details.prop(active_script, "args", icon='CONSOLE')
-                    
-                    row = details.row(align=True)
-                    row.prop(active_script, "auto_input", toggle=True)
-                    row.prop(active_script, "use_timeout", toggle=True)
-                    if active_script.use_timeout:
-                        row.prop(active_script, "timeout", text="sec")
-                except IndexError:
-                    pass
+            # Quick Update Toggles (Below the buttons for clarity)
+            q_row = box.row(align=True)
+            q_row.prop(settings, "quick_update_resources", text="Res", icon='IMAGE_DATA', toggle=True)
+            q_row.prop(settings, "quick_update_run_scripts", text="Scripts", icon='FILE_SCRIPT', toggle=True)
+            q_row.label(text="", icon='BLANK1') # Spacer
+            q_row.label(text=" (Quick Update Options)", icon='INFO')
 
-        if game == 'EMULATOR':
-            box.label(text="Running in Emulator mode (No game addon needed)")
 
 
     def draw_captures_preview_ui(self, context, layout):
@@ -403,21 +332,22 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             return
 
         # --- MOD PRODUCER TIERS ---
-        box = layout.box()
-        box.label(text="Mod Producer Tiers", icon='FILE_CACHE')
-        
-        from ..operators.tier_ops import get_tier_ids
-        available_tiers = get_tier_ids(context)
-        if not available_tiers:
-            box.label(text="No tiers configured in Addon Prefs.", icon='INFO')
-        else:
-            active_tiers = {t.tier_id for t in target_obj.rzm_tier_list}
-            flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-            for tid in available_tiers:
-                is_active = tid in active_tiers
-                op_name = "rzm.remove_object_tier" if is_active else "rzm.add_object_tier"
-                op = flow.operator(op_name, text=tid, depress=is_active)
-                op.tier_id = tid
+        if context.scene.rzm_editor_mode == 'PRO':
+            box = layout.box()
+            box.label(text="Mod Producer Tiers", icon='FILE_CACHE')
+            
+            from ..operators.tier_ops import get_tier_ids
+            available_tiers = get_tier_ids(context)
+            if not available_tiers:
+                box.label(text="No tiers configured in Addon Prefs.", icon='INFO')
+            else:
+                active_tiers = {t.tier_id for t in target_obj.rzm_tier_list}
+                flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+                for tid in available_tiers:
+                    is_active = tid in active_tiers
+                    op_name = "rzm.remove_object_tier" if is_active else "rzm.add_object_tier"
+                    op = flow.operator(op_name, text=tid, depress=is_active)
+                    op.tier_id = tid
 
         # --- TOGGLES ---
         box = layout.box()
@@ -570,6 +500,10 @@ class VIEW3D_PT_RZM_AutoMenuCreator(bpy.types.Panel):
     bl_parent_id = "VIEW3D_PT_rz_constructor_panel"
     bl_order = 98 
 
+    @classmethod
+    def poll(cls, context):
+        return context.scene.rzm_editor_mode == 'PRO'
+
     def draw(self, context):
         layout = self.layout
         rzm = context.scene.rzm
@@ -607,6 +541,10 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
     bl_category = 'RZ Constructor'
     bl_parent_id = "VIEW3D_PT_rz_constructor_panel"
     bl_order = 99 
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.rzm_editor_mode == 'PRO'
 
     def draw(self, context):
         layout = self.layout
@@ -680,331 +618,436 @@ class RZM_UL_CustomScriptList(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text="", icon='FILE_SCRIPT')
 
-class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
-    bl_label = "RZ Construct Toolbox"
-    bl_idname = "VIEW3D_PT_rz_constructor_toolbox_panel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'RZ Constructor'
-    bl_order = 0
+
+def draw_toolbox_content(self, context):
+    layout = self.layout
+    scene = context.scene
+    rzm = scene.rzm
     
-    @classmethod
-    def poll(cls, context):
-        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
-        prefs = context.preferences.addons.get(addon_name)
-        return prefs and getattr(prefs.preferences, "move_to_npanel", False)
+    # 1. ALWAYS SHOW MESH PROPERTIES AT TOP
+    VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)
 
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        rzm = scene.rzm
-        
-        # 1. ALWAYS SHOW MESH PROPERTIES AT TOP
-        VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)
-        
-        layout.separator(factor=2.0)
-        
-        # 1.5 VIEWPORT UTILS
-        v_box = layout.box()
-        row = v_box.row(align=True)
-        row.label(text="Viewport Utils:", icon='TRANSFORM_ORIGINS')
-        row.operator("rzm.swap_elements", text="Swap Positions", icon='UV_SYNC_SELECT')
-
-        layout.separator(factor=1.0)
-        
-        # 2. PROJECT CONFIGURATION AT BOTTOM
-        box = layout.box()
-        box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
-        box.label(text="Run Links & Keybinds → Qt 'Run Links' panel", icon='INFO')
-        
-        # Tabs Selector inside the box
+    layout.separator(factor=1.0)
+    
+    # 2. PROJECT CONFIGURATION AT BOTTOM
+    box = layout.box()
+    box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
+    box.label(text="Run Links & Keybinds → Qt 'Run Links' panel", icon='INFO')
+    
+    # Tabs Selector inside the box
+    row = box.row(align=True)
+    row.prop(scene, "rzm_toolbox_tab", expand=True)
+    
+    tab = scene.rzm_toolbox_tab
+    
+    if tab == 'TOGGLES':
+        # Project Toggles
         row = box.row(align=True)
-        row.prop(scene, "rzm_toolbox_tab", expand=True)
-        
-        tab = scene.rzm_toolbox_tab
-        
-        if tab == 'TOGGLES':
-            # Project Toggles
-            row = box.row(align=True)
-            row.operator("rzm.add_toggle_definition", text="Add Toggle", icon='ADD')
-            row.operator("rzm.remove_toggle_definition", text="", icon='REMOVE')
-            box.template_list("RZM_UL_ToggleDefinitions", "", rzm, "toggle_definitions", context.scene, "rzm_active_toggle_def_index")
-        
-        elif tab == 'VARIABLES':
-            # Project Variables
-            row = box.row(align=True)
-            row.operator("rzm.add_value", text="Add Var", icon='ADD')
-            row.operator("rzm.remove_value", text="", icon='REMOVE')
-            row.separator()
-            row.operator("rzm.import_ini", text="", icon='IMPORT')
-            box.template_list("RZM_UL_Values", "", rzm, "rzm_values", context.scene, "rzm_active_value_index")
-            if rzm.rzm_values and 0 <= context.scene.rzm_active_value_index < len(rzm.rzm_values):
-                active_val = rzm.rzm_values[context.scene.rzm_active_value_index]
+        row.operator("rzm.add_toggle_definition", text="Add Toggle", icon='ADD')
+        row.operator("rzm.remove_toggle_definition", text="", icon='REMOVE')
+        box.template_list("RZM_UL_ToggleDefinitions", "", rzm, "toggle_definitions", context.scene, "rzm_active_toggle_def_index")
+    
+    elif tab == 'VARIABLES':
+        # Project Variables
+        row = box.row(align=True)
+        row.operator("rzm.add_value", text="Add Var", icon='ADD')
+        row.operator("rzm.remove_value", text="", icon='REMOVE')
+        row.separator()
+        row.operator("rzm.import_ini", text="", icon='IMPORT')
+        box.template_list("RZM_UL_Values", "", rzm, "rzm_values", context.scene, "rzm_active_value_index")
+        if rzm.rzm_values and 0 <= context.scene.rzm_active_value_index < len(rzm.rzm_values):
+            active_val = rzm.rzm_values[context.scene.rzm_active_value_index]
 
-                # --- Randomization & Range ---
-                rand_box = box.box()
-                rand_box.label(text="Randomization & Range:", icon='SHADERFX')
-                col_r = rand_box.column(align=True)
-                row_r = col_r.row(align=True)
-                row_r.prop(active_val, "val_min", text="Min")
-                row_r.prop(active_val, "val_max", text="Max")
-                rzm_addons = rzm.addons
-                invert = getattr(rzm_addons, 'invert_random_marking', False)
-                if invert:
-                    icon_r = 'CHECKBOX_HLT' if not active_val.mark_random else 'CHECKBOX_DEHLT'
-                    label_r = "Excluded from Randomize" if active_val.mark_random else "Included in Randomize"
-                else:
-                    icon_r = 'CHECKBOX_HLT' if active_val.mark_random else 'CHECKBOX_DEHLT'
-                    label_r = "Included in Randomize" if active_val.mark_random else "Excluded from Randomize"
-                col_r.prop(active_val, "mark_random", text=label_r, icon=icon_r)
+            # --- Randomization & Range ---
+            rand_box = box.box()
+            rand_box.label(text="Randomization & Range:", icon='SHADERFX')
+            col_r = rand_box.column(align=True)
+            row_r = col_r.row(align=True)
+            row_r.prop(active_val, "val_min", text="Min")
+            row_r.prop(active_val, "val_max", text="Max")
+            rzm_addons = rzm.addons
+            invert = getattr(rzm_addons, 'invert_random_marking', False)
+            if invert:
+                icon_r = 'CHECKBOX_HLT' if not active_val.mark_random else 'CHECKBOX_DEHLT'
+                label_r = "Excluded from Randomize" if active_val.mark_random else "Included in Randomize"
+            else:
+                icon_r = 'CHECKBOX_HLT' if active_val.mark_random else 'CHECKBOX_DEHLT'
+                label_r = "Included in Randomize" if active_val.mark_random else "Excluded from Randomize"
+            col_r.prop(active_val, "mark_random", text=label_r, icon=icon_r)
 
-                # NOTE: Run Link is bound per-element in the Qt Inspector, not here.
+            # NOTE: Run Link is bound per-element in the Qt Inspector, not here.
 
-                # --- Export Tiers ---
-                from ..operators.tier_ops import get_tier_ids
-                available = get_tier_ids(context)
-                if available:
-                    box.label(text="Export Tiers:")
-                    v_active = {t.tier_id for t in active_val.export_tiers}
-                    flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-                    for tid in available:
-                        is_act = tid in v_active
-                        op_str = "rzm.remove_value_tier" if is_act else "rzm.add_value_tier"
-                        op = flow.operator(op_str, text=tid, depress=is_act)
-                        op.value_index = context.scene.rzm_active_value_index
-                        op.tier_id = tid
+            # --- Export Tiers ---
+            from ..operators.tier_ops import get_tier_ids
+            available = get_tier_ids(context)
+            if available:
+                box.label(text="Export Tiers:")
+                v_active = {t.tier_id for t in active_val.export_tiers}
+                flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+                for tid in available:
+                    is_act = tid in v_active
+                    op_str = "rzm.remove_value_tier" if is_act else "rzm.add_value_tier"
+                    op = flow.operator(op_str, text=tid, depress=is_act)
+                    op.value_index = context.scene.rzm_active_value_index
+                    op.tier_id = tid
 
-        elif tab == 'SHAPES':
-            # --- LEGACY SYSTEM (RZMShape) ---
-            row = box.row(align=True)
-            row.operator("rzm.add_shape", text="Add Shape", icon='ADD')
-            row.operator("rzm.remove_shape", text="", icon='REMOVE')
-            box.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
+    elif tab == 'SHAPES':
+        # --- LEGACY SYSTEM (RZMShape) ---
+        row = box.row(align=True)
+        row.operator("rzm.add_shape", text="Add Shape", icon='ADD')
+        row.operator("rzm.remove_shape", text="", icon='REMOVE')
+        box.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
 
-            if rzm.shapes and 0 <= context.scene.rzm_active_shape_index < len(rzm.shapes):
-                active_shape = rzm.shapes[context.scene.rzm_active_shape_index]
-                from ..operators.tier_ops import get_tier_ids
-                available = get_tier_ids(context)
-                if available:
-                    box.label(text="Export Tiers:")
-                    s_active = {t.tier_id for t in active_shape.export_tiers}
-                    flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-                    for tid in available:
-                        is_act = tid in s_active
-                        op_str = "rzm.remove_shape_tier" if is_act else "rzm.add_shape_tier"
-                        op = flow.operator(op_str, text=tid, depress=is_act)
-                        op.shape_index = context.scene.rzm_active_shape_index
-                        op.tier_id = tid
+        if rzm.shapes and 0 <= context.scene.rzm_active_shape_index < len(rzm.shapes):
+            active_shape = rzm.shapes[context.scene.rzm_active_shape_index]
+            from ..operators.tier_ops import get_tier_ids
+            available = get_tier_ids(context)
+            if available:
+                box.label(text="Export Tiers:")
+                s_active = {t.tier_id for t in active_shape.export_tiers}
+                flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+                for tid in available:
+                    is_act = tid in s_active
+                    op_str = "rzm.remove_shape_tier" if is_act else "rzm.add_shape_tier"
+                    op = flow.operator(op_str, text=tid, depress=is_act)
+                    op.shape_index = context.scene.rzm_active_shape_index
+                    op.tier_id = tid
 
-                # --- Shape Properties ---
-                s_box = box.box()
-                s_box.prop(active_shape, "shape_name")
-                s_box.prop(active_shape, "shape_type")
-                s_box.prop(active_shape, "force_export")
-                
-                if active_shape.shape_type == 'Anim':
-                    s_box.prop(active_shape, "anim_condition")
-
-                # --- Shape Keys List ---
-                s_box.separator()
-                row_k = s_box.row()
-                row_k.label(text="Shape Keyframes:", icon='SHAPEKEY_DATA')
-                op_add = row_k.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
-                op_add.shape_index = context.scene.rzm_active_shape_index
-                op_rem = row_k.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
-                op_rem.shape_index = context.scene.rzm_active_shape_index
-                op_rem.key_index = context.scene.rzm_active_shape_key_index
-                
-                s_box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
-                
-                if active_shape.shape_keys and 0 <= context.scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
-                    key = active_shape.shape_keys[context.scene.rzm_active_shape_key_index]
-                    sbox = s_box.box()
-                    sbox.prop(key, "key_name")
-                    sbox.prop(key, "mode")
-                    if key.mode == 'ADVANCED':
-                        sbox.prop(key, "input_range_min")
-                        sbox.prop(key, "input_range_max")
-                        sbox.prop(key, "multiplier")
-                    if active_shape.shape_type == 'Anim':
-                        sbox.separator()
-                        sbox.label(text="Animation Settings:")
-                        sbox.prop(key, "anim_type_index")
-                        sbox.prop(key, "anim_start_frame")
-                        sbox.prop(key, "anim_end_frame")
-
-        elif tab == 'NATIVE_SHAPES':
-            # --- NEW SYSTEM (Discovery & Puppet Master) ---
-            box.prop(rzm.addons, "export_shapekeys", text="Enable Native Shapes Export", icon='OUTLINER_OB_MESH')
+            # --- Shape Properties ---
+            s_box = box.box()
+            s_box.prop(active_shape, "shape_name")
+            s_box.prop(active_shape, "shape_type")
+            s_box.prop(active_shape, "force_export")
             
-            if rzm.addons.export_shapekeys:
-                coll_box = box.box()
-                coll_box.row().label(text="Discovery Collections:", icon='GROUP')
-                row_c = coll_box.row(align=True)
-                row_c.operator("rzm.add_shape_discovery_collection", text="Add Slot", icon='ADD')
-                row_c.operator("rzm.remove_shape_discovery_collection", text="", icon='REMOVE')
-                coll_box.template_list("RZM_UL_ShapeDiscoveryCollections", "", rzm, "shape_discovery_collections", scene, "rzm_active_shape_coll_index")
-                
-                box.separator()
-                row = box.row(align=True)
-                row.operator("rzm.shape_key_export", text="Discover", icon='FILE_REFRESH')
-                row.operator("rzm.cleanup_trash_shapes", text="Cleanup Trash", icon='TRASH')
-                
-                # Bulk Toggles
-                en = row.operator("rzm.set_all_shape_export", text="All ON", icon='CHECKBOX_HLT')
-                en.state = True
-                dis = row.operator("rzm.set_all_shape_export", text="All OFF", icon='CHECKBOX_DEHLT')
-                dis.state = False
+            if active_shape.shape_type == 'Anim':
+                s_box.prop(active_shape, "anim_condition")
 
-                row.operator("rzm.puppet_master_bake", text="Bake ALL", icon='NONE')
-                row.operator("rzm.puppet_master_bake_single", text="Bake THIS", icon='SHAPEKEY_DATA')
-                
-                # --- GLOBAL VIEWPORT MASTER ---
-                gm_box = box.box()
-                gm_box.label(text="Global Sync Controls (Viewport Only):", icon='VIEW3D')
-                row_g = gm_box.row(align=True)
-                row_g.prop(rzm, "master_shape_value", text="Master Value")
-                op_apply = row_g.operator("rzm.global_shape_master", text="Force All", icon='PLAY')
-                op_apply.value = rzm.master_shape_value
-                
-                op_reset = gm_box.row().operator("rzm.global_shape_master", text="Reset All Configurations to 0.0", icon='X')
-                op_reset.value = 0.0
+            # --- Shape Keys List ---
+            s_box.separator()
+            row_k = s_box.row()
+            row_k.label(text="Shape Keyframes:", icon='SHAPEKEY_DATA')
+            op_add = row_k.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
+            op_add.shape_index = context.scene.rzm_active_shape_index
+            op_rem = row_k.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
+            op_rem.shape_index = context.scene.rzm_active_shape_index
+            op_rem.key_index = context.scene.rzm_active_shape_key_index
+            
+            s_box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
+            
+            if active_shape.shape_keys and 0 <= context.scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
+                key = active_shape.shape_keys[context.scene.rzm_active_shape_key_index]
+                sbox = s_box.box()
+                sbox.prop(key, "key_name")
+                sbox.prop(key, "mode")
+                if key.mode == 'ADVANCED':
+                    sbox.prop(key, "input_range_min")
+                    sbox.prop(key, "input_range_max")
+                    sbox.prop(key, "multiplier")
+                if active_shape.shape_type == 'Anim':
+                    sbox.separator()
+                    sbox.label(text="Animation Settings:")
+                    sbox.prop(key, "anim_type_index")
+                    sbox.prop(key, "anim_start_frame")
+                    sbox.prop(key, "anim_end_frame")
 
-                box.separator()
-                box.label(text="Discovered Configurations:", icon='SHAPEKEY_DATA')
-                box.template_list("RZM_UL_ShapeConfigs", "", rzm, "shape_configs", scene, "rzm_active_shape_config_index")
-                
-                if rzm.shape_configs and 0 <= scene.rzm_active_shape_config_index < len(rzm.shape_configs):
-                    active_conf = rzm.shape_configs[scene.rzm_active_shape_config_index]
-                    c_box = box.box()
-                    c_box.prop(active_conf, "shape_name")
-                    
-                    row = c_box.row(align=True)
-                    row.prop(active_conf, "disable_export", text="Disable Export", icon='HIDE_OFF')
-                    row.prop(active_conf, "force_export", text="Force Export", icon='IMPORT')
-                    
-                    c_box.prop(active_conf, "shape_type")
-                    
-                    # Core values for all types
-                    c_box.prop(active_conf, "sync_value", text="Sync Value (Global Name)", slider=True)
-                    m_row = c_box.row(align=True)
-                    m_row.prop(active_conf, "multiplier")
-                    m_row.prop(active_conf, "inverse")
+    elif tab == 'NATIVE_SHAPES':
+        # --- NEW SYSTEM (Discovery & Puppet Master) ---
+        box.prop(rzm.addons, "export_shapekeys", text="Enable Native Shapes Export", icon='OUTLINER_OB_MESH')
+        
+        if rzm.addons.export_shapekeys:
+            coll_box = box.box()
+            coll_box.row().label(text="Discovery Collections:", icon='GROUP')
+            row_c = coll_box.row(align=True)
+            row_c.operator("rzm.add_shape_discovery_collection", text="Add Slot", icon='ADD')
+            row_c.operator("rzm.remove_shape_discovery_collection", text="", icon='REMOVE')
+            coll_box.template_list("RZM_UL_ShapeDiscoveryCollections", "", rzm, "shape_discovery_collections", scene, "rzm_active_shape_coll_index")
+            
+            box.separator()
+            row = box.row(align=True)
+            row.operator("rzm.shape_key_export", text="Discover", icon='FILE_REFRESH')
+            row.operator("rzm.cleanup_trash_shapes", text="Cleanup Trash", icon='TRASH')
+            
+            # Bulk Toggles
+            en = row.operator("rzm.set_all_shape_export", text="All ON", icon='CHECKBOX_HLT')
+            en.state = True
+            dis = row.operator("rzm.set_all_shape_export", text="All OFF", icon='CHECKBOX_DEHLT')
+            dis.state = False
 
-                    # --- Input Range Remap ---
-                    range_box = c_box.box()
-                    rmin = active_conf.input_range_min
-                    rmax = active_conf.input_range_max
-                    uses_range = (abs(rmin) > 0.001 or abs(rmax - 1.0) > 0.001)
-                    range_header = range_box.row(align=True)
-                    range_header.label(text="Input Range:", icon='ARROW_LEFTRIGHT')
-                    if uses_range:
-                        range_header.label(text=f"[{rmin:.3f} → {rmax:.3f}] ↦ [0, 1]", icon='INFO')
-                    else:
-                        range_header.label(text="Full Range (0 → 1)", icon='CHECKMARK')
-                    r_row = range_box.row(align=True)
-                    r_row.prop(active_conf, "input_range_min", text="From")
-                    r_row.prop(active_conf, "input_range_max", text="To")
-                    
-                    if active_conf.shape_type == 'Anim':
-                        anim_box = c_box.box()
-                        anim_box.label(text="Animation Settings:")
-                        anim_box.prop(active_conf, "anim_type_index")
-                        
-                        row_s = anim_box.row(align=True)
-                        row_s.prop(active_conf, "anim_start_frame")
-                        op_s = row_s.operator("rzm.set_anim_frame", text="", icon='CURSOR')
-                        op_s.target = 'start'
-                        
-                        row_e = anim_box.row(align=True)
-                        row_e.prop(active_conf, "anim_end_frame")
-                        op_e = row_e.operator("rzm.set_anim_frame", text="", icon='CURSOR')
-                        op_e.target = 'end'
-                        
-                        over_box = anim_box.box()
-                        over_box.label(text="Manual Override (Anim -> Linear):")
-                        over_box.prop(active_conf, "override_switch_condition")
-                        over_box.prop(active_conf, "override_switch_value_link")
-                        
-                    c_box.prop(active_conf, "value_link")
-                    c_box.prop(active_conf, "condition")
-                    c_box.prop(active_conf, "mark_random")
-                    
-                    obj_box = c_box.box()
-                    row_o = obj_box.row()
-                    row_o.label(text="Affected Objects:", icon='OUTLINER_OB_MESH')
-                    row_o.label(text=str(len(active_conf.affected_objects)))
-                    op_sel = row_o.operator("rzm.select_affected_objects", text="Select All", icon='RESTRICT_SELECT_OFF')
-                    op_sel.config_index = scene.rzm_active_shape_config_index
-
-                    for ref in active_conf.affected_objects[:5]:
-                        row_obj = obj_box.row(align=True)
-                        row_obj.label(text=ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "<None>"), icon='DOT')
-                    if len(active_conf.affected_objects) > 5:
-                        obj_box.label(text="...")
-                
-                pm_box = box.box()
-                pm_box.label(text="Puppet Master Baking (v10.1):", icon='ARMATURE_DATA')
-                pm_box.prop(rzm.addons, "puppet_master_per_component", text="Active Component Only")
-                pm_box.prop(rzm.addons, "puppet_master_limit", text="Match Limit")
-                pm_box.operator("rzm.puppet_master_bake", text="Bake SK Buffers", icon='MOD_BUILD')
-
-        elif tab == 'KEYBINDS':
-            # ── Run Links (named CommandLists) ─────────────────────────────
-            rl_box = box.box()
-            rl_row = rl_box.row(align=True)
-            rl_row.label(text="Run Links:", icon='PLAY')
-            rl_row.operator("rzm.import_ini", text="Import .ini", icon='IMPORT')
-            rl_box.template_list(
-                "RZM_UL_RunLinks", "",
-                rzm, "run_links",
-                context.scene, "rzm_active_run_link_index",
-                rows=3
-            )
-            if rzm.run_links and 0 <= context.scene.rzm_active_run_link_index < len(rzm.run_links):
-                active_rl = rzm.run_links[context.scene.rzm_active_run_link_index]
-                rl_detail = rl_box.box()
-                rl_detail.prop(active_rl, "name", text="ID")
-                rl_detail.prop(active_rl, "description", text="Desc")
-                rl_detail.label(text="Body (CommandList lines):", icon='TEXT')
-                rl_detail.prop(active_rl, "body", text="")
+            row.operator("rzm.puppet_master_bake", text="Bake ALL", icon='NONE')
+            row.operator("rzm.puppet_master_bake_single", text="Bake THIS", icon='SHAPEKEY_DATA')
+            
+            # --- GLOBAL VIEWPORT MASTER ---
+            gm_box = box.box()
+            gm_box.label(text="Global Sync Controls (Viewport Only):", icon='VIEW3D')
+            row_g = gm_box.row(align=True)
+            row_g.prop(rzm, "master_shape_value", text="Master Value")
+            op_apply = row_g.operator("rzm.global_shape_master", text="Force All", icon='PLAY')
+            op_apply.value = rzm.master_shape_value
+            
+            op_reset = gm_box.row().operator("rzm.global_shape_master", text="Reset All Configurations to 0.0", icon='X')
+            op_reset.value = 0.0
 
             box.separator()
+            box.label(text="Discovered Configurations:", icon='SHAPEKEY_DATA')
+            box.template_list("RZM_UL_ShapeConfigs", "", rzm, "shape_configs", scene, "rzm_active_shape_config_index")
+            
+            if rzm.shape_configs and 0 <= scene.rzm_active_shape_config_index < len(rzm.shape_configs):
+                active_conf = rzm.shape_configs[scene.rzm_active_shape_config_index]
+                c_box = box.box()
+                c_box.prop(active_conf, "shape_name")
+                
+                row = c_box.row(align=True)
+                row.prop(active_conf, "disable_export", text="Disable Export", icon='HIDE_OFF')
+                row.prop(active_conf, "force_export", text="Force Export", icon='IMPORT')
+                
+                c_box.prop(active_conf, "shape_type")
+                
+                # Core values for all types
+                c_box.prop(active_conf, "sync_value", text="Sync Value (Global Name)", slider=True)
+                m_row = c_box.row(align=True)
+                m_row.prop(active_conf, "multiplier")
+                m_row.prop(active_conf, "inverse")
 
-            # ── Keybinds ───────────────────────────────────────────────────
-            kb_row = box.row(align=True)
-            kb_row.label(text="Keybinds:", icon='EVENT_SPACEKEY')
-            box.template_list(
-                "RZM_UL_Keybinds", "",
-                rzm, "keybinds",
-                context.scene, "rzm_active_keybind_index",
-                rows=4
-            )
-            if rzm.keybinds and 0 <= context.scene.rzm_active_keybind_index < len(rzm.keybinds):
-                active_kb = rzm.keybinds[context.scene.rzm_active_keybind_index]
-                kb_detail = box.box()
+                # --- Input Range Remap ---
+                range_box = c_box.box()
+                rmin = active_conf.input_range_min
+                rmax = active_conf.input_range_max
+                uses_range = (abs(rmin) > 0.001 or abs(rmax - 1.0) > 0.001)
+                range_header = range_box.row(align=True)
+                range_header.label(text="Input Range:", icon='ARROW_LEFTRIGHT')
+                if uses_range:
+                    range_header.label(text=f"[{rmin:.3f} → {rmax:.3f}] ↦ [0, 1]", icon='INFO')
+                else:
+                    range_header.label(text="Full Range (0 → 1)", icon='CHECKMARK')
+                r_row = range_box.row(align=True)
+                r_row.prop(active_conf, "input_range_min", text="From")
+                r_row.prop(active_conf, "input_range_max", text="To")
+                
+                if active_conf.shape_type == 'Anim':
+                    anim_box = c_box.box()
+                    anim_box.label(text="Animation Settings:")
+                    anim_box.prop(active_conf, "anim_type_index")
+                    
+                    row_s = anim_box.row(align=True)
+                    row_s.prop(active_conf, "anim_start_frame")
+                    op_s = row_s.operator("rzm.set_anim_frame", text="", icon='CURSOR')
+                    op_s.target = 'start'
+                    
+                    row_e = anim_box.row(align=True)
+                    row_e.prop(active_conf, "anim_end_frame")
+                    op_e = row_e.operator("rzm.set_anim_frame", text="", icon='CURSOR')
+                    op_e.target = 'end'
+                    
+                    over_box = anim_box.box()
+                    over_box.label(text="Manual Override (Anim -> Linear):")
+                    over_box.prop(active_conf, "override_switch_condition")
+                    over_box.prop(active_conf, "override_switch_value_link")
+                    
+                c_box.prop(active_conf, "value_link")
+                c_box.prop(active_conf, "condition")
+                c_box.prop(active_conf, "mark_random")
+                
+                obj_box = c_box.box()
+                row_o = obj_box.row()
+                row_o.label(text="Affected Objects:", icon='OUTLINER_OB_MESH')
+                row_o.label(text=str(len(active_conf.affected_objects)))
+                op_sel = row_o.operator("rzm.select_affected_objects", text="Select All", icon='RESTRICT_SELECT_OFF')
+                op_sel.config_index = scene.rzm_active_shape_config_index
 
-                col_kb = kb_detail.column(align=True)
-                col_kb.prop(active_kb, "name",    text="Name")
-                col_kb.prop(active_kb, "key",     text="Key")
-                col_kb.prop(active_kb, "back",    text="Back")
-                col_kb.prop(active_kb, "type",    text="Type")
-                col_kb.separator()
-                col_kb.prop(active_kb, "only_menu_active")
-                col_kb.prop(active_kb, "condition", text="Condition")
-                col_kb.separator()
-                col_kb.prop(active_kb, "run_id",  text="Run Link ID")
+                for ref in active_conf.affected_objects[:5]:
+                    row_obj = obj_box.row(align=True)
+                    row_obj.label(text=ref.obj_name if ref.obj_name else (ref.obj.name if ref.obj else "<None>"), icon='DOT')
+                if len(active_conf.affected_objects) > 5:
+                    obj_box.label(text="...")
+            
+            pm_box = box.box()
+            pm_box.label(text="Puppet Master Baking (v10.1):", icon='ARMATURE_DATA')
+            pm_box.prop(rzm.addons, "puppet_master_per_component", text="Active Component Only")
+            pm_box.prop(rzm.addons, "puppet_master_limit", text="Match Limit")
+            pm_box.operator("rzm.puppet_master_bake", text="Bake SK Buffers", icon='MOD_BUILD')
 
-                # Reserve fields (collapsed)
-                res_box = kb_detail.box()
-                res_box.label(text="Reserved (3DMigoto advanced):", icon='SETTINGS')
-                c2 = res_box.column(align=True)
-                c2.prop(active_kb, "wrap")
-                c2.prop(active_kb, "smart")
-                c2.prop(active_kb, "delay")
-                c2.prop(active_kb, "release_delay")
-                c2.prop(active_kb, "transition")
-                c2.prop(active_kb, "transition_type")
+    elif tab == 'KEYBINDS':
+        # ── Run Links (named CommandLists) ─────────────────────────────
+        rl_box = box.box()
+        rl_row = rl_box.row(align=True)
+        rl_row.label(text="Run Links:", icon='PLAY')
+        rl_row.operator("rzm.import_ini", text="Import .ini", icon='IMPORT')
+        rl_box.template_list(
+            "RZM_UL_RunLinks", "",
+            rzm, "run_links",
+            context.scene, "rzm_active_run_link_index",
+            rows=3
+        )
+        if rzm.run_links and 0 <= context.scene.rzm_active_run_link_index < len(rzm.run_links):
+            active_rl = rzm.run_links[context.scene.rzm_active_run_link_index]
+            rl_detail = rl_box.box()
+            rl_detail.prop(active_rl, "name", text="ID")
+            rl_detail.prop(active_rl, "description", text="Desc")
+            rl_detail.label(text="Body (CommandList lines):", icon='TEXT')
+            rl_detail.prop(active_rl, "body", text="")
+
+        box.separator()
+
+        # ── Keybinds ───────────────────────────────────────────────────
+        kb_row = box.row(align=True)
+        kb_row.label(text="Keybinds:", icon='EVENT_SPACEKEY')
+        box.template_list(
+            "RZM_UL_Keybinds", "",
+            rzm, "keybinds",
+            context.scene, "rzm_active_keybind_index",
+            rows=4
+        )
+        if rzm.keybinds and 0 <= context.scene.rzm_active_keybind_index < len(rzm.keybinds):
+            active_kb = rzm.keybinds[context.scene.rzm_active_keybind_index]
+            kb_detail = box.box()
+
+            col_kb = kb_detail.column(align=True)
+            col_kb.prop(active_kb, "name",    text="Name")
+            col_kb.prop(active_kb, "key",     text="Key")
+            col_kb.prop(active_kb, "back",    text="Back")
+            col_kb.prop(active_kb, "type",    text="Type")
+            col_kb.separator()
+            col_kb.prop(active_kb, "only_menu_active")
+            col_kb.prop(active_kb, "condition", text="Condition")
+            col_kb.separator()
+            col_kb.prop(active_kb, "run_id",  text="Run Link ID")
+
+            # Reserve fields (collapsed)
+            res_box = kb_detail.box()
+            res_box.label(text="Reserved (3DMigoto advanced):", icon='SETTINGS')
+            c2 = res_box.column(align=True)
+            c2.prop(active_kb, "wrap")
+            c2.prop(active_kb, "smart")
+            c2.prop(active_kb, "delay")
+            c2.prop(active_kb, "release_delay")
+            c2.prop(active_kb, "transition")
+            c2.prop(active_kb, "transition_type")
+
+    elif tab == 'BLEND_RESIZE':
+        # --- BLEND RESIZE SYSTEM ---
+        br = rzm.addons.blend_resize
+        
+        header_row = box.row()
+        # Left side: Active toggle
+        header_row.prop(br, "is_enabled", text="Active", toggle=True)
+        
+        # Right side: Config Import/Export
+        config_row = header_row.row(align=True)
+        config_row.alignment = 'RIGHT'
+        config_row.operator("rzm.import_config", text="", icon='IMPORT')
+        config_row.operator("rzm.export_config", text="", icon='EXPORT').config_type = 'BLEND_RESIZE'
+
+        if br.is_enabled:
+            # 1. Master Groups (12 Slots)
+            m_box = box.box()
+            m_box.label(text="Master Resize Groups (12 Slots)", icon='GROUP_BONE')
+            
+            m_box.row().operator("rzm.br_add_group", text="Add Group", icon='ADD')
+            
+            for i, group in enumerate(br.groups):
+                row = m_box.row(align=True)
+                row.prop(group, "slot_id", text="")
+                row.prop(group, "name", text="")
+                row.prop(group, "value_link", text="Link")
+                row.operator("rzm.br_remove_group", text="", icon='REMOVE').index = i
+                
+            # 2. Component Mappings
+            c_box = box.box()
+            c_box.label(text="Component Mappings", icon='NONE')
+            
+            c_box.row().operator("rzm.br_add_comp", text="Add Component", icon='ADD')
+            
+            col = c_box.column(align=True)
+            for i, comp in enumerate(br.component_mappings):
+                row = col.row(align=True)
+                row.prop(comp, "name", text="")
+                
+                if scene.rzm_active_br_comp_index == i:
+                    row.label(icon='CHECKMARK')
+                else:
+                    row.operator("rzm.br_select_comp", text="Select").index = i
+                    
+                row.operator("rzm.br_remove_comp", text="", icon='REMOVE').index = i
+
+            # 3. Baked Layers for active component
+            if 0 <= scene.rzm_active_br_comp_index < len(br.component_mappings):
+                comp_idx = scene.rzm_active_br_comp_index
+                active_comp = br.component_mappings[comp_idx]
+                
+                l_box_root = box.box()
+                header = l_box_root.row()
+                header.label(text=f"Baked Layers: {active_comp.name}", icon='RENDER_ANIMATION')
+                
+                header.operator("rzm.br_bake_layer", text="Bake from Active Bones", icon='FILE_REFRESH').comp_index = comp_idx
+                
+                l_box_root.row().operator("rzm.br_add_layer", text="Add Empty Layer", icon='ADD')
+                
+                for i, layer in enumerate(active_comp.layers):
+                    l_box = l_box_root.box()
+                    row = l_box.row()
+                    row.prop(layer, "name", text="")
+                    
+                    group_name = "None"
+                    for g in br.groups:
+                        if g.slot_id == layer.slot_id:
+                            group_name = g.name
+                            break
+                    
+                    row.prop(layer, "slot_id", text="Slot")
+                    row.label(text=group_name)
+                    row.label(text=f"Bones: {layer.bone_count}")
+                    op_rem = row.operator("rzm.br_remove_layer", text="", icon='REMOVE')
+                    op_rem.comp_index = comp_idx
+                    op_rem.layer_index = i
+                    
+                    # Layer Details (Coordinates)
+                    header_c = l_box.row()
+                    header_c.label(text="Spatial Anchor (Coordinates)", icon='EMPTY_AXIS')
+                    cop_row = header_c.row(align=True)
+                    op_c = cop_row.operator("rzm.br_copy_coords", icon='COPYDOWN', text="")
+                    op_c.comp_index = comp_idx
+                    op_c.layer_index = i
+                    op_p = cop_row.operator("rzm.br_paste_coords", icon='PASTEDOWN', text="")
+                    op_p.comp_index = comp_idx
+                    op_p.layer_index = i
+
+                    flow = l_box.grid_flow(columns=3, align=True)
+                    flow.prop(layer, "head_mapped", text="Head")
+                    flow.prop(layer, "bone_x_mapped", text="X Axis")
+                    flow.prop(layer, "bone_y_mapped", text="Y Axis")
+                    
+                    # Bones inside layer
+                    b_row = l_box.row()
+                    b_row.label(text="Bones:")
+                    b_op = b_row.operator("rzm.br_add_layer_bone", text="", icon='ADD')
+                    b_op.comp_index = comp_idx
+                    b_op.layer_index = i
+                    
+                    for j, bone in enumerate(layer.bones):
+                        b_r = l_box.row(align=True)
+                        b_r.prop(bone, "bone_index", text="ID")
+                        
+                        b_r.prop(bone, "scale_mapped", text="S")
+                        b_r.prop(bone, "offset_mapped", text="T")
+                        b_r.prop(bone, "rotation_euler_mapped", text="R")
+
+                        c_op = b_r.operator("rzm.br_copy_bone_coords", text="", icon='COPYDOWN')
+                        c_op.comp_index = comp_idx
+                        c_op.layer_index = i
+                        c_op.bone_index = j
+                        
+                        p_op = b_r.operator("rzm.br_paste_bone_coords", text="", icon='PASTEDOWN')
+                        p_op.comp_index = comp_idx
+                        p_op.layer_index = i
+                        p_op.bone_index = j
+
+                        b_rm = b_r.operator("rzm.br_remove_layer_bone", text="", icon='REMOVE')
+                        b_rm.comp_index = comp_idx
+                        b_rm.layer_index = i
+                        b_rm.bone_index = j
+
+            box.separator()
+            box.label(text="Export saves configurations inside the addon's .ini output. No external buffers needed.", icon='INFO')
 
         elif tab == 'BLEND_RESIZE':
             # --- BLEND RESIZE SYSTEM ---
@@ -1141,6 +1184,42 @@ class VIEW3D_PT_RZConstructorToolboxPanel(bpy.types.Panel):
                 box.label(text="Export saves configurations inside the addon's .ini output. No external buffers needed.", icon='INFO')
 
 
+class VIEW3D_PT_RZConstructorToolboxPanel_Internal(bpy.types.Panel):
+    bl_label = "RZ Construct Toolbox"
+    bl_idname = "VIEW3D_PT_rz_constructor_toolbox_panel_internal"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'RZ Constructor'
+    bl_order = 100
+
+    @classmethod
+    def poll(cls, context):
+        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+        prefs = context.preferences.addons.get(addon_name)
+        return prefs and not getattr(prefs.preferences, "move_to_npanel", False)
+
+    def draw(self, context):
+        draw_toolbox_content(self, context)
+
+
+class VIEW3D_PT_RZConstructorToolboxPanel_External(bpy.types.Panel):
+    bl_label = "RZ Construct Toolbox"
+    bl_idname = "VIEW3D_PT_rz_constructor_toolbox_panel_external"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'RZ Constructor Toolbox'
+    bl_order = 0
+
+    @classmethod
+    def poll(cls, context):
+        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+        prefs = context.preferences.addons.get(addon_name)
+        return prefs and getattr(prefs.preferences, "move_to_npanel", True)
+
+    def draw(self, context):
+        draw_toolbox_content(self, context)
+
+
 
 class VIEW3D_PT_RZModProducerBuild(bpy.types.Panel):
     bl_label = "Mod Producer Build"
@@ -1149,6 +1228,10 @@ class VIEW3D_PT_RZModProducerBuild(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = "RZ Constructor"
     bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.rzm_editor_mode == 'PRO'
 
     def draw(self, context):
         layout = self.layout
@@ -1204,6 +1287,10 @@ class RZM_PT_ObjectTiers(bpy.types.Panel):
     bl_context = "object"
     bl_options = {'DEFAULT_CLOSED'}
 
+    @classmethod
+    def poll(cls, context):
+        return context.scene.rzm_editor_mode == 'PRO'
+
     def draw(self, context):
         layout = self.layout
         obj = context.active_object
@@ -1224,6 +1311,114 @@ class RZM_PT_ObjectTiers(bpy.types.Panel):
             op.tier_id = tid
 
 
+class VIEW3D_PT_RZConstructorAdvancedPanel(bpy.types.Panel):
+    bl_label = "RZ Constructor Advanced"
+    bl_idname = "VIEW3D_PT_rz_constructor_advanced_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'RZ Constructor'
+    bl_parent_id = "VIEW3D_PT_rz_constructor_panel"
+    bl_order = 5
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.rzm_editor_mode == 'PRO'
+
+    def draw(self, context):
+        self.draw_info_block(context, self.layout)
+
+    def draw_info_block(self, context, layout):
+        scene = context.scene
+        rzm = scene.rzm
+        game = rzm.game.selection
+        if not hasattr(rzm, "export_settings") or not rzm.export_settings:
+            return
+        settings = rzm.export_settings
+        
+        box = layout.box()
+        box.label(text="Export Management", icon='INFO')
+        
+        # --- GLOBAL ARTIST INFO ---
+        from ..operators.tier_ops import get_prefs
+        prefs = get_prefs(context)
+        if prefs:
+            row = box.row()
+            row.label(text=f"Author: {prefs.author_name}", icon='USER')
+            row.operator("wm.url_open", text="Logo", icon='IMAGE_DATA').url = prefs.mod_logo_url
+            row.operator("wm.url_open", text="Banner", icon='IMAGE_DATA').url = prefs.mod_banner_url
+
+        # --- MOD INFO / METADATA ---
+        meta_box = layout.box()
+        meta_box.label(text="Mod Details (Meta Data)", icon='GREASEPENCIL')
+        
+        meta = rzm.meta_data
+        col = meta_box.column(align=True)
+        col.prop(meta, "character_name")
+        col.prop(meta, "outfit_name")
+        col.prop(meta, "version_num")
+        
+        # Author stays global, but we show it here for context
+        col.separator()
+        row = col.row()
+        row.label(text=f"Global Author: {prefs.author_name}" if prefs else "Author: UNKNOWN", icon='USER')
+        # In Blender we usually just tell them to check prefs.
+        
+        col.separator()
+        col.prop(meta, "requirements")
+        col.prop(meta, "description", text="Lore")
+        col.prop(meta, "menu_keybind")
+        col.prop(meta, "community_respect")
+
+        col.separator()
+        col.prop(meta, "requirements")
+        col.prop(meta, "description", text="Lore")
+        col.prop(meta, "menu_keybind")
+        col.prop(meta, "community_respect")
+        
+        # --- Custom Scripts Management ---
+        script_box = box.column(align=True)
+        row = script_box.row(align=True)
+        icon = 'TRIA_DOWN' if settings.show_custom_scripts else 'TRIA_RIGHT'
+        row.prop(settings, "show_custom_scripts", text="POST-EXPORT SCRIPTS", icon=icon, toggle=True, emboss=False)
+        
+        if settings.show_custom_scripts:
+            # List of scripts
+            row = script_box.row()
+            row.template_list("RZM_UL_CustomScriptList", "", settings, "custom_scripts", settings, "custom_scripts_index", rows=3)
+            
+            # Side buttons
+            col = row.column(align=True)
+            col.operator("rzm.add_custom_script", text="", icon='ADD')
+            col.operator("rzm.remove_custom_script", text="", icon='REMOVE').index = settings.custom_scripts_index
+            col.separator()
+            op_up = col.operator("rzm.move_custom_script", text="", icon='TRIA_UP')
+            op_up.index = settings.custom_scripts_index
+            op_up.direction = 'UP'
+            op_down = col.operator("rzm.move_custom_script", text="", icon='TRIA_DOWN')
+            op_down.index = settings.custom_scripts_index
+            op_down.direction = 'DOWN'
+            
+            # Details for active script
+            if settings.custom_scripts and settings.custom_scripts_index >= 0:
+                try:
+                    active_script = settings.custom_scripts[settings.custom_scripts_index]
+                    script_box.prop(active_script, "path", text="")
+                    
+                    details = script_box.column(align=True)
+                    details.prop(active_script, "args", icon='CONSOLE')
+                    
+                    row = details.row(align=True)
+                    row.prop(active_script, "auto_input", toggle=True)
+                    row.prop(active_script, "use_timeout", toggle=True)
+                    if active_script.use_timeout:
+                        row.prop(active_script, "timeout", text="sec")
+                except IndexError:
+                    pass
+
+        if game == 'EMULATOR':
+            box.label(text="Running in Emulator mode (No game addon needed)")
+
+
 classes_to_register = [
     RZM_UL_CustomScriptList,
     RZM_UL_Values,
@@ -1237,9 +1432,11 @@ classes_to_register = [
     RZM_MT_AssignToggleMenu,
     RZM_MT_AssignTexSlotMenu,
     VIEW3D_PT_RZConstructorPanel,
+    VIEW3D_PT_RZConstructorAdvancedPanel,
     VIEW3D_PT_RZM_AutoMenuCreator,
     VIEW3D_PT_RZM_ExportManager,
     VIEW3D_PT_RZModProducerBuild,
-    VIEW3D_PT_RZConstructorToolboxPanel,
+    VIEW3D_PT_RZConstructorToolboxPanel_Internal,
+    VIEW3D_PT_RZConstructorToolboxPanel_External,
     RZM_PT_ObjectTiers
 ]

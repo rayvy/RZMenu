@@ -23,6 +23,7 @@ class RZM_OT_CheckDependencies(bpy.types.Operator):
             dep_prop.name = name
             dep_prop.target_version = dep_info["target_version"]
             dep_prop.is_optional = dep_info["is_optional"]
+            dep_prop.description = dep_info.get("description", "")
             
             installed_version = ""
             if dep_info["pip_name"]: 

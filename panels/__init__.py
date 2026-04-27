@@ -42,9 +42,12 @@ def register():
             import traceback
             traceback.print_exc()
 
-    # Register the dependency check function
-    if dep_panel_module and hasattr(dep_panel_module, "are_dependencies_met"):
-        bpy.types.Scene.rzm_dependencies_met = dep_panel_module.are_dependencies_met
+    # Register the dependency check function from settings
+    try:
+        from ..data.p_settings import are_dependencies_met
+        bpy.types.Scene.rzm_dependencies_met = are_dependencies_met
+    except ImportError:
+        pass
 
 def unregister():
     """

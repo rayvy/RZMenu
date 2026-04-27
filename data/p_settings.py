@@ -4,6 +4,13 @@ from bpy.props import StringProperty, IntProperty, FloatProperty, BoolProperty, 
 from .constants import DEFAULT_MOD_INFO_TEXT
 from .p_blend_resize import RZMBResizeSettings
 
+# --- DEPENDENCY IMPORTS ---
+try:
+    from ..core.deps_manager import DEPS, is_installing
+except ImportError:
+    DEPS = []
+    is_installing = lambda: False
+
 # Импорт зависимостей для CollectionProperty
 # from .p_texworks import TexResource, TexOverride, TexWorksTextureConfig, TexWorksTexture
 
@@ -97,6 +104,7 @@ class DependencyStatus(bpy.types.PropertyGroup):
     installed_version: StringProperty(name="Installed Version")
     target_version: StringProperty(name="Target Version")
     is_optional: BoolProperty(name="Is Optional")
+    description: StringProperty(name="Description", default="")
     install_progress: FloatProperty(name="Install Progress", subtype='PERCENTAGE', min=0, max=100, default=0.0)
 
 class RZMCustomScript(bpy.types.PropertyGroup):
@@ -188,7 +196,7 @@ class RZMExportSettings(bpy.types.PropertyGroup):
             ('PNG', "PNG", "Portable Network Graphics (.png)"),
             ('DDS', "DDS (Beta)", "DirectDraw Surface (.dds) - requires texconv"),
         ],
-        default='PNG'
+        default='DDS'
     )
     
     dds_profile: EnumProperty(
@@ -567,6 +575,61 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
+        rzm = context.scene.rzm
+        wm = context.window_manager
+        
+        # ─── 0. DEPENDENCIES (Moved from N-Panel) ──────────────────────────
+        box = layout.box()
+        box.label(text="RZ Dependencies & Requirements", icon='PREFERENCES')
+        
+        row = box.row(align=True)
+        row.operator("rzm.check_dependencies", text="Check Status", icon='FILE_REFRESH')
+        row.operator("rzm.install_all_dependencies", text="Install All Missing", icon='IMPORT')
+        row.operator("rzm.show_install_log", text="Show Log", icon='TEXT')
+        
+        dep_box = box.box()
+        if not rzm.dependency_statuses:
+            dep_box.label(text="Click 'Check Status' to verify dependencies", icon='INFO')
+        else:
+            installing = is_installing()
+            for dep in rzm.dependency_statuses:
+                row = dep_box.row(align=True)
+                
+                # Icon
+                if dep.status == 'OK': icon = 'CHECKMARK'
+                elif dep.status == 'NOT_FOUND': icon = 'CANCEL'
+                elif dep.status == 'OUTDATED': icon = 'ERROR'
+                elif dep.status == 'NEWER': icon = 'INFO'
+                elif dep.status == 'INSTALLING': icon = 'NONE'
+                else: icon = 'QUESTION'
+                row.label(text="", icon=icon)
+                
+                # Text
+                ver_str = f"v{dep.installed_version}" if dep.installed_version else "Not installed"
+                main_label = f"{dep.name}: {ver_str}"
+                
+                if dep.status == 'INSTALLING':
+                    row.prop(dep, "install_progress", text=f"{dep.name} (Installing...)", slider=True)
+                else:
+                    row.label(text=main_label)
+                    if dep.description:
+                        row.label(text=f"({dep.description})", icon='NONE')
+                
+                # Buttons
+                dep_info = next((d for d in DEPS if d["name"] == dep.name), None)
+                if dep_info and dep_info.get("pip_name") and not installing:
+                    if dep.status == 'NOT_FOUND':
+                        op = row.operator("rzm.install_dependency", text="Install", icon='IMPORT')
+                        op.name = dep.name
+                        if not dep.is_optional: row.alert = True
+                    elif dep.status in ['OUTDATED', 'OK', 'NEWER']:
+                        op = row.operator("rzm.install_dependency", text="Update", icon='FILE_REFRESH')
+                        op.name = dep.name
+
+        if wm.rzm_dependency_install_status:
+            box.label(text=wm.rzm_dependency_install_status, icon='INFO')
+        
+        layout.separator()
         
         # ─── 1. ARTIST PROFILE ────────────────────────────────────────────────
         box = layout.box()
@@ -659,3 +722,18 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "modifier_blacklist")
         col.separator()
         col.prop(self, "batch_build_path")
+
+def are_dependencies_met(scene, context):
+    """
+    Проверяет, можно ли работать с аддоном.
+    Возвращает True, если критические зависимости на месте.
+    """
+    if not scene.rzm.dependency_statuses:
+        return True 
+        
+    for dep in scene.rzm.dependency_statuses:
+        # Блокируем ТОЛЬКО если обязательный пакет имеет статус NOT_FOUND.
+        if not dep.is_optional and dep.status == 'NOT_FOUND':
+            return False
+            
+    return True

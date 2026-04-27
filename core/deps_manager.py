@@ -26,7 +26,7 @@ DEPS = [
         "name": "XXMI Tools",
         "import_name": "XXMITools",
         "pip_name": None,
-        "target_version": "1.6.3",
+        "target_version": "1.6.9",
         "is_optional": True
     },
     {
@@ -41,7 +41,8 @@ DEPS = [
         "import_name": "WWMI-Tools",
         "pip_name": None,
         "target_version": "1.3.0",
-        "is_optional": True
+        "is_optional": True,
+        "description": "Game is not supported yet"
     },
     {
         "name": "Pillow (PIL)",
@@ -56,7 +57,7 @@ DEPS = [
         "pip_name": "imageio[pyav]",
         "target_version": "2.37.0",
         "is_optional": True,
-        "description": "Базовый движок для чтения видео (MP4/WebM/AVI)"
+        "description": "(MP4/WebM/AVI)"
     },
     {
         "name": "imageio-ffmpeg",
@@ -64,7 +65,7 @@ DEPS = [
         "pip_name": "imageio-ffmpeg",
         "target_version": "0.6.0",
         "is_optional": True,
-        "description": "FFmpeg backend для imageio (требуется для некоторых форматов)"
+        "description": "(MP4/WebM/AVI)"
     },
 
 ]
@@ -358,4 +359,4 @@ def install_multiple_packages(package_names, callback=None):
         finally:
             _installing = False
 
-    threading.Thread(target=_worker, daemon=True).start()
+    threading.Thread(target=_worker, daemon=True).start()
