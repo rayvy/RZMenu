@@ -150,7 +150,8 @@ class RZMenuElement(bpy.types.PropertyGroup):
             ('OVERLAY_ALPHA', "Overlay (Alpha)", "Overlay vertex color considering texture alpha"),
             ('COLOR_REPLACE', "Color Replace",   "Forces target color replacing greyscale intensity"),
             ('HSV',           "HSV Shift",       "Vertex R=H, G=S, B=V offsets for atlas colors"),
-            ('INVERSION',     "Invert",          "Inverts atlas colors")
+            ('INVERSION',     "Invert",          "Inverts atlas colors"),
+            ('BLUR_MASK',     "Blur Mask",       "Uses image alpha as a blur mask for the background"),
         ],
         default='NONE'
     )

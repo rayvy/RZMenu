@@ -39,6 +39,7 @@ def pack_project_images(scene, export_dir):
     mode_map = {
         'NONE': 0, 'OVERLAY': 1, 'OVERLAY_ALPHA': 2,
         'COLOR_REPLACE': 3, 'HSV': 4, 'INVERSION': 5,
+        'BLUR_MASK': 11,
     }
 
     # ── Helpers ───────────────────────────────────────────────────────────────

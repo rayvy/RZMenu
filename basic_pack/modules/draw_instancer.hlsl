@@ -468,8 +468,14 @@ float4 main(VertexOutput input) : SV_Target0 {
     // 4. Object Logic
     float4 objectLayer = float4(0,0,0,0);
 
+    uint sub_mode = 0;
+    if (imageID > 0) {
+        uint realInstID = GetAnimFrame(imageID);
+        sub_mode = ImagePoolBuffer[realInstID * 3].x;
+    }
+
     if (insideBounds || isBlurBg) {
-        if (input.drawMode == MODE_MASKED_BLUR || isBlurBg || (styleFlags & BIT_BLUR)) {
+        if (input.drawMode == MODE_MASKED_BLUR || sub_mode == 11 || isBlurBg || (styleFlags & BIT_BLUR)) {
             
             float targetStrength = 0.0;
             float layerOpacity = 0.0;
@@ -478,7 +484,7 @@ float4 main(VertexOutput input) : SV_Target0 {
                 targetStrength = 0.5 + (float)(input.drawMode - 90) * 0.6;
                 layerOpacity = input.color.a;
             }
-            else if (input.drawMode == MODE_MASKED_BLUR) {
+            else if (input.drawMode == MODE_MASKED_BLUR || sub_mode == 11) {
                 float maskVal = rawTexture.r; 
                 targetStrength = maskVal * 8.25; 
                 layerOpacity = maskVal; 
@@ -504,9 +510,6 @@ float4 main(VertexOutput input) : SV_Target0 {
             objectLayer = float4(input.color.rgb, rawTexture.r * input.color.a); 
         }
         else if (imageID > 0) {
-            uint realInstID = GetAnimFrame(imageID);
-            uint sub_mode = ImagePoolBuffer[realInstID * 3].x;
-            
             if (sub_mode == 0) {
                 objectLayer = rawTexture;
             }
