@@ -94,7 +94,8 @@
             {% if cond_key not in real_obj %}
                 {% set safe_val = value | string %}
                 {%- if safe_val.startswith('Resource\\') -%}{% set safe_val = safe_val[9:] %}
-                {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}{%- endif -%}
+                {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}
+            {%- endif -%}
             Resource\ZZMI\{{ slot_id }} = ref Resource{{ safe_val }}
                 {% set _ = found_textures.append(1) %}
             {% endif %}
@@ -108,7 +109,8 @@
                 {% if real_obj.get('rzm.TexCond.' + slot_id) == cond %}
                     {% set safe_val = value | string %}
                     {%- if safe_val.startswith('Resource\\') -%}{% set safe_val = safe_val[9:] %}
-                    {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}{%- endif -%}
+                    {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}
+                {%- endif -%}
                 Resource\ZZMI\{{ slot_id }} = ref Resource{{ safe_val }}
                     {% set _ = found_textures.append(1) %}
                 {% endif %}

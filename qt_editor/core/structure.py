@@ -86,7 +86,7 @@ def delete_elements(target_ids):
     finally:
         signals.IS_UPDATING_FROM_QT = False
 
-def reorder_elements(target_id, insert_after_id):
+def reorder_elements(target_id, insert_after_id, silent=False):
     signals.IS_UPDATING_FROM_QT = True
     try:
         if not bpy.context or not bpy.context.scene: return
@@ -112,8 +112,9 @@ def reorder_elements(target_id, insert_after_id):
         
         if target_idx != to_index:
             elements.move(target_idx, to_index)
-            blender_bridge.safe_undo_push("RZM: Reorder")
-            signals.SIGNALS.structure_changed.emit()
+            if not silent:
+                blender_bridge.safe_undo_push("RZM: Reorder")
+                signals.SIGNALS.structure_changed.emit()
     finally:
         signals.IS_UPDATING_FROM_QT = False
 

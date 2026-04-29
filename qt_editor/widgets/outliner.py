@@ -168,17 +168,19 @@ class RZMOutlinerPanel(RZEditorPanel):
         self.set_selection_silent(ctx.selected_ids, ctx.active_id)
 
     def _on_items_reordered(self, target_ids, new_parent_id, sibling_ids):
-        """Handle drag-drop reparenting for multiple items and normalize priorities."""
+        """Handle drag-drop reparenting for multiple items and physical reordering in Blender."""
         # 1. First move items to the new parent
         for tid in target_ids:
             core.reparent_element(tid, new_parent_id, silent=True)
         
-        # 2. Normalize priorities of ALL siblings to match the visual order in the tree
-        # We use a step of 10 to leave gaps for manual adjustments
-        for i, sid in enumerate(sibling_ids):
-            core.update_property_multi([sid], "qt_priority", i * 10)
+        # 2. Synchronize physical order with the visual order in the tree
+        # We iterate through all siblings and move them one by one to ensure the correct sequence in the buffer
+        if len(sibling_ids) > 1:
+            for i in range(1, len(sibling_ids)):
+                core.reorder_elements(sibling_ids[i], sibling_ids[i-1], silent=True)
         
-        # Trigger global updates
+        # 3. Final commit and UI refresh
+        core.commit_history("RZM: Reorder Elements")
         SIGNALS.structure_changed.emit()
         SIGNALS.transform_changed.emit()
     
@@ -249,8 +251,8 @@ class RZMOutlinerPanel(RZEditorPanel):
             return
 
         # SORT BY QT_PRIORITY
-        # Blender data might not be sorted, so we do it here for visual order
-        elements_list = sorted(elements_list, key=lambda x: x.get('qt_priority', 0))
+        # DEPRECATED Phase 2: Ordering now depends on the physical index in Blender collection.
+        # elements_list = sorted(elements_list, key=lambda x: x.get('qt_priority', 0))
 
         # --- TAB ISOLATOR - VIEWPORT CONTROL ONLY (Logic removed from Outliner) ---
         # We no longer filter 'elements_list' here, so the tree shows everything.

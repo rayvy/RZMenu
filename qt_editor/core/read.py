@@ -343,6 +343,7 @@ def get_selection_details(selected_ids, active_id):
 
         data = {
             "exists": True, "id": target.id, "active_id": active_id,
+            "array_index": ID_CACHE.get(target.id, -1),
             "selected_ids": list(selected_ids), 
             "name": target.element_name if len(selection) <= 1 else "Multiple Elements",
             "name_pattern": find_common_pattern([e.element_name for e in selection])[0] if len(selection) > 1 else "",

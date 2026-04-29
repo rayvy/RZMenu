@@ -1381,6 +1381,9 @@ class RZMInspectorPanel(RZEditorPanel):
         self.spin_id.setRange(0, 99999)
         self.spin_id.editingFinished.connect(self._on_id_changed)
         
+        self.lbl_array_index = self._add_row(layout, "Array Index:", RZLabel("-"))
+        self.lbl_array_index.setToolTip("Physical index in the Blender collection (rzm.elements)")
+        
         self.name_edit = self._add_row(layout, "Name:", RZLineEdit(), 'element_name')
         self.edit_tag = self._add_row(layout, "Tag:", RZLineEdit(), 'tag')
         
@@ -1923,6 +1926,12 @@ class RZMInspectorPanel(RZEditorPanel):
                 else:
                     self.spin_id.setSpecialValueText("Multiple")
                     self.spin_id.setValue(0)
+            
+            if hasattr(self, 'lbl_array_index'):
+                if is_single:
+                    self.lbl_array_index.setText(str(props.get('array_index', '-')))
+                else:
+                    self.lbl_array_index.setText("Multiple")
             
             # Pattern mode for Name
             name_pattern = props.get('name_pattern')
