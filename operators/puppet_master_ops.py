@@ -1,4 +1,15 @@
 # RZMenu/operators/puppet_master_ops.py
+#
+# Hybrid Pipeline — три уровня экспорта:
+#   1. FAST PATH   — прямой топологический маппинг из кэша (EFMI/XXMI).
+#                    Идеально для простых мешей без генеративных модификаторов.
+#   2. BAKED PATH  — для объектов с Mirror/Subdiv/Array и т.п.:
+#                    Вычисляет координаты через Depsgraph, избегая физического
+#                    применения модификаторов и бага с Mirror+Subdiv. Ищет точные 
+#                    соответствия через KD-Tree.
+#   3. SLOW PATH   — пространственная интерполяция для объектов без кэша или
+#                    для via_target (Surface Deform). Используется BVH + барицентрика.
+#
 import bpy
 import os
 import re
@@ -6,11 +17,13 @@ import json
 import time
 import struct
 import numpy as np
-from mathutils import Vector
+from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
-from .modifier_utils import apply_modifiers_for_object_with_shape_keys
 
-# --- HELPERS ---
+# ---------------------------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------------------------
+
 def get_all_meshes_in_collection(collection, meshes_set, context, settings):
     view_layer = context.view_layer
     def find_layer_coll(root, target):
@@ -30,7 +43,7 @@ def get_all_meshes_in_collection(collection, meshes_set, context, settings):
         if settings.get('ignore_hidden_obj', False) and obj.hide_get(view_layer=view_layer):
             continue
         meshes_set.add(obj)
-            
+
     if not settings.get('ignore_nested', False):
         for child in collection.children:
             get_all_meshes_in_collection(child, meshes_set, context, settings)
@@ -61,70 +74,70 @@ def load_xxmi_metadata(dir_path):
             return json.load(f)
     except: return []
 
-# --- CORE DISCOVERY ---
+# ---------------------------------------------------------------------------
+# DISCOVERY
+# ---------------------------------------------------------------------------
+
 def get_components_to_process(context, per_component=False):
     scene = context.scene
-    rzm = scene.rzm
+    rzm   = scene.rzm
     game_name = rzm.game.name
     xxmi_list = ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']
-    is_xxmi = game_name in xxmi_list
-    
+    is_xxmi   = game_name in xxmi_list
+
     settings = {
-        'ignore_hidden_obj': False,
+        'ignore_hidden_obj':  False,
         'ignore_hidden_coll': False,
-        'ignore_nested': False
+        'ignore_nested':      False,
     }
-    
     if is_xxmi and hasattr(scene, "xxmi"):
         settings['ignore_hidden_obj'] = scene.xxmi.ignore_hidden
     elif game_name == 'ArknightsEndfield' and hasattr(scene, "efmi_tools_settings"):
         efmi = scene.efmi_tools_settings
-        settings['ignore_hidden_obj'] = efmi.ignore_hidden_objects
+        settings['ignore_hidden_obj']  = efmi.ignore_hidden_objects
         settings['ignore_hidden_coll'] = efmi.ignore_hidden_collections
-        settings['ignore_nested'] = efmi.ignore_nested_collections
-    
+        settings['ignore_nested']      = efmi.ignore_nested_collections
+
     results = {}
-    
+
     if is_xxmi:
         dump_path_prop = scene.xxmi.dump_path if hasattr(scene, "xxmi") else ""
         if not dump_path_prop: return {}
-        dump_path = os.path.normpath(bpy.path.abspath(dump_path_prop))
-        mod_name = os.path.basename(dump_path)
+        dump_path    = os.path.normpath(bpy.path.abspath(dump_path_prop))
+        mod_name     = os.path.basename(dump_path)
         comp_metadata = load_xxmi_metadata(dump_path)
         if not comp_metadata: return {}
-
         for component in comp_metadata:
-            comp_name = component.get("component_name", "")
+            comp_name   = component.get("component_name", "")
             base_fullname = f"{mod_name}{comp_name}"
             classifications = component.get("object_classifications", [])
-            
             comp_meshes = set()
             for part in classifications:
                 part_fullname = base_fullname + part
-                matching_collections = [c for c in bpy.data.collections if c.name.lower().startswith(part_fullname.lower())]
-                for coll in matching_collections:
-                    for obj in coll.all_objects:
-                        if obj.type == 'MESH':
-                            if settings['ignore_hidden_obj'] and obj.hide_get(): continue
-                            comp_meshes.add(obj)
-                
+                for coll in bpy.data.collections:
+                    if coll.name.lower().startswith(part_fullname.lower()):
+                        for obj in coll.all_objects:
+                            if obj.type == 'MESH':
+                                if settings['ignore_hidden_obj'] and obj.hide_get(): continue
+                                comp_meshes.add(obj)
                 for obj in context.view_layer.objects:
                     if obj.type != 'MESH': continue
                     if settings['ignore_hidden_obj'] and obj.hide_get(): continue
-                    if obj.name.lower() == part_fullname.lower() or obj.name.lower().startswith(part_fullname.lower() + "."):
+                    if (obj.name.lower() == part_fullname.lower() or
+                            obj.name.lower().startswith(part_fullname.lower() + ".")):
                         comp_meshes.add(obj)
-
             if comp_meshes:
                 results[comp_name] = list(comp_meshes)
     else:
-        base_objs = [o for o in context.view_layer.objects if o.type == 'MESH']
-        for obj in base_objs:
+        for obj in context.view_layer.objects:
+            if obj.type != 'MESH': continue
             if settings['ignore_hidden_obj'] and obj.hide_get(): continue
             match = re.search(r"Component\s*(\d+)", obj.name, re.IGNORECASE)
             if match:
                 results.setdefault(f"Component{match.group(1)}", []).append(obj)
 
-    for key in results: results[key] = list(set(results[key]))
+    for key in results:
+        results[key] = list(set(results[key]))
 
     if per_component and context.active_object:
         target_name = None
@@ -137,278 +150,55 @@ def get_components_to_process(context, per_component=False):
 
     return results
 
-# --- NUMPY SPATIAL INDEX ---
-def _build_spatial_index(coords_np, tri_verts_np):
-    if len(tri_verts_np) == 0:
-        return None, None
-    centroids = coords_np[tri_verts_np].mean(axis=1).astype(np.float32)
-    try:
-        from scipy.spatial import KDTree
-        return KDTree(centroids), centroids
-    except ImportError:
-        try:
-            import mathutils
-            size = len(centroids)
-            tree = mathutils.kdtree.KDTree(size)
-            for i, c in enumerate(centroids):
-                tree.insert(c, i)
-            tree.balance()
-            return tree, centroids
-        except:
-            return None, None
+# ---------------------------------------------------------------------------
+# GENERATIVE MODIFIER DETECTION
+# ---------------------------------------------------------------------------
 
-def _get_barycentric_coords(p, a, b, c):
-    v0, v1, v2 = b - a, c - a, p - a
-    d00, d01, d11 = v0.dot(v0), v0.dot(v1), v1.dot(v1)
-    d20, d21 = v2.dot(v0), v2.dot(v1)
-    denom = d00 * d11 - d01 * d01
-    if abs(denom) < 1e-10: return 0.333, 0.333, 0.334
-    v = (d11 * d20 - d01 * d21) / denom
-    w = (d00 * d21 - d01 * d20) / denom
-    return 1.0 - v - w, v, w
+GENERATIVE_MODS = {
+    'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD', 'DECIMATE', 'EDGE_SPLIT',
+    'GEOMETRY_NODES', 'MASK', 'MESH_TO_VOLUME', 'MIRROR', 'MULTIRES',
+    'REMESH', 'SCREW', 'SKIN', 'SOLIDIFY', 'SUBSURF', 'TRIANGULATE',
+    'VOLUME_TO_MESH', 'WELD', 'WIREFRAME', 'CLOTH', 'COLLISION',
+    'DYNAMIC_PAINT', 'EXPLODE', 'FLUID', 'OCEAN',
+    'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SOFT_BODY',
+}
 
-def _build_direct_map(obj, buf_xyz, mat):
-    """
-    Builds a 1-to-1 mapping between an APPLIED Blender mesh and a buffer slice.
-    This allows Fast Path baking for Mirrored/Subdivided meshes.
-    """
-    import mathutils
-    v_cnt = len(obj.data.vertices)
-    if v_cnt == 0: return None
-    
-    # Extract coordinates
-    coords_raw = np.zeros(v_cnt * 3, dtype=np.float32)
-    obj.data.vertices.foreach_get('co', coords_raw)
-    coords_raw = coords_raw.reshape(-1, 3)
-    
-    # Transform to buffer space
-    mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
-    mat_trans = np.array(mat.to_translation(), dtype=np.float32)
-    blender_coords = (coords_raw @ mat_rot.T) + mat_trans
-    
-    # Build KD-Tree
-    tree = mathutils.kdtree.KDTree(v_cnt)
-    for i, co in enumerate(blender_coords):
-        tree.insert(co, i)
-    tree.balance()
-    
-    # Map
-    v_map = np.zeros(len(buf_xyz), dtype=np.int32)
-    max_d = 0
-    for i, pos in enumerate(buf_xyz):
-        _, idx, dist = tree.find(pos)
-        v_map[i] = idx
-        if dist > max_d: max_d = dist
-        
-    if max_d > 0.1: # Threshold for topology mismatch
-        return None
-        
-    return v_map
+def _get_active_generative_mods(obj):
+    """Возвращает список имён активных генеративных модификаторов объекта."""
+    return [m.name for m in obj.modifiers
+            if m.show_viewport and m.type in GENERATIVE_MODS]
 
-def _barycentric_delta_batch(buf_verts_np, owner_data, target_coords_np):
-    """
-    Stable Barycentric Projection for Med Path.
-    Replaces IDW to eliminate geometry spikes.
-    """
-    base_coords = owner_data['coords']
-    bvh         = owner_data['bvh']
-    tri_verts   = owner_data['tri_verts']
-    deltas_np   = (target_coords_np - base_coords).astype(np.float32)
+# ---------------------------------------------------------------------------
+# FILENAMING
+# ---------------------------------------------------------------------------
 
-    out = np.zeros_like(buf_verts_np, dtype=np.float32)
-    if bvh is None: return out
-    
-    for i, bv in enumerate(buf_verts_np):
-        mv = Vector(bv)
-        # Find nearest polygon (triangle)
-        res = bvh.find_nearest(mv)
-        if res is None or res[2] is None: continue
-        face_idx = res[2]
-        
-        # Get triangle indices and coordinates
-        v_idx = tri_verts[face_idx]
-        a, b, c = Vector(base_coords[v_idx[0]]), Vector(base_coords[v_idx[1]]), Vector(base_coords[v_idx[2]])
-        
-        # Calculate weights
-        u, v, w = _get_barycentric_coords(mv, a, b, c)
-        
-        # Interpolate deltas
-        d_a, d_b, d_c = deltas_np[v_idx[0]], deltas_np[v_idx[1]], deltas_np[v_idx[2]]
-        out[i] = u * d_a + v * d_b + w * d_c
-        
-    return out
-
-# --- FILENAMING ---
 def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
     raw_base   = (dump_name + base_name) if is_xxmi else base_name
     clean_base = re.sub(r'[\\/:*?"<>|]', '_', raw_base).replace(' ', '_').replace('.', '_')
     clean_sk   = re.sub(r'[\\/:*?"<>|]', '_', sk_name).replace(' ', '_').replace('.', '_')
     return f"{clean_base}_{clean_sk}.buf"
 
-# --- PHASE 2 FAST PATH ---
-def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi):
-    stride_f32  = stride // 4
-    cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])}
-    
-    fallback_objs_per_sk = {} 
-
-    for sk_name in list(sk_owner_map.keys()):
-        buf_f32       = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
-        matched_count = 0
-        fallback_this = []
-
-        # Only process direct Shape Keys.
-        # via_target (Surface Deform) automatically skipped and forwarded to Slow Path
-        sk_direct = sk_owner_map[sk_name]['direct']
-        
-        # Modifier Categories from User List
-        GENERATIVE_MODS = {
-            'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD', 'DECIMATE', 'EDGE_SPLIT', 'GEOMETRY_NODES',
-            'MASK', 'MESH_TO_VOLUME', 'MIRROR', 'MULTIRES', 'REMESH', 'SCREW', 'SKIN',
-            'SOLIDIFY', 'SUBSURF', 'TRIANGULATE', 'VOLUME_TO_MESH', 'WELD', 'WIREFRAME',
-            'CLOTH', 'COLLISION', 'DYNAMIC_PAINT', 'EXPLODE', 'FLUID', 'OCEAN', 
-            'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SOFT_BODY'
-        }
-
-        force_fast = bpy.context.scene.rzm.export_settings.force_fast_path
-        
-        for obj in sk_direct:
-            # Handle Pre-processed objects (Applied Mirror/Subdiv)
-            orig_name = obj.get("rzm_orig_name", obj.name)
-            custom_map = obj.get("rzm_direct_map")
-            
-            entry = cache_objects.get(orig_name)
-            if entry is None:
-                fallback_this.append(obj)
-                continue
-
-            is_absolute = entry.get('is_absolute', False)
-            vb_off = 0 if is_absolute else entry['vb_offset']
-            vb_cnt = entry['vb_count']
-            
-            map_type = "Absolute" if is_absolute else "Relative"
-
-            active_gen_mods = [m.name for m in obj.modifiers if m.show_viewport and m.type in GENERATIVE_MODS]
-            
-            # If we have a custom map from pre-processing, we bypass the generative mod check!
-            if active_gen_mods and not force_fast and custom_map is None:
-                print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:2])}) -> Slow Path.")
-                fallback_this.append(obj)
-                continue
-                
-            if not (obj.data and obj.data.shape_keys): continue
-            sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
-            ba_blk = obj.data.shape_keys.reference_key
-            if not sk_blk or not ba_blk: continue
-            
-            v_map = custom_map if custom_map is not None else entry.get('vertex_map')
-            m_idx = entry.get('mat_idx', 0)
-            is_robust = True if custom_map is not None else entry.get('is_robust', False)
-            
-            # FAST PATH: Requires valid v_map
-            if is_robust:
-                is_valid_map = (v_map is not None and len(v_map) == vb_cnt)
-            else:
-                blender_v_count = len(obj.data.loops) if (v_map and len(v_map) == len(obj.data.loops)) else len(obj.data.vertices)
-                is_valid_map = (v_map and len(v_map) == blender_v_count)
-            
-            if is_valid_map:
-                import mathutils
-                mat = mathutils.Matrix.Identity(4)
-                if m_idx == 1: mat = obj.matrix_world
-                elif m_idx == 2: 
-                    root_obj_name = comp_cache.get('root_obj')
-                    root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
-                    mat = root_obj.matrix_world.inverted() @ obj.matrix_world if root_obj else mathutils.Matrix.Identity(4)
-                
-                sk_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
-                ba_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
-                sk_blk.data.foreach_get('co', sk_co)
-                ba_blk.data.foreach_get('co', ba_co)
-                sk_co = sk_co.reshape(-1, 3)
-                ba_co = ba_co.reshape(-1, 3)
-                
-                mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
-                v_map_np = np.array(v_map, dtype=np.int32)
-
-                if is_robust:
-                    # MANY-TO-1 MAPPING (Robust XXMI)
-                    # Every buffer vertex knows exactly which Blender vertex it belongs to.
-                    # All split vertices move together automatically.
-                    deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
-                    
-                    # High-speed NumPy Vectorization: buf[slice] += deltas_all[v_map]
-                    # This updates the entire object in the buffer in one go.
-                    obj_slice = buf_f32[vb_off : vb_off + vb_cnt, :3]
-                    buf_f32[vb_off : vb_off + vb_cnt, :3] = obj_slice + deltas_all[v_map_np]
-                    matched_count += vb_cnt
-                else:
-                    # 1-TO-1 OR LOOP-TO-VERTEX MAPPING (EFMI/Legacy)
-                    is_loop_mapped = (len(v_map_np) == len(obj.data.loops))
-                    if is_loop_mapped:
-                        v_indices = np.empty(len(obj.data.loops), dtype=np.int32)
-                        obj.data.loops.foreach_get('vertex_index', v_indices)
-                        delta_pre = (sk_co - ba_co)[v_indices]
-                    else:
-                        delta_pre = sk_co - ba_co
-
-                    delta_transformed = (delta_pre @ mat_rot.T).astype(np.float32)
-                    nonzero = np.linalg.norm(delta_transformed, axis=1) > 1e-7
-                    if not nonzero.any(): continue
-                    
-                    idx = np.where(nonzero)[0]
-                    buf_indices = vb_off + v_map_np[idx]
-                    
-                    valid_mask = (buf_indices >= 0) & (buf_indices < buf_v_count)
-                    if not valid_mask.any(): continue
-                    
-                    target_indices = buf_indices[valid_mask]
-                    source_indices = idx[valid_mask]
-                    
-                    new_xyz = (buf_f32[target_indices, :3] + delta_transformed[source_indices]).astype(np.float32)
-                    buf_f32[target_indices, 0] = new_xyz[:, 0]
-                    buf_f32[target_indices, 1] = new_xyz[:, 1]
-                    buf_f32[target_indices, 2] = new_xyz[:, 2]
-                    matched_count += len(target_indices)
-            else:
-                # No valid mapping or count mismatch -> Fallback to Slow Path (KD-Tree)
-                fallback_this.append(obj)
-                continue
-
-        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
-        if matched_count > 0:
-            with open(os.path.join(output_dir, out_name), 'wb') as f:
-                f.write(buf_f32.tobytes())
-            print(f"    -> [DONE] {out_name} ({matched_count} verts merged via {map_type} Fast Path)")
-                
-        fallback_objs_per_sk[sk_name] = fallback_this
-
-    return fallback_objs_per_sk
+# ---------------------------------------------------------------------------
+# SK OWNER SCAN
+# ---------------------------------------------------------------------------
 
 def _scan_sk_owners(comp_objects, all_keys):
+    """Классифицирует объекты по способу их деформации для каждого шейпкея."""
     result = {}
     for sk_name in all_keys:
         direct, via_target = [], []
         for obj in comp_objects:
-            if not (obj.data and obj.data.shape_keys):
-                for mod in obj.modifiers:
-                    if (mod.type in {'SURFACE_DEFORM', 'SHRINKWRAP'}
-                            and mod.show_viewport and mod.target
-                            and mod.target.data and mod.target.data.shape_keys
-                            and sk_name in mod.target.data.shape_keys.key_blocks):
-                        via_target.append(obj)
-                        break
-                continue
-
-            sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
-            if sk_blk is not None:
-                ba_blk = obj.data.shape_keys.reference_key
-                if sk_blk.data and ba_blk.data:
-                    sk_co = np.array([kp.co for kp in sk_blk.data], dtype=np.float32)
-                    ba_co = np.array([kp.co for kp in ba_blk.data], dtype=np.float32)
-                    if np.any(np.abs(sk_co - ba_co) > 1e-7):
-                        direct.append(obj)
-                        continue
+            if obj.data and obj.data.shape_keys:
+                sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
+                if sk_blk is not None:
+                    ba_blk = obj.data.shape_keys.reference_key
+                    if sk_blk.data and ba_blk.data:
+                        sk_co = np.array([kp.co for kp in sk_blk.data], dtype=np.float32)
+                        ba_co = np.array([kp.co for kp in ba_blk.data], dtype=np.float32)
+                        if np.any(np.abs(sk_co - ba_co) > 1e-7):
+                            direct.append(obj)
+                            continue
+            # Проверяем Surface Deform / Shrinkwrap
             for mod in obj.modifiers:
                 if (mod.type in {'SURFACE_DEFORM', 'SHRINKWRAP'}
                         and mod.show_viewport and mod.target
@@ -421,21 +211,553 @@ def _scan_sk_owners(comp_objects, all_keys):
             result[sk_name] = {'direct': direct, 'via_target': via_target}
     return result
 
-# --- CORE BAKE ---
-def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, single_shape_name=None, full_export_mode=False):
-    t_start = time.time()
-    vb0_path = None
+# ---------------------------------------------------------------------------
+# FAST PATH — прямой маппинг из кэша
+# ---------------------------------------------------------------------------
+
+def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
+                               stride, buf_v_count, output_dir,
+                               base_name, dump_name, is_xxmi):
+    """
+    Fast Path: читаем дельты прямо из шейпкеев Blender и пишем через кэш-карту.
+    Работает ТОЛЬКО для объектов без активных генеративных модификаторов.
+    Объекты с генеративными модами → в fallback (Baked Path или Slow Path).
+    """
+    import mathutils
+    stride_f32   = stride // 4
+    cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])}
+    force_fast   = bpy.context.scene.rzm.export_settings.force_fast_path
+
+    fallback_objs_per_sk = {}
+
+    for sk_name in list(sk_owner_map.keys()):
+        buf_f32       = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
+        matched_count = 0
+        fallback_this = []
+
+        sk_direct = sk_owner_map[sk_name]['direct']
+
+        for obj in sk_direct:
+            entry = cache_objects.get(obj.name)
+            if entry is None:
+                fallback_this.append(obj)
+                continue
+
+            is_absolute = entry.get('is_absolute', False)
+            vb_off  = 0 if is_absolute else entry['vb_offset']
+            vb_cnt  = entry['vb_count']
+            map_type = "Absolute" if is_absolute else "Relative"
+
+            active_gen_mods = _get_active_generative_mods(obj)
+            if active_gen_mods and not force_fast:
+                print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:3])}) -> Baked Path.")
+                fallback_this.append(obj)
+                continue
+
+            if not (obj.data and obj.data.shape_keys): continue
+            sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
+            ba_blk = obj.data.shape_keys.reference_key
+            if not sk_blk or not ba_blk: continue
+
+            v_map      = entry.get('vertex_map')
+            m_idx      = entry.get('mat_idx', 0)
+            is_robust  = entry.get('is_robust', False)
+
+            if is_robust:
+                is_valid_map = (v_map and len(v_map) == vb_cnt)
+            else:
+                blender_v_count = (len(obj.data.loops) if (v_map and len(v_map) == len(obj.data.loops))
+                                   else len(obj.data.vertices))
+                is_valid_map = (v_map and len(v_map) == blender_v_count)
+
+            if not is_valid_map:
+                fallback_this.append(obj)
+                continue
+
+            mat = mathutils.Matrix.Identity(4)
+            if m_idx == 1:
+                mat = obj.matrix_world
+            elif m_idx == 2:
+                root_obj_name = comp_cache.get('root_obj')
+                root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
+                mat = (root_obj.matrix_world.inverted() @ obj.matrix_world
+                       if root_obj else mathutils.Matrix.Identity(4))
+
+            sk_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
+            ba_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
+            sk_blk.data.foreach_get('co', sk_co)
+            ba_blk.data.foreach_get('co', ba_co)
+            sk_co = sk_co.reshape(-1, 3)
+            ba_co = ba_co.reshape(-1, 3)
+
+            mat_rot  = np.array(mat.to_3x3(), dtype=np.float32)
+            v_map_np = np.array(v_map, dtype=np.int32)
+
+            if is_robust:
+                deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
+                obj_slice  = buf_f32[vb_off: vb_off + vb_cnt, :3]
+                buf_f32[vb_off: vb_off + vb_cnt, :3] = obj_slice + deltas_all[v_map_np]
+                matched_count += vb_cnt
+            else:
+                is_loop_mapped = (len(v_map_np) == len(obj.data.loops))
+                if is_loop_mapped:
+                    v_indices = np.empty(len(obj.data.loops), dtype=np.int32)
+                    obj.data.loops.foreach_get('vertex_index', v_indices)
+                    delta_pre = (sk_co - ba_co)[v_indices]
+                else:
+                    delta_pre = sk_co - ba_co
+
+                delta_transformed = (delta_pre @ mat_rot.T).astype(np.float32)
+                nonzero = np.linalg.norm(delta_transformed, axis=1) > 1e-7
+                if not nonzero.any(): continue
+
+                idx         = np.where(nonzero)[0]
+                buf_indices = vb_off + v_map_np[idx]
+
+                valid_mask = (buf_indices >= 0) & (buf_indices < buf_v_count)
+                if not valid_mask.any(): continue
+
+                target_indices = buf_indices[valid_mask]
+                source_indices = idx[valid_mask]
+
+                new_xyz = (buf_f32[target_indices, :3] + delta_transformed[source_indices]).astype(np.float32)
+                buf_f32[target_indices, 0] = new_xyz[:, 0]
+                buf_f32[target_indices, 1] = new_xyz[:, 1]
+                buf_f32[target_indices, 2] = new_xyz[:, 2]
+                matched_count += len(target_indices)
+
+        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+        if matched_count > 0:
+            with open(os.path.join(output_dir, out_name), 'wb') as f:
+                f.write(buf_f32.tobytes())
+            print(f"    -> [DONE] {out_name} ({matched_count} verts via Fast Path [{map_type}])")
+
+        fallback_objs_per_sk[sk_name] = fallback_this
+
+    return fallback_objs_per_sk
+
+# ---------------------------------------------------------------------------
+# BAKED PATH — вычисление дельт через Depsgraph (Mirror + Subdiv safe)
+# ---------------------------------------------------------------------------
+
+def _bake_path_for_generative_objects(
+        context, sk_owner_map_bake, comp_cache,
+        original_bytes, stride, buf_v_count,
+        output_dir, base_name, dump_name, is_xxmi):
+    """
+    Baked Path для генеративных модификаторов (Mirror, Subdiv и т.д.).
+    Вместо физического применения модификаторов и пересборки меша,
+    мы используем Depsgraph для вычисления дельт "на лету", что 
+    полностью решает баги Blender с искажением индексов при слиянии Mirror+Subdiv.
+    """
+    import mathutils as mu
+    
+    stride_f32 = stride // 4
+    remaining_for_slow = {}
+    depsgraph = context.evaluated_depsgraph_get()
+
+    # Собираем все уникальные объекты, чтобы отключить у них арматуру
+    all_bake_objs = set(obj for owners in sk_owner_map_bake.values() for obj in owners if obj)
+    set_armature_visibility(all_bake_objs, False)
+
+    try:
+        for obj_name_key in set(obj.name for obj in all_bake_objs):
+            obj = bpy.data.objects.get(obj_name_key)
+            if not obj or not obj.data or not obj.data.shape_keys: continue
+
+            gen_mods = _get_active_generative_mods(obj)
+            if not gen_mods:
+                for sk_name, owners in sk_owner_map_bake.items():
+                    if obj in owners:
+                        remaining_for_slow.setdefault(sk_name, []).append(obj)
+                continue
+
+            print(f"  [BAKED] Processing {obj.name} dynamically via Depsgraph (Mods: {', '.join(gen_mods[:3])})")
+
+            # Сохраняем исходное состояние шейпкеев
+            sk_snapshot = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
+
+            # 1. Получаем БАЗОВЫЙ сгенерированный меш (все shape keys = 0.0)
+            for sk in obj.data.shape_keys.key_blocks:
+                sk.value = 0.0
+            context.view_layer.update()
+            depsgraph.update()
+
+            eval_base = obj.evaluated_get(depsgraph)
+            mesh_base = eval_base.to_mesh()
+            base_v_count = len(mesh_base.vertices)
+            mat_world = obj.matrix_world
+
+            # Конвертируем вершины в World Space
+            base_coords_world = np.array([mat_world @ v.co for v in mesh_base.vertices], dtype=np.float32)
+            eval_base.to_mesh_clear()
+
+            # Строим KD-Tree для точного поиска
+            baked_kd = mu.kdtree.KDTree(base_v_count)
+            for i, co in enumerate(base_coords_world):
+                baked_kd.insert(Vector(co), i)
+            baked_kd.balance()
+
+            # 2. Обрабатываем каждый шейпкей, который принадлежит этому объекту
+            for sk_name, owners in sk_owner_map_bake.items():
+                if obj not in owners: continue
+
+                if sk_name not in obj.data.shape_keys.key_blocks:
+                    remaining_for_slow.setdefault(sk_name, []).append(obj)
+                    continue
+
+                # Включаем ТОЛЬКО текущий шейпкей
+                for sk in obj.data.shape_keys.key_blocks:
+                    sk.value = 1.0 if sk.name == sk_name else 0.0
+                context.view_layer.update()
+                depsgraph.update()
+
+                eval_sk = obj.evaluated_get(depsgraph)
+                mesh_sk = eval_sk.to_mesh()
+
+                # Важнейшая проверка: если шейпкей так сильно раздвинул вершины по шву Mirror,
+                # что изменилось количество вертексов, 1:1 маппинг не сработает. Уходим в Slow Path.
+                if len(mesh_sk.vertices) != base_v_count:
+                    print(f"    [WARN] Topology shifted on {obj.name} for SK '{sk_name}' (Merge break). Fallback -> Slow Path.")
+                    eval_sk.to_mesh_clear()
+                    remaining_for_slow.setdefault(sk_name, []).append(obj)
+                    continue
+
+                # Конвертируем деформированные вершины в World Space
+                sk_coords_world = np.array([mat_world @ v.co for v in mesh_sk.vertices], dtype=np.float32)
+                eval_sk.to_mesh_clear()
+
+                # Вычисляем абсолютно точные дельты "на лету" без применения модификаторов
+                deltas_world = sk_coords_world - base_coords_world
+
+                # Запись в буфер
+                out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+                out_path = os.path.join(output_dir, out_name)
+                
+                if os.path.exists(out_path):
+                    with open(out_path, 'rb') as f:
+                        buf_f32 = np.frombuffer(f.read(), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
+                else:
+                    buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
+
+                buf_xyz = buf_f32[:, :3].copy()
+                matched_count = 0
+                DIST_THRESHOLD = 0.02
+
+                for buf_idx in range(buf_v_count):
+                    buf_pos = Vector(buf_xyz[buf_idx])
+                    _, baked_v_idx, dist = baked_kd.find(buf_pos)
+                    if dist > DIST_THRESHOLD: continue
+                    
+                    d = deltas_world[baked_v_idx]
+                    if np.linalg.norm(d) < 1e-7: continue
+                    
+                    buf_f32[buf_idx, 0] += d[0]
+                    buf_f32[buf_idx, 1] += d[1]
+                    buf_f32[buf_idx, 2] += d[2]
+                    matched_count += 1
+
+                if matched_count > 0:
+                    with open(out_path, 'wb') as f:
+                        f.write(buf_f32.tobytes())
+                    print(f"    -> [DONE] {out_name} ({matched_count} verts via Baked Path [Depsgraph])")
+                else:
+                    print(f"    -> [WARN] {out_name}: 0 matched verts for {obj.name} via Baked Path.")
+
+            # Восстанавливаем оригинальные значения шейпкеев для объекта
+            for sk in obj.data.shape_keys.key_blocks:
+                if sk.name in sk_snapshot:
+                    sk.value = sk_snapshot[sk.name]
+            context.view_layer.update()
+            depsgraph.update()
+
+    finally:
+        # Обязательно возвращаем арматуры обратно
+        set_armature_visibility(all_bake_objs, True)
+
+    return remaining_for_slow
+
+# ---------------------------------------------------------------------------
+# BARYCENTRIC DELTA INTERPOLATION (Slow Path)
+# ---------------------------------------------------------------------------
+
+def _barycentric_coords(p, a, b, c):
+    """Барицентрические координаты точки p в треугольнике (a, b, c)."""
+    v0 = b - a
+    v1 = c - a
+    v2 = p - a
+    d00 = np.dot(v0, v0)
+    d01 = np.dot(v0, v1)
+    d11 = np.dot(v1, v1)
+    d20 = np.dot(v2, v0)
+    d21 = np.dot(v2, v1)
+    denom = d00 * d11 - d01 * d01
+    if abs(denom) < 1e-12:
+        return 1.0/3, 1.0/3, 1.0/3  # вырожденный треугольник
+    v = (d11 * d20 - d01 * d21) / denom
+    w = (d00 * d21 - d01 * d20) / denom
+    u = 1.0 - v - w
+    return u, v, w
+
+def _bary_delta_batch_bvh(buf_verts_np, owner_data, target_data):
+    """
+    Барицентрическая интерполяция дельт через BVH.
+    Для каждой вершины буфера:
+      1. Ищем ближайший треугольник в меше владельца.
+      2. Вычисляем барицентрические координаты.
+      3. Интерполируем дельту по этим весам.
+    Значительно точнее IDW на центроидах: нет «шума» и «спайков».
+    """
+    base_coords = owner_data['coords']   # (N, 3) float64
+    deltas      = target_data - base_coords  # (N, 3)
+    tri_verts   = owner_data['tri_verts']    # (T, 3) int32
+    bvh         = owner_data['bvh']
+
+    out = np.zeros_like(buf_verts_np)
+
+    if bvh is not None:
+        for i, bv in enumerate(buf_verts_np):
+            mv = Vector(bv)
+            loc, norm, face_idx, dist = bvh.find_nearest(mv)
+            if face_idx is None:
+                # Резервный IDW по 3 ближайшим вершинам
+                dists_sq = ((base_coords - bv) ** 2).sum(axis=1) + 1e-10
+                w = 1.0 / dists_sq
+                w /= w.sum()
+                out[i] = (w[:, None] * deltas).sum(axis=0)
+                continue
+            ia, ib, ic = tri_verts[face_idx]
+            a = base_coords[ia]; b = base_coords[ib]; c = base_coords[ic]
+            wu, wv, ww = _barycentric_coords(np.array(bv), a, b, c)
+            # Клэмпируем веса: если точка за пределами треугольника — просто IDW
+            total = abs(wu) + abs(wv) + abs(ww)
+            if total < 1e-9:
+                wu, wv, ww = 1.0/3, 1.0/3, 1.0/3
+            else:
+                wu, wv, ww = wu/total, wv/total, ww/total
+            out[i] = wu * deltas[ia] + wv * deltas[ib] + ww * deltas[ic]
+    else:
+        # Без BVH — IDW по вершинам (резервный вариант)
+        for i, bv in enumerate(buf_verts_np):
+            dists_sq = ((base_coords - bv) ** 2).sum(axis=1) + 1e-10
+            w = 1.0 / dists_sq
+            w /= w.sum()
+            out[i] = (w[:, None] * deltas).sum(axis=0)
+
+    return out
+
+# ---------------------------------------------------------------------------
+# SLOW PATH — пространственная интерполяция
+# ---------------------------------------------------------------------------
+
+def _build_owner_data(obj, depsgraph, mat):
+    """Строит структуру данных объекта для Slow Path (BVH + координаты)."""
+    eval_obj = obj.evaluated_get(depsgraph)
+    b_eval   = eval_obj.to_mesh()
+
+    coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in b_eval.vertices], dtype=np.float64)
+    polys  = [list(p.vertices) for p in b_eval.polygons]
+
+    b_eval.calc_loop_triangles()
+    num_tris = len(b_eval.loop_triangles)
+    if num_tris > 0:
+        tri_flat = np.empty(num_tris * 3, dtype=np.int32)
+        b_eval.loop_triangles.foreach_get("vertices", tri_flat)
+        tri_verts = tri_flat.reshape((num_tris, 3))
+        tri_list = tri_verts.tolist()
+    else:
+        tri_verts = np.zeros((0, 3), dtype=np.int32)
+        tri_list = []
+
+    # Строим BVH из треугольников для точного поиска
+    if tri_list:
+        bvh = BVHTree.FromPolygons([Vector(c) for c in coords], tri_list)
+    else:
+        bvh = None
+
+    eval_obj.to_mesh_clear()
+
+    return {
+        'coords':    coords,
+        'tri_verts': tri_verts,
+        'polys':     polys,
+        'bvh':       bvh,
+        'mat':       mat,
+    }
+
+def _assign_owners_bulk_bvh(buf_xyz, base_cache, limit):
+    """Назначаем каждой вершине буфера ближайший объект через BVH."""
+    N        = len(buf_xyz)
+    owner_map = np.zeros(N, dtype=np.int64)
+    dist_map  = np.full(N, np.inf, dtype=np.float64)
+
+    for obj, data in base_cache.items():
+        bvh = data['bvh']
+        if bvh is None: continue
+        for i, bv in enumerate(buf_xyz):
+            _, _, _, dist = bvh.find_nearest(Vector(bv))
+            if dist is not None and dist < dist_map[i] - 1e-5:
+                dist_map[i]  = dist
+                owner_map[i] = id(obj)
+
+    owner_map[dist_map > limit] = 0
+    return owner_map, dist_map
+
+def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
+                   stride, buf_v_count, output_dir, base_name, dump_name,
+                   is_xxmi, limit, t_start):
+    """Slow Path: пространственный поиск + барицентрическая интерполяция."""
+
+    stride_f32 = stride // 4
+    raw_np     = np.frombuffer(original_bytes, dtype=np.uint8)
+    float_view = raw_np.reshape(buf_v_count, stride).view(np.float32).reshape(buf_v_count, stride // 4)
+    buf_xyz    = float_view[:, :3].astype(np.float64)
+
+    active_objects_set = set()
+    for owners in sk_owner_map_slow.values():
+        active_objects_set.update(owners['direct'])
+        active_objects_set.update(owners['via_target'])
+    active_objects = list(active_objects_set)
+    if not active_objects: return
+
+    linked_targets = get_linked_targets(active_objects)
+    all_involved   = active_objects + list(set(linked_targets))
+    depsgraph      = context.evaluated_depsgraph_get()
+
+    # Snapshot шейпкеев
+    sk_snapshot = {}
+    for obj in all_involved:
+        if obj.data and obj.data.shape_keys:
+            sk_snapshot[obj] = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
+
+    set_armature_visibility(all_involved, False)
+
+    # Для Mirror: НЕ отключаем Merge/Clip — объект уже in Slow Path только если
+    # у него нет кэша, значит буфер содержит полный (зеркальный) меш.
+    # Отключение Merge/Clip здесь только навредит (половина вершин пропадёт).
+    # Мы НЕ трогаем mirror_states в Slow Path.
+
+    try:
+        # Сбрасываем все шейпкеи в 0
+        for a_obj in all_involved:
+            if a_obj.data and a_obj.data.shape_keys:
+                for sk in a_obj.data.shape_keys.key_blocks:
+                    sk.value = 0.0
+        context.view_layer.update()
+        depsgraph.update()
+
+        # Строим базовый кэш объектов
+        base_cache = {}
+        for obj in active_objects:
+            import mathutils as mu
+            m_idx = 0
+            if comp_cache:
+                for entry in comp_cache.get('objects', []):
+                    if entry['name'] == obj.name:
+                        m_idx = entry.get('mat_idx', 0)
+                        break
+            if m_idx == 1:
+                mat = obj.matrix_world
+            elif m_idx == 2:
+                root_obj_name = comp_cache.get('root_obj')
+                root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else active_objects[0]
+                mat = root_obj.matrix_world.inverted() @ obj.matrix_world
+            else:
+                mat = mu.Matrix.Identity(4)
+
+            base_cache[obj] = _build_owner_data(obj, depsgraph, mat)
+
+        # Назначаем владельцев вершинам буфера
+        owner_map, dist_map = _assign_owners_bulk_bvh(buf_xyz, base_cache, limit)
+
+        for sk_name, owners in sk_owner_map_slow.items():
+            sk_direct   = owners['direct']
+            sk_via_target = owners['via_target']
+
+            # Активируем шейпкей
+            for obj in all_involved:
+                if obj.data and obj.data.shape_keys:
+                    for sk in obj.data.shape_keys.key_blocks:
+                        sk.value = 1.0 if sk.name == sk_name else 0.0
+            context.view_layer.update()
+            depsgraph.update()
+
+            target_cache = {}
+            for obj in sk_direct + sk_via_target:
+                if obj not in base_cache: continue
+                eval_obj = obj.evaluated_get(depsgraph)
+                t_eval   = eval_obj.to_mesh()
+                mat      = base_cache[obj]['mat']
+                t_coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
+                eval_obj.to_mesh_clear()
+                if len(t_coords) == len(base_cache[obj]['coords']):
+                    target_cache[obj] = t_coords
+
+            if not target_cache: continue
+
+            out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+            out_path = os.path.join(output_dir, out_name)
+
+            if os.path.exists(out_path):
+                with open(out_path, 'rb') as f:
+                    buf_bytes = f.read()
+                buf_f32 = np.frombuffer(buf_bytes, dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
+            else:
+                buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
+
+            matched_count = 0
+            for obj, t_coords in target_cache.items():
+                mask = (owner_map == id(obj))
+                if not mask.any(): continue
+
+                buf_sub = buf_xyz[mask]
+                deltas  = _bary_delta_batch_bvh(buf_sub, base_cache[obj], t_coords)
+                nonzero = np.linalg.norm(deltas, axis=1) > 1e-7
+                if not nonzero.any(): continue
+
+                indices      = np.where(mask)[0][nonzero]
+                valid_deltas = deltas[nonzero]
+                new_xyz      = (buf_xyz[indices] + valid_deltas).astype(np.float32)
+
+                buf_f32[indices, 0] = new_xyz[:, 0]
+                buf_f32[indices, 1] = new_xyz[:, 1]
+                buf_f32[indices, 2] = new_xyz[:, 2]
+                matched_count += len(indices)
+
+            if matched_count > 0:
+                with open(out_path, 'wb') as f:
+                    f.write(buf_f32.tobytes())
+                print(f"    -> [DONE] {out_name} ({matched_count} verts via Slow Path [Barycentric])")
+
+    finally:
+        # Восстанавливаем шейпкеи
+        for obj, states in sk_snapshot.items():
+            if obj.data and obj.data.shape_keys:
+                for sk in obj.data.shape_keys.key_blocks:
+                    if sk.name in states:
+                        sk.value = states[sk.name]
+        set_armature_visibility(all_involved, True)
+        print(f"  [TIME] Slow Path finished in {time.time() - t_start:.3f}s")
+
+# ---------------------------------------------------------------------------
+# CORE BAKE — оркестратор
+# ---------------------------------------------------------------------------
+
+def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
+                           single_shape_name=None, full_export_mode=False):
+    t_start   = time.time()
+    vb0_path  = None
     dump_name = (os.path.basename(os.path.normpath(bpy.path.abspath(context.scene.xxmi.dump_path)))
                  if hasattr(context.scene, "xxmi") else "")
 
-    game = context.scene.rzm.game.name
+    game    = context.scene.rzm.game.name
     is_xxmi = game in {'GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail'}
 
     patterns = [f"{base_name}Position.buf", f"{base_name}_VB0.buf", f"{base_name}.buf"]
     if dump_name:
         patterns.insert(0, f"{dump_name}{base_name}Position.buf")
         patterns.insert(1, f"{dump_name}{base_name}_VB0.buf")
-    
+
     subfolders = ["", "Meshes", "Buffers"]
     for sub in subfolders:
         curr_dir = os.path.join(mod_root, sub) if sub else mod_root
@@ -447,7 +769,9 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
                 break
         if vb0_path: break
 
-    if not vb0_path: return False
+    if not vb0_path:
+        print(f"  [ERROR] Position buffer not found for {base_name}")
+        return False
 
     output_dir = os.path.join(mod_root, "SK")
     os.makedirs(output_dir, exist_ok=True)
@@ -456,341 +780,129 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
         original_bytes = f.read()
     original_data = bytearray(original_bytes)
 
-    # Stride will be finalized after cache check
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
-    
-    rzm = context.scene.rzm
-    all_keys = {single_shape_name} if single_shape_name else {c.shape_name for c in rzm.shape_configs if not c.disable_export}
-    if not all_keys: return True
 
-    # --- SMART MODIFIER PRE-PROCESSING ---
-    GENERATIVE_MODS = {
-        'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD', 'DECIMATE', 'EDGE_SPLIT', 'GEOMETRY_NODES',
-        'MASK', 'MESH_TO_VOLUME', 'MIRROR', 'MULTIRES', 'REMESH', 'SCREW', 'SKIN',
-        'SOLIDIFY', 'SUBSURF', 'TRIANGULATE', 'VOLUME_TO_MESH', 'WELD', 'WIREFRAME',
-        'CLOTH', 'COLLISION', 'DYNAMIC_PAINT', 'EXPLODE', 'FLUID', 'OCEAN',
-        'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SOFT_BODY'
-    }
-    
-    processed_objects_map = {} # original -> temporary_processed
-    temp_meshes_to_clean = []
+    rzm      = context.scene.rzm
+    all_keys = ({single_shape_name} if single_shape_name
+                else {c.shape_name for c in rzm.shape_configs if not c.disable_export})
+    if not all_keys:
+        return True
 
+    sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
+
+    # Создаём заглушки-буферы для всех шейпкеев (игра не упадёт)
+    for sk_name in all_keys:
+        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+        with open(os.path.join(output_dir, out_name), "wb") as f:
+            f.write(original_bytes)
+
+    if not sk_owner_map:
+        print(f"  [PRE-SCAN] No real shape keys found — skipping component (placeholders saved)")
+        return True
+
+    # Читаем кэш
     try:
-        # Load cache early to help with pre-processing re-mapping
-        try:
-            from .export_cache import component_cache
-            comp_cache = component_cache(base_name)
-        except Exception:
-            comp_cache = None
+        from .export_cache import component_cache
+        comp_cache = component_cache(base_name)
+    except Exception:
+        comp_cache = None
 
-        for obj in comp_objects:
-            active_gen_mods = [m.name for m in obj.modifiers if m.show_viewport and m.type in GENERATIVE_MODS]
-            if active_gen_mods:
-                print(f"  [PRE-PROCESS] {obj.name}: Applying generative modifiers ({', '.join(active_gen_mods[:2])})")
-                # Create a temporary copy and apply modifiers
-                prev_active = context.view_layer.objects.active
-                
-                # --- DUPLICATE FIRST ---
-                bpy.ops.object.select_all(action='DESELECT')
-                obj.select_set(True)
-                context.view_layer.objects.active = obj
-                bpy.ops.object.duplicate(linked=False)
-                tmp_copy = context.view_layer.objects.active
-                
-                success, err = apply_modifiers_for_object_with_shape_keys(context, active_gen_mods)
-                if success:
-                    processed_objects_map[obj] = tmp_copy
-                    temp_meshes_to_clean.append(tmp_copy)
-                    
-                    # TAG FOR FAST PATH
-                    tmp_copy["rzm_orig_name"] = obj.name
-                    
-                    # ATTEMPT DIRECT RE-MAPPING
-                    if comp_cache:
-                        entry = next((o for o in comp_cache.get('objects', []) if o['name'] == obj.name), None)
-                        if entry:
-                            # Finalize stride if needed
-                            stride = comp_cache.get('stride', stride)
-                            vb_off = entry['vb_offset']
-                            vb_cnt = entry['vb_count']
-                            
-                            # Extract buffer slice
-                            buf_f32 = np.frombuffer(original_bytes, dtype=np.float32).reshape(-1, stride // 4)
-                            buf_slice = buf_f32[vb_off : vb_off + vb_cnt, :3]
-                            
-                            # Determine matrix
-                            m_idx = entry.get('mat_idx', 0)
-                            import mathutils
-                            mat = mathutils.Matrix.Identity(4)
-                            if m_idx == 1: mat = obj.matrix_world
-                            elif m_idx == 2:
-                                root_obj_name = comp_cache.get('root_obj')
-                                root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
-                                mat = root_obj.matrix_world.inverted() @ obj.matrix_world if root_obj else mathutils.Matrix.Identity(4)
-                            
-                            v_map = _build_direct_map(tmp_copy, buf_slice, mat)
-                            if v_map is not None:
-                                tmp_copy["rzm_direct_map"] = v_map.tolist()
-                                print(f"    -> [MAP] Direct 1-to-1 map established for {obj.name}")
-                else:
-                    print(f"  [WARNING] Modifier application failed for {obj.name}: {err}")
-                    # Cleanup the failed copy
-                    bpy.data.objects.remove(tmp_copy, do_unlink=True)
-                    
-                context.view_layer.objects.active = prev_active
+    buf_v_count = len(original_data) // stride
 
-        # Replace objects in the list for further processing
-        objs_to_bake = [processed_objects_map.get(o, o) for o in comp_objects]
-        sk_owner_map = _scan_sk_owners(objs_to_bake, all_keys)
+    # ── FAST PATH ──────────────────────────────────────────────────────────
+    sk_owner_map_after_fast = {}   # шейпкеи, которые нуждаются в Baked или Slow Path
 
-        # Create dummy buffers for ALL configured shape keys.
-        for sk_name in all_keys:
-            out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
-            with open(os.path.join(output_dir, out_name), "wb") as f:
-                f.write(original_bytes)
+    if comp_cache is not None:
+        print(f"  [CACHE] HIT — starting Fast Path")
+        stride = comp_cache.get('stride', stride)
+        buf_v_count = len(original_data) // stride
 
-        if not sk_owner_map:
-            print(f"  [PRE-SCAN] No real shape keys found — skipping component (placeholders saved)")
-            return True
+        fallback_map = _bake_with_direct_offsets(
+            sk_owner_map, comp_cache, original_bytes,
+            stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
+        )
 
-        try:
-            from .export_cache import component_cache
-            comp_cache = component_cache(base_name)
-        except Exception:
-            comp_cache = None
-
-        sk_owner_map_slow = {}
-        need_slow_path = False
-
-        if comp_cache is not None:
-            print(f"  [CACHE] HIT — using direct offset write")
-            stride = comp_cache.get('stride', stride)
-            buf_v_count = len(original_data) // stride
-
-            fallback_map = _bake_with_direct_offsets(
-                sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
-            )
-            
-            # Gather objects for Slow Path (via_target or failed Fast Path)
-            for sk_name, owners in sk_owner_map.items():
-                fb = fallback_map.get(sk_name, [])
-                via = owners.get('via_target', []) 
-                
-                if fb or via:
-                    sk_owner_map_slow[sk_name] = {'direct': fb, 'via_target': via}
-                    need_slow_path = True
-                        
-            if not need_slow_path:
-                return True
-        else:
-            buf_v_count = len(original_data) // stride
-            sk_owner_map_slow = sk_owner_map
-            need_slow_path = True
-
-        if not need_slow_path:
-            return True
-
-        print(f"  [PHASE 1] Spatial Matching (Slow Path)")
-        raw_np     = np.frombuffer(original_bytes, dtype=np.uint8)
-        float_view = raw_np.reshape(buf_v_count, stride).view(np.float32).reshape(buf_v_count, stride // 4)
-        buf_xyz    = float_view[:, :3].astype(np.float64)
-
-        active_objects_set = set()
-        for owners in sk_owner_map_slow.values():
-            active_objects_set.update(owners['direct'])
-            active_objects_set.update(owners['via_target'])
-        active_objects = list(active_objects_set)
-
-        linked_targets = get_linked_targets(active_objects)
-        all_involved   = active_objects + list(set(linked_targets))
-        depsgraph = context.evaluated_depsgraph_get()
-
-        sk_snapshot = {}
-        for obj in all_involved:
-            if obj.data and obj.data.shape_keys:
-                sk_snapshot[obj] = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
-
-        set_armature_visibility(all_involved, False)
-        # We no longer disable Mirror Merge/Clip by default in Slow Path, 
-        # as user wants high quality and stable meshes should handle it.
-        mirror_states = {}
-
-        try:
-            for a_obj in all_involved:
-                if a_obj.data and a_obj.data.shape_keys:
-                    for sk in a_obj.data.shape_keys.key_blocks:
-                        sk.value = 0.0
-            context.view_layer.update()
-            depsgraph.update()
-
-            base_cache = {}
-            for obj in active_objects:
-                eval_obj  = obj.evaluated_get(depsgraph)
-                b_eval    = eval_obj.to_mesh()
-                
-                import mathutils
-                m_idx = 0
-                if comp_cache:
-                    for entry in comp_cache.get('objects', []):
-                        if entry['name'] == obj.name:
-                            m_idx = entry.get('mat_idx', 0)
-                            break
-                
-                if m_idx == 1: mat = obj.matrix_world
-                elif m_idx == 2:
-                    root_obj_name = comp_cache.get('root_obj')
-                    root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else active_objects[0]
-                    mat = root_obj.matrix_world.inverted() @ obj.matrix_world
-                else: mat = mathutils.Matrix.Identity(4)
-
-                coords    = np.array([np.array(mat @ v.co, dtype=np.float64) for v in b_eval.vertices], dtype=np.float64)
-                mat_rot   = np.array(mat.to_3x3(), dtype=np.float64)
-                
-                polys     = [list(p.vertices) for p in b_eval.polygons]
-                b_eval.calc_loop_triangles()
-                tri_verts = np.array([[lt.vertices[0], lt.vertices[1], lt.vertices[2]] for lt in b_eval.loop_triangles], dtype=np.int32) if b_eval.loop_triangles else np.zeros((0, 3), dtype=np.int32)
-                eval_obj.to_mesh_clear()
-
-                kd, centroids = _build_spatial_index(coords, tri_verts)
-                # Barycentric mapping REQUIRES a triangle-based BVH.
-                bvh = BVHTree.FromPolygons([Vector(c) for c in coords], tri_verts) if len(tri_verts) > 0 else None
-                
-                base_cache[obj] = {
-                    'coords': coords, 'tri_verts': tri_verts, 'polys': polys,
-                    'kd': kd, 'centroids': centroids, 'bvh': bvh, 'mat': mat
+        for sk_name, owners in sk_owner_map.items():
+            fb  = fallback_map.get(sk_name, [])
+            via = owners.get('via_target', [])
+            if fb or via:
+                sk_owner_map_after_fast[sk_name] = {
+                    'direct':     fb,
+                    'via_target': via,
                 }
+    else:
+        print(f"  [CACHE] MISS — skipping Fast Path")
+        sk_owner_map_after_fast = sk_owner_map
 
-            def _assign_owners_bulk(buf_xyz, base_cache, limit):
-                N = len(buf_xyz)
-                owner_map, dist_map = np.zeros(N, dtype=np.int64), np.full(N, np.inf, dtype=np.float64)
-                
-                # Proper detection of Scipy vs mathutils KDTree
-                use_scipy = False
-                if base_cache:
-                    first_kd = next(iter(base_cache.values())).get('kd')
-                    if first_kd is not None:
-                        try:
-                            from scipy.spatial import KDTree as ScipyKDTree
-                            if isinstance(first_kd, ScipyKDTree):
-                                use_scipy = True
-                        except ImportError:
-                            pass
+    if not sk_owner_map_after_fast:
+        print(f"  [TIME] Bake finished in {time.time() - t_start:.3f}s (Fast Path only)")
+        return True
 
-                if use_scipy:
-                    for obj, data in base_cache.items():
-                        dists, _ = data['kd'].query(buf_xyz, workers=-1)
-                        improve = dists < dist_map - 1e-5
-                        owner_map[improve], dist_map[improve] = id(obj), dists[improve]
-                    owner_map[dist_map > limit] = 0
-                else:
-                    # Fallback to mathutils.kdtree or BVHTree
-                    for i, bv in enumerate(buf_xyz):
-                        mv = Vector(bv)
-                        for obj, data in base_cache.items():
-                            kd = data.get('kd')
-                            if kd is not None and hasattr(kd, 'find'):
-                                _, _, dist = kd.find(bv)
-                            elif data.get('bvh') is not None:
-                                _, _, _, dist = data['bvh'].find_nearest(mv)
-                            else:
-                                continue
-                                
-                            if dist < dist_map[i] - 1e-5:
-                                dist_map[i], owner_map[i] = dist, id(obj)
-                    owner_map[dist_map > limit] = 0
-                return owner_map, dist_map
+    # ── BAKED PATH ─────────────────────────────────────────────────────────
+    # Объекты с генеративными модами, у которых ЕСТЬ шейпкеи (direct)
+    sk_owner_map_bake   = {}
+    sk_owner_map_slow   = {}
 
-            owner_map, dist_map = _assign_owners_bulk(buf_xyz, base_cache, limit)
-            stride_f32 = stride // 4
+    for sk_name, owners in sk_owner_map_after_fast.items():
+        bake_direct = []
+        slow_direct = []
+        for obj in owners.get('direct', []):
+            gen_mods = _get_active_generative_mods(obj)
+            if gen_mods and (obj.data and obj.data.shape_keys):
+                bake_direct.append(obj)
+            else:
+                slow_direct.append(obj)
 
-            for sk_name, owners in sk_owner_map_slow.items():
-                sk_direct, sk_via_target = owners['direct'], owners['via_target']
+        if bake_direct:
+            sk_owner_map_bake[sk_name] = bake_direct
 
-                for obj in all_involved:
-                    if obj.data and obj.data.shape_keys:
-                        for sk in obj.data.shape_keys.key_blocks:
-                            sk.value = 1.0 if sk.name == sk_name else 0.0
-                context.view_layer.update()
-                depsgraph.update()
+        # via_target → всегда Slow Path (Surface Deform не имеет своих шейпкеев)
+        slow_via = owners.get('via_target', [])
+        if slow_direct or slow_via:
+            sk_owner_map_slow[sk_name] = {
+                'direct':     slow_direct,
+                'via_target': slow_via,
+            }
 
-                target_cache = {}
-                for obj in sk_direct + sk_via_target:
-                    if obj not in base_cache: continue
-                    eval_obj = obj.evaluated_get(depsgraph)
-                    t_eval   = eval_obj.to_mesh()
-                    
-                    mat = base_cache[obj]['mat']
-                    t_coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
-                    
-                    eval_obj.to_mesh_clear()
-                    if len(t_coords) == len(base_cache[obj]['coords']):
-                        target_cache[obj] = t_coords
+    if sk_owner_map_bake:
+        print(f"  [BAKED PATH] Processing {sum(len(v) for v in sk_owner_map_bake.values())} object-sk pairs")
+        remaining = _bake_path_for_generative_objects(
+            context, sk_owner_map_bake, comp_cache,
+            original_bytes, stride, buf_v_count,
+            output_dir, base_name, dump_name, is_xxmi
+        )
+        # Объекты, которые не удалось запечь (из-за смены топологии) → в Slow Path
+        for sk_name, objs in remaining.items():
+            if sk_name not in sk_owner_map_slow:
+                sk_owner_map_slow[sk_name] = {'direct': [], 'via_target': []}
+            sk_owner_map_slow[sk_name]['direct'].extend(objs)
 
-                if not target_cache: continue
+    # ── SLOW PATH ──────────────────────────────────────────────────────────
+    if sk_owner_map_slow:
+        # Финальная проверка: объекты без шейпкеев И без Surface Deform не нужны
+        sk_owner_map_slow = {
+            sk: owners for sk, owners in sk_owner_map_slow.items()
+            if owners.get('direct') or owners.get('via_target')
+        }
 
-                out_name  = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
-                out_path  = os.path.join(output_dir, out_name)
-                
-                if os.path.exists(out_path):
-                    with open(out_path, "rb") as _f:
-                        _base_bytes = _f.read()
-                    buf_f32 = np.frombuffer(_base_bytes, dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
-                else:
-                    buf_f32 = np.frombuffer(bytes(original_data), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
-                    
-                matched_count = 0
+    if sk_owner_map_slow:
+        print(f"  [SLOW PATH] Spatial Barycentric for remaining objects")
+        _run_slow_path(
+            context, sk_owner_map_slow, comp_cache,
+            original_bytes, stride, buf_v_count,
+            output_dir, base_name, dump_name, is_xxmi, limit, t_start
+        )
 
-                for obj, t_coords in target_cache.items():
-                    mask = (owner_map == id(obj))
-                    if not mask.any(): continue
-                    
-                    buf_sub      = buf_xyz[mask]
-                    deltas       = _barycentric_delta_batch(buf_sub, base_cache[obj], t_coords)
-                    nonzero      = np.linalg.norm(deltas, axis=1) > 1e-7
-                    if not nonzero.any(): continue
-                    
-                    indices      = np.where(mask)[0][nonzero]
-                    valid_deltas = deltas[nonzero]
-                    new_xyz      = (buf_xyz[indices] + valid_deltas).astype(np.float32)
-                    
-                    buf_f32[indices, 0] = new_xyz[:, 0]
-                    buf_f32[indices, 1] = new_xyz[:, 1]
-                    buf_f32[indices, 2] = new_xyz[:, 2]
-                    matched_count += len(indices)
-
-                if matched_count > 0:
-                    with open(out_path, "wb") as f:
-                        f.write(buf_f32.tobytes())
-                    print(f"    -> [DONE] {out_name} ({matched_count} verts merged via Slow Path)")
-
-        finally:
-            for obj, states in sk_snapshot.items():
-                if obj.data and obj.data.shape_keys:
-                    for sk in obj.data.shape_keys.key_blocks:
-                        if sk.name in states:
-                            sk.value = states[sk.name]
-            set_armature_visibility(all_involved, True)
-            
-            print(f"  [TIME] Puppet Master baking finished in {time.time() - t_start:.3f}s")
-            for obj, mods in mirror_states.items():
-                for mod, merge, clip in mods:
-                    mod.use_mirror_merge, mod.use_clip = merge, clip
-
-    finally:
-        # CLEANUP TEMPORARY OBJECTS
-        for tmp_obj in temp_meshes_to_clean:
-            try:
-                mesh_to_del = tmp_obj.data
-                bpy.data.objects.remove(tmp_obj, do_unlink=True)
-                if mesh_to_del:
-                    bpy.data.meshes.remove(mesh_to_del)
-            except: pass
-
+    print(f"  [TIME] Puppet Master baking finished in {time.time() - t_start:.3f}s")
     return True
 
+# ---------------------------------------------------------------------------
+# OPERATORS
+# ---------------------------------------------------------------------------
+
 class RZM_OT_PuppetMasterBake(bpy.types.Operator):
-    bl_idname    = "rzm.puppet_master_bake"
-    bl_label     = "Bake Puppet Master Shapes"
+    bl_idname     = "rzm.puppet_master_bake"
+    bl_label      = "Bake Puppet Master Shapes"
     bl_description = "Bake shape keys using strictly RZMenu Shape Configs"
     full_export_mode: bpy.props.BoolProperty(default=False)
 
@@ -798,18 +910,20 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
         from .export_manager import get_target_path
         mod_root = get_target_path(context)
         if not mod_root or not os.path.exists(mod_root): return {'CANCELLED'}
-        addons       = context.scene.rzm.addons
+        addons        = context.scene.rzm.addons
         per_component = False if self.full_export_mode else addons.puppet_master_per_component
-        limit        = addons.puppet_master_limit
-        components   = get_components_to_process(context, per_component)
+        limit         = addons.puppet_master_limit
+        components    = get_components_to_process(context, per_component)
         if not components: return {'CANCELLED'}
         for base_name, objs in components.items():
-            bake_component_shapes(context, base_name, objs, mod_root, limit, full_export_mode=self.full_export_mode)
+            bake_component_shapes(context, base_name, objs, mod_root, limit,
+                                   full_export_mode=self.full_export_mode)
         return {'FINISHED'}
 
+
 class RZM_OT_PuppetMasterBakeSingle(bpy.types.Operator):
-    bl_idname    = "rzm.puppet_master_bake_single"
-    bl_label     = "Bake Selected Shape Key"
+    bl_idname     = "rzm.puppet_master_bake_single"
+    bl_label      = "Bake Selected Shape Key"
     bl_description = "Bake the active shape regardless of whitelist"
 
     def execute(self, context):
@@ -817,19 +931,24 @@ class RZM_OT_PuppetMasterBakeSingle(bpy.types.Operator):
         mod_root = get_target_path(context)
         if not mod_root or not os.path.exists(mod_root): return {'CANCELLED'}
         rzm = context.scene.rzm
-        if not (0 <= context.scene.rzm_active_shape_config_index < len(rzm.shape_configs)): return {'CANCELLED'}
+        if not (0 <= context.scene.rzm_active_shape_config_index < len(rzm.shape_configs)):
+            return {'CANCELLED'}
         target_shape = rzm.shape_configs[context.scene.rzm_active_shape_config_index].shape_name
         limit        = rzm.addons.puppet_master_limit
         components   = get_components_to_process(context, per_component=False)
         if not components: return {'CANCELLED'}
         for base_name, objs in components.items():
-            bake_component_shapes(context, base_name, objs, mod_root, limit, single_shape_name=target_shape)
+            bake_component_shapes(context, base_name, objs, mod_root, limit,
+                                   single_shape_name=target_shape)
         return {'FINISHED'}
+
 
 classes_to_register = [RZM_OT_PuppetMasterBake, RZM_OT_PuppetMasterBakeSingle]
 
 def register():
-    for cls in classes_to_register: bpy.utils.register_class(cls)
+    for cls in classes_to_register:
+        bpy.utils.register_class(cls)
 
 def unregister():
-    for cls in reversed(classes_to_register): bpy.utils.unregister_class(cls)
+    for cls in reversed(classes_to_register):
+        bpy.utils.unregister_class(cls)
