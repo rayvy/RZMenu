@@ -8,6 +8,7 @@ import struct
 import numpy as np
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
+from .modifier_utils import apply_modifiers_for_object_with_shape_keys
 
 # --- HELPERS ---
 def get_all_meshes_in_collection(collection, meshes_set, context, settings):
@@ -156,55 +157,48 @@ def _build_spatial_index(coords_np, tri_verts_np):
         except:
             return None, None
 
-def _idw_delta_batch(buf_verts_np, owner_data, target_data):
+def _get_barycentric_coords(p, a, b, c):
+    v0, v1, v2 = b - a, c - a, p - a
+    d00, d01, d11 = v0.dot(v0), v0.dot(v1), v1.dot(v1)
+    d20, d21 = v2.dot(v0), v2.dot(v1)
+    denom = d00 * d11 - d01 * d01
+    if abs(denom) < 1e-10: return 0.333, 0.333, 0.334
+    v = (d11 * d20 - d01 * d21) / denom
+    w = (d00 * d21 - d01 * d20) / denom
+    return 1.0 - v - w, v, w
+
+def _barycentric_delta_batch(buf_verts_np, owner_data, target_coords_np):
+    """
+    Stable Barycentric Projection for Med Path.
+    Replaces IDW to eliminate geometry spikes.
+    """
     base_coords = owner_data['coords']
-    kd          = owner_data['kd']
     bvh         = owner_data['bvh']
-    deltas_np   = target_data - base_coords
+    tri_verts   = owner_data['tri_verts']
+    deltas_np   = (target_coords_np - base_coords).astype(np.float32)
 
-    if kd is not None:
-        try:
-            from scipy.spatial import KDTree
-            if isinstance(kd, KDTree):
-                tri_verts   = owner_data['tri_verts']
-                _, face_ids = kd.query(buf_verts_np, workers=-1)
-                face_v_idx  = tri_verts[face_ids]
-                face_coords = base_coords[face_v_idx]
-                diff        = face_coords - buf_verts_np[:, np.newaxis, :]
-                sq_dist     = (diff * diff).sum(axis=2) + 1e-10
-                w           = 1.0 / sq_dist
-                face_deltas = deltas_np[face_v_idx]
-                out = (w[:, :, np.newaxis] * face_deltas).sum(axis=1) / w.sum(axis=1, keepdims=True)
-                return out
-        except ImportError: pass
-
-        tri_verts = owner_data['tri_verts']
-        out = np.zeros_like(buf_verts_np)
-        for i, bv in enumerate(buf_verts_np):
-            _, face_idx, _ = kd.find(bv)
-            face_v_idx = tri_verts[face_idx]
-            bv_face    = base_coords[face_v_idx]
-            diff       = bv_face - bv
-            sq_dist    = (diff * diff).sum(axis=1) + 1e-10
-            w          = 1.0 / sq_dist
-            out[i]     = (w[:, None] * deltas_np[face_v_idx]).sum(axis=0) / w.sum()
-        return out
-    else:
-        polys    = owner_data['polys']
-        face_ids = []
-        for bv in buf_verts_np:
-            _, _, face_idx, _ = bvh.find_nearest(Vector(bv))
-            face_ids.append(face_idx if face_idx is not None else 0)
-        face_ids = np.array(face_ids, dtype=np.int32)
-        out = np.zeros_like(buf_verts_np)
-        for n, (bv, fi) in enumerate(zip(buf_verts_np, face_ids)):
-            face_v_idx = np.array(polys[fi])
-            bv_face    = base_coords[face_v_idx]
-            diff       = bv_face - bv
-            sq_dist    = (diff * diff).sum(axis=1) + 1e-10
-            w          = 1.0 / sq_dist
-            out[n]     = (w[:, None] * deltas_np[face_v_idx]).sum(axis=0) / w.sum()
-        return out
+    out = np.zeros_like(buf_verts_np, dtype=np.float32)
+    if bvh is None: return out
+    
+    for i, bv in enumerate(buf_verts_np):
+        mv = Vector(bv)
+        # Find nearest polygon (triangle)
+        res = bvh.find_nearest(mv)
+        if res is None or res[2] is None: continue
+        face_idx = res[2]
+        
+        # Get triangle indices and coordinates
+        v_idx = tri_verts[face_idx]
+        a, b, c = Vector(base_coords[v_idx[0]]), Vector(base_coords[v_idx[1]]), Vector(base_coords[v_idx[2]])
+        
+        # Calculate weights
+        u, v, w = _get_barycentric_coords(mv, a, b, c)
+        
+        # Interpolate deltas
+        d_a, d_b, d_c = deltas_np[v_idx[0]], deltas_np[v_idx[1]], deltas_np[v_idx[2]]
+        out[i] = u * d_a + v * d_b + w * d_c
+        
+    return out
 
 # --- FILENAMING ---
 def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
@@ -428,226 +422,294 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
     all_keys = {single_shape_name} if single_shape_name else {c.shape_name for c in rzm.shape_configs if not c.disable_export}
     if not all_keys: return True
 
-    sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
-
-    # Create dummy buffers for ALL configured shape keys.
-    # This prevents the game from crashing if the .ini references a file that wasn't modified.
-    for sk_name in all_keys:
-        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
-        with open(os.path.join(output_dir, out_name), "wb") as f:
-            f.write(original_bytes)
-
-    if not sk_owner_map:
-        print(f"  [PRE-SCAN] No real shape keys found — skipping component (placeholders saved)")
-        return True
+    # --- SMART MODIFIER PRE-PROCESSING ---
+    GENERATIVE_MODS = {
+        'ARRAY', 'BEVEL', 'BOOLEAN', 'BUILD', 'DECIMATE', 'EDGE_SPLIT', 'GEOMETRY_NODES',
+        'MASK', 'MESH_TO_VOLUME', 'MIRROR', 'MULTIRES', 'REMESH', 'SCREW', 'SKIN',
+        'SOLIDIFY', 'SUBSURF', 'TRIANGULATE', 'VOLUME_TO_MESH', 'WELD', 'WIREFRAME',
+        'CLOTH', 'COLLISION', 'DYNAMIC_PAINT', 'EXPLODE', 'FLUID', 'OCEAN',
+        'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SOFT_BODY'
+    }
+    
+    processed_objects_map = {} # original -> temporary_processed
+    temp_meshes_to_clean = []
 
     try:
-        from .export_cache import component_cache
-        comp_cache = component_cache(base_name)
-    except Exception:
-        comp_cache = None
-
-    sk_owner_map_slow = {}
-    need_slow_path = False
-
-    if comp_cache is not None:
-        print(f"  [CACHE] HIT — using direct offset write")
-        stride = comp_cache.get('stride', stride)
-        buf_v_count = len(original_data) // stride
-
-        fallback_map = _bake_with_direct_offsets(
-            sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
-        )
-        
-        # Gather objects for Slow Path (via_target or failed Fast Path)
-        for sk_name, owners in sk_owner_map.items():
-            fb = fallback_map.get(sk_name, [])
-            via = owners.get('via_target', []) 
-            
-            if fb or via:
-                sk_owner_map_slow[sk_name] = {'direct': fb, 'via_target': via}
-                need_slow_path = True
+        for obj in comp_objects:
+            active_gen_mods = [m.name for m in obj.modifiers if m.show_viewport and m.type in GENERATIVE_MODS]
+            if active_gen_mods:
+                print(f"  [PRE-PROCESS] {obj.name}: Applying generative modifiers ({', '.join(active_gen_mods[:2])})")
+                # Create a temporary copy and apply modifiers
+                prev_active = context.view_layer.objects.active
+                
+                # --- DUPLICATE FIRST ---
+                bpy.ops.object.select_all(action='DESELECT')
+                obj.select_set(True)
+                context.view_layer.objects.active = obj
+                bpy.ops.object.duplicate(linked=False)
+                tmp_copy = context.view_layer.objects.active
+                
+                success, err = apply_modifiers_for_object_with_shape_keys(context, active_gen_mods)
+                if success:
+                    processed_objects_map[obj] = tmp_copy
+                    temp_meshes_to_clean.append(tmp_copy)
+                else:
+                    print(f"  [WARNING] Modifier application failed for {obj.name}: {err}")
+                    # Cleanup the failed copy
+                    bpy.data.objects.remove(tmp_copy, do_unlink=True)
                     
+                context.view_layer.objects.active = prev_active
+
+        # Replace objects in the list for further processing
+        objs_to_bake = [processed_objects_map.get(o, o) for o in comp_objects]
+        sk_owner_map = _scan_sk_owners(objs_to_bake, all_keys)
+
+        # Create dummy buffers for ALL configured shape keys.
+        for sk_name in all_keys:
+            out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+            with open(os.path.join(output_dir, out_name), "wb") as f:
+                f.write(original_bytes)
+
+        if not sk_owner_map:
+            print(f"  [PRE-SCAN] No real shape keys found — skipping component (placeholders saved)")
+            return True
+
+        try:
+            from .export_cache import component_cache
+            comp_cache = component_cache(base_name)
+        except Exception:
+            comp_cache = None
+
+        sk_owner_map_slow = {}
+        need_slow_path = False
+
+        if comp_cache is not None:
+            print(f"  [CACHE] HIT — using direct offset write")
+            stride = comp_cache.get('stride', stride)
+            buf_v_count = len(original_data) // stride
+
+            fallback_map = _bake_with_direct_offsets(
+                sk_owner_map, comp_cache, original_bytes, stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
+            )
+            
+            # Gather objects for Slow Path (via_target or failed Fast Path)
+            for sk_name, owners in sk_owner_map.items():
+                fb = fallback_map.get(sk_name, [])
+                via = owners.get('via_target', []) 
+                
+                if fb or via:
+                    sk_owner_map_slow[sk_name] = {'direct': fb, 'via_target': via}
+                    need_slow_path = True
+                        
+            if not need_slow_path:
+                return True
+        else:
+            buf_v_count = len(original_data) // stride
+            sk_owner_map_slow = sk_owner_map
+            need_slow_path = True
+
         if not need_slow_path:
             return True
-    else:
-        buf_v_count = len(original_data) // stride
-        sk_owner_map_slow = sk_owner_map
-        need_slow_path = True
 
-    if not need_slow_path:
-        return True
+        print(f"  [PHASE 1] Spatial Matching (Slow Path)")
+        raw_np     = np.frombuffer(original_bytes, dtype=np.uint8)
+        float_view = raw_np.reshape(buf_v_count, stride).view(np.float32).reshape(buf_v_count, stride // 4)
+        buf_xyz    = float_view[:, :3].astype(np.float64)
 
-    print(f"  [PHASE 1] Spatial Matching (Slow Path)")
-    raw_np     = np.frombuffer(original_bytes, dtype=np.uint8)
-    float_view = raw_np.reshape(buf_v_count, stride).view(np.float32).reshape(buf_v_count, stride // 4)
-    buf_xyz    = float_view[:, :3].astype(np.float64)
+        active_objects_set = set()
+        for owners in sk_owner_map_slow.values():
+            active_objects_set.update(owners['direct'])
+            active_objects_set.update(owners['via_target'])
+        active_objects = list(active_objects_set)
 
-    active_objects_set = set()
-    for owners in sk_owner_map_slow.values():
-        active_objects_set.update(owners['direct'])
-        active_objects_set.update(owners['via_target'])
-    active_objects = list(active_objects_set)
+        linked_targets = get_linked_targets(active_objects)
+        all_involved   = active_objects + list(set(linked_targets))
+        depsgraph = context.evaluated_depsgraph_get()
 
-    linked_targets = get_linked_targets(active_objects)
-    all_involved   = active_objects + list(set(linked_targets))
-    depsgraph = context.evaluated_depsgraph_get()
+        sk_snapshot = {}
+        for obj in all_involved:
+            if obj.data and obj.data.shape_keys:
+                sk_snapshot[obj] = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
 
-    sk_snapshot = {}
-    for obj in all_involved:
-        if obj.data and obj.data.shape_keys:
-            sk_snapshot[obj] = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
-
-    set_armature_visibility(all_involved, False)
-    mirror_states = {}
-    for obj in active_objects:
-        mirror_states[obj] = []
-        for mod in obj.modifiers:
-            if mod.type == 'MIRROR' and mod.show_viewport:
-                mirror_states[obj].append((mod, mod.use_mirror_merge, mod.use_clip))
-                mod.use_mirror_merge, mod.use_clip = False, False
-
-    try:
-        for a_obj in all_involved:
-            if a_obj.data and a_obj.data.shape_keys:
-                for sk in a_obj.data.shape_keys.key_blocks:
-                    sk.value = 0.0
-        context.view_layer.update()
-        depsgraph.update()
-
-        base_cache = {}
+        set_armature_visibility(all_involved, False)
+        mirror_states = {}
         for obj in active_objects:
-            eval_obj  = obj.evaluated_get(depsgraph)
-            b_eval    = eval_obj.to_mesh()
-            
-            import mathutils
-            m_idx = 0
-            if comp_cache:
-                for entry in comp_cache.get('objects', []):
-                    if entry['name'] == obj.name:
-                        m_idx = entry.get('mat_idx', 0)
-                        break
-            
-            if m_idx == 1: mat = obj.matrix_world
-            elif m_idx == 2:
-                root_obj_name = comp_cache.get('root_obj')
-                root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else active_objects[0]
-                mat = root_obj.matrix_world.inverted() @ obj.matrix_world
-            else: mat = mathutils.Matrix.Identity(4)
+            mirror_states[obj] = []
+            for mod in obj.modifiers:
+                if mod.type == 'MIRROR' and mod.show_viewport:
+                    mirror_states[obj].append((mod, mod.use_mirror_merge, mod.use_clip))
+                    mod.use_mirror_merge, mod.use_clip = False, False
 
-            coords    = np.array([np.array(mat @ v.co, dtype=np.float64) for v in b_eval.vertices], dtype=np.float64)
-            mat_rot   = np.array(mat.to_3x3(), dtype=np.float64)
-            
-            polys     = [list(p.vertices) for p in b_eval.polygons]
-            loop_tris = b_eval.calc_loop_triangles()
-            tri_verts = np.array([[lt.vertices[0], lt.vertices[1], lt.vertices[2]] for lt in loop_tris], dtype=np.int32) if loop_tris else np.zeros((0, 3), dtype=np.int32)
-            eval_obj.to_mesh_clear()
-
-            kd, centroids = _build_spatial_index(coords, tri_verts)
-            bvh = None if kd is not None else BVHTree.FromPolygons([Vector(c) for c in coords], polys)
-            
-            base_cache[obj] = {
-                'coords': coords, 'tri_verts': tri_verts, 'polys': polys,
-                'kd': kd, 'centroids': centroids, 'bvh': bvh, 'mat': mat
-            }
-
-        def _assign_owners_bulk(buf_xyz, base_cache, limit):
-            N = len(buf_xyz)
-            owner_map, dist_map = np.zeros(N, dtype=np.int64), np.full(N, np.inf, dtype=np.float64)
-            has_scipy = base_cache and next(iter(base_cache.values()))['kd'] is not None
-
-            if has_scipy:
-                for obj, data in base_cache.items():
-                    dists, _ = data['kd'].query(buf_xyz, workers=-1)
-                    improve = dists < dist_map - 1e-5
-                    owner_map[improve], dist_map[improve] = id(obj), dists[improve]
-                owner_map[dist_map > limit] = 0
-            else:
-                for i, bv in enumerate(buf_xyz):
-                    mv = Vector(bv)
-                    for obj, data in base_cache.items():
-                        if data['bvh'] is None: continue
-                        _, _, _, dist = data['bvh'].find_nearest(mv)
-                        if dist < dist_map[i] - 1e-5:
-                            dist_map[i], owner_map[i] = dist, id(obj)
-                owner_map[dist_map > limit] = 0
-            return owner_map, dist_map
-
-        owner_map, dist_map = _assign_owners_bulk(buf_xyz, base_cache, limit)
-        stride_f32 = stride // 4
-
-        for sk_name, owners in sk_owner_map_slow.items():
-            sk_direct, sk_via_target = owners['direct'], owners['via_target']
-
-            for obj in all_involved:
-                if obj.data and obj.data.shape_keys:
-                    for sk in obj.data.shape_keys.key_blocks:
-                        sk.value = 1.0 if sk.name == sk_name else 0.0
+        try:
+            for a_obj in all_involved:
+                if a_obj.data and a_obj.data.shape_keys:
+                    for sk in a_obj.data.shape_keys.key_blocks:
+                        sk.value = 0.0
             context.view_layer.update()
             depsgraph.update()
 
-            target_cache = {}
-            for obj in sk_direct + sk_via_target:
-                if obj not in base_cache: continue
-                eval_obj = obj.evaluated_get(depsgraph)
-                t_eval   = eval_obj.to_mesh()
+            base_cache = {}
+            for obj in active_objects:
+                eval_obj  = obj.evaluated_get(depsgraph)
+                b_eval    = eval_obj.to_mesh()
                 
-                mat = base_cache[obj]['mat']
-                t_coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
+                import mathutils
+                m_idx = 0
+                if comp_cache:
+                    for entry in comp_cache.get('objects', []):
+                        if entry['name'] == obj.name:
+                            m_idx = entry.get('mat_idx', 0)
+                            break
                 
+                if m_idx == 1: mat = obj.matrix_world
+                elif m_idx == 2:
+                    root_obj_name = comp_cache.get('root_obj')
+                    root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else active_objects[0]
+                    mat = root_obj.matrix_world.inverted() @ obj.matrix_world
+                else: mat = mathutils.Matrix.Identity(4)
+
+                coords    = np.array([np.array(mat @ v.co, dtype=np.float64) for v in b_eval.vertices], dtype=np.float64)
+                mat_rot   = np.array(mat.to_3x3(), dtype=np.float64)
+                
+                polys     = [list(p.vertices) for p in b_eval.polygons]
+                b_eval.calc_loop_triangles()
+                tri_verts = np.array([[lt.vertices[0], lt.vertices[1], lt.vertices[2]] for lt in b_eval.loop_triangles], dtype=np.int32) if b_eval.loop_triangles else np.zeros((0, 3), dtype=np.int32)
                 eval_obj.to_mesh_clear()
-                if len(t_coords) == len(base_cache[obj]['coords']):
-                    target_cache[obj] = t_coords
 
-            if not target_cache: continue
+                kd, centroids = _build_spatial_index(coords, tri_verts)
+                # Barycentric mapping REQUIRES a triangle-based BVH.
+                bvh = BVHTree.FromPolygons([Vector(c) for c in coords], tri_verts) if len(tri_verts) > 0 else None
+                
+                base_cache[obj] = {
+                    'coords': coords, 'tri_verts': tri_verts, 'polys': polys,
+                    'kd': kd, 'centroids': centroids, 'bvh': bvh, 'mat': mat
+                }
 
-            out_name  = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
-            out_path  = os.path.join(output_dir, out_name)
+            def _assign_owners_bulk(buf_xyz, base_cache, limit):
+                N = len(buf_xyz)
+                owner_map, dist_map = np.zeros(N, dtype=np.int64), np.full(N, np.inf, dtype=np.float64)
+                
+                # Proper detection of Scipy vs mathutils KDTree
+                use_scipy = False
+                if base_cache:
+                    first_kd = next(iter(base_cache.values())).get('kd')
+                    if first_kd is not None:
+                        try:
+                            from scipy.spatial import KDTree as ScipyKDTree
+                            if isinstance(first_kd, ScipyKDTree):
+                                use_scipy = True
+                        except ImportError:
+                            pass
+
+                if use_scipy:
+                    for obj, data in base_cache.items():
+                        dists, _ = data['kd'].query(buf_xyz, workers=-1)
+                        improve = dists < dist_map - 1e-5
+                        owner_map[improve], dist_map[improve] = id(obj), dists[improve]
+                    owner_map[dist_map > limit] = 0
+                else:
+                    # Fallback to mathutils.kdtree or BVHTree
+                    for i, bv in enumerate(buf_xyz):
+                        mv = Vector(bv)
+                        for obj, data in base_cache.items():
+                            kd = data.get('kd')
+                            if kd is not None and hasattr(kd, 'find'):
+                                _, _, dist = kd.find(bv)
+                            elif data.get('bvh') is not None:
+                                _, _, _, dist = data['bvh'].find_nearest(mv)
+                            else:
+                                continue
+                                
+                            if dist < dist_map[i] - 1e-5:
+                                dist_map[i], owner_map[i] = dist, id(obj)
+                    owner_map[dist_map > limit] = 0
+                return owner_map, dist_map
+
+            owner_map, dist_map = _assign_owners_bulk(buf_xyz, base_cache, limit)
+            stride_f32 = stride // 4
+
+            for sk_name, owners in sk_owner_map_slow.items():
+                sk_direct, sk_via_target = owners['direct'], owners['via_target']
+
+                for obj in all_involved:
+                    if obj.data and obj.data.shape_keys:
+                        for sk in obj.data.shape_keys.key_blocks:
+                            sk.value = 1.0 if sk.name == sk_name else 0.0
+                context.view_layer.update()
+                depsgraph.update()
+
+                target_cache = {}
+                for obj in sk_direct + sk_via_target:
+                    if obj not in base_cache: continue
+                    eval_obj = obj.evaluated_get(depsgraph)
+                    t_eval   = eval_obj.to_mesh()
+                    
+                    mat = base_cache[obj]['mat']
+                    t_coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
+                    
+                    eval_obj.to_mesh_clear()
+                    if len(t_coords) == len(base_cache[obj]['coords']):
+                        target_cache[obj] = t_coords
+
+                if not target_cache: continue
+
+                out_name  = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+                out_path  = os.path.join(output_dir, out_name)
+                
+                if os.path.exists(out_path):
+                    with open(out_path, "rb") as _f:
+                        _base_bytes = _f.read()
+                    buf_f32 = np.frombuffer(_base_bytes, dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
+                else:
+                    buf_f32 = np.frombuffer(bytes(original_data), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
+                    
+                matched_count = 0
+
+                for obj, t_coords in target_cache.items():
+                    mask = (owner_map == id(obj))
+                    if not mask.any(): continue
+                    
+                    buf_sub      = buf_xyz[mask]
+                    deltas       = _barycentric_delta_batch(buf_sub, base_cache[obj], t_coords)
+                    nonzero      = np.linalg.norm(deltas, axis=1) > 1e-7
+                    if not nonzero.any(): continue
+                    
+                    indices      = np.where(mask)[0][nonzero]
+                    valid_deltas = deltas[nonzero]
+                    new_xyz      = (buf_xyz[indices] + valid_deltas).astype(np.float32)
+                    
+                    buf_f32[indices, 0] = new_xyz[:, 0]
+                    buf_f32[indices, 1] = new_xyz[:, 1]
+                    buf_f32[indices, 2] = new_xyz[:, 2]
+                    matched_count += len(indices)
+
+                if matched_count > 0:
+                    with open(out_path, "wb") as f:
+                        f.write(buf_f32.tobytes())
+                    print(f"    -> [DONE] {out_name} ({matched_count} verts merged via Slow Path)")
+
+        finally:
+            for obj, states in sk_snapshot.items():
+                if obj.data and obj.data.shape_keys:
+                    for sk in obj.data.shape_keys.key_blocks:
+                        if sk.name in states:
+                            sk.value = states[sk.name]
+            set_armature_visibility(all_involved, True)
             
-            if os.path.exists(out_path):
-                with open(out_path, "rb") as _f:
-                    _base_bytes = _f.read()
-                buf_f32 = np.frombuffer(_base_bytes, dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
-            else:
-                buf_f32 = np.frombuffer(bytes(original_data), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
-                
-            matched_count = 0
-
-            for obj, t_coords in target_cache.items():
-                mask = (owner_map == id(obj))
-                if not mask.any(): continue
-                
-                buf_sub      = buf_xyz[mask]
-                deltas       = _idw_delta_batch(buf_sub, base_cache[obj], t_coords)
-                nonzero      = np.linalg.norm(deltas, axis=1) > 1e-7
-                if not nonzero.any(): continue
-                
-                indices      = np.where(mask)[0][nonzero]
-                valid_deltas = deltas[nonzero]
-                new_xyz      = (buf_xyz[indices] + valid_deltas).astype(np.float32)
-                
-                buf_f32[indices, 0] = new_xyz[:, 0]
-                buf_f32[indices, 1] = new_xyz[:, 1]
-                buf_f32[indices, 2] = new_xyz[:, 2]
-                matched_count += len(indices)
-
-            if matched_count > 0:
-                with open(out_path, "wb") as f:
-                    f.write(buf_f32.tobytes())
-                print(f"    -> [DONE] {out_name} ({matched_count} verts merged via Slow Path)")
+            print(f"  [TIME] Puppet Master baking finished in {time.time() - t_start:.3f}s")
+            for obj, mods in mirror_states.items():
+                for mod, merge, clip in mods:
+                    mod.use_mirror_merge, mod.use_clip = merge, clip
 
     finally:
-        for obj, states in sk_snapshot.items():
-            if obj.data and obj.data.shape_keys:
-                for sk in obj.data.shape_keys.key_blocks:
-                    if sk.name in states:
-                        sk.value = states[sk.name]
-        set_armature_visibility(all_involved, True)
-        
-        print(f"  [TIME] Puppet Master baking finished in {time.time() - t_start:.3f}s")
-        for obj, mods in mirror_states.items():
-            for mod, merge, clip in mods:
-                mod.use_mirror_merge, mod.use_clip = merge, clip
+        # CLEANUP TEMPORARY OBJECTS
+        for tmp_obj in temp_meshes_to_clean:
+            try:
+                mesh_to_del = tmp_obj.data
+                bpy.data.objects.remove(tmp_obj, do_unlink=True)
+                if mesh_to_del:
+                    bpy.data.meshes.remove(mesh_to_del)
+            except: pass
 
     return True
 
