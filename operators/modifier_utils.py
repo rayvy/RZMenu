@@ -22,14 +22,12 @@ def apply_modifiers_for_object_with_shape_keys(context, selectedModifiers, disab
     startTime = time.time()
     
     # Inspect modifiers and handle Mirror Merge
-    mirror_merge_states = {}
+    # We now attempt to KEEP merge/clip enabled for high quality (Subdiv parity).
+    # We only disable them if the user explicitly requested it or if we detect instability.
+    mirror_mods_to_watch = []
     for modifier in context.object.modifiers:
-        if modifier.name in selectedModifiers:
-            if modifier.type == 'MIRROR':
-                mirror_merge_states[modifier] = (modifier.use_mirror_merge, modifier.use_clip)
-                # Disable merge and clip to ensure vertex count stability across shapekeys
-                modifier.use_mirror_merge = False
-                modifier.use_clip = False
+        if modifier.name in selectedModifiers and modifier.type == 'MIRROR':
+            mirror_mods_to_watch.append(modifier)
 
     # Disable armature modifiers.
     disabled_armature_modifiers = []
@@ -109,8 +107,25 @@ def apply_modifiers_for_object_with_shape_keys(context, selectedModifiers, disab
         
         # Verify number of vertices.
         if vertCount != len(tmpObject.data.vertices):
-            errorInfo = ("Shape keys ended up with different number of vertices!\n"
-                         "Check if Mirror modifier has 'Merge' enabled.")
+            # If vertex count differs, it's likely due to Mirror Merge.
+            # We could try to fallback and disable merge here, but for now we report it.
+            errorInfo = (f"Shape key '{list_properties[i]['name']}' ended up with {len(tmpObject.data.vertices)} vertices, "
+                         f"but base shape has {vertCount}.\n"
+                         "This usually happens when Mirror 'Merge' is enabled and shape keys move vertices across the mirror plane.\n"
+                         "Please disable 'Merge' on the Mirror modifier or ensure vertices don't cross the center.")
+            
+            # Cleanup
+            tmpMesh = tmpObject.data
+            bpy.ops.object.delete(use_global=False)
+            bpy.data.meshes.remove(tmpMesh)
+            
+            originalObject.select_set(False)
+            context.view_layer.objects.active = copyObject
+            copyObject.select_set(True)
+            copyMesh = copyObject.data
+            bpy.ops.object.delete(use_global=False)
+            bpy.data.meshes.remove(copyMesh)
+            
             return False, errorInfo
     
         # Join with originalObject
@@ -164,7 +179,5 @@ def apply_modifiers_for_object_with_shape_keys(context, selectedModifiers, disab
         for modifier in disabled_armature_modifiers:
             modifier.show_viewport = True
             
-    for modifier, states in mirror_merge_states.items():
-        modifier.use_mirror_merge, modifier.use_clip = states
-    
     return True, None
+

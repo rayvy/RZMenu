@@ -167,6 +167,44 @@ def _get_barycentric_coords(p, a, b, c):
     w = (d00 * d21 - d01 * d20) / denom
     return 1.0 - v - w, v, w
 
+def _build_direct_map(obj, buf_xyz, mat):
+    """
+    Builds a 1-to-1 mapping between an APPLIED Blender mesh and a buffer slice.
+    This allows Fast Path baking for Mirrored/Subdivided meshes.
+    """
+    import mathutils
+    v_cnt = len(obj.data.vertices)
+    if v_cnt == 0: return None
+    
+    # Extract coordinates
+    coords_raw = np.zeros(v_cnt * 3, dtype=np.float32)
+    obj.data.vertices.foreach_get('co', coords_raw)
+    coords_raw = coords_raw.reshape(-1, 3)
+    
+    # Transform to buffer space
+    mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
+    mat_trans = np.array(mat.to_translation(), dtype=np.float32)
+    blender_coords = (coords_raw @ mat_rot.T) + mat_trans
+    
+    # Build KD-Tree
+    tree = mathutils.kdtree.KDTree(v_cnt)
+    for i, co in enumerate(blender_coords):
+        tree.insert(co, i)
+    tree.balance()
+    
+    # Map
+    v_map = np.zeros(len(buf_xyz), dtype=np.int32)
+    max_d = 0
+    for i, pos in enumerate(buf_xyz):
+        _, idx, dist = tree.find(pos)
+        v_map[i] = idx
+        if dist > max_d: max_d = dist
+        
+    if max_d > 0.1: # Threshold for topology mismatch
+        return None
+        
+    return v_map
+
 def _barycentric_delta_batch(buf_verts_np, owner_data, target_coords_np):
     """
     Stable Barycentric Projection for Med Path.
@@ -235,7 +273,11 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
         force_fast = bpy.context.scene.rzm.export_settings.force_fast_path
         
         for obj in sk_direct:
-            entry = cache_objects.get(obj.name)
+            # Handle Pre-processed objects (Applied Mirror/Subdiv)
+            orig_name = obj.get("rzm_orig_name", obj.name)
+            custom_map = obj.get("rzm_direct_map")
+            
+            entry = cache_objects.get(orig_name)
             if entry is None:
                 fallback_this.append(obj)
                 continue
@@ -248,7 +290,8 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
 
             active_gen_mods = [m.name for m in obj.modifiers if m.show_viewport and m.type in GENERATIVE_MODS]
             
-            if active_gen_mods and not force_fast:
+            # If we have a custom map from pre-processing, we bypass the generative mod check!
+            if active_gen_mods and not force_fast and custom_map is None:
                 print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:2])}) -> Slow Path.")
                 fallback_this.append(obj)
                 continue
@@ -258,15 +301,13 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes, stride, 
             ba_blk = obj.data.shape_keys.reference_key
             if not sk_blk or not ba_blk: continue
             
-            v_map = entry.get('vertex_map')
+            v_map = custom_map if custom_map is not None else entry.get('vertex_map')
             m_idx = entry.get('mat_idx', 0)
-            is_robust = entry.get('is_robust', False)
+            is_robust = True if custom_map is not None else entry.get('is_robust', False)
             
-            # FAST PATH: Requires valid v_map from cache
-            # Validation: v_map length must match Blender mesh granularity (Loops for EFMI, Vertices for Legacy XXMI)
-            # OR Buffer size for Robust XXMI
+            # FAST PATH: Requires valid v_map
             if is_robust:
-                is_valid_map = (v_map and len(v_map) == vb_cnt)
+                is_valid_map = (v_map is not None and len(v_map) == vb_cnt)
             else:
                 blender_v_count = len(obj.data.loops) if (v_map and len(v_map) == len(obj.data.loops)) else len(obj.data.vertices)
                 is_valid_map = (v_map and len(v_map) == blender_v_count)
@@ -435,6 +476,13 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
     temp_meshes_to_clean = []
 
     try:
+        # Load cache early to help with pre-processing re-mapping
+        try:
+            from .export_cache import component_cache
+            comp_cache = component_cache(base_name)
+        except Exception:
+            comp_cache = None
+
         for obj in comp_objects:
             active_gen_mods = [m.name for m in obj.modifiers if m.show_viewport and m.type in GENERATIVE_MODS]
             if active_gen_mods:
@@ -453,6 +501,37 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
                 if success:
                     processed_objects_map[obj] = tmp_copy
                     temp_meshes_to_clean.append(tmp_copy)
+                    
+                    # TAG FOR FAST PATH
+                    tmp_copy["rzm_orig_name"] = obj.name
+                    
+                    # ATTEMPT DIRECT RE-MAPPING
+                    if comp_cache:
+                        entry = next((o for o in comp_cache.get('objects', []) if o['name'] == obj.name), None)
+                        if entry:
+                            # Finalize stride if needed
+                            stride = comp_cache.get('stride', stride)
+                            vb_off = entry['vb_offset']
+                            vb_cnt = entry['vb_count']
+                            
+                            # Extract buffer slice
+                            buf_f32 = np.frombuffer(original_bytes, dtype=np.float32).reshape(-1, stride // 4)
+                            buf_slice = buf_f32[vb_off : vb_off + vb_cnt, :3]
+                            
+                            # Determine matrix
+                            m_idx = entry.get('mat_idx', 0)
+                            import mathutils
+                            mat = mathutils.Matrix.Identity(4)
+                            if m_idx == 1: mat = obj.matrix_world
+                            elif m_idx == 2:
+                                root_obj_name = comp_cache.get('root_obj')
+                                root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
+                                mat = root_obj.matrix_world.inverted() @ obj.matrix_world if root_obj else mathutils.Matrix.Identity(4)
+                            
+                            v_map = _build_direct_map(tmp_copy, buf_slice, mat)
+                            if v_map is not None:
+                                tmp_copy["rzm_direct_map"] = v_map.tolist()
+                                print(f"    -> [MAP] Direct 1-to-1 map established for {obj.name}")
                 else:
                     print(f"  [WARNING] Modifier application failed for {obj.name}: {err}")
                     # Cleanup the failed copy
@@ -532,13 +611,9 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit, sin
                 sk_snapshot[obj] = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
 
         set_armature_visibility(all_involved, False)
+        # We no longer disable Mirror Merge/Clip by default in Slow Path, 
+        # as user wants high quality and stable meshes should handle it.
         mirror_states = {}
-        for obj in active_objects:
-            mirror_states[obj] = []
-            for mod in obj.modifiers:
-                if mod.type == 'MIRROR' and mod.show_viewport:
-                    mirror_states[obj].append((mod, mod.use_mirror_merge, mod.use_clip))
-                    mod.use_mirror_merge, mod.use_clip = False, False
 
         try:
             for a_obj in all_involved:
