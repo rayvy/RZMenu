@@ -1,11 +1,11 @@
 {% import "modules/utils.j2" as utils with context %}
 {# --- Вспомогательный макрос: Получение реального объекта --- #}
-{% macro _get_real_object(input_obj) -%}
-    {%- set obj_name = input_obj.name if input_obj.name is defined else input_obj -%}
-    {%- if scene is defined and obj_name in scene.objects -%}
+{% macro _get_real_object(input_obj) %}
+    {% set obj_name = input_obj.name if input_obj.name is defined else input_obj %}
+    {% if scene is defined and obj_name in scene.objects %}
         {{- scene.objects[obj_name] -}}
-    {%- endif -%}
-{%- endmacro %}
+    {% endif %}
+{% endmacro %}
 
 {# --- ГЛАВНЫЙ МАКРОС ОТРИСОВКИ --- #}
 {# 
@@ -16,14 +16,14 @@
 #}
 {% macro smart_draw(input_obj, draw_mode='simple', override_count=none, override_offset=none) %}
     {# [RZ] MESH METADATA TAG #}
-    {%- set obj_name = input_obj.name if input_obj.name is defined else input_obj -%}
-    {%- set real_obj = none -%}
-    {%- if scene is defined and obj_name in scene.objects -%}{%- set real_obj = scene.objects[obj_name] -%}{%- endif -%}
+    {% set obj_name = input_obj.name if input_obj.name is defined else input_obj %}
+    {% set real_obj = none %}
+    {% if scene is defined and obj_name in scene.objects %}{% set real_obj = scene.objects[obj_name] %}{% endif %}
     
-    {%- set mesh_tags = utils.tier_tags_mesh(real_obj or input_obj, scene) -%}
-    {%- if mesh_tags -%}
+    {% set mesh_tags = utils.tier_tags_mesh(real_obj or input_obj, scene) %}
+    {% if mesh_tags %}
     ;[META-INFO] [START] [DELETE] [MESH] [{{ obj_name }}] {{ mesh_tags }}
-    {%- endif %}
+    {% endif %}
     
     {# 1. Находим реальный объект в сцене для доступа к Custom Properties #}
     {% set obj_name = input_obj.name if input_obj.name is defined else input_obj %}
@@ -90,13 +90,16 @@
         {# 2. Сначала выводим текстуры БЕЗ условий #}
         {% for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
             {% set slot_id = key[12:] %}
+            {# --- МЕХАНИЗМ КОРРЕКЦИИ: отсекаем .1, .2 и т.д. --- #}
+            {% set clean_slot_id = slot_id.split('.')[0] %}
+            
             {% set cond_key = 'rzm.TexCond.' + slot_id %}
             {% if cond_key not in real_obj %}
                 {% set safe_val = value | string %}
-                {%- if safe_val.startswith('Resource\\') -%}{% set safe_val = safe_val[9:] %}
-                {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}
-            {%- endif -%}
-            Resource\ZZMI\{{ slot_id }} = ref Resource{{ safe_val }}
+                {% if safe_val.startswith('Resource\\') %}{% set safe_val = safe_val[9:] %}
+                {% elif safe_val.startswith('Resource') %}{% set safe_val = safe_val[8:] %}
+                {% endif %}
+            Resource\ZZMI\{{ clean_slot_id }} = ref Resource{{ safe_val }}
                 {% set _ = found_textures.append(1) %}
             {% endif %}
         {% endfor %}
@@ -104,14 +107,17 @@
         {# 3. Группируем текстуры под их условиями (if blocks) #}
         {% for cond in unique_conditions %}
             if {{ utils.normalize_all_vars(cond, none, scene) }}
-            {%- for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
+            {% for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
                 {% set slot_id = key[12:] %}
+                {# --- МЕХАНИЗМ КОРРЕКЦИИ: отсекаем .1, .2 и т.д. --- #}
+                {% set clean_slot_id = slot_id.split('.')[0] %}
+
                 {% if real_obj.get('rzm.TexCond.' + slot_id) == cond %}
                     {% set safe_val = value | string %}
-                    {%- if safe_val.startswith('Resource\\') -%}{% set safe_val = safe_val[9:] %}
-                    {%- elif safe_val.startswith('Resource') -%}{% set safe_val = safe_val[8:] %}
-                {%- endif -%}
-                Resource\ZZMI\{{ slot_id }} = ref Resource{{ safe_val }}
+                    {% if safe_val.startswith('Resource\\') %}{% set safe_val = safe_val[9:] %}
+                    {% elif safe_val.startswith('Resource') %}{% set safe_val = safe_val[8:] %}
+                    {% endif %}
+                Resource\ZZMI\{{ clean_slot_id }} = ref Resource{{ safe_val }}
                     {% set _ = found_textures.append(1) %}
                 {% endif %}
             {% endfor %}
@@ -156,7 +162,7 @@
 
     {% endif %}
     
-    {%- if mesh_tags %}
+    {% if mesh_tags %}
     ;[META-INFO] [END] [DELETE] [MESH] [{{ obj_name }}] {{ mesh_tags }}
-    {%- endif %}
+    {% endif %}
 {% endmacro %}
