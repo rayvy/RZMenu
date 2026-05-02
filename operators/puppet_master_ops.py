@@ -285,14 +285,6 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             eval_v_count = entry.get('eval_v_count', orig_v_count)
             has_real_id  = entry.get('has_real_id', True)
 
-            # If .id was synthetic (identity) and modifier expanded the mesh,
-            # v_map indices point into eval space, not orig space → Baked Path.
-            if not has_real_id and eval_v_count > orig_v_count:
-                print(f"    [WARN] {obj.name}: identity orig_map with expanded eval mesh "
-                      f"(orig={orig_v_count}, eval={eval_v_count}) → Baked Path.")
-                fallback_this.append(obj)
-                continue
-
             # ── Matrix (coordinate space) ──────────────────────────────────
             mat = mathutils.Matrix.Identity(4)
             if m_idx == 1:
@@ -306,12 +298,11 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             v_map_np = np.array(v_map, dtype=np.int32)
 
             # ── Route: ORIG vs EVAL ────────────────────────────────────────
-            # ORIG: .id attribute was real (orig_v == eval_v slot range).
-            #       v_map[i] < orig_v_count → read SK data directly.
-            # EVAL: .id was synthetic (Mirror/Subdiv expanded the mesh).
-            #       v_map[i] are eval indices; compute delta from depsgraph.
-            #       KDTree uses EVAL positions → left (-X) and right (+X) are
-            #       spatially separated, so there is no left/right ambiguity.
+            # ORIG: .id is real OR eval_v == orig_v (plain/applied mesh).
+            #       v_map[i] is within orig SK data range → read directly.
+            # EVAL: .id is synthetic AND modifier expanded the mesh (Mirror, Subdiv).
+            #       v_map[i] are eval indices; depsgraph eval at SK=0 and SK=1.
+            #       KDTree uses EVAL positions → no left/right ambiguity.
             use_eval_path = (not has_real_id and eval_v_count > orig_v_count)
 
             if not use_eval_path:
@@ -359,25 +350,26 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                     obj.evaluated_get(depsgraph).to_mesh_clear()
                     sk_world = sk_loc @ mw3.T + mwt
 
-                    # Delta per eval vertex via position KDTree
-                    # KDTree on SK=1 eval positions — no left/right ambiguity
-                    # because Mirror produces spatially distinct vertices.
-                    if sv == bv:
-                        deltas_eval = (sk_world - ba_world).astype(np.float32)
-                    else:
-                        import mathutils as _mu
-                        kd = _mu.kdtree.KDTree(sv)
-                        for ki, kp in enumerate(sk_world):
-                            kd.insert(_mu.Vector(kp), ki)
-                        kd.balance()
-                        deltas_eval = np.empty((bv, 3), dtype=np.float32)
-                        for bi in range(bv):
-                            _, ki, _ = kd.find(_mu.Vector(ba_world[bi]))
-                            deltas_eval[bi] = sk_world[ki] - ba_world[bi]
+                    # Delta per eval vertex via position KDTree.
+                    # ALWAYS use KDTree — never assume vertex ordering is stable
+                    # between two depsgraph evaluations. Mirror+Merge can swap
+                    # vertex indices even when count stays the same (a vertex
+                    # near the merge threshold crosses it between SK=0 and SK=1).
+                    # KDTree by EVAL position is unambiguous: left (+X) and
+                    # right (-X) vertices are spatially separate.
+                    import mathutils as _mu
+                    kd = _mu.kdtree.KDTree(sv)
+                    for ki, kp in enumerate(sk_world):
+                        kd.insert(_mu.Vector(kp), ki)
+                    kd.balance()
+                    deltas_eval = np.empty((bv, 3), dtype=np.float32)
+                    for bi in range(bv):
+                        _, ki, _ = kd.find(_mu.Vector(ba_world[bi]))
+                        deltas_eval[bi] = sk_world[ki] - ba_world[bi]
 
-                    # deltas_eval[i] is already world-space delta for eval vert i
-                    # v_map_np[slot] = eval vert index for that buffer slot
-                    deltas_all = deltas_eval  # indexed by eval vert
+                    # deltas_eval[i] = world-space delta for eval vertex i.
+                    # v_map_np[slot] = eval vertex index → indexes deltas_eval.
+                    deltas_all = deltas_eval
 
                     if not is_xxmi:
                         deltas_all[:, 0] *= -1
