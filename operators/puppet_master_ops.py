@@ -272,6 +272,14 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             # v_map must cover exactly the buffer slice for this object.
             # Any other length means the topology bridge is stale or wrong.
             is_valid_map = (v_map is not None) and (len(v_map) == vb_cnt)
+            
+            n_verts = len(obj.data.vertices)
+            if is_valid_map:
+                max_v = max(v_map) if v_map else -1
+                if max_v >= n_verts:
+                    print(f"    [WARN] {obj.name}: map max index ({max_v}) exceeds original vertex count ({n_verts}). Geometry changed via modifiers. → Fallback to Baked Path.")
+                    is_valid_map = False
+
             if not is_valid_map:
                 map_len = len(v_map) if v_map else 0
                 orig_vc = entry.get('orig_v_count', '?')
@@ -886,7 +894,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
 
     # ── SUMMARY ──
     print(f"\n  [SUMMARY] {base_name} component finished in {time.time() - t_start:.3f}s")
-    print(f"    - Fast Path (Direct Map): {sum(1 for sk in sk_owner_map.values() for o in sk['direct'] if o not in sk_owner_map_after_fast.get(sk, {}).get('direct', []))} objects")
+    print(f"    - Fast Path (Direct Map): {sum(1 for sk_name, sk_data in sk_owner_map.items() for o in sk_data['direct'] if o not in sk_owner_map_after_fast.get(sk_name, {}).get('direct', []))} objects")
     print(f"    - Baked Path (Spatial Match): {sum(len(v) for v in sk_owner_map_bake.values())} objects")
     print(f"    - Slow Path (Barycentric): {sum(len(v['direct']) + len(v['via_target']) for v in sk_owner_map_slow.values())} objects")
     
