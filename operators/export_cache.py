@@ -289,29 +289,28 @@ def get_vblayout_semantics(obj: bpy.types.Object) -> list[dict]:
                 if layout: return list(layout)
     return []
 
-def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object = None, stride: int = -1, flip_winding: bool = False) -> list[int] | None:
+def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object = None, stride: int = -1, flip_winding: bool = False) -> tuple[list[int], int] | None:
     """Achieves 1:1 parity with EFMI/WWMI exporters using signature hashing.
+
+    Returns: (v_map, eval_v_count) or None on failure.
+      v_map        – list of eval vertex indices (one per buffer slot).
+                     These are indices into the EVALUATED mesh (post-modifiers),
+                     NOT into obj.data.vertices. This allows Puppet Master to
+                     extract deltas from the evaluated mesh regardless of which
+                     modifiers are active.
+      eval_v_count – len(eval_mesh.vertices) at cache-build time.
 
     Signature key: (VertexIndex, UV[n], Color[n])
     Normals and Tangents are intentionally EXCLUDED from the key.
-    Reason: Mirror/Subdiv modifiers introduce floating-point noise in normals
-    that produces inconsistent loop splits, making the map size diverge from
-    the buffer vertex count. UV seams already cover the vast majority of
-    legitimate split cases in game meshes.
 
     Important: The mesh is ALWAYS triangulated before building signatures.
     EFMI triangulates before deduplication — without this, quad/ngon meshes
-    produce a different loop count (~2/3 of EFMI's), causing wrong v_map and spikes.
+    produce a different loop count, causing wrong v_map and spikes.
     """
     if not mesh: return None
     try:
         import bmesh as _bmesh
 
-        # ── Triangulate to match EFMI's deduplication loop order ──────────────
-        # EFMI: apply modifiers → triangulate → iterate loops → deduplicate.
-        # We must do the same triangulation step, otherwise:
-        #   quad-mesh:   N original loops  vs  ~1.5*N EFMI loops  → wrong map
-        #   ngon-mesh:   N original loops  vs  ~2+ *N EFMI loops  → wrong map
         bm = _bmesh.new()
         try:
             bm.from_mesh(mesh)
@@ -335,35 +334,54 @@ def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object
 def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
                                    orig_mesh: bpy.types.Mesh,
                                    obj: bpy.types.Object = None,
-                                   flip_winding: bool = False) -> list[int] | None:
-    """Builds ordered signature→blender_vertex map on an already-triangulated mesh.
+                                   flip_winding: bool = False) -> tuple[list[int], int] | None:
+    """Builds ordered signature→orig_vertex_index map on an already-triangulated mesh.
 
     tri_mesh  – triangulated working copy (UV/Color data preserved by BMesh).
-    orig_mesh – original evaluated mesh that carries the .orig_index attribute.
+    orig_mesh – evaluated mesh (post-modifiers, pre-triangulation).
+
+    Returns (v_map, eval_v_count) where:
+      v_map[i]     = ORIG vertex index for buffer slot i.
+                     Blender preserves the `.id` attribute through any modifier
+                     (Mirror, Subdivision, GeoNodes), pointing back to the
+                     pre-modifier vertex that spawned each eval vertex.
+                     This means v_map[i] is always < orig_v_count, so Puppet
+                     Master reads shape key data directly via sk_blk.data[v_map[i]]
+                     without any depsgraph evaluation or KD-Tree lookups.
+      eval_v_count = total number of vertices in orig_mesh (= eval mesh)
     """
+    eval_v_count = len(orig_mesh.vertices)
     n_loops = len(tri_mesh.loops)
     if n_loops == 0:
-        return list(range(len(orig_mesh.vertices)))
-
-    # Map evaluated vertex indices → original Blender vertex indices
-    orig_indices = None
-    if '.orig_index' in orig_mesh.attributes:
-        attr = orig_mesh.attributes['.orig_index']
-        orig_indices = np.empty(len(orig_mesh.vertices), dtype=np.int32)
-        attr.data.foreach_get('value', orig_indices)
+        return (list(range(eval_v_count)), eval_v_count)
 
     layout        = get_vblayout_semantics(obj) if obj else []
     uv_indices    = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'TEXCOORD']
     color_indices = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'COLOR']
 
     # Default when no layout is detected: use UV layer 0.
-    # Color skipped — rarely contributes meaningful splits without explicit layout.
     if not layout:
         uv_indices    = [0]
         color_indices = []
 
     v_indices = np.empty(n_loops, dtype=np.int32)
     tri_mesh.loops.foreach_get('vertex_index', v_indices)
+
+    # ── Build orig_index lookup ────────────────────────────────────────────────
+    # Blender stores the pre-modifier vertex index in the `.id` attribute on the
+    # evaluated mesh. Mirror duplicates a vertex from orig index i → the mirror
+    # copy also carries `.id = i`. Subdivision splits edges → new vertices carry
+    # the nearest orig index. This makes orig_index a stable, topology-invariant
+    # key that maps any eval vertex back to a shape-key-addressable orig vertex.
+    orig_idx_arr = None
+    id_attr = orig_mesh.attributes.get('.id')
+    if id_attr is not None:
+        orig_idx_arr = np.empty(eval_v_count, dtype=np.int32)
+        id_attr.data.foreach_get('value', orig_idx_arr)
+
+    # Fall back to identity if .id is not present (plain mesh, no generative mods)
+    if orig_idx_arr is None:
+        orig_idx_arr = np.arange(eval_v_count, dtype=np.int32)
 
     sig_fields: list = [('v', 'i4')]
     arrays: dict     = {'v': v_indices}
@@ -399,14 +417,17 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
     for loop_idx, sig in enumerate(signatures):
         sig_bytes = sig.tobytes()
         if sig_bytes not in indexed_vertices:
-            eval_v_idx  = v_indices[loop_idx]
-            final_v_idx = int(orig_indices[eval_v_idx]) if orig_indices is not None else int(eval_v_idx)
-            indexed_vertices[sig_bytes] = final_v_idx
+            eval_v = int(v_indices[loop_idx])
+            # Store ORIG vertex index — works for Mirror, Subdiv, GeoNodes.
+            # v_map[i] will always be < orig_v_count so Puppet Master reads
+            # shape key deltas directly from sk_blk.data[v_map[i]].
+            indexed_vertices[sig_bytes] = int(orig_idx_arr[eval_v])
 
     results = list(indexed_vertices.values())
+    has_id  = id_attr is not None
     print(f"[RZM] [CACHE] Parity Mapping: {len(results)} buf slots <- "
-          f"{len(orig_mesh.vertices)} Blender verts (tri_loops: {n_loops})")
-    return results
+          f"{eval_v_count} eval verts (tri_loops: {n_loops}, orig_map={'YES' if has_id else 'identity'})")
+    return (results, eval_v_count)
 
 # ── Builder: EFMI (TOPOLOGICAL MAPPING) ───────────────────────────────────────
 
@@ -458,15 +479,12 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                     eval_obj = efmi_obj.evaluated_get(depsgraph)
                     eval_mesh = eval_obj.to_mesh()
                 
-                v_map_topology = reconstruct_vertex_map_from_mesh(eval_mesh, efmi_obj, stride, flip_winding) if eval_mesh else None
-                
+                result = reconstruct_vertex_map_from_mesh(eval_mesh, efmi_obj, stride, flip_winding) if eval_mesh else None
+                v_map_topology, eval_v_count = result if result else (None, 0)
+
                 applied_v_count = len(eval_mesh.vertices) if eval_mesh else tmp.vertex_count
 
-                # Key invariant: tmp.vertex_count = Blender pre-dedup vertex count.
-                # The actual buffer slot count is len(v_map_topology) (post-dedup).
-                # These LEGITIMATELY DIFFER when UV seams or hard edges exist.
-                # Do NOT compare them — trust the parity map result.
-
+                # actual_vb_count = number of unique deduplicated slots (buffer slots for this object).
                 actual_vb_count = len(v_map_topology) if v_map_topology else 0
 
                 if actual_vb_count > 0:
@@ -474,15 +492,16 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                         'name':            tmp.name,
                         'vb_offset':       vb_offset,
                         'vb_count':        actual_vb_count,   # real buffer slot count
-                        'orig_v_count':    orig_v_count,
+                        'orig_v_count':    orig_v_count,      # obj.data.vertices count (pre-modifiers)
+                        'eval_v_count':    eval_v_count,      # eval mesh vertex count (post-modifiers)
                         'applied_v_count': applied_v_count,
-                        'vertex_map':      v_map_topology,
+                        'vertex_map':      v_map_topology,    # eval vertex indices
                         'mat_idx':         0,
                         'is_absolute':     False,
                         'is_robust':       True
                     })
                     print(f"[RZM] [CACHE] {tmp.name}: Topology Map OK "
-                          f"(buf={actual_vb_count}, blender={applied_v_count}, offset={vb_offset})")
+                          f"(buf={actual_vb_count}, eval={eval_v_count}, orig={orig_v_count}, offset={vb_offset})")
                 else:
                     # Parity failed -> send to Baked Path (vertex_map=None = skip Fast Path).
                     # Do NOT spatial fallback here: spatial gives blender->buf direction

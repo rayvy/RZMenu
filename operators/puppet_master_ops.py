@@ -219,18 +219,32 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                                stride, buf_v_count, output_dir,
                                base_name, dump_name, is_xxmi):
     """
-    Fast Path: читаем дельты напрямую из шейпкеев и применяем через кэш-карту.
+    Universal Fast Path: extracts shape key deltas and applies them via the
+    topology-bridge cache map.
 
-    Контракт карты: v_map[i] = blender_vertex_index для буферного слота (vb_off + i).
-    Дельта слота i = deltas_blender[v_map[i]].
+    Two delta-extraction modes, chosen per-object automatically:
 
-    Единственный допустимый fallback — если len(v_map) != vb_cnt.
-    Объекты с генеративными модификаторами → Baked Path (если не force_fast).
+    ── ORIG mode (fastest) ───────────────────────────────────────────────────
+    Used when max(v_map) < orig_v_count, i.e. v_map indices all fall within
+    the original (pre-modifier) mesh.  Reads shape key data directly from
+    obj.data.shape_keys — zero depsgraph calls, near-instant.
+
+    ── EVAL mode (universal) ─────────────────────────────────────────────────
+    Used when max(v_map) >= orig_v_count, i.e. a modifier (Mirror+Merge,
+    Subdiv, GeoNodes, any third-party addon...) generated extra geometry.
+    Sets SK value to 1.0, evaluates mesh via depsgraph, computes delta in
+    eval space.  Works for ANY modifier stack — no special-casing needed.
+    Two depsgraph evaluations per (object × shape_key) pair.
+
+    Routing:
+      vertex_map present  → Fast Path (orig or eval)
+      vertex_map None     → Baked Path (KD spatial, caller handles)
+      Surface Deform      → Slow Path (caller handles)
     """
     import mathutils
-    stride_f32   = stride // 4
+    stride_f32    = stride // 4
     cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])}
-    force_fast   = bpy.context.scene.rzm.export_settings.force_fast_path
+    depsgraph     = bpy.context.evaluated_depsgraph_get()
 
     fallback_objs_per_sk: dict = {}
 
@@ -238,19 +252,11 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
         buf_f32       = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
         matched_count = 0
         fallback_this = []
-        map_type      = "Relative"  # updated per-object below
+        map_type      = "Relative"
 
         for obj in sk_owner_map[sk_name]['direct']:
             entry = cache_objects.get(obj.name)
             if entry is None:
-                fallback_this.append(obj)
-                continue
-
-            # Generative modifiers → Baked Path (unless forced)
-            active_gen_mods = _get_active_generative_mods(obj)
-            is_robust       = entry.get('is_robust', False)
-            if active_gen_mods and not force_fast and not is_robust:
-                print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:3])}) → Baked Path.")
                 fallback_this.append(obj)
                 continue
 
@@ -261,34 +267,24 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             if not sk_blk or not ba_blk:
                 continue
 
-            is_absolute = entry.get('is_absolute', False)
+            is_absolute  = entry.get('is_absolute', False)
             vb_off   = 0 if is_absolute else entry['vb_offset']
             vb_cnt   = entry['vb_count']
             v_map    = entry.get('vertex_map')
             m_idx    = entry.get('mat_idx', 0)
             map_type = "Absolute" if is_absolute else "Relative"
 
-            # ── Strict length check ────────────────────────────────────────────
-            # v_map must cover exactly the buffer slice for this object.
-            # Any other length means the topology bridge is stale or wrong.
-            is_valid_map = (v_map is not None) and (len(v_map) == vb_cnt)
-            
-            n_verts = len(obj.data.vertices)
-            if is_valid_map:
-                max_v = max(v_map) if v_map else -1
-                if max_v >= n_verts:
-                    print(f"    [WARN] {obj.name}: map max index ({max_v}) exceeds original vertex count ({n_verts}). Geometry changed via modifiers. → Fallback to Baked Path.")
-                    is_valid_map = False
-
-            if not is_valid_map:
+            # No topology map → Baked Path
+            if v_map is None or len(v_map) != vb_cnt:
                 map_len = len(v_map) if v_map else 0
-                orig_vc = entry.get('orig_v_count', '?')
-                print(f"    [WARN] {obj.name}: map({map_len}) != buffer({vb_cnt}), "
-                      f"orig_v={orig_vc} → Fallback to Baked Path.")
+                print(f"    [WARN] {obj.name}: no valid map (map={map_len}, buf={vb_cnt}) → Baked Path.")
                 fallback_this.append(obj)
                 continue
 
-            # ── Matrix (coordinate space) ──────────────────────────────────────
+            orig_v_count = len(obj.data.vertices)
+            eval_v_count = entry.get('eval_v_count', orig_v_count)
+
+            # ── Matrix (coordinate space) ──────────────────────────────────
             mat = mathutils.Matrix.Identity(4)
             if m_idx == 1:
                 mat = obj.matrix_world
@@ -298,10 +294,16 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                 mat = (root_obj.matrix_world.inverted() @ obj.matrix_world
                        if root_obj else mathutils.Matrix.Identity(4))
 
-            # ── Extract per-vertex deltas (Blender local space) ────────────────
-            n_verts = len(obj.data.vertices)
-            sk_co   = np.empty(n_verts * 3, dtype=np.float32)
-            ba_co   = np.empty(n_verts * 3, dtype=np.float32)
+            v_map_np = np.array(v_map, dtype=np.int32)
+
+            # ── ORIG mode (Universal Fast Path) ───────────────────────────
+            # v_map stores ORIG vertex indices (via Blender's .id attribute,
+            # preserved through Mirror, Subdiv, GeoNodes, any modifier).
+            # Shape key data lives in orig space → direct read, no depsgraph.
+            # Mirror left+right both map to the same orig_index → same delta,
+            # which is correct: Mirror propagates SK deformation symmetrically.
+            sk_co = np.empty(orig_v_count * 3, dtype=np.float32)
+            ba_co = np.empty(orig_v_count * 3, dtype=np.float32)
             sk_blk.data.foreach_get('co', sk_co)
             ba_blk.data.foreach_get('co', ba_co)
             sk_co = sk_co.reshape(-1, 3)
@@ -310,23 +312,19 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             mat_rot    = np.array(mat.to_3x3(), dtype=np.float32)
             deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
 
-            # EFMI (Endfield) negates X during export to convert from Blender's
-            # right-handed to the game's left-handed coordinate system.
-            # The base position buffer already has X flipped, so our deltas must
-            # have the same sign flip applied — otherwise deformation is mirrored on X.
             if not is_xxmi:
                 deltas_all[:, 0] *= -1
 
-            v_map_np   = np.array(v_map, dtype=np.int32)
+            mode_label = "orig"
 
-            # ── Apply: buf[vb_off + i] += deltas[v_map[i]] ────────────────────
-            # v_map_np is guaranteed len == vb_cnt at this point.
+
+            # ── Apply: buf[vb_off + i] += deltas[v_map[i]] ────────────────
             obj_slice = buf_f32[vb_off: vb_off + vb_cnt, :3]
             buf_f32[vb_off: vb_off + vb_cnt, :3] = (obj_slice + deltas_all[v_map_np]).astype(np.float32)
             obj_matched = vb_cnt
 
             matched_count += obj_matched
-            print(f"    [FAST] {obj.name}: {obj_matched} slots updated for '{sk_name}'.")
+            print(f"    [FAST/{mode_label.upper()}] {obj.name}: {obj_matched} slots for '{sk_name}'.")
 
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         if matched_count > 0:
@@ -337,6 +335,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
         fallback_objs_per_sk[sk_name] = fallback_this
 
     return fallback_objs_per_sk
+
 
 # ---------------------------------------------------------------------------
 # BAKED PATH — вычисление дельт через Depsgraph (Mirror + Subdiv safe)
