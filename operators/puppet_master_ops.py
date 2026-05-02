@@ -305,27 +305,88 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
 
             v_map_np = np.array(v_map, dtype=np.int32)
 
-            # ── ORIG mode (Universal Fast Path) ───────────────────────────
-            # v_map stores ORIG vertex indices (via Blender's .id attribute,
-            # preserved through Mirror, Subdiv, GeoNodes, any modifier).
-            # Shape key data lives in orig space → direct read, no depsgraph.
-            # Mirror left+right both map to the same orig_index → same delta,
-            # which is correct: Mirror propagates SK deformation symmetrically.
-            sk_co = np.empty(orig_v_count * 3, dtype=np.float32)
-            ba_co = np.empty(orig_v_count * 3, dtype=np.float32)
-            sk_blk.data.foreach_get('co', sk_co)
-            ba_blk.data.foreach_get('co', ba_co)
-            sk_co = sk_co.reshape(-1, 3)
-            ba_co = ba_co.reshape(-1, 3)
+            # ── Route: ORIG vs EVAL ────────────────────────────────────────
+            # ORIG: .id attribute was real (orig_v == eval_v slot range).
+            #       v_map[i] < orig_v_count → read SK data directly.
+            # EVAL: .id was synthetic (Mirror/Subdiv expanded the mesh).
+            #       v_map[i] are eval indices; compute delta from depsgraph.
+            #       KDTree uses EVAL positions → left (-X) and right (+X) are
+            #       spatially separated, so there is no left/right ambiguity.
+            use_eval_path = (not has_real_id and eval_v_count > orig_v_count)
 
-            mat_rot    = np.array(mat.to_3x3(), dtype=np.float32)
-            deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
+            if not use_eval_path:
+                # ── ORIG mode ─────────────────────────────────────────────
+                sk_co = np.empty(orig_v_count * 3, dtype=np.float32)
+                ba_co = np.empty(orig_v_count * 3, dtype=np.float32)
+                sk_blk.data.foreach_get('co', sk_co)
+                ba_blk.data.foreach_get('co', ba_co)
+                sk_co = sk_co.reshape(-1, 3)
+                ba_co = ba_co.reshape(-1, 3)
+                mat_rot    = np.array(mat.to_3x3(), dtype=np.float32)
+                deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
+                if not is_xxmi:
+                    deltas_all[:, 0] *= -1
+                mode_label = "orig"
 
-            if not is_xxmi:
-                deltas_all[:, 0] *= -1
+            else:
+                # ── EVAL mode — position KDTree ────────────────────────────
+                sk_snapshot = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
+                try:
+                    mat_w   = obj.matrix_world
+                    mw3     = np.array(mat_w.to_3x3(), dtype=np.float32)
+                    mwt     = np.array(mat_w.translation, dtype=np.float32)
 
-            mode_label = "orig"
+                    # Basis eval
+                    for sk in obj.data.shape_keys.key_blocks: sk.value = 0.0
+                    bpy.context.view_layer.update(); depsgraph.update()
+                    em_base = obj.evaluated_get(depsgraph).to_mesh()
+                    bv = len(em_base.vertices)
+                    ba_loc = np.empty(bv * 3, dtype=np.float32)
+                    em_base.vertices.foreach_get('co', ba_loc)
+                    ba_loc = ba_loc.reshape(-1, 3)
+                    obj.evaluated_get(depsgraph).to_mesh_clear()
+                    ba_world = ba_loc @ mw3.T + mwt
 
+                    # SK=1 eval
+                    for sk in obj.data.shape_keys.key_blocks:
+                        sk.value = 1.0 if sk.name == sk_name else 0.0
+                    bpy.context.view_layer.update(); depsgraph.update()
+                    em_sk = obj.evaluated_get(depsgraph).to_mesh()
+                    sv = len(em_sk.vertices)
+                    sk_loc = np.empty(sv * 3, dtype=np.float32)
+                    em_sk.vertices.foreach_get('co', sk_loc)
+                    sk_loc = sk_loc.reshape(-1, 3)
+                    obj.evaluated_get(depsgraph).to_mesh_clear()
+                    sk_world = sk_loc @ mw3.T + mwt
+
+                    # Delta per eval vertex via position KDTree
+                    # KDTree on SK=1 eval positions — no left/right ambiguity
+                    # because Mirror produces spatially distinct vertices.
+                    if sv == bv:
+                        deltas_eval = (sk_world - ba_world).astype(np.float32)
+                    else:
+                        import mathutils as _mu
+                        kd = _mu.kdtree.KDTree(sv)
+                        for ki, kp in enumerate(sk_world):
+                            kd.insert(_mu.Vector(kp), ki)
+                        kd.balance()
+                        deltas_eval = np.empty((bv, 3), dtype=np.float32)
+                        for bi in range(bv):
+                            _, ki, _ = kd.find(_mu.Vector(ba_world[bi]))
+                            deltas_eval[bi] = sk_world[ki] - ba_world[bi]
+
+                    # deltas_eval[i] is already world-space delta for eval vert i
+                    # v_map_np[slot] = eval vert index for that buffer slot
+                    deltas_all = deltas_eval  # indexed by eval vert
+
+                    if not is_xxmi:
+                        deltas_all[:, 0] *= -1
+                    mode_label = "eval_kd"
+
+                finally:
+                    for sk in obj.data.shape_keys.key_blocks:
+                        sk.value = sk_snapshot.get(sk.name, 0.0)
+                    bpy.context.view_layer.update(); depsgraph.update()
 
             # ── Apply: buf[vb_off + i] += deltas[v_map[i]] ────────────────
             obj_slice = buf_f32[vb_off: vb_off + vb_cnt, :3]

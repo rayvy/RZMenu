@@ -426,10 +426,11 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
         sig_bytes = sig.tobytes()
         if sig_bytes not in indexed_vertices:
             eval_v = int(v_indices[loop_idx])
-            # Store ORIG vertex index — works for Mirror, Subdiv, GeoNodes.
-            # v_map[i] will always be < orig_v_count so Puppet Master reads
-            # shape key deltas directly from sk_blk.data[v_map[i]].
-            indexed_vertices[sig_bytes] = int(orig_idx_arr[eval_v])
+            # Store EVAL vertex index (same as EFMI/WWMI exporters).
+            # puppet_master_ops uses has_real_id to decide ORIG vs EVAL route:
+            # - has_real_id=True  → v_map indices are orig-range → ORIG mode
+            # - has_real_id=False → v_map indices are eval-range → EVAL mode
+            indexed_vertices[sig_bytes] = eval_v
 
     results = list(indexed_vertices.values())
     has_id  = id_attr is not None
