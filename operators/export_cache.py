@@ -220,9 +220,13 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                     # Try to get mapping from the evaluated mesh
                     v_map = None
                     m_idx = -1
+                    eval_v_count = orig_v_count
+                    has_id = True
                     
                     if eval_mesh:
-                        v_map = reconstruct_vertex_map_from_mesh(eval_mesh, sub.obj, stride)
+                        res = reconstruct_vertex_map_from_mesh(eval_mesh, sub.obj, stride)
+                        if res:
+                            v_map, eval_v_count, has_id = res
                     
                     # Fallback to spatial mapping if topology reconstruction failed
                     if v_map is None:
@@ -242,8 +246,10 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                         'vb_offset': vb_offset, 
                         'vb_count': sub.vertex_count,
                         'orig_v_count': orig_v_count,
+                        'eval_v_count': eval_v_count,
                         'applied_v_count': applied_v_count,
                         'vertex_map': v_map, 
+                        'has_real_id': has_id,
                         'mat_idx': m_idx, 
                         'is_absolute': m_idx != -1, 
                         'is_robust': True
@@ -289,16 +295,17 @@ def get_vblayout_semantics(obj: bpy.types.Object) -> list[dict]:
                 if layout: return list(layout)
     return []
 
-def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object = None, stride: int = -1, flip_winding: bool = False) -> tuple[list[int], int] | None:
+def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object = None, stride: int = -1, flip_winding: bool = False) -> tuple[list[int], int, bool] | None:
     """Achieves 1:1 parity with EFMI/WWMI exporters using signature hashing.
 
-    Returns: (v_map, eval_v_count) or None on failure.
+    Returns: (v_map, eval_v_count, has_id) or None on failure.
       v_map        – list of eval vertex indices (one per buffer slot).
                      These are indices into the EVALUATED mesh (post-modifiers),
                      NOT into obj.data.vertices. This allows Puppet Master to
                      extract deltas from the evaluated mesh regardless of which
                      modifiers are active.
       eval_v_count – len(eval_mesh.vertices) at cache-build time.
+      has_id       - boolean indicating if the original id was mapped or synthesized.
 
     Signature key: (VertexIndex, UV[n], Color[n])
     Normals and Tangents are intentionally EXCLUDED from the key.
@@ -334,13 +341,13 @@ def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object
 def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
                                    orig_mesh: bpy.types.Mesh,
                                    obj: bpy.types.Object = None,
-                                   flip_winding: bool = False) -> tuple[list[int], int] | None:
+                                   flip_winding: bool = False) -> tuple[list[int], int, bool] | None:
     """Builds ordered signature→orig_vertex_index map on an already-triangulated mesh.
 
     tri_mesh  – triangulated working copy (UV/Color data preserved by BMesh).
     orig_mesh – evaluated mesh (post-modifiers, pre-triangulation).
 
-    Returns (v_map, eval_v_count) where:
+    Returns (v_map, eval_v_count, has_id) where:
       v_map[i]     = ORIG vertex index for buffer slot i.
                      Blender preserves the `.id` attribute through any modifier
                      (Mirror, Subdivision, GeoNodes), pointing back to the
@@ -349,11 +356,12 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
                      Master reads shape key data directly via sk_blk.data[v_map[i]]
                      without any depsgraph evaluation or KD-Tree lookups.
       eval_v_count = total number of vertices in orig_mesh (= eval mesh)
+      has_id       = True if real .id mapping was found, else False.
     """
     eval_v_count = len(orig_mesh.vertices)
     n_loops = len(tri_mesh.loops)
     if n_loops == 0:
-        return (list(range(eval_v_count)), eval_v_count)
+        return (list(range(eval_v_count)), eval_v_count, False)
 
     layout        = get_vblayout_semantics(obj) if obj else []
     uv_indices    = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'TEXCOORD']
@@ -427,7 +435,7 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
     has_id  = id_attr is not None
     print(f"[RZM] [CACHE] Parity Mapping: {len(results)} buf slots <- "
           f"{eval_v_count} eval verts (tri_loops: {n_loops}, orig_map={'YES' if has_id else 'identity'})")
-    return (results, eval_v_count)
+    return (results, eval_v_count, has_id)
 
 # ── Builder: EFMI (TOPOLOGICAL MAPPING) ───────────────────────────────────────
 
@@ -480,7 +488,7 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                     eval_mesh = eval_obj.to_mesh()
                 
                 result = reconstruct_vertex_map_from_mesh(eval_mesh, efmi_obj, stride, flip_winding) if eval_mesh else None
-                v_map_topology, eval_v_count = result if result else (None, 0)
+                v_map_topology, eval_v_count, has_id = result if result else (None, 0, False)
 
                 applied_v_count = len(eval_mesh.vertices) if eval_mesh else tmp.vertex_count
 
@@ -496,6 +504,7 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                         'eval_v_count':    eval_v_count,      # eval mesh vertex count (post-modifiers)
                         'applied_v_count': applied_v_count,
                         'vertex_map':      v_map_topology,    # eval vertex indices
+                        'has_real_id':     has_id,
                         'mat_idx':         0,
                         'is_absolute':     False,
                         'is_robust':       True
@@ -513,6 +522,7 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                         'orig_v_count':    orig_v_count,
                         'applied_v_count': applied_v_count,
                         'vertex_map':      None,
+                        'has_real_id':     False,
                         'mat_idx':         0,
                         'is_absolute':     False,
                         'is_robust':       False

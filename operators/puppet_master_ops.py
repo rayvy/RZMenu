@@ -283,6 +283,15 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
 
             orig_v_count = len(obj.data.vertices)
             eval_v_count = entry.get('eval_v_count', orig_v_count)
+            has_real_id  = entry.get('has_real_id', True)
+
+            # If .id was synthetic (identity) and modifier expanded the mesh,
+            # v_map indices point into eval space, not orig space → Baked Path.
+            if not has_real_id and eval_v_count > orig_v_count:
+                print(f"    [WARN] {obj.name}: identity orig_map with expanded eval mesh "
+                      f"(orig={orig_v_count}, eval={eval_v_count}) → Baked Path.")
+                fallback_this.append(obj)
+                continue
 
             # ── Matrix (coordinate space) ──────────────────────────────────
             mat = mathutils.Matrix.Identity(4)
