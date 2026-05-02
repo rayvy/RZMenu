@@ -335,6 +335,12 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                     ba_loc = np.empty(bv * 3, dtype=np.float32)
                     em_base.vertices.foreach_get('co', ba_loc)
                     ba_loc = ba_loc.reshape(-1, 3)
+                    
+                    has_id_base = 'id' in em_base.attributes
+                    if has_id_base:
+                        ba_ids = np.empty(bv, dtype=np.int32)
+                        em_base.attributes['id'].data.foreach_get('value', ba_ids)
+                        
                     obj.evaluated_get(depsgraph).to_mesh_clear()
                     ba_world = ba_loc @ mw3.T + mwt
 
@@ -347,25 +353,60 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                     sk_loc = np.empty(sv * 3, dtype=np.float32)
                     em_sk.vertices.foreach_get('co', sk_loc)
                     sk_loc = sk_loc.reshape(-1, 3)
+                    
+                    has_id_sk = 'id' in em_sk.attributes
+                    if has_id_sk:
+                        sk_ids = np.empty(sv, dtype=np.int32)
+                        em_sk.attributes['id'].data.foreach_get('value', sk_ids)
+                        
                     obj.evaluated_get(depsgraph).to_mesh_clear()
                     sk_world = sk_loc @ mw3.T + mwt
 
-                    # Delta per eval vertex via position KDTree.
-                    # ALWAYS use KDTree — never assume vertex ordering is stable
-                    # between two depsgraph evaluations. Mirror+Merge can swap
-                    # vertex indices even when count stays the same (a vertex
-                    # near the merge threshold crosses it between SK=0 and SK=1).
-                    # KDTree by EVAL position is unambiguous: left (+X) and
-                    # right (-X) vertices are spatially separate.
-                    import mathutils as _mu
-                    kd = _mu.kdtree.KDTree(sv)
-                    for ki, kp in enumerate(sk_world):
-                        kd.insert(_mu.Vector(kp), ki)
-                    kd.balance()
-                    deltas_eval = np.empty((bv, 3), dtype=np.float32)
-                    for bi in range(bv):
-                        _, ki, _ = kd.find(_mu.Vector(ba_world[bi]))
-                        deltas_eval[bi] = sk_world[ki] - ba_world[bi]
+                    # Delta per eval vertex.
+                    # If vertex counts match, Blender's eval mesh order is exactly stable.
+                    # We MUST use direct subtraction. KDTree can pick wrong neighbors for large deltas!
+                    if sv == bv:
+                        deltas_eval = (sk_world - ba_world).astype(np.float32)
+                    else:
+                        print(f"    [WARN] {obj.name}: Topology shifted (sv={sv} != bv={bv}), matching by ID...")
+                        deltas_eval = np.zeros((bv, 3), dtype=np.float32)
+                        
+                        has_id = has_id_base and has_id_sk
+                        if has_id:
+                            sk_id_map = {}
+                            for ki in range(sv):
+                                vid = sk_ids[ki]
+                                if vid not in sk_id_map: sk_id_map[vid] = []
+                                sk_id_map[vid].append((ki, sk_world[ki]))
+                                
+                            for bi in range(bv):
+                                vid = ba_ids[bi]
+                                b_pos = ba_world[bi]
+                                candidates = sk_id_map.get(vid, [])
+                                
+                                if not candidates: continue
+                                
+                                if len(candidates) == 1:
+                                    best_ki = candidates[0][0]
+                                else:
+                                    # Safe proximity: only compares among identical orig vertices (Left vs Right)
+                                    best_dist = float('inf')
+                                    best_ki = candidates[0][0]
+                                    for ki, k_pos in candidates:
+                                        dist = np.sum((k_pos - b_pos)**2)
+                                        if dist < best_dist:
+                                            best_dist = dist
+                                            best_ki = ki
+                                            
+                                deltas_eval[bi] = sk_world[best_ki] - b_pos
+                        else:
+                            import mathutils as _mu
+                            kd = _mu.kdtree.KDTree(sv)
+                            for ki, kp in enumerate(sk_world): kd.insert(_mu.Vector(kp), ki)
+                            kd.balance()
+                            for bi in range(bv):
+                                _, ki, _ = kd.find(_mu.Vector(ba_world[bi]))
+                                deltas_eval[bi] = sk_world[ki] - ba_world[bi]
 
                     # deltas_eval[i] = world-space delta for eval vertex i.
                     # v_map_np[slot] = eval vertex index → indexes deltas_eval.
