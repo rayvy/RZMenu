@@ -234,6 +234,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
         buf_f32       = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
         matched_count = 0
         fallback_this = []
+        path_details  = []
 
         sk_direct = sk_owner_map[sk_name]['direct']
 
@@ -249,7 +250,11 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             map_type = "Absolute" if is_absolute else "Relative"
 
             active_gen_mods = _get_active_generative_mods(obj)
-            if active_gen_mods and not force_fast:
+            is_robust = entry.get('is_robust', False)
+            
+            # Если force_fast — игнорируем модификаторы и отсутствие робастности.
+            # Если не force_fast — проверяем, можно ли доверять прямому маппингу.
+            if active_gen_mods and not force_fast and not is_robust:
                 print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:3])}) -> Baked Path.")
                 fallback_this.append(obj)
                 continue
@@ -271,6 +276,11 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                 is_valid_map = (v_map and len(v_map) == blender_v_count)
 
             if not is_valid_map:
+                map_len = len(v_map) if v_map else 0
+                orig_vc = entry.get('orig_v_count', '?')
+                print(f"    [WARN] Mapping mismatch for {obj.name}: "
+                      f"cache_map({map_len}) vs buffer({vb_cnt}), orig_v={orig_vc}. "
+                      f"Fallback → Baked Path.")
                 fallback_this.append(obj)
                 continue
 
@@ -293,11 +303,12 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             mat_rot  = np.array(mat.to_3x3(), dtype=np.float32)
             v_map_np = np.array(v_map, dtype=np.int32)
 
+            obj_matched = 0
             if is_robust:
                 deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
                 obj_slice  = buf_f32[vb_off: vb_off + vb_cnt, :3]
                 buf_f32[vb_off: vb_off + vb_cnt, :3] = obj_slice + deltas_all[v_map_np]
-                matched_count += vb_cnt
+                obj_matched = vb_cnt
             else:
                 is_loop_mapped = (len(v_map_np) == len(obj.data.loops))
                 if is_loop_mapped:
@@ -309,7 +320,9 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
 
                 delta_transformed = (delta_pre @ mat_rot.T).astype(np.float32)
                 nonzero = np.linalg.norm(delta_transformed, axis=1) > 1e-7
-                if not nonzero.any(): continue
+                if not nonzero.any(): 
+                    print(f"    [FAST] {obj.name}: No deltas for '{sk_name}'")
+                    continue
 
                 idx         = np.where(nonzero)[0]
                 buf_indices = vb_off + v_map_np[idx]
@@ -324,13 +337,17 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                 buf_f32[target_indices, 0] = new_xyz[:, 0]
                 buf_f32[target_indices, 1] = new_xyz[:, 1]
                 buf_f32[target_indices, 2] = new_xyz[:, 2]
-                matched_count += len(target_indices)
+                obj_matched = len(target_indices)
+            
+            if obj_matched > 0:
+                matched_count += obj_matched
+                print(f"    [FAST] {obj.name}: {obj_matched} verts matched.")
 
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         if matched_count > 0:
             with open(os.path.join(output_dir, out_name), 'wb') as f:
                 f.write(buf_f32.tobytes())
-            print(f"    -> [DONE] {out_name} ({matched_count} verts via Fast Path [{map_type}])")
+            print(f"    -> [DONE] {out_name} (Total {matched_count} verts via Fast Path [{map_type}])")
 
         fallback_objs_per_sk[sk_name] = fallback_this
 
@@ -345,10 +362,8 @@ def _bake_path_for_generative_objects(
         original_bytes, stride, buf_v_count,
         output_dir, base_name, dump_name, is_xxmi):
     """
-    Baked Path для генеративных модификаторов (Mirror, Subdiv и т.д.).
-    Вместо физического применения модификаторов и пересборки меша,
-    мы используем Depsgraph для вычисления дельт "на лету", что 
-    полностью решает баги Blender с искажением индексов при слиянии Mirror+Subdiv.
+    Baked Path (Spatial Fallback) — поиск соответствий через KD-Tree.
+    Используется для объектов с модификаторами или если нет топологического кэша.
     """
     import mathutils as mu
     
@@ -366,13 +381,13 @@ def _bake_path_for_generative_objects(
             if not obj or not obj.data or not obj.data.shape_keys: continue
 
             gen_mods = _get_active_generative_mods(obj)
-            if not gen_mods:
-                for sk_name, owners in sk_owner_map_bake.items():
-                    if obj in owners:
-                        remaining_for_slow.setdefault(sk_name, []).append(obj)
-                continue
-
-            print(f"  [BAKED] Processing {obj.name} dynamically via Depsgraph (Mods: {', '.join(gen_mods[:3])})")
+            
+            # Даже если нет генеративных модов, мы используем этот путь как точный пространственный поиск
+            # для объектов без кэша (вместо Slow Path).
+            if gen_mods:
+                print(f"  [BAKED] Processing {obj.name} via Depsgraph (Mods: {', '.join(gen_mods[:3])})")
+            else:
+                print(f"  [BAKED] Processing {obj.name} via Spatial Vertex Match (No mods, No cache)")
 
             # Сохраняем исходное состояние шейпкеев
             sk_snapshot = {sk.name: sk.value for sk in obj.data.shape_keys.key_blocks}
@@ -415,19 +430,17 @@ def _bake_path_for_generative_objects(
                 eval_sk = obj.evaluated_get(depsgraph)
                 mesh_sk = eval_sk.to_mesh()
 
-                # Важнейшая проверка: если шейпкей так сильно раздвинул вершины по шву Mirror,
-                # что изменилось количество вертексов, 1:1 маппинг не сработает. Уходим в Slow Path.
+                # Если топология изменилась (Mirror Merge break), уходим в Slow Path.
                 if len(mesh_sk.vertices) != base_v_count:
                     print(f"    [WARN] Topology shifted on {obj.name} for SK '{sk_name}' (Merge break). Fallback -> Slow Path.")
                     eval_sk.to_mesh_clear()
                     remaining_for_slow.setdefault(sk_name, []).append(obj)
                     continue
 
-                # Конвертируем деформированные вершины в World Space
                 sk_coords_world = np.array([mat_world @ v.co for v in mesh_sk.vertices], dtype=np.float32)
                 eval_sk.to_mesh_clear()
 
-                # Вычисляем абсолютно точные дельты "на лету" без применения модификаторов
+                # Вычисляем дельты
                 deltas_world = sk_coords_world - base_coords_world
 
                 # Запись в буфер
@@ -460,11 +473,12 @@ def _bake_path_for_generative_objects(
                 if matched_count > 0:
                     with open(out_path, 'wb') as f:
                         f.write(buf_f32.tobytes())
-                    print(f"    -> [DONE] {out_name} ({matched_count} verts via Baked Path [Depsgraph])")
+                    print(f"    [BAKED] {obj.name}: {matched_count} verts matched for '{sk_name}'")
                 else:
-                    print(f"    -> [WARN] {out_name}: 0 matched verts for {obj.name} via Baked Path.")
+                    print(f"    [WARN] {obj.name}: 0 matched verts for '{sk_name}' via Baked Path. Fallback -> Slow Path.")
+                    remaining_for_slow.setdefault(sk_name, []).append(obj)
 
-            # Восстанавливаем оригинальные значения шейпкеев для объекта
+            # Восстанавливаем оригинальные значения шейпкеев
             for sk in obj.data.shape_keys.key_blocks:
                 if sk.name in sk_snapshot:
                     sk.value = sk_snapshot[sk.name]
@@ -472,7 +486,6 @@ def _bake_path_for_generative_objects(
             depsgraph.update()
 
     finally:
-        # Обязательно возвращаем арматуры обратно
         set_armature_visibility(all_bake_objs, True)
 
     return remaining_for_slow
@@ -693,7 +706,9 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 if len(t_coords) == len(base_cache[obj]['coords']):
                     target_cache[obj] = t_coords
 
-            if not target_cache: continue
+            if not target_cache:
+                print(f"    [WARN] Skipping SK '{sk_name}': Topology shifted on all owners. Try removing 'Merge' from Mirror.")
+                continue
 
             out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
             out_path = os.path.join(output_dir, out_name)
@@ -838,46 +853,45 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         print(f"  [TIME] Bake finished in {time.time() - t_start:.3f}s (Fast Path only)")
         return True
 
-    # ── BAKED PATH ─────────────────────────────────────────────────────────
-    # Объекты с генеративными модами, у которых ЕСТЬ шейпкеи (direct)
+    # ── BAKED PATH (Spatial Fallback) ──────────────────────────────────────
+    # Все 'direct' объекты, которые не прошли через Fast Path, пробуем запечь через KD-Tree.
     sk_owner_map_bake   = {}
     sk_owner_map_slow   = {}
 
     for sk_name, owners in sk_owner_map_after_fast.items():
         bake_direct = []
-        slow_direct = []
+        # Теперь ВСЕ прямые владельцы шейпкеев идут в Baked Path (пространственный поиск),
+        # так как это точнее и быстрее, чем барицентрический Slow Path.
         for obj in owners.get('direct', []):
-            gen_mods = _get_active_generative_mods(obj)
-            if gen_mods and (obj.data and obj.data.shape_keys):
+            if obj.data and obj.data.shape_keys:
                 bake_direct.append(obj)
             else:
-                slow_direct.append(obj)
+                sk_owner_map_slow.setdefault(sk_name, {'direct': [], 'via_target': []})['direct'].append(obj)
 
         if bake_direct:
             sk_owner_map_bake[sk_name] = bake_direct
 
-        # via_target → всегда Slow Path (Surface Deform не имеет своих шейпкеев)
+        # via_target → ВСЕГДА Slow Path (Surface Deform требует интерполяции по треугольникам)
         slow_via = owners.get('via_target', [])
-        if slow_direct or slow_via:
-            sk_owner_map_slow[sk_name] = {
-                'direct':     slow_direct,
-                'via_target': slow_via,
-            }
+        if slow_via:
+            if sk_name not in sk_owner_map_slow:
+                sk_owner_map_slow[sk_name] = {'direct': [], 'via_target': []}
+            sk_owner_map_slow[sk_name]['via_target'].extend(slow_via)
 
     if sk_owner_map_bake:
-        print(f"  [BAKED PATH] Processing {sum(len(v) for v in sk_owner_map_bake.values())} object-sk pairs")
+        print(f"  [BAKED PATH] Processing {sum(len(v) for v in sk_owner_map_bake.values())} objects via Spatial Match")
         remaining = _bake_path_for_generative_objects(
             context, sk_owner_map_bake, comp_cache,
             original_bytes, stride, buf_v_count,
             output_dir, base_name, dump_name, is_xxmi
         )
-        # Объекты, которые не удалось запечь (из-за смены топологии) → в Slow Path
+        # Объекты, которые не удалось запечь (из-за смены топологии или дистанции) → в Slow Path
         for sk_name, objs in remaining.items():
             if sk_name not in sk_owner_map_slow:
                 sk_owner_map_slow[sk_name] = {'direct': [], 'via_target': []}
             sk_owner_map_slow[sk_name]['direct'].extend(objs)
 
-    # ── SLOW PATH ──────────────────────────────────────────────────────────
+    # ── SLOW PATH (Barycentric) ────────────────────────────────────────────
     if sk_owner_map_slow:
         # Финальная проверка: объекты без шейпкеев И без Surface Deform не нужны
         sk_owner_map_slow = {
@@ -886,14 +900,19 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         }
 
     if sk_owner_map_slow:
-        print(f"  [SLOW PATH] Spatial Barycentric for remaining objects")
+        print(f"  [SLOW PATH] Spatial Barycentric for Object Bind (Surface Deform) and Failures")
         _run_slow_path(
             context, sk_owner_map_slow, comp_cache,
             original_bytes, stride, buf_v_count,
             output_dir, base_name, dump_name, is_xxmi, limit, t_start
         )
 
-    print(f"  [TIME] Puppet Master baking finished in {time.time() - t_start:.3f}s")
+    # ── SUMMARY ──
+    print(f"\n  [SUMMARY] {base_name} component finished in {time.time() - t_start:.3f}s")
+    print(f"    - Fast Path (Direct Map): {sum(1 for sk in sk_owner_map.values() for o in sk['direct'] if o not in sk_owner_map_after_fast.get(sk, {}).get('direct', []))} objects")
+    print(f"    - Baked Path (Spatial Match): {sum(len(v) for v in sk_owner_map_bake.values())} objects")
+    print(f"    - Slow Path (Barycentric): {sum(len(v['direct']) + len(v['via_target']) for v in sk_owner_map_slow.values())} objects")
+    
     return True
 
 # ---------------------------------------------------------------------------

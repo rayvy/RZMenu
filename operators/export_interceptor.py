@@ -28,7 +28,7 @@
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 import bpy
-from .export_cache import build_cache_from_xxmi, build_cache_from_efmi, set_cache
+from .export_cache import build_cache_from_xxmi, build_cache_from_efmi, set_cache, save_export_logs
 
 # ── Identity strings ──────────────────────────────────────────────────────────
 # Change these if the upstream addon renames its classes or methods.
@@ -56,6 +56,7 @@ def _xxmi_hook(self, *args, **kwargs):
         cache = build_cache_from_xxmi(self)
         if cache:
             set_cache(cache)
+            save_export_logs(cache)
             print(f'[RZM] [CACHE] XXMI export cached: '
                   f'{len(cache["components"])} components  '
                   f'(use rzm_cache_info() in Python console to inspect)')
@@ -134,6 +135,7 @@ def _efmi_hook(self, *args, **kwargs):
         cache = build_cache_from_efmi(self)
         if cache:
             set_cache(cache)
+            save_export_logs(cache)
             print(f'[RZM] [CACHE] EFMI export cached: '
                   f'{len(cache["components"])} components')
         else:
