@@ -219,71 +219,68 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                                stride, buf_v_count, output_dir,
                                base_name, dump_name, is_xxmi):
     """
-    Fast Path: читаем дельты прямо из шейпкеев Blender и пишем через кэш-карту.
-    Работает ТОЛЬКО для объектов без активных генеративных модификаторов.
-    Объекты с генеративными модами → в fallback (Baked Path или Slow Path).
+    Fast Path: читаем дельты напрямую из шейпкеев и применяем через кэш-карту.
+
+    Контракт карты: v_map[i] = blender_vertex_index для буферного слота (vb_off + i).
+    Дельта слота i = deltas_blender[v_map[i]].
+
+    Единственный допустимый fallback — если len(v_map) != vb_cnt.
+    Объекты с генеративными модификаторами → Baked Path (если не force_fast).
     """
     import mathutils
     stride_f32   = stride // 4
     cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])}
     force_fast   = bpy.context.scene.rzm.export_settings.force_fast_path
 
-    fallback_objs_per_sk = {}
+    fallback_objs_per_sk: dict = {}
 
     for sk_name in list(sk_owner_map.keys()):
         buf_f32       = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
         matched_count = 0
         fallback_this = []
-        path_details  = []
+        map_type      = "Relative"  # updated per-object below
 
-        sk_direct = sk_owner_map[sk_name]['direct']
-
-        for obj in sk_direct:
+        for obj in sk_owner_map[sk_name]['direct']:
             entry = cache_objects.get(obj.name)
             if entry is None:
                 fallback_this.append(obj)
                 continue
 
-            is_absolute = entry.get('is_absolute', False)
-            vb_off  = 0 if is_absolute else entry['vb_offset']
-            vb_cnt  = entry['vb_count']
-            map_type = "Absolute" if is_absolute else "Relative"
-
+            # Generative modifiers → Baked Path (unless forced)
             active_gen_mods = _get_active_generative_mods(obj)
-            is_robust = entry.get('is_robust', False)
-            
-            # Если force_fast — игнорируем модификаторы и отсутствие робастности.
-            # Если не force_fast — проверяем, можно ли доверять прямому маппингу.
+            is_robust       = entry.get('is_robust', False)
             if active_gen_mods and not force_fast and not is_robust:
-                print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:3])}) -> Baked Path.")
+                print(f"    [ROUTE] {obj.name}: Generative mods ({', '.join(active_gen_mods[:3])}) → Baked Path.")
                 fallback_this.append(obj)
                 continue
 
-            if not (obj.data and obj.data.shape_keys): continue
+            if not (obj.data and obj.data.shape_keys):
+                continue
             sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
             ba_blk = obj.data.shape_keys.reference_key
-            if not sk_blk or not ba_blk: continue
+            if not sk_blk or not ba_blk:
+                continue
 
-            v_map      = entry.get('vertex_map')
-            m_idx      = entry.get('mat_idx', 0)
-            is_robust  = entry.get('is_robust', False)
+            is_absolute = entry.get('is_absolute', False)
+            vb_off   = 0 if is_absolute else entry['vb_offset']
+            vb_cnt   = entry['vb_count']
+            v_map    = entry.get('vertex_map')
+            m_idx    = entry.get('mat_idx', 0)
+            map_type = "Absolute" if is_absolute else "Relative"
 
-            if is_robust:
-                is_valid_map = (v_map and len(v_map) == vb_cnt)
-            else:
-                blender_v_count = (len(obj.data.loops) if (v_map and len(v_map) == len(obj.data.loops))
-                                   else len(obj.data.vertices))
-                is_valid_map = (v_map and len(v_map) == blender_v_count)
-
+            # ── Strict length check ────────────────────────────────────────────
+            # v_map must cover exactly the buffer slice for this object.
+            # Any other length means the topology bridge is stale or wrong.
+            is_valid_map = (v_map is not None) and (len(v_map) == vb_cnt)
             if not is_valid_map:
                 map_len = len(v_map) if v_map else 0
                 orig_vc = entry.get('orig_v_count', '?')
-                print(f"    [WARN] Mapping mismatch for {obj.name}: "
-                      f"cache_map({map_len}) vs buffer({vb_cnt}), orig_v={orig_vc}. "
-                      f"Fallback → Baked Path.")
+                print(f"    [WARN] {obj.name}: map({map_len}) != buffer({vb_cnt}), "
+                      f"orig_v={orig_vc} → Fallback to Baked Path.")
                 fallback_this.append(obj)
                 continue
 
+            # ── Matrix (coordinate space) ──────────────────────────────────────
             mat = mathutils.Matrix.Identity(4)
             if m_idx == 1:
                 mat = obj.matrix_world
@@ -293,61 +290,41 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                 mat = (root_obj.matrix_world.inverted() @ obj.matrix_world
                        if root_obj else mathutils.Matrix.Identity(4))
 
-            sk_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
-            ba_co = np.zeros(len(obj.data.vertices) * 3, dtype=np.float32)
+            # ── Extract per-vertex deltas (Blender local space) ────────────────
+            n_verts = len(obj.data.vertices)
+            sk_co   = np.empty(n_verts * 3, dtype=np.float32)
+            ba_co   = np.empty(n_verts * 3, dtype=np.float32)
             sk_blk.data.foreach_get('co', sk_co)
             ba_blk.data.foreach_get('co', ba_co)
             sk_co = sk_co.reshape(-1, 3)
             ba_co = ba_co.reshape(-1, 3)
 
-            mat_rot  = np.array(mat.to_3x3(), dtype=np.float32)
-            v_map_np = np.array(v_map, dtype=np.int32)
+            mat_rot    = np.array(mat.to_3x3(), dtype=np.float32)
+            deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
 
-            obj_matched = 0
-            if is_robust:
-                deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
-                obj_slice  = buf_f32[vb_off: vb_off + vb_cnt, :3]
-                buf_f32[vb_off: vb_off + vb_cnt, :3] = obj_slice + deltas_all[v_map_np]
-                obj_matched = vb_cnt
-            else:
-                is_loop_mapped = (len(v_map_np) == len(obj.data.loops))
-                if is_loop_mapped:
-                    v_indices = np.empty(len(obj.data.loops), dtype=np.int32)
-                    obj.data.loops.foreach_get('vertex_index', v_indices)
-                    delta_pre = (sk_co - ba_co)[v_indices]
-                else:
-                    delta_pre = sk_co - ba_co
+            # EFMI (Endfield) negates X during export to convert from Blender's
+            # right-handed to the game's left-handed coordinate system.
+            # The base position buffer already has X flipped, so our deltas must
+            # have the same sign flip applied — otherwise deformation is mirrored on X.
+            if not is_xxmi:
+                deltas_all[:, 0] *= -1
 
-                delta_transformed = (delta_pre @ mat_rot.T).astype(np.float32)
-                nonzero = np.linalg.norm(delta_transformed, axis=1) > 1e-7
-                if not nonzero.any(): 
-                    print(f"    [FAST] {obj.name}: No deltas for '{sk_name}'")
-                    continue
+            v_map_np   = np.array(v_map, dtype=np.int32)
 
-                idx         = np.where(nonzero)[0]
-                buf_indices = vb_off + v_map_np[idx]
+            # ── Apply: buf[vb_off + i] += deltas[v_map[i]] ────────────────────
+            # v_map_np is guaranteed len == vb_cnt at this point.
+            obj_slice = buf_f32[vb_off: vb_off + vb_cnt, :3]
+            buf_f32[vb_off: vb_off + vb_cnt, :3] = (obj_slice + deltas_all[v_map_np]).astype(np.float32)
+            obj_matched = vb_cnt
 
-                valid_mask = (buf_indices >= 0) & (buf_indices < buf_v_count)
-                if not valid_mask.any(): continue
-
-                target_indices = buf_indices[valid_mask]
-                source_indices = idx[valid_mask]
-
-                new_xyz = (buf_f32[target_indices, :3] + delta_transformed[source_indices]).astype(np.float32)
-                buf_f32[target_indices, 0] = new_xyz[:, 0]
-                buf_f32[target_indices, 1] = new_xyz[:, 1]
-                buf_f32[target_indices, 2] = new_xyz[:, 2]
-                obj_matched = len(target_indices)
-            
-            if obj_matched > 0:
-                matched_count += obj_matched
-                print(f"    [FAST] {obj.name}: {obj_matched} verts matched.")
+            matched_count += obj_matched
+            print(f"    [FAST] {obj.name}: {obj_matched} slots updated for '{sk_name}'.")
 
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         if matched_count > 0:
             with open(os.path.join(output_dir, out_name), 'wb') as f:
                 f.write(buf_f32.tobytes())
-            print(f"    -> [DONE] {out_name} (Total {matched_count} verts via Fast Path [{map_type}])")
+            print(f"    -> [DONE] {out_name} ({matched_count} verts via Fast Path [{map_type}])")
 
         fallback_objs_per_sk[sk_name] = fallback_this
 
