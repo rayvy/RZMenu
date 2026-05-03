@@ -367,41 +367,58 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
     uv_indices    = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'TEXCOORD']
     color_indices = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'COLOR']
 
-    # Default when no layout is detected: use UV layer 0.
+    # Default when no layout is detected: use UV layer 0 and Color layer 0.
     if not layout:
         uv_indices    = [0]
-        color_indices = []
+        color_indices = [0]
 
     v_indices = np.empty(n_loops, dtype=np.int32)
     tri_mesh.loops.foreach_get('vertex_index', v_indices)
 
     # ── Build orig_index lookup ────────────────────────────────────────────────
-    # Blender stores the pre-modifier vertex index in the `.id` attribute on the
-    # evaluated mesh. Mirror duplicates a vertex from orig index i → the mirror
-    # copy also carries `.id = i`. Subdivision splits edges → new vertices carry
-    # the nearest orig index. This makes orig_index a stable, topology-invariant
-    # key that maps any eval vertex back to a shape-key-addressable orig vertex.
     orig_idx_arr = None
     id_attr = orig_mesh.attributes.get('.id')
     if id_attr is not None:
         orig_idx_arr = np.empty(eval_v_count, dtype=np.int32)
         id_attr.data.foreach_get('value', orig_idx_arr)
 
-    # Fall back to identity if .id is not present (plain mesh, no generative mods)
     if orig_idx_arr is None:
         orig_idx_arr = np.arange(eval_v_count, dtype=np.int32)
 
-    sig_fields: list = [('v', 'i4')]
-    arrays: dict     = {'v': v_indices}
+    sig_fields: list = []
+    arrays: dict     = {}
 
+    # 1. UV (TexCoord)
+    for idx in uv_indices:
+        if idx < len(tri_mesh.uv_layers):
+            uv_data = np.empty(n_loops * 2, dtype=np.float32)
+            tri_mesh.uv_layers[idx].data.foreach_get('uv', uv_data)
+            arrays[f'u{idx}'] = np.round(np.nan_to_num(uv_data.reshape(-1, 2)), 4).astype(np.float32)
+        else:
+            arrays[f'u{idx}'] = np.zeros((n_loops, 2), dtype=np.float32)
+        sig_fields.append((f'u{idx}', 'f4', (2,)))
+
+    # 2. Color
+    for idx in color_indices:
+        c_data = None
+        if hasattr(tri_mesh, 'color_attributes') and len(tri_mesh.color_attributes) > idx:
+            c_data = np.empty(n_loops * 4, dtype=np.float32)
+            tri_mesh.color_attributes[idx].data.foreach_get('color', c_data)
+        elif hasattr(tri_mesh, 'vertex_colors') and len(tri_mesh.vertex_colors) > idx:
+            c_data = np.empty(n_loops * 4, dtype=np.float32)
+            tri_mesh.vertex_colors[idx].data.foreach_get('color', c_data)
+        
+        if c_data is not None:
+            # EFMI uses float32 x4 for Color
+            arrays[f'c{idx}'] = np.round(np.nan_to_num(c_data.reshape(-1, 4)), 3).astype(np.float32)
+        else:
+            arrays[f'c{idx}'] = np.zeros((n_loops, 4), dtype=np.float32)
+        sig_fields.append((f'c{idx}', 'f4', (4,)))
+
+    # 3. Tangent, 4. BitangentSign, 5. Normal
     if hasattr(tri_mesh, 'calc_tangents'):
         tri_mesh.calc_tangents()
         
-        n_data = np.empty(n_loops * 3, dtype=np.float32)
-        tri_mesh.loops.foreach_get('normal', n_data)
-        arrays['n'] = np.nan_to_num(n_data.reshape(-1, 3)).astype(np.float32)
-        sig_fields.append(('n', 'f4', (3,)))
-
         t_data = np.empty(n_loops * 3, dtype=np.float32)
         tri_mesh.loops.foreach_get('tangent', t_data)
         arrays['t'] = np.nan_to_num(t_data.reshape(-1, 3)).astype(np.float32)
@@ -412,20 +429,14 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
         arrays['b'] = np.nan_to_num(b_data).astype(np.float32)
         sig_fields.append(('b', 'f4'))
 
+        n_data = np.empty(n_loops * 3, dtype=np.float32)
+        tri_mesh.loops.foreach_get('normal', n_data)
+        arrays['n'] = np.round(np.nan_to_num(n_data.reshape(-1, 3)), 4).astype(np.float32)
+        sig_fields.append(('n', 'f4', (3,)))
 
-    for idx in uv_indices:
-        if idx < len(tri_mesh.uv_layers):
-            uv_data = np.empty(n_loops * 2, dtype=np.float32)
-            tri_mesh.uv_layers[idx].data.foreach_get('uv', uv_data)
-            arrays[f'u{idx}'] = np.round(np.nan_to_num(uv_data.reshape(-1, 2)), 4).astype(np.float32)
-            sig_fields.append((f'u{idx}', 'f4', (2,)))
-
-    for idx in color_indices:
-        if idx < len(tri_mesh.vertex_colors):
-            c_data = np.empty(n_loops * 4, dtype=np.float32)
-            tri_mesh.vertex_colors[idx].data.foreach_get('color', c_data)
-            arrays[f'c{idx}'] = np.round(np.nan_to_num(c_data.reshape(-1, 4)), 3).astype(np.float32)
-            sig_fields.append((f'c{idx}', 'f4', (4,)))
+    # 6. VertexId
+    arrays['v'] = v_indices
+    sig_fields.append(('v', 'i4'))
 
     signatures = np.empty(n_loops, dtype=sig_fields)
     for key, arr in arrays.items():

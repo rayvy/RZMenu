@@ -367,8 +367,10 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                     # If vertex counts match, Blender's eval mesh order is exactly stable.
                     # We MUST use direct subtraction. KDTree can pick wrong neighbors for large deltas!
                     if sv == bv:
+                        mode_label = "eval_direct"
                         deltas_eval = ((sk_world - ba_world) / sk_weight).astype(np.float32)
                     else:
+                        mode_label = "eval_kd"
                         print(f"    [WARN] {obj.name}: Topology shifted (sv={sv} != bv={bv}), matching by ID...")
                         deltas_eval = np.zeros((bv, 3), dtype=np.float32)
                         
@@ -415,7 +417,6 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
 
                     if not is_xxmi:
                         deltas_all[:, 0] *= -1
-                    mode_label = "eval_kd"
 
                 finally:
                     for sk in obj.data.shape_keys.key_blocks:
