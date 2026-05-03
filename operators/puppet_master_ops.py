@@ -247,12 +247,14 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
     depsgraph     = bpy.context.evaluated_depsgraph_get()
 
     fallback_objs_per_sk: dict = {}
+    fast_path_slots_per_sk: dict = {}  # {sk_name: bool[buf_v_count]} slots written by Fast Path
 
     for sk_name in list(sk_owner_map.keys()):
         buf_f32       = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
         matched_count = 0
         fallback_this = []
         map_type      = "Relative"
+        sk_fast_slots = np.zeros(buf_v_count, dtype=bool)  # track which slots Fast Path writes
 
         for obj in sk_owner_map[sk_name]['direct']:
             entry = cache_objects.get(obj.name)
@@ -423,10 +425,29 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                         sk.value = sk_snapshot.get(sk.name, 0.0)
                     bpy.context.view_layer.update(); depsgraph.update()
 
+            # ── Guard 1: buffer bounds ─────────────────────────────────────
+            # vb_off+vb_cnt can exceed buf_v_count when export_cache accumulates
+            # actual_vb_count (topological dedup) instead of EFMI's internal counts.
+            if vb_off + vb_cnt > buf_v_count:
+                print(f"    [ERROR] {obj.name}: offset OOB "
+                      f"(vb_off={vb_off}+vb_cnt={vb_cnt}={vb_off+vb_cnt} > buf={buf_v_count}) "
+                      f"→ Baked Path.")
+                fallback_this.append(obj)
+                continue
+
+            # ── Guard 2: v_map index bounds ────────────────────────────────
+            max_idx = int(v_map_np.max()) if len(v_map_np) > 0 else 0
+            if max_idx >= len(deltas_all):
+                print(f"    [ERROR] {obj.name}: v_map max index {max_idx} >= "
+                      f"deltas size {len(deltas_all)} → Baked Path.")
+                fallback_this.append(obj)
+                continue
+
             # ── Apply: buf[vb_off + i] += deltas[v_map[i]] ────────────────
             obj_slice = buf_f32[vb_off: vb_off + vb_cnt, :3]
             buf_f32[vb_off: vb_off + vb_cnt, :3] = (obj_slice + deltas_all[v_map_np]).astype(np.float32)
             obj_matched = vb_cnt
+            sk_fast_slots[vb_off: vb_off + vb_cnt] = True  # mark these slots as done
 
             matched_count += obj_matched
             print(f"    [FAST/{mode_label.upper()}] {obj.name}: {obj_matched} slots for '{sk_name}'.")
@@ -438,8 +459,9 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
             print(f"    -> [DONE] {out_name} ({matched_count} verts via Fast Path [{map_type}])")
 
         fallback_objs_per_sk[sk_name] = fallback_this
+        fast_path_slots_per_sk[sk_name] = sk_fast_slots
 
-    return fallback_objs_per_sk
+    return fallback_objs_per_sk, fast_path_slots_per_sk
 
 
 # ---------------------------------------------------------------------------
@@ -708,7 +730,7 @@ def _assign_owners_bulk_bvh(buf_xyz, base_cache, limit):
 
 def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                    stride, buf_v_count, output_dir, base_name, dump_name,
-                   is_xxmi, limit, t_start):
+                   is_xxmi, limit, t_start, fast_path_slots=None):
     """Slow Path: пространственный поиск + барицентрическая интерполяция."""
 
     stride_f32 = stride // 4
@@ -774,8 +796,20 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
         owner_map, dist_map = _assign_owners_bulk_bvh(buf_xyz, base_cache, limit)
 
         for sk_name, owners in sk_owner_map_slow.items():
-            sk_direct   = owners['direct']
+            sk_direct     = owners['direct']
             sk_via_target = owners['via_target']
+
+            # Build a per-sk owner_map that excludes slots already written by Fast Path.
+            # This prevents Slow Path from overwriting correct Fast Path deltas with
+            # approximated barycentric ones.
+            fp_slots = fast_path_slots.get(sk_name) if fast_path_slots else None
+            if fp_slots is not None and fp_slots.any():
+                effective_owner_map = owner_map.copy()
+                effective_owner_map[fp_slots] = 0  # 0 = unowned → Slow Path skips these
+                n_protected = int(fp_slots.sum())
+                print(f"    [SLOW] '{sk_name}': protecting {n_protected} Fast Path slots from overwrite")
+            else:
+                effective_owner_map = owner_map
 
             # Активируем шейпкей (use microscopic weight to prevent topology destruction)
             sk_weight = 0.001
@@ -815,7 +849,7 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
 
             matched_count = 0
             for obj, t_coords in target_cache.items():
-                mask = (owner_map == id(obj))
+                mask = (effective_owner_map == id(obj))
                 if not mask.any(): continue
 
                 buf_sub = buf_xyz[mask]
@@ -925,7 +959,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         stride = comp_cache.get('stride', stride)
         buf_v_count = len(original_data) // stride
 
-        fallback_map = _bake_with_direct_offsets(
+        fallback_map, fast_path_slots_per_sk = _bake_with_direct_offsets(
             sk_owner_map, comp_cache, original_bytes,
             stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi
         )
@@ -941,6 +975,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     else:
         print(f"  [CACHE] MISS — skipping Fast Path")
         sk_owner_map_after_fast = sk_owner_map
+        fast_path_slots_per_sk = {}
 
     if not sk_owner_map_after_fast:
         print(f"  [TIME] Bake finished in {time.time() - t_start:.3f}s (Fast Path only)")
@@ -997,7 +1032,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         _run_slow_path(
             context, sk_owner_map_slow, comp_cache,
             original_bytes, stride, buf_v_count,
-            output_dir, base_name, dump_name, is_xxmi, limit, t_start
+            output_dir, base_name, dump_name, is_xxmi, limit, t_start,
+            fast_path_slots=fast_path_slots_per_sk
         )
 
     # ── SUMMARY ──
