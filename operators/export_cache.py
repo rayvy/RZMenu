@@ -416,22 +416,30 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
         sig_fields.append((f'c{idx}', 'f4', (4,)))
 
     # 3. Tangent, 4. BitangentSign, 5. Normal
+    # EFMI packs these into a 10-10-10-2 uint (1/511 ≈ 0.00196 precision).
+    # We must quantize to the same precision before hashing, otherwise loops
+    # that EFMI collapses (same 10-bit representation) stay separate in our
+    # float32 signature → we get more unique slots than EFMI → v_map is wrong.
+    _Q = 511.0  # EFMI uses rint(x * 511) / 511 for 10-bit SNorm
     if hasattr(tri_mesh, 'calc_tangents'):
         tri_mesh.calc_tangents()
-        
+
         t_data = np.empty(n_loops * 3, dtype=np.float32)
         tri_mesh.loops.foreach_get('tangent', t_data)
-        arrays['t'] = np.nan_to_num(t_data.reshape(-1, 3)).astype(np.float32)
+        t_raw = np.nan_to_num(t_data.reshape(-1, 3))
+        arrays['t'] = (np.rint(t_raw * _Q) / _Q).astype(np.float32)
         sig_fields.append(('t', 'f4', (3,)))
 
         b_data = np.empty(n_loops, dtype=np.float32)
         tri_mesh.loops.foreach_get('bitangent_sign', b_data)
-        arrays['b'] = np.nan_to_num(b_data).astype(np.float32)
+        # BitangentSign is ±1 → just keep the sign (no quantization needed)
+        arrays['b'] = np.sign(np.nan_to_num(b_data)).astype(np.float32)
         sig_fields.append(('b', 'f4'))
 
         n_data = np.empty(n_loops * 3, dtype=np.float32)
         tri_mesh.loops.foreach_get('normal', n_data)
-        arrays['n'] = np.round(np.nan_to_num(n_data.reshape(-1, 3)), 4).astype(np.float32)
+        n_raw = np.nan_to_num(n_data.reshape(-1, 3))
+        arrays['n'] = (np.rint(n_raw * _Q) / _Q).astype(np.float32)
         sig_fields.append(('n', 'f4', (3,)))
 
     # 6. VertexId
@@ -525,6 +533,52 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
 
                 # actual_vb_count = number of unique deduplicated slots (buffer slots for this object).
                 actual_vb_count = len(v_map_topology) if v_map_topology else 0
+
+                # ── v_map consistency validation ──────────────────────────────────────
+                # A correctly built v_map must satisfy:
+                #   1. Every eval vertex is referenced by at least one buf slot.
+                #      If n_unique << eval_v_count, the signature over-deduplicates
+                #      (e.g. UV or Color was missing from the hash) → wrong mapping.
+                #   2. The buf/eval ratio is within realistic bounds for a real mesh.
+                #      Typical value: 1.0 – 2.0 (UV seams inflate slot count).
+                #      Values outside [0.8, 4.0] mean the signature is badly wrong.
+                #   3. Our buf_count should be reasonably close to EFMI's reported
+                #      tmp.vertex_count for this object.  Large divergence means the
+                #      signature produced a different number of unique vertices than
+                #      EFMI did, so v_map[slot] will be off by a systematic shift.
+                if v_map_topology and eval_v_count > 0:
+                    n_unique     = len(set(v_map_topology))
+                    dedup_ratio  = actual_vb_count / eval_v_count
+                    efmi_count   = tmp.vertex_count  # what EFMI says this object contributes
+
+                    # Coverage: every eval vertex should appear in the map (≥ 95 % threshold
+                    # to tolerate rare isolated vertices that carry no loops).
+                    coverage_ok  = n_unique >= eval_v_count * 0.95
+
+                    # Ratio: buf slots per eval vertex — must be between 0.8 and 4.0.
+                    ratio_ok     = 0.8 <= dedup_ratio <= 4.0
+
+                    # EFMI agreement: our count vs EFMI's count must agree within 20 %.
+                    if efmi_count > 0:
+                        efmi_ratio   = actual_vb_count / efmi_count
+                        efmi_ok      = 0.8 <= efmi_ratio <= 1.25
+                    else:
+                        efmi_ok = True  # no reference → skip this check
+
+                    if not (coverage_ok and ratio_ok and efmi_ok):
+                        reasons = []
+                        if not coverage_ok:
+                            reasons.append(
+                                f"coverage {n_unique}/{eval_v_count}={n_unique/eval_v_count:.2f} < 0.95")
+                        if not ratio_ok:
+                            reasons.append(f"dedup_ratio {dedup_ratio:.2f} not in [0.8, 4.0]")
+                        if not efmi_ok:
+                            reasons.append(
+                                f"efmi_ratio {actual_vb_count}/{efmi_count}={efmi_ratio:.2f} not in [0.8, 1.25]")
+                        print(f"[RZM] [CACHE] {tmp.name}: v_map VALIDATION FAILED "
+                              f"({'; '.join(reasons)}) → Baked Path")
+                        v_map_topology = None
+                        actual_vb_count = 0
 
                 if actual_vb_count > 0:
                     objects.append({
