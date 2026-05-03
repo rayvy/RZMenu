@@ -676,11 +676,22 @@ def _bary_delta_batch_bvh(buf_verts_np, owner_data, target_data):
 # ---------------------------------------------------------------------------
 
 def _build_owner_data(obj, depsgraph, mat):
-    """Строит структуру данных объекта для Slow Path (BVH + координаты)."""
+    """Строит структуру данных объекта для Slow Path (BVH + координаты).
+    
+    mat — матрица преобразования координат (обычно obj.matrix_world для EFMI,
+    так как EFMI применяет transform_apply → буфер в мировых координатах).
+    """
     eval_obj = obj.evaluated_get(depsgraph)
     b_eval   = eval_obj.to_mesh()
 
-    coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in b_eval.vertices], dtype=np.float64)
+    mw3 = np.array(mat.to_3x3(), dtype=np.float64)
+    mwt = np.array(mat.translation, dtype=np.float64)
+    n_verts = len(b_eval.vertices)
+    raw_co  = np.empty(n_verts * 3, dtype=np.float32)
+    b_eval.vertices.foreach_get('co', raw_co)
+    local_co = raw_co.reshape(-1, 3).astype(np.float64)
+    coords = local_co @ mw3.T + mwt
+
     polys  = [list(p.vertices) for p in b_eval.polygons]
 
     b_eval.calc_loop_triangles()
@@ -772,6 +783,8 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
         depsgraph.update()
 
         # Строим базовый кэш объектов
+        # EFMI применяет transform_apply → позиции буфера в мировых координатах.
+        # Для корректного BVH-матчинга используем matrix_world для всех EFMI объектов.
         base_cache = {}
         for obj in active_objects:
             import mathutils as mu
@@ -787,6 +800,9 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 root_obj_name = comp_cache.get('root_obj')
                 root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else active_objects[0]
                 mat = root_obj.matrix_world.inverted() @ obj.matrix_world
+            elif not is_xxmi:
+                # EFMI: transform_apply bakes world transform → buf positions == world space.
+                mat = obj.matrix_world
             else:
                 mat = mu.Matrix.Identity(4)
 
@@ -811,8 +827,11 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
             else:
                 effective_owner_map = owner_map
 
-            # Активируем шейпкей (use microscopic weight to prevent topology destruction)
-            sk_weight = 0.001
+            # Активируем шейпкей.
+            # sk_weight=0.05: достаточно большой для точной линейной экстраполяции
+            # через Surface Deform, достаточно маленький чтобы не ломать Mirror+Merge
+            # (вершины не успевают пересечь X=0 при таком малом весе).
+            sk_weight = 0.05
             for obj in all_involved:
                 if obj.data and obj.data.shape_keys:
                     for sk in obj.data.shape_keys.key_blocks:
@@ -826,10 +845,15 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 eval_obj = obj.evaluated_get(depsgraph)
                 t_eval   = eval_obj.to_mesh()
                 mat      = base_cache[obj]['mat']
-                t_coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
+                mw3 = np.array(mat.to_3x3(), dtype=np.float64)
+                mwt = np.array(mat.translation, dtype=np.float64)
+                n_tv = len(t_eval.vertices)
+                raw_t = np.empty(n_tv * 3, dtype=np.float32)
+                t_eval.vertices.foreach_get('co', raw_t)
+                t_coords = raw_t.reshape(-1, 3).astype(np.float64) @ mw3.T + mwt
                 eval_obj.to_mesh_clear()
                 if len(t_coords) == len(base_cache[obj]['coords']):
-                    # Calculate world-space coords corresponding to full 1.0 weight
+                    # Экстраполируем к полному весу 1.0
                     t_coords = base_cache[obj]['coords'] + (t_coords - base_cache[obj]['coords']) / sk_weight
                     target_cache[obj] = t_coords
 
@@ -858,8 +882,14 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 if not nonzero.any(): continue
 
                 indices      = np.where(mask)[0][nonzero]
-                valid_deltas = deltas[nonzero]
-                new_xyz      = (buf_xyz[indices] + valid_deltas).astype(np.float32)
+                valid_deltas = deltas[nonzero].copy()
+
+                # EFMI хранит позиции в мировом пространстве с инвертированной осью X
+                # (аналогично Fast Path: if not is_xxmi: deltas[:, 0] *= -1)
+                if not is_xxmi:
+                    valid_deltas[:, 0] *= -1
+
+                new_xyz = (buf_xyz[indices] + valid_deltas).astype(np.float32)
 
                 buf_f32[indices, 0] = new_xyz[:, 0]
                 buf_f32[indices, 1] = new_xyz[:, 1]

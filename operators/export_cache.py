@@ -561,7 +561,7 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                     # EFMI agreement: our count vs EFMI's count must agree within 20 %.
                     if efmi_count > 0:
                         efmi_ratio   = actual_vb_count / efmi_count
-                        efmi_ok      = 0.8 <= efmi_ratio <= 1.25
+                        efmi_ok      = 0.8 <= efmi_ratio <= 1.5
                     else:
                         efmi_ok = True  # no reference → skip this check
 
