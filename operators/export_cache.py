@@ -394,6 +394,25 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
     sig_fields: list = [('v', 'i4')]
     arrays: dict     = {'v': v_indices}
 
+    if hasattr(tri_mesh, 'calc_tangents'):
+        tri_mesh.calc_tangents()
+        
+        n_data = np.empty(n_loops * 3, dtype=np.float32)
+        tri_mesh.loops.foreach_get('normal', n_data)
+        arrays['n'] = np.nan_to_num(n_data.reshape(-1, 3)).astype(np.float32)
+        sig_fields.append(('n', 'f4', (3,)))
+
+        t_data = np.empty(n_loops * 3, dtype=np.float32)
+        tri_mesh.loops.foreach_get('tangent', t_data)
+        arrays['t'] = np.nan_to_num(t_data.reshape(-1, 3)).astype(np.float32)
+        sig_fields.append(('t', 'f4', (3,)))
+
+        b_data = np.empty(n_loops, dtype=np.float32)
+        tri_mesh.loops.foreach_get('bitangent_sign', b_data)
+        arrays['b'] = np.nan_to_num(b_data).astype(np.float32)
+        sig_fields.append(('b', 'f4'))
+
+
     for idx in uv_indices:
         if idx < len(tri_mesh.uv_layers):
             uv_data = np.empty(n_loops * 2, dtype=np.float32)

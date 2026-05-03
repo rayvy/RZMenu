@@ -344,9 +344,10 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                     obj.evaluated_get(depsgraph).to_mesh_clear()
                     ba_world = ba_loc @ mw3.T + mwt
 
-                    # SK=1 eval
+                    # SK=1 eval (use microscopic weight to prevent topology destruction by modifiers)
+                    sk_weight = 0.001
                     for sk in obj.data.shape_keys.key_blocks:
-                        sk.value = 1.0 if sk.name == sk_name else 0.0
+                        sk.value = sk_weight if sk.name == sk_name else 0.0
                     bpy.context.view_layer.update(); depsgraph.update()
                     em_sk = obj.evaluated_get(depsgraph).to_mesh()
                     sv = len(em_sk.vertices)
@@ -366,7 +367,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                     # If vertex counts match, Blender's eval mesh order is exactly stable.
                     # We MUST use direct subtraction. KDTree can pick wrong neighbors for large deltas!
                     if sv == bv:
-                        deltas_eval = (sk_world - ba_world).astype(np.float32)
+                        deltas_eval = ((sk_world - ba_world) / sk_weight).astype(np.float32)
                     else:
                         print(f"    [WARN] {obj.name}: Topology shifted (sv={sv} != bv={bv}), matching by ID...")
                         deltas_eval = np.zeros((bv, 3), dtype=np.float32)
@@ -398,7 +399,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                                             best_dist = dist
                                             best_ki = ki
                                             
-                                deltas_eval[bi] = sk_world[best_ki] - b_pos
+                                deltas_eval[bi] = (sk_world[best_ki] - b_pos) / sk_weight
                         else:
                             import mathutils as _mu
                             kd = _mu.kdtree.KDTree(sv)
@@ -406,7 +407,7 @@ def _bake_with_direct_offsets(sk_owner_map, comp_cache, original_bytes,
                             kd.balance()
                             for bi in range(bv):
                                 _, ki, _ = kd.find(_mu.Vector(ba_world[bi]))
-                                deltas_eval[bi] = sk_world[ki] - ba_world[bi]
+                                deltas_eval[bi] = (sk_world[ki] - ba_world[bi]) / sk_weight
 
                     # deltas_eval[i] = world-space delta for eval vertex i.
                     # v_map_np[slot] = eval vertex index → indexes deltas_eval.
@@ -508,9 +509,10 @@ def _bake_path_for_generative_objects(
                     remaining_for_slow.setdefault(sk_name, []).append(obj)
                     continue
 
-                # Включаем ТОЛЬКО текущий шейпкей
+                # Включаем ТОЛЬКО текущий шейпкей (use microscopic weight to prevent topology destruction)
+                sk_weight = 0.001
                 for sk in obj.data.shape_keys.key_blocks:
-                    sk.value = 1.0 if sk.name == sk_name else 0.0
+                    sk.value = sk_weight if sk.name == sk_name else 0.0
                 context.view_layer.update()
                 depsgraph.update()
 
@@ -528,7 +530,7 @@ def _bake_path_for_generative_objects(
                 eval_sk.to_mesh_clear()
 
                 # Вычисляем дельты
-                deltas_world = sk_coords_world - base_coords_world
+                deltas_world = (sk_coords_world - base_coords_world) / sk_weight
 
                 # Запись в буфер
                 out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
@@ -774,11 +776,12 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
             sk_direct   = owners['direct']
             sk_via_target = owners['via_target']
 
-            # Активируем шейпкей
+            # Активируем шейпкей (use microscopic weight to prevent topology destruction)
+            sk_weight = 0.001
             for obj in all_involved:
                 if obj.data and obj.data.shape_keys:
                     for sk in obj.data.shape_keys.key_blocks:
-                        sk.value = 1.0 if sk.name == sk_name else 0.0
+                        sk.value = sk_weight if sk.name == sk_name else 0.0
             context.view_layer.update()
             depsgraph.update()
 
@@ -791,6 +794,8 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 t_coords = np.array([np.array(mat @ v.co, dtype=np.float64) for v in t_eval.vertices], dtype=np.float64)
                 eval_obj.to_mesh_clear()
                 if len(t_coords) == len(base_cache[obj]['coords']):
+                    # Calculate world-space coords corresponding to full 1.0 weight
+                    t_coords = base_cache[obj]['coords'] + (t_coords - base_cache[obj]['coords']) / sk_weight
                     target_cache[obj] = t_coords
 
             if not target_cache:
