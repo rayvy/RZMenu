@@ -711,13 +711,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                         sd_mod = mod
                     break
 
-            needs_mod_bake = False
-            for mod in obj.modifiers:
-                if mod.show_viewport and mod.type != 'ARMATURE':
-                    if needs_sd and mod == sd_mod:
-                        continue
-                    needs_mod_bake = True
-                    break
+            needs_mod_bake = has_active_modifiers(obj)
 
             has_direct_keys = False
             if obj.data and obj.data.shape_keys:
@@ -745,24 +739,30 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
             set_armature_visibility([temp_obj], False)
             bake_success = True
 
-            # ЭТАП 1: Изоляция (Отключаем SurfaceDeform перед запеканием)
-            if needs_sd:
-                mod_to_remove = temp_obj.modifiers.get(sd_mod.name)
-                if mod_to_remove:
-                    temp_obj.modifiers.remove(mod_to_remove)
-
-            # ЭТАП 2: Запекание модификаторов НА ИСХОДНУЮ ГЕОМЕТРИЮ (Subdiv, Array и т.д.)
+            # ЭТАП 2: Запекание модификаторов (Двойной Try-Except)
             if needs_mod_bake:
-                print(f"  [MOD BAKE] Baking modifiers for {obj.name} via Gret standalone...")
+                print(f"  [MOD BAKE] Attempt A: Baking modifiers for {obj.name}...")
                 try:
+                    # Попытка А: Запекаем всё (включая Surface Deform, если он есть)
                     bpy.ops.rz.shape_key_apply_modifiers()
-                    new_active = context.view_layer.objects.active
-                    if new_active not in temp_objects:
-                        temp_objects.append(new_active)
-                    temp_obj = new_active
-                except Exception as e:
-                    print(f"  [ERROR] Mod bake failed for {obj.name}: {e}")
-                    bake_success = False
+                except Exception:
+                    # Фоллбек (Попытка Б): Если А упала, пробуем удалить SD и запечь остальное
+                    if needs_sd and temp_obj.modifiers.get(sd_mod.name):
+                        print(f"  [MOD BAKE] Attempt A failed, trying Attempt B (removing Surface Deform)...")
+                        temp_obj.modifiers.remove(temp_obj.modifiers.get(sd_mod.name))
+                        try:
+                            bpy.ops.rz.shape_key_apply_modifiers()
+                        except Exception as e2:
+                            print(f"  [ERROR] Mod bake failed (Attempt B) for {obj.name}: {e2}")
+                            bake_success = False
+                    else:
+                        print(f"  [ERROR] Mod bake failed (Attempt A) for {obj.name}")
+                        bake_success = False
+
+                # Обновляем ссылку на temp_obj, так как оператор мог заменить объект
+                temp_obj = context.view_layer.objects.active
+                if temp_obj not in temp_objects:
+                    temp_objects.append(temp_obj)
 
             # ЭТАП 3: Перенос Shape Keys (Берем донора из ready_map, чтобы использовать его хай-поли версию)
             if bake_success and needs_sd:
