@@ -107,6 +107,84 @@ def save_export_logs(cache: dict):
         print(f"[RZM] [LOG] Failed to save export logs: {e}")
 
 
+def export_vertex_evolution_debug(obj_name, mod_root, comp_name, 
+                                  eval_mesh, orig_mesh_data, 
+                                  v_map, buf_xyz, matrix_world):
+    """Exports detailed per-vertex mapping data to ./debug/ folder."""
+    print(f"[RZM] [DEBUG] Entering evolution export for {obj_name}...")
+    if not v_map:
+        return
+        
+    try:
+        import json
+        debug_dir = os.path.join(mod_root, "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        # Capture .id mapping if it exists (Blender internal attribute)
+        orig_idx_arr = None
+        id_attr = eval_mesh.attributes.get('.id')
+        if id_attr is not None:
+            orig_idx_arr = np.empty(len(eval_mesh.vertices), dtype=np.int32)
+            id_attr.data.foreach_get('value', orig_idx_arr)
+        
+        vertices_data = []
+        eval_to_buf = collections.defaultdict(list)
+        
+        for i, eval_idx in enumerate(v_map):
+            eval_v = eval_mesh.vertices[eval_idx]
+            eval_pos = [round(c, 6) for c in eval_v.co]
+            eval_pos_world = [round(c, 6) for c in (matrix_world @ eval_v.co)]
+            
+            orig_idx = int(orig_idx_arr[eval_idx]) if orig_idx_arr is not None else -1
+            orig_pos = None
+            if orig_idx != -1 and orig_idx < len(orig_mesh_data.vertices):
+                orig_pos = [round(c, 6) for c in orig_mesh_data.vertices[orig_idx].co]
+                
+            vertices_data.append({
+                "buf_idx": i,
+                "eval_idx": eval_idx,
+                "orig_idx": orig_idx,
+                "pos_buf": [round(float(c), 6) for c in buf_xyz[i]] if buf_xyz is not None else None,
+                "pos_eval_local": eval_pos,
+                "pos_eval_world": eval_pos_world,
+                "pos_orig_local": orig_pos
+            })
+            eval_to_buf[eval_idx].append(i)
+            
+        dupes = {int(k): v for k, v in eval_to_buf.items() if len(v) > 1}
+        
+        # Identify vertices that are NOT in the buffer (deduplicated)
+        not_in_buf = [idx for idx in range(len(eval_mesh.vertices)) if idx not in eval_to_buf]
+        
+        debug_data = {
+            "object": obj_name,
+            "component": comp_name,
+            "counts": {
+                "buffer": len(v_map),
+                "evaluated": len(eval_mesh.vertices),
+                "original": len(orig_mesh_data.vertices),
+                "not_in_buffer": len(not_in_buf)
+            },
+            "evolution": vertices_data,
+            "duplicates": dupes,
+            "unused_eval_vertices": not_in_buf
+        }
+        
+        # Clean up name for filename
+        safe_obj_name = "".join([c if c.isalnum() else "_" for c in obj_name])
+        safe_comp_name = "".join([c if c.isalnum() else "_" for c in comp_name])
+        file_path = os.path.join(debug_dir, f"{safe_comp_name}_{safe_obj_name}.json")
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(debug_data, f, indent=4)
+        print(f"[RZM] [DEBUG] Exported vertex evolution for {obj_name} to {file_path}")
+        
+    except Exception as e:
+        print(f"[RZM] [DEBUG] Failed to export vertex debug for {obj_name}: {e}")
+        import traceback; traceback.print_exc()
+
+
+
 # ── Builder: XXMI (SPATIAL MAPPING) ───────────────────────────────────────────
 
 def _build_spatial_map_xxmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: mathutils.Matrix, buf_xyz: np.ndarray, max_dist_threshold: float = 0.5) -> tuple[list[int] | None, int]:
@@ -187,6 +265,7 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
         depsgraph  = bpy.context.evaluated_depsgraph_get()
 
         for comp in mod_exporter.mod_file.components:
+            comp_key = comp.fullname[len(mod_name):] or comp.fullname
             buf_path = os.path.join(dest, comp.fullname + ('Position.buf' if comp.blend_vb != '' else '.buf'))
             if not os.path.exists(buf_path): continue
             stride = (comp.strides.get('position') or next(iter(comp.strides.values()), 0))
@@ -238,6 +317,15 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                             v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, mathutils.Matrix.Identity(4), buf_slice)
                             m_idx = 0
                     
+                    if v_map:
+                        is_debug_enabled = getattr(bpy.context.scene.rzm.addons, 'export_vertex_debug', False)
+                        if is_debug_enabled:
+                            print(f"[RZM] [DEBUG] Triggering evolution export for {sub.name} to {dest}")
+                            export_vertex_evolution_debug(sub.name, dest, comp_key, eval_mesh, sub.obj.data, v_map, buf_slice, sub.obj.matrix_world)
+                        else:
+                            # If it's disabled, we don't print every vertex, but we can log that it's skipped
+                            pass
+
                     if eval_mesh:
                         sub.obj.to_mesh_clear()
                     
@@ -255,7 +343,6 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                         'is_robust': True
                     })
                     vb_offset += sub.vertex_count
-            comp_key = comp.fullname[len(mod_name):] or comp.fullname
             components[comp_key] = {'buf_path': buf_path, 'stride': stride, 'n_verts': vb_offset, 'objects': objects}
         return {'source': 'xxmi', 'game': game, 'mod_name': mod_name, 'mod_root': dest, 'timestamp': time.time(), 'components': components}
     except Exception as e:
@@ -634,6 +721,23 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                         'is_robust':       False
                     })
                     print(f"[RZM] [CACHE] {tmp.name}: Parity mapping failed -> Baked Path")
+
+                if v_map_topology and getattr(bpy.context.scene.rzm.addons, 'export_vertex_debug', False):
+                    # For EFMI, the buffer is local/relative. 
+                    # We pass None for buf_xyz here unless we want to load it from buf_path.
+                    # But we already have tree/coord_hash if we wanted to.
+                    # Let's try to pass the actual buffer positions if available.
+                    obj_buf_xyz = None
+                    if tree and v_map_topology:
+                        try:
+                            # Reconstruct from tree if needed, or just skip pos_buf for now
+                            # Actually, we can just not pass it and let evolution show Blender stages.
+                            pass
+                        except: pass
+                    
+                    export_vertex_evolution_debug(tmp.name, dest, f'Component{comp_id}', 
+                                                  eval_mesh, efmi_obj.data, 
+                                                  v_map_topology, obj_buf_xyz, efmi_obj.matrix_world)
 
                 if eval_mesh:
                     efmi_obj.to_mesh_clear()
