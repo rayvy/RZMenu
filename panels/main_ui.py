@@ -321,6 +321,10 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             exp_row.operator("rzm.inquisitor_cleanup", text="Clean Up", icon='BRUSH_DATA')
             exp_row.operator("rzm.real_compression", text="Compress", icon='SEQ_STRIP_DUPLICATE')
             exp_box.label(text="Caution: Backups (.bak) will be created.", icon='INFO')
+            
+            exp_box.separator()
+            exp_box.prop(rzm.addons, "export_vertex_debug", text="Export Vertex Evolution (.json)", icon='GHOST_ENABLED')
+
 
 
 
@@ -611,6 +615,10 @@ class VIEW3D_PT_RZM_ExportManager(bpy.types.Panel):
         tw_box = col.box()
         tw_box.operator("rzm.tw_export_hierarchy", text="Export Hierarchy", icon='FILE_FOLDER')
         tw_box.operator("rzm.tw_debug_sync", text="Debug Sync", icon='CONSOLE')
+        
+        box.separator()
+        box.prop(rzm.addons, "export_vertex_debug", text="Export Vertex Debug (.json)", icon='GHOST_ENABLED')
+
 
 
 class RZM_UL_CustomScriptList(bpy.types.UIList):

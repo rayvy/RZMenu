@@ -239,6 +239,11 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
         default=False,
         description="Enable new ShapeKeyConfig discovery and export system"
     )
+    export_vertex_debug: BoolProperty(
+        name="Export Vertex Debug",
+        default=False,
+        description="Export detailed per-vertex mapping and evolution data to ./debug/ folder"
+    )
     puppet_master_per_component: BoolProperty(
         name="Per-Component Export",
         default=False,
