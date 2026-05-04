@@ -1,12 +1,14 @@
 # RZMenu/operators/puppet_master_ops.py
 #
-# Hybrid Pipeline v3 (Pre-Baked Exact Match)
+# Hybrid Pipeline v5 (Pre-Baked Exact Match + Slow Path Fallback)
 #   1. EXACT MATCH PATH (Fast) — Для объектов с собственными шейпкеями.
 #      - Объекты без модов читаются напрямую.
-#      - Объекты с модами предварительно запекаются через rz.shape_key_apply_modifiers.
-#      - Дельты наносятся на буфер через топологический v_map или точный KD-Tree (если v_map нет).
-#   2. SLOW PATH — Только для via_target (Surface Deform) объектов без собственных
-#      шейпкеев. Используется пространственная барицентрическая интерполяция.
+#      - Объекты с модами и SurfaceDeform предварительно запекаются через 
+#        rzm_surface_baker и rz.shape_key_apply_modifiers.
+#      - Дельты наносятся на буфер через топологический v_map или точный KD-Tree.
+#   2. SLOW PATH (Fallback) — Включается автоматически, если Exact Match 
+#      или Pre-Bake не сработали (ошибки, новые игры без кэша и т.д.).
+#      Используется пространственная барицентрическая интерполяция через BVH.
 #
 import bpy
 import os
@@ -155,7 +157,7 @@ def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
     return f"{clean_base}_{clean_sk}.buf"
 
 # ---------------------------------------------------------------------------
-# PRE-BAKE & CLASSIFICATION
+# CLASSIFICATION & PRE-BAKE HELPERS
 # ---------------------------------------------------------------------------
 
 def has_active_modifiers(obj):
@@ -174,7 +176,6 @@ def _scan_sk_owners(comp_objects, all_keys):
         for obj in comp_objects:
             has_direct_sk = False
             
-            # Проверяем наличие прямых шейпкеев
             if obj.data and obj.data.shape_keys:
                 sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
                 ba_blk = obj.data.shape_keys.reference_key
@@ -184,7 +185,6 @@ def _scan_sk_owners(comp_objects, all_keys):
                     if np.any(np.abs(sk_co - ba_co) > 1e-7):
                         has_direct_sk = True
 
-            # Проверяем Surface Deform / Shrinkwrap
             is_via_target = False
             for mod in obj.modifiers:
                 if (mod.type in {'SURFACE_DEFORM', 'SHRINKWRAP'}
@@ -207,67 +207,17 @@ def _scan_sk_owners(comp_objects, all_keys):
             
     return result
 
-def _create_baked_copies(context, objects_to_bake):
-    """
-    Создает временные копии объектов и применяет на них модификаторы 
-    с сохранением шейпкеев через внешний аддон Gret.
-    Возвращает словарь {original_obj: baked_temp_obj}.
-    """
-    baked_map = {}
-    if not objects_to_bake:
-        return baked_map
-
-    orig_active = context.view_layer.objects.active
-    orig_selected = context.selected_objects.copy()
-    
-    # Отключаем арматуру на оригиналах, чтобы Rest Pose запекся
-    set_armature_visibility(objects_to_bake, False)
-
-    try:
-        for obj in objects_to_bake:
-            bpy.ops.object.select_all(action='DESELECT')
-            
-            # Создаем копию
-            temp_obj = obj.copy()
-            temp_obj.data = obj.data.copy()
-            context.collection.objects.link(temp_obj)
-            
-            temp_obj.select_set(True)
-            context.view_layer.objects.active = temp_obj
-            
-            try:
-                # Вызываем оператор Gret для запекания модов + SK
-                bpy.ops.rz.shape_key_apply_modifiers()
-                
-                # Оператор мог подменить активный объект
-                final_baked_obj = context.view_layer.objects.active
-                baked_map[obj] = final_baked_obj
-                print(f"  [PRE-BAKE] Successfully baked modifiers for {obj.name}")
-            except Exception as e:
-                print(f"  [ERROR] Gret bake failed for {obj.name}: {e}")
-                bpy.data.objects.remove(temp_obj, do_unlink=True)
-                
-    finally:
-        set_armature_visibility(objects_to_bake, True)
-        bpy.ops.object.select_all(action='DESELECT')
-        for o in orig_selected:
-            if o.name in bpy.data.objects:
-                o.select_set(True)
-        if orig_active and orig_active.name in bpy.data.objects:
-            context.view_layer.objects.active = orig_active
-
-    return baked_map
-
 # ---------------------------------------------------------------------------
 # EXACT MATCH PATH (Fast Path + KD-Tree)
 # ---------------------------------------------------------------------------
 
-def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
+def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
                            stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi):
     """
-    Обрабатывает ВСЕ объекты с собственными шейпкеями (как сырые, так и запеченные).
-    Если есть v_map — переносит по индексам.
-    Если v_map нет (или он сломан) — переносит по точным координатам базиса (KD-Tree).
+    Извлекает дельты из полностью подготовленных объектов (ready_map) и 
+    наносит их на буфер через v_map или KD-Tree.
+    Объекты, которые не удалось перенести (ошибки, нет кэша, диссонанс вершин), 
+    возвращаются как failed_objects для передачи в Slow Path.
     """
     import mathutils as mu
     stride_f32 = stride // 4
@@ -275,23 +225,32 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
 
     fast_path_slots_per_sk = {}
     stats = {'vmap_matched': 0, 'kd_matched': 0, 'objects': 0}
+    failed_objects = {sk: {'direct': [], 'via_target': []} for sk in sk_owner_map.keys()}
 
     for sk_name, owners in sk_owner_map.items():
         buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
         sk_fast_slots = np.zeros(buf_v_count, dtype=bool)
         
         objs_to_process = []
-        for obj in owners['direct_raw']: objs_to_process.append((obj, obj))
-        for obj in owners['direct_bake']:
-            baked_obj = baked_map.get(obj)
-            if baked_obj: objs_to_process.append((obj, baked_obj))
+        for obj in owners['direct_raw']: 
+            objs_to_process.append((obj, obj))
+            
+        for obj in owners['direct_bake'] + owners['via_target']:
+            baked_obj = ready_map.get(obj)
+            if baked_obj and baked_obj.data and baked_obj.data.shape_keys and sk_name in baked_obj.data.shape_keys.key_blocks:
+                objs_to_process.append((obj, baked_obj))
+            else:
+                # Объект не прошел Pre-Bake или шейпкей не перенесся
+                if obj in owners['via_target']: failed_objects[sk_name]['via_target'].append(obj)
+                else: failed_objects[sk_name]['direct'].append(obj)
 
         matched_for_sk = 0
 
         for orig_obj, target_obj in objs_to_process:
             sk_blk = target_obj.data.shape_keys.key_blocks.get(sk_name)
             ba_blk = target_obj.data.shape_keys.reference_key
-            if not sk_blk or not ba_blk: continue
+            if not sk_blk or not ba_blk: 
+                continue
 
             entry = cache_objects.get(orig_obj.name)
             vb_off = entry.get('vb_offset', 0) if entry else 0
@@ -299,7 +258,6 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
             v_map  = entry.get('vertex_map') if entry else None
             m_idx  = entry.get('mat_idx', 0) if entry else 0
 
-            # Матрица
             mat = mu.Matrix.Identity(4)
             if m_idx == 1:
                 mat = orig_obj.matrix_world
@@ -308,7 +266,6 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
                 root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
                 mat = (root_obj.matrix_world.inverted() @ orig_obj.matrix_world if root_obj else mu.Matrix.Identity(4))
 
-            # Извлекаем данные напрямую из SK (так как моды уже применены)
             v_count = len(target_obj.data.vertices)
             sk_co = np.empty(v_count * 3, dtype=np.float32)
             ba_co = np.empty(v_count * 3, dtype=np.float32)
@@ -323,10 +280,13 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
                 deltas_all[:, 0] *= -1
 
             if vb_off + vb_cnt > buf_v_count:
-                print(f"    [ERROR] {orig_obj.name}: Buffer bounds exceeded. Skipping.")
+                print(f"    [ERROR] {orig_obj.name}: Buffer bounds exceeded. Forwarding to Slow Path.")
+                if orig_obj in owners['via_target']: failed_objects[sk_name]['via_target'].append(orig_obj)
+                else: failed_objects[sk_name]['direct'].append(orig_obj)
                 continue
 
             obj_slice = buf_f32[vb_off: vb_off + vb_cnt, :3]
+            matched_count = 0
 
             # Попытка 1: Идеальный маппинг по v_map
             if v_map and len(v_map) == vb_cnt and max(v_map) < v_count:
@@ -338,9 +298,6 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
             
             # Попытка 2: Пространственный маппинг по базису (KD-Tree)
             else:
-                print(f"    [WARN] {orig_obj.name}: No valid v_map. Using Exact Spatial Match.")
-                
-                # Координаты базиса в World-space
                 mwt = np.array(mat.translation, dtype=np.float32)
                 ba_world = ba_co @ mat_rot.T + mwt
                 
@@ -349,14 +306,11 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
                     kd.insert(mu.Vector(co), i)
                 kd.balance()
 
-                DIST_THRESHOLD = 0.005 # Очень жесткий порог, так как базисы должны совпадать идеально
-                matched_count = 0
-                
+                DIST_THRESHOLD = 0.005
                 for idx in range(vb_cnt):
                     buf_idx = vb_off + idx
                     buf_pos = mu.Vector(buf_f32[buf_idx, :3])
                     
-                    # Компенсация координаты X для не-XXMI игр в поиске
                     search_pos = buf_pos.copy()
                     if not is_xxmi:
                         search_pos.x *= -1
@@ -371,13 +325,19 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
                             buf_f32[buf_idx, 2] += d[2]
                         matched_count += 1
 
-                print(f"    [EXACT/KD] {orig_obj.name}: {matched_count} slots matched exactly.")
-                stats['kd_matched'] += 1
+                if matched_count > 0:
+                    print(f"    [EXACT/KD] {orig_obj.name}: {matched_count} slots matched exactly.")
+                    stats['kd_matched'] += 1
+                else:
+                    print(f"    [WARN] {orig_obj.name}: 0 matches in KD-Tree. Forwarding to Slow Path.")
 
             if matched_count > 0:
                 sk_fast_slots[vb_off: vb_off + vb_cnt] = True
                 matched_for_sk += matched_count
                 stats['objects'] += 1
+            else:
+                if orig_obj in owners['via_target']: failed_objects[sk_name]['via_target'].append(orig_obj)
+                else: failed_objects[sk_name]['direct'].append(orig_obj)
 
         if matched_for_sk > 0:
             out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
@@ -387,7 +347,7 @@ def _process_exact_matches(sk_owner_map, baked_map, comp_cache, original_bytes,
 
         fast_path_slots_per_sk[sk_name] = sk_fast_slots
 
-    return fast_path_slots_per_sk, stats
+    return fast_path_slots_per_sk, stats, failed_objects
 
 # ---------------------------------------------------------------------------
 # BARYCENTRIC DELTA INTERPOLATION (Slow Path)
@@ -446,7 +406,7 @@ def _bary_delta_batch_bvh(buf_verts_np, owner_data, target_data):
     return out
 
 # ---------------------------------------------------------------------------
-# SLOW PATH — Только для Surface Deform
+# SLOW PATH — Универсальный Fallback
 # ---------------------------------------------------------------------------
 
 def _build_owner_data(obj, depsgraph, mat):
@@ -507,9 +467,10 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
 
     active_objects_set = set()
     for owners in sk_owner_map_slow.values():
+        active_objects_set.update(owners['direct'])
         active_objects_set.update(owners['via_target'])
     active_objects = list(active_objects_set)
-    if not active_objects: return
+    if not active_objects: return 0
 
     linked_targets = get_linked_targets(active_objects)
     all_involved   = active_objects + list(set(linked_targets))
@@ -559,8 +520,9 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
         stats = 0
 
         for sk_name, owners in sk_owner_map_slow.items():
-            sk_via_target = owners['via_target']
-            if not sk_via_target: continue
+            sk_direct = owners.get('direct', [])
+            sk_via_target = owners.get('via_target', [])
+            if not sk_direct and not sk_via_target: continue
 
             fp_slots = fast_path_slots.get(sk_name) if fast_path_slots else None
             if fp_slots is not None and fp_slots.any():
@@ -578,7 +540,7 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
             depsgraph.update()
 
             target_cache = {}
-            for obj in sk_via_target:
+            for obj in sk_direct + sk_via_target:
                 if obj not in base_cache: continue
                 eval_obj = obj.evaluated_get(depsgraph)
                 t_eval   = eval_obj.to_mesh()
@@ -715,31 +677,116 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         stride = comp_cache.get('stride', stride)
         buf_v_count = len(original_data) // stride
 
-    # ── 1. PRE-BAKE PHASE ──────────────────────────────────────────────────
-    objects_to_bake = set()
-    for owners in sk_owner_map.values():
-        objects_to_bake.update(owners['direct_bake'])
-        
-    baked_map = {}
-    if objects_to_bake:
-        print(f"  [PRE-BAKE] Applying modifiers on {len(objects_to_bake)} objects via Gret standalone...")
-        baked_map = _create_baked_copies(context, list(objects_to_bake))
+    # ── 1. ФАЗА ПОДГОТОВКИ (Pre-Processing) ────────────────────────────────
+    ready_map = {}
+    temp_objects = []
+    
+    orig_active = context.view_layer.objects.active
+    orig_selected = context.selected_objects.copy()
 
-    # ── 2. EXACT MATCH PATH ────────────────────────────────────────────────
     try:
-        fast_path_slots, stats_exact = _process_exact_matches(
-            sk_owner_map, baked_map, comp_cache,
+        for obj in comp_objects:
+            needs_sd = False
+            sd_target = None
+            sd_mod = None
+            keys_to_transfer = []
+
+            for mod in obj.modifiers:
+                if mod.type in {'SURFACE_DEFORM', 'SHRINKWRAP'} and mod.show_viewport and mod.target:
+                    tgt = mod.target
+                    if tgt.data and tgt.data.shape_keys:
+                        for sk_name in all_keys:
+                            if sk_name in tgt.data.shape_keys.key_blocks:
+                                if not obj.data or not obj.data.shape_keys or sk_name not in obj.data.shape_keys.key_blocks:
+                                    keys_to_transfer.append(sk_name)
+                    if keys_to_transfer:
+                        needs_sd = True
+                        sd_target = tgt
+                        sd_mod = mod
+                    break
+
+            needs_mod_bake = False
+            for mod in obj.modifiers:
+                if mod.show_viewport and mod.type != 'ARMATURE':
+                    if needs_sd and mod == sd_mod:
+                        continue
+                    needs_mod_bake = True
+                    break
+
+            has_direct_keys = False
+            if obj.data and obj.data.shape_keys:
+                for sk_name in all_keys:
+                    if sk_name in obj.data.shape_keys.key_blocks:
+                        has_direct_keys = True
+                        break
+
+            if not has_direct_keys and not needs_sd:
+                continue
+
+            if not needs_sd and not needs_mod_bake:
+                ready_map[obj] = obj
+                continue
+
+            # Создаем временный объект
+            bpy.ops.object.select_all(action='DESELECT')
+            temp_obj = obj.copy()
+            temp_obj.data = obj.data.copy()
+            context.collection.objects.link(temp_obj)
+            temp_obj.select_set(True)
+            context.view_layer.objects.active = temp_obj
+            temp_objects.append(temp_obj)
+
+            set_armature_visibility([temp_obj], False)
+            bake_success = True
+
+            # Этап A: Surface Deform Baking
+            if needs_sd:
+                try:
+                    from .rzm_surface_baker import transfer_surface_shape_keys
+                    print(f"  [SURFACE BAKE] Transferring {len(keys_to_transfer)} keys from {sd_target.name} to {obj.name}")
+                    transfer_surface_shape_keys(temp_obj, sd_target, keys_to_transfer)
+                    
+                    mod_to_remove = temp_obj.modifiers.get(sd_mod.name)
+                    if mod_to_remove:
+                        temp_obj.modifiers.remove(mod_to_remove)
+                except Exception as e:
+                    print(f"  [ERROR] Surface bake failed for {obj.name}: {e}")
+                    bake_success = False
+
+            # Этап B: Запекание модификаторов
+            if bake_success and (needs_mod_bake or (needs_sd and has_active_modifiers(temp_obj))):
+                print(f"  [MOD BAKE] Baking modifiers for {obj.name} via Gret standalone...")
+                try:
+                    bpy.ops.rz.shape_key_apply_modifiers()
+                    new_active = context.view_layer.objects.active
+                    if new_active not in temp_objects:
+                        temp_objects.append(new_active)
+                    temp_obj = new_active
+                except Exception as e:
+                    print(f"  [ERROR] Mod bake failed for {obj.name}: {e}")
+                    bake_success = False
+
+            set_armature_visibility([temp_obj], True)
+            
+            if bake_success:
+                ready_map[obj] = temp_obj
+
+        # ── 2. EXACT MATCH PATH (Выгрузка) ─────────────────────────────────────
+        fast_path_slots, stats_exact, failed_exact = _process_exact_matches(
+            sk_owner_map, ready_map, comp_cache,
             original_bytes, stride, buf_v_count,
             output_dir, base_name, dump_name, is_xxmi
         )
-        
-        # ── 3. SLOW PATH ───────────────────────────────────────────────────────
+
+        # ── 3. SLOW PATH (Fallback) ────────────────────────────────────────────
+        # Собираем все объекты, которые провалили Exact Match (ошибки, нет v_map, и т.д.)
+        sk_owner_map_slow = {sk: owners for sk, owners in failed_exact.items() if owners['direct'] or owners['via_target']}
         stats_slow = 0
-        has_via_target = any(owners['via_target'] for owners in sk_owner_map.values())
-        if has_via_target:
-            print(f"  [SLOW PATH] Spatial Barycentric for Object Bind (Surface Deform)")
+
+        if sk_owner_map_slow:
+            print(f"  [SLOW PATH] Spatial Barycentric Fallback")
             stats_slow = _run_slow_path(
-                context, sk_owner_map, comp_cache,
+                context, sk_owner_map_slow, comp_cache,
                 original_bytes, stride, buf_v_count,
                 output_dir, base_name, dump_name, is_xxmi, limit, t_start,
                 fast_path_slots=fast_path_slots
@@ -749,13 +796,20 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         print(f"\n  [SUMMARY] {base_name} component finished in {time.time() - t_start:.3f}s")
         print(f"    - Exact Match (v_map):   {stats_exact['vmap_matched']} objects")
         print(f"    - Exact Match (KD-Tree): {stats_exact['kd_matched']} objects")
-        print(f"    - Slow Path (via target):{stats_slow} objects")
-        
+        print(f"    - Slow Path (Fallback):  {stats_slow} objects")
+            
     finally:
         # УДАЛЕНИЕ ВРЕМЕННЫХ ОБЪЕКТОВ
-        for baked_obj in baked_map.values():
-            if baked_obj and baked_obj.name in bpy.data.objects:
-                bpy.data.objects.remove(baked_obj, do_unlink=True)
+        bpy.ops.object.select_all(action='DESELECT')
+        for t_obj in temp_objects:
+            if t_obj and t_obj.name in bpy.data.objects:
+                bpy.data.objects.remove(t_obj, do_unlink=True)
+                
+        # Восстанавливаем выделение
+        for o in orig_selected:
+            if o.name in bpy.data.objects: o.select_set(True)
+        if orig_active and orig_active.name in bpy.data.objects:
+            context.view_layer.objects.active = orig_active
 
     return True
 
