@@ -1,14 +1,21 @@
 # RZMenu/operators/puppet_master_ops.py
 #
-# Hybrid Pipeline v5 (Pre-Baked Exact Match + Slow Path Fallback)
-#   1. EXACT MATCH PATH (Fast) — Для объектов с собственными шейпкеями.
-#      - Объекты без модов читаются напрямую.
-#      - Объекты с модами и SurfaceDeform предварительно запекаются через 
-#        rzm_surface_baker и rz.shape_key_apply_modifiers.
-#      - Дельты наносятся на буфер через топологический v_map или точный KD-Tree.
-#   2. SLOW PATH (Fallback) — Включается автоматически, если Exact Match 
-#      или Pre-Bake не сработали (ошибки, новые игры без кэша и т.д.).
-#      Используется пространственная барицентрическая интерполяция через BVH.
+# Hybrid Pipeline v6 (Order of Operations Fix + Slow Path Fallback)
+#   
+#   Фаза 1: ПОДГОТОВКА (Pre-Processing)
+#     - Объекты сортируются: доноры обрабатываются первыми.
+#     - Шаг А: Отключение SurfaceDeform (чтобы не исказить генерацию топологии).
+#     - Шаг Б: Запекание модификаторов (rz.shape_key_apply_modifiers).
+#     - Шаг В: Перенос недостающих шейпкеев с УЖЕ ЗАПЕЧЕННОГО донора на 
+#       уже запеченный объект через rzm_surface_baker.
+#       
+#   Фаза 2: EXACT MATCH (Выгрузка)
+#     - Дельты наносятся на буфер через топологический v_map.
+#     - Если v_map нет — точный перенос через KD-Tree по координатам Базиса.
+#
+#   Фаза 3: SLOW PATH (Fallback)
+#     - Спасательный круг. Включается автоматически, если Exact Match 
+#       не сработал (сбои, новая игра без кэша и т.д.).
 #
 import bpy
 import os
@@ -157,7 +164,7 @@ def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
     return f"{clean_base}_{clean_sk}.buf"
 
 # ---------------------------------------------------------------------------
-# CLASSIFICATION & PRE-BAKE HELPERS
+# CLASSIFICATION
 # ---------------------------------------------------------------------------
 
 def has_active_modifiers(obj):
@@ -213,12 +220,6 @@ def _scan_sk_owners(comp_objects, all_keys):
 
 def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
                            stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi):
-    """
-    Извлекает дельты из полностью подготовленных объектов (ready_map) и 
-    наносит их на буфер через v_map или KD-Tree.
-    Объекты, которые не удалось перенести (ошибки, нет кэша, диссонанс вершин), 
-    возвращаются как failed_objects для передачи в Slow Path.
-    """
     import mathutils as mu
     stride_f32 = stride // 4
     cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])} if comp_cache else {}
@@ -236,11 +237,10 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
             objs_to_process.append((obj, obj))
             
         for obj in owners['direct_bake'] + owners['via_target']:
-            baked_obj = ready_map.get(obj)
-            if baked_obj and baked_obj.data and baked_obj.data.shape_keys and sk_name in baked_obj.data.shape_keys.key_blocks:
-                objs_to_process.append((obj, baked_obj))
+            ready_obj = ready_map.get(obj)
+            if ready_obj and ready_obj.data and ready_obj.data.shape_keys and sk_name in ready_obj.data.shape_keys.key_blocks:
+                objs_to_process.append((obj, ready_obj))
             else:
-                # Объект не прошел Pre-Bake или шейпкей не перенесся
                 if obj in owners['via_target']: failed_objects[sk_name]['via_target'].append(obj)
                 else: failed_objects[sk_name]['direct'].append(obj)
 
@@ -288,7 +288,7 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
             obj_slice = buf_f32[vb_off: vb_off + vb_cnt, :3]
             matched_count = 0
 
-            # Попытка 1: Идеальный маппинг по v_map
+            # 1: Идеальный маппинг по v_map
             if v_map and len(v_map) == vb_cnt and max(v_map) < v_count:
                 v_map_np = np.array(v_map, dtype=np.int32)
                 buf_f32[vb_off: vb_off + vb_cnt, :3] = (obj_slice + deltas_all[v_map_np]).astype(np.float32)
@@ -296,7 +296,7 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
                 print(f"    [EXACT/VMAP] {orig_obj.name}: {matched_count} slots matched.")
                 stats['vmap_matched'] += 1
             
-            # Попытка 2: Пространственный маппинг по базису (KD-Tree)
+            # 2: Пространственный маппинг (KD-Tree)
             else:
                 mwt = np.array(mat.translation, dtype=np.float32)
                 ba_world = ba_co @ mat_rot.T + mwt
@@ -350,7 +350,7 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
     return fast_path_slots_per_sk, stats, failed_objects
 
 # ---------------------------------------------------------------------------
-# BARYCENTRIC DELTA INTERPOLATION (Slow Path)
+# BARYCENTRIC DELTA INTERPOLATION (Slow Path Fallback)
 # ---------------------------------------------------------------------------
 
 def _barycentric_coords(p, a, b, c):
@@ -404,10 +404,6 @@ def _bary_delta_batch_bvh(buf_verts_np, owner_data, target_data):
             out[i] = (w[:, None] * deltas).sum(axis=0)
 
     return out
-
-# ---------------------------------------------------------------------------
-# SLOW PATH — Универсальный Fallback
-# ---------------------------------------------------------------------------
 
 def _build_owner_data(obj, depsgraph, mat):
     eval_obj = obj.evaluated_get(depsgraph)
@@ -685,7 +681,17 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     orig_selected = context.selected_objects.copy()
 
     try:
-        for obj in comp_objects:
+        # Умная сортировка: объекты-доноры (цели для SurfaceDeform) обрабатываются ПЕРВЫМИ,
+        # чтобы перенос шейпкеев происходил с уже запеченных плотных мешей (как при ручной работе).
+        def get_sd_target(o):
+            for m in o.modifiers:
+                if m.type in {'SURFACE_DEFORM', 'SHRINKWRAP'} and m.show_viewport and m.target:
+                    return m.target
+            return None
+            
+        comp_objects_sorted = sorted(list(comp_objects), key=lambda o: 1 if get_sd_target(o) else 0)
+
+        for obj in comp_objects_sorted:
             needs_sd = False
             sd_target = None
             sd_mod = None
@@ -727,7 +733,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                 ready_map[obj] = obj
                 continue
 
-            # Создаем временный объект
+            # --- Создаем временный объект ---
             bpy.ops.object.select_all(action='DESELECT')
             temp_obj = obj.copy()
             temp_obj.data = obj.data.copy()
@@ -739,22 +745,14 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
             set_armature_visibility([temp_obj], False)
             bake_success = True
 
-            # Этап A: Surface Deform Baking
+            # ЭТАП 1: Изоляция (Отключаем SurfaceDeform перед запеканием)
             if needs_sd:
-                try:
-                    from .rzm_surface_baker import transfer_surface_shape_keys
-                    print(f"  [SURFACE BAKE] Transferring {len(keys_to_transfer)} keys from {sd_target.name} to {obj.name}")
-                    transfer_surface_shape_keys(temp_obj, sd_target, keys_to_transfer)
-                    
-                    mod_to_remove = temp_obj.modifiers.get(sd_mod.name)
-                    if mod_to_remove:
-                        temp_obj.modifiers.remove(mod_to_remove)
-                except Exception as e:
-                    print(f"  [ERROR] Surface bake failed for {obj.name}: {e}")
-                    bake_success = False
+                mod_to_remove = temp_obj.modifiers.get(sd_mod.name)
+                if mod_to_remove:
+                    temp_obj.modifiers.remove(mod_to_remove)
 
-            # Этап B: Запекание модификаторов
-            if bake_success and (needs_mod_bake or (needs_sd and has_active_modifiers(temp_obj))):
+            # ЭТАП 2: Запекание модификаторов НА ИСХОДНУЮ ГЕОМЕТРИЮ (Subdiv, Array и т.д.)
+            if needs_mod_bake:
                 print(f"  [MOD BAKE] Baking modifiers for {obj.name} via Gret standalone...")
                 try:
                     bpy.ops.rz.shape_key_apply_modifiers()
@@ -764,6 +762,17 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                     temp_obj = new_active
                 except Exception as e:
                     print(f"  [ERROR] Mod bake failed for {obj.name}: {e}")
+                    bake_success = False
+
+            # ЭТАП 3: Перенос Shape Keys (Берем донора из ready_map, чтобы использовать его хай-поли версию)
+            if bake_success and needs_sd:
+                try:
+                    actual_donor = ready_map.get(sd_target, sd_target)
+                    from .rzm_surface_baker import transfer_surface_shape_keys
+                    print(f"  [SURFACE BAKE] Transferring {len(keys_to_transfer)} keys from {actual_donor.name} to {obj.name}")
+                    transfer_surface_shape_keys(temp_obj, actual_donor, keys_to_transfer)
+                except Exception as e:
+                    print(f"  [ERROR] Surface bake failed for {obj.name}: {e}")
                     bake_success = False
 
             set_armature_visibility([temp_obj], True)
@@ -779,7 +788,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         )
 
         # ── 3. SLOW PATH (Fallback) ────────────────────────────────────────────
-        # Собираем все объекты, которые провалили Exact Match (ошибки, нет v_map, и т.д.)
         sk_owner_map_slow = {sk: owners for sk, owners in failed_exact.items() if owners['direct'] or owners['via_target']}
         stats_slow = 0
 
