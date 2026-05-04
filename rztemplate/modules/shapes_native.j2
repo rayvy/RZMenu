@@ -379,7 +379,7 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
         {% set vb0_lookup = 'Component' ~ id ~ '_VB0' %}
         {% if vb0_lookup in buffers and merged_object.components[id].vertex_count > 0 %}
             {% set comp_name = 'Component' ~ id %}
-            {% set vertex_count = merged_object.components[id].vertex_count %}
+            {% set vertex_count = buffers[vb0_lookup] | length %}
             {% set base_filename = props.path_prefix ~ comp_name ~ '_VB0' ~ props.path_suffix %}
             
             {# Собираем имена объектов компонента #}
