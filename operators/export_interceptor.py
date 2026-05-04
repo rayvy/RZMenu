@@ -38,7 +38,7 @@ XXMI_EXPORT_METHOD   = 'export'
 
 EFMI_MODULE          = 'EFMI-Tools.blender_export.blender_export'
 EFMI_EXPORTER_CLASS  = 'ModExporter'
-EFMI_EXPORT_METHOD   = 'export_mod'
+EFMI_EXPORT_METHOD   = 'write_files'
 
 # ── State ─────────────────────────────────────────────────────────────────────
 _xxmi_original = None
@@ -124,11 +124,9 @@ def uninstall_xxmi_interceptor() -> None:
 # ── EFMI hook ─────────────────────────────────────────────────────────────────
 
 def _efmi_hook(self, *args, **kwargs):
-    """Wraps ModExporter.export_mod() — captures cache after successful export.
-    NOTE: EFMI clears self.buffers at the end of write_files(), so we must
-    capture BEFORE that.  We wrap export_mod() which calls write_files()
-    internally; the merged_object and meshes_path are already populated
-    when write_files() returns, so reading them right after is safe.
+    """Wraps ModExporter.write_files() — captures cache while buffers are still in memory.
+    EFMI clears self.buffers at the end of export_mod(), but right after write_files() 
+    they are still available.
     """
     result = _efmi_original(self, *args, **kwargs)
     try:

@@ -482,6 +482,9 @@ def _bake_path_for_generative_objects(
     remaining_for_slow = {}
     depsgraph = context.evaluated_depsgraph_get()
 
+    # Cache lookup for boundaries
+    cache_objects = {e['name']: e for e in comp_cache.get('objects', [])} if comp_cache else {}
+
     # Собираем все уникальные объекты, чтобы отключить у них арматуру
     all_bake_objs = set(obj for owners in sk_owner_map_bake.values() for obj in owners if obj)
     set_armature_visibility(all_bake_objs, False)
@@ -566,10 +569,16 @@ def _bake_path_for_generative_objects(
                     buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
 
                 buf_xyz = buf_f32[:, :3].copy()
+                
+                # --- PER-OBJECT ISOLATION (LIMITER) ---
+                entry = cache_objects.get(obj.name)
+                vb_off = entry.get('vb_offset', 0) if entry else 0
+                vb_cnt = entry.get('vb_count', buf_v_count) if entry else buf_v_count
+                
                 matched_count = 0
                 DIST_THRESHOLD = 0.02
 
-                for buf_idx in range(buf_v_count):
+                for buf_idx in range(vb_off, vb_off + vb_cnt):
                     buf_pos = Vector(buf_xyz[buf_idx])
                     _, baked_v_idx, dist = baked_kd.find(buf_pos)
                     if dist > DIST_THRESHOLD: continue

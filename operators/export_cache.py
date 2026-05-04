@@ -508,12 +508,23 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                 root_obj = bpy.data.objects.get(comp.objects[0].name)
 
             objects   = []
-            vb_offset = 0
+            # ── IB-Based Authoritative discovery ──────────────────────────
+            ib_key = f'Component{comp_id}_IB'
+            ib_buffer = mod_exporter.buffers.get(ib_key)
+            ib_indices = None
+            if ib_buffer and hasattr(ib_buffer, 'get_field'):
+                try:
+                    ib_indices = ib_buffer.get_field(0)
+                    if ib_indices is not None:
+                        ib_indices = ib_indices.flatten()
+                except: ib_indices = None
+
+            vb_offset_acc = 0 # Fallback accumulator
             depsgraph = bpy.context.evaluated_depsgraph_get()
 
             for tmp in comp.objects:
                 if tmp.vertex_count == 0: 
-                    vb_offset += tmp.vertex_count 
+                    vb_offset_acc += tmp.vertex_count 
                     continue
                 
                 efmi_obj = bpy.data.objects.get(tmp.name)
@@ -580,7 +591,17 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                         v_map_topology = None
                         actual_vb_count = 0
 
-                if actual_vb_count > 0:
+                    # ── Bounds Discovery ──────────────────────────────────────
+                    vb_offset = vb_offset_acc # Start with fallback
+                    
+                    if ib_indices is not None and tmp.index_count > 0:
+                        # Extract the slice of indices belonging to this sub-object
+                        obj_indices = ib_indices[tmp.index_offset : tmp.index_offset + tmp.index_count]
+                        if len(obj_indices) > 0:
+                            vb_offset = int(obj_indices.min())
+                            actual_vb_count = int(obj_indices.max() - vb_offset + 1)
+                            # print(f"    [RZM] IB-Auth: {tmp.name} -> off={vb_offset}, cnt={actual_vb_count}")
+
                     objects.append({
                         'name':            tmp.name,
                         'vb_offset':       vb_offset,
@@ -602,7 +623,7 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                     # while Fast Path expects buf->blender -> would cause IndexError.
                     objects.append({
                         'name':            tmp.name,
-                        'vb_offset':       vb_offset,
+                        'vb_offset':       vb_offset_acc,
                         'vb_count':        tmp.vertex_count,  # best guess; Fast Path skips
                         'orig_v_count':    orig_v_count,
                         'applied_v_count': applied_v_count,
@@ -617,8 +638,8 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                 if eval_mesh:
                     efmi_obj.to_mesh_clear()
 
-                # Advance offset by the REAL buffer slot count (post-dedup), not Blender count.
-                vb_offset += actual_vb_count if actual_vb_count > 0 else tmp.vertex_count
+                # Update fallback accumulator (though ideally we use IB-Auth above)
+                vb_offset_acc += actual_vb_count if actual_vb_count > 0 else tmp.vertex_count
 
             components[f'Component{comp_id}'] = {
                 'buf_path': buf_path,
