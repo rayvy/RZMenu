@@ -28,6 +28,85 @@ def component_cache(comp_name: str) -> dict | None:
     return c.get('components', {}).get(comp_name)
 
 
+def save_export_logs(cache: dict):
+    """Saves detailed export logs next to the .blend file."""
+    if not cache:
+        return
+    
+    try:
+        import json
+        blend_path = bpy.data.filepath
+        if not blend_path:
+            print("[RZM] [LOG] Cannot save logs: blend file not saved.")
+            return
+            
+        blend_dir = os.path.dirname(blend_path)
+        blend_name = os.path.splitext(os.path.basename(blend_path))[0]
+        date_str = time.strftime("%y-%m-%d")
+        
+        log_name = f"{date_str}-{blend_name}-skexportlog.json"
+        raw_log_name = f"{date_str}-{blend_name}-skexportlograw.json"
+        
+        log_path = os.path.join(blend_dir, log_name)
+        raw_log_path = os.path.join(blend_dir, raw_log_name)
+        
+        # 1. Main log: High-level overview
+        log_data = {
+            'info': {
+                'blend_file': os.path.basename(blend_path),
+                'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
+                'source': cache.get('source'),
+                'game': cache.get('game'),
+                'mod_name': cache.get('mod_name'),
+            },
+            'components': {}
+        }
+        
+        # 2. Raw log: Exact mapping
+        raw_log_data = {}
+        
+        for comp_name, comp_data in cache.get('components', {}).items():
+            comp_log = {
+                'buf_path': comp_data.get('buf_path'),
+                'stride': comp_data.get('stride'),
+                'n_verts': comp_data.get('n_verts'),
+                'objects': []
+            }
+            
+            for obj in comp_data.get('objects', []):
+                obj_log = {
+                    'name': obj.get('name'),
+                    'vb_offset': obj.get('vb_offset'),
+                    'vb_count': obj.get('vb_count'),
+                    'orig_v_count': obj.get('orig_v_count'),
+                    'applied_v_count': obj.get('applied_v_count'),
+                    'mapping_type': 'Absolute' if obj.get('is_absolute') else 'Relative',
+                    'is_robust': obj.get('is_robust', False),
+                    'status': 'OK' if obj.get('vertex_map') else 'FAILED'
+                }
+                comp_log['objects'].append(obj_log)
+                
+                # Raw mapping
+                v_map = obj.get('vertex_map')
+                if v_map:
+                    raw_log_data[obj.get('name')] = v_map
+            
+            log_data['components'][comp_name] = comp_log
+            
+        with open(log_path, 'w', encoding='utf-8') as f:
+            json.dump(log_data, f, indent=4)
+            
+        with open(raw_log_path, 'w', encoding='utf-8') as f:
+            json.dump(raw_log_data, f) # No indent for raw log to save space
+            
+        print(f"[RZM] [LOG] Logs saved to {blend_dir}")
+        print(f"  - {log_name}")
+        print(f"  - {raw_log_name}")
+        
+    except Exception as e:
+        print(f"[RZM] [LOG] Failed to save export logs: {e}")
+
+
 # ── Builder: XXMI (SPATIAL MAPPING) ───────────────────────────────────────────
 
 def _build_spatial_map_xxmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: mathutils.Matrix, buf_xyz: np.ndarray, max_dist_threshold: float = 0.5) -> tuple[list[int] | None, int]:
@@ -105,6 +184,8 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
         dest       = str(mod_exporter.destination)
         game       = str(mod_exporter.game)
         components = {}
+        depsgraph  = bpy.context.evaluated_depsgraph_get()
+
         for comp in mod_exporter.mod_file.components:
             buf_path = os.path.join(dest, comp.fullname + ('Position.buf' if comp.blend_vb != '' else '.buf'))
             if not os.path.exists(buf_path): continue
@@ -120,20 +201,58 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                         vb_offset += sub.vertex_count
                         continue
                     if not sub.obj: continue
+                    
                     buf_slice = buf_xyz[vb_offset : vb_offset + sub.vertex_count]
-                    # XXMI buffers are always in World Space.
-                    # Try matrix_world first — correct for objects with non-applied transforms.
-                    # Fall back to Identity only if world-space mapping quality is good enough
-                    # (i.e. the object already has its transform applied, making local == world).
-                    v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, sub.obj.matrix_world, buf_slice)
-                    if v_map is not None:
-                        m_idx = 1
-                    else:
-                        v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, mathutils.Matrix.Identity(4), buf_slice)
-                        m_idx = 0
+                    
+                    # Track vertex counts
+                    orig_v_count = len(sub.obj.data.vertices)
+                    
+                    # Perfect Mapping Phase 2: Use evaluated mesh to handle modifiers
+                    eval_mesh = None
+                    try:
+                        eval_obj = sub.obj.evaluated_get(depsgraph)
+                        eval_mesh = eval_obj.to_mesh()
+                    except Exception as e:
+                        print(f"[RZM] [CACHE] XXMI failed to get evaluated mesh for {sub.name}: {e}")
+                    
+                    applied_v_count = len(eval_mesh.vertices) if eval_mesh else -1
+                    
+                    # Try to get mapping from the evaluated mesh
+                    v_map = None
+                    m_idx = -1
+                    eval_v_count = orig_v_count
+                    has_id = True
+                    
+                    if eval_mesh:
+                        res = reconstruct_vertex_map_from_mesh(eval_mesh, sub.obj, stride)
+                        if res:
+                            v_map, eval_v_count, has_id = res
+                    
+                    # Fallback to spatial mapping if topology reconstruction failed
+                    if v_map is None:
+                        # XXMI buffers are always in World Space.
+                        v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, sub.obj.matrix_world, buf_slice)
+                        if v_map is not None:
+                            m_idx = 1
+                        else:
+                            v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, mathutils.Matrix.Identity(4), buf_slice)
+                            m_idx = 0
+                    
+                    if eval_mesh:
+                        sub.obj.to_mesh_clear()
+                    
                     objects.append({
-                        'name': sub.name, 'vb_offset': vb_offset, 'vb_count': sub.vertex_count,
-                        'vertex_map': v_map, 'mat_idx': m_idx, 'is_absolute': False, 'is_robust': True
+                        'name': sub.name, 
+                        'vb_offset': vb_offset, 
+                        'vb_count': sub.vertex_count,
+                        'orig_v_count': orig_v_count,
+                        'eval_v_count': eval_v_count,
+                        'applied_v_count': applied_v_count,
+                        'vertex_map': v_map, 
+                        'has_real_id': has_id,
+                        'mat_idx': m_idx, 
+                        'is_absolute': m_idx != -1, 
+                        'is_robust': True
                     })
                     vb_offset += sub.vertex_count
             comp_key = comp.fullname[len(mod_name):] or comp.fullname
@@ -176,80 +295,186 @@ def get_vblayout_semantics(obj: bpy.types.Object) -> list[dict]:
                 if layout: return list(layout)
     return []
 
-def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object = None) -> list[int] | None:
-    """Achieves 1:1 parity with WWMI/EFMI exporters using signature hashing."""
+def reconstruct_vertex_map_from_mesh(mesh: bpy.types.Mesh, obj: bpy.types.Object = None, stride: int = -1, flip_winding: bool = False) -> tuple[list[int], int, bool] | None:
+    """Achieves 1:1 parity with EFMI/WWMI exporters using signature hashing.
+
+    Returns: (v_map, eval_v_count, has_id) or None on failure.
+      v_map        – list of eval vertex indices (one per buffer slot).
+                     These are indices into the EVALUATED mesh (post-modifiers),
+                     NOT into obj.data.vertices. This allows Puppet Master to
+                     extract deltas from the evaluated mesh regardless of which
+                     modifiers are active.
+      eval_v_count – len(eval_mesh.vertices) at cache-build time.
+      has_id       - boolean indicating if the original id was mapped or synthesized.
+
+    Signature key: (VertexIndex, UV[n], Color[n])
+    Normals and Tangents are intentionally EXCLUDED from the key.
+
+    Important: The mesh is ALWAYS triangulated before building signatures.
+    EFMI triangulates before deduplication — without this, quad/ngon meshes
+    produce a different loop count, causing wrong v_map and spikes.
+    """
     if not mesh: return None
     try:
-        n_loops = len(mesh.loops)
-        if n_loops == 0: return list(range(len(mesh.vertices)))
+        import bmesh as _bmesh
 
-        layout = get_vblayout_semantics(obj) if obj else []
-        use_tangents = any(i.get('SemanticName') == 'TANGENT' for i in layout)
-        uv_indices   = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'TEXCOORD']
-        color_indices = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'COLOR']
-        
-        if use_tangents:
-            try:
-                uvmap = mesh.uv_layers.get('TEXCOORD.xy') or mesh.uv_layers.active or (mesh.uv_layers[0] if mesh.uv_layers else None)
-                if uvmap: mesh.calc_tangents(uvmap=uvmap.name)
-                else: use_tangents = False
-            except Exception: use_tangents = False
+        bm = _bmesh.new()
+        try:
+            bm.from_mesh(mesh)
+            _bmesh.ops.triangulate(bm, faces=bm.faces[:])
+            tri_mesh = bpy.data.meshes.new("__rzm_tri_tmp__")
+            bm.to_mesh(tri_mesh)
+        finally:
+            bm.free()
 
-        v_indices = np.empty(n_loops, dtype=np.int32)
-        mesh.loops.foreach_get('vertex_index', v_indices)
-        
-        sig_fields = [('v', 'i4')]
-        arrays = {'v': v_indices}
-        
-        if not layout or any(i.get('SemanticName') == 'NORMAL' for i in layout):
-            n_data = np.empty(n_loops * 3, dtype=np.float32)
-            mesh.loops.foreach_get('normal', n_data)
-            arrays['n'] = np.nan_to_num(n_data.reshape(-1, 3)).astype(np.float16)
-            sig_fields.append(('n', 'f2', (3,)))
-
-        if use_tangents:
-            t_data = np.empty(n_loops * 3, dtype=np.float32)
-            mesh.loops.foreach_get('tangent', t_data)
-            b_data = np.empty(n_loops, dtype=np.float32)
-            mesh.loops.foreach_get('bitangent_sign', b_data)
-            arrays['t'] = np.nan_to_num(t_data.reshape(-1, 3)).astype(np.float16)
-            arrays['b'] = np.nan_to_num(b_data).astype(np.float16)
-            sig_fields.append(('t', 'f2', (3,)))
-            sig_fields.append(('b', 'f2'))
-
-        if not layout: uv_indices = [0]
-        for idx in uv_indices:
-            if idx < len(mesh.uv_layers):
-                uv_layer = mesh.uv_layers[idx]
-                uv_data = np.empty(n_loops * 2, dtype=np.float32)
-                uv_layer.data.foreach_get('uv', uv_data)
-                arrays[f'u{idx}'] = np.nan_to_num(uv_data.reshape(-1, 2))
-                sig_fields.append((f'u{idx}', 'f4', (2,)))
-
-        for idx in color_indices:
-            if idx < len(mesh.vertex_colors):
-                c_layer = mesh.vertex_colors[idx]
-                c_data = np.empty(n_loops * 4, dtype=np.float32)
-                c_layer.data.foreach_get('color', c_data)
-                arrays[f'c{idx}'] = np.nan_to_num(c_data.reshape(-1, 4))
-                sig_fields.append((f'c{idx}', 'f4', (4,)))
-
-        signatures = np.empty(n_loops, dtype=sig_fields)
-        for key, arr in arrays.items(): signatures[key] = arr
-        
-        indexed_vertices = collections.OrderedDict()
-        for idx, sig in enumerate(signatures):
-            sig_bytes = sig.tobytes()
-            if sig_bytes not in indexed_vertices:
-                indexed_vertices[sig_bytes] = v_indices[idx]
-        
-        results = list(indexed_vertices.values())
-        print(f"[RZM] [CACHE] Parity Mapping Generated: {len(results)} vertices for EFMI")
-        return results
+        try:
+            return _parity_map_from_triangulated(tri_mesh, mesh, obj, flip_winding)
+        finally:
+            bpy.data.meshes.remove(tri_mesh)
 
     except Exception as e:
         print(f"[RZM] [CACHE] Parity mapping failed: {e}")
+        import traceback; traceback.print_exc()
         return None
+
+
+def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
+                                   orig_mesh: bpy.types.Mesh,
+                                   obj: bpy.types.Object = None,
+                                   flip_winding: bool = False) -> tuple[list[int], int, bool] | None:
+    """Builds ordered signature→orig_vertex_index map on an already-triangulated mesh.
+
+    tri_mesh  – triangulated working copy (UV/Color data preserved by BMesh).
+    orig_mesh – evaluated mesh (post-modifiers, pre-triangulation).
+
+    Returns (v_map, eval_v_count, has_id) where:
+      v_map[i]     = ORIG vertex index for buffer slot i.
+                     Blender preserves the `.id` attribute through any modifier
+                     (Mirror, Subdivision, GeoNodes), pointing back to the
+                     pre-modifier vertex that spawned each eval vertex.
+                     This means v_map[i] is always < orig_v_count, so Puppet
+                     Master reads shape key data directly via sk_blk.data[v_map[i]]
+                     without any depsgraph evaluation or KD-Tree lookups.
+      eval_v_count = total number of vertices in orig_mesh (= eval mesh)
+      has_id       = True if real .id mapping was found, else False.
+    """
+    eval_v_count = len(orig_mesh.vertices)
+    n_loops = len(tri_mesh.loops)
+    if n_loops == 0:
+        return (list(range(eval_v_count)), eval_v_count, False)
+
+    layout        = get_vblayout_semantics(obj) if obj else []
+    uv_indices    = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'TEXCOORD']
+    color_indices = [int(i.get('SemanticIndex', 0)) for i in layout if i.get('SemanticName') == 'COLOR']
+
+    # Default when no layout is detected: use UV layer 0 and Color layer 0.
+    if not layout:
+        uv_indices    = [0]
+        color_indices = [0]
+
+    v_indices = np.empty(n_loops, dtype=np.int32)
+    tri_mesh.loops.foreach_get('vertex_index', v_indices)
+
+    # ── Build orig_index lookup ────────────────────────────────────────────────
+    orig_idx_arr = None
+    id_attr = orig_mesh.attributes.get('.id')
+    if id_attr is not None:
+        orig_idx_arr = np.empty(eval_v_count, dtype=np.int32)
+        id_attr.data.foreach_get('value', orig_idx_arr)
+
+    if orig_idx_arr is None:
+        orig_idx_arr = np.arange(eval_v_count, dtype=np.int32)
+
+    sig_fields: list = []
+    arrays: dict     = {}
+
+    # 1. UV (TexCoord)
+    for idx in uv_indices:
+        if idx < len(tri_mesh.uv_layers):
+            uv_data = np.empty(n_loops * 2, dtype=np.float32)
+            tri_mesh.uv_layers[idx].data.foreach_get('uv', uv_data)
+            arrays[f'u{idx}'] = np.round(np.nan_to_num(uv_data.reshape(-1, 2)), 4).astype(np.float32)
+        else:
+            arrays[f'u{idx}'] = np.zeros((n_loops, 2), dtype=np.float32)
+        sig_fields.append((f'u{idx}', 'f4', (2,)))
+
+    # 2. Color
+    for idx in color_indices:
+        c_data = None
+        if hasattr(tri_mesh, 'color_attributes') and len(tri_mesh.color_attributes) > idx:
+            c_data = np.empty(n_loops * 4, dtype=np.float32)
+            tri_mesh.color_attributes[idx].data.foreach_get('color', c_data)
+        elif hasattr(tri_mesh, 'vertex_colors') and len(tri_mesh.vertex_colors) > idx:
+            c_data = np.empty(n_loops * 4, dtype=np.float32)
+            tri_mesh.vertex_colors[idx].data.foreach_get('color', c_data)
+        
+        if c_data is not None:
+            # EFMI uses float32 x4 for Color
+            arrays[f'c{idx}'] = np.round(np.nan_to_num(c_data.reshape(-1, 4)), 3).astype(np.float32)
+        else:
+            arrays[f'c{idx}'] = np.zeros((n_loops, 4), dtype=np.float32)
+        sig_fields.append((f'c{idx}', 'f4', (4,)))
+
+    # 3. Tangent, 4. BitangentSign, 5. Normal
+    # EFMI packs these into a 10-10-10-2 uint (1/511 ≈ 0.00196 precision).
+    # We must quantize to the same precision before hashing, otherwise loops
+    # that EFMI collapses (same 10-bit representation) stay separate in our
+    # float32 signature → we get more unique slots than EFMI → v_map is wrong.
+    _Q = 511.0  # EFMI uses rint(x * 511) / 511 for 10-bit SNorm
+    if hasattr(tri_mesh, 'calc_tangents'):
+        tri_mesh.calc_tangents()
+
+        t_data = np.empty(n_loops * 3, dtype=np.float32)
+        tri_mesh.loops.foreach_get('tangent', t_data)
+        t_raw = np.nan_to_num(t_data.reshape(-1, 3))
+        arrays['t'] = (np.rint(t_raw * _Q) / _Q).astype(np.float32)
+        sig_fields.append(('t', 'f4', (3,)))
+
+        b_data = np.empty(n_loops, dtype=np.float32)
+        tri_mesh.loops.foreach_get('bitangent_sign', b_data)
+        # BitangentSign is ±1 → just keep the sign (no quantization needed)
+        arrays['b'] = np.sign(np.nan_to_num(b_data)).astype(np.float32)
+        sig_fields.append(('b', 'f4'))
+
+        n_data = np.empty(n_loops * 3, dtype=np.float32)
+        tri_mesh.loops.foreach_get('normal', n_data)
+        n_raw = np.nan_to_num(n_data.reshape(-1, 3))
+        arrays['n'] = (np.rint(n_raw * _Q) / _Q).astype(np.float32)
+        sig_fields.append(('n', 'f4', (3,)))
+
+    # 6. VertexId
+    arrays['v'] = v_indices
+    sig_fields.append(('v', 'i4'))
+
+    signatures = np.empty(n_loops, dtype=sig_fields)
+    for key, arr in arrays.items():
+        signatures[key] = arr
+
+    if flip_winding:
+        signatures = signatures.reshape(-1, 3)
+        signatures[:, [0, 2]] = signatures[:, [2, 0]]
+        signatures = signatures.flatten()
+
+        v_indices = v_indices.reshape(-1, 3)
+        v_indices[:, [0, 2]] = v_indices[:, [2, 0]]
+        v_indices = v_indices.flatten()
+
+    indexed_vertices: collections.OrderedDict = collections.OrderedDict()
+    for loop_idx, sig in enumerate(signatures):
+        sig_bytes = sig.tobytes()
+        if sig_bytes not in indexed_vertices:
+            eval_v = int(v_indices[loop_idx])
+            # Store EVAL vertex index (same as EFMI/WWMI exporters).
+            # puppet_master_ops uses has_real_id to decide ORIG vs EVAL route:
+            # - has_real_id=True  → v_map indices are orig-range → ORIG mode
+            # - has_real_id=False → v_map indices are eval-range → EVAL mode
+            indexed_vertices[sig_bytes] = eval_v
+
+    results = list(indexed_vertices.values())
+    has_id  = id_attr is not None
+    print(f"[RZM] [CACHE] Parity Mapping: {len(results)} buf slots <- "
+          f"{eval_v_count} eval verts (tri_loops: {n_loops}, orig_map={'YES' if has_id else 'identity'})")
+    return (results, eval_v_count, has_id)
 
 # ── Builder: EFMI (TOPOLOGICAL MAPPING) ───────────────────────────────────────
 
@@ -276,47 +501,145 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
             tree, coord_hash = _prepare_component_search_data(buf_path, stride)
             if not tree: continue
 
+            flip_winding = getattr(mod_exporter.cfg, 'mirror_mesh', False)
+
             root_obj = None
             if comp.objects:
                 root_obj = bpy.data.objects.get(comp.objects[0].name)
 
-            # RESTORE TOPOLOGY TRUST
             objects   = []
-            vb_offset = 0
+            # ── IB-Based Authoritative discovery ──────────────────────────
+            ib_key = f'Component{comp_id}_IB'
+            ib_buffer = mod_exporter.buffers.get(ib_key)
+            ib_indices = None
+            if ib_buffer and hasattr(ib_buffer, 'get_field'):
+                try:
+                    ib_indices = ib_buffer.get_field(0)
+                    if ib_indices is not None:
+                        ib_indices = ib_indices.flatten()
+                except: ib_indices = None
+
+            vb_offset_acc = 0 # Fallback accumulator
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+
             for tmp in comp.objects:
                 if tmp.vertex_count == 0: 
-                    vb_offset += tmp.vertex_count 
+                    vb_offset_acc += tmp.vertex_count 
                     continue
                 
                 efmi_obj = bpy.data.objects.get(tmp.name)
-                v_map_topology = reconstruct_vertex_map_from_mesh(efmi_obj.data, efmi_obj) if efmi_obj else None
                 
-                # EFMI: We ALMOST NEVER want absolute spatial mapping because coordinates overlap between limbs.
-                # We use the topology bridge (indices 0..N) and Relative Offset.
-                if v_map_topology and len(v_map_topology) > 0:
-                    objects.append({
-                        'name':       tmp.name,
-                        'vb_offset':  vb_offset, # RELATIVE OFFSET IS REQUIRED FOR EFMI
-                        'vb_count':   tmp.vertex_count,
-                        'vertex_map': v_map_topology,
-                        'mat_idx':    0,
-                        'is_absolute': False # CRITICAL: EFMI uses RELATIVE indices
-                    })
-                    print(f"[RZM] [CACHE] {tmp.name}: Using Relative Topology Map (Offset {vb_offset})")
-                # EFMI fallback spatial search
-                if not v_map_topology or len(v_map_topology) == 0:
-                    v_map, m_idx = _build_spatial_map_efmi(tmp.name, efmi_obj.data, mathutils.Matrix.Identity(4), tree, coord_hash)
-                    objects.append({
-                        'name':       tmp.name,
-                        'vb_offset':  0,
-                        'vb_count':   tmp.vertex_count,
-                        'vertex_map': v_map,
-                        'mat_idx':    m_idx,
-                        'is_absolute': True
-                    })
-                    print(f"[RZM] [CACHE] {tmp.name}: Falling back to Global Spatial Search")
+                # Use evaluated mesh to handle modifiers
+                eval_mesh = None
+                orig_v_count = -1
+                if efmi_obj:
+                    orig_v_count = len(efmi_obj.data.vertices)
+                    eval_obj = efmi_obj.evaluated_get(depsgraph)
+                    eval_mesh = eval_obj.to_mesh()
                 
-                vb_offset += tmp.vertex_count
+                result = reconstruct_vertex_map_from_mesh(eval_mesh, efmi_obj, stride, flip_winding) if eval_mesh else None
+                v_map_topology, eval_v_count, has_id = result if result else (None, 0, False)
+
+                applied_v_count = len(eval_mesh.vertices) if eval_mesh else tmp.vertex_count
+
+                # actual_vb_count = number of unique deduplicated slots (buffer slots for this object).
+                actual_vb_count = len(v_map_topology) if v_map_topology else 0
+
+                # ── v_map consistency validation ──────────────────────────────────────
+                # A correctly built v_map must satisfy:
+                #   1. Every eval vertex is referenced by at least one buf slot.
+                #      If n_unique << eval_v_count, the signature over-deduplicates
+                #      (e.g. UV or Color was missing from the hash) → wrong mapping.
+                #   2. The buf/eval ratio is within realistic bounds for a real mesh.
+                #      Typical value: 1.0 – 2.0 (UV seams inflate slot count).
+                #      Values outside [0.8, 4.0] mean the signature is badly wrong.
+                #   3. Our buf_count should be reasonably close to EFMI's reported
+                #      tmp.vertex_count for this object.  Large divergence means the
+                #      signature produced a different number of unique vertices than
+                #      EFMI did, so v_map[slot] will be off by a systematic shift.
+                if v_map_topology and eval_v_count > 0:
+                    n_unique     = len(set(v_map_topology))
+                    dedup_ratio  = actual_vb_count / eval_v_count
+                    efmi_count   = tmp.vertex_count  # what EFMI says this object contributes
+
+                    # Coverage: every eval vertex should appear in the map (≥ 95 % threshold
+                    # to tolerate rare isolated vertices that carry no loops).
+                    coverage_ok  = n_unique >= eval_v_count * 0.95
+
+                    # Ratio: buf slots per eval vertex — must be between 0.8 and 4.0.
+                    ratio_ok     = 0.8 <= dedup_ratio <= 4.0
+
+                    # EFMI agreement: our count vs EFMI's count must agree within 20 %.
+                    if efmi_count > 0:
+                        efmi_ratio   = actual_vb_count / efmi_count
+                        efmi_ok      = 0.8 <= efmi_ratio <= 1.5
+                    else:
+                        efmi_ok = True  # no reference → skip this check
+
+                    if not (coverage_ok and ratio_ok and efmi_ok):
+                        reasons = []
+                        if not coverage_ok:
+                            reasons.append(
+                                f"coverage {n_unique}/{eval_v_count}={n_unique/eval_v_count:.2f} < 0.95")
+                        if not ratio_ok:
+                            reasons.append(f"dedup_ratio {dedup_ratio:.2f} not in [0.8, 4.0]")
+                        if not efmi_ok:
+                            reasons.append(
+                                f"efmi_ratio {actual_vb_count}/{efmi_count}={efmi_ratio:.2f} not in [0.8, 1.25]")
+                        print(f"[RZM] [CACHE] {tmp.name}: v_map VALIDATION FAILED "
+                              f"({'; '.join(reasons)}) → Baked Path")
+                        v_map_topology = None
+                        actual_vb_count = 0
+
+                    # ── Bounds Discovery ──────────────────────────────────────
+                    vb_offset = vb_offset_acc # Start with fallback
+                    
+                    if ib_indices is not None and tmp.index_count > 0:
+                        # Extract the slice of indices belonging to this sub-object
+                        obj_indices = ib_indices[tmp.index_offset : tmp.index_offset + tmp.index_count]
+                        if len(obj_indices) > 0:
+                            vb_offset = int(obj_indices.min())
+                            actual_vb_count = int(obj_indices.max() - vb_offset + 1)
+                            # print(f"    [RZM] IB-Auth: {tmp.name} -> off={vb_offset}, cnt={actual_vb_count}")
+
+                    objects.append({
+                        'name':            tmp.name,
+                        'vb_offset':       vb_offset,
+                        'vb_count':        actual_vb_count,   # real buffer slot count
+                        'orig_v_count':    orig_v_count,      # obj.data.vertices count (pre-modifiers)
+                        'eval_v_count':    eval_v_count,      # eval mesh vertex count (post-modifiers)
+                        'applied_v_count': applied_v_count,
+                        'vertex_map':      v_map_topology,    # eval vertex indices
+                        'has_real_id':     has_id,
+                        'mat_idx':         0,
+                        'is_absolute':     False,
+                        'is_robust':       True
+                    })
+                    print(f"[RZM] [CACHE] {tmp.name}: Topology Map OK "
+                          f"(buf={actual_vb_count}, eval={eval_v_count}, orig={orig_v_count}, offset={vb_offset})")
+                else:
+                    # Parity failed -> send to Baked Path (vertex_map=None = skip Fast Path).
+                    # Do NOT spatial fallback here: spatial gives blender->buf direction
+                    # while Fast Path expects buf->blender -> would cause IndexError.
+                    objects.append({
+                        'name':            tmp.name,
+                        'vb_offset':       vb_offset_acc,
+                        'vb_count':        tmp.vertex_count,  # best guess; Fast Path skips
+                        'orig_v_count':    orig_v_count,
+                        'applied_v_count': applied_v_count,
+                        'vertex_map':      None,
+                        'has_real_id':     False,
+                        'mat_idx':         0,
+                        'is_absolute':     False,
+                        'is_robust':       False
+                    })
+                    print(f"[RZM] [CACHE] {tmp.name}: Parity mapping failed -> Baked Path")
+
+                if eval_mesh:
+                    efmi_obj.to_mesh_clear()
+
+                # Update fallback accumulator (though ideally we use IB-Auth above)
+                vb_offset_acc += actual_vb_count if actual_vb_count > 0 else tmp.vertex_count
 
             components[f'Component{comp_id}'] = {
                 'buf_path': buf_path,
