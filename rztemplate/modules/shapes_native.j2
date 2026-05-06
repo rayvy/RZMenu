@@ -1,9 +1,11 @@
 {# rztemplate/modules/shapes_native.j2 #}
 {% import "modules/utils.j2" as utils with context %}
+{% import "modules/weights_native.j2" as weights_native with context %}
 
 {# ===================================================================== #}
 {#                       САБ-МАКРОСЫ (HELPERS)                           #}
 {# ===================================================================== #}
+
 
 {# 1. Общие глобальные переменные и логика Present #}
 {% macro _macro_shared_constants_and_present(rzm) %}
@@ -168,6 +170,9 @@ $dt = time - $SKC_LastTime
 
 if $shape_changed
     run = CustomShaderComputeShapes
+    {% if weights_native.has_active_weights(rzm) == 'True' %}
+    run = CustomShaderComputeWeights
+    {% endif %}
 endif
 post $shape_changed = 0
 post $SKC_LastTime = time

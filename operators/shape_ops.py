@@ -84,6 +84,8 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 'over_link': c.override_switch_value_link,
                 'range_min': c.input_range_min,
                 'range_max': c.input_range_max,
+                'bake_weights': c.bake_weights,
+                'parent_shape': c.parent_shape,
             }
 
         legacy_settings = {s.shape_name: s for s in rzm.shapes if s.shape_name}
@@ -94,6 +96,7 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
         for name, data in discovered_shapes.items():
             config = rzm.shape_configs.add()
             config.shape_name = name
+            config.name = name # Sync for search
             
             # 1. Restore from previous NATIVE config (most specific)
             if name in current_settings:
@@ -115,6 +118,8 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 config.override_switch_value_link = s['over_link']
                 config.input_range_min = s['range_min']
                 config.input_range_max = s['range_max']
+                config.bake_weights = s.get('bake_weights', False)
+                config.parent_shape = s.get('parent_shape', "")
             # 2. Fallback to Legacy config if first time discovery
             elif name in legacy_settings:
                 legacy = legacy_settings[name]

@@ -264,6 +264,7 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         name="Shape Name",
         description="Name of the Shape Key in Blender (e.g. 'Sport')"
     )
+    name: StringProperty(name="Config Name") # Used for search/UI
     shape_type: EnumProperty(
         name="Type",
         items=[('Linear', "Linear", ""), ('Anim', "Anim", "")],
@@ -292,6 +293,16 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         name="Disable Export",
         description="If active, this shape key will not be exported",
         default=False
+    )
+    bake_weights: BoolProperty(
+        name="Bake Weights",
+        description="Enable weight morphing (BlendWorks Phase 1) for this shape key",
+        default=False
+    )
+    parent_shape: StringProperty(
+        name="Parent Shape",
+        description="Optional parent shape key. If set, this shape key's deltas (positions/weights) will be calculated relative to the parent.",
+        default=""
     )
     force_export: BoolProperty(
         name="Force Export",

@@ -26,6 +26,8 @@ import struct
 import numpy as np
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
+from . import blendworks_baker
+from . import rzm_surface_baker
 
 # ---------------------------------------------------------------------------
 # HELPERS
@@ -603,6 +605,180 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
     return stats
 
 # ---------------------------------------------------------------------------
+# BLENDWORKS: Weight Morphing (Phase 1)
+# ---------------------------------------------------------------------------
+
+def _pack_efmi_vb2(obj, output_path, donor_obj, buf_xyz):
+    """
+    Orchestrates EFMI VB2 weight buffer packing using blendworks_baker.
+    """
+    print(f"      [VB2 PACKER] -> Packing weights for {obj.name} from {donor_obj.name}...")
+    
+    packed_data = blendworks_baker.pack_efmi_weights(obj, donor_obj, buf_xyz)
+    
+    if packed_data is not None:
+        with open(output_path, "wb") as f:
+            f.write(packed_data.tobytes())
+        print(f"      [VB2 PACKER] -> Done: {os.path.basename(output_path)}")
+        return True
+    else:
+        print(f"      [ERROR] VB2 Packer returned empty data for {obj.name}")
+        return False
+
+def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name="", comp_cache=None):
+    """
+    Обрабатывает морфинг весов для шейпкеев, помеченных bake_weights.
+    """
+    rzm = context.scene.rzm
+    weight_keys = [c for c in rzm.shape_configs if c.shape_name in all_keys and c.bake_weights and not c.disable_export]
+    
+    if not weight_keys:
+        return
+
+    # Extract coordinates from VB0 as "source of truth"
+    buf_v_count = len(original_bytes) // stride
+    raw_np = np.frombuffer(original_bytes, dtype=np.uint8)
+    float_view = raw_np.reshape(buf_v_count, stride).view(np.float32).reshape(buf_v_count, stride // 4)
+    buf_xyz_base = float_view[:, :3].copy()
+    
+    # EFMI Axis Sync: If not XXMI, we need to flip X back to Blender world space for sampling
+    if not is_xxmi:
+        buf_xyz_base[:, 0] *= -1
+
+    print(f"\n  [BLENDWORKS] Processing {len(weight_keys)} weight morph layers...")
+    
+    output_dir = os.path.join(mod_root, "SK")
+    os.makedirs(output_dir, exist_ok=True)
+
+    cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])} if comp_cache else {}
+
+    for config in weight_keys:
+        sk_name = config.shape_name
+        parent_name = config.parent_shape
+        print(f"    [*] Layer: {sk_name}" + (f" (Parent: {parent_name})" if parent_name else ""))
+        
+        # [FIX] Initialize master packed buffer from the BASE VB2 instead of zeros
+        master_packed = np.zeros((buf_v_count, 12), dtype=np.uint8)
+        
+        # [NEW] Handle Parent Weights for Subtraction (Additive Fix)
+        parent_packed = None
+        if parent_name:
+            safe_parent_name = "_".join(parent_name.lstrip('$@#~').split())
+            parent_path = os.path.join(output_dir, f"{base_name}_VB2_{safe_parent_name}.buf")
+            if os.path.exists(parent_path):
+                parent_packed = np.fromfile(parent_path, dtype=np.uint8).reshape(-1, 12)
+                print(f"      [INFO] Loaded parent weights for subtraction: {safe_parent_name}")
+        
+        # Look for the base VB2 file to use as a template
+        patterns_vb2 = [f"{base_name}Weights.buf", f"{base_name}_VB2.buf", f"{base_name}_VB2_LOD.buf"]
+        base_vb2_path = None
+        for sub in ["", "Meshes", "Buffers"]:
+            for p in patterns_vb2:
+                tp = os.path.join(mod_root, sub, p) if sub else os.path.join(mod_root, p)
+                if os.path.exists(tp):
+                    base_vb2_path = tp
+                    break
+            if base_vb2_path: break
+        
+        if base_vb2_path:
+            with open(base_vb2_path, "rb") as f:
+                master_packed = bytearray(f.read())
+            # Ensure it's the right size
+            master_packed = np.frombuffer(master_packed, dtype=np.uint8).reshape(buf_v_count, 12).copy()
+        else:
+            print(f"      [WARN] Base VB2 not found. Initializing with zeros (objects might disappear!)")
+
+        # [NEW] Load Morphed Positions for accurate sampling
+        # If the shape key moves vertices (e.g. to the wrist), we MUST sample weights at those new positions.
+        safe_sk_name = "_".join(sk_name.lstrip('$@#~').split())
+        morph_pos_path = os.path.join(output_dir, _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name))
+        
+        current_buf_xyz = buf_xyz_base.copy()
+        if os.path.exists(morph_pos_path):
+            with open(morph_pos_path, "rb") as f:
+                morph_f32 = np.frombuffer(f.read(), dtype=np.float32).reshape(buf_v_count, stride // 4)
+                current_buf_xyz = morph_f32[:, :3].copy()
+                if not is_xxmi:
+                    current_buf_xyz[:, 0] *= -1
+            print(f"      [INFO] Using morphed positions for sampling.")
+
+        layer_has_data = False
+        for obj in comp_objects:
+            dt_mod = None
+            for m in obj.modifiers:
+                if m.type == 'DATA_TRANSFER' and m.show_viewport:
+                    has_vgroups = any(v in m.data_types_verts for v in {'VGROUP_WEIGHTS', 'VGROUP'})
+                    if m.use_vert_data and has_vgroups:
+                        dt_mod = m
+                        break
+            
+            if dt_mod and dt_mod.object:
+                donor = dt_mod.object
+                entry = cache_objects.get(obj.name)
+                vb_off = entry.get('vb_offset', 0) if entry else 0
+                vb_cnt = entry.get('vb_count', 0) if entry else 0
+                if vb_cnt == 0: vb_cnt = buf_v_count
+                
+                # [NEW] Cumulative Positioning: Enable ALL parents in the chain to match physical location
+                def get_chain(cfg, all_cfgs, chain):
+                    chain.add(cfg.shape_name)
+                    if cfg.parent_shape:
+                        p = next((c for c in all_cfgs if c.shape_name == cfg.parent_shape), None)
+                        if p and p.shape_name not in chain:
+                            get_chain(p, all_cfgs, chain)
+                
+                active_chain = set()
+                get_chain(config, rzm.shape_configs, active_chain)
+                
+                sk_states = {}
+                if donor.data and donor.data.shape_keys:
+                    for blk in donor.data.shape_keys.key_blocks:
+                        sk_states[blk.name] = blk.value
+                        if blk.name in active_chain:
+                            blk.value = 1.0
+                        elif blk.name != "Basis":
+                            blk.value = 0.0
+                    context.view_layer.update()
+                    context.evaluated_depsgraph_get().update()
+                
+                # Perform Packing for this object's slice using morphed positions
+                obj_buf_xyz = current_buf_xyz[vb_off : vb_off + vb_cnt]
+                packed_slice = blendworks_baker.pack_efmi_weights(obj, donor, obj_buf_xyz)
+                
+                if packed_slice is not None:
+                    # [STATS] Debug Weight Info
+                    w_slice = packed_slice[:, :8].view(np.uint16).reshape(-1, 4)
+                    avg_w = np.mean(w_slice, axis=0) / 655.35 # scale to 0-100
+                    print(f"      [DEBUG] {obj.name} Weights: {avg_w[0]:.1f}%, {avg_w[1]:.1f}%, {avg_w[2]:.1f}%, {avg_w[3]:.1f}%")
+                    
+                    master_packed[vb_off : vb_off + vb_cnt] = packed_slice
+                    layer_has_data = True
+                
+                if sk_states:
+                    for name, val in sk_states.items():
+                        donor.data.shape_keys.key_blocks[name].value = val
+                    context.view_layer.update()
+            
+            elif dt_mod:
+                print(f"      [WARN] Object '{obj.name}' has DataTransfer but no Source Object selected.")
+
+        if layer_has_data:
+            out_name = f"{base_name}_VB2_{safe_sk_name}.buf"
+            out_path = os.path.join(output_dir, out_name)
+
+            if parent_packed is not None and len(parent_packed) == len(master_packed):
+                curr_w = master_packed[:, :8].view(np.uint16).reshape(-1, 4).astype(np.int32)
+                prev_w = parent_packed[:, :8].view(np.uint16).reshape(-1, 4).astype(np.int32)
+                curr_idx = master_packed[:, 8:]; prev_idx = parent_packed[:, 8:]
+                if np.array_equal(curr_idx, prev_idx):
+                    master_packed[:, :8].view(np.uint16).reshape(-1, 4)[:] = np.clip(curr_w - prev_w, 0, 65535).astype(np.uint16)
+            
+            with open(out_path, "wb") as f:
+                f.write(master_packed.tobytes())
+            print(f"      [VB2 PACKER] -> Done: {out_name}")
+
+
+# ---------------------------------------------------------------------------
 # CORE BAKE — оркестратор
 # ---------------------------------------------------------------------------
 
@@ -632,8 +808,43 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                 break
         if vb0_path: break
 
+    # [NEW] Hash-based fallback: look for the hash in mod.ini ifpretty name failed
     if not vb0_path:
-        print(f"  [ERROR] Position buffer not found for {base_name}")
+        ini_path = os.path.join(mod_root, "mod.ini")
+        if os.path.exists(ini_path):
+            with open(ini_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                # Look for ComponentX section and VB0 hash
+                match_sec = re.search(rf"\[\s*Resource{base_name}VB0\s*\]", content, re.I)
+                if match_sec:
+                    match_hash = re.search(r"filename\s*=\s*([a-fA-F0-9]+)\.buf", content[match_sec.end():match_sec.end()+200], re.I)
+                    if match_hash:
+                        hash_name = f"{match_hash.group(1)}.buf"
+                        for sub in subfolders:
+                            test_path = os.path.join(mod_root, sub, hash_name) if sub else os.path.join(mod_root, hash_name)
+                            if os.path.exists(test_path):
+                                vb0_path = test_path
+                                print(f"    [INFO] Found {base_name} VB0 via hash: {hash_name}")
+                                break
+
+    rzm      = context.scene.rzm
+    all_keys = ({single_shape_name} if single_shape_name
+                else {c.shape_name for c in rzm.shape_configs if not c.disable_export})
+    
+    if not all_keys:
+        return True
+
+    sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
+    
+    # [NEW] Check for weight morphs too
+    weight_keys = [c for c in rzm.shape_configs if c.shape_name in all_keys and c.bake_weights and not c.disable_export]
+
+    if not sk_owner_map and not weight_keys:
+        return True
+
+    # Now if we REALLY need a buffer but don't have it, then error
+    if not vb0_path:
+        print(f"  [ERROR] Position buffer not found for {base_name}. Skipping component.")
         return False
 
     output_dir = os.path.join(mod_root, "SK")
@@ -799,6 +1010,10 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                 output_dir, base_name, dump_name, is_xxmi, limit, t_start,
                 fast_path_slots=fast_path_slots
             )
+
+        # ── 4. BLENDWORKS (Weights) ────────────────────────────────────────────
+        # [NEW] Проверка и запуск слоя весов
+        _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name=dump_name, comp_cache=comp_cache)
 
         # ── SUMMARY ──
         print(f"\n  [SUMMARY] {base_name} component finished in {time.time() - t_start:.3f}s")

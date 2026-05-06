@@ -1,6 +1,7 @@
 {% import "modules/utils.j2" as utils with context %}
 {% import "modules/shapes_legacy.j2" as shapes_legacy with context %}
 {% import "modules/shapes_native.j2" as shapes_native with context %}
+{% import "modules/weights_native.j2" as weights_native with context %}
 
 {%macro generate_variables(mod_file,scene)%}
 ;macro generate_variables(mod_file,scene)
@@ -1264,6 +1265,8 @@ filename = .\res\mod_name.{{ font_ext }}
 {% macro shape_generate_arknights(extracted_object, merged_object, buffers, scene) %}
 {% if scene.rzm.addons.export_shapekeys %}
 {{ shapes_native.shape_generate(scene=scene, game_name=scene.rzm.game.name, extracted_object=extracted_object, merged_object=merged_object, buffers=buffers) }}
+
+{{ weights_native.weight_generate(scene=scene, game_name=scene.rzm.game.name, extracted_object=extracted_object, merged_object=merged_object, buffers=buffers) }}
 {% else %}
 {{ shapes_legacy.shape_generate_arknights(extracted_object, merged_object, buffers, scene) }}
 {% endif %}

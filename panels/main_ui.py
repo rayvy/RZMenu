@@ -812,7 +812,11 @@ def draw_toolbox_content(self, context):
                 
                 row = c_box.row(align=True)
                 row.prop(active_conf, "disable_export", text="Disable Export", icon='HIDE_OFF')
+                row.prop(active_conf, "bake_weights", text="Bake Weights", icon='MOD_VERTEX_WEIGHT')
                 row.prop(active_conf, "force_export", text="Force Export", icon='IMPORT')
+                
+                if active_conf.bake_weights:
+                    c_box.prop(active_conf, "parent_shape", text="Parent Shape", icon='LINKED')
                 
                 c_box.prop(active_conf, "shape_type")
                 

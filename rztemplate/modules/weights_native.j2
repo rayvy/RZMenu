@@ -1,0 +1,134 @@
+{# rztemplate/modules/weights_native.j2 #}
+{% import "modules/utils.j2" as utils with context %}
+
+{# 0. Проверка наличия активных весов для запекания #}
+{% macro has_active_weights(rzm) -%}
+    {{- (rzm.shape_configs | selectattr("bake_weights", "equalto", True) | selectattr("disable_export", "equalto", False) | list | length > 0) -}}
+{%- endmacro %}
+
+{# 1. ГЛАВНЫЙ ГЕНЕРАТОР ВЕСОВ #}
+{% macro weight_generate(scene, game_name, extracted_object=none, merged_object=none, buffers=none) %}
+{% set rzm = scene.rzm %}
+
+{# На данный момент морфинг весов поддерживается только для Endfield/WW #}
+{% if game_name in ["ArknightsEndfield", "WutheringWaves"] %}
+    {% set props = {'stride': 12, 'shader': './modules/weight_shape_linear_ENDFIELD.hlsl', 'path_prefix': 'Meshes/', 'path_suffix': '.buf'} %}
+
+[CustomShaderComputeWeights]
+    {% if extracted_object and merged_object %}
+        {% for id, component in enumerate(extracted_object.components) %}
+            {% set vb0_lookup = 'Component' ~ id ~ '_VB0' %}
+            {% if vb0_lookup in buffers and merged_object.components[id].vertex_count > 0 %}
+    run = CustomShaderComputeWeights.Component{{ id }}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
+    {% if extracted_object and merged_object %}
+        {% for id, component in enumerate(extracted_object.components) %}
+            {% set vb0_lookup = 'Component' ~ id ~ '_VB0' %}
+            {% if vb0_lookup in buffers and merged_object.components[id].vertex_count > 0 %}
+                {% set comp_name = 'Component' ~ id %}
+                {% set vertex_count = buffers[vb0_lookup] | length %}
+                {% set base_filename = props.path_prefix ~ comp_name ~ '_VB2' ~ props.path_suffix %}
+                
+                {# Собираем имена объектов компонента #}
+                {% set affected_names = [] %}
+                {% for m_obj in merged_object.components[id].objects %}
+                    {% set _ = affected_names.append(m_obj.name | lower) %}
+                {% endfor %}
+
+                {{ weight_compute_section(rzm, comp_name, vertex_count, props.shader, affected_names) }}
+                {{ weight_resources(rzm, comp_name, props.stride, base_filename, affected_names) }}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{% endif %}
+{% endmacro %}
+
+{# 2. COMPUTE SECTION (Weights) #}
+{% macro weight_compute_section(rzm, comp_name, vertex_count, shader_path, affected_names) %}
+[CustomShaderComputeWeights.{{ comp_name }}]
+cs = {{ shader_path }}
+cs-u5 = copy Resource{{ comp_name }}_VB2_Base
+
+{% for config in rzm.shape_configs if not config.disable_export and config.bake_weights %}
+    {% set affected_list = [] %}
+    {% for ref in config.affected_objects %}
+        {% set names_to_check = [] %}
+        {% if ref.obj_name %}
+            {% set _ = names_to_check.append(ref.obj_name | lower) %}
+        {% elif ref.obj %}
+            {% if ref.obj.type == 'MESH' and ref.obj.data %}
+                {% set _ = names_to_check.append(ref.obj.data.name | lower) %}
+            {% endif %}
+            {% set _ = names_to_check.append(ref.obj.name | lower) %}
+        {% endif %}
+        
+        {% for a_name in affected_names %}
+            {% for r_name in names_to_check %}
+                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+                    {% set _ = affected_list.append(1) %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    {% endfor %}
+
+    {% if affected_list | length > 0 %}
+        {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
+        {% if config.shape_type == "Anim" %}
+        x88 = ${{ var_name }}Final
+        {% else %}
+        x88 = ${{ var_name }}
+        {% endif %}
+        
+        cs-t50 = copy Resource{{ comp_name }}_VB2_Base
+        cs-t51 = copy Resource{{ comp_name }}_VB2_{{ utils.format_var(config.shape_name) }}
+        Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}_VB2 = ref cs-u5
+        Dispatch = {{ vertex_count }}, 1, 1
+    {% endif %}
+{% endfor %}
+
+cs-u5 = null
+cs-t50 = null
+cs-t51 = null
+{% endmacro %}
+
+
+{# 3. RESOURCES (Weights) #}
+{% macro weight_resources(rzm, comp_name, stride, base_filename, affected_names) %}
+[Resource{{ comp_name }}_VB2_Base]
+type = Buffer
+stride = {{ stride }}
+filename = {{ base_filename }}
+
+{% for config in rzm.shape_configs if not config.disable_export and config.bake_weights %}
+    {% set affected_list = [] %}
+    {% for ref in config.affected_objects %}
+        {% set names_to_check = [] %}
+        {% if ref.obj_name %}
+            {% set _ = names_to_check.append(ref.obj_name | lower) %}
+        {% elif ref.obj %}
+            {% if ref.obj.type == 'MESH' and ref.obj.data %}
+                {% set _ = names_to_check.append(ref.obj.data.name | lower) %}
+            {% endif %}
+            {% set _ = names_to_check.append(ref.obj.name | lower) %}
+        {% endif %}
+        
+        {% for a_name in affected_names %}
+            {% for r_name in names_to_check %}
+                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+                    {% set _ = affected_list.append(1) %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    {% endfor %}
+    
+    {% if affected_list | length > 0 %}
+[Resource{{ comp_name }}_VB2_{{ utils.format_var(config.shape_name) }}]
+type = Buffer
+stride = {{ stride }}
+filename = ./SK/{{ comp_name }}_VB2_{{ utils.format_var(config.shape_name) }}.buf
+    {% endif %}
+{% endfor %}
+{% endmacro %}
