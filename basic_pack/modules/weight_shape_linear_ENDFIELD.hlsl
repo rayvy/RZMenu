@@ -30,10 +30,13 @@ void AddToPool(uint idx, float w, inout BoneEntry pool[12], inout int size) {
     }
 }
 
-[numthreads(1, 1, 1)]
+[numthreads(1024, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;
+    uint vertex_count, stride;
+    rw_buffer.GetDimensions(vertex_count, stride);
+    if (i >= vertex_count) return;
 
     BoneEntry pool[12];
     for (int k_init = 0; k_init < 12; k_init++) {

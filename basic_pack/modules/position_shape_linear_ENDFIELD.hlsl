@@ -10,10 +10,13 @@ StructuredBuffer<VertexAttributes> shapekey : register(t51);
 Texture1D<float4> IniParams : register(t120);
 #define key IniParams[88].x
 
-[numthreads(1, 1, 1)]
+[numthreads(1024, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;
+    uint vertex_count, stride;
+    rw_buffer.GetDimensions(vertex_count, stride);
+    if (i >= vertex_count) return;
 
     float3 diffPos = shapekey[i].position - base[i].position;
     
