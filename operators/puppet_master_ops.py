@@ -626,22 +626,17 @@ def _pack_efmi_vb2(obj, output_path, donor_obj, buf_xyz):
         return False
 
 def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name="", comp_cache=None):
-    """
-    Обрабатывает морфинг весов для шейпкеев, помеченных bake_weights.
-    """
     rzm = context.scene.rzm
     weight_keys = [c for c in rzm.shape_configs if c.shape_name in all_keys and c.bake_weights and not c.disable_export]
     
     if not weight_keys:
         return
 
-    # Extract coordinates from VB0 as "source of truth"
     buf_v_count = len(original_bytes) // stride
     raw_np = np.frombuffer(original_bytes, dtype=np.uint8)
     float_view = raw_np.reshape(buf_v_count, stride).view(np.float32).reshape(buf_v_count, stride // 4)
     buf_xyz_base = float_view[:, :3].copy()
     
-    # EFMI Axis Sync: If not XXMI, we need to flip X back to Blender world space for sampling
     if not is_xxmi:
         buf_xyz_base[:, 0] *= -1
 
@@ -657,10 +652,8 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
         parent_name = config.parent_shape
         print(f"    [*] Layer: {sk_name}" + (f" (Parent: {parent_name})" if parent_name else ""))
         
-        # [FIX] Initialize master packed buffer from the BASE VB2 instead of zeros
         master_packed = np.zeros((buf_v_count, 12), dtype=np.uint8)
         
-        # [NEW] Handle Parent Weights for Subtraction (Additive Fix)
         parent_packed = None
         if parent_name:
             safe_parent_name = "_".join(parent_name.lstrip('$@#~').split())
@@ -669,7 +662,6 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
                 parent_packed = np.fromfile(parent_path, dtype=np.uint8).reshape(-1, 12)
                 print(f"      [INFO] Loaded parent weights for subtraction: {safe_parent_name}")
         
-        # Look for the base VB2 file to use as a template
         patterns_vb2 = [f"{base_name}Weights.buf", f"{base_name}_VB2.buf", f"{base_name}_VB2_LOD.buf"]
         base_vb2_path = None
         for sub in ["", "Meshes", "Buffers"]:
@@ -682,27 +674,23 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
         
         if base_vb2_path:
             with open(base_vb2_path, "rb") as f:
-                master_packed = bytearray(f.read())
-            # Ensure it's the right size
-            master_packed = np.frombuffer(master_packed, dtype=np.uint8).reshape(buf_v_count, 12).copy()
+                master_packed = np.frombuffer(f.read(), dtype=np.uint8).reshape(buf_v_count, 12).copy()
         else:
-            print(f"      [WARN] Base VB2 not found. Initializing with zeros (objects might disappear!)")
+            print(f"      [WARN] Base VB2 not found. Initializing with zeros.")
 
-        # [NEW] Load Morphed Positions for accurate sampling
-        # If the shape key moves vertices (e.g. to the wrist), we MUST sample weights at those new positions.
-        safe_sk_name = "_".join(sk_name.lstrip('$@#~').split())
-        morph_pos_path = os.path.join(output_dir, _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name))
+        # Resolve cumulative chain for this shape key
+        def get_chain(cfg, all_cfgs, chain):
+            chain.add(cfg.shape_name)
+            if cfg.parent_shape:
+                p = next((c for c in all_cfgs if c.shape_name == cfg.parent_shape), None)
+                if p and p.shape_name not in chain:
+                    get_chain(p, all_cfgs, chain)
         
-        current_buf_xyz = buf_xyz_base.copy()
-        if os.path.exists(morph_pos_path):
-            with open(morph_pos_path, "rb") as f:
-                morph_f32 = np.frombuffer(f.read(), dtype=np.float32).reshape(buf_v_count, stride // 4)
-                current_buf_xyz = morph_f32[:, :3].copy()
-                if not is_xxmi:
-                    current_buf_xyz[:, 0] *= -1
-            print(f"      [INFO] Using morphed positions for sampling.")
+        active_chain = set()
+        get_chain(config, rzm.shape_configs, active_chain)
 
         layer_has_data = False
+
         for obj in comp_objects:
             dt_mod = None
             for m in obj.modifiers:
@@ -712,64 +700,123 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
                         dt_mod = m
                         break
             
-            if dt_mod and dt_mod.object:
-                donor = dt_mod.object
-                entry = cache_objects.get(obj.name)
-                vb_off = entry.get('vb_offset', 0) if entry else 0
-                vb_cnt = entry.get('vb_count', 0) if entry else 0
-                if vb_cnt == 0: vb_cnt = buf_v_count
-                
-                # [NEW] Cumulative Positioning: Enable ALL parents in the chain to match physical location
-                def get_chain(cfg, all_cfgs, chain):
-                    chain.add(cfg.shape_name)
-                    if cfg.parent_shape:
-                        p = next((c for c in all_cfgs if c.shape_name == cfg.parent_shape), None)
-                        if p and p.shape_name not in chain:
-                            get_chain(p, all_cfgs, chain)
-                
-                active_chain = set()
-                get_chain(config, rzm.shape_configs, active_chain)
-                
-                sk_states = {}
-                if donor.data and donor.data.shape_keys:
-                    for blk in donor.data.shape_keys.key_blocks:
-                        sk_states[blk.name] = blk.value
-                        if blk.name in active_chain:
-                            blk.value = 1.0
-                        elif blk.name != "Basis":
-                            blk.value = 0.0
-                    context.view_layer.update()
-                    context.evaluated_depsgraph_get().update()
-                
-                # Perform Packing for this object's slice using morphed positions
-                obj_buf_xyz = current_buf_xyz[vb_off : vb_off + vb_cnt]
-                packed_slice = blendworks_baker.pack_efmi_weights(obj, donor, obj_buf_xyz)
-                
-                if packed_slice is not None:
-                    # [STATS] Debug Weight Info
-                    w_slice = packed_slice[:, :8].view(np.uint16).reshape(-1, 4)
-                    avg_w = np.mean(w_slice, axis=0) / 655.35 # scale to 0-100
-                    print(f"      [DEBUG] {obj.name} Weights: {avg_w[0]:.1f}%, {avg_w[1]:.1f}%, {avg_w[2]:.1f}%, {avg_w[3]:.1f}%")
-                    
-                    master_packed[vb_off : vb_off + vb_cnt] = packed_slice
-                    layer_has_data = True
-                
-                if sk_states:
-                    for name, val in sk_states.items():
+            if not (dt_mod and dt_mod.object):
+                if dt_mod:
+                    print(f"      [WARN] Object '{obj.name}' has DataTransfer but no Source Object selected.")
+                continue
+
+            donor = dt_mod.object
+            entry = cache_objects.get(obj.name)
+            vb_off = entry.get('vb_offset', 0) if entry else 0
+            vb_cnt = entry.get('vb_count', 0) if entry else 0
+            if vb_cnt == 0:
+                vb_cnt = buf_v_count
+            v_map = entry.get('vertex_map') if entry else None
+
+            # ── КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ──────────────────────────────────────
+            # Сохраняем состояние и активируем ВСЮ цепочку на OBJ + DONOR
+            sk_states_obj   = {}
+            sk_states_donor = {}
+
+            if obj.data and obj.data.shape_keys:
+                for blk in obj.data.shape_keys.key_blocks:
+                    sk_states_obj[blk.name] = blk.value
+                    blk.value = 1.0 if blk.name in active_chain else 0.0
+
+            if donor.data and donor.data.shape_keys:
+                for blk in donor.data.shape_keys.key_blocks:
+                    sk_states_donor[blk.name] = blk.value
+                    blk.value = 1.0 if blk.name in active_chain else 0.0
+
+            context.view_layer.update()
+            depsgraph = context.evaluated_depsgraph_get()
+            depsgraph.update()
+
+            # Evaluate деформированного меша объекта для получения реальных координат
+            eval_obj = obj.evaluated_get(depsgraph)
+            eval_mesh = eval_obj.to_mesh()
+
+            import mathutils as mu
+            m_idx = entry.get('mat_idx', 0) if entry else 0
+            if m_idx == 1:
+                mat = obj.matrix_world
+            elif m_idx == 2:
+                root_obj_name = comp_cache.get('root_obj') if comp_cache else None
+                root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
+                mat = (root_obj.matrix_world.inverted() @ obj.matrix_world if root_obj else mu.Matrix.Identity(4))
+            else:
+                mat = obj.matrix_world if not is_xxmi else mu.Matrix.Identity(4)
+
+            mw3 = np.array(mat.to_3x3(), dtype=np.float32)
+            mwt = np.array(mat.translation, dtype=np.float32)
+
+            n_eval = len(eval_mesh.vertices)
+            raw_eval = np.empty(n_eval * 3, dtype=np.float32)
+            eval_mesh.vertices.foreach_get('co', raw_eval)
+            eval_co = raw_eval.reshape(-1, 3) @ mw3.T + mwt
+
+            eval_obj.to_mesh_clear()
+
+            # Строим v_map из deformed координат → буферные слоты
+            if v_map and len(v_map) == vb_cnt:
+                # Используем v_map: для каждого буферного слота берём координату из eval_co[v_map[i]]
+                v_map_np = np.array(v_map, dtype=np.int32)
+                valid_mask = v_map_np < n_eval
+                obj_buf_xyz = np.zeros((vb_cnt, 3), dtype=np.float32)
+                obj_buf_xyz[valid_mask] = eval_co[v_map_np[valid_mask]]
+                print(f"      [INFO] {obj.name}: Using v_map for deformed coordinates ({vb_cnt} slots).")
+            else:
+                # Пространственный поиск: для каждого буферного слота ищем ближайший eval-вертекс
+                kd = mu.kdtree.KDTree(n_eval)
+                for i, co in enumerate(eval_co):
+                    kd.insert(mu.Vector(co), i)
+                kd.balance()
+
+                obj_buf_xyz = np.empty((vb_cnt, 3), dtype=np.float32)
+                for idx in range(vb_cnt):
+                    buf_idx = vb_off + idx
+                    buf_pos = mu.Vector(buf_xyz_base[buf_idx])
+                    # Для EFMI инвертируем X при поиске
+                    if not is_xxmi:
+                        search_pos = mu.Vector((-buf_pos.x, buf_pos.y, buf_pos.z))
+                    else:
+                        search_pos = buf_pos
+                    co, best_idx, dist = kd.find(search_pos)
+                    obj_buf_xyz[idx] = eval_co[best_idx]
+                print(f"      [INFO] {obj.name}: Used KD-Tree to map deformed positions ({vb_cnt} slots).")
+
+            # Сэмплинг весов по деформированным координатам
+            packed_slice = blendworks_baker.pack_efmi_weights(obj, donor, obj_buf_xyz)
+
+            # Восстанавливаем состояние shape keys
+            if sk_states_obj and obj.data and obj.data.shape_keys:
+                for name, val in sk_states_obj.items():
+                    if name in obj.data.shape_keys.key_blocks:
+                        obj.data.shape_keys.key_blocks[name].value = val
+            if sk_states_donor and donor.data and donor.data.shape_keys:
+                for name, val in sk_states_donor.items():
+                    if name in donor.data.shape_keys.key_blocks:
                         donor.data.shape_keys.key_blocks[name].value = val
-                    context.view_layer.update()
-            
-            elif dt_mod:
-                print(f"      [WARN] Object '{obj.name}' has DataTransfer but no Source Object selected.")
+            context.view_layer.update()
+            # ── КОНЕЦ ИСПРАВЛЕНИЯ ─────────────────────────────────────────
+
+            if packed_slice is not None:
+                w_slice = packed_slice[:, :8].view(np.uint16).reshape(-1, 4)
+                avg_w = np.mean(w_slice, axis=0) / 655.35
+                print(f"      [DEBUG] {obj.name} Weights: {avg_w[0]:.1f}%, {avg_w[1]:.1f}%, {avg_w[2]:.1f}%, {avg_w[3]:.1f}%")
+                master_packed[vb_off : vb_off + vb_cnt] = packed_slice
+                layer_has_data = True
 
         if layer_has_data:
+            safe_sk_name = "_".join(sk_name.lstrip('$@#~').split())
             out_name = f"{base_name}_VB2_{safe_sk_name}.buf"
             out_path = os.path.join(output_dir, out_name)
 
             if parent_packed is not None and len(parent_packed) == len(master_packed):
                 curr_w = master_packed[:, :8].view(np.uint16).reshape(-1, 4).astype(np.int32)
                 prev_w = parent_packed[:, :8].view(np.uint16).reshape(-1, 4).astype(np.int32)
-                curr_idx = master_packed[:, 8:]; prev_idx = parent_packed[:, 8:]
+                curr_idx = master_packed[:, 8:]
+                prev_idx = parent_packed[:, 8:]
                 if np.array_equal(curr_idx, prev_idx):
                     master_packed[:, :8].view(np.uint16).reshape(-1, 4)[:] = np.clip(curr_w - prev_w, 0, 65535).astype(np.uint16)
             
