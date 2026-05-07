@@ -75,6 +75,11 @@ cs-u5 = copy Resource{{ comp_name }}_VB2_Base
     {% endfor %}
 
     {% if affected_list | length > 0 %}
+        ; Debug Info:
+        ;   - Parent Shape: {{ config.parent_shape if config.parent_shape else "None" }}
+        ;   - Chain: {{ config.parent_shape ~ ' -> ' if config.parent_shape }}{{ config.shape_name }}
+        ;   - Matched: {{ (affected_list | length > 0) }}
+
         {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
         {% if config.shape_type == "Anim" %}
         x88 = ${{ var_name }}Final
@@ -82,7 +87,8 @@ cs-u5 = copy Resource{{ comp_name }}_VB2_Base
         x88 = ${{ var_name }}
         {% endif %}
         
-        cs-t50 = copy Resource{{ comp_name }}_VB2_Base
+        {% set parent_suffix = utils.format_var(config.parent_shape) if config.parent_shape else "Base" %}
+        cs-t50 = copy Resource{{ comp_name }}_VB2_{{ parent_suffix }}
         cs-t51 = copy Resource{{ comp_name }}_VB2_{{ utils.format_var(config.shape_name) }}
         Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}_VB2 = ref cs-u5
         Dispatch = {{ vertex_count }}, 1, 1
