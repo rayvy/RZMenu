@@ -23,7 +23,20 @@ class RZM_MT_AssignTexSlotMenu(bpy.types.Menu):
     bl_idname = "RZM_MT_assign_tex_slot_menu"
     def draw(self, context):
         layout = self.layout
-        slots = ["Diffuse", "LightMap", "NormalMap", "MaterialMap", "ExtraMap"]
+        rzm = context.scene.rzm
+        game = rzm.game.selection if hasattr(rzm, "game") else "HonkaiStarRail"
+        
+        # Адаптивный список текстур в зависимости от игры
+        game_mapping = {
+            'GenshinImpact': ["Diffuse", "LightMap", "NormalMap", "ExtraMap"],
+            'ArknightsEndfield': ["Diffuse", "NormalMap", "MaterialMap", "ExtraMap"],
+            'WutheringWaves': ["Diffuse", "NormalMap", "MaterialMap", "ExtraMap"],
+            'ZenlessZoneZero': ["Diffuse", "NormalMap", "LightMap", "MaterialMap", "GlowMap", "GlowGradient", "WengineFx", "ExtraMap"],
+        }
+        
+        # По умолчанию (HSR или неизвестная игра) показываем стандартные слоты
+        slots = game_mapping.get(game, ["Diffuse", "LightMap", "NormalMap", "MaterialMap", "ExtraMap"])
+            
         for s in slots:
             op = layout.operator("rzm.assign_object_tex_slot", text=s)
             op.slot_name = s
