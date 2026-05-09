@@ -7,6 +7,7 @@
     3: 'BUTTON',
     4: 'SLIDER',
     5: 'TEXT',
+    6: 'VECTOR_BOX',
 } %}
 
 {% set CLASS_ID_MAP = {
@@ -23,7 +24,8 @@
     'ANCHOR': ['isMovable'],
     'GRID_CONTAINER': ['isResizable'],
     'BUTTON': ['isClickable', 'isHoldable', 'hadPopup'],
-    'SLIDER': ['isClickable', 'isHoldable']
+    'SLIDER': ['isClickable', 'isHoldable'],
+    'VECTOR_BOX': ['isClickable', 'isHoldable']
 } %}
 
 {% set FN_MAP = {

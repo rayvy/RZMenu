@@ -237,6 +237,8 @@ def duplicate_elements(target_ids, offset=20):
             new_elem.hover_event_formula = src.hover_event_formula
             new_elem.click_event_enabled = src.click_event_enabled
             new_elem.click_event_formula = src.click_event_formula
+            new_elem.hold_event_enabled = src.hold_event_enabled
+            new_elem.hold_event_formula = src.hold_event_formula
             
             # Copy Collections
             if hasattr(src, "preset_ids"):

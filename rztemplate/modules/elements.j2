@@ -16,7 +16,8 @@
     'ANCHOR': ['isMovable'],
     'GRID_CONTAINER': ['isResizable'],
     'BUTTON': ['isClickable', 'isHoldable', 'hadPopup'],
-    'SLIDER': ['isClickable', 'isHoldable']
+    'SLIDER': ['isClickable', 'isHoldable'],
+    'VECTOR_BOX': ['isClickable', 'isHoldable']
 } %}
 
 {% set FN_MAP = {
@@ -268,101 +269,77 @@ ${{ utils.get_var_name(slave_name, scene) }} = {{ master_var }}
 {# --- VECTOR BOX LOGIC --- #}
 {% if element.value_link is defined and element.value_link|length > 0 %}
     {% set links = element.value_link %}
-    {% if links|length > 1 %}
-        {# First link is indexer #}
-        {% set index_link = links[0] %}
-        {% set index_var = '$' ~ utils.get_var_name(index_link.value_name, scene) %}
-        {% set targets = links[1:] %}
-    {% else %}
-        {# Only one link, no indexer #}
-        {% set index_var = none %}
-        {% set targets = links %}
-    {% endif %}
-
-    {# Working variables (Local) #}
-    local $VB_X = 0
-    local $VB_Y = 0
-    local $VB_Z = 0
-    local $VB_W = 0
-
-    {# Read from current target #}
-    {% for target in targets %}
-        {% set target_base = utils.get_var_name(target.value_name, scene, false) %}
-        {% if index_var %}
-    if {{ index_var }} == {{ loop.index0 }}
-        {% endif %}
-    $VB_X = ${{ target_base }}_X
-    $VB_Y = ${{ target_base }}_Y
-    $VB_Z = ${{ target_base }}_Z
-    $VB_W = ${{ target_base }}_W
-        {% if index_var %}
-    endif
-        {% endif %}
-    {% endfor %}
+    
+    {# Accumulators (pre-loaded by container.j2) #}
+    {% set ACC_X = '$' ~ element.element_name ~ '_X' %}
+    {% set ACC_Y = '$' ~ element.element_name ~ '_Y' %}
+    {% set ACC_Z = '$' ~ element.element_name ~ '_Z' %}
+    {% set ACC_W = '$' ~ element.element_name ~ '_W' %}
 
     {# Interaction #}
     {% if not element.disable_default_xy %}
-    if $capturedID == $id
-        {% set first_target = targets[0] if targets else none %}
-        {% set x_min = first_target.value_min | default(0.0) if first_target else 0.0 %}
-        {% set x_max = first_target.value_max | default(1.0) if first_target else 1.0 %}
-        {% set y_min = first_target.value_min | default(0.0) if first_target else 0.0 %}
-        {% set y_max = first_target.value_max | default(1.0) if first_target else 1.0 %}
+    if $capturedID == $id || $clickTriggerID == $id
+        {% set first_target = links[1] if links|length > 1 else links[0] %}
+        {% set x_min = first_target.value_min | default(0.0) %}
+        {% set x_max = first_target.value_max | default(1.0) %}
+        {% set y_min = first_target.value_min | default(0.0) %}
+        {% set y_max = first_target.value_max | default(1.0) %}
 
-        $VB_X = {{ x_min }} + (($cursorX - $positionX) / $sizeX) * ({{ x_max }} - {{ x_min }})
-        $VB_Y = {{ y_min }} + (1.0 - ($cursorY - $positionY) / $sizeY) * ({{ y_max }} - {{ y_min }})
+        {% set progress_x = "(($cursorX - $positionX) / $sizeX)" %}
+        {% set progress_y = "(1.0 - ($cursorY - $positionY) / $sizeY)" %}
+        {% if element.slider_logic_invert_x %}
+            {% set progress_x = "(1.0 - " ~ progress_x ~ ")" %}
+        {% endif %}
+        {% if element.slider_logic_invert_y %}
+            {% set progress_y = "(1.0 - " ~ progress_y ~ ")" %}
+        {% endif %}
+
+        {{ ACC_X }} = {{ x_min }} + {{ progress_x }} * ({{ x_max }} - {{ x_min }})
+        {{ ACC_Y }} = {{ y_min }} + {{ progress_y }} * ({{ y_max }} - {{ y_min }})
 
         {# Clamp #}
-        if $VB_X < {{ x_min }}
-            $VB_X = {{ x_min }}
-        else if $VB_X > {{ x_max }}
-            $VB_X = {{ x_max }}
+        if {{ ACC_X }} < {{ x_min }}
+            {{ ACC_X }} = {{ x_min }}
+        else if {{ ACC_X }} > {{ x_max }}
+            {{ ACC_X }} = {{ x_max }}
         endif
-        if $VB_Y < {{ y_min }}
-            $VB_Y = {{ y_min }}
-        else if $VB_Y > {{ y_max }}
-            $VB_Y = {{ y_max }}
+        if {{ ACC_Y }} < {{ y_min }}
+            {{ ACC_Y }} = {{ y_min }}
+        else if {{ ACC_Y }} > {{ y_max }}
+            {{ ACC_Y }} = {{ y_max }}
         endif
     endif
     {% endif %}
 
-    {# Exposure to Event Formula - using specific local vars $_X, $_Y, $_Z, $_W as requested #}
-    local $_X = $VB_X
-    local $_Y = $VB_Y
-    local $_Z = $VB_Z
-    local $_W = $VB_W
+    {# Exposure to Event Formula #}
+    local $_X = {{ ACC_X }}
+    local $_Y = {{ ACC_Y }}
+    local $_Z = {{ ACC_Z }}
+    local $_W = {{ ACC_W }}
 
-    {% if element.event_formula %}
-    {{ utils.normalize_all_vars(element.event_formula, element, scene) }}
-    {% endif %}
-
-    {# Sync back to working vars #}
-    $VB_X = $_X
-    $VB_Y = $_Y
-    $VB_Z = $_Z
-    $VB_W = $_W
-
-    {# Global Controllers (requested for large link counts) #}
-    {% if links|length > 3 %}
-    ${{ element.element_name }}_X = $VB_X
-    ${{ element.element_name }}_Y = $VB_Y
-    ${{ element.element_name }}_Z = $VB_Z
-    ${{ element.element_name }}_W = $VB_W
-    {% endif %}
-
-    {# Write Back to Targets #}
-    {% for target in targets %}
-        {% set target_base = utils.get_var_name(target.value_name, scene, false) %}
-        {% if index_var %}
-    if {{ index_var }} == {{ loop.index0 }}
-        {% endif %}
-    ${{ target_base }} = $VB_X
-    ${{ target_base }} = $VB_Y
-    ${{ target_base }} = $VB_Z
-    ${{ target_base }} = $VB_W
-        {% if index_var %}
+    {% if element.hover_event_enabled and element.hover_event_formula %}
+    if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id) || $capturedID == $id
+        {{ utils.normalize_all_vars(element.hover_event_formula, element, scene) }}
     endif
-        {% endif %}
-    {% endfor %}
+    {% endif %}
+
+    {% if element.click_event_enabled and element.click_event_formula %}
+    if $id == $clickTriggerID || $capturedID == $id
+        {{ utils.normalize_all_vars(element.click_event_formula, element, scene) }}
+    endif
+    {% endif %}
+
+    {% if element.hold_event_enabled and element.hold_event_formula %}
+    if $id == $capturedID && $dragState == 3
+        {{ utils.normalize_all_vars(element.hold_event_formula, element, scene) }}
+    endif
+    {% endif %}
+
+    {# Write back to accumulators #}
+    {{ ACC_X }} = $_X
+    {{ ACC_Y }} = $_Y
+    {{ ACC_Z }} = $_Z
+    {{ ACC_W }} = $_W
+
 {% endif %}
 {% endmacro %}

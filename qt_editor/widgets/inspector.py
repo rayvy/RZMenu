@@ -1113,6 +1113,10 @@ class RZMInspectorPanel(RZEditorPanel):
         self.layout_props.addStretch()
         
         self.scroll_content.setMouseTracking(True)
+        
+        # Shortcut F5 to force rebuild cache
+        self.shortcut_f5 = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_F5), self)
+        self.shortcut_f5.activated.connect(self._force_rebuild_cache)
 
         # --- TAB 2: Raw Data ---
         self.tab_raw = QtWidgets.QWidget()
@@ -1125,6 +1129,11 @@ class RZMInspectorPanel(RZEditorPanel):
         self.table_raw.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers) 
         layout_raw.addWidget(self.table_raw)
         # self.tabs.addTab(self.tab_raw, "Raw Data")
+
+    def _force_rebuild_cache(self):
+        print("[INSPECTOR] Forcing cache rebuild (F5)")
+        core.read.rebuild_id_cache(force=True)
+        self.refresh_data()
 
     def _scroll_to_group(self, group_name):
         """Scrolls the scroll area to the target group widget."""
@@ -1756,6 +1765,13 @@ class RZMInspectorPanel(RZEditorPanel):
             self.edit_click_fx.setPlaceholderText("On click..."); self.edit_click_fx.setMinimumHeight(120)
             self.chk_click_event.toggled.connect(self.edit_click_fx.setVisible)
 
+            h_hld = QtWidgets.QHBoxLayout(); h_hld.addWidget(RZLabel("Hold Event")); h_hld.addStretch()
+            self.chk_hold_event = self._add_row(h_hld, "", RZCheckBox("Enable"), 'hold_event_enabled')
+            layout.addLayout(h_hld)
+            self.edit_hold_fx = self._add_row(layout, "", RZCodeTextEdit(), 'hold_event_formula')
+            self.edit_hold_fx.setPlaceholderText("On hold..."); self.edit_hold_fx.setMinimumHeight(120)
+            self.chk_hold_event.toggled.connect(self.edit_hold_fx.setVisible)
+
             # ── Run Link binding ────────────────────────────────────────────────
             sep = QtWidgets.QFrame(); sep.setFrameShape(QtWidgets.QFrame.HLine); sep.setFrameShadow(QtWidgets.QFrame.Sunken)
             layout.addWidget(sep)
@@ -2197,6 +2213,11 @@ class RZMInspectorPanel(RZEditorPanel):
             if hasattr(self, 'edit_click_fx'):
                 self.edit_click_fx.set_text_silent(props.get('click_event_formula', ''))
                 self.edit_click_fx.setVisible(hasattr(self, 'chk_click_event') and self.chk_click_event.isChecked())
+
+            if hasattr(self, 'chk_hold_event'): self.chk_hold_event.setChecked(props.get('hold_event_enabled') is True)
+            if hasattr(self, 'edit_hold_fx'):
+                self.edit_hold_fx.set_text_silent(props.get('hold_event_formula', ''))
+                self.edit_hold_fx.setVisible(hasattr(self, 'chk_hold_event') and self.chk_hold_event.isChecked())
 
             # ── Run Link binding ────────────────────────────────────────────────
             if hasattr(self, 'cb_run_link'):

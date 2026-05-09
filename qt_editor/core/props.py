@@ -104,6 +104,8 @@ PROP_MAP = {
     "hover_event_formula": ("hover_event_formula", None, 'D'),
     "click_event_enabled": ("click_event_enabled", None, 'D'),
     "click_event_formula": ("click_event_formula", None, 'D'),
+    "hold_event_enabled": ("hold_event_enabled", None, 'D'),
+    "hold_event_formula": ("hold_event_formula", None, 'D'),
 
     # Color Formula
     "color_is_formula": ("color_is_formula", None, 'D'),

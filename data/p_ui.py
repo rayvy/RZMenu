@@ -193,6 +193,8 @@ class RZMenuElement(bpy.types.PropertyGroup):
     hover_event_formula: StringProperty(name="Hover Formula", description="Custom code executed on mouse hover",default="")
     click_event_enabled: BoolProperty(name="Custom Click Event", default=False)
     click_event_formula: StringProperty(name="Click Formula", description="Custom code executed on mouse click",default="")
+    hold_event_enabled: BoolProperty(name="Custom Hold Event", default=False)
+    hold_event_formula: StringProperty(name="Hold Formula", description="Custom code executed on mouse hold",default="")
     is_main_window: BoolProperty(name="Is Main Window")
     is_tab_container: BoolProperty(name="Is Page (Isolation)", description="Treat this as an isolation root (page) in the viewport", default=False)
     page_color: FloatVectorProperty(name="Page Color", subtype='COLOR', size=4, min=0, max=1, default=(0.5, 0.5, 0.5, 1.0))

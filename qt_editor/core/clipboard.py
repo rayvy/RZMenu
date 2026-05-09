@@ -105,6 +105,8 @@ def copy_elements(target_ids):
                 "hover_event_formula": elem.hover_event_formula,
                 "click_event_enabled": elem.click_event_enabled,
                 "click_event_formula": elem.click_event_formula,
+                "hold_event_enabled": elem.hold_event_enabled,
+                "hold_event_formula": elem.hold_event_formula,
                 
                 "conditional_images": [{"condition": ci.condition, "image_id": ci.image_id} for ci in elem.conditional_images],
                 "text_mode": elem.text_mode,
@@ -276,6 +278,8 @@ def paste_elements(target_x=None, target_y=None, offset=20, parent_id=-1, mode='
             new_elem.hover_event_formula = item.get("hover_event_formula", "")
             new_elem.click_event_enabled = item.get("click_event_enabled", False)
             new_elem.click_event_formula = item.get("click_event_formula", "")
+            new_elem.hold_event_enabled = item.get("hold_event_enabled", False)
+            new_elem.hold_event_formula = item.get("hold_event_formula", "")
             
             new_elem.text_mode = item.get("text_mode", "SINGLE")
             new_elem.text_id_is_data = item.get("text_id_is_data", False)

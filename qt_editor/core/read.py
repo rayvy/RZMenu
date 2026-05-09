@@ -370,6 +370,8 @@ def get_selection_details(selected_ids, active_id):
             "hover_event_formula": get_uniform("hover_event_formula", default=""),
             "click_event_enabled": get_uniform("click_event_enabled", default=False),
             "click_event_formula": get_uniform("click_event_formula", default=""),
+            "hold_event_enabled": get_uniform("hold_event_enabled", default=False),
+            "hold_event_formula": get_uniform("hold_event_formula", default=""),
             
             # Transform - Logic (Formula vs Static)
             "position_is_formula": get_uniform("position_is_formula", default=False),
