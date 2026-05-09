@@ -1,13 +1,14 @@
 {% import "rz_helper.j2" as helper with context %}
 
 {% macro main_logic(extracted_object, merged_object, mod_info, buffers, textures, cfg) %}
-; EFMI ALPHA-3 INI
+; EFMI ALPHA-7 INI (Custom RZMenu edition)
 
 {%- macro note(text) %}{% if comment_code %}; {{ text }}{% else %};DEL{% endif %}{% endmacro %}
 
-; Mod State -------------------------
-
 {%- if cfg.use_ini_toggles %}
+
+; Key Bindings -------------------------
+
 {{note("Hotkeys generated from Ini Toggles")}}
 {%- for var in cfg.ini_toggles.vars -%}
 {%- if var.hotkeys %}
@@ -22,6 +23,59 @@ type = cycle
 {%- endif -%}
 {%- endfor %}
 {%- endif %}
+
+; Mod Info -------------------------
+
+{{note("Name of mod")}}
+[ResourceModName]
+
+{%- if mod_info.mod_name.strip() != '' %}
+type = Buffer
+data = "{{ mod_info.mod_name }}"
+{%- else %}
+; type = Buffer
+; data = "Unknown Mod Name"
+{%- endif %}
+
+{{note("Name of mod author")}}
+[ResourceModAuthor]
+{%- if mod_info.mod_author.strip() != '' %}
+type = Buffer
+data = "{{ mod_info.mod_author }}"
+{%- else %}
+; type = Buffer
+; data = "Unknown Mod Author"
+{%- endif %}
+
+{{note("Mod description")}}
+[ResourceModDesc]
+{%- if mod_info.mod_desc.strip() != '' %}
+type = Buffer
+data = "{{ mod_info.mod_desc }}"
+{%- else %}
+; type = Buffer
+; data = "Empty Mod Description"
+{%- endif %}
+
+{{note("Link to mod repository")}}
+[ResourceModLink]
+{%- if mod_info.mod_link.strip() != '' %}
+type = Buffer
+data = "{{ mod_info.mod_link }}"
+{%- else %}
+; type = Buffer
+; data = "Empty Mod Link"
+{%- endif %}
+
+{{note("Texture file with 512x512 .dds (BC7 SRGB) mod logo")}}
+[ResourceModLogo]
+{%- if mod_info.mod_logo.is_file() %}
+filename = Textures/Logo.dds
+{%- else %}
+; filename = Textures/Logo.dds
+{%- endif %}
+
+; Mod State -------------------------
 
 {{note("Global variables used by entire mod")}}
 [Constants]
@@ -39,13 +93,13 @@ global $mod_enabled = 0
 {{note("Indicates if our object was detected in previous frame")}}
 global $object_detected = 0
 {{note("Indicates if our object has LoDs applied")}}
-global $lod_detected = 0
+global $lod_level = 0
 {%- if cfg.use_ini_toggles %}
-; Swap vars aka toggles defaults
+; Swap vars aka state values for toggles (marked as `persist` to keep state saved in `d3dx_user.ini`)
 {%- for var in cfg.ini_toggles.vars %}
 global persist {{ formatter.format_ini_swapvar(var.name) }} = {{ var.default_state or 0 }}
 {%- endfor %}
-; Per-object state vars
+; Per-object state vars (dynamically controlled by CommandListProcessToggles)
 {%- for component in extracted_object.components %}
 {%- for obj in merged_object.components[loop.index0].objects %}
 global {{ formatter.format_ini_drawvar(obj.name) }} = 1
@@ -101,181 +155,138 @@ endif
 {{note("<< Here's a nice place to put your custom logic that controls objects visibility >>")}}
 {%- endif %}
 
-; Resources: Mod Info -------------------------
+; Shading: Custom Mesh Draw CommandLists -------------------------
 
-{{note("Name of mod")}}
-[ResourceModName]
-
-{%- if mod_info.mod_name.strip() != '' %}
-type = Buffer
-data = "{{ mod_info.mod_name }}"
-{%- else %}
-; type = Buffer
-; data = "Unknown Mod Name"
-{%- endif %}
-
-{{note("Name of mod author")}}
-[ResourceModAuthor]
-{%- if mod_info.mod_author.strip() != '' %}
-type = Buffer
-data = "{{ mod_info.mod_author }}"
-{%- else %}
-; type = Buffer
-; data = "Unknown Mod Author"
-{%- endif %}
-
-{{note("Mod description")}}
-[ResourceModDesc]
-{%- if mod_info.mod_desc.strip() != '' %}
-type = Buffer
-data = "{{ mod_info.mod_desc }}"
-{%- else %}
-; type = Buffer
-; data = "Empty Mod Description"
-{%- endif %}
-
-{{note("Link to mod repository")}}
-[ResourceModLink]
-{%- if mod_info.mod_link.strip() != '' %}
-type = Buffer
-data = "{{ mod_info.mod_link }}"
-{%- else %}
-; type = Buffer
-; data = "Empty Mod Link"
-{%- endif %}
-
-{{note("Texture file with 512x512 .dds (BC7 SRGB) mod logo")}}
-[ResourceModLogo]
-{%- if mod_info.mod_logo.is_file() %}
-filename = Textures/Logo.dds
-{%- else %}
-; filename = Textures/Logo.dds
-{%- endif %}
-
-; Shading: Draw Call Stacks Processing -------------------------
-
-{{note("Overrides textures via triggering [ResourceTextureX] sections by calling chechtextureoverride on ps-t slots")}}
-[CommandListTriggerResourceOverrides]
-{{note("Trigger texture sections to replace texture with matching hash")}}
-CheckTextureOverride = ps-t0
-CheckTextureOverride = ps-t1
-CheckTextureOverride = ps-t2
-CheckTextureOverride = ps-t3
-CheckTextureOverride = ps-t4
-CheckTextureOverride = ps-t5
-CheckTextureOverride = ps-t6
-CheckTextureOverride = ps-t7
-CheckTextureOverride = ps-t8
-CheckTextureOverride = ps-t9
-CheckTextureOverride = ps-t10
-CheckTextureOverride = ps-t11
-CheckTextureOverride = ps-t12
-CheckTextureOverride = ps-t13
-CheckTextureOverride = ps-t14
-CheckTextureOverride = ps-t15
-CheckTextureOverride = ps-t16
-CheckTextureOverride = ps-t17
-CheckTextureOverride = ps-t18
-CheckTextureOverride = ps-t19
-CheckTextureOverride = ps-t20
-
-{%- for componnet_id, component in enumerate(extracted_object.components) %}
+{%- for component_id, component in enumerate(extracted_object.components) if merged_object.components[component_id].objects | length > 0 %}
 
 {{note("Do custom draw calls for Component %d" | format(loop.index0))}}
-[CommandList_Draw_Component{{ componnet_id }}]
-{{note("Trigger by-hash resource overrides")}}
-run = CommandListTriggerResourceOverrides
+[CommandList_Draw_Component{{ component_id }}]
+{{note("Trigger TextureOverride sections for PS slots from 0 to 20 with matching `hash` values")}}
+{{note("If hash of resource in slot matches TextureOverride hash, TextureOverride puts defined custom texture Resource in `this` slot")}}
+run = CommandList\EFMIv1\OverrideTextures
+{%- if not component.cpu_posed %}
 {{note("Do by-slot resource overrides")}}
-{%- if ('Component' ~ componnet_id ~ '_IB') in buffers %}
-ib = ref Resource_Component{{ componnet_id }}_IB
-{%- endif %}
-{%- if ('Component' ~ componnet_id ~ '_VB0') in buffers %}
-vb0 = ref Resource_Component{{ componnet_id }}_VB0
-{%- endif %}
-{%- if ('Component' ~ componnet_id ~ '_VB1') in buffers %}
-vb1 = ref Resource_Component{{ componnet_id }}_VB1
-{%- endif %}
-{{note("Conditional VB2 (blends buffer) swap for LoDs handling")}}
-{%- if component.lods | length == 0 or component.lods[0].vg_map | length == 0 %}
-    {%- if ('Component' ~ componnet_id ~ '_VB2') in buffers %}
-    vb2 = ref Resource_Component{{ componnet_id }}_VB2
+ib = ref Resource_Component{{ component_id }}_IB
+{{note("Conditional vertex buffers swap (with multiple LoD levels support)")}}
+if $lod_level == 0
+    {{note("Contains vertex positions and TBN data")}}
+    vb0 = ref Resource_Component{{ component_id }}_VB0
+    {{note("Some shaders (e.g. wetness) are being supplied with differently mapped VB0 copy")}}
+    vb3 = ref Resource_Component{{ component_id }}_VB0
+    {%- if 'Component'~component_id~'_VB1' in buffers.keys() %}
+    {{note("Usually contains UV maps and vertex colors")}}
+    vb1 = ref Resource_Component{{ component_id }}_VB1
     {%- endif %}
-{%- else %}
-if $lod_detected == 0
+    {%- if 'Component'~component_id~'_VB2' in buffers.keys() %}
     {{note("Use VB2 with weights for full model")}}
-    {%- if ('Component' ~ componnet_id ~ '_VB2') in buffers %}
-    vb2 = ref Resource_Component{{ componnet_id }}_VB2
+    vb2 = ref Resource_Component{{ component_id }}_VB2
     {%- endif %}
-else
-    {{note("Use VB2 with weights for LoD model")}}
-    {%- if ('Component' ~ componnet_id ~ '_VB2_LOD') in buffers %}
-    vb2 = ref Resource_Component{{ componnet_id }}_VB2_LOD
+{%- for lod_id, lod in enumerate(component.lods) %}
+elif $lod_level == {{ lod_id + 1 }}
+    {%- if "VB0" in lod.vb_formats %}
+    {{note("Use VB0 with LoD mesh layout")}}
+    vb0 = ref Resource_Component{{ component_id }}_VB0_LOD{{ lod_id + 1 }}
+    vb3 = ref Resource_Component{{ component_id }}_VB0_LOD{{ lod_id + 1 }}
+    {%- else %}
+    {{note("Use VB0 with full mesh layout")}}
+    vb0 = ref Resource_Component{{ component_id }}_VB0
+    vb3 = ref Resource_Component{{ component_id }}_VB0
     {%- endif %}
+    {%- if "VB1" in lod.vb_formats %}
+    {{note("Use VB1 with LoD mesh layout")}}
+    vb1 = ref Resource_Component{{ component_id }}_VB1_LOD{{ lod_id + 1 }}
+    {%- elif 'Component'~component_id~'_VB1' in buffers.keys() %}
+    {{note("Use VB1 with full mesh layout")}}
+    vb1 = ref Resource_Component{{ component_id }}_VB1
+    {%- endif %}
+    {%- if "VB2" in lod.vb_formats or lod.vg_map %}
+    {{note("Use VB2 with LoD mesh layout and/or remapped weights (if LoD mesh uses simplified skeleton)")}}
+    vb2 = ref Resource_Component{{ component_id }}_VB2_LOD{{ lod_id + 1 }}
+    {%- elif 'Component'~component_id~'_VB2' in buffers.keys() %}
+    {{note("Use VB2 with full mesh layout and/or full model weights (if LoD mesh uses full skeleton)")}}
+    vb2 = ref Resource_Component{{ component_id }}_VB2
+    {%- endif %}
+{%- endfor %}
 endif
+{%- else %}
+; Component is posed on CPU, vertex buffers modding not supported
 {%- endif %}
-{%- for obj in merged_object.components[componnet_id].objects %}
+{%- for obj in merged_object.components[component_id].objects %}
 ; Draw {{ obj.name }}
 {%- if cfg.use_ini_toggles %}
 if {{ formatter.format_ini_drawvar(obj.name) }}
+    {%- if not component.cpu_posed %}
     {{ helper.smart_draw(obj, draw_mode='instanced') }}
+    {%- else %}
+    draw = from_caller
+    {%- endif %}
 endif
 {%- else %}
+{%- if not component.cpu_posed %}
 {{ helper.smart_draw(obj, draw_mode='instanced') }}
+{%- else %}
+{{note("Use original draw type and arguments (since mesh geometry is not modified)")}}
+draw = from_caller
+{%- endif %}
 {%- endif %}
 {%- endfor %}
 
 {%- endfor %}
 
-; Darw Full Models -------------------------
+; Shading: Full Models Draw Call Stacks Processing -------------------------
 
-{%- for componnet_id, component in enumerate(extracted_object.components) %}
+{%- for component_id, component in enumerate(extracted_object.components) %}
 
 {{note("Override draw calls for Component %d" | format(loop.index0))}}
-[TextureOverride_Component{{ componnet_id }}]
-hash = {{ component.vb0_hash }}
+[TextureOverride_Component{{ component_id }}]
+hash = {{ component.ib_hash }}
+match_index_count = {{ component.index_count }}
 {{note("Signal our mod that object is found on screen and we can start overriding it")}}
 $object_detected = 1
-{{note("Signal our mod that object LoD is NOT found on screen (only components with LoDs should do it)")}}
-{%- if component.lods | length > 0 and component.lods[0].vb0_hash != component.vb0_hash %}
-$lod_detected = 0
 $active = 1
+
+{{note("Signal our mod that object LoD is NOT found on screen (only components with LoDs should do it)")}}
+{%- if component.lods | length > 0 and component.lods[0].ib_hash != component.ib_hash %}
+$lod_level = 0
 {%- endif %}
 if $mod_enabled && DRAW_TYPE == 4
     {{note("Skip original draw call")}}
     handling = skip
-    {%- if merged_object.components[componnet_id].objects | length > 0 %}
+    {%- if merged_object.components[component_id].objects | length > 0 %}
     {{note("Do custom draw calls")}}
-    run = CommandList_Draw_Component{{ componnet_id }}
+    run = CommandList_Draw_Component{{ component_id }}
     {%- else %}
     ; Draw skipped: No matching custom components found
-    ; run = CommandList_Draw_Component{{ componnet_id }}
+    ; run = CommandList_Draw_Component{{ component_id }}
     {%- endif %}
 endif
 
 {%- endfor %}
 
-; Darw LoDs Models -------------------------
+; Shading: LoD Models Draw Call Stacks Processing -------------------------
 
-{%- for componnet_id, component in enumerate(extracted_object.components) %}
+{%- for component_id, component in enumerate(extracted_object.components) %}
 
-{%- for lod_id, lod in enumerate(component.lods) if lod.vb0_hash != component.vb0_hash %}
+{%- for lod_id, lod in enumerate(component.lods) if lod.ib_hash != component.ib_hash %}
 
 {{note("Override draw calls for LoD of Component %d" | format(loop.index0))}}
-[TextureOverride_Component{{ componnet_id }}_LOD{{ lod_id }}]
-hash = {{ lod.vb0_hash }}
+[TextureOverride_Component{{ component_id }}_LOD{{ lod_id + 1 }}]
+hash = {{ lod.ib_hash }}
+match_index_count = {{ lod.index_count }}
 {{note("Signal our mod that object is found on screen and we can start overriding it")}}
 $object_detected = 1
+$active = 1
 {{note("Signal our mod that object LoD is found on screen and we can start overriding it")}}
-$lod_detected = 1
+$lod_level = {{ lod_id + 1 }}
 if $mod_enabled && DRAW_TYPE == 4
 {{note("Skip original draw call")}}
     handling = skip
-    {%- if merged_object.components[componnet_id].objects | length > 0 %}
+    {%- if merged_object.components[component_id].objects | length > 0 %}
     {{note("Do custom draw calls")}}
-    run = CommandList_Draw_Component{{ componnet_id }}
+    run = CommandList_Draw_Component{{ component_id }}
     {%- else %}
     ; Draw skipped: No matching custom components found
-    ; run = CommandList_Draw_Component{{ componnet_id }}
+    ; run = CommandList_Draw_Component{{ component_id }}
     {%- endif %}
 endif
 
@@ -284,7 +295,7 @@ endif
 {%- endfor %}
 
 ; Shading: Textures -------------------------
-{% if scene.rzm.export_texture_slots%}
+{% if scene.rzm.export_texture_slots %}
 {%- for texture in textures %}
 
 [Resource_Texture{{ loop.index0 }}]
@@ -298,6 +309,7 @@ if $object_detected
 endif
 {%- endfor %}
 {% endif %}
+
 ; Resources: Buffers -------------------------
 
 {%- for buffer_name, buffer in buffers.items() %}
@@ -313,6 +325,8 @@ filename = Meshes/{{ buffer_name }}.buf
 {%- endfor %}
 
 ; Autogenerated -------------------------
+
+; This mod.ini was automatically generated by EFMI Tools Blender addon v{{mod_info.efmi_tools_version}} and requires EFMI v{{mod_info.required_efmi_version}}+ to function
 
 ; EFMI Tools GitHub: https://github.com/SpectrumQT/EFMI-Tools
 ; EFMI Package GitHub: https://github.com/SpectrumQT/EFMI-Package

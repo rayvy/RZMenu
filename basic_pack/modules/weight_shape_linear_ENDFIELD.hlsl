@@ -30,7 +30,7 @@ void AddToPool(uint idx, float w, inout BoneEntry pool[12], inout int size) {
     }
 }
 
-[numthreads(1024, 1, 1)]
+[numthreads(256, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;

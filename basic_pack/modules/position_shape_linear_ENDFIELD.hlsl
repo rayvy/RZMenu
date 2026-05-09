@@ -10,7 +10,7 @@ StructuredBuffer<VertexAttributes> shapekey : register(t51);
 Texture1D<float4> IniParams : register(t120);
 #define key IniParams[88].x
 
-[numthreads(1024, 1, 1)]
+[numthreads(256, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;

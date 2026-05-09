@@ -242,7 +242,7 @@ cs-u5 = copy Resource{{ comp_name }}_Base
         cs-t50 = copy Resource{{ comp_name }}_Base
         cs-t51 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}
         Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_VB0{% else %}Position{% endif %} = ref cs-u5
-        Dispatch = ({{ vertex_count }} + 1023) // 1024, 1, 1
+        Dispatch = ({{ vertex_count }} + 255) // 256, 1, 1
     {% endif %}
 {% endfor %}
 
