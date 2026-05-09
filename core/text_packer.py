@@ -138,10 +138,10 @@ def pack_project_text(scene, export_dir):
                 if lt.hover_text_id: survey_text(lt.hover_text_id, item if not host else host, host)
 
     for element in rzm.elements:
-        if not element.is_helper and not element.disable_export:
+        if not element.is_helper:
             survey_all(element)
     for host in rzm.elements:
-        if not host.disable_export and host.helper_ids:
+        if host.helper_ids:
             for ref in host.helper_ids:
                 helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
                 if helper: survey_all(helper, host)
@@ -185,7 +185,7 @@ def pack_project_text(scene, export_dir):
             })
 
         for element in rzm.elements:
-            if not element.is_helper and not element.disable_export:
+            if not element.is_helper:
                 t = get_loc_text(element, 'text_id', lang_idx)
                 if t: collect(t, element.text_align, (element.id, -1), 'single', element)
                 
@@ -198,7 +198,7 @@ def pack_project_text(scene, export_dir):
                 if hov: collect(hov, element.text_align, (element.id, -1, 'hover'), 'single', element)
 
         for host in rzm.elements:
-            if not host.disable_export and host.helper_ids:
+            if host.helper_ids:
                 for ref in host.helper_ids:
                     helper = next((e for e in rzm.elements if e.id == ref.helper_id), None)
                     if helper:

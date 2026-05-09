@@ -81,6 +81,9 @@ Local $current_sizeY
     {{generate_underlayer_presets(element,mod_file,scene)}}
     {%if element.color%}{{generate_color(element,parent_element, scene)}}{%endif%}
     {%if element.fn%}{{generate_fn(element)}}{%endif%}
+    {% if not element.is_helper and not element.is_preset and (element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0)) %}
+    {{ elements_helpers.generate_text_resource_block(element, scene, [], {'text_elements': []}) }}
+    {% endif %}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
         {{ handle_element_in_grid(element, parent_element, mod_file,scene) }}
     {% endif %}
@@ -570,14 +573,23 @@ $imageID = {{ inst_id }}
 
 {% macro generate_text(element, host_element=none) %}
     {% set t_id = element.text_id | default('') | string %}
-    {# Редирект для ~PT: если хелпер просто хочет текст родителя, берем CommandList родителя (ORIGINALS) #}
-    {% if (t_id == "~PT" or t_id == "~pt" or t_id == "~PText") and host_element %}
-        {{ elements_helpers.generate_text_resource_block(host_element, scene, [], {'text_elements': []}) }}
-    {% elif element.text_id or (element.text_mode != 'SINGLE' and element.conditional_texts|length > 0) %}
+    {% set is_helper_or_preset = host_element or element.is_preset %}
+    
+    {% if is_helper_or_preset %}
+        {% if t_id and not t_id.startswith('~') %}
+            {# Branch A: Just text, without ~ #}
+            local $backupTextID = $TextID
+            {{ elements_helpers.generate_text_resource_block(element, scene, [], {'text_elements': []}, host_element) }}
+            run = CustomShaderRCI2D_TEXT
+            $TextID = $backupTextID
+        {% else %}
+            {# Branch B: Content starts with ~ or empty. Use inherited $TextID #}
+            run = CustomShaderRCI2D_TEXT
+        {% endif %}
+    {% else %}
+        {# Normal elements: $TextID is generated in main flow if present #}
         {{ elements_helpers.generate_text_resource_block(element, scene, [], {'text_elements': []}, host_element) }}
     {% endif %}
-    
-    run = CustomShaderRCI2D_TEXT
 {% endmacro %}
 
 {%macro generate_hovertext(element, host_element=none)%}
