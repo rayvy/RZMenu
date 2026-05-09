@@ -182,6 +182,8 @@ global $mathinA
 global $mathinB
 global $mathinC
 global $mathout
+global $RZM_WHEEL_VALID
+global $RzmLastHoldTimer
 
 [CommandListMathCos]
 if $mathinA == inf || $mathinA == -inf || $mathinA == NaN || $mathinA == null
@@ -208,6 +210,70 @@ run = CommandListMathSin
 $mathinA = $mathinA
 run = CommandListMathCos
 $mathout = $mathout / $mathout
+
+[CommandListMathATan2]
+local $safeX
+$safeX = $mathinB
+if $safeX == 0
+    $safeX = 0.00001
+endif
+
+local $safeY
+$safeY = $mathinA
+if $safeY == 0
+    $safeY = 0.00001
+endif
+
+local $absX
+$absX = $safeX
+if $absX < 0
+    $absX = -$absX
+endif
+
+local $absY
+$absY = $safeY
+if $absY < 0
+    $absY = -$absY
+endif
+
+local $z
+local $invert
+$invert = 0
+
+if $absY > $absX
+    $z = $safeX / $safeY
+    $invert = 1
+else
+    $z = $safeY / $safeX
+endif
+
+local $z2
+$z2 = $z * $z
+
+local $atan
+$atan = $z / (1.0 + 0.28 * $z2)
+
+if $invert == 1
+    local $signY
+    $signY = 1
+    if $safeY < 0
+        $signY = -1
+    endif
+    $atan = (1.570796 * $signY) - $atan
+endif
+
+if $safeX < 0
+    local $signY2
+    $signY2 = 1
+    if $safeY < 0
+        $signY2 = -1
+    endif
+    local $offset
+    $offset = 3.141592 * $signY2
+    $atan = $atan + $offset
+endif
+
+$mathout = $atan
 
 [CommandListMathABS]
 if $mathinA < 0

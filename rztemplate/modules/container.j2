@@ -375,22 +375,25 @@ endif
         run = CommandListCoreFNHandleHold
     {% endif %}
 
-    {% if element.hover_event_enabled and element.hover_event_formula %}
-    if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
-    {{ utils.normalize_all_vars(element.hover_event_formula, parent_element, scene) }}
-    endif
-    {% endif %}
+    {% set is_vector_box = utils.get_cls(element)|trim == 'VECTOR_BOX' %}
+    {% if not is_vector_box %}
+        {% if element.hover_event_enabled and element.hover_event_formula %}
+        if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+        {{ utils.normalize_all_vars(element.hover_event_formula, parent_element, scene) }}
+        endif
+        {% endif %}
 
-    {% if element.click_event_enabled and element.click_event_formula %}
-    if $id == $clickTriggerID
-    {{ utils.normalize_all_vars(element.click_event_formula, parent_element, scene) }}
-    endif
-    {% endif %}
+        {% if element.click_event_enabled and element.click_event_formula %}
+        if $id == $clickTriggerID
+        {{ utils.normalize_all_vars(element.click_event_formula, parent_element, scene) }}
+        endif
+        {% endif %}
 
-    {% if element.hold_event_enabled and element.hold_event_formula %}
-    if $id == $capturedID && $dragState == 3
-    {{ utils.normalize_all_vars(element.hold_event_formula, parent_element, scene) }}
-    endif
+        {% if element.hold_event_enabled and element.hold_event_formula %}
+        if $id == $capturedID && $dragState == 3
+        {{ utils.normalize_all_vars(element.hold_event_formula, parent_element, scene) }}
+        endif
+        {% endif %}
     {% endif %}
 {%endmacro%}
 
@@ -508,26 +511,29 @@ endif
         {% endif %}
 
         {# --- Новые блоки кастомных событий --- #}
-        {% if element.hover_event_enabled and element.hover_event_formula %}
-        {# Выполняется, когда мышь над элементом #}
-        if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
-        {{ utils.normalize_all_vars(element.hover_event_formula, parent_element, scene) }}
-        endif
-        {% endif %}
+        {% set is_vector_box = utils.get_cls(element)|trim == 'VECTOR_BOX' %}
+        {% if not is_vector_box %}
+            {% if element.hover_event_enabled and element.hover_event_formula %}
+            {# Выполняется, когда мышь над элементом #}
+            if $hoveredID == $id || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
+            {{ utils.normalize_all_vars(element.hover_event_formula, parent_element, scene) }}
+            endif
+            {% endif %}
 
-        {% if element.click_event_enabled and element.click_event_formula %}
-        {# Выполняется при клике #}
-        if $id == $clickTriggerID
-        {{ utils.normalize_all_vars(element.click_event_formula, parent_element, scene) }}
-        $clickInterpolate = 1
-        endif
-        {% endif %}
+            {% if element.click_event_enabled and element.click_event_formula %}
+            {# Выполняется при клике #}
+            if $id == $clickTriggerID
+            {{ utils.normalize_all_vars(element.click_event_formula, parent_element, scene) }}
+            $clickInterpolate = 1
+            endif
+            {% endif %}
 
-        {% if element.hold_event_enabled and element.hold_event_formula %}
-        {# Выполняется при удержании #}
-        if $id == $capturedID && $dragState == 3
-        {{ utils.normalize_all_vars(element.hold_event_formula, parent_element, scene) }}
-        endif
+            {% if element.hold_event_enabled and element.hold_event_formula %}
+            {# Выполняется при удержании #}
+            if $id == $capturedID && $dragState == 3
+            {{ utils.normalize_all_vars(element.hold_event_formula, parent_element, scene) }}
+            endif
+            {% endif %}
         {% endif %}
     {% endif %}
 
