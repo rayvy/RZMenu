@@ -15,7 +15,13 @@
     {% set props = {'stride': 12, 'shader': './modules/weight_shape_linear_ENDFIELD.hlsl', 'path_prefix': 'Meshes/', 'path_suffix': '.buf'} %}
 
 [CustomShaderComputeWeights]
-    {% if extracted_object and merged_object %}
+    {% if rzm_is_quick_export|default(false) and rzm_export_cache|default(none) and rzm_export_cache.components is defined %}
+        {% for base_name, comp_data in rzm_export_cache.components.items() %}
+            {% set raw_comp_name = rzm_export_cache.mod_name ~ base_name if rzm_export_cache.source == 'xxmi' else base_name %}
+            {% set comp_name = utils.format_from_idiot(raw_comp_name) %}
+    run = CustomShaderComputeWeights.{{ comp_name }}
+        {% endfor %}
+    {% elif extracted_object and merged_object %}
         {% for id, component in enumerate(extracted_object.components) %}
             {% set vb0_lookup = 'Component' ~ id ~ '_VB0' %}
             {% if vb0_lookup in buffers and merged_object.components[id].vertex_count > 0 %}
@@ -24,7 +30,23 @@
         {% endfor %}
     {% endif %}
 
-    {% if extracted_object and merged_object %}
+    {% if rzm_is_quick_export|default(false) and rzm_export_cache|default(none) and rzm_export_cache.components is defined %}
+        {% for base_name, comp_data in rzm_export_cache.components.items() %}
+            {% set raw_comp_name = rzm_export_cache.mod_name ~ base_name if rzm_export_cache.source == 'xxmi' else base_name %}
+            {% set comp_name = utils.format_from_idiot(raw_comp_name) %}
+            {% set vertex_count = comp_data.n_verts %}
+            {% set base_filename = props.path_prefix ~ comp_name ~ '_VB2' ~ props.path_suffix %}
+            
+            {# Собираем имена объектов компонента из кэша #}
+            {% set affected_names = [raw_comp_name | lower] %}
+            {% for obj_data in comp_data.objects %}
+                {% set _ = affected_names.append(obj_data.name | lower) %}
+            {% endfor %}
+
+                {{ weight_compute_section(rzm, comp_name, vertex_count, props.shader, affected_names) }}
+                {{ weight_resources(rzm, comp_name, props.stride, base_filename, affected_names) }}
+        {% endfor %}
+    {% elif extracted_object and merged_object %}
         {% for id, component in enumerate(extracted_object.components) %}
             {% set vb0_lookup = 'Component' ~ id ~ '_VB0' %}
             {% if vb0_lookup in buffers and merged_object.components[id].vertex_count > 0 %}
