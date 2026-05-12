@@ -30,7 +30,7 @@ def _safe_id(val):
         return -1
 
 
-def build_element_static_map(elements) -> bytes:
+def build_element_static_map(elements, image_mapping=None) -> bytes:
     """
     Build the binary ElementStaticMap buffer.
 
@@ -42,6 +42,7 @@ def build_element_static_map(elements) -> bytes:
     Args:
         elements: iterable of element objects (Blender RNA or dicts).
                   Must have .id (or ['id']), .image_id, .text_id attributes.
+        image_mapping: dict mapping element IDs to packed instance IDs.
 
     Returns:
         bytes — binary content of element_static_map.buf
@@ -51,6 +52,13 @@ def build_element_static_map(elements) -> bytes:
         eid = _get(elem, 'id', 0)
         img = _safe_id(_get(elem, 'image_id'))
         txt = _safe_id(_get(elem, 'text_id'))
+        
+        # Phase 0.5: Use mapped instance ID instead of raw image_id
+        if image_mapping and 'elements' in image_mapping:
+            inst_id = image_mapping['elements'].get(str(eid))
+            if inst_id is not None:
+                img = inst_id
+
         entries.append((int(eid), max(0, img) if img >= 0 else 0,
                                   max(0, txt) if txt >= 0 else 0))
 
@@ -92,28 +100,25 @@ def build_element_flags_map(elements) -> dict:
         if hover_img > 0:
             has_cond_images = True  # hover overrides make imageID dynamic
 
-        if img > 0 and not has_cond_images:
-            flags |= FLAG_USE_STATIC_IMG
+        flags_map[str(eid)] = flags
 
-        if txt > 0 and not has_cond_texts:
-            flags |= FLAG_USE_STATIC_TEXT
-
-        flags_map[eid] = flags
+        flags_map[str(eid)] = flags
     return flags_map
 
 
-def export_element_static_map(elements, output_path: str) -> dict:
+def export_element_static_map(elements, output_path: str, image_mapping=None) -> dict:
     """
     Write element_static_map.buf to disk and return flags_map.
 
     Args:
         elements: iterable of element objects
         output_path: full path to output file (e.g. 'path/to/res/element_static_map.buf')
+        image_mapping: dict mapping element IDs to packed instance IDs.
 
     Returns:
         dict {element_id: x111_flags} for use in j2 template context as 'elem_static_flags'
     """
-    data = build_element_static_map(elements)
+    data = build_element_static_map(elements, image_mapping)
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)

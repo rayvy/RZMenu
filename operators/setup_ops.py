@@ -198,7 +198,8 @@ class RZM_OT_FullExport(bpy.types.Operator):
             
             if context.scene.rzm and context.scene.rzm.elements:
                 static_map_path = os.path.join(target_path, "res", "element_static_map.buf")
-                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path)
+                image_mapping = context.scene.rzm.image_mapping
+                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
                 context.scene.rzm["elem_static_flags"] = flags_map
                 
             print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf).")
@@ -321,7 +322,8 @@ class RZM_OT_BatchExport(bpy.types.Operator):
             
             if context.scene.rzm and context.scene.rzm.elements:
                 static_map_path = os.path.join(target_path, "res", "element_static_map.buf")
-                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path)
+                image_mapping = context.scene.rzm.image_mapping
+                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
                 context.scene.rzm["elem_static_flags"] = flags_map
                 
             print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf).")

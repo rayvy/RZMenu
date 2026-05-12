@@ -99,7 +99,7 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
         //   3. INI did NOT supply an override (x102.x == 0 when $imageID was commented out)
         //      When INI sets $imageID via conditional block, x102 > 0 → INI wins.
         [branch]
-        if ((flags & FLAG_USE_STATIC_IMG) && found_image > 0u)
+        if (found_image > 0u)
         {
             float ini_image = IN_TILE_DATA.x;
             if (ini_image < 0.5f)
@@ -115,7 +115,7 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
         // ── Apply static textID ──
         // Same priority logic as imageID above.
         [branch]
-        if ((flags & FLAG_USE_STATIC_TEXT) && found_text > 0u)
+        if (found_text > 0u)
         {
             float ini_text = IN_TILE_DATA.x;  // textID also comes through x102
             if (ini_text < 0.5f)

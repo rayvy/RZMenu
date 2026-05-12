@@ -8,10 +8,12 @@ $classType = {{ utils.get_cls_id(element) }}
 {% if not element.is_preset %}
 $id = {{ element.id }}
 $isPreset = 0
+$isElement = 1
 {# Phase 0.5: pass element $id via w111 for ElementStaticMap CS lookup #}
 w111 = $id
 {% else %}
 $isPreset = 1
+$isElement = 0
 {% endif %}
 local $LocalVisibility
 {% if not element.is_preset %}
@@ -586,8 +588,9 @@ endif
     {% elif scene.rzm.elem_static_flags is defined %}
         {% set _esf = scene.rzm.elem_static_flags %}
     {% endif %}
-    {% if _esf and element.id in _esf %}
-        {% set _eflags = _esf[element.id] %}
+    {% set _eid_str = element.id | string %}
+    {% if _esf and _eid_str in _esf %}
+        {% set _eflags = _esf[_eid_str] %}
     {% endif %}
     {# For presets/helpers element.is_preset=True -> _eflags won't have FLAG_IS_ELEMENT bit, stays 0 #}
     $elemFlags = {{ _eflags }}
