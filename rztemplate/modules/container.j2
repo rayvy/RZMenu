@@ -858,7 +858,7 @@ $imageID = {{ inst_id }}
         {# Логика вызова попапа #}
         {% if utils.has_attribute(element, 'hadPopup') and not element.disable_button_popup %}
             if w33 > 0.4 || ($isGamepadEditing == 1 && $GamepadEditedID == $id)
-                run = CommandListElement{{ element.element_name }}_{{ element.id }}Popup
+                {# run = CommandListElement{{ element.element_name }}_{{ element.id }}Popup #}
             endif
         {# Логика для геймпада, если попап отключен #}
         {% else %}
