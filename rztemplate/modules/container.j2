@@ -618,7 +618,9 @@ endif
         {% set inst_id = img_map['elements'].get(eid) %}
         {% if inst_id is not none %}
 {% if is_main_element %}
-;$imageID = {{ inst_id }}
+    {% if scene.rzm.addons.debugger_info %}
+    $imageID = {{ inst_id }}
+    {% endif %}
 {% else %}
 $imageID = {{ inst_id }}
 {% endif %}

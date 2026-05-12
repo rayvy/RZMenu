@@ -61,7 +61,51 @@
                     $texPosY = {{ element.text_id_data_length | default(1) }}
                 {% else %}
 
-                    $TextID = {{ text_id }}
+                    {% set has_pt_child = [0] %}
+                    
+                    {# --- 1. Check helper_ids --- #}
+                    {% if element.helper_ids %}
+                        {% for ref in element.helper_ids %}
+                            {% set child = scene.rzm.elements | selectattr('id', 'equalto', ref.helper_id) | first %}
+                            {% if child %}
+                                {% if child.text_id and (child.text_id == '~PT' or child.text_id == '~pt' or child.text_id == '~PText') %}
+                                    {% set _ = has_pt_child.pop(0) %}{% set _ = has_pt_child.append(1) %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+
+                    {# --- 2. Check preset_ids --- #}
+                    {% if element.preset_ids %}
+                        {% for ref in element.preset_ids %}
+                            {% set child = scene.rzm.elements | selectattr('id', 'equalto', ref.preset_id) | first %}
+                            {% if child %}
+                                {% if child.text_id and (child.text_id == '~PT' or child.text_id == '~pt' or child.text_id == '~PText') %}
+                                    {% set _ = has_pt_child.pop(0) %}{% set _ = has_pt_child.append(1) %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+
+                    {# --- 3. Check underlayer_preset_ids --- #}
+                    {% if element.underlayer_preset_ids %}
+                        {% for ref in element.underlayer_preset_ids %}
+                            {% set child = scene.rzm.elements | selectattr('id', 'equalto', ref.preset_id) | first %}
+                            {% if child %}
+                                {% if child.text_id and (child.text_id == '~PT' or child.text_id == '~pt' or child.text_id == '~PText') %}
+                                    {% set _ = has_pt_child.pop(0) %}{% set _ = has_pt_child.append(1) %}
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+
+                    {% if not element.is_preset and not element.is_helper %}
+                        {% if scene.rzm.addons.debugger_info or has_pt_child[0] == 1 %}
+                        $TextID = {{ text_id }}
+                        {% endif %}
+                    {% else %}
+                        $TextID = {{ text_id }}
+                    {% endif %}
                 {% endif %}
             {% endif %}
 
