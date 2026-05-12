@@ -8,6 +8,8 @@ $classType = {{ utils.get_cls_id(element) }}
 {% if not element.is_preset %}
 $id = {{ element.id }}
 $isPreset = 0
+{# Phase 0.5: pass element $id via w111 for ElementStaticMap CS lookup #}
+w111 = $id
 {% else %}
 $isPreset = 1
 {% endif %}
@@ -576,6 +578,20 @@ endif
     {% set img_map = scene.rzm.image_mapping %}
     {% set eid = element.id | string %}
 
+    {# Phase 0.5: compute x111 flags for this element #}
+    {% set _eflags = 0 %}
+    {% set _esf = {} %}
+    {% if elem_static_flags is defined and elem_static_flags is mapping %}
+        {% set _esf = elem_static_flags %}
+    {% elif scene.rzm.elem_static_flags is defined %}
+        {% set _esf = scene.rzm.elem_static_flags %}
+    {% endif %}
+    {% if _esf and element.id in _esf %}
+        {% set _eflags = _esf[element.id] %}
+    {% endif %}
+    {# For presets/helpers element.is_preset=True -> _eflags won't have FLAG_IS_ELEMENT bit, stays 0 #}
+    $elemFlags = {{ _eflags }}
+
     {# --- Resolve safe_img_mode --- #}
     {% set raw_mode = element.image_mode[0] if element.image_mode is iterable and element.image_mode is not string else element.image_mode %}
     {% if raw_mode == 'SINGLE' %}
@@ -590,14 +606,20 @@ endif
 
     {# --- DEBUG --- #}
     {% if scene.rzm.addons.debugger_info == 1 %}
-    ; ===IMAGE=== elem={{ element.element_name }} mode={{ raw_mode }} img={{ element.image_id }}
+    ; ===IMAGE=== elem={{ element.element_name }} mode={{ raw_mode }} img={{ element.image_id }} flags={{ _eflags }}
     {% endif %}
 
     {# ── SINGLE ── #}
     {% if safe_img_mode == 0 and element.image_id is defined and element.image_id != -1 %}
         {% set inst_id = img_map['elements'].get(eid) %}
         {% if inst_id is not none %}
+{# Phase 0.5: check if this element has FLAG_USE_STATIC_IMG (bit 0) #}
+{% if (_eflags % 2) == 1 %}
+;$imageID = {{ inst_id }}   {# static: CS reads from ElementStaticMap #}
+x102 = 0
+{% else %}
 $imageID = {{ inst_id }}
+{% endif %}
         {% endif %}
 
     {# ── CONDITIONAL_LIST ── #}

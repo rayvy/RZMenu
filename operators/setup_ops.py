@@ -192,9 +192,16 @@ class RZM_OT_FullExport(bpy.types.Operator):
         try:
             from ..core.image_packer import pack_project_images
             from ..core.style_packer import pack_styles
+            from ..core.element_static_map import export_element_static_map
             pack_project_images(context.scene, target_path)
             pack_styles(context.scene, target_path)
-            print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin).")
+            
+            if context.scene.rzm and context.scene.rzm.elements:
+                static_map_path = os.path.join(target_path, "res", "element_static_map.buf")
+                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path)
+                context.scene.rzm["elem_static_flags"] = flags_map
+                
+            print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf).")
         except Exception as e:
             self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
             import traceback
@@ -308,9 +315,16 @@ class RZM_OT_BatchExport(bpy.types.Operator):
         try:
             from ..core.image_packer import pack_project_images
             from ..core.style_packer import pack_styles
+            from ..core.element_static_map import export_element_static_map
             pack_project_images(context.scene, target_path)
             pack_styles(context.scene, target_path)
-            print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin).")
+            
+            if context.scene.rzm and context.scene.rzm.elements:
+                static_map_path = os.path.join(target_path, "res", "element_static_map.buf")
+                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path)
+                context.scene.rzm["elem_static_flags"] = flags_map
+                
+            print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf).")
         except Exception as e:
             self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
             import traceback

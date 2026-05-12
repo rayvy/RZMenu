@@ -5,6 +5,7 @@ from pathlib import Path
 from .text_packer import get_text_mapping_for_j2
 from .image_packer import get_image_mapping_for_j2
 from .style_packer import pack_styles
+from .element_static_map import export_element_static_map
 
 # Add libs to sys.path so we can import jinja2
 ADDON_DIR = Path(__file__).parent.parent
@@ -69,7 +70,8 @@ class RZMenuJ2Exporter:
         except Exception:
             export_cache = None
 
-        # 1. Pack Texts & Styles
+        # 1. Pack Texts, Styles & Static Element Map
+        elem_static_flags = {}
         try:
             from ..operators.export_manager import get_target_path
             export_path = get_target_path(self.context)
@@ -78,7 +80,13 @@ class RZMenuJ2Exporter:
                 get_text_mapping_for_j2(scene, export_path)
                 get_image_mapping_for_j2(scene, export_path)
                 pack_styles(scene, export_path)
-                print(f"RZMenu: All resource buffers (text, images, styles) packed to {export_path}")
+                # Phase 0.5: Export ElementStaticMap buffer
+                if scene.rzm and scene.rzm.elements:
+                    static_map_path = str(Path(export_path) / 'res' / 'element_static_map.buf')
+                    elem_static_flags = export_element_static_map(
+                        scene.rzm.elements, static_map_path
+                    )
+                print(f"RZMenu: All resource buffers (text, images, styles, static_map) packed to {export_path}")
         except Exception as e:
             print(f"RZMenu Text Packing Error: {e}")
 
@@ -87,6 +95,8 @@ class RZMenuJ2Exporter:
             'mod_file': mod_file,
             'rzm_is_quick_export': menu_only,
             'rzm_export_cache': export_cache,
+            # Phase 0.5: static flags per element id for j2 template
+            'elem_static_flags': elem_static_flags,
             # Placeholder variables for EFMI/XXMI specific logic
             'extracted_object': None,
             'merged_object': None,

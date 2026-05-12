@@ -637,6 +637,7 @@ $ts = time
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
+cs-t106 = ResourceElementStaticMap
 
 cs = /modules/draw_controller.hlsl
 
@@ -684,6 +685,7 @@ $di_count = $di_count + 1
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
+cs-t106 = ResourceElementStaticMap
 
 cs = /modules/draw_controller.hlsl
 
@@ -740,6 +742,7 @@ endif
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
+cs-t106 = ResourceElementStaticMap
 
 cs = /modules/draw_controller.hlsl
 
@@ -817,6 +820,7 @@ endif
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
+cs-t106 = ResourceElementStaticMap
 
 cs = /modules/draw_controller.hlsl
 
@@ -868,6 +872,7 @@ $drawType = 0
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
+cs-t106 = ResourceElementStaticMap
 
 cs = /modules/draw_controller.hlsl
 
@@ -960,6 +965,7 @@ $drawType = 0
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
+cs-t106 = ResourceElementStaticMap
 
 
 cs = /modules/draw_controller.hlsl
@@ -989,7 +995,7 @@ w110 = 0
 y111 = $di_count
 $slot_count = 7
 z111 = $data_offset
-x111 = 0
+x111 = $elemFlags
 
 
 if $flipX == 1 && $flipY == 1
@@ -1205,8 +1211,14 @@ type = Buffer
 format = R32G32B32A32_FLOAT
 filename = .\res\styles.bin
 
+[ResourceElementStaticMap]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\element_static_map.buf
+
 [Constants]
 global $debugTexShow = 0
+global $elemFlags = 0
 [KeyShowTexDebug]
 key = L
 type = hold
