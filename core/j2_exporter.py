@@ -84,7 +84,7 @@ class RZMenuJ2Exporter:
                 if scene.rzm and scene.rzm.elements:
                     static_map_path = str(Path(export_path) / 'res' / 'element_static_map.buf')
                     elem_static_flags = export_element_static_map(
-                        scene.rzm.elements, static_map_path
+                        scene.rzm.elements, static_map_path, scene.rzm.image_mapping
                     )
                 print(f"RZMenu: All resource buffers (text, images, styles, static_map) packed to {export_path}")
         except Exception as e:

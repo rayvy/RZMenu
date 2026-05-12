@@ -579,8 +579,9 @@ endif
 {% macro generate_image(element, parent_element, scene) %}
     {% set img_map = scene.rzm.image_mapping %}
     {% set eid = element.id | string %}
-
-    {# Phase 0.5: compute x111 flags for this element #}
+    {% set is_preset = element.is_preset is defined and element.is_preset %}
+    {% set is_helper = element.is_helper is defined and element.is_helper %}
+    {% set is_main_element = not is_preset and not is_helper %}
     {% set _eflags = 0 %}
     {% set _esf = {} %}
     {% if elem_static_flags is defined and elem_static_flags is mapping %}
@@ -616,10 +617,8 @@ endif
     {% if safe_img_mode == 0 and element.image_id is defined and element.image_id != -1 %}
         {% set inst_id = img_map['elements'].get(eid) %}
         {% if inst_id is not none %}
-{# Phase 0.5: check if this element has FLAG_USE_STATIC_IMG (bit 0) #}
-{% if (_eflags % 2) == 1 %}
-;$imageID = {{ inst_id }}   {# static: CS reads from ElementStaticMap #}
-x102 = 0
+{% if is_main_element %}
+;$imageID = {{ inst_id }}
 {% else %}
 $imageID = {{ inst_id }}
 {% endif %}
@@ -781,21 +780,28 @@ $imageID = {{ inst_id }}
     {% if element.value_link %}
         {% set first_link = element.value_link[0] %}
         {% set target_var = utils.format_var(first_link.value_name,parent_element, scene) %}
-        {% set target_var_is_toggle = 0 %}
-        {% if first_link.value_name.startswith('@') %}{% set target_var_is_toggle = 1 %}{% endif %}
+        {% set is_toggle = 0 %}
+        {% set toggle_len = 2 %}
+        {% for t in scene.rzm.toggle_definitions %}
+            {% if t.toggle_name == target_var %}
+                {% set is_toggle = 1 %}
+                {% set toggle_len = t.toggle_length %}
+            {% endif %}
+        {% endfor %}
+
         {% if not element.is_preset %}
         $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dtCustom + 0.0069)
-        {% if target_var.target_var_is_toggle == 1%}
-        if $ValueX24Interpolated > {{ target_var.toggle_length - 1 }}
-        ${{ target_var }} = {{ target_var.toggle_length - 1 }}
+        {% if is_toggle == 1 %}
+        if $ValueX24Interpolated > {{ toggle_len - 1 }}
+        $ValueX24Interpolated = {{ toggle_len - 1 }}
         elif $ValueX24Interpolated < 0
         $ValueX24Interpolated = 0
         endif
         {% else %}
-        if $ValueX24Interpolated < {{ target_var.value_min | default(0.0) | float }}
-        $ValueX24Interpolated = {{ target_var.value_min | default(0.0) | float }}
-        elif $ValueX24Interpolated > {{ target_var.value_max | default(0.0) | float }}
-        $ValueX24Interpolated = {{ target_var.value_max | default(0.0) | float }}
+        if $ValueX24Interpolated < {{ first_link.value_min | default(0.0) | float }}
+        $ValueX24Interpolated = {{ first_link.value_min | default(0.0) | float }}
+        elif $ValueX24Interpolated > {{ first_link.value_max | default(1.0) | float }}
+        $ValueX24Interpolated = {{ first_link.value_max | default(1.0) | float }}
         endif
         {% endif %}
         {% endif %}

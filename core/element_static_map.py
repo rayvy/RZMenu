@@ -87,13 +87,9 @@ def build_element_flags_map(elements) -> dict:
     flags_map = {}
     for elem in elements:
         eid = int(_get(elem, 'id', 0))
-        flags = FLAG_IS_ELEMENT  # always set for rzm.elements
-
-        img = _safe_id(_get(elem, 'image_id'))
-        txt = _safe_id(_get(elem, 'text_id'))
-
-        # Check conditional collections (Blender RNA or list)
-        has_cond_images = bool(_get(elem, 'conditional_images'))
+        is_preset = bool(_get(elem, 'is_preset'))
+        is_helper = bool(_get(elem, 'is_helper'))
+        flags = 0 if (is_preset or is_helper) else FLAG_IS_ELEMENT
         has_cond_texts  = bool(_get(elem, 'conditional_texts'))
         # Also consider hover_image_id as a dynamic override
         hover_img = _safe_id(_get(elem, 'hover_image_id'))
