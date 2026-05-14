@@ -71,93 +71,14 @@ def get_linked_targets(comp_objects):
                 targets.add(mod.target)
     return list(targets)
 
-def load_xxmi_metadata(dir_path):
-    if not dir_path: return []
-    json_path = os.path.join(dir_path, "hash.json")
-    if not os.path.exists(json_path):
-        if dir_path.endswith("hash.json") and os.path.exists(dir_path):
-            json_path = dir_path
-        else: return []
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except: return []
-
-# ---------------------------------------------------------------------------
-# DISCOVERY
-# ---------------------------------------------------------------------------
-
 def get_components_to_process(context, per_component=False):
-    scene = context.scene
-    rzm   = scene.rzm
-    game_name = rzm.game.name
-    xxmi_list = ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']
-    is_xxmi   = game_name in xxmi_list
+    """
+    Retrieves components to process using the generalized ComponentCollector abstraction.
+    """
+    from ..utils.component_collector import ComponentCollector
+    collector = ComponentCollector(context)
+    return collector.get_components(per_component=per_component)
 
-    settings = {
-        'ignore_hidden_obj':  False,
-        'ignore_hidden_coll': False,
-        'ignore_nested':      False,
-    }
-    if is_xxmi and hasattr(scene, "xxmi"):
-        settings['ignore_hidden_obj'] = scene.xxmi.ignore_hidden
-    elif game_name == 'ArknightsEndfield' and hasattr(scene, "efmi_tools_settings"):
-        efmi = scene.efmi_tools_settings
-        settings['ignore_hidden_obj']  = efmi.ignore_hidden_objects
-        settings['ignore_hidden_coll'] = efmi.ignore_hidden_collections
-        settings['ignore_nested']      = efmi.ignore_nested_collections
-
-    results = {}
-
-    if is_xxmi:
-        dump_path_prop = scene.xxmi.dump_path if hasattr(scene, "xxmi") else ""
-        if not dump_path_prop: return {}
-        dump_path    = os.path.normpath(bpy.path.abspath(dump_path_prop))
-        mod_name     = os.path.basename(dump_path)
-        comp_metadata = load_xxmi_metadata(dump_path)
-        if not comp_metadata: return {}
-        for component in comp_metadata:
-            comp_name   = component.get("component_name", "")
-            base_fullname = f"{mod_name}{comp_name}"
-            classifications = component.get("object_classifications", [])
-            comp_meshes = set()
-            for part in classifications:
-                part_fullname = base_fullname + part
-                for coll in bpy.data.collections:
-                    if coll.name.lower().startswith(part_fullname.lower()):
-                        for obj in coll.all_objects:
-                            if obj.type == 'MESH':
-                                if settings['ignore_hidden_obj'] and obj.hide_get(): continue
-                                comp_meshes.add(obj)
-                for obj in context.view_layer.objects:
-                    if obj.type != 'MESH': continue
-                    if settings['ignore_hidden_obj'] and obj.hide_get(): continue
-                    if (obj.name.lower() == part_fullname.lower() or
-                            obj.name.lower().startswith(part_fullname.lower() + ".")):
-                        comp_meshes.add(obj)
-            if comp_meshes:
-                results[comp_name] = list(comp_meshes)
-    else:
-        for obj in context.view_layer.objects:
-            if obj.type != 'MESH': continue
-            if settings['ignore_hidden_obj'] and obj.hide_get(): continue
-            match = re.search(r"Component\s*(\d+)", obj.name, re.IGNORECASE)
-            if match:
-                results.setdefault(f"Component{match.group(1)}", []).append(obj)
-
-    for key in results:
-        results[key] = list(set(results[key]))
-
-    if per_component and context.active_object:
-        target_name = None
-        for name, objs in results.items():
-            if context.active_object in objs:
-                target_name = name
-                break
-        if target_name: return {target_name: results[target_name]}
-        return {}
-
-    return results
 
 def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
     raw_base   = (dump_name + base_name) if is_xxmi else base_name
