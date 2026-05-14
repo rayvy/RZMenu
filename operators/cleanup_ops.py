@@ -58,6 +58,10 @@ def inquisitor_cleanup_logic(target_path, operator=None):
             continue
 
         if raw_line.startswith(';'):
+            if '[META-INFO]' in raw_line and '[MOD-BLOCK]' in raw_line:
+                new_lines.append(line)
+                i += 1
+                continue
             removed_comments += 1
             i += 1
             continue
