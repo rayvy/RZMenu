@@ -330,10 +330,15 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             box.separator()
             exp_box = box.box()
             exp_box.label(text="Experimental Optimization", icon='MODIFIER')
+            exp_box.operator("rzm.combined_optimization", text="Optimize .ini (Clean & Compress)", icon='MODIFIER')
             exp_row = exp_box.row(align=True)
             exp_row.operator("rzm.inquisitor_cleanup", text="Clean Up", icon='BRUSH_DATA')
             exp_row.operator("rzm.real_compression", text="Compress", icon='SEQ_STRIP_DUPLICATE')
-            exp_box.label(text="Caution: Backups (.bak) will be created.", icon='INFO')
+            
+            addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+            addon = context.preferences.addons.get(addon_name)
+            if addon:
+                exp_box.prop(addon.preferences, "create_backup", text="Create Backup")
             
             exp_box.separator()
             exp_box.prop(rzm.addons, "export_vertex_debug", text="Export Vertex Evolution (.json)", icon='GHOST_ENABLED')

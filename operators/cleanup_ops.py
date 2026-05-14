@@ -8,7 +8,7 @@ from .export_manager import get_target_path
 
 # --- INQUISITOR Logic (from test.py) ---
 
-def inquisitor_cleanup_logic(target_path, operator=None):
+def inquisitor_cleanup_logic(target_path, operator=None, create_backup=True):
     if not os.path.exists(target_path):
         if operator: operator.report({'ERROR'}, f"File not found: {target_path}")
         return False
@@ -96,9 +96,12 @@ def inquisitor_cleanup_logic(target_path, operator=None):
         i += 1
 
     if removed_blocks + removed_empty + removed_comments > 0:
-        backup_name = target_path + ".bak"
-        with open(backup_name, 'w', encoding='utf-8') as b:
-            b.writelines(lines)
+        if create_backup:
+            directory = os.path.dirname(target_path)
+            filename = os.path.basename(target_path)
+            backup_name = os.path.join(directory, "DISABLED_RZM_BACKUP_" + filename)
+            with open(backup_name, 'w', encoding='utf-8') as b:
+                b.writelines(lines)
         
         with open(target_path, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
@@ -119,7 +122,7 @@ BLACKLIST_VARS = {'$positionx', '$positiony', '$sizex', '$sizey'}
 def get_all_vars(line):
     return re.findall(r'\$[a-zA-Z0-9_.]+', line)
 
-def real_compression_logic(target_path, operator=None):
+def real_compression_logic(target_path, operator=None, create_backup=True):
     if not os.path.exists(target_path):
         if operator: operator.report({'ERROR'}, f"File not found: {target_path}")
         return False
@@ -234,13 +237,41 @@ def real_compression_logic(target_path, operator=None):
             new_lines.append(f"    {bl}\n")
 
     # 5. Write
-    backup = target_path + ".bak"
-    with open(backup, 'w', encoding='utf-8') as b: b.writelines(lines)
+    if create_backup:
+        directory = os.path.dirname(target_path)
+        filename = os.path.basename(target_path)
+        backup = os.path.join(directory, "DISABLED_RZM_BACKUP_" + filename)
+        with open(backup, 'w', encoding='utf-8') as b: b.writelines(lines)
     with open(target_path, 'w', encoding='utf-8') as f: f.writelines(new_lines)
     
     if operator:
         operator.report({'INFO'}, f"Compressed: Created {len(valid_replacements)} deduplicated blocks.")
     return True
+
+def combined_cleanup_compression(target_path, operator=None, create_backup=True):
+    if not os.path.exists(target_path):
+        if operator: operator.report({'ERROR'}, f"File not found: {target_path}")
+        return False
+
+    # 1. Create backup once if requested
+    if create_backup:
+        with open(target_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+        directory = os.path.dirname(target_path)
+        filename = os.path.basename(target_path)
+        backup_name = os.path.join(directory, "DISABLED_RZM_BACKUP_" + filename)
+        with open(backup_name, 'w', encoding='utf-8') as b:
+            b.writelines(lines)
+        if operator:
+            operator.report({'INFO'}, f"Backup created: {backup_name}")
+
+    # 2. Run Clean Up (without backup)
+    cleanup_done = inquisitor_cleanup_logic(target_path, operator, create_backup=False)
+
+    # 3. Run Compression (without backup)
+    compression_done = real_compression_logic(target_path, operator, create_backup=False)
+
+    return cleanup_done or compression_done
 
 # --- Operators ---
 
@@ -269,7 +300,9 @@ class RZM_OT_InquisitorCleanup(bpy.types.Operator):
             self.report({'ERROR'}, "Target .ini file not found in mod folder.")
             return {'CANCELLED'}
 
-        inquisitor_cleanup_logic(bpy.path.abspath(path), self)
+        addon_name = __package__.split('.')[0] if '.' in __package__ else __package__
+        prefs = context.preferences.addons[addon_name].preferences
+        inquisitor_cleanup_logic(bpy.path.abspath(path), self, create_backup=prefs.create_backup)
         return {'FINISHED'}
 
 class RZM_OT_RealCompression(bpy.types.Operator):
@@ -296,10 +329,43 @@ class RZM_OT_RealCompression(bpy.types.Operator):
             self.report({'ERROR'}, "Target .ini file not found in mod folder.")
             return {'CANCELLED'}
 
-        real_compression_logic(bpy.path.abspath(path), self)
+        addon_name = __package__.split('.')[0] if '.' in __package__ else __package__
+        prefs = context.preferences.addons[addon_name].preferences
+        real_compression_logic(bpy.path.abspath(path), self, create_backup=prefs.create_backup)
+        return {'FINISHED'}
+class RZM_OT_CombinedOptimization(bpy.types.Operator):
+    """Clean up and compress .ini file in one go."""
+    bl_idname = "rzm.combined_optimization"
+    bl_label = "Optimize .ini (Clean & Compress)"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    target_file : bpy.props.StringProperty(name="Target File", description="Full path to the .ini file")
+
+    def execute(self, context):
+        path = self.target_file
+        if not path:
+            from .export_manager import get_target_path
+            folder = get_target_path(context)
+            if not folder:
+                self.report({'ERROR'}, "No target folder found.")
+                return {'CANCELLED'}
+            for f in os.listdir(folder):
+                if f.lower().endswith('.ini') and not any(x in f.lower() for x in ["bak", "archived", "disabled"]):
+                    path = os.path.join(folder, f)
+                    break
+        
+        if not path:
+            self.report({'ERROR'}, "Target .ini file not found in mod folder.")
+            return {'CANCELLED'}
+
+        addon_name = __package__.split('.')[0] if '.' in __package__ else __package__
+        prefs = context.preferences.addons[addon_name].preferences
+        
+        combined_cleanup_compression(bpy.path.abspath(path), self, create_backup=prefs.create_backup)
         return {'FINISHED'}
 
 classes_to_register = [
     RZM_OT_InquisitorCleanup,
-    RZM_OT_RealCompression
+    RZM_OT_RealCompression,
+    RZM_OT_CombinedOptimization
 ]

@@ -512,6 +512,12 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         default="Surface Deform, Data Transfer, Armature"
     )
 
+    create_backup: BoolProperty(
+        name="Create Backup",
+        description="Create a backup file with 'DISABLED_' prefix before cleaning or compressing INI files",
+        default=True
+    )
+
     # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
     author_name: StringProperty(
         name="Global Author Name",
@@ -725,6 +731,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "custom_asset_library")
         col.prop(self, "move_to_npanel")
         col.prop(self, "modifier_blacklist")
+        col.prop(self, "create_backup")
         col.separator()
         col.prop(self, "batch_build_path")
 
