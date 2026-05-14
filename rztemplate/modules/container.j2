@@ -12,6 +12,9 @@ $isElement = 1
 {# Phase 0.5: pass element $id via w111 for ElementStaticMap CS lookup #}
 w111 = $id
 {% else %}
+{# Phase 0.5.5: preset gets its own true Blender id for buf lookup #}
+{# $id of the host is NOT overwritten — InputManager logic depends on it #}
+$preset_id = {{ element.id }}
 $isPreset = 1
 $isElement = 0
 {% endif %}
@@ -161,6 +164,10 @@ Local $current_sizeY
         run = CommandList{{ element.element_name }}_{{ element.id }}Helper
         run = CustomShaderRCI2D
     {%elif class_name == 'TEXT'%}
+        {% set _esf = elem_static_flags if (elem_static_flags is defined and elem_static_flags is mapping) else scene.rzm.elem_static_flags %}
+        {% set _eflags = _esf[element.id|string] | default(0) %}
+        $elemFlags = {{ _eflags }}
+        w111 = $id
         {{generate_text(element)}}
         {{generate_fx(element)}}
         ;run = CustomShaderRCI2D_TEXT_{{element.text_align | default ('LEFT')}}
@@ -319,6 +326,10 @@ Local $current_sizeY
     {% endif %}
 [CommandListElement{{h_name}}]
 $id = {{h_id}}
+{# Phase 0.5.5: true Blender-side ids for buf lookup and host tracking #}
+$helper_id = {{ helper_item.id }}
+$helper_host_id = {{ host_item.id }}
+$isHelper = 1
 $classType = {{ utils.get_cls_id(helper_item) }}
 local $hoverInterpolate
 local $clickInterpolate
@@ -553,13 +564,13 @@ endif
 
 {%macro generate_color(element,parent_element, scene)%}
     {% if element.color_is_formula %}
-    {# Режим формулы: полная свобода #}
+    {# Formula mode: INI writes computed color values — no bake possible #}
     $colorR = {{ utils.normalize_all_vars(element.color_formula_r,parent_element, scene) }}
     $colorG = {{ utils.normalize_all_vars(element.color_formula_g,parent_element, scene) }}
     $colorB = {{ utils.normalize_all_vars(element.color_formula_b,parent_element, scene) }}
     $colorA = {{ utils.normalize_all_vars(element.color_formula_a,parent_element, scene) }}
-    {% else %}
-    {# Старый режим: статические значения #}
+    {% elif element.is_preset or element.is_helper %}
+    {# Presets and helpers: always write color explicitly (not baked) #}
     {% if element.color and element.color|length == 4 %}
     $colorR = {{ element.color[0] | float}}
     $colorG = {{ element.color[1] | float}}
@@ -571,6 +582,10 @@ endif
     $colorB = 0.0
     $colorA = 0.5
     {% endif %}
+    {% else %}
+    {# Phase 0.5.5: Static color — baked into ElementStaticMap.
+       INI does NOT write $colorR/G/B/A. RestoreElement already reset them to 0.
+       CS will read RGBA from buffer via FLAG_USE_STATIC_COLOR + BlackList. #}
     {% endif %}
 {%endmacro%}
 
@@ -591,8 +606,22 @@ endif
     {% if _esf and _eid_str in _esf %}
         {% set _eflags = _esf[_eid_str] %}
     {% endif %}
-    {# For presets/helpers element.is_preset=True -> _eflags won't have FLAG_IS_ELEMENT bit, stays 0 #}
+    {# For presets/helpers _eflags stays 0 (FLAG_IS_ELEMENT not set in flags_map for them).
+       Phase 0.5.5: presets/helpers set FLAG_IS_ELEMENT manually and route their true id via w111. #}
+    {% if is_preset %}
+    {# Preset: use its true Blender id ($preset_id) for buf lookup #}
+    $elemFlags = 4
+    w111 = $preset_id
+    {% elif is_helper %}
+    {# Helper: use its true Blender id ($helper_id) for buf lookup #}
+    $elemFlags = 4
+    w111 = $helper_id
+    {% else %}
     $elemFlags = {{ _eflags }}
+    {# w111 = $id already set in base macro for main elements, but we re-apply it here in case underlayer presets overwrote it #}
+    w111 = $id
+    {% endif %}
+    x111 = $elemFlags
 
     {# --- Resolve safe_img_mode --- #}
     {% set raw_mode = element.image_mode[0] if element.image_mode is iterable and element.image_mode is not string else element.image_mode %}

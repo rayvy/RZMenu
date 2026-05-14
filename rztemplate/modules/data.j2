@@ -113,6 +113,11 @@ global $tier_{{ utils.format_from_idiot(t.tier_id) }} = 1
 global $classType
 global $isElement
 global $isPreset
+; Phase 0.5.5: true Blender-side IDs for presets and helpers (for buf lookup via w111)
+global $preset_id = -1
+global $helper_id = -1
+global $helper_host_id = -1
+global $isHelper = 0
 global $isClickable
 global $isHoldable
 global $isDraggable

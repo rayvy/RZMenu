@@ -2,8 +2,18 @@
 [CommandListRestoreElement]
 $imageID = 0
 $rotation = 0.0
-; $flipX = 0
-; $flipY = 0
+; Phase 0.5.5: reset color — prevents bleed-through between elements.
+; Static elements: CS will overwrite from StaticMap (FLAG_USE_STATIC_COLOR + BlackList).
+; Formula elements: INI writes the formula result after this reset.
+; Presets/helpers: write color explicitly (no color bake for them).
+$colorR = 0.0
+$colorG = 0.0
+$colorB = 0.0
+$colorA = 0.0
+; Phase 0.5.5: reset ID markers for presets/helpers
+$preset_id = -1
+$helper_id = -1
+$isHelper = 0
 if $isPreset != 1
 $scissorX = 0
 $scissorY = 0
@@ -13,7 +23,9 @@ $fontSlot = 0
 w33 = 0
 x110 = 0
 y110 = 0
+$isPreset = 0
 endif
+
 
 [CommandListCoreAlignment.Check]
 if $element_align == 0

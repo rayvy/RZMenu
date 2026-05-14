@@ -193,6 +193,7 @@ class RZM_OT_FullExport(bpy.types.Operator):
             from ..core.image_packer import pack_project_images
             from ..core.style_packer import pack_styles
             from ..core.element_static_map import export_element_static_map
+            from ..core.element_blacklist import export_element_blacklist
             pack_project_images(context.scene, target_path)
             pack_styles(context.scene, target_path)
             
@@ -201,8 +202,10 @@ class RZM_OT_FullExport(bpy.types.Operator):
                 image_mapping = context.scene.rzm.image_mapping
                 flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
                 context.scene.rzm["elem_static_flags"] = flags_map
+                blacklist_path = os.path.join(target_path, "res", "element_blacklist.buf")
+                export_element_blacklist(context.scene.rzm.elements, blacklist_path)
                 
-            print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf).")
+            print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf, element_blacklist.buf).")
         except Exception as e:
             self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
             import traceback
@@ -317,6 +320,7 @@ class RZM_OT_BatchExport(bpy.types.Operator):
             from ..core.image_packer import pack_project_images
             from ..core.style_packer import pack_styles
             from ..core.element_static_map import export_element_static_map
+            from ..core.element_blacklist import export_element_blacklist
             pack_project_images(context.scene, target_path)
             pack_styles(context.scene, target_path)
             
@@ -325,8 +329,10 @@ class RZM_OT_BatchExport(bpy.types.Operator):
                 image_mapping = context.scene.rzm.image_mapping
                 flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
                 context.scene.rzm["elem_static_flags"] = flags_map
+                blacklist_path = os.path.join(target_path, "res", "element_blacklist.buf")
+                export_element_blacklist(context.scene.rzm.elements, blacklist_path)
                 
-            print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf).")
+            print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf, element_blacklist.buf).")
         except Exception as e:
             self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
             import traceback

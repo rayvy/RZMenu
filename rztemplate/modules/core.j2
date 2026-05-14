@@ -638,6 +638,7 @@ cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
+cs-t108 = ResourceElementBlackList
 
 cs = ./modules/draw_controller.hlsl
 
@@ -686,6 +687,7 @@ cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
+cs-t108 = ResourceElementBlackList
 
 cs = /modules/draw_controller.hlsl
 
@@ -743,6 +745,7 @@ cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
+cs-t108 = ResourceElementBlackList
 
 cs = /modules/draw_controller.hlsl
 
@@ -821,6 +824,7 @@ cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
+cs-t108 = ResourceElementBlackList
 
 cs = ./modules/draw_controller.hlsl
 
@@ -860,7 +864,7 @@ w110 = $drawType
 y111 = $di_count
 $slot_count = 7
 z111 = $data_offset
-x111 = 0
+x111 = $elemFlags
 
 
 dispatch = 1, 1, 1
@@ -873,6 +877,7 @@ cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
+cs-t108 = ResourceElementBlackList
 
 cs = /modules/draw_controller.hlsl
 
@@ -966,6 +971,7 @@ cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
+cs-t108 = ResourceElementBlackList
 
 
 cs = /modules/draw_controller.hlsl
@@ -1215,6 +1221,11 @@ filename = .\res\styles.bin
 type = Buffer
 format = R32G32B32A32_FLOAT
 filename = .\res\element_static_map.buf
+
+[ResourceElementBlackList]
+type = Buffer
+format = R32G32B32A32_UINT
+filename = .\res\element_blacklist.buf
 
 [Constants]
 global $debugTexShow = 0
