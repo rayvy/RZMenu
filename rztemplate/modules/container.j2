@@ -15,7 +15,6 @@ w111 = $id
 $isPreset = 1
 $isElement = 0
 {% endif %}
-local $LocalVisibility
 {% if not element.is_preset %}
 local $ValueX24Interpolated
 {% endif %}
@@ -321,7 +320,6 @@ Local $current_sizeY
 [CommandListElement{{h_name}}]
 $id = {{h_id}}
 $classType = {{ utils.get_cls_id(helper_item) }}
-local $LocalVisibility
 local $hoverInterpolate
 local $clickInterpolate
     {% if helper_item.visibility_mode == 'CONDITIONAL' %}
@@ -967,7 +965,6 @@ endif
     [CommandListElement{{ element.element_name }}_{{ element.id }}]
     $id = {{ element.id }}
     $classType = {{ utils.get_cls_id(element) }}
-    local $LocalVisibility
     if $inputMode
     $LocalVisibility = 1
     else
@@ -1040,7 +1037,6 @@ endif
     [CommandListElement{{ element_id_name }}]
     $id = {{ element.id }}
     $classType = {{ utils.get_cls_id(element) }}
-    local $LocalVisibility
     {% if element.visibility_mode == 'CONDITIONAL' %}
     $LocalVisibility = 0
     if {{ utils.normalize_all_vars(element.visibility_condition, parent_element, scene) }}
@@ -1214,7 +1210,6 @@ endif
     [CommandListElement{{ element_id_name }}_HueSlider]
     $id = {{ element.id + 10000 }}
     $classType = 4
-    local $LocalVisibility
     $LocalVisibility = 1
 
     if $LocalVisibility
