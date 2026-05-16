@@ -547,6 +547,10 @@ def _pack_efmi_vb2(obj, output_path, donor_obj, buf_xyz):
         return False
 
 def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name="", comp_cache=None):
+    if is_xxmi:
+        print('Oups, this is XXMI game, currently weight SK export is not supported for XXMI games')
+        return
+    
     rzm = context.scene.rzm
     weight_keys = [c for c in rzm.shape_configs if c.shape_name in all_keys and c.bake_weights and not c.disable_export]
     
@@ -823,14 +827,6 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     original_data = bytearray(original_bytes)
 
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
-
-    rzm      = context.scene.rzm
-    all_keys = ({single_shape_name} if single_shape_name
-                else {c.shape_name for c in rzm.shape_configs if not c.disable_export})
-    if not all_keys:
-        return True
-
-    sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
 
     # Создаем заглушки-буферы
     for sk_name in all_keys:
