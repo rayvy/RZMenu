@@ -24,6 +24,7 @@ import json
 import time
 import struct
 import numpy as np
+from math import radians
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 from . import blendworks_baker
@@ -142,12 +143,32 @@ def _scan_sk_owners(comp_objects, all_keys):
             
     return result
 
+def _get_game_orientation_matrix(game_name, is_xxmi):
+    """
+    Returns a 4x4 matrix to align Blender space with Buffer space.
+    - XXMI (Genshin): +90 X
+    - XXMI (HSR): -90 X
+    - Legacy (Non-XXMI): Mirror X (Scale X = -1)
+    """
+    import mathutils as mu
+    if is_xxmi:
+        if game_name == 'GenshinImpact':
+            return mu.Euler((radians(-90), 0, 0)).to_matrix().to_4x4()
+        elif game_name == 'HonkaiStarRail':
+            return mu.Euler((radians(-90), 0, 0)).to_matrix().to_4x4()
+        return mu.Matrix.Identity(4)
+    else:
+        # Legacy mirror logic: Scale X by -1 for search space alignment
+        mat = mu.Matrix.Identity(4)
+        mat[0][0] = -1.0
+        return mat
+
 # ---------------------------------------------------------------------------
 # EXACT MATCH PATH (Fast Path + KD-Tree)
 # ---------------------------------------------------------------------------
 
 def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
-                           stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi):
+                           stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi, game_name):
     import mathutils as mu
     stride_f32 = stride // 4
     cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])} if comp_cache else {}
@@ -155,6 +176,8 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
     fast_path_slots_per_sk = {}
     stats = {'vmap_matched': 0, 'kd_matched': 0, 'objects': 0}
     failed_objects = {sk: {'direct': [], 'via_target': []} for sk in sk_owner_map.keys()}
+
+    orient_mat = _get_game_orientation_matrix(game_name, is_xxmi)
 
     for sk_name, owners in sk_owner_map.items():
         buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
@@ -194,6 +217,8 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
                 root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
                 mat = (root_obj.matrix_world.inverted() @ orig_obj.matrix_world if root_obj else mu.Matrix.Identity(4))
 
+            mat = orient_mat @ mat
+
             v_count = len(target_obj.data.vertices)
             sk_co = np.empty(v_count * 3, dtype=np.float32)
             ba_co = np.empty(v_count * 3, dtype=np.float32)
@@ -204,7 +229,9 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
 
             mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
             deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
+            
             if not is_xxmi:
+                # Legacy / EFMI Mirror Path (Deltas must be standard space for standard buffer)
                 deltas_all[:, 0] *= -1
 
             if vb_off + vb_cnt > buf_v_count:
@@ -240,9 +267,7 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
                     buf_pos = mu.Vector(buf_f32[buf_idx, :3])
                     
                     search_pos = buf_pos.copy()
-                    if not is_xxmi:
-                        search_pos.x *= -1
-                        
+                    
                     _, best_idx, dist = kd.find(search_pos)
                     
                     if dist <= DIST_THRESHOLD:
@@ -382,7 +407,7 @@ def _assign_owners_bulk_bvh(buf_xyz, base_cache, limit):
 
 def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                    stride, buf_v_count, output_dir, base_name, dump_name,
-                   is_xxmi, limit, t_start, fast_path_slots=None):
+                   is_xxmi, limit, t_start, game_name, fast_path_slots=None):
 
     stride_f32 = stride // 4
     raw_np     = np.frombuffer(original_bytes, dtype=np.uint8)
@@ -408,6 +433,8 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
     set_armature_visibility(all_involved, False)
 
     try:
+        orient_mat = _get_game_orientation_matrix(game_name, is_xxmi)
+
         for a_obj in all_involved:
             if a_obj.data and a_obj.data.shape_keys:
                 for sk in a_obj.data.shape_keys.key_blocks:
@@ -430,16 +457,16 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 root_obj_name = comp_cache.get('root_obj')
                 root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else active_objects[0]
                 mat = root_obj.matrix_world.inverted() @ obj.matrix_world
-            elif not is_xxmi:
-                mat = obj.matrix_world
             else:
-                mat = mu.Matrix.Identity(4)
+                mat = obj.matrix_world
+
+            # [Orientation Patch] Apply integrated game orientation (Rotation or Mirror)
+            mat = orient_mat @ mat
 
             base_cache[obj] = _build_owner_data(obj, depsgraph, mat)
 
         search_buf_xyz = buf_xyz.copy()
-        if not is_xxmi: search_buf_xyz[:, 0] *= -1
-
+        
         owner_map, dist_map = _assign_owners_bulk_bvh(search_buf_xyz, base_cache, limit)
         stats = 0
 
@@ -505,7 +532,9 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 indices = np.where(mask)[0][nonzero]
                 valid_deltas = deltas[nonzero].copy()
 
-                if not is_xxmi: valid_deltas[:, 0] *= -1
+                if not is_xxmi:
+                    # Legacy flip back to standard space for standard buffer
+                    valid_deltas[:, 0] *= -1
 
                 new_xyz = (buf_xyz[indices] + valid_deltas).astype(np.float32)
 
@@ -964,7 +993,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         fast_path_slots, stats_exact, failed_exact = _process_exact_matches(
             sk_owner_map, ready_map, comp_cache,
             original_bytes, stride, buf_v_count,
-            output_dir, base_name, dump_name, is_xxmi
+            output_dir, base_name, dump_name, is_xxmi, game_name=game
         )
 
         # ── 3. SLOW PATH (Fallback) ────────────────────────────────────────────
@@ -977,7 +1006,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                 context, sk_owner_map_slow, comp_cache,
                 original_bytes, stride, buf_v_count,
                 output_dir, base_name, dump_name, is_xxmi, limit, t_start,
-                fast_path_slots=fast_path_slots
+                game_name=game, fast_path_slots=fast_path_slots
             )
 
         # ── 4. BLENDWORKS (Weights) ────────────────────────────────────────────
