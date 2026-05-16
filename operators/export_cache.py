@@ -265,7 +265,17 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
         depsgraph  = bpy.context.evaluated_depsgraph_get()
 
         for comp in mod_exporter.mod_file.components:
-            comp_key = comp.fullname[len(mod_name):] or comp.fullname
+            # Smart prefix stripping: if fullname starts with mod_name, strip it.
+            # If the result is empty, it's the "Main" (unnamed) component.
+            if comp.fullname.startswith(mod_name):
+                comp_key = comp.fullname[len(mod_name):]
+            else:
+                comp_key = comp.fullname
+                
+            if comp_key == "":
+                print(f"[RZM] [CACHE] Identified Main Component (unnamed) for '{mod_name}'")
+            else:
+                print(f"[RZM] [CACHE] Identified Component: '{comp_key}'")
             buf_path = os.path.join(dest, comp.fullname + ('Position.buf' if comp.blend_vb != '' else '.buf'))
             if not os.path.exists(buf_path): continue
             stride = (comp.strides.get('position') or next(iter(comp.strides.values()), 0))

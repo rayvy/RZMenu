@@ -81,9 +81,14 @@ def get_components_to_process(context, per_component=False):
 
 
 def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
-    raw_base   = (dump_name + base_name) if is_xxmi else base_name
+    if is_xxmi:
+        raw_base = (dump_name + base_name)
+    else:
+        raw_base = base_name if base_name else "Main"
+        
     clean_base = re.sub(r'[\\/:*?"<>|]', '_', raw_base).replace(' ', '_').replace('.', '_')
     clean_sk   = re.sub(r'[\\/:*?"<>|]', '_', sk_name).replace(' ', '_').replace('.', '_')
+    
     return f"{clean_base}_{clean_sk}.buf"
 
 # ---------------------------------------------------------------------------
