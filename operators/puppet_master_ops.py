@@ -143,12 +143,22 @@ def _scan_sk_owners(comp_objects, all_keys):
             
     return result
 
+def should_mirror_mesh(context, game_name):
+    """
+    Determines if X-axis mirroring should be applied.
+    For Arknights Endfield, respects efmi_tools_settings.mirror_mesh.
+    For others, uses RZMenu addon settings.
+    """
+    if game_name == 'ArknightsEndfield' and hasattr(context.scene, "efmi_tools_settings"):
+        return context.scene.efmi_tools_settings.mirror_mesh
+    
+    rzm = context.scene.rzm
+    return rzm.addons.mirror_mesh
+
 def _get_game_orientation_matrix(game_name, is_xxmi):
     """
-    Returns a 4x4 matrix to align Blender space with Buffer space.
-    - XXMI (Genshin): +90 X
-    - XXMI (HSR): -90 X
-    - Legacy (Non-XXMI): Mirror X (Scale X = -1)
+    Returns a 4x4 matrix for game-specific ROTATIONS only.
+    Mirroring is handled separately via should_mirror_mesh.
     """
     import mathutils as mu
     if is_xxmi:
@@ -156,18 +166,14 @@ def _get_game_orientation_matrix(game_name, is_xxmi):
             return mu.Euler((radians(-90), 0, 0)).to_matrix().to_4x4()
         elif game_name == 'HonkaiStarRail':
             return mu.Euler((radians(-90), 0, 0)).to_matrix().to_4x4()
-        return mu.Matrix.Identity(4)
-    else:
-        # Legacy mirror logic: Scale X by -1 for search space alignment
-        mat = mu.Matrix.Identity(4)
-        mat[0][0] = -1.0
-        return mat
+    
+    return mu.Matrix.Identity(4)
 
 # ---------------------------------------------------------------------------
 # EXACT MATCH PATH (Fast Path + KD-Tree)
 # ---------------------------------------------------------------------------
 
-def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
+def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, original_bytes,
                            stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi, game_name):
     import mathutils as mu
     stride_f32 = stride // 4
@@ -178,6 +184,7 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
     failed_objects = {sk: {'direct': [], 'via_target': []} for sk in sk_owner_map.keys()}
 
     orient_mat = _get_game_orientation_matrix(game_name, is_xxmi)
+    mirror_enabled = should_mirror_mesh(context, game_name)
 
     for sk_name, owners in sk_owner_map.items():
         buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
@@ -230,8 +237,8 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
             mat_rot = np.array(mat.to_3x3(), dtype=np.float32)
             deltas_all = ((sk_co - ba_co) @ mat_rot.T).astype(np.float32)
             
-            if not is_xxmi:
-                # Legacy / EFMI Mirror Path (Deltas must be standard space for standard buffer)
+            if mirror_enabled:
+                # Mirror Path (Deltas must be standard space for standard buffer)
                 deltas_all[:, 0] *= -1
 
             if vb_off + vb_cnt > buf_v_count:
@@ -267,6 +274,9 @@ def _process_exact_matches(sk_owner_map, ready_map, comp_cache, original_bytes,
                     buf_pos = mu.Vector(buf_f32[buf_idx, :3])
                     
                     search_pos = buf_pos.copy()
+                    if mirror_enabled:
+                        # If mirroring is requested, buffer is standard but search tree is mirrored
+                        search_pos.x *= -1
                     
                     _, best_idx, dist = kd.find(search_pos)
                     
@@ -434,6 +444,7 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
 
     try:
         orient_mat = _get_game_orientation_matrix(game_name, is_xxmi)
+        mirror_enabled = should_mirror_mesh(context, game_name)
 
         for a_obj in all_involved:
             if a_obj.data and a_obj.data.shape_keys:
@@ -466,6 +477,9 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
             base_cache[obj] = _build_owner_data(obj, depsgraph, mat)
 
         search_buf_xyz = buf_xyz.copy()
+        if mirror_enabled:
+            # Mirror the search coords to match the search tree (BVH)
+            search_buf_xyz[:, 0] *= -1
         
         owner_map, dist_map = _assign_owners_bulk_bvh(search_buf_xyz, base_cache, limit)
         stats = 0
@@ -532,8 +546,8 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                 indices = np.where(mask)[0][nonzero]
                 valid_deltas = deltas[nonzero].copy()
 
-                if not is_xxmi:
-                    # Legacy flip back to standard space for standard buffer
+                if mirror_enabled:
+                    # Flip back to standard space for standard buffer
                     valid_deltas[:, 0] *= -1
 
                 new_xyz = (buf_xyz[indices] + valid_deltas).astype(np.float32)
@@ -991,7 +1005,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
 
         # ── 2. EXACT MATCH PATH (Выгрузка) ─────────────────────────────────────
         fast_path_slots, stats_exact, failed_exact = _process_exact_matches(
-            sk_owner_map, ready_map, comp_cache,
+            context, sk_owner_map, ready_map, comp_cache,
             original_bytes, stride, buf_v_count,
             output_dir, base_name, dump_name, is_xxmi, game_name=game
         )

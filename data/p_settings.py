@@ -239,6 +239,11 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
         default=False,
         description="Enable new ShapeKeyConfig discovery and export system"
     )
+    mirror_mesh: BoolProperty(
+        name="Mirror Mesh (X)",
+        default=False,
+        description="Apply X-axis mirroring to mesh and deltas (Standard for Legacy/EFMI games)"
+    )
     export_vertex_debug: BoolProperty(
         name="Export Vertex Debug",
         default=False,

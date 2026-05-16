@@ -341,6 +341,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 exp_box.prop(addon.preferences, "create_backup", text="Create Backup")
             
             exp_box.separator()
+            exp_box.prop(rzm.addons, "mirror_mesh", text="Mirror Mesh (X)", icon='MOD_MIRROR')
             exp_box.prop(rzm.addons, "export_vertex_debug", text="Export Vertex Evolution (.json)", icon='GHOST_ENABLED')
 
 
