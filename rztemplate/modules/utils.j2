@@ -196,8 +196,7 @@
         {%- endif -%}
         
         {# 2. Базовый режим: удаляем спецсимволы и заменяем пробелы на подчеркивания #}
-        {%- set cleaned = result.lstrip('$@#~').split() | join('_') -%}
-        {{- format_from_idiot(cleaned) -}}
+        {{- result.lstrip('$@#~').split() | join('_') -}}
     {%- endif -%}
 {%- endmacro -%}
 

@@ -74,6 +74,10 @@ Local $current_sizeY
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
     {% else %}
         {{generate_position_and_size(element,parent_element,mod_file,scene)}}
+        $PositionX = $positionX
+        $PositionY = $positionY
+        $SizeX = $sizeX
+        $SizeY = $sizeY
     {% endif %}
     $P_PX = $PositionX
     $P_PY = $PositionY
@@ -171,7 +175,9 @@ Local $current_sizeY
         {{generate_text(element)}}
         {{generate_fx(element)}}
         ;run = CustomShaderRCI2D_TEXT_{{element.text_align | default ('LEFT')}}
+        {% if not element.is_preset %}
         run = CustomShaderRCI2D_TEXT
+        {% endif %}
     {%else%}
         {{generate_image(element,parent_element,scene)}}
         {{generate_fx(element)}}
@@ -709,6 +715,7 @@ $imageID = {{ inst_id }}
 {% macro generate_text(element, host_element=none) %}
     {% set t_id = element.text_id | default('') | string %}
     {% set is_helper_or_preset = host_element or element.is_preset %}
+    $texSizeX = {{ utils.TEXT_ALIGN_MAP.get(element.text_align, 0) }}
     
     {% if is_helper_or_preset %}
         {% if t_id and not t_id.startswith('~') %}

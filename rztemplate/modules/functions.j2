@@ -386,6 +386,19 @@ run = CommandListCoreFnBottom
 {%macro ButtonNumbers()%}
 [CommandListCoreFXRenderButtonNumbers]
 if $rzmUIRenderSettings_ButtonNumbers == 1
+    local $BackColorR
+    local $BackColorG
+    local $BackColorB
+    local $BackColorA
+    local $BackElemFlags
+    local $BackTexSizeX
+    $BackColorR = $colorR
+    $BackColorG = $colorG
+    $BackColorB = $colorB
+    $BackColorA = $colorA
+    $BackElemFlags = $elemFlags
+    $BackTexSizeX = $texSizeX
+    $classType = 5
 	local $LocalPosX
 	local $LocalPosY
 	local $LocalSizeX
@@ -404,14 +417,18 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 	$positionY = $LocalPosY + ($LocalSizeY * 0.75)
 	$sizeX = $LocalSizeX * 0.25
 	$sizeY = $LocalSizeY * 0.25
+	$PositionX = $positionX
+	$PositionY = $positionY
+	$SizeX = $sizeX
+	$SizeY = $sizeY
 	run = CommandListCoreAlignmentCenterX
 
-	$colorR = $colorR + ($colorR * 3) + (0.1)
-	$colorG = $colorG + ($colorG * 3) + (0.1)
-	$colorB = $colorB + ($colorB * 3) + (0.1)
+	$colorR = $colorR + 1
+	$colorG = $colorG + 1
+	$colorB = $colorB + 1
 	$colorA = 1.0
-
-
+    $elemFlags = 0
+	$texSizeX = 1
 	run = CustomShaderRCI2D_TEXT
 	w110 = 0
 
@@ -419,6 +436,16 @@ if $rzmUIRenderSettings_ButtonNumbers == 1
 	$positionY = $LocalPosY
 	$sizeX = $LocalSizeX
 	$sizeY = $LocalSizeY
+	$PositionX = $LocalPosX
+	$PositionY = $LocalPosY
+	$SizeX = $LocalSizeX
+	$SizeY = $LocalSizeY
+    $colorR = $BackColorR
+    $colorG = $BackColorG
+    $colorB = $BackColorB
+    $colorA = $BackColorA
+    $elemFlags = $BackElemFlags
+    $texSizeX = $BackTexSizeX
 endif
 
 [CommandListCoreFXRenderSliderText]
@@ -427,10 +454,14 @@ local $BackColorR
 local $BackColorG
 local $BackColorB
 local $BackColorA
+local $BackElemFlags
+local $BackTexSizeX
 $BackColorR = $colorR
 $BackColorG = $colorG
 $BackColorB = $colorB
 $BackColorA = $colorA
+$BackElemFlags = $elemFlags
+$BackTexSizeX = $texSizeX
 if $rzmUIRenderSettings_SliderNumbers == 1
 	local $LocalPosX
 	local $LocalPosY
@@ -440,33 +471,52 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	$LocalPosY = $positionY
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
-	$TexSizeX = 1
-	$sizeX = $LocalSizeY * 0.75
-	$sizeY = $LocalSizeY * 0.75
-	$positionX = $LocalPosX + ($LocalSizeX * 0.5)
-	$positionY = $LocalPosY + ($LocalSizeY * 0.5) - ($sizeY * 0.5)
+	$texSizeX = 1
+	$PositionX = $positionX + ($SizeX/2)
+	$PositionY = $positionY + ($SizeY/10)
+	$SizeX = $sizeX
+	$SizeY = $sizeY / 2
 
 	$colorR = 1
 	$colorG = 1
 	$colorB = 1
-	$colorA = 0.1
+	$colorA = 0.25
 	x110 = 0
 	y110 = 0
+	$elemFlags = 0
 
-	run = CustomShaderRCI2D
+	run = CustomShaderRCI2D_TEXT
 
 	$positionX = $LocalPosX
 	$positionY = $LocalPosY
 	$sizeX = $LocalSizeX
 	$sizeY = $LocalSizeY
+	$PositionX = $LocalPosX
+	$PositionY = $LocalPosY
+	$SizeX = $LocalSizeX
+	$SizeY = $LocalSizeY
 endif
 $colorR = $BackColorR
 $colorG = $BackColorG
 $colorB = $BackColorB
 $colorA = $BackColorA
+$elemFlags = $BackElemFlags
+$texSizeX = $BackTexSizeX
 
 [CommandListCoreFXRenderSliderNumbers]
 if $rzmUIRenderSettings_SliderNumbers == 1
+    local $BackColorR
+    local $BackColorG
+    local $BackColorB
+    local $BackColorA
+    local $BackElemFlags
+    local $BackTexSizeX
+    $BackColorR = $colorR
+    $BackColorG = $colorG
+    $BackColorB = $colorB
+    $BackColorA = $colorA
+    $BackElemFlags = $elemFlags
+    $BackTexSizeX = $texSizeX
 	local $LocalPosX
 	local $LocalPosY
 	local $LocalSizeX
@@ -476,19 +526,21 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	$LocalSizeX = $sizeX
 	$LocalSizeY = $sizeY
 	$TextIsData = 1
+	$TextID = x24*100
 	$TexPosX = x24*100
 	$TexPosY = 1
-	$TexSizeX = 1
+	$texSizeX = 1
 
-	$sizeX = $LocalSizeY * 1.5
-	$sizeY = $LocalSizeY * 0.5
-	$positionX = $LocalPosX + ($LocalSizeX * 0.5)
-	$positionY = $LocalPosY + ($LocalSizeY * 0.5) - ($sizeY * 0.5)
+	$PositionX = $positionX + ($SizeX/2)
+	$PositionY = $positionY + ($SizeY/10)
+	$SizeX = $sizeX
+	$SizeY = $sizeY / 2
 
 	$colorR = 1 - $colorR
 	$colorG = 1 - $colorG
 	$colorB = 1 - $colorB
 	$colorA = 1.0
+    $elemFlags = 0
 	x110 = 0
 	y110 = 0
 
@@ -499,6 +551,16 @@ if $rzmUIRenderSettings_SliderNumbers == 1
 	$positionY = $LocalPosY
 	$sizeX = $LocalSizeX
 	$sizeY = $LocalSizeY
+	$PositionX = $LocalPosX
+	$PositionY = $LocalPosY
+	$SizeX = $LocalSizeX
+	$SizeY = $LocalSizeY
+    $colorR = $BackColorR
+    $colorG = $BackColorG
+    $colorB = $BackColorB
+    $colorA = $BackColorA
+    $elemFlags = $BackElemFlags
+    $texSizeX = $BackTexSizeX
 endif
 
 [CommandListCoreMathABS]

@@ -100,7 +100,7 @@
                     {% endif %}
 
                     {% if not element.is_preset and not element.is_helper %}
-                        {% if scene.rzm.addons.debugger_info or has_pt_child[0] == 1 %}
+                        {% if scene.rzm.addons.debugger_info or has_pt_child[0] == 1 or utils.get_cls(element)|trim == 'SLIDER' %}
                         $TextID = {{ text_id }}
                         {% endif %}
                     {% else %}

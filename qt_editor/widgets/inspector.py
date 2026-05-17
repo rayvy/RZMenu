@@ -2176,6 +2176,8 @@ class RZMInspectorPanel(RZEditorPanel):
                         self.edit_txt_id.set_text_silent(props.get('text_id', ''))
                 if hasattr(self, 'chk_txt_is_data'):
                     self.chk_txt_is_data.setChecked(props.get('text_id_is_data', False))
+                if hasattr(self, 'spin_txt_data_len'):
+                    self.spin_txt_data_len.setValue(props.get('text_id_data_length', 1))
                         
                 hov_pat = props.get('hover_text_id_pattern')
                 if hasattr(self, 'edit_hov_txt'):
@@ -2185,6 +2187,8 @@ class RZMInspectorPanel(RZEditorPanel):
                         self.edit_hov_txt.set_text_silent(props.get('hover_text_id', ''))
                 if hasattr(self, 'chk_hov_is_data'):
                     self.chk_hov_is_data.setChecked(props.get('hover_text_id_is_data', False))
+                if hasattr(self, 'spin_hov_data_len'):
+                    self.spin_hov_data_len.setValue(props.get('hover_text_id_data_length', 1))
             else:
                 if hasattr(self, 'list_texts'): self.list_texts.update_data(props.get('conditional_texts', []), txt_mode)
 
