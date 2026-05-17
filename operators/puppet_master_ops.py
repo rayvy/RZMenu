@@ -155,26 +155,82 @@ def should_mirror_mesh(context, game_name):
     rzm = context.scene.rzm
     return rzm.addons.mirror_mesh
 
-def _get_game_orientation_matrix(game_name, is_xxmi):
+def _find_xxmi_anchor(context, mod_name, comp_name, classifications):
     """
-    Returns a 4x4 matrix for game-specific ROTATIONS only.
-    Mirroring is handled separately via should_mirror_mesh.
+    Dynamically finds the unique visible anchor object for an XXMI component.
+    Uses naming prefix: CharName + ComponentName + SubComponentName.
+    Returns: (Matrix, bool_flip)
     """
     import mathutils as mu
-    if is_xxmi:
-        if game_name == 'GenshinImpact':
-            return mu.Euler((radians(-90), 0, 0)).to_matrix().to_4x4()
-        elif game_name == 'HonkaiStarRail':
-            return mu.Euler((radians(-90), 0, 0)).to_matrix().to_4x4()
     
-    return mu.Matrix.Identity(4)
+    def is_truly_visible(obj):
+        return obj.visible_get() and not obj.hide_viewport
+
+    # Build search prefixes
+    # If no classifications provided, we'll try a few common ones or just the comp_name
+    search_prefixes = []
+    if classifications:
+        for sub_comp in classifications:
+            search_prefixes.append(f"{mod_name}{comp_name}{sub_comp}".lower())
+    else:
+        # Fallback: try common sub-components if it's the main component
+        base_prefix = f"{mod_name}{comp_name}".lower()
+        search_prefixes.append(base_prefix)
+        # XXMI often uses Body/Head/Dress/Extra/Accessories/Bang/Eyes
+        for common in ["Body", "Head", "Dress", "Extra", "Accessories", "Bang", "Eyes", "Face"]:
+            search_prefixes.append(f"{base_prefix}{common}".lower())
+    
+    # We prioritize the first prefix that yields a visible anchor
+    for prefix in search_prefixes:
+        found_visible = []
+        for obj in bpy.data.objects:
+            if obj.name.lower().startswith(prefix):
+                if is_truly_visible(obj):
+                    found_visible.append(obj)
+        
+        if found_visible:
+            anchor = found_visible[0]
+            # Matrix inversion 'extinguishes' the Blender-side transformation
+            orient_mat = anchor.matrix_world.inverted()
+            flip_mesh = bool(anchor.get("3DMigoto:FlipMesh", 0))
+            
+            if len(found_visible) > 1:
+                print(f"  [RZM] [WARNING] Multiple visible anchors for prefix '{prefix}'. Using {anchor.name}.")
+            
+            print(f"  [RZM] [ANCHOR] Found anchor '{anchor.name}' for prefix '{prefix}'.")
+            return orient_mat, flip_mesh
+
+    return mu.Matrix.Identity(4), False
+
+def _resolve_component_transform(context, is_xxmi, game_name, mod_name, comp_name, classifications):
+    """
+    Determines the final orientation matrix and mirror toggle for a component.
+    """
+    import mathutils as mu
+    
+    if is_xxmi:
+        # Dynamic Anchor Path
+        orient_mat, mirror_enabled = _find_xxmi_anchor(context, mod_name, comp_name, classifications)
+        if orient_mat != mu.Matrix.Identity(4):
+            print(f"  [RZM] [ANCHOR] Applied dynamic transformation from scene anchor.")
+        else:
+            # Fallback for XXMI if no anchor found (Legacy behavior or Identity)
+            mirror_enabled = should_mirror_mesh(context, game_name)
+            # You could add legacy Genshin/HSR fallbacks here if desired
+            pass
+        return orient_mat, mirror_enabled
+    
+    # EFMI / Legacy Path
+    mirror_enabled = should_mirror_mesh(context, game_name)
+    return mu.Matrix.Identity(4), mirror_enabled
 
 # ---------------------------------------------------------------------------
 # EXACT MATCH PATH (Fast Path + KD-Tree)
 # ---------------------------------------------------------------------------
 
 def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, original_bytes,
-                           stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi, game_name):
+                           stride, buf_v_count, output_dir, base_name, dump_name, is_xxmi, game_name,
+                           orient_mat=None, mirror_enabled=None):
     import mathutils as mu
     stride_f32 = stride // 4
     cache_objects = {entry['name']: entry for entry in comp_cache.get('objects', [])} if comp_cache else {}
@@ -183,8 +239,8 @@ def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, origina
     stats = {'vmap_matched': 0, 'kd_matched': 0, 'objects': 0}
     failed_objects = {sk: {'direct': [], 'via_target': []} for sk in sk_owner_map.keys()}
 
-    orient_mat = _get_game_orientation_matrix(game_name, is_xxmi)
-    mirror_enabled = should_mirror_mesh(context, game_name)
+    orient_mat = orient_mat if orient_mat is not None else mu.Matrix.Identity(4)
+    mirror_enabled = mirror_enabled if mirror_enabled is not None else False
 
     for sk_name, owners in sk_owner_map.items():
         buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
@@ -417,7 +473,8 @@ def _assign_owners_bulk_bvh(buf_xyz, base_cache, limit):
 
 def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                    stride, buf_v_count, output_dir, base_name, dump_name,
-                   is_xxmi, limit, t_start, game_name, fast_path_slots=None):
+                   is_xxmi, limit, t_start, game_name, fast_path_slots=None,
+                   orient_mat=None, mirror_enabled=None):
 
     stride_f32 = stride // 4
     raw_np     = np.frombuffer(original_bytes, dtype=np.uint8)
@@ -443,8 +500,8 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
     set_armature_visibility(all_involved, False)
 
     try:
-        orient_mat = _get_game_orientation_matrix(game_name, is_xxmi)
-        mirror_enabled = should_mirror_mesh(context, game_name)
+        orient_mat = orient_mat if orient_mat is not None else mu.Matrix.Identity(4)
+        mirror_enabled = mirror_enabled if mirror_enabled is not None else False
 
         for a_obj in all_involved:
             if a_obj.data and a_obj.data.shape_keys:
@@ -803,7 +860,8 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
 # ---------------------------------------------------------------------------
 
 def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
-                           single_shape_name=None, full_export_mode=False):
+                           single_shape_name=None, full_export_mode=False,
+                           orient_mat=None, mirror_enabled=None):
     t_start   = time.time()
     vb0_path  = None
     dump_name = (os.path.basename(os.path.normpath(bpy.path.abspath(context.scene.xxmi.dump_path)))
@@ -1007,7 +1065,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         fast_path_slots, stats_exact, failed_exact = _process_exact_matches(
             context, sk_owner_map, ready_map, comp_cache,
             original_bytes, stride, buf_v_count,
-            output_dir, base_name, dump_name, is_xxmi, game_name=game
+            output_dir, base_name, dump_name, is_xxmi, game_name=game,
+            orient_mat=orient_mat, mirror_enabled=mirror_enabled
         )
 
         # ── 3. SLOW PATH (Fallback) ────────────────────────────────────────────
@@ -1020,7 +1079,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                 context, sk_owner_map_slow, comp_cache,
                 original_bytes, stride, buf_v_count,
                 output_dir, base_name, dump_name, is_xxmi, limit, t_start,
-                game_name=game, fast_path_slots=fast_path_slots
+                game_name=game, fast_path_slots=fast_path_slots,
+                orient_mat=orient_mat, mirror_enabled=mirror_enabled
             )
 
         # ── 4. BLENDWORKS (Weights) ────────────────────────────────────────────
@@ -1067,9 +1127,37 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
         limit         = addons.puppet_master_limit
         components    = get_components_to_process(context, per_component)
         if not components: return {'CANCELLED'}
+        
+        from .export_cache import get_cache
+        cache = get_cache() or {}
+        game  = context.scene.rzm.game.name
+        is_xxmi = game in {'GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail'}
+
+        # Resolve Mod Name for XXMI anchor search
+        mod_name = ""
+        if is_xxmi:
+            dump_path_prop = context.scene.xxmi.dump_path if hasattr(context.scene, "xxmi") else ""
+            if dump_path_prop:
+                dp = os.path.normpath(bpy.path.abspath(dump_path_prop))
+                mod_dir = os.path.dirname(dp) if dp.lower().endswith("hash.json") else dp
+                mod_name = os.path.basename(mod_dir)
+
         for base_name, objs in components.items():
+            # Get component metadata for classifications
+            comp_cache = cache.get('components', {}).get(base_name, {})
+            classifications = []
+            if is_xxmi and comp_cache:
+                obj_names = [o.get('name') for o in comp_cache.get('objects', [])]
+                pass
+
+            # [REWORK] Resolve dynamic orientation and mirror per component
+            orient_mat, mirror_enabled = _resolve_component_transform(
+                context, is_xxmi, game, mod_name, base_name, classifications
+            )
+
             bake_component_shapes(context, base_name, objs, mod_root, limit,
-                                   full_export_mode=self.full_export_mode)
+                                   full_export_mode=self.full_export_mode,
+                                   orient_mat=orient_mat, mirror_enabled=mirror_enabled)
         return {'FINISHED'}
 
 
@@ -1089,9 +1177,37 @@ class RZM_OT_PuppetMasterBakeSingle(bpy.types.Operator):
         limit        = rzm.addons.puppet_master_limit
         components   = get_components_to_process(context, per_component=False)
         if not components: return {'CANCELLED'}
+        
+        from .export_cache import get_cache
+        cache = get_cache() or {}
+        game  = context.scene.rzm.game.name
+        is_xxmi = game in {'GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail'}
+
+        # Resolve Mod Name for XXMI anchor search
+        mod_name = ""
+        if is_xxmi:
+            dump_path_prop = context.scene.xxmi.dump_path if hasattr(context.scene, "xxmi") else ""
+            if dump_path_prop:
+                dp = os.path.normpath(bpy.path.abspath(dump_path_prop))
+                mod_dir = os.path.dirname(dp) if dp.lower().endswith("hash.json") else dp
+                mod_name = os.path.basename(mod_dir)
+
         for base_name, objs in components.items():
+            # Get component metadata for classifications
+            comp_cache = cache.get('components', {}).get(base_name, {})
+            classifications = []
+            if is_xxmi and comp_cache:
+                # obj_names = [o.get('name') for o in comp_cache.get('objects', [])]
+                pass
+
+            # [REWORK] Resolve dynamic orientation and mirror per component
+            orient_mat, mirror_enabled = _resolve_component_transform(
+                context, is_xxmi, game, mod_name, base_name, classifications
+            )
+
             bake_component_shapes(context, base_name, objs, mod_root, limit,
-                                   single_shape_name=target_shape)
+                                   single_shape_name=target_shape,
+                                   orient_mat=orient_mat, mirror_enabled=mirror_enabled)
         return {'FINISHED'}
 
 classes_to_register = [RZM_OT_PuppetMasterBake, RZM_OT_PuppetMasterBakeSingle]
