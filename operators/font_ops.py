@@ -64,10 +64,24 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
         res_dir = os.path.join(out_dir, "res")
         os.makedirs(res_dir, exist_ok=True)
 
+        # Collect slots to process (always including slot 0)
+        slots_to_process = {}
         for i, slot in enumerate(rzm.fonts):
-            if i not in used_slots:
-                continue
+            if i in used_slots:
+                slots_to_process[i] = slot
                 
+        if 0 not in slots_to_process:
+            class MockFontSlot:
+                font_source = 'DEFAULT'
+                custom_path = ""
+                font_style_name = "Regular"
+                font_index = 0
+                cell_size = 32
+                density = 0.88
+            slots_to_process[0] = MockFontSlot()
+
+        for i in sorted(slots_to_process.keys()):
+            slot = slots_to_process[i]
             font_path = ""
             if slot.font_source == 'CUSTOM' and slot.custom_path:
                 font_path = bpy.path.abspath(slot.custom_path)
