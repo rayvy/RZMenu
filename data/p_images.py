@@ -64,6 +64,17 @@ class RZMenuImage(bpy.types.PropertyGroup):
         ],
         default='CUSTOM'
     )
+    fit_mode: EnumProperty(
+        name="Fit Mode",
+        items=[
+            ('FILL', "Fill", "Растянуть по вертексам (Stretch)"),
+            ('COVER', "Cover", "Обрезать и заполнить (Crop & Fill)"),
+            ('CONTAIN', "Contain", "Вписать с полосами (Fit & Pad)"),
+            ('TILE', "Tile", "Замостить (Repeat)")
+        ],
+        default='FILL',
+        update=mark_atlas_dirty_img
+    )
     image_pointer: PointerProperty(name="Blender Image", type=bpy.types.Image, update=mark_atlas_dirty_img)
     uv_coords: IntVectorProperty(name="Atlas UV Coords", size=2)
     uv_size: IntVectorProperty(name="Atlas UV Size", size=2)

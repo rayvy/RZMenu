@@ -887,6 +887,7 @@ def get_available_images() -> list[dict]:
             'path': getattr(img, 'anim_source_path', ''),
             'uv_coords': [img.uv_coords[0], img.uv_coords[1]],
             'uv_size': [img.uv_size[0], img.uv_size[1]],
+            'fit_mode': getattr(img, 'fit_mode', 'FILL'),
         }
         
         # Инфо об анимации

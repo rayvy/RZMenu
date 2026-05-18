@@ -27,11 +27,13 @@ class ImageCache:
     def __init__(self):
         self._cache = {} # {image_id: QPixmap}
         self._anim_cache = {} # {name_frame: QPixmap}
+        self._fit_modes = {} # {image_id: fit_mode}
 
     def clear(self):
         """Очистка кэша перед обновлением."""
         self._cache.clear()
         self._anim_cache.clear()
+        self._fit_modes.clear()
 
     def pre_cache_image(self, image_id):
         """
@@ -58,6 +60,8 @@ class ImageCache:
             # print(f"ImageCache: ID {image_id} not found in RZM images.")
             self._cache[image_id] = None
             return
+            
+        self._fit_modes[image_id] = getattr(target_rz_img, 'fit_mode', 'FILL')
 
         bl_image = target_rz_img.image_pointer
         if not bl_image:
@@ -119,6 +123,9 @@ class ImageCache:
     def get_pixmap(self, image_id):
         """Возвращает картинку из кэша. Не лезет в Blender."""
         return self._cache.get(image_id, None)
+
+    def get_fit_mode(self, image_id):
+        return self._fit_modes.get(image_id, 'FILL')
 
     def get_anim_frame(self, base_name, frame_idx):
         """Достает запеченный кадр анимации из Blender и кэширует его."""

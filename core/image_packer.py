@@ -44,30 +44,30 @@ def pack_project_images(scene, export_dir):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def create_static_instance(x, y, w, h, mode_str, flip_x=False, flip_y=False):
-        """Non-animated instance — anim record is all zeros."""
+    def create_static_instance(x, y, w, h, mode_str, flip_x=False, flip_y=False, fit_mode=0):
+        """Non-animated instance — anim record is all zeros except fit_mode."""
         sub_mode = mode_map.get(mode_str, 1)
-        key = ('S', int(x), int(y), int(w), int(h), sub_mode, flip_x, flip_y)
+        key = ('S', int(x), int(y), int(w), int(h), sub_mode, flip_x, flip_y, fit_mode)
         if key in usage_cache:
             return usage_cache[key]
         inst_id = len(instances) // 3
         instances.append((sub_mode, 0, int(flip_x), int(flip_y)))
         instances.append((int(x), int(y), int(w), int(h)))
-        instances.append((0, 0, 0, 0))
+        instances.append((0, 0, int(fit_mode), 0))
         usage_cache[key] = inst_id
         return inst_id
 
-    def create_anim_instance(fx, fy, fw, fh, mode_str, anim_start, anim_count, fps_native, flip_x=False, flip_y=False):
-        """Animated instance — anim record holds the timeline pointer."""
+    def create_anim_instance(fx, fy, fw, fh, mode_str, anim_start, anim_count, fps_native, flip_x=False, flip_y=False, fit_mode=0):
+        """Animated instance — anim record holds the timeline pointer and fit_mode."""
         sub_mode = mode_map.get(mode_str, 1)
         fps_x100 = max(1, int(round(fps_native * 100)))
-        key = ('A', anim_start, anim_count, sub_mode, flip_x, flip_y)
+        key = ('A', anim_start, anim_count, sub_mode, flip_x, flip_y, fit_mode)
         if key in usage_cache:
             return usage_cache[key]
         inst_id = len(instances) // 3
         instances.append((sub_mode, 1, int(flip_x), int(flip_y)))           # is_anim=1
         instances.append((int(fx), int(fy), int(fw), int(fh)))              # first-frame coords (informational)
-        instances.append((int(anim_start), int(anim_count), 0, fps_x100))  # anim header
+        instances.append((int(anim_start), int(anim_count), int(fit_mode), fps_x100))  # anim header
         usage_cache[key] = inst_id
         return inst_id
 
@@ -83,6 +83,9 @@ def pack_project_images(scene, export_dir):
         mode   = getattr(elem, 'image_blending_mode', 'OVERLAY')
         flip_x = getattr(elem, 'flip_x', False)
         flip_y = getattr(elem, 'flip_y', False)
+        
+        fit_mode_str = getattr(img, 'fit_mode', 'FILL')
+        fit_mode_val = {'FILL': 0, 'COVER': 1, 'CONTAIN': 2, 'TILE': 3}.get(fit_mode_str, 0)
 
         # ── ANIMATED ──────────────────────────────────────────────────────────
         if img.source_type == 'ANIMATED':
@@ -96,7 +99,7 @@ def pack_project_images(scene, export_dir):
                     frame = img.anim_frames[seq.frame_index]
                     f_inst = create_static_instance(
                         frame.x, frame.y, frame.w, frame.h,
-                        mode, flip_x=flip_x, flip_y=flip_y
+                        mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
                     )
                     frame_inst_ids.append(f_inst)
 
@@ -122,7 +125,7 @@ def pack_project_images(scene, export_dir):
                 anim_inst = create_anim_instance(
                     fx, fy, fw, fh, mode,
                     anim_start, anim_count, fps_native,
-                    flip_x=flip_x, flip_y=flip_y
+                    flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
                 )
                 usage_cache[seq_key] = anim_inst
             else:
@@ -175,7 +178,7 @@ def pack_project_images(scene, export_dir):
                 v_id = create_static_instance(
                     target_var.uv_coords[0], target_var.uv_coords[1],
                     target_var.uv_size[0],   target_var.uv_size[1],
-                    mode, flip_x=flip_x, flip_y=flip_y
+                    mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
                 )
                 print(f"    - SUCCESS: Element {eid_str} -> InstID {v_id}")
             else:
@@ -183,7 +186,7 @@ def pack_project_images(scene, export_dir):
                 v_id = create_static_instance(
                     img.uv_coords[0], img.uv_coords[1],
                     img.uv_size[0],   img.uv_size[1],
-                    mode, flip_x=flip_x, flip_y=flip_y
+                    mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
                 )
 
             mapping['elements'][eid_str] = v_id
@@ -193,7 +196,7 @@ def pack_project_images(scene, export_dir):
             inst_id = create_static_instance(
                 img.uv_coords[0], img.uv_coords[1],
                 img.uv_size[0],   img.uv_size[1],
-                mode, flip_x=flip_x, flip_y=flip_y
+                mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
             )
             mapping['elements'][str(elem.id)]  = inst_id
             mapping['static'][str(img.id)]     = inst_id
@@ -223,6 +226,9 @@ def pack_project_images(scene, export_dir):
             mode   = getattr(elem, 'image_blending_mode', 'OVERLAY')
             flip_x = getattr(elem, 'flip_x', False)
             flip_y = getattr(elem, 'flip_y', False)
+            
+            fit_mode_str = getattr(img, 'fit_mode', 'FILL')
+            fit_mode_val = {'FILL': 0, 'COVER': 1, 'CONTAIN': 2, 'TILE': 3}.get(fit_mode_str, 0)
 
             if img.source_type == 'ANIMATED':
                 seq_key = ('ASEQ', img.id, mode, flip_x, flip_y)
@@ -248,7 +254,7 @@ def pack_project_images(scene, export_dir):
                     v_id = create_static_instance(
                         var.uv_coords[0], var.uv_coords[1],
                         var.uv_size[0],   var.uv_size[1],
-                        mode, flip_x=flip_x, flip_y=flip_y
+                        mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
                     )
                     mapping['elements'][composite_key] = v_id
 
@@ -257,7 +263,7 @@ def pack_project_images(scene, export_dir):
                 inst_id = create_static_instance(
                     img.uv_coords[0], img.uv_coords[1],
                     img.uv_size[0],   img.uv_size[1],
-                    mode, flip_x=flip_x, flip_y=flip_y
+                    mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
                 )
                 mapping['elements'][composite_key] = inst_id
 

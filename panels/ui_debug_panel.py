@@ -141,6 +141,14 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         ops_row.operator("rzm.remove_image", text="", icon='REMOVE')
         ops_row.operator("rzm.load_base_icons", text="Load Base Icons", icon='IMPORT')
         box.template_list("RZM_UL_Images", "", rzm, "images", context.scene, "rzm_active_image_index")
+        
+        active_img_idx = context.scene.rzm_active_image_index
+        if 0 <= active_img_idx < len(rzm.images):
+            img = rzm.images[active_img_idx]
+            img_box = box.box()
+            img_box.label(text=f"Image Properties ({img.display_name}):")
+            img_box.prop(img, "fit_mode")
+            
         layout.separator()
         box = layout.box()
         box.label(text="Project Global Values:")

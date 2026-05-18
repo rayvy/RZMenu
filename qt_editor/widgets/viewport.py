@@ -683,16 +683,23 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         dirty = False
 
         # Detect image-related changes that require pixmap cache invalidation
+        curr_fit_mode = None
+        if img_id != -1:
+            from ..utils.image_cache import ImageCache
+            curr_fit_mode = ImageCache.instance().get_fit_mode(img_id)
+            
         img_dirty = (
             img_id != self.image_id or
             flip_x != self.flip_x or
             flip_y != self.flip_y or
             image_source_type != self.image_source_type or
             svg_preserve_color != self.svg_preserve_color or
-            color != self.custom_color
+            color != self.custom_color or
+            curr_fit_mode != getattr(self, '_last_fit_mode', None)
         )
         if img_dirty:
             self._pixmap_cache.clear()
+            self._last_fit_mode = curr_fit_mode
             dirty = True
 
         # Check all other fields that affect paint output
@@ -940,12 +947,45 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
                 # --- End cache block ---
 
                 target_rect = rect
+                fit_mode = 'FILL'
+                
                 if self.image_source_type == 'VECTOR':
                     sw, sh = rect.width() * self.svg_scale, rect.height() * self.svg_scale
                     target_rect = QtCore.QRectF(rect.center().x() - sw/2.0, rect.center().y() - sh/2.0, sw, sh)
                     target_rect.translate(self.svg_offset_x * rect.width(), self.svg_offset_y * rect.height())
+                else:
+                    fit_mode = ImageCache.instance().get_fit_mode(self.image_id)
+                    if fit_mode in ('COVER', 'CONTAIN'):
+                        img_w, img_h = processed_pix.width(), processed_pix.height()
+                        rect_w, rect_h = rect.width(), rect.height()
+                        if img_w > 0 and img_h > 0 and rect_w > 0 and rect_h > 0:
+                            img_ratio = img_w / img_h
+                            rect_ratio = rect_w / rect_h
+                            
+                            if fit_mode == 'COVER':
+                                painter.setClipRect(rect)
+                                if img_ratio > rect_ratio:
+                                    new_w = rect_h * img_ratio
+                                    target_rect = QtCore.QRectF(rect.x() - (new_w - rect_w) / 2, rect.y(), new_w, rect_h)
+                                else:
+                                    new_h = rect_w / img_ratio
+                                    target_rect = QtCore.QRectF(rect.x(), rect.y() - (new_h - rect_h) / 2, rect_w, new_h)
+                            elif fit_mode == 'CONTAIN':
+                                if img_ratio > rect_ratio:
+                                    new_h = rect_w / img_ratio
+                                    target_rect = QtCore.QRectF(rect.x(), rect.y() + (rect_h - new_h) / 2, rect_w, new_h)
+                                else:
+                                    new_w = rect_h * img_ratio
+                                    target_rect = QtCore.QRectF(rect.x() + (rect_w - new_w) / 2, rect.y(), new_w, rect_h)
 
-                painter.drawPixmap(target_rect, processed_pix, QtCore.QRectF(processed_pix.rect()))
+                if fit_mode == 'TILE' and self.image_source_type != 'VECTOR':
+                    img_w, img_h = processed_pix.width(), processed_pix.height()
+                    if img_w > 0 and img_h > 0:
+                        painter.setClipRect(rect)
+                        painter.drawTiledPixmap(rect.toRect(), processed_pix)
+                else:
+                    painter.drawPixmap(target_rect, processed_pix, QtCore.QRectF(processed_pix.rect()))
+                    
                 painter.restore()
                 has_image = True
 

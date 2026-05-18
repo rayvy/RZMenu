@@ -144,6 +144,11 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         self.txt_name.editingFinished.connect(self.on_prop_changed)
         form.addRow("Name:", self.txt_name)
         
+        self.combo_fit = QtWidgets.QComboBox()
+        self.combo_fit.addItems(["FILL", "COVER", "CONTAIN", "TILE"])
+        self.combo_fit.currentTextChanged.connect(self.on_prop_changed)
+        form.addRow("Fit Mode:", self.combo_fit)
+        
         self.lbl_id = QtWidgets.QLabel("-")
         form.addRow("ID:", self.lbl_id)
         
@@ -235,6 +240,7 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         self.curr_frame_idx = 0
         
         self.txt_name.setText(data.get('name', ''))
+        self.combo_fit.setCurrentText(data.get('fit_mode', 'FILL'))
         self.lbl_id.setText(str(data.get('id', 'N/A')))
         self.lbl_type.setText(data.get('source_type', 'TEMPLATE'))
         self.lbl_path.setText(data.get('path', ''))
@@ -374,18 +380,35 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         is_vector = self.vector_group.isVisible()
         is_anim = self.anim_group.isVisible()
         
+        has_visual_changes = False
+        
         # Общий Name
         if self.txt_name.text() != self.asset_data.get('name'):
             blender_bridge.update_asset_property(asset_id, 'name', self.txt_name.text())
+            has_visual_changes = True
+            
+        if self.combo_fit.currentText() != self.asset_data.get('fit_mode'):
+            blender_bridge.update_asset_property(asset_id, 'fit_mode', self.combo_fit.currentText())
+            
+            # Update cache directly so viewport sees the change immediately
+            from ..utils.image_cache import ImageCache
+            ImageCache.instance()._fit_modes[asset_id] = self.combo_fit.currentText()
+            has_visual_changes = True
             
         if is_vector:
-            blender_bridge.update_asset_property(asset_id, 'svg_preserve_color', self.cb_preserve_color.isChecked())
+            if self.cb_preserve_color.isChecked() != self.asset_data.get('svg_preserve_color', True):
+                blender_bridge.update_asset_property(asset_id, 'svg_preserve_color', self.cb_preserve_color.isChecked())
+                has_visual_changes = True
         
         if is_anim:
             blender_bridge.update_asset_property(asset_id, 'anim_preset', self.combo_preset.currentText())
             blender_bridge.update_asset_property(asset_id, 'anim_start', self.spin_start.value())
             blender_bridge.update_asset_property(asset_id, 'anim_end', self.spin_end.value())
             blender_bridge.update_asset_property(asset_id, 'anim_speed', self.spin_speed.value())
+
+        if has_visual_changes:
+            from ..core.signals import SIGNALS
+            SIGNALS.structure_changed.emit()
 
     def on_build_atlas(self):
         """Вызывает пересборку атласа для предпросмотра эффекта Optimization."""

@@ -398,6 +398,51 @@ float2 GetRandomNoise(float2 uv, float seed) {
     return float2(n1, n2) - 0.5; 
 }
 
+float2 GetFitModeUV(float2 contentUV, uint fitMode, float2 imgSize, float2 elemSize, inout bool clipUV) {
+    if (fitMode == 0 || imgSize.x < 0.1 || imgSize.y < 0.1 || elemSize.x < 0.1 || elemSize.y < 0.1) 
+        return contentUV;
+
+    float imgRatio = imgSize.x / imgSize.y;
+    float elemRatio = elemSize.x / elemSize.y;
+    float2 finalUV = contentUV;
+
+    if (fitMode == 1) { // COVER
+        if (imgRatio > elemRatio) {
+            float newW = elemSize.y * imgRatio;
+            float scaleX = elemSize.x / newW;
+            finalUV.x = (finalUV.x - 0.5) * scaleX + 0.5;
+        } else {
+            float newH = elemSize.x / imgRatio;
+            float scaleY = elemSize.y / newH;
+            finalUV.y = (finalUV.y - 0.5) * scaleY + 0.5;
+        }
+    } else if (fitMode == 2) { // CONTAIN
+        if (imgRatio > elemRatio) {
+            float newH = elemSize.x / imgRatio;
+            float scaleY = elemSize.y / newH;
+            finalUV.y = (finalUV.y - 0.5) * scaleY + 0.5;
+        } else {
+            float newW = elemSize.y * imgRatio;
+            float scaleX = elemSize.x / newW;
+            finalUV.x = (finalUV.x - 0.5) * scaleX + 0.5;
+        }
+        if (finalUV.x < 0.0 || finalUV.x > 1.0 || finalUV.y < 0.0 || finalUV.y > 1.0) {
+            clipUV = true;
+        }
+    } else if (fitMode == 3) { // TILE
+        finalUV.x *= (elemSize.x / imgSize.x);
+        finalUV.y *= (elemSize.y / imgSize.y);
+        finalUV = frac(finalUV);
+        
+        // Prevent sampling atlas padding by restricting UVs 
+        // to strictly within the image pixel boundary
+        float2 halfPixel = 0.5 / imgSize;
+        finalUV = clamp(finalUV, halfPixel, 1.0 - halfPixel);
+    }
+    
+    return finalUV;
+}
+
 float4 main(VertexOutput input) : SV_Target0 {
     // 1. Clipping
     if (input.clipRect.z > 0) {
@@ -436,17 +481,27 @@ float4 main(VertexOutput input) : SV_Target0 {
         uint base = realInstID * 3;              // 3 records per instance
         uint4 meta0 = ImagePoolBuffer[base];     // [SubMode, IsAnim, FlipX, FlipY]
         uint4 rect  = ImagePoolBuffer[base + 1]; // [TexX, TexY, Width, Height]
-        
-        float2 finalUV = input.contentUV;
-        if (meta0.z > 0) finalUV.x = 1.0 - finalUV.x;
-        if (meta0.w > 0) finalUV.y = 1.0 - finalUV.y;
+        uint4 meta2 = ImagePoolBuffer[base + 2]; // [AnimStart, AnimCount, FitMode, Fps]
 
         float2 texPos  = (float2)rect.xy;
         float2 texSize = (float2)rect.zw;
+        uint fitMode = meta2.z;
+        float2 elemSize = input.objectRect.zw * ScreenRes;
+        
+        bool clipUV = false;
+        float2 finalUV = GetFitModeUV(input.contentUV, fitMode, texSize, elemSize, clipUV);
+
+        if (meta0.z > 0) finalUV.x = 1.0 - finalUV.x;
+        if (meta0.w > 0) finalUV.y = 1.0 - finalUV.y;
+
         uint w, h; AtlasIcons.GetDimensions(w, h);
         float2 uvSample = (texPos + finalUV * texSize) / float2(max(1, w), max(1, h));
         
-        rawTexture = AtlasIcons.Sample(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y));
+        if (clipUV) {
+            rawTexture = float4(0, 0, 0, 0);
+        } else {
+            rawTexture = AtlasIcons.SampleLevel(LinearSampler, float2(uvSample.x, 1.0 - uvSample.y), 0);
+        }
     }
 
     uint styleFlags = 0;
@@ -579,10 +634,10 @@ float4 main(VertexOutput input) : SV_Target0 {
                      float2 uvSz   = input.atlasRect.zw;
                      float2 fUV    = uvBase + outlineUV * uvSz;
                      uint fontSlot = (uint)input.extraData.y;
-                     if (fontSlot == 1)      a += AtlasFont1.Sample(LinearSampler, fUV).r;
-                     else if (fontSlot == 2) a += AtlasFont2.Sample(LinearSampler, fUV).r;
-                     else if (fontSlot == 3) a += AtlasFont3.Sample(LinearSampler, fUV).r;
-                     else                    a += AtlasFont0.Sample(LinearSampler, fUV).r;
+                     if (fontSlot == 1)      a += AtlasFont1.SampleLevel(LinearSampler, fUV, 0).r;
+                     else if (fontSlot == 2) a += AtlasFont2.SampleLevel(LinearSampler, fUV, 0).r;
+                     else if (fontSlot == 3) a += AtlasFont3.SampleLevel(LinearSampler, fUV, 0).r;
+                     else                    a += AtlasFont0.SampleLevel(LinearSampler, fUV, 0).r;
                  }
                  else {
                      // Image outline — stride=3, anim-aware
@@ -591,17 +646,26 @@ float4 main(VertexOutput input) : SV_Target0 {
                      uint base       = realInstID * 3;
                      uint4 meta0     = ImagePoolBuffer[base];
                      uint4 rect      = ImagePoolBuffer[base + 1];
-
-                     float2 outlineUV = cUV;
-                     if (meta0.z > 0) outlineUV.x = 1.0 - outlineUV.x;
-                     if (meta0.w > 0) outlineUV.y = 1.0 - outlineUV.y;
+                     uint4 meta2     = ImagePoolBuffer[base + 2];
 
                      float2 texPos  = (float2)rect.xy;
                      float2 texSize = (float2)rect.zw;
+                     uint fitMode   = meta2.z;
+                     float2 elemSize = input.objectRect.zw * ScreenRes;
+
+                     bool clipUV = false;
+                     float2 outlineUV = GetFitModeUV(cUV, fitMode, texSize, elemSize, clipUV);
+
+                     if (meta0.z > 0) outlineUV.x = 1.0 - outlineUV.x;
+                     if (meta0.w > 0) outlineUV.y = 1.0 - outlineUV.y;
+
                      uint w, h; AtlasIcons.GetDimensions(w, h);
                      float2 dim     = float2(max(1, w), max(1, h));
                      float2 fUV_img = (texPos + outlineUV * texSize) / dim;
-                     a += AtlasIcons.Sample(LinearSampler, float2(fUV_img.x, 1.0 - fUV_img.y)).a;
+                     
+                     if (!clipUV) {
+                         a += AtlasIcons.SampleLevel(LinearSampler, float2(fUV_img.x, 1.0 - fUV_img.y), 0).a;
+                     }
                  }
              }
          }
