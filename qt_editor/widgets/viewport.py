@@ -2491,13 +2491,20 @@ class RZViewportPanel(RZEditorPanel):
         # Hash is intentionally lightweight: we only fingerprint element IDs,
         # positions, and a few key fields — not the entire data dict.
         try:
+            from ..utils.image_cache import ImageCache
+            img_cache = ImageCache.instance()
             _fp_parts = []
             for e in data:
+                img_id = e.get('image_id', -1)
+                fit_mode = img_cache.get_fit_mode(img_id) if img_id != -1 else 'FILL'
                 _fp_parts.append((
                     e.get('id'), e.get('pos_x'), e.get('pos_y'),
                     e.get('width'), e.get('height'),
-                    e.get('image_id'), e.get('is_hidden'),
+                    img_id, e.get('is_hidden'),
                     e.get('color'), e.get('rotation', 0),
+                    e.get('image_source_type'),
+                    e.get('svg_preserve_color'),
+                    fit_mode
                 ))
             _fingerprint = hash((
                 tuple(_fp_parts),

@@ -125,6 +125,15 @@ class ImageCache:
         return self._cache.get(image_id, None)
 
     def get_fit_mode(self, image_id):
+        if image_id == -1:
+            return 'FILL'
+        scene = bpy.context.scene
+        if hasattr(scene, "rzm") and hasattr(scene.rzm, "images"):
+            for img in scene.rzm.images:
+                if img.id == image_id:
+                    val = getattr(img, 'fit_mode', 'FILL')
+                    self._fit_modes[image_id] = val
+                    return val
         return self._fit_modes.get(image_id, 'FILL')
 
     def get_anim_frame(self, base_name, frame_idx):
