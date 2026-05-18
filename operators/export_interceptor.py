@@ -45,6 +45,10 @@ _xxmi_original = None
 _efmi_original = None
 _xxmi_patched  = False
 _efmi_patched  = False
+_xxmi_attempts = 0
+_efmi_attempts = 0
+MAX_ATTEMPTS   = 5
+
 
 
 # ── XXMI hook ─────────────────────────────────────────────────────────────────
@@ -68,9 +72,12 @@ def _xxmi_hook(self, *args, **kwargs):
 
 
 def install_xxmi_interceptor() -> bool:
-    global _xxmi_original, _xxmi_patched
+    global _xxmi_original, _xxmi_patched, _xxmi_attempts
     if _xxmi_patched:
         return True
+    if _xxmi_attempts >= MAX_ATTEMPTS:
+        return False
+    _xxmi_attempts += 1
     try:
         import importlib
         # Module path uses dots but the Blender addon uses a package alias
@@ -82,8 +89,12 @@ def install_xxmi_interceptor() -> bool:
                 mod = sys.modules[key]
                 break
         if mod is None:
-            print('[RZM] [CACHE] XXMI exporter module not found in sys.modules. '
-                  'Is XXMITools enabled?')
+            if _xxmi_attempts >= MAX_ATTEMPTS:
+                print('[RZM] [CACHE] XXMI exporter module not found in sys.modules. '
+                      'Is XXMITools enabled? (Max attempts reached, stopping checks)')
+            else:
+                print(f'[RZM] [CACHE] XXMI exporter module not found in sys.modules. '
+                      f'Is XXMITools enabled? (Attempt {_xxmi_attempts}/{MAX_ATTEMPTS})')
             return False
 
         cls = getattr(mod, XXMI_EXPORTER_CLASS, None)
@@ -144,9 +155,12 @@ def _efmi_hook(self, *args, **kwargs):
 
 
 def install_efmi_interceptor() -> bool:
-    global _efmi_original, _efmi_patched
+    global _efmi_original, _efmi_patched, _efmi_attempts
     if _efmi_patched:
         return True
+    if _efmi_attempts >= MAX_ATTEMPTS:
+        return False
+    _efmi_attempts += 1
     try:
         import sys
         mod = None
@@ -158,8 +172,12 @@ def install_efmi_interceptor() -> bool:
                 mod = sys.modules[key]
                 break
         if mod is None:
-            print('[RZM] [CACHE] EFMI blender_export module not found. '
-                  'Is EFMI-Tools enabled?')
+            if _efmi_attempts >= MAX_ATTEMPTS:
+                print('[RZM] [CACHE] EFMI blender_export module not found. '
+                      'Is EFMI-Tools enabled? (Max attempts reached, stopping checks)')
+            else:
+                print(f'[RZM] [CACHE] EFMI blender_export module not found. '
+                      f'Is EFMI-Tools enabled? (Attempt {_efmi_attempts}/{MAX_ATTEMPTS})')
             return False
 
         cls = getattr(mod, EFMI_EXPORTER_CLASS, None)
@@ -214,21 +232,23 @@ def uninstall_all() -> None:
 _timer_registered = False
 
 def _interceptor_timer():
-    """Timer that repeatedly tries to install interceptors until both are placed."""
+    """Timer that repeatedly tries to install interceptors until both are placed or max attempts reached."""
     install_all()
-    # Once both are patched, we can stop the timer (return None).
-    # If a user only has one addon, the timer will keep running every 5 seconds, 
-    # which is harmless and covers the case if they enable the other addon later.
-    if _xxmi_patched and _efmi_patched:
+    # Once both are patched or hit max attempts, we can stop the timer (return None).
+    if (_xxmi_patched or _xxmi_attempts >= MAX_ATTEMPTS) and (_efmi_patched or _efmi_attempts >= MAX_ATTEMPTS):
         return None
     return 5.0
 
 def register():
-    global _timer_registered
+    global _timer_registered, _xxmi_attempts, _efmi_attempts
+    _xxmi_attempts = 0
+    _efmi_attempts = 0
     install_all()  # Try once immediately
     if not _timer_registered:
-        bpy.app.timers.register(_interceptor_timer, first_interval=2.0)
-        _timer_registered = True
+        # Only start the timer if at least one interceptor is not yet installed and hasn't exhausted its attempts
+        if not ((_xxmi_patched or _xxmi_attempts >= MAX_ATTEMPTS) and (_efmi_patched or _efmi_attempts >= MAX_ATTEMPTS)):
+            bpy.app.timers.register(_interceptor_timer, first_interval=2.0)
+            _timer_registered = True
 
 def unregister():
     global _timer_registered

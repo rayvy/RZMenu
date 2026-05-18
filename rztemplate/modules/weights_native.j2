@@ -89,7 +89,7 @@ cs-u5 = copy Resource{{ comp_name }}_VB2_Base
         
         {% for a_name in affected_names %}
             {% for r_name in names_to_check %}
-                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+                {% if (r_name == a_name) or (r_name|length >= 3 and a_name|length >= 3 and (a_name in r_name or r_name in a_name)) %}
                     {% set _ = affected_list.append(1) %}
                 {% endif %}
             {% endfor %}
@@ -145,7 +145,7 @@ filename = {{ base_filename }}
         
         {% for a_name in affected_names %}
             {% for r_name in names_to_check %}
-                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+                {% if (r_name == a_name) or (r_name|length >= 3 and a_name|length >= 3 and (a_name in r_name or r_name in a_name)) %}
                     {% set _ = affected_list.append(1) %}
                 {% endif %}
             {% endfor %}

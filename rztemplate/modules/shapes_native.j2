@@ -214,7 +214,7 @@ cs-u5 = copy Resource{{ comp_name }}_Base
 ;   Comparing with a_name: "{{ a_name }}"
 {% endif %}
             {% for r_name in names_to_check %}
-                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+                {% if (r_name == a_name) or (r_name|length >= 3 and a_name|length >= 3 and (a_name in r_name or r_name in a_name)) %}
 {% if rzm.addons.debugger_info %}
 ;   >> MATCH FOUND! <<
 {% endif %}
@@ -276,7 +276,7 @@ filename = {{ base_filename }}
         
         {% for a_name in affected_names %}
             {% for r_name in names_to_check %}
-                {% if (r_name == a_name) or (a_name in r_name) or (r_name in a_name) %}
+                {% if (r_name == a_name) or (r_name|length >= 3 and a_name|length >= 3 and (a_name in r_name or r_name in a_name)) %}
                     {% set _ = affected_list.append(1) %}
                 {% endif %}
             {% endfor %}
