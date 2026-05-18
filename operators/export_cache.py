@@ -283,6 +283,19 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
             stride_f32 = stride // 4
             buf_f32    = np.frombuffer(buf_bytes, dtype=np.float32).reshape(-1, stride_f32)
             buf_xyz    = buf_f32[:, :3]
+
+            # Resolve flipmesh/mirroring dynamically using the component anchor
+            from .puppet_master_ops import _resolve_component_transform
+            comp_classifications = [part.fullname for part in comp.parts]
+            _, flip_winding = _resolve_component_transform(
+                bpy.context,
+                is_xxmi=True,
+                game_name=game,
+                mod_name=mod_name,
+                comp_name=comp_key,
+                classifications=comp_classifications
+            )
+
             objects, vb_offset = [], 0
             for part in comp.parts:
                 for sub in part.objects:
@@ -313,7 +326,7 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                     has_id = True
                     
                     if eval_mesh:
-                        res = reconstruct_vertex_map_from_mesh(eval_mesh, sub.obj, stride)
+                        res = reconstruct_vertex_map_from_mesh(eval_mesh, sub.obj, stride, flip_winding=flip_winding)
                         if res:
                             v_map, eval_v_count, has_id = res
                     
