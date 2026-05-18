@@ -36,7 +36,7 @@ def _pil_to_float32_rgba(pil_img):
 
 def _frames_are_similar(a: np.ndarray, b: np.ndarray, threshold: float) -> bool:
     """
-    Сравнивает два RGBA float32 кадра через MAE.
+    Сравнивает два RGBA float32 кадра через MAE и проверку локальных изменений.
     threshold=0 означает полную идентичность.
     """
     if a.shape != b.shape:
@@ -45,8 +45,31 @@ def _frames_are_similar(a: np.ndarray, b: np.ndarray, threshold: float) -> bool:
     if threshold <= 0:
         return np.array_equal(a, b)
     
-    mae = float(np.mean(np.abs(a - b)))
-    return mae < threshold
+    diff = np.abs(a - b)
+    mae = float(np.mean(diff))
+    
+    # 1. Глобальная разница (по всему изображению)
+    if mae >= threshold:
+        return False
+        
+    # 2. Локальная разница (для малых анимированных областей)
+    # Ищем максимальное изменение (RGB или Alpha) для каждого пикселя
+    pixel_diff = np.max(diff, axis=-1)
+    
+    # Считаем пиксели, изменившиеся больше чем на ~25/255 (отсев шума сжатия)
+    changed_pixels = np.sum(pixel_diff > 0.1)
+    
+    # Порог количества пикселей, который считается "движением" (а не шумом).
+    # Масштабируется от базового threshold, чтобы уважать пресеты качества (ADAPTIVE, ECONOMY).
+    min_changed_pixels = max(int(threshold * 1000), 5)
+    min_changed_fraction = int(a.shape[0] * a.shape[1] * threshold * 0.01)
+    
+    min_pixels = max(min_changed_pixels, min_changed_fraction)
+    
+    if changed_pixels > min_pixels:
+        return False
+        
+    return True
 
 
 # ─── Дедупликация ─────────────────────────────────────────────────────────────
@@ -177,9 +200,11 @@ def load_video(filepath: str, max_frames: int = 64) -> list:
         frametime = 1.0 / 24.0  # fallback: 24fps
 
     frames = []
+    print(f"[RZM AnimLoader] Начинаем чтение видео: {filepath} (max_frames={max_frames})")
     try:
-        for idx, raw_frame in enumerate(iio.imiter(filepath, plugin='pyav')):
+        for idx, raw_frame in enumerate(iio.imiter(filepath, plugin='pyav', format='rgba')):
             if idx >= max_frames:
+                print(f"[RZM AnimLoader] Достигнут лимит кадров ({max_frames}). Остановка чтения.")
                 break
 
             # raw_frame: uint8 RGB или RGBA (H, W, 3|4)
@@ -196,11 +221,17 @@ def load_video(filepath: str, max_frames: int = 64) -> list:
                 'frametime': frametime,
                 'size': (w, h),
             })
+            
+        print(f"[RZM AnimLoader] Успешно прочитано кадров: {len(frames)}")
+        if len(frames) == 1:
+            print(f"[RZM AnimLoader] ВНИМАНИЕ: Извлечён всего 1 кадр! Либо видео состоит из 1 кадра, либо кодек (ProRes/H265) прервал поток.")
+            
     except Exception as e:
         if not frames:
+            print(f"[RZM AnimLoader] КРИТИЧЕСКАЯ ОШИБКА кодека при чтении {filepath}: {e}")
             raise IOError(f"Не удалось прочитать видеофайл: {e}")
         # Если хоть что-то прочитали — продолжаем с тем что есть
-        print(f"[RZM AnimLoader] Предупреждение: чтение видео прервано на кадре {len(frames)}: {e}")
+        print(f"[RZM AnimLoader] ПРЕДУПРЕЖДЕНИЕ: чтение прервано кодеком на кадре {len(frames)}: {e}")
 
     return frames
 
@@ -474,7 +505,7 @@ def get_frame_at(filepath: str, index: int) -> np.ndarray:
         return None
         
     try:
-        raw_frame = reader.read(index=index)
+        raw_frame = reader.read(index=index, format="rgba")
         
         # Конвертация в float32 RGBA
         arr = np.array(raw_frame, dtype=np.float32) / 255.0

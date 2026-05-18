@@ -303,7 +303,7 @@ def import_image_from_path(filepath):
         
         # Choose the right operator based on file extension
         ext = os.path.splitext(filepath)[1].lower()
-        if ext in ['.gif', '.mp4', '.webm', '.avi']:
+        if ext in ['.gif', '.mp4', '.webm', '.avi', '.mov', '.mkv']:
             op_name = "add_animated_image"
         else:
             op_name = "add_image"

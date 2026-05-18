@@ -259,7 +259,7 @@ class RZAssetDetailsPanel(QtWidgets.QFrame):
         static_exts = ('.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp')
         is_static_ext = path.lower().endswith(static_exts)
         is_vector = data.get('source_type') == 'VECTOR' or path.lower().endswith('.svg')
-        is_anim = (data.get('source_type') == 'ANIMATED' or path.lower().endswith('.gif')) and not is_static_ext and not is_vector
+        is_anim = (data.get('source_type') == 'ANIMATED' or path.lower().endswith(('.gif', '.mp4', '.webm', '.avi', '.mov', '.mkv'))) and not is_static_ext and not is_vector
         
         self.vector_group.setVisible(is_vector)
         self.anim_group.setVisible(is_anim)
@@ -550,7 +550,7 @@ class RZAssetListWidget(QtWidgets.QListWidget):
                         print(f"[AssetBrowser] Failed to copy template: {e}")
 
                 # Б) Если кинули КАРТИНКУ -> Импортируем в Blend (как раньше)
-                elif ext in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp', '.gif', '.mp4', '.webm', '.avi', '.svg']:
+                elif ext in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp', '.gif', '.mp4', '.webm', '.avi', '.mov', '.mkv', '.svg']:
                     print(f"[AssetBrowser] Calling core.import_image_from_path for {path}")
                     from .. import core
                     core.import_image_from_path(path)
@@ -631,7 +631,7 @@ class RZAssetBrowserPanel(RZEditorPanel):
         # 2c. Фильтр по Расширению
         toolbar.addWidget(QtWidgets.QLabel("Ext:"))
         self.combo_ext = QtWidgets.QComboBox()
-        self.combo_ext.addItems(["All", ".png", ".svg", ".mp4", ".gif", ".rzmt"])
+        self.combo_ext.addItems(["All", ".png", ".svg", ".mp4", ".webm", ".mov", ".gif", ".rzmt"])
         self.combo_ext.currentTextChanged.connect(self.rebuild_view)
         toolbar.addWidget(self.combo_ext)
 

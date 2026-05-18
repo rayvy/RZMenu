@@ -48,7 +48,7 @@ class RZM_OT_LoadBaseIcons(bpy.types.Operator):
                 base_name, ext = os.path.splitext(filename)
                 ext = ext.lower()
 
-                if ext not in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp', '.svg', '.gif', '.mp4']:
+                if ext not in ['.png', '.jpg', '.jpeg', '.dds', '.tga', '.bmp', '.svg', '.gif', '.mp4', '.webm', '.avi', '.mov', '.mkv']:
                     continue
                 
                 print(f"[IconsDebug] Detected File: {filename}")
