@@ -1062,17 +1062,28 @@ ps-t107 = ResourceImageBuffer
 {% if has_anim %}
 ps-t108 = ResourceAnimFrames
 {% endif %}
+{% set used_font_slots = [0] %}
+{% if scene.rzm and scene.rzm.elements %}
+    {% for elem in scene.rzm.elements %}
+        {% if (elem.elem_class == 'TEXT' or elem.elem_class == 'BUTTON') and not elem.disable_export %}
+            {% set slot = elem.font_slot | default(0) | int %}
+            {% if slot not in used_font_slots %}
+                {% set _ = used_font_slots.append(slot) %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+{% endif %}
 vs-t82 = ResourceFont0
 ps-t82 = ResourceFont0
-{% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
+{% if 1 in used_font_slots and scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
 vs-t83 = ResourceFont1
 ps-t83 = ResourceFont1
 {% endif -%}
-{% if scene.rzm.fonts and scene.rzm.fonts|length > 2 and (scene.rzm.fonts[2].custom_path or scene.rzm.fonts[2].font_source != 'DEFAULT') -%}
+{% if 2 in used_font_slots and scene.rzm.fonts and scene.rzm.fonts|length > 2 and (scene.rzm.fonts[2].custom_path or scene.rzm.fonts[2].font_source != 'DEFAULT') -%}
 vs-t84 = ResourceFont2
 ps-t84 = ResourceFont2
 {% endif -%}
-{% if scene.rzm.fonts and scene.rzm.fonts|length > 3 and (scene.rzm.fonts[3].custom_path or scene.rzm.fonts[3].font_source != 'DEFAULT') -%}
+{% if 3 in used_font_slots and scene.rzm.fonts and scene.rzm.fonts|length > 3 and (scene.rzm.fonts[3].custom_path or scene.rzm.fonts[3].font_source != 'DEFAULT') -%}
 vs-t85 = ResourceFont3
 ps-t85 = ResourceFont3
 {% endif -%}
@@ -1259,17 +1270,28 @@ post $debugTexShow = 0
 [ResourceIcons]
 filename = .\res\icons.{{ scene.rzm.export_settings.atlas_format.lower() | default('png') }}
 {% set font_ext = scene.rzm.export_settings.atlas_format.lower() | default('png') -%}
+{% set used_font_slots = [0] %}
+{% if scene.rzm and scene.rzm.elements %}
+    {% for elem in scene.rzm.elements %}
+        {% if (elem.elem_class == 'TEXT' or elem.elem_class == 'BUTTON') and not elem.disable_export %}
+            {% set slot = elem.font_slot | default(0) | int %}
+            {% if slot not in used_font_slots %}
+                {% set _ = used_font_slots.append(slot) %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+{% endif %}
 [ResourceFont0]
 filename = .\res\font_atlas_0.{{ font_ext }}
-{% if scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
+{% if 1 in used_font_slots and scene.rzm.fonts and scene.rzm.fonts|length > 1 and (scene.rzm.fonts[1].custom_path or scene.rzm.fonts[1].font_source != 'DEFAULT') -%}
 [ResourceFont1]
 filename = .\res\font_atlas_1.{{ font_ext }}
 {% endif -%}
-{% if scene.rzm.fonts and scene.rzm.fonts|length > 2 and (scene.rzm.fonts[2].custom_path or scene.rzm.fonts[2].font_source != 'DEFAULT') -%}
+{% if 2 in used_font_slots and scene.rzm.fonts and scene.rzm.fonts|length > 2 and (scene.rzm.fonts[2].custom_path or scene.rzm.fonts[2].font_source != 'DEFAULT') -%}
 [ResourceFont2]
 filename = .\res\font_atlas_2.{{ font_ext }}
 {% endif -%}
-{% if scene.rzm.fonts and scene.rzm.fonts|length > 3 and (scene.rzm.fonts[3].custom_path or scene.rzm.fonts[3].font_source != 'DEFAULT') -%}
+{% if 3 in used_font_slots and scene.rzm.fonts and scene.rzm.fonts|length > 3 and (scene.rzm.fonts[3].custom_path or scene.rzm.fonts[3].font_source != 'DEFAULT') -%}
 [ResourceFont3]
 filename = .\res\font_atlas_3.{{ font_ext }}
 {% endif -%}

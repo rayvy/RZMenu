@@ -5,9 +5,10 @@ Texture1D<float4> IniParams : register(t120);
 // Возвращаем получение переменной из текстуры
 float GetVar(int id) {
     if (id < 0) return 1.0;
-    int row = 86 + id / 4;
-    int col = id % 4;
-    return IniParams.Load(int2(row, 0))[col];
+    uint u_id = (uint)id;
+    uint row = 86u + u_id / 4u;
+    uint col = u_id % 4u;
+    return IniParams.Load(int2((int)row, 0))[(int)col];
 }
 
 void main(
