@@ -272,13 +272,14 @@ def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, origina
             v_map  = entry.get('vertex_map') if entry else None
             m_idx  = entry.get('mat_idx', 0) if entry else 0
 
-            mat = mu.Matrix.Identity(4)
-            if m_idx == 1:
+            if m_idx in (1, -1):
                 mat = orig_obj.matrix_world
             elif m_idx == 2:
                 root_obj_name = comp_cache.get('root_obj')
                 root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else None
                 mat = (root_obj.matrix_world.inverted() @ orig_obj.matrix_world if root_obj else mu.Matrix.Identity(4))
+            else:
+                mat = mu.Matrix.Identity(4)
 
             mat = orient_mat @ mat
 
@@ -519,14 +520,14 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
                     if entry['name'] == obj.name:
                         m_idx = entry.get('mat_idx', 0)
                         break
-            if m_idx == 1:
+            if m_idx in (1, -1):
                 mat = obj.matrix_world
             elif m_idx == 2:
                 root_obj_name = comp_cache.get('root_obj')
                 root_obj = bpy.data.objects.get(root_obj_name) if root_obj_name else active_objects[0]
                 mat = root_obj.matrix_world.inverted() @ obj.matrix_world
             else:
-                mat = obj.matrix_world
+                mat = mu.Matrix.Identity(4)
 
             # [Orientation Patch] Apply integrated game orientation (Rotation or Mirror)
             mat = orient_mat @ mat
