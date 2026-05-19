@@ -230,6 +230,11 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
         x, y = uv_data[name]['uv_coords']
         w, h = uv_data[name]['uv_size']
         
+        # Bounds check to prevent out-of-bounds slicing/broadcasting errors
+        if x < 0 or y < 0 or x + w > atlas_w or y + h > atlas_h:
+            print(f"[RZM Atlas] WARNING: Image '{name}' is out of atlas bounds (pos: {x},{y}, size: {w}x{h}, atlas: {atlas_w}x{atlas_h}). Please run 'Update Atlas Layout' in Blender to re-pack!")
+            continue
+            
         if isinstance(img, np.ndarray):
             # Direct NumPy support (for SVG renders)
             # Input is (H, W, 4) float32, top-down.

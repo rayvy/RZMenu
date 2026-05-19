@@ -440,22 +440,27 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             if img.id not in used_image_ids: continue
 
             if img.source_type == 'ANIMATED':
-                # Снова извлекаем на лету
-                unique_frames, _ = load_animated_advanced(
-                    img.anim_source_path,
-                    preset=img.anim_export_preset,
-                    start_frame=img.anim_start_frame,
-                    end_frame=img.anim_end_frame,
-                    max_source_frames=img.anim_max_frames
-                )
-                
-                # Создаем временные Blender-картинки для рендера
-                bl_frames = frames_to_blender_images(unique_frames, f"TEMP_{img.display_name}", colorspace='Non-Color')
-                temp_bl_images.extend(bl_frames)
-                
-                for n, bl_img in enumerate(bl_frames):
-                    frame_key = f"{img.display_name}_anim_{n:04d}"
-                    images_to_render[frame_key] = bl_img
+                try:
+                    # Снова извлекаем на лету
+                    unique_frames, _ = load_animated_advanced(
+                        img.anim_source_path,
+                        preset=img.anim_export_preset,
+                        start_frame=img.anim_start_frame,
+                        end_frame=img.anim_end_frame,
+                        max_source_frames=img.anim_max_frames
+                    )
+                    
+                    # Создаем временные Blender-картинки для рендера
+                    bl_frames = frames_to_blender_images(unique_frames, f"TEMP_{img.display_name}", colorspace='Non-Color')
+                    temp_bl_images.extend(bl_frames)
+                    
+                    for n, bl_img in enumerate(bl_frames):
+                        frame_key = f"{img.display_name}_anim_{n:04d}"
+                        images_to_render[frame_key] = bl_img
+                except Exception as e:
+                    self.report({'WARNING'}, f"Failed to load animated image '{img.display_name}': {e}")
+                    print(f"[RZM] Animated image load error for '{img.display_name}': {e}")
+                    continue
             
             elif img.source_type == 'VECTOR':
                 # SVG are now handled via svg_render_configs
