@@ -204,7 +204,17 @@ Local $current_sizeY
     $clickInterpolate = $clickInterpolate + (0 - $clickInterpolate) * ($dtCustom + 0.0069)
     ;Presets
     {% if not element.is_preset and element.value_link %}
+    {% if utils.get_cls(element)|trim == 'SLIDER' %}
+    {% set first_link = element.value_link[0] %}
+    local $range_span_display = {{ (first_link.value_max | default(1.0) | float) }} - {{ (first_link.value_min| default(0.0) | float) }}
+    if $range_span_display > 0.0001
+        x24 = ($ValueX24Interpolated - {{ (first_link.value_min| default(0.0) | float) }}) / $range_span_display
+    else
+        x24 = 0.0
+    endif
+    {% else %}
     x24 = $ValueX24Interpolated
+    {% endif %}
     {% endif %}
     {% if not element.is_preset%}
     w23 = $hoverInterpolate
@@ -991,8 +1001,8 @@ endif
     $ValueX24Interpolated = $ValueX24Interpolated + (${{utils.format_var(first_link.value_name,parent_element, scene)}} - $ValueX24Interpolated) * ($dtCustom + 0.0069)
     if $ValueX24Interpolated < {{ (first_link.value_min| default(0.0) | float) }}
     $ValueX24Interpolated = {{ (first_link.value_min| default(0.0) | float) }}
-    elif $ValueX24Interpolated > {{ (first_link.value_max| default(0.0) | float) }}
-    $ValueX24Interpolated = {{ (first_link.value_min| default(0.0) | float) }}
+    elif $ValueX24Interpolated > {{ (first_link.value_max| default(1.0) | float) }}
+    $ValueX24Interpolated = {{ (first_link.value_max| default(1.0) | float) }}
     endif
 {% endif %}
 {% endmacro %}
