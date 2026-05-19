@@ -1051,6 +1051,7 @@ vs-t108 = ref ResourceAnimFrames
 ps-t105 = ref ResourceStyleBuffer
 
 
+x97 = $inputMode
 x98 = time
 w98 = time % 1
 x99 = $cursorX / $ScreenW
@@ -1089,6 +1090,7 @@ ps-t85 = ResourceFont3
 {% endif -%}
 run = CustomShaderDI2D.PASS0.BLUR
 run = CustomShaderDI2D.PASS.MAIN
+run = CustomShaderDI2D.PASS.SYSTEM
 clear = ResourceDataBuffer
 clear = ResourceIndexBuffer
 
@@ -1184,6 +1186,27 @@ cull = none
 topology = triangle_list
 o0 = set_viewport no_view_cache bb
 DrawInstanced = 192, 1024, 0, 0
+
+
+[CustomShaderDI2D.PASS.SYSTEM]
+local $interpolateCursorPosX
+local $interpolateCursorPosY
+$interpolateCursorPosX = $interpolateCursorPosX + ($CursorX - $interpolateCursorPosX) * ($dtCustom + 0.0069)
+$interpolateCursorPosY = $interpolateCursorPosY + ($CursorY - $interpolateCursorPosY) * ($dtCustom + 0.0069)
+ps-t55 = ResourceSVG
+x99 = $interpolateCursorPosX / $ScreenW
+y99 = $interpolateCursorPosY / $ScreenH
+vs = /modules/system_draw.hlsl
+ps = /modules/system_draw.hlsl
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+cull = none
+topology = triangle_list
+o0 = set_viewport no_view_cache bb
+draw = 3, 0
+[ResourceSVG]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = /modules/svg.svgmigoto
 
 
 [ResourceIndexBuffer]
