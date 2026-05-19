@@ -1,18 +1,13 @@
-// ---- Created with 3Dmigoto v1.3.16 on Thu Aug  7 17:13:17 2025
-//76c341f3625a11ad
+// ---- Created with 3Dmigoto v1.3.16 on Wed May 20 01:27:56 2026
+//c94819f8eefdca50
 struct t0_t {
   float val[32];
 };
 StructuredBuffer<t0_t> t0 : register(t0);
 
-cbuffer cb3 : register(b3)
-{
-  float4 cb3[25];
-}
-
 cbuffer cb2 : register(b2)
 {
-  float4 cb2[27];
+  float4 cb2[25];
 }
 
 cbuffer cb1 : register(b1)
@@ -22,7 +17,7 @@ cbuffer cb1 : register(b1)
 
 cbuffer cb0 : register(b0)
 {
-  float4 cb0[190];
+  float4 cb0[196];
 }
 
 struct VertexAttributes {
@@ -61,14 +56,13 @@ void main(
   out float4 o5 : TEXCOORD5,
   out float4 o6 : TXCOORDD6,
   out float4 o7 : TEXCOORD7,
-  out float4 o8 : TEXCOORD8,
-  out float3 o9 : TEXCOORD9,
-  out float4 o10 : SV_POSITION0)
+  out float3 o8 : TEXCOORD8,
+  out float4 o9 : SV_POSITION0)
 {
   float4 r0,r1,r2,r3,r4,r5,r6,r7,r8;
   uint4 bitmask, uiDest;
   float4 fDest;
-  o0 = 0;o1 = 0;o2 = 0;o3 = 0;o4 = 0;o5 = 0;o6 = 0;o7 = 0;o8 = 0;o9 = 0;o10 = 0;
+  o0 = 0;o1 = 0;o2 = 0;o3 = 0;o4 = 0;o5 = 0;o6 = 0;o7 = 0;o8 = 0;o9 = 0;
   float4 cb1Copy[29] = cb1;
 
 if (instance != 0) {
@@ -91,19 +85,18 @@ if (instance != 0) {
   r0.xyz = cb1Copy[0].xyz * v0.xxx + r0.xyz;
   r0.xyz = cb1Copy[2].xyz * v0.zzz + r0.xyz;
   r0.xyz = cb1Copy[3].xyz + r0.xyz;
-  r1.xyzw = cb0[125].xyzw * r0.yyyy;
-  r1.xyzw = cb0[124].xyzw * r0.xxxx + r1.xyzw;
-  r1.xyzw = cb0[126].xyzw * r0.zzzz + r1.xyzw;
-  o10.xyzw = cb0[127].xyzw + r1.xyzw;
+  r1.xyzw = cb0[126].xyzw * r0.yyyy;
+  r1.xyzw = cb0[125].xyzw * r0.xxxx + r1.xyzw;
+  r1.xyzw = cb0[127].xyzw * r0.zzzz + r1.xyzw;
+  o9.xyzw = cb0[128].xyzw + r1.xyzw;
   o7.w = (float)instance;
-  o8.w = 0;
   float hide_distance_threshold = 0.2f; 
   float3 original_character_pos = cb1[3].xyz;
   float3 current_clone_pos = cb1Copy[3].xyz;
 
   if (distance(original_character_pos, current_clone_pos) < hide_distance_threshold)
   {
-      o10.xyzw = float4(0, 0, 0, 0);
+      o9.xyzw = float4(0, 0, 0, 0);
   }
   return;
 }

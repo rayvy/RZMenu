@@ -50,7 +50,7 @@ run = CustomShaderRCI2D
 {% endfor %}
 {% endif %}
 
-{% if scene.rzm.addons.sandevistan_zzz == 1 %}
+{% if scene.rzm.addons.frame_trace == 1 %}
 [Constants]
 global $Sandevistan_Speed = 32
 global $Sandevistan_length = 128
@@ -58,6 +58,7 @@ global $SandevistanTime = 0
 global $SandevistanTimer = 0
 global $Sandevistan_current_index = 0
 global $Sandevistan_Base_Interval = 1
+global $CDC_Sandevistan = 0
 
 [Present]
 if $first_run
