@@ -685,6 +685,13 @@ def draw_component_manager_ui(context, layout):
     header_row.prop(cm, "dump_path", text="")
     header_row.operator("rzm.cm_update_from_dump", text="Update", icon='FILE_REFRESH')
     
+    row = layout.row(align=True)
+    row.prop(rzm.addons, "frame_trace", text="Frame Trace Active", toggle=True)
+    if rzm.addons.frame_trace:
+        box_ft = layout.box()
+        box_ft.prop(rzm.addons, "frame_trace_speed", text="Speed")
+        box_ft.prop(rzm.addons, "frame_trace_length", text="Length (Copies)")
+    
     layout.separator()
     layout.row().prop(cm, "active_tab", expand=True)
     

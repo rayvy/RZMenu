@@ -151,7 +151,13 @@
             $CD_FIRST_VERTEX = 0
             $CD_FIRST_INSTANCE = FIRST_INSTANCE
             $CD_draw_type = {{ cd_draw_type }}
+            {% if cd_name == 'FRAMETRACE' and scene.rzm.addons.frame_trace == 1 %}
+                {% set safe_name = utils.format_from_idiot(real_obj.name) %}
+            run = CustomShader{{ safe_name }}Sandevistan
+            run = CustomShader.rzm.CustomDraw.FRAMETRACE
+            {% else %}
             run = CustomShader.rzm.CustomDraw.{{ cd_name }}
+            {% endif %}
             {% endif %}
         {% endfor %}
 

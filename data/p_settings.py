@@ -234,6 +234,8 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     dtoggle_compute: BoolProperty(name="DToggleCompute", default=False)
     rtoggle_compute: BoolProperty(name="RToggleCompute", default=False)
     frame_trace: BoolProperty(name="FrameTrace", default=False)
+    frame_trace_speed: IntProperty(name="Frame Trace Speed", default=32, min=1)
+    frame_trace_length: IntProperty(name="Frame Trace Length", default=128, min=1)
     export_shapekeys: BoolProperty(
         name="Export ShapeKeys",
         default=False,

@@ -414,8 +414,14 @@ global $rayvich_back_values_w110
             {% for entry in part.objects if entry.vertex_count > 0 %}
                 {% for key, value in entry.obj.items() %}
                     {% if key.startswith('CustomDraw') %}
+                        {% if key == 'CustomDraw.FRAMETRACE' %}
+                            {% set safe_name = utils.format_from_idiot(entry.name) %}
+                        global $CDC_{{ safe_name }}_Sandevistan = {{ entry.index_count }}
+                        global $CDO_{{ safe_name }}_Sandevistan = {{ entry.index_offset }}
+                        {% else %}
                         global $CDC_{{ key|replace('CustomDraw', '') }} = {{ entry.index_count }}
                         global $CDO_{{ key|replace('CustomDraw', '') }} = {{ entry.index_offset }}
+                        {% endif %}
                     {% endif %}
                 {% endfor %}
             {% endfor %}

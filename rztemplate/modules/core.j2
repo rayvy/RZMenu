@@ -532,17 +532,17 @@ drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD
 endif
 
 [CustomShader.rzm.CustomDraw.FRAMETRACE]
-depth_bias = 500
-slope_scaled_depth_bias = 1.0
-cull = back
-blend = ADD SRC_ALPHA INV_SRC_ALPHA
-depth_func = less_equal
-alpha_to_coverage = true
-if $CD_draw_type == 2
-drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
-elif $CD_draw_type == 4
-drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
-endif
+;depth_bias = 500
+;slope_scaled_depth_bias = 1.0
+;cull = back
+;blend = ADD SRC_ALPHA INV_SRC_ALPHA
+;depth_func = less_equal
+;alpha_to_coverage = true
+;if $CD_draw_type == 2
+;drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
+;elif $CD_draw_type == 4
+;drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
+;endif
 
 {%endmacro%}
 

@@ -356,6 +356,7 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                         'name': sub.name, 
                         'vb_offset': vb_offset, 
                         'vb_count': sub.vertex_count,
+                        'ib_count': getattr(sub, 'index_count', 0),
                         'orig_v_count': orig_v_count,
                         'eval_v_count': eval_v_count,
                         'applied_v_count': applied_v_count,
@@ -716,6 +717,7 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                         'name':            tmp.name,
                         'vb_offset':       vb_offset,
                         'vb_count':        actual_vb_count,   # real buffer slot count
+                        'ib_count':        getattr(tmp, 'index_count', 0),
                         'orig_v_count':    orig_v_count,      # obj.data.vertices count (pre-modifiers)
                         'eval_v_count':    eval_v_count,      # eval mesh vertex count (post-modifiers)
                         'applied_v_count': applied_v_count,
@@ -735,6 +737,7 @@ def build_cache_from_efmi(mod_exporter) -> dict | None:
                         'name':            tmp.name,
                         'vb_offset':       vb_offset_acc,
                         'vb_count':        tmp.vertex_count,  # best guess; Fast Path skips
+                        'ib_count':        getattr(tmp, 'index_count', 0),
                         'orig_v_count':    orig_v_count,
                         'applied_v_count': applied_v_count,
                         'vertex_map':      None,

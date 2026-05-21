@@ -51,106 +51,143 @@ run = CustomShaderRCI2D
 {% endif %}
 
 {% if scene.rzm.addons.frame_trace == 1 %}
+{% set ft_objects = [] %}
+{% if scene and scene.objects %}
+    {% for obj in scene.objects %}
+        {% if obj.get('CustomDraw.FRAMETRACE') is not none %}
+            {% if ft_objects.append(obj) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+{% endif %}
+
+{% for obj in ft_objects %}
+    {% set safe_name = utils.format_from_idiot(obj.name) %}
+    {% set speed = scene.rzm.addons.frame_trace_speed | default(32) | int %}
+    {% set length = scene.rzm.addons.frame_trace_length | default(128) | int %}
+
+    {# Locate draw count / index count #}
+    {% set ns_vcount = [0] %}
+    {% if mod_file and mod_file.components %}
+        {% for component in mod_file.components %}
+            {% for part in component.parts %}
+                {% for entry in part.objects %}
+                    {% if entry.name == obj.name %}
+                        {% if ns_vcount.append(entry.index_count) %}{% endif %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+        {% endfor %}
+    {% endif %}
+    {% if ns_vcount[-1] == 0 and rzm_export_cache and rzm_export_cache.components %}
+        {% for comp_name, comp_data in rzm_export_cache.components.items() %}
+            {% for cache_obj in comp_data.objects %}
+                {% if cache_obj.name == obj.name %}
+                    {% if ns_vcount.append(cache_obj.ib_count | default(0)) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    {% endif %}
+    {% set final_vcount = ns_vcount[-1] if ns_vcount[-1] > 0 else 1024 %}
+
 [Constants]
-global $Sandevistan_Speed = 32
-global $Sandevistan_length = 128
-global $SandevistanTime = 0
-global $SandevistanTimer = 0
-global $Sandevistan_current_index = 0
-global $Sandevistan_Base_Interval = 1
+global ${{ safe_name }}_Sandevistan_Speed = {{ speed }}
+global ${{ safe_name }}_Sandevistan_length = {{ length }}
+global ${{ safe_name }}_SandevistanTime = 0
+global ${{ safe_name }}_SandevistanTimer = 0
+global ${{ safe_name }}_Sandevistan_current_index = 0
+global ${{ safe_name }}_Sandevistan_Base_Interval = 1
 ;CDC - is Component Draw Count
 ;CDO - is Component Draw Offset
-global $CDC_Sandevistan = 0
-global $CDO_Sandevistan = 0
+;global $CDC_{{ safe_name }}_Sandevistan = 0
+;global $CDO_{{ safe_name }}_Sandevistan = 0
+global ${{ safe_name }}_movement_trigger
+global ${{ safe_name }}_movement_trigger_t
+global ${{ safe_name }}_movement_multiplier = 1
+global ${{ safe_name }}_blending_threshold = 0.05
+
 [Present]
 if $first_run
-	$SandevistanTime = time + ($Sandevistan_Base_Interval / ($Sandevistan_Speed * $movement_multiplier))
+	${{ safe_name }}_SandevistanTime = time + (${{ safe_name }}_Sandevistan_Base_Interval / (${{ safe_name }}_Sandevistan_Speed * ${{ safe_name }}_movement_multiplier))
 endif 
 
-[CustomShaderSandevistan]
+[CustomShader{{ safe_name }}Sandevistan]
 vs = /modules/trace_vs_Sandevistan.hlsl
 ps = /modules/trace_ps_Sandevistan.hlsl
-; ps = ps2.hlsl
-x0 = $CDC_Sandevistan
-x1 = $Sandevistan_length
-x2 = $Sandevistan_current_index
-vs-t1 = Resource_Sandevistan_MERGED_VB0
-vs-t127 = Resource_Sandevistan_Buffer
+x0 = $CDC_{{ safe_name }}_Sandevistan
+x1 = ${{ safe_name }}_Sandevistan_length
+x2 = ${{ safe_name }}_Sandevistan_current_index
+vs-t1 = Resource_{{ safe_name }}_Sandevistan_MERGED_VB0
+vs-t127 = Resource_{{ safe_name }}_Sandevistan_Buffer
 
-drawindexedinstanced = $CDC_Sandevistan, $Sandevistan_length, $CDO_Sandevistan, 0, 0
-run = CommandListSwapC0
+drawindexedinstanced = $CDC_{{ safe_name }}_Sandevistan, ${{ safe_name }}_Sandevistan_length, $CDO_{{ safe_name }}_Sandevistan, 0, 0
+run = CommandListSwapC0_{{ safe_name }}
 
-[Constants]
-global $movement_trigger
-global $movement_trigger_t
-global $movement_multiplier = 1
-global $blending_threshold = 0.05
-
-[CustomShaderComputeSandevistan]
+[CustomShaderComputeSandevistan_{{ safe_name }}]
 cs = /modules/ouroboros_position_record.hlsl
-cs-u0 = Resource_Sandevistan_Buffer
+cs-u0 = Resource_{{ safe_name }}_Sandevistan_Buffer
 cs-cb1 = vs-cb1
-x1 = $Sandevistan_length
-x2 = $Sandevistan_current_index
+x1 = ${{ safe_name }}_Sandevistan_length
+x2 = ${{ safe_name }}_Sandevistan_current_index
 dispatch = 1, 1, 1
 
-[CustomShaderTriggerSandevistan]
+[CustomShaderTriggerSandevistan_{{ safe_name }}]
 cs = /modules/ouroboros_position_trigger.hlsl
-cs-u0 = ResourceMovementTriggerOutput
+cs-u0 = ResourceMovementTriggerOutput_{{ safe_name }}
 cs-cb1 = vs-cb1
 dispatch = 1, 1, 1
-store = $movement_trigger_t, ResourceMovementTriggerOutput, 8
-$movement_trigger = $movement_trigger + ($movement_trigger_t - $movement_trigger) * $dt
-if $movement_trigger >= -10 && $movement_trigger < 0.5
-	$movement_multiplier = 1
-elif $movement_trigger >= 0.5 && $movement_trigger < 1.0
-	$movement_multiplier = 2
-elif $movement_trigger >= 1.0
-	$movement_multiplier = 3
+store = ${{ safe_name }}_movement_trigger_t, ResourceMovementTriggerOutput_{{ safe_name }}, 8
+${{ safe_name }}_movement_trigger = ${{ safe_name }}_movement_trigger + (${{ safe_name }}_movement_trigger_t - ${{ safe_name }}_movement_trigger) * $dt
+if ${{ safe_name }}_movement_trigger >= -10 && ${{ safe_name }}_movement_trigger < 0.5
+	${{ safe_name }}_movement_multiplier = 1
+elif ${{ safe_name }}_movement_trigger >= 0.5 && ${{ safe_name }}_movement_trigger < 1.0
+	${{ safe_name }}_movement_multiplier = 2
+elif ${{ safe_name }}_movement_trigger >= 1.0
+	${{ safe_name }}_movement_multiplier = 3
 endif
 
-[ResourceMovementTriggerOutput]
+[ResourceMovementTriggerOutput_{{ safe_name }}]
 type = RWBuffer
 format = R32G32B32A32_FLOAT
 array = 3
 
-[CommandListSwapC0]
-run = CustomShaderTriggerSandevistan
-if (time) >= $SandevistanTime
-	run = CustomShaderComputeSandevistan
-	run = CustomShaderWriteSandevistan
-	$SandevistanTime = time + ($Sandevistan_Base_Interval / ($Sandevistan_Speed * $movement_multiplier))
-	run = CustomShaderComputeSandevistan
-	run = CustomShaderWriteSandevistan
+[CommandListSwapC0_{{ safe_name }}]
+run = CustomShaderTriggerSandevistan_{{ safe_name }}
+if (time) >= ${{ safe_name }}_SandevistanTime
+	run = CustomShaderComputeSandevistan_{{ safe_name }}
+	run = CustomShaderWriteSandevistan_{{ safe_name }}
+	${{ safe_name }}_SandevistanTime = time + (${{ safe_name }}_Sandevistan_Base_Interval / (${{ safe_name }}_Sandevistan_Speed * ${{ safe_name }}_movement_multiplier))
+	run = CustomShaderComputeSandevistan_{{ safe_name }}
+	run = CustomShaderWriteSandevistan_{{ safe_name }}
 endif
-;Buffer Record Logic
 
-[CustomShaderWriteSandevistan]
+[CustomShaderWriteSandevistan_{{ safe_name }}]
 cs-t0 = vb0
-cs-u0 = ResourceOutput
+cs-u0 = ResourceOutput_{{ safe_name }}
 cs = /modules/ouroboros_buffer_record.hlsl
-x0 = $CDC_Sandevistan
-x1 = $Sandevistan_length
-x2 = $Sandevistan_current_index
-dispatch = $CDC_Sandevistan + 1023 // 1024, 1, 1
-Resource_Sandevistan_MERGED_VB0 = cs-u0
-$Sandevistan_current_index = $Sandevistan_current_index + 1
-if $Sandevistan_current_index > $Sandevistan_length
-	$Sandevistan_current_index = 0
+x0 = $CDC_{{ safe_name }}_Sandevistan
+x1 = ${{ safe_name }}_Sandevistan_length
+x2 = ${{ safe_name }}_Sandevistan_current_index
+dispatch = $CDC_{{ safe_name }}_Sandevistan + 1023 // 1024, 1, 1
+Resource_{{ safe_name }}_Sandevistan_MERGED_VB0 = cs-u0
+${{ safe_name }}_Sandevistan_current_index = ${{ safe_name }}_Sandevistan_current_index + 1
+if ${{ safe_name }}_Sandevistan_current_index > ${{ safe_name }}_Sandevistan_length
+	${{ safe_name }}_Sandevistan_current_index = 0
 endif
 
-[Resource_Sandevistan_MERGED_VB0]
+[Resource_{{ safe_name }}_Sandevistan_MERGED_VB0]
 
-[Resource_Sandevistan_Buffer]
+[Resource_{{ safe_name }}_Sandevistan_Buffer]
 type = RWBuffer
 format = R32G32B32A32_FLOAT
-array = 512
+array = {{ length * 4 }}
 
-[ResourceOutput]
+[ResourceOutput_{{ safe_name }}]
 type = RWStructuredBuffer
 stride = 40
-;VertexCount * $Sandevistan_length
-array = 1327104
+array = {{ final_vcount * length }}
+;{{final_vcount}}
+;{{length}}
+{% endfor %}
 {% endif %}
 {{ generate_blend_resize(mod_file, scene) }}
 {% endif %}
