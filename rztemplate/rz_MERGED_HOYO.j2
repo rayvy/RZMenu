@@ -83,28 +83,24 @@
     {% endfor %}
 {%endmacro%}
 
-{% macro handle_textures(part,mod_file,scene) %}
+{% macro handle_textures(part,mod_file,scene,component,seen_hashes=None) %}
     {% for texture in part.textures %}
-	{% set banlist = ["EvernightFaceA","EvernightHairA"] %}
-        {% if scene.rzm and scene.rzm.export_texture_slots == 1 %}
-            [TextureOverride{{part.fullname}}{{ texture.name }}]
-            hash = {{ texture.hash }}
-            {% if scene.rzm %}
-                {% if scene.rzm.addons.atlas_merger == 1 and not part.fullname in banlist %}
-                this = ResourceAtlas{{ texture.name }}
-                {% else %}
+        {% if (not scene.rzm or scene.rzm.export_texture_slots == 0) or component.draw_vb == "" %}
+            {% if seen_hashes is not none and texture.hash not in seen_hashes %}
+                [TextureOverride{{part.fullname}}{{ texture.name }}]
+                hash = {{ texture.hash }}
                 this = Resource{{part.fullname}}{{ texture.name }}
-                {% endif %}
+                {% if seen_hashes.append(texture.hash) %}{% endif %}
+            {% elif seen_hashes is none %}
+                [TextureOverride{{part.fullname}}{{ texture.name }}]
+                hash = {{ texture.hash }}
+                this = Resource{{part.fullname}}{{ texture.name }}
             {% endif %}
         {% endif %}
 
-        {% if scene.rzm.export_texture_slots == 1 or scene.rzm.export_texture_slots == 1 %}
-		[Resource{{ part.fullname }}{{ texture.name }}]
-		filename = {{ part.fullname }}{{ texture.name }}{{ texture.extension }}
-        {% else %}
-        ;there nothing
-        {% endif %}
-	{% endfor %}
+        [Resource{{ part.fullname }}{{ texture.name }}]
+        filename = {{ part.fullname }}{{ texture.name }}{{ texture.extension }}
+    {% endfor %}
 {% endmacro %}
 
 
@@ -137,10 +133,15 @@
         
 
         {% for part in component.parts if part.vertex_count > 0 %}
+            {% if utils.cm_test_subcomp_enabled(mod_file, scene, component.fullname, part.fullname) == 'True' %}
+            ;Помечен
+            {% endif %}
             [TextureOverride{{ part.fullname }}]
             hash = {{ component.ib }}
             match_first_index = {{ part.first_index }}
+            {% if utils.cm_part_is_donor(mod_file, scene, part.fullname) == 'False' %}
             run = CommandListTextureOverride{{ part.fullname }}
+            {% endif %}
             [CommandListTextureOverride{{ part.fullname }}]
             ib = Resource{{ part.fullname }}IB
             {% if mod_file.game.name == "ZenlessZoneZero" %}run = CommandListSkinTexture{%endif%}
@@ -158,6 +159,38 @@
                 {% endif %}
                 ; {{ entry.name }} ({{ entry.vertex_count }})
                 {{ helper.smart_draw(entry, draw_mode='simple') }}
+            {% endfor %}
+
+            {# Material Transfer Redirection #}
+            {% set cm = scene.rzm.component_manager %}
+            {% for comp_mt in cm.components %}
+                {% set mt_comp_fullname = comp_mt.name %}
+                {% if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] %}
+                    {% set mt_comp_fullname = mod_file.name ~ comp_mt.name %}
+                {% endif %}
+                {% if mt_comp_fullname == component.fullname %}
+                    {% for part_mt in comp_mt.parts %}
+                        {% set mt_part_fullname = part_mt.name %}
+                        {% if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] %}
+                            {% set mt_part_fullname = mod_file.name ~ part_mt.name %}
+                        {% endif %}
+                        {% if mt_part_fullname == part.fullname %}
+                            {% for donor in part_mt.donors %}
+                                {% set donor_comp_fullname = donor.component_name %}
+                                {% set donor_part_fullname = donor.part_name %}
+                                {% if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] %}
+                                    {% set donor_comp_fullname = mod_file.name ~ donor.component_name %}
+                                    {% set donor_part_fullname = mod_file.name ~ donor.part_name %}
+                                {% endif %}
+            vb0 = Resource{{ donor_comp_fullname }}vb0.copy
+            vb1 = Resource{{ donor_comp_fullname }}Texcoord
+            vb2 = Resource{{ donor_comp_fullname }}Blend
+            vb3 = Resource{{ donor_comp_fullname }}vb0.copy
+            run = CommandListTextureOverride{{ donor_part_fullname }}
+                            {% endfor %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
             {% endfor %}
 
             {% if not bufPosCopy%}
@@ -257,9 +290,10 @@
 
 {% macro resourcetextures(mod_file,scene) %}
     {# Этот макрос полностью идентичен для всех игр #}
+    {% set seen_hashes = [] %}
     {% for component in mod_file.components %}
         {% for part in component.parts %}
-            {{ handle_textures(part,mod_file,scene) }}
+            {{ handle_textures(part,mod_file,scene,component,seen_hashes) }}
         {% endfor %}
     {% endfor %}
 {%endmacro%}

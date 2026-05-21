@@ -27,7 +27,7 @@ from .p_settings import (
     RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer, RZMLanguage
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
-from .p_component_manager import RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
+from .p_component_manager import RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
 from ..operators import custom_draw_ops
 
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
@@ -183,7 +183,7 @@ classes_to_register = [
     RZMCollectionPointer,
     RZM_AddonPreferences,
     RZMAutoMenuSettings,
-    RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings,
+    RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings,
     RZMenuProperties,
     RZModProducerSettings,
 ]
@@ -227,6 +227,8 @@ def register():
     bpy.types.Scene.rzm_capture_overwrite_id = IntProperty(name="Overwrite ID", default=-1)
     bpy.types.Scene.rzm_show_captures_preview = BoolProperty(name="Show Captures Preview", default=True)
     bpy.types.Scene.rzm_show_capture_tools = BoolProperty(name="Show Capture Tools", default=False)
+    bpy.types.Scene.rzm_show_component_manager = BoolProperty(name="Show Component Manager", default=False)
+    bpy.types.Scene.rzm_show_material_transfer = BoolProperty(name="Show Material Transfer", default=False)
     bpy.types.Scene.rzm_toolbox_tab = EnumProperty(
         name="Toolbox Tab",
         items=[
@@ -236,7 +238,6 @@ def register():
             ('NATIVE_SHAPES', "Native Shapes", "Manage discovered Blender shape keys"),
             ('KEYBINDS',  "Keybinds",  "Manage in-game hotkeys and RunLinks"),
             ('BLEND_RESIZE', "Blend Resize", "Manage bone-based resizing"),
-            ('COMPONENT_MANAGER', "Comp. Mgr", "Manage Components and SubComponents"),
         ],
         default='TOGGLES'
     )

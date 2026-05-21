@@ -1,9 +1,14 @@
 import bpy
 from bpy.props import StringProperty, BoolProperty, CollectionProperty, EnumProperty
 
+class RZMCM_PartDonor(bpy.types.PropertyGroup):
+    component_name: StringProperty(name="Component Name")
+    part_name: StringProperty(name="SubComponent Name")
+
 class RZMCM_Part(bpy.types.PropertyGroup):
     name: StringProperty(name="Name")
     enabled: BoolProperty(name="Enabled", default=False)
+    donors: CollectionProperty(type=RZMCM_PartDonor)
 
 class RZMCM_Component(bpy.types.PropertyGroup):
     name: StringProperty(name="Name")

@@ -215,6 +215,8 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
 
         layout.separator()
 
+        layout.separator()
+
         # 5. OBJECT PROPERTIES
         addon_name = __package__.split(".")[0] if "." in __package__ else __package__
         prefs = context.preferences.addons.get(addon_name)
@@ -672,6 +674,78 @@ class RZM_UL_CM_PartList(bpy.types.UIList):
             layout.label(text="", icon='MESH_DATA')
 
 
+
+def draw_component_manager_ui(context, layout):
+    scene = context.scene
+    rzm = scene.rzm
+    cm = rzm.component_manager
+    
+    layout.label(text="Component Manager", icon='OUTLINER_OB_MESH')
+    header_row = layout.row(align=True)
+    header_row.prop(cm, "dump_path", text="")
+    header_row.operator("rzm.cm_update_from_dump", text="Update", icon='FILE_REFRESH')
+    
+    layout.separator()
+    layout.row().prop(cm, "active_tab", expand=True)
+    
+    if cm.active_tab == 'BLEND_COPY':
+        b_box = layout.box()
+        b_box.label(text="BlendCopy (Components)", icon='MOD_BOOLEAN')
+        b_box.template_list("RZM_UL_CM_ComponentList", "", cm, "components", scene, "rzm_cm_active_comp_index", rows=5)
+        
+    elif cm.active_tab == 'TEST_SUBCOMP':
+        t_box = layout.box()
+        t_box.label(text="TestSubComp (SubComponents)", icon='GROUP_VERTEX')
+        
+        for i, comp in enumerate(cm.components):
+            c_box = t_box.box()
+            c_box.label(text=f"Component: {comp.name if comp.name else '<Empty>'}", icon='OUTLINER_OB_MESH')
+            if comp.parts:
+                for part in comp.parts:
+                    row = c_box.row(align=True)
+                    row.prop(part, "enabled", text="")
+                    row.label(text=part.name, icon='MESH_DATA')
+            else:
+                c_box.label(text="No subcomponents", icon='INFO')
+
+def draw_material_transfer_ui(context, layout):
+    scene = context.scene
+    cm = scene.rzm.component_manager
+    
+    if not cm.components:
+        layout.label(text="No components loaded in Component Manager.", icon='INFO')
+        return
+        
+    layout.label(text="Assign subcomponent geometry to draw on targets:", icon='NONE')
+    
+    for comp in cm.components:
+        # We only show components that have parts/subcomponents
+        if not comp.parts:
+            continue
+            
+        comp_box = layout.box()
+        comp_box.label(text=f"Component: {comp.name}", icon='OUTLINER_OB_MESH')
+        
+        for part in comp.parts:
+            part_box = comp_box.box()
+            row = part_box.row()
+            row.label(text=f"Target: {part.name}", icon='MESH_DATA')
+            
+            # Button to add donor
+            add_op = row.operator("rzm.add_transfer_donor", text="Add Donor", icon='ADD')
+            add_op.target_comp = comp.name
+            add_op.target_part = part.name
+            
+            # Draw list of donors
+            if part.donors:
+                col = part_box.column(align=True)
+                for idx, donor in enumerate(part.donors):
+                    d_row = col.row(align=True)
+                    d_row.label(text=f"↳ Donor: {donor.component_name} -> {donor.part_name}", icon='LINKED')
+                    rem_op = d_row.operator("rzm.remove_transfer_donor", text="", icon='TRASH')
+                    rem_op.target_comp = comp.name
+                    rem_op.target_part = part.name
+                    rem_op.donor_index = idx
 
 def draw_toolbox_content(self, context):
     layout = self.layout
@@ -1241,36 +1315,26 @@ def draw_toolbox_content(self, context):
                 box.separator()
                 box.label(text="Export saves configurations inside the addon's .ini output. No external buffers needed.", icon='INFO')
 
-    elif tab == 'COMPONENT_MANAGER':
-        cm = rzm.component_manager
+    # 3. COMPONENT MANAGER & MATERIAL TRANSFER (Below Project Configuration, collapsible)
+    layout.separator(factor=1.0)
+    
+    # COMPONENT MANAGER Collapsible Box
+    cm_box = layout.box()
+    row = cm_box.row()
+    icon = 'TRIA_DOWN' if scene.rzm_show_component_manager else 'TRIA_RIGHT'
+    row.prop(scene, "rzm_show_component_manager", text="COMPONENT MANAGER", icon=icon, emboss=False)
+    
+    if scene.rzm_show_component_manager:
+        draw_component_manager_ui(context, cm_box)
         
-        box.label(text="Component Manager", icon='OUTLINER_OB_MESH')
-        header_row = box.row(align=True)
-        header_row.prop(cm, "dump_path", text="")
-        header_row.operator("rzm.cm_update_from_dump", text="Update", icon='FILE_REFRESH')
-        
-        box.separator()
-        box.row().prop(cm, "active_tab", expand=True)
-        
-        if cm.active_tab == 'BLEND_COPY':
-            b_box = box.box()
-            b_box.label(text="BlendCopy (Components)", icon='MOD_BOOLEAN')
-            b_box.template_list("RZM_UL_CM_ComponentList", "", cm, "components", scene, "rzm_cm_active_comp_index", rows=5)
-            
-        elif cm.active_tab == 'TEST_SUBCOMP':
-            t_box = box.box()
-            t_box.label(text="TestSubComp (SubComponents)", icon='GROUP_VERTEX')
-            
-            for i, comp in enumerate(cm.components):
-                c_box = t_box.box()
-                c_box.label(text=f"Component: {comp.name if comp.name else '<Empty>'}", icon='OUTLINER_OB_MESH')
-                if comp.parts:
-                    for part in comp.parts:
-                        row = c_box.row(align=True)
-                        row.prop(part, "enabled", text="")
-                        row.label(text=part.name, icon='MESH_DATA')
-                else:
-                    c_box.label(text="No subcomponents", icon='INFO')
+    # MATERIAL TRANSFER Collapsible Box
+    mt_box = layout.box()
+    row = mt_box.row()
+    icon = 'TRIA_DOWN' if scene.rzm_show_material_transfer else 'TRIA_RIGHT'
+    row.prop(scene, "rzm_show_material_transfer", text="MATERIAL TRANSFER", icon=icon, emboss=False)
+    
+    if scene.rzm_show_material_transfer:
+        draw_material_transfer_ui(context, mt_box)
 
 
 class VIEW3D_PT_RZConstructorToolboxPanel_Internal(bpy.types.Panel):

@@ -507,8 +507,47 @@
                 {%- if ns.update({'enabled': true}) -%}{%- endif -%}
             {%- endif -%}
         {%- endif -%}
+        {# Check if any part in this comp is a donor for another part #}
+        {%- for part in comp.parts -%}
+            {%- set expected_part_fullname = part.name -%}
+            {%- if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] -%}
+                {%- set expected_part_fullname = mod_file.name ~ part.name -%}
+            {%- endif -%}
+            {%- for other_comp in cm.components -%}
+                {%- for other_part in other_comp.parts -%}
+                    {%- for donor in other_part.donors -%}
+                        {%- set donor_part_fullname = donor.part_name -%}
+                        {%- if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] -%}
+                            {%- set donor_part_fullname = mod_file.name ~ donor.part_name -%}
+                        {%- endif -%}
+                        {%- if expected_fullname == component_fullname and expected_part_fullname == donor_part_fullname -%}
+                            {%- if ns.update({'enabled': true}) -%}{%- endif -%}
+                        {%- endif -%}
+                    {%- endfor -%}
+                {%- endfor -%}
+            {%- endfor -%}
+        {%- endfor -%}
     {%- endfor -%}
     {{- 'True' if ns.enabled else 'False' -}}
+{%- endmacro -%}
+
+{%- macro cm_part_is_donor(mod_file, scene, part_fullname) -%}
+    {%- set cm = scene.rzm.component_manager -%}
+    {%- set ns = {'is_donor': false} -%}
+    {%- for comp in cm.components -%}
+        {%- for part in comp.parts -%}
+            {%- for donor in part.donors -%}
+                {%- set donor_part_fullname = donor.part_name -%}
+                {%- if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] -%}
+                    {%- set donor_part_fullname = mod_file.name ~ donor.part_name -%}
+                {%- endif -%}
+                {%- if donor_part_fullname == part_fullname -%}
+                    {%- if ns.update({'is_donor': true}) -%}{%- endif -%}
+                {%- endif -%}
+            {%- endfor -%}
+        {%- endfor -%}
+    {%- endfor -%}
+    {{- 'True' if ns.is_donor else 'False' -}}
 {%- endmacro -%}
 
 {%- macro cm_test_subcomp_enabled(mod_file, scene, component_fullname, part_fullname) -%}
