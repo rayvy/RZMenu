@@ -493,3 +493,57 @@
         {%- endif -%}
     {%- endif -%}
 {%- endmacro -%}
+
+{%- macro cm_vb0_enabled(mod_file, scene, component_fullname) -%}
+    {%- set cm = scene.rzm.component_manager -%}
+    {%- set ns = {'enabled': false} -%}
+    {%- for comp in cm.components -%}
+        {%- set expected_fullname = comp.name -%}
+        {%- if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] -%}
+            {%- set expected_fullname = mod_file.name ~ comp.name -%}
+        {%- endif -%}
+        {%- if expected_fullname == component_fullname -%}
+            {%- if comp.blend_copy_enabled -%}
+                {%- if ns.update({'enabled': true}) -%}{%- endif -%}
+            {%- endif -%}
+        {%- endif -%}
+    {%- endfor -%}
+    {{- 'True' if ns.enabled else 'False' -}}
+{%- endmacro -%}
+
+{%- macro cm_test_subcomp_enabled(mod_file, scene, component_fullname, part_fullname) -%}
+    {%- set cm = scene.rzm.component_manager -%}
+    {%- set ns = {'enabled': false} -%}
+    {%- for comp in cm.components -%}
+        {%- set expected_comp_fullname = comp.name -%}
+        {%- if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] -%}
+            {%- set expected_comp_fullname = mod_file.name ~ comp.name -%}
+        {%- endif -%}
+        {%- if expected_comp_fullname == component_fullname -%}
+            {%- for part in comp.parts -%}
+                {%- set expected_part_fullname = part.name -%}
+                {%- if mod_file.game.name in ["GenshinImpact", "ZenlessZoneZero", "HonkaiStarRail"] -%}
+                    {%- set expected_part_fullname = mod_file.name ~ part.name -%}
+                {%- endif -%}
+                {%- if expected_part_fullname == part_fullname -%}
+                    {%- if part.enabled -%}
+                        {%- if ns.update({'enabled': true}) -%}{%- endif -%}
+                    {%- endif -%}
+                {%- endif -%}
+            {%- endfor -%}
+        {%- endif -%}
+    {%- endfor -%}
+    {{- 'True' if ns.enabled else 'False' -}}
+{%- endmacro -%}
+
+{% macro cm_debug_dump(mod_file, scene) %}
+    ; --- CM DEBUG DUMP ---
+    ; Mod name (mod_file.name): "{{ mod_file.name }}"
+    ; Game name: "{{ mod_file.game.name }}"
+    ; Components count: {{ scene.rzm.component_manager.components | length }}
+    {% for comp in scene.rzm.component_manager.components %}
+    ;   Component: "{{ comp.name }}" (blend_copy: {{ comp.blend_copy_enabled }})
+    ;     expected_fullname: "{{ mod_file.name ~ comp.name }}"
+    {% endfor %}
+    ; --- END DEBUG DUMP ---
+{% endmacro %}

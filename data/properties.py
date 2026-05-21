@@ -27,6 +27,7 @@ from .p_settings import (
     RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer, RZMLanguage
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
+from .p_component_manager import RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
 from ..operators import custom_draw_ops
 
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
@@ -37,6 +38,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     meta_data: PointerProperty(type=RZMMetaDataSettings)
     export_settings: PointerProperty(type=RZMExportSettings)
     auto_menu: PointerProperty(type=RZMAutoMenuSettings)
+    component_manager: PointerProperty(type=RZMComponentManagerSettings)
 
     images: CollectionProperty(type=RZMenuImage)
     atlas_size: IntVectorProperty(name="Atlas Size", size=2)
@@ -180,7 +182,9 @@ classes_to_register = [
     RZM_BuildProfile,
     RZMCollectionPointer,
     RZM_AddonPreferences,
-    RZMAutoMenuSettings, RZMenuProperties,
+    RZMAutoMenuSettings,
+    RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings,
+    RZMenuProperties,
     RZModProducerSettings,
 ]
 
@@ -212,6 +216,11 @@ def register():
     bpy.types.Scene.rzm_active_br_group_index = IntProperty(name="Active BR Group Index", default=-1)
     bpy.types.Scene.rzm_active_br_comp_index = IntProperty(name="Active BR Component Index", default=-1)
     bpy.types.Scene.rzm_active_br_bone_index = IntProperty(name="Active BR Bone Index", default=-1)
+    
+    # --- Component Manager Active Indices ---
+    bpy.types.Scene.rzm_cm_active_comp_index = IntProperty(name="Active CM Comp Index", default=-1)
+    bpy.types.Scene.rzm_cm_active_part_index = IntProperty(name="Active CM Part Index", default=-1)
+
     bpy.types.Scene.rzm_editor_mode = EnumProperty(name="Editor Mode", items=[('LIGHT', "Light", ""), ('PRO', "Pro", "")], default='LIGHT')
     bpy.types.Scene.rzm_show_debug_panel = BoolProperty(name="Show Debug Panel", default=False)
     bpy.types.Scene.rzm_capture_settings = PointerProperty(type=RZMCaptureSettings)
@@ -227,6 +236,7 @@ def register():
             ('NATIVE_SHAPES', "Native Shapes", "Manage discovered Blender shape keys"),
             ('KEYBINDS',  "Keybinds",  "Manage in-game hotkeys and RunLinks"),
             ('BLEND_RESIZE', "Blend Resize", "Manage bone-based resizing"),
+            ('COMPONENT_MANAGER', "Comp. Mgr", "Manage Components and SubComponents"),
         ],
         default='TOGGLES'
     )
@@ -248,6 +258,8 @@ def unregister():
     del bpy.types.Scene.rzm
     del bpy.types.Scene.rzm_active_run_link_index
     del bpy.types.Scene.rzm_active_keybind_index
+    del bpy.types.Scene.rzm_cm_active_comp_index
+    del bpy.types.Scene.rzm_cm_active_part_index
     if hasattr(bpy.types.Object, "rzm_tier_list"):
         del bpy.types.Object.rzm_tier_list
     custom_draw_ops.unregister()

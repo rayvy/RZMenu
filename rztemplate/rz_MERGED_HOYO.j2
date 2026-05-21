@@ -1,6 +1,8 @@
 {% import "rz_helper.j2" as helper with context %}
+{% import "modules/utils.j2" as utils with context %}
 
 {% macro overridesbuffers(mod_file,scene) %}
+    {{ utils.cm_debug_dump(mod_file, scene) }}
     {#--- ОБРАБОТКА КОМПОНЕНТОВ С BLEND И POSITION БУФЕРАМИ ---#}
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 %}
         
@@ -25,11 +27,16 @@
             if DRAW_TYPE == 1
                 vb0 = Resource{{ component.fullname }}Position
                 draw = {{ component.vertex_count }}, 0
+                ;{{component.fullname}}
+                {% if utils.cm_vb0_enabled(mod_file, scene, component.fullname) == 'True' %}
                 Resource{{component.fullname}}vb0.copy = ref so0
+                {% endif %}
             endif
+            {% if utils.cm_vb0_enabled(mod_file, scene, component.fullname) == 'True' %}
             [Resource{{component.fullname}}vb0.copy]
             type = Buffer
             stride = 40
+            {% endif %}
         {% elif mod_file.game.name == "GenshinImpact" %}
             vb1 = Resource{{ component.fullname }}Blend
             {% if scene.rzm.addons.blend_resize and scene.rzm.addons.blend_resize.is_enabled %}

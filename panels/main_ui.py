@@ -651,6 +651,27 @@ class RZM_UL_CustomScriptList(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text="", icon='FILE_SCRIPT')
 
+class RZM_UL_CM_ComponentList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.prop(item, "blend_copy_enabled", text="")
+            row.label(text=item.name if item.name else "<Empty Name>", icon='OUTLINER_OB_MESH')
+        elif self.layout_type in {'GRID'}:
+            layout.alignment = 'CENTER'
+            layout.label(text="", icon='OUTLINER_OB_MESH')
+
+class RZM_UL_CM_PartList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.prop(item, "enabled", text="")
+            row.label(text=item.name if item.name else "<Empty Name>", icon='MESH_DATA')
+        elif self.layout_type in {'GRID'}:
+            layout.alignment = 'CENTER'
+            layout.label(text="", icon='MESH_DATA')
+
+
 
 def draw_toolbox_content(self, context):
     layout = self.layout
@@ -1220,6 +1241,37 @@ def draw_toolbox_content(self, context):
                 box.separator()
                 box.label(text="Export saves configurations inside the addon's .ini output. No external buffers needed.", icon='INFO')
 
+    elif tab == 'COMPONENT_MANAGER':
+        cm = rzm.component_manager
+        
+        box.label(text="Component Manager", icon='OUTLINER_OB_MESH')
+        header_row = box.row(align=True)
+        header_row.prop(cm, "dump_path", text="")
+        header_row.operator("rzm.cm_update_from_dump", text="Update", icon='FILE_REFRESH')
+        
+        box.separator()
+        box.row().prop(cm, "active_tab", expand=True)
+        
+        if cm.active_tab == 'BLEND_COPY':
+            b_box = box.box()
+            b_box.label(text="BlendCopy (Components)", icon='MOD_BOOLEAN')
+            b_box.template_list("RZM_UL_CM_ComponentList", "", cm, "components", scene, "rzm_cm_active_comp_index", rows=5)
+            
+        elif cm.active_tab == 'TEST_SUBCOMP':
+            t_box = box.box()
+            t_box.label(text="TestSubComp (SubComponents)", icon='GROUP_VERTEX')
+            
+            for i, comp in enumerate(cm.components):
+                c_box = t_box.box()
+                c_box.label(text=f"Component: {comp.name if comp.name else '<Empty>'}", icon='OUTLINER_OB_MESH')
+                if comp.parts:
+                    for part in comp.parts:
+                        row = c_box.row(align=True)
+                        row.prop(part, "enabled", text="")
+                        row.label(text=part.name, icon='MESH_DATA')
+                else:
+                    c_box.label(text="No subcomponents", icon='INFO')
+
 
 class VIEW3D_PT_RZConstructorToolboxPanel_Internal(bpy.types.Panel):
     bl_label = "RZ Construct Toolbox"
@@ -1457,6 +1509,8 @@ class VIEW3D_PT_RZConstructorAdvancedPanel(bpy.types.Panel):
 
 
 classes_to_register = [
+    RZM_UL_CM_ComponentList,
+    RZM_UL_CM_PartList,
     RZM_UL_CustomScriptList,
     RZM_UL_Values,
     RZM_UL_ToggleDefinitions,
