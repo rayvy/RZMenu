@@ -1052,6 +1052,23 @@ ps-t105 = ref ResourceStyleBuffer
 
 
 x97 = $inputMode
+y97 = $isGamepadEditing
+z97 = $hoveredID
+local $nav_arrows = 0
+if $nav_key_request_up == 1
+    $nav_arrows = $nav_arrows + 1
+endif
+if $nav_key_request_down == 1
+    $nav_arrows = $nav_arrows + 2
+endif
+if $nav_key_request_left == 1
+    $nav_arrows = $nav_arrows + 4
+endif
+if $nav_key_request_right == 1
+    $nav_arrows = $nav_arrows + 8
+endif
+w97 = $nav_arrows
+
 x98 = time
 w98 = time % 1
 x99 = $cursorX / $ScreenW
@@ -1201,31 +1218,55 @@ run = CustomShaderDI2D.SYSTEM.PROC
 vs = /modules/system_draw.hlsl
 ps = /modules/system_draw.hlsl
 ps-t82 = ResourceFont0
-ps-t56 = ResourceRZMSys_Slot0
-ps-t57 = ResourceRZMSys_Slot1
+ps-t56 = ResourceRZMSys_SlotTitle
+ps-t57 = ResourceRZMSys_SlotAuthor
+ps-t62 = ResourceRZMSys_SlotBy
+ps-t63 = ResourceRZMSys_SlotPowered
+
 if $inputMode == 1
-    ps-t58 = ResourceRZMSys_GM_ON
+    ps-t58 = ResourceRZMSys_SlotButtonMode
 else
-    ps-t58 = ResourceRZMSys_GM_OFF
+    ps-t58 = ResourceRZMSys_SlotMouseMode
 endif
+
+; Управление циклическим сдвигом уведомлений
+local $period = time % 15
 ps-t59 = null
 ps-t60 = null
 ps-t61 = null
-if time % 5 > 4
-    ps-t59 = ResourceRZMSys_TestNotice
+x96 = -9999.0
+y96 = -9999.0
+z96 = -9999.0
+
+if $period < 5.0
+    ps-t59 = ResourceRZMSys_NoticeA
+    x96 = time - $period
+elif $period < 10.0
+    ps-t59 = ResourceRZMSys_NoticeB
+    x96 = time - ($period - 5.0)
+    ps-t60 = ResourceRZMSys_NoticeA
+    y96 = time - $period
+else
+    ps-t59 = ResourceRZMSys_NoticeC
+    x96 = time - ($period - 10.0)
+    ps-t60 = ResourceRZMSys_NoticeB
+    y96 = time - ($period - 5.0)
+    ps-t61 = ResourceRZMSys_NoticeA
+    z96 = time - $period
 endif
+
 blend = ADD SRC_ALPHA INV_SRC_ALPHA
 cull = none
 topology = triangle_list
 o0 = set_viewport no_view_cache bb
 draw = 3, 0
 
-[ResourceRZMSys_Slot0]
+[ResourceRZMSys_SlotTitle]
 type = Buffer
 format = R32_UINT
-data = 82 90 77 101 110 117 32 52 46 48 46 50
-
-{% set author = scene.rzm.meta_data.author_name if (scene.rzm and scene.rzm.meta_data and scene.rzm.meta_data.author_name) else "Unknown" %}
+{% set char_name = scene.rzm.meta_data.character_name | default("Unknown") %}
+{% set outfit_name = scene.rzm.meta_data.outfit_name | default("Mod") %}
+{% set title_str = char_name ~ " " ~ outfit_name %}
 {% set ord_map = {
   ' ': 32, '!': 33, '"': 34, '#': 35, '$': 36, '%': 37, '&': 38, "'": 39, '(': 40, ')': 41, '*': 42, '+': 43, ',': 44, '-': 45, '.': 46, '/': 47,
   '0': 48, '1': 49, '2': 50, '3': 51, '4': 52, '5': 53, '6': 54, '7': 55, '8': 56, '9': 57, ':': 58, ';': 59, '<': 60, '=': 61, '>': 62, '?': 63,
@@ -1234,10 +1275,48 @@ data = 82 90 77 101 110 117 32 52 46 48 46 50
   '`': 96, 'a': 97, 'b': 98, 'c': 99, 'd': 100, 'e': 101, 'f': 102, 'g': 103, 'h': 104, 'i': 105, 'j': 106, 'k': 107, 'l': 108, 'm': 109, 'n': 110,
   'o': 111, 'p': 112, 'q': 113, 'r': 114, 's': 115, 't': 116, 'u': 117, 'v': 118, 'w': 119, 'x': 120, 'y': 121, 'z': 122, '{': 123, '|': 124, '}': 125, '~': 126
 } %}
-[ResourceRZMSys_Slot1]
+data = {% for c in title_str %}{{ ord_map.get(c, 63) }} {% endfor %}
+
+[ResourceRZMSys_SlotAuthor]
 type = Buffer
 format = R32_UINT
+{% set author = scene.rzm.meta_data.author_name if (scene.rzm and scene.rzm.meta_data and scene.rzm.meta_data.author_name) else "Unknown" %}
 data = {% for c in author %}{{ ord_map.get(c, 63) }} {% endfor %}
+
+[ResourceRZMSys_SlotBy]
+type = Buffer
+format = R32_UINT
+data = 98 121 32
+
+[ResourceRZMSys_SlotPowered]
+type = Buffer
+format = R32_UINT
+data = 112 111 119 101 114 101 100 32 82 90 77 101 110 117 32 52 46 48 46 50
+
+[ResourceRZMSys_SlotButtonMode]
+type = Buffer
+format = R32_UINT
+data = 66 117 116 116 111 110 77 111 100 101
+
+[ResourceRZMSys_SlotMouseMode]
+type = Buffer
+format = R32_UINT
+data = 77 111 117 115 101 77 111 100 101
+
+[ResourceRZMSys_NoticeA]
+type = Buffer
+format = R32_UINT
+data = 80 114 101 115 101 116 32 65 32 115 97 118 101 100
+
+[ResourceRZMSys_NoticeB]
+type = Buffer
+format = R32_UINT
+data = 80 114 101 115 101 116 32 66 32 115 97 118 101 100
+
+[ResourceRZMSys_NoticeC]
+type = Buffer
+format = R32_UINT
+data = 82 97 98 98 105 116 70 88 32 110 111 116 32 102 111 117 110 100 33
 
 [ResourceRZMSys_GM_ON]
 type = Buffer
