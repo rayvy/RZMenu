@@ -236,6 +236,12 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     frame_trace: BoolProperty(name="FrameTrace", default=False)
     frame_trace_speed: IntProperty(name="Frame Trace Speed", default=32, min=1)
     frame_trace_length: IntProperty(name="Frame Trace Length", default=128, min=1)
+    frame_trace_threshold: FloatProperty(
+        name="Frame Trace Distance Threshold",
+        default=0.25,
+        min=0.0001,
+        description="Distance threshold in world units before recording a new trace clone"
+    )
     export_shapekeys: BoolProperty(
         name="Export ShapeKeys",
         default=False,

@@ -64,6 +64,7 @@ run = CustomShaderRCI2D
     {% set safe_name = utils.format_from_idiot(obj.name) %}
     {% set speed = scene.rzm.addons.frame_trace_speed | default(32) | int %}
     {% set length = scene.rzm.addons.frame_trace_length | default(128) | int %}
+    {% set threshold = scene.rzm.addons.frame_trace_threshold | default(0.25) | float %}
 
     {# Locate draw count / index count #}
     {% set ns_vcount = [0] %}
@@ -93,25 +94,25 @@ run = CustomShaderRCI2D
 global ${{ safe_name }}_Sandevistan_Speed = {{ speed }}
 global ${{ safe_name }}_Sandevistan_length = {{ length }}
 global ${{ safe_name }}_SandevistanTime = 0
-global ${{ safe_name }}_SandevistanTimer = 0
-global ${{ safe_name }}_Sandevistan_current_index = 0
 global ${{ safe_name }}_Sandevistan_Base_Interval = 1
 ;CDC - is Component Draw Count
 ;CDO - is Component Draw Offset
 ;global $CDC_{{ safe_name }}_Sandevistan = 0
 ;global $CDO_{{ safe_name }}_Sandevistan = 0
+; Distance threshold (world units) — how far character must move to record next ghost
+global ${{ safe_name }}_Sandevistan_Threshold = {{ threshold }}
 
 [Present]
 if $first_run
 	${{ safe_name }}_SandevistanTime = time + (${{ safe_name }}_Sandevistan_Base_Interval / ${{ safe_name }}_Sandevistan_Speed)
-endif 
+endif
 
 [CustomShader{{ safe_name }}Sandevistan]
 vs = /modules/trace_vs_Sandevistan.hlsl
 ps = /modules/trace_ps_Sandevistan.hlsl
 x0 = $CDC_{{ safe_name }}_Sandevistan
 x1 = ${{ safe_name }}_Sandevistan_length
-x2 = ${{ safe_name }}_Sandevistan_current_index
+; x2 removed — current_index is now GPU-side at the end of Coords buffer
 vs-t1 = Resource_{{ safe_name }}_Sandevistan_MERGED_VB0
 vs-t127 = Resource_{{ safe_name }}_Sandevistan_Buffer
 
@@ -119,14 +120,17 @@ drawindexedinstanced = $CDC_{{ safe_name }}_Sandevistan, ${{ safe_name }}_Sandev
 run = CommandListSwapC0_{{ safe_name }}
 
 [CustomShaderComputeSandevistan_{{ safe_name }}]
-cs = /modules/ouroboros_position_record.hlsl
+; Pure GPU adaptive position recorder — no store, no CPU readback
+cs = /modules/ouroboros_adaptive_pos.hlsl
 cs-u0 = Resource_{{ safe_name }}_Sandevistan_Buffer
 cs-cb1 = vs-cb1
 x1 = ${{ safe_name }}_Sandevistan_length
-x2 = ${{ safe_name }}_Sandevistan_current_index
+; x3 = distance threshold to advance index
+x3 = ${{ safe_name }}_Sandevistan_Threshold
 dispatch = 1, 1, 1
 
 [CommandListSwapC0_{{ safe_name }}]
+; Timer gates dispatch frequency to avoid driver/API call overhead every frame
 if (time) >= ${{ safe_name }}_SandevistanTime
 	run = CustomShaderComputeSandevistan_{{ safe_name }}
 	run = CustomShaderWriteSandevistan_{{ safe_name }}
@@ -134,25 +138,24 @@ if (time) >= ${{ safe_name }}_SandevistanTime
 endif
 
 [CustomShaderWriteSandevistan_{{ safe_name }}]
+; Adaptive VB recorder — skips copy if GPU state indicates no movement
 cs-t0 = vb0
 cs-u0 = ResourceOutput_{{ safe_name }}
-cs = /modules/ouroboros_buffer_record.hlsl
+; cs-t1: reads the did_write and write slot index from Coords buffer on GPU
+cs-t1 = Resource_{{ safe_name }}_Sandevistan_Buffer
+cs = /modules/ouroboros_adaptive_vb.hlsl
 x0 = $CDC_{{ safe_name }}_Sandevistan
 x1 = ${{ safe_name }}_Sandevistan_length
-x2 = ${{ safe_name }}_Sandevistan_current_index
 dispatch = $CDC_{{ safe_name }}_Sandevistan + 1023 // 1024, 1, 1
 Resource_{{ safe_name }}_Sandevistan_MERGED_VB0 = cs-u0
-${{ safe_name }}_Sandevistan_current_index = ${{ safe_name }}_Sandevistan_current_index + 1
-if ${{ safe_name }}_Sandevistan_current_index > ${{ safe_name }}_Sandevistan_length
-	${{ safe_name }}_Sandevistan_current_index = 0
-endif
 
 [Resource_{{ safe_name }}_Sandevistan_MERGED_VB0]
 
 [Resource_{{ safe_name }}_Sandevistan_Buffer]
 type = RWBuffer
 format = R32G32B32A32_FLOAT
-array = {{ length * 4 }}
+; We add +1 float4 at the end of the array to store current_write_index, did_write flag and pre-advance slot index
+array = {{ length * 4 + 1 }}
 
 [ResourceOutput_{{ safe_name }}]
 type = RWStructuredBuffer

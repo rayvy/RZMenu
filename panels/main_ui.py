@@ -691,6 +691,7 @@ def draw_component_manager_ui(context, layout):
         box_ft = layout.box()
         box_ft.prop(rzm.addons, "frame_trace_speed", text="Speed")
         box_ft.prop(rzm.addons, "frame_trace_length", text="Length (Copies)")
+        box_ft.prop(rzm.addons, "frame_trace_threshold", text="Distance Threshold")
     
     layout.separator()
     layout.row().prop(cm, "active_tab", expand=True)
