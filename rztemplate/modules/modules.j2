@@ -65,6 +65,21 @@ run = CustomShaderRCI2D
     {% set speed = scene.rzm.addons.frame_trace_speed | default(32) | int %}
     {% set length = scene.rzm.addons.frame_trace_length | default(128) | int %}
     {% set threshold = scene.rzm.addons.frame_trace_threshold | default(0.25) | float %}
+    {% set color_start = scene.rzm.addons.frame_trace_color_start | default([0.9, 0.0, 0.1, 1.0]) %}
+    {% set color_mid = scene.rzm.addons.frame_trace_color_mid | default([0.0, 0.0, 0.7, 0.5]) %}
+    {% set color_end = scene.rzm.addons.frame_trace_color_end | default([0.0, 0.5, 0.0, 0.0]) %}
+    {% set color_start_r = color_start[0] | default(0.9) | float %}
+    {% set color_start_g = color_start[1] | default(0.0) | float %}
+    {% set color_start_b = color_start[2] | default(0.1) | float %}
+    {% set color_start_a = color_start[3] | default(1.0) | float %}
+    {% set color_mid_r = color_mid[0] | default(0.0) | float %}
+    {% set color_mid_g = color_mid[1] | default(0.0) | float %}
+    {% set color_mid_b = color_mid[2] | default(0.7) | float %}
+    {% set color_mid_a = color_mid[3] | default(0.5) | float %}
+    {% set color_end_r = color_end[0] | default(0.0) | float %}
+    {% set color_end_g = color_end[1] | default(0.5) | float %}
+    {% set color_end_b = color_end[2] | default(0.0) | float %}
+    {% set color_end_a = color_end[3] | default(0.0) | float %}
 
     {# Locate draw count / index count #}
     {% set ns_vcount = [0] %}
@@ -101,6 +116,18 @@ global ${{ safe_name }}_Sandevistan_Base_Interval = 1
 ;global $CDO_{{ safe_name }}_Sandevistan = 0
 ; Distance threshold (world units) — how far character must move to record next ghost
 global ${{ safe_name }}_Sandevistan_Threshold = {{ threshold }}
+global ${{ safe_name }}_Sandevistan_ColorStart_R = {{ "%.3f"|format(color_start_r) }}
+global ${{ safe_name }}_Sandevistan_ColorStart_G = {{ "%.3f"|format(color_start_g) }}
+global ${{ safe_name }}_Sandevistan_ColorStart_B = {{ "%.3f"|format(color_start_b) }}
+global ${{ safe_name }}_Sandevistan_ColorStart_A = {{ "%.3f"|format(color_start_a) }}
+global ${{ safe_name }}_Sandevistan_ColorMid_R = {{ "%.3f"|format(color_mid_r) }}
+global ${{ safe_name }}_Sandevistan_ColorMid_G = {{ "%.3f"|format(color_mid_g) }}
+global ${{ safe_name }}_Sandevistan_ColorMid_B = {{ "%.3f"|format(color_mid_b) }}
+global ${{ safe_name }}_Sandevistan_ColorMid_A = {{ "%.3f"|format(color_mid_a) }}
+global ${{ safe_name }}_Sandevistan_ColorEnd_R = {{ "%.3f"|format(color_end_r) }}
+global ${{ safe_name }}_Sandevistan_ColorEnd_G = {{ "%.3f"|format(color_end_g) }}
+global ${{ safe_name }}_Sandevistan_ColorEnd_B = {{ "%.3f"|format(color_end_b) }}
+global ${{ safe_name }}_Sandevistan_ColorEnd_A = {{ "%.3f"|format(color_end_a) }}
 
 [Present]
 if $first_run
@@ -115,6 +142,18 @@ x1 = ${{ safe_name }}_Sandevistan_length
 ; x2 removed — current_index is now GPU-side at the end of Coords buffer
 vs-t1 = Resource_{{ safe_name }}_Sandevistan_MERGED_VB0
 vs-t127 = Resource_{{ safe_name }}_Sandevistan_Buffer
+x4 = ${{ safe_name }}_Sandevistan_ColorStart_R
+y4 = ${{ safe_name }}_Sandevistan_ColorStart_G
+z4 = ${{ safe_name }}_Sandevistan_ColorStart_B
+w4 = ${{ safe_name }}_Sandevistan_ColorStart_A
+x5 = ${{ safe_name }}_Sandevistan_ColorMid_R
+y5 = ${{ safe_name }}_Sandevistan_ColorMid_G
+z5 = ${{ safe_name }}_Sandevistan_ColorMid_B
+w5 = ${{ safe_name }}_Sandevistan_ColorMid_A
+x6 = ${{ safe_name }}_Sandevistan_ColorEnd_R
+y6 = ${{ safe_name }}_Sandevistan_ColorEnd_G
+z6 = ${{ safe_name }}_Sandevistan_ColorEnd_B
+w6 = ${{ safe_name }}_Sandevistan_ColorEnd_A
 
 drawindexedinstanced = $CDC_{{ safe_name }}_Sandevistan, ${{ safe_name }}_Sandevistan_length, $CDO_{{ safe_name }}_Sandevistan, 0, 0
 run = CommandListSwapC0_{{ safe_name }}

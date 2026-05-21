@@ -242,6 +242,27 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
         min=0.0001,
         description="Distance threshold in world units before recording a new trace clone"
     )
+    frame_trace_color_start: FloatVectorProperty(
+        name="Trace Color Start",
+        subtype='COLOR',
+        size=4,
+        default=(0.9, 0.0, 0.1, 1.0),
+        description="Start color of the trace gradient (newest clone)"
+    )
+    frame_trace_color_mid: FloatVectorProperty(
+        name="Trace Color Mid",
+        subtype='COLOR',
+        size=4,
+        default=(0.0, 0.0, 0.7, 0.5),
+        description="Middle color of the trace gradient"
+    )
+    frame_trace_color_end: FloatVectorProperty(
+        name="Trace Color End",
+        subtype='COLOR',
+        size=4,
+        default=(0.0, 0.5, 0.0, 0.0),
+        description="End color of the trace gradient (oldest clone)"
+    )
     export_shapekeys: BoolProperty(
         name="Export ShapeKeys",
         default=False,

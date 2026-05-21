@@ -692,6 +692,13 @@ def draw_component_manager_ui(context, layout):
         box_ft.prop(rzm.addons, "frame_trace_speed", text="Speed")
         box_ft.prop(rzm.addons, "frame_trace_length", text="Length (Copies)")
         box_ft.prop(rzm.addons, "frame_trace_threshold", text="Distance Threshold")
+        
+        # Группа цветов градиента
+        col_box = box_ft.box()
+        col_box.label(text="Trace Gradient Colors", icon='COLOR')
+        col_box.prop(rzm.addons, "frame_trace_color_start", text="Start")
+        col_box.prop(rzm.addons, "frame_trace_color_mid", text="Mid")
+        col_box.prop(rzm.addons, "frame_trace_color_end", text="End")
     
     layout.separator()
     layout.row().prop(cm, "active_tab", expand=True)

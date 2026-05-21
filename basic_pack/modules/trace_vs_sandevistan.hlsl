@@ -1,5 +1,5 @@
 // trace_vs_sandevistan.hlsl
-// Sandevistan ghost trail vertex shader
+// Sandevistan ghost trail vertex shader (stable revert)
 // current_frame_index reads from the end of the Coords buffer (t127).
 // Uninitialized slots are hidden by checking Coords[slot*4+3].w.
 
@@ -55,7 +55,6 @@ void main(
 
   if (instance != 0)
   {
-    // Integer modulo to prevent fmod precision/reset bugs
     uint history_slot_index = (current_frame_index - instance + len) % len;
     uint history_read_offset = history_slot_index * (uint)(size + 0.5f);
 
