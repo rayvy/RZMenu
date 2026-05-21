@@ -1,21 +1,15 @@
-// system_draw.hlsl — System Overlay: cursor + advanced status/notification slots
+// system_draw.hlsl — System Overlay: cursor + input info panel
 // draw = 3, 0  (fullscreen triangle)
 
 Texture1D<float4> IniParams : register(t120);
 Texture2D<float4> FontAtlas : register(t82);
-Buffer<uint>      SlotTitle : register(t56); // CharacterName + OutfitName (L size)
-Buffer<uint>      SlotAuthor: register(t57); // AuthorName (M size)
-Buffer<uint>      SlotBy    : register(t62); // "by " (S size)
-Buffer<uint>      SlotPowered : register(t63); // "powered RZMenu 4.0.2" (S size)
-Buffer<uint>      Slot2     : register(t58); // Mode (ButtonMode / MouseMode) (M size)
-Buffer<uint>      Slot3     : register(t59); // Notice 0
-Buffer<uint>      Slot4     : register(t60); // Notice 1
-Buffer<uint>      Slot5     : register(t61); // Notice 2
+Buffer<uint>      SlotHint  : register(t63); // Hint (S size)
+Buffer<uint>      SlotHint2 : register(t64); // Hint 2 (RCtrl)
+Buffer<uint>      Slot2     : register(t58); // Mode (ButtonMode / MouseMode) (L size)
 SamplerState      Smp       : register(s0);
 
 // --- Constants ---
 static const uint  FONT_COLS  = 16;
-static const float  BG_PAD    = 5.0;
 
 // --- Structs ---
 struct VSOut {
@@ -27,12 +21,18 @@ struct CharMetrics {
     float advance; float glyphW; float glyphH; float offX; float offY;
 };
 
+// --- Signed Distance Field for Rounded Box ---
+float sdRoundBox(float2 p, float2 size, float r) {
+    float2 d = abs(p) - size + r;
+    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;
+}
+
 // --- Cursor helper ---
 bool InTri(float2 p, float2 a, float2 b, float2 c) {
     float d0 = (b.x-a.x)*(p.y-a.y) - (b.y-a.y)*(p.x-a.x);
     float d1 = (c.x-b.x)*(p.y-b.y) - (c.y-b.y)*(p.x-b.x);
     float d2 = (a.x-c.x)*(p.y-c.y) - (a.y-c.y)*(p.x-c.x);
-    return !(((d0<0)||(d1<0)||(d2<0)) && ((d0>0)||(d1>0)||(d2>0)));
+    return !(((d0<0.0)||(d1<0.0)||(d2<0.0)) && ((d0>0.0)||(d1>0.0)||(d2>0.0)));
 }
 
 // --- Font Metrics Loader ---
@@ -61,7 +61,7 @@ CharMetrics FetchCharMetrics(uint c) {
     return m;
 }
 
-// --- Text Width Helper ---
+// --- Text Width Helpers ---
 float GetTextWidth(Buffer<uint> buf, uint len, out float firstOff) {
     firstOff = 0.0;
     if (len == 0) return 0.0;
@@ -72,6 +72,20 @@ float GetTextWidth(Buffer<uint> buf, uint len, out float firstOff) {
         totalW += FetchCharMetrics(buf.Load(k)).advance;
     }
     CharMetrics last = FetchCharMetrics(buf.Load(len - 1));
+    totalW += last.offX + last.glyphW - firstOff;
+    return totalW;
+}
+
+float GetDynamicTextWidth(uint chars[24], uint len, out float firstOff) {
+    firstOff = 0.0;
+    if (len == 0) return 0.0;
+
+    firstOff = FetchCharMetrics(chars[0]).offX;
+    float totalW = 0.0;
+    for (uint k = 0; k < len - 1; ++k) {
+        totalW += FetchCharMetrics(chars[k]).advance;
+    }
+    CharMetrics last = FetchCharMetrics(chars[len - 1]);
     totalW += last.offX + last.glyphW - firstOff;
     return totalW;
 }
@@ -98,20 +112,15 @@ float4 main(VSOut input) : SV_Target {
     }
     float2 CursorPos = IniParams.Load(int2(99,0)).xy * ScreenRes;
     float  InputMode = IniParams.Load(int2(97,0)).x;
-    float  IsGamepadEditing = IniParams.Load(int2(97,0)).y;
+    float  IsCaptured = IniParams.Load(int2(97,0)).y;
     float  HoveredID = IniParams.Load(int2(97,0)).z;
     float  NavArrows = IniParams.Load(int2(97,0)).w;
-    float  Time = IniParams.Load(int2(98,0)).x;
-
-    float  Notice0Time = IniParams.Load(int2(96,0)).x;
-    float  Notice1Time = IniParams.Load(int2(96,0)).y;
-    float  Notice2Time = IniParams.Load(int2(96,0)).z;
 
     bool showGP = (InputMode > 0.5);
     float2 px = input.uv * ScreenRes;
 
     // ----------------------------------------------------------------
-    // 1. CURSOR (Gamepad mode only)
+    // 1. CURSOR (Gamepad/Button mode only)
     // ----------------------------------------------------------------
     if (showGP) {
         float2 d = px - CursorPos;
@@ -127,7 +136,7 @@ float4 main(VSOut input) : SV_Target {
     }
 
     // ----------------------------------------------------------------
-    // 2. METRICS & SCALING (Screen height proportional)
+    // 2. PANEL DIMENSIONS & METRICS
     // ----------------------------------------------------------------
     uint atlasW, atlasH;
     FontAtlas.GetDimensions(atlasW, atlasH);
@@ -135,54 +144,51 @@ float4 main(VSOut input) : SV_Target {
     float rows = (float)(atlasH) / cs;
     float2 uvCell = 1.0 / float2((float)FONT_COLS, rows);
 
-    // Font Sizes (L, M, S)
-    float H_L = 0.020 * ScreenRes.y;
-    float H_M = 0.016 * ScreenRes.y;
-    float H_S = 0.012 * ScreenRes.y;
+    // Font Scales (L, M, S) using absolute pixel heights for stability
+    float scale_L = 32.0 / cs; // Mode text (32px)
+    float scale_M = 20.0 / cs; // Hint text / Coordinates (20px)
+    float scale_S = 16.0 / cs; // Unused (16px)
 
-    float scale_L = H_L / cs;
-    float scale_M = H_M / cs;
-    float scale_S = H_S / cs;
+    // Panel layout definitions (Bottom-right aligned, Y increases upwards)
+    float PANEL_W = 350.0;
+    float PANEL_H = 150.0;
+    float2 panel_min = float2(ScreenRes.x - 20.0 - PANEL_W, 20.0);
+    float2 panel_max = float2(ScreenRes.x - 20.0, 20.0 + PANEL_H);
 
-    float right_edge = ScreenRes.x - 20.0;
+    // D-pad center
+    float2 ac = float2(panel_min.x + 45.0, panel_min.y + 75.0);
 
-    // Length of main block slots
-    uint len_title = 0; SlotTitle.GetDimensions(len_title);
-    uint len_author = 0; SlotAuthor.GetDimensions(len_author);
-    uint len_by = 0; SlotBy.GetDimensions(len_by);
-    uint len_powered = 0; SlotPowered.GetDimensions(len_powered);
+    // Text positions
+    float mode_x = panel_min.x + 95.0;
+    float mode_y = panel_min.y + 98.0;
+
+    float hint_x = panel_min.x + 95.0;
+    float hint_y = panel_min.y + 72.0;
+    float hint2_y = panel_min.y + 48.0;
+
+    float sep_y = panel_min.y + 36.0;
+
+    float coord_x = panel_min.x + 95.0;
+    float coord_y = panel_min.y + 6.0;
+
+    // Buffer dimensions
     uint len_mode = 0; Slot2.GetDimensions(len_mode);
-
-    // Calculate horizontal offsets for main block
-    float firstOff_title = 0.0;
-    float width_title = GetTextWidth(SlotTitle, len_title, firstOff_title) * scale_L;
-    float left_L = right_edge - width_title;
-
-    float firstOff_powered = 0.0;
-    float width_powered = GetTextWidth(SlotPowered, len_powered, firstOff_powered) * scale_S;
-    float left_powered = right_edge - width_powered;
-
-    float firstOff_author = 0.0;
-    float width_author = GetTextWidth(SlotAuthor, len_author, firstOff_author) * scale_M;
-    float left_author = left_powered - 8.0 - width_author;
-
-    float firstOff_by = 0.0;
-    float width_by = GetTextWidth(SlotBy, len_by, firstOff_by) * scale_S;
-    float left_by = left_author - 4.0 - width_by;
-
-    float main_left = min(left_L, left_by);
+    uint len_hint = 0; SlotHint.GetDimensions(len_hint);
+    uint len_hint2 = 0; SlotHint2.GetDimensions(len_hint2);
 
     // ----------------------------------------------------------------
     // 3. TEXT RENDERING PASS (Highest Priority)
     // ----------------------------------------------------------------
 
-    // Macro for proportional text rendering
-    #define DRAW_TEXT_LINE(buf, len, x_start, y_start, scale_val, txtCol, globalAlpha) \
+    #define DRAW_TEXT_LINE(buf, len, x_start, y_start, scale_val, txtCol) \
     { \
         float firstOff = 0.0; \
         float width_val = GetTextWidth(buf, len, firstOff) * scale_val; \
         float2 rel = px - float2(x_start, y_start); \
-        if (rel.y >= 0.0 && rel.y < (cs * scale_val)) { \
+        CharMetrics refChar = FetchCharMetrics(65); \
+        float H_ref = refChar.offY + refChar.glyphH + 17.06667; \
+        float localY = H_ref - (rel.y / scale_val); \
+        if (localY >= 0.0 && localY < cs) { \
             float text_x = rel.x / scale_val + firstOff; \
             float accum_x = 0.0; \
             for (uint ci = 0; ci < len; ++ci) { \
@@ -191,74 +197,115 @@ float4 main(VSOut input) : SV_Target {
                 float glyph_left = accum_x + m.offX; \
                 float glyph_right = glyph_left + m.glyphW; \
                 if (text_x >= glyph_left && text_x < glyph_right) { \
-                    float2 cellUV = float2((c - 32) % FONT_COLS, (c - 32) / FONT_COLS); \
-                    float2 uvBase = cellUV * uvCell; \
-                    float2 localUV = float2( \
-                        (m.offX + (text_x - glyph_left)), \
-                        (m.offY + m.glyphH - (rel.y / scale_val)) \
-                    ) / cs; \
-                    float2 uv = uvBase + saturate(localUV) * uvCell; \
-                    float alpha = FontAtlas.SampleLevel(Smp, uv, 0).r; \
-                    if (alpha >= 0.05) return float4(txtCol.rgb, alpha * txtCol.a * globalAlpha); \
+                    if (localY >= m.offY && localY < (m.offY + m.glyphH)) { \
+                        float2 cellUV = float2((c - 32) % FONT_COLS, (c - 32) / FONT_COLS); \
+                        float2 uvBase = cellUV * uvCell; \
+                        float2 localUV = float2( \
+                            m.offX + (text_x - glyph_left), \
+                            localY \
+                        ) / cs; \
+                        float2 uv = uvBase + localUV * uvCell; \
+                        float alpha = FontAtlas.SampleLevel(Smp, uv, 0).r; \
+                        if (alpha >= 0.05) return float4(txtCol.rgb, alpha * txtCol.a); \
+                    } \
                 } \
                 accum_x += m.advance; \
             } \
         } \
     }
 
-    // A. Main Block - Line 1 (SlotTitle)
-    DRAW_TEXT_LINE(SlotTitle, len_title, left_L, 20.0 + H_S + 5.0, scale_L, float4(0.95, 0.95, 0.95, 1.0), 1.0)
-
-    // B. Main Block - Line 2 (SlotBy + SlotAuthor + SlotPowered)
-    DRAW_TEXT_LINE(SlotBy, len_by, left_by, 20.0, scale_S, float4(0.65, 0.65, 0.65, 1.0), 1.0)
-    DRAW_TEXT_LINE(SlotAuthor, len_author, left_author, 20.0, scale_M, float4(0.3, 0.7, 1.0, 1.0), 1.0)
-    DRAW_TEXT_LINE(SlotPowered, len_powered, left_powered, 20.0, scale_S, float4(1.0, 0.6, 0.1, 1.0), 1.0)
-
-    // C. Status Block Mode Text
-    float status_right = main_left - 15.0;
-    float STATUS_W = 160.0;
-    float status_left = status_right - STATUS_W;
-    float status_y = 20.0 + (H_S + 5.0 + H_L) / 2.0 - H_M / 2.0;
-
-    DRAW_TEXT_LINE(Slot2, len_mode, status_left + 65.0, status_y, scale_M, float4(0.85, 0.85, 0.85, 1.0), 1.0)
-
-    // D. Notifications Text
-    float BOX_W = 280.0;
-    float BOX_H = 40.0;
-
-    // Notice 0
-    float age0 = Time - Notice0Time;
-    if (Notice0Time > 0.0 && age0 >= 0.0 && age0 < 4.0) {
-        float x_left = lerp(ScreenRes.x, ScreenRes.x - BOX_W - 20.0, saturate(age0 / 0.4) * saturate(age0 / 0.4) * (3.0 - 2.0 * saturate(age0 / 0.4)));
-        float y_bottom = 20.0 + H_S + 5.0 + H_L + BG_PAD + 15.0 + 0.0 * (BOX_H + 10.0);
-        uint len_n0 = 0; Slot3.GetDimensions(len_n0);
-        DRAW_TEXT_LINE(Slot3, len_n0, x_left + 15.0, y_bottom + (BOX_H - H_S) / 2.0, scale_S, float4(0.95, 0.95, 0.95, 1.0), saturate((4.0 - age0) / 1.0))
+    #define DRAW_DYNAMIC_TEXT(chars, len, x_start, y_start, scale_val, txtCol) \
+    { \
+        float firstOff = 0.0; \
+        float width_val = GetDynamicTextWidth(chars, len, firstOff) * scale_val; \
+        float2 rel = px - float2(x_start, y_start); \
+        CharMetrics refChar = FetchCharMetrics(65); \
+        float H_ref = refChar.offY + refChar.glyphH + 17.06667; \
+        float localY = H_ref - (rel.y / scale_val); \
+        if (localY >= 0.0 && localY < cs) { \
+            float text_x = rel.x / scale_val + firstOff; \
+            float accum_x = 0.0; \
+            for (uint ci = 0; ci < len; ++ci) { \
+                uint c = chars[ci]; \
+                CharMetrics m = FetchCharMetrics(c); \
+                float glyph_left = accum_x + m.offX; \
+                float glyph_right = glyph_left + m.glyphW; \
+                if (text_x >= glyph_left && text_x < glyph_right) { \
+                    if (localY >= m.offY && localY < (m.offY + m.glyphH)) { \
+                        float2 cellUV = float2((c - 32) % FONT_COLS, (c - 32) / FONT_COLS); \
+                        float2 uvBase = cellUV * uvCell; \
+                        float2 localUV = float2( \
+                            m.offX + (text_x - glyph_left), \
+                            localY \
+                        ) / cs; \
+                        float2 uv = uvBase + localUV * uvCell; \
+                        float alpha = FontAtlas.SampleLevel(Smp, uv, 0).r; \
+                        if (alpha >= 0.05) return float4(txtCol.rgb, alpha * txtCol.a); \
+                    } \
+                } \
+                accum_x += m.advance; \
+            } \
+        } \
     }
 
-    // Notice 1
-    float age1 = Time - Notice1Time;
-    if (Notice1Time > 0.0 && age1 >= 0.0 && age1 < 4.0) {
-        float x_left = lerp(ScreenRes.x, ScreenRes.x - BOX_W - 20.0, saturate(age1 / 0.4) * saturate(age1 / 0.4) * (3.0 - 2.0 * saturate(age1 / 0.4)));
-        float y_bottom = 20.0 + H_S + 5.0 + H_L + BG_PAD + 15.0 + 1.0 * (BOX_H + 10.0);
-        uint len_n1 = 0; Slot4.GetDimensions(len_n1);
-        DRAW_TEXT_LINE(Slot4, len_n1, x_left + 15.0, y_bottom + (BOX_H - H_S) / 2.0, scale_S, float4(0.95, 0.95, 0.95, 1.0), saturate((4.0 - age1) / 1.0))
-    }
+    // A. Mode Text (ButtonMode / MouseMode) - Solid Bright White
+    DRAW_TEXT_LINE(Slot2, len_mode, mode_x, mode_y, scale_L, float4(1.0, 1.0, 1.0, 1.0))
 
-    // Notice 2
-    float age2 = Time - Notice2Time;
-    if (Notice2Time > 0.0 && age2 >= 0.0 && age2 < 4.0) {
-        float x_left = lerp(ScreenRes.x, ScreenRes.x - BOX_W - 20.0, saturate(age2 / 0.4) * saturate(age2 / 0.4) * (3.0 - 2.0 * saturate(age2 / 0.4)));
-        float y_bottom = 20.0 + H_S + 5.0 + H_L + BG_PAD + 15.0 + 2.0 * (BOX_H + 10.0);
-        uint len_n2 = 0; Slot5.GetDimensions(len_n2);
-        DRAW_TEXT_LINE(Slot5, len_n2, x_left + 15.0, y_bottom + (BOX_H - H_S) / 2.0, scale_S, float4(0.95, 0.95, 0.95, 1.0), saturate((4.0 - age2) / 1.0))
-    }
+    // B. Switch Mode Hint ("RShift - switch mode") - Solid Amber/Gold, No Transparency
+    DRAW_TEXT_LINE(SlotHint, len_hint, hint_x, hint_y, scale_M, float4(1.0, 0.8, 0.2, 1.0))
+
+    // B2. Capture Element Hint ("RCtrl - capture element") - Solid Amber/Gold, No Transparency
+    DRAW_TEXT_LINE(SlotHint2, len_hint2, hint_x, hint2_y, scale_M, float4(1.0, 0.8, 0.2, 1.0))
+
+    // C. Coordinates Text ("x [cx]   y [cy]")
+    uint coord_chars[24];
+    uint coord_len = 0;
+    coord_chars[coord_len++] = 120; // 'x'
+    coord_chars[coord_len++] = 32;  // ' '
+
+    int tempX = (int)CursorPos.x;
+    if (tempX < 0) tempX = 0;
+    int dX4 = (tempX / 10000) % 10;
+    int dX3 = (tempX / 1000) % 10;
+    int dX2 = (tempX / 100) % 10;
+    int dX1 = (tempX / 10) % 10;
+    int dX0 = tempX % 10;
+
+    bool started = false;
+    if (dX4 > 0) { coord_chars[coord_len++] = 48 + dX4; started = true; }
+    if (dX3 > 0 || started) { coord_chars[coord_len++] = 48 + dX3; started = true; }
+    if (dX2 > 0 || started) { coord_chars[coord_len++] = 48 + dX2; started = true; }
+    if (dX1 > 0 || started) { coord_chars[coord_len++] = 48 + dX1; started = true; }
+    coord_chars[coord_len++] = 48 + dX0;
+
+    coord_chars[coord_len++] = 32;  // ' '
+    coord_chars[coord_len++] = 32;  // ' '
+    coord_chars[coord_len++] = 32;  // ' '
+    coord_chars[coord_len++] = 121; // 'y'
+    coord_chars[coord_len++] = 32;  // ' '
+
+    int tempY = (int)CursorPos.y;
+    if (tempY < 0) tempY = 0;
+    int dY4 = (tempY / 10000) % 10;
+    int dY3 = (tempY / 1000) % 10;
+    int dY2 = (tempY / 100) % 10;
+    int dY1 = (tempY / 10) % 10;
+    int dY0 = tempY % 10;
+
+    started = false;
+    if (dY4 > 0) { coord_chars[coord_len++] = 48 + dY4; started = true; }
+    if (dY3 > 0 || started) { coord_chars[coord_len++] = 48 + dY3; started = true; }
+    if (dY2 > 0 || started) { coord_chars[coord_len++] = 48 + dY2; started = true; }
+    if (dY1 > 0 || started) { coord_chars[coord_len++] = 48 + dY1; started = true; }
+    coord_chars[coord_len++] = 48 + dY0;
+
+    DRAW_DYNAMIC_TEXT(coord_chars, coord_len, coord_x, coord_y, scale_M, float4(0.7, 0.7, 0.7, 1.0))
 
     // ----------------------------------------------------------------
     // 4. GRAPHICS / INTERACTION ELEMENTS RENDERING PASS
     // ----------------------------------------------------------------
 
-    // A. Status Block Controls (D-pad + Capture circle)
-    float2 ac = float2(status_left + 25.0, 20.0 + (H_S + 5.0 + H_L) / 2.0);
+    // A. Status Block Controls (D-pad Arrows - Large & Spaced Out)
     int bits = (int)(NavArrows + 0.5);
     bool pressUp    = (bits & 1) != 0;
     bool pressDown  = (bits & 2) != 0;
@@ -266,101 +313,52 @@ float4 main(VSOut input) : SV_Target {
     bool pressRight = (bits & 8) != 0;
 
     // Up Arrow
-    if (InTri(px - ac, float2(0, 9), float2(-4.5, 4), float2(4.5, 4))) {
-        return pressUp ? float4(1.0, 0.8, 0.2, 1.0) : float4(0.4, 0.4, 0.4, 1.0);
+    if (InTri(px - ac, float2(0, 30.0), float2(-12.0, 17.0), float2(12.0, 17.0))) {
+        return pressUp ? float4(0.3, 0.75, 1.0, 1.0) : float4(0.4, 0.4, 0.43, 1.0);
     }
     // Down Arrow
-    if (InTri(px - ac, float2(0, -9), float2(-4.5, -4), float2(4.5, -4))) {
-        return pressDown ? float4(1.0, 0.8, 0.2, 1.0) : float4(0.4, 0.4, 0.4, 1.0);
+    if (InTri(px - ac, float2(0, -30.0), float2(-12.0, -17.0), float2(12.0, -17.0))) {
+        return pressDown ? float4(0.3, 0.75, 1.0, 1.0) : float4(0.4, 0.4, 0.43, 1.0);
     }
     // Left Arrow
-    if (InTri(px - ac, float2(-9, 0), float2(-4, -4.5), float2(-4, 4.5))) {
-        return pressLeft ? float4(1.0, 0.8, 0.2, 1.0) : float4(0.4, 0.4, 0.4, 1.0);
+    if (InTri(px - ac, float2(-30.0, 0), float2(-17.0, -12.0), float2(-17.0, 12.0))) {
+        return pressLeft ? float4(0.3, 0.75, 1.0, 1.0) : float4(0.4, 0.4, 0.43, 1.0);
     }
     // Right Arrow
-    if (InTri(px - ac, float2(9, 0), float2(4, -4.5), float2(4, 4.5))) {
-        return pressRight ? float4(1.0, 0.8, 0.2, 1.0) : float4(0.4, 0.4, 0.4, 1.0);
+    if (InTri(px - ac, float2(30.0, 0), float2(17.0, -12.0), float2(17.0, 12.0))) {
+        return pressRight ? float4(0.3, 0.75, 1.0, 1.0) : float4(0.4, 0.4, 0.43, 1.0);
     }
 
-    // Capture indicator circle
-    float2 cc = float2(status_left + 50.0, 20.0 + (H_S + 5.0 + H_L) / 2.0);
-    if (length(px - cc) <= 4.0) {
-        if (showGP) {
-            return (HoveredID >= 0.0) ? float4(1.0, 0.2, 0.2, 1.0) : float4(0.2, 0.6, 1.0, 1.0); // Red (captured) / Blue (floating)
-        }
-        return float4(0.4, 0.4, 0.4, 1.0);
+    // Capture indicator dot inside the D-pad center
+    float dist_circle = length(px - ac);
+    if (dist_circle <= 8.0) {
+        return (IsCaptured > 0.5) ? float4(0.95, 0.2, 0.2, 1.0) : float4(0.2, 0.6, 1.0, 1.0); // Red (captured) / Blue (active/idle)
+    }
+    if (dist_circle <= 9.0 && dist_circle > 8.0) {
+        return float4(0.0, 0.0, 0.0, 0.9); // sharp border ring
     }
 
     // ----------------------------------------------------------------
-    // 5. BACKDROP PANELS RENDERING PASS
+    // 5. BACKDROP PANELS & LINES RENDERING PASS
     // ----------------------------------------------------------------
-    float y_top_limit = 20.0 + H_S + 5.0 + H_L + BG_PAD;
-
-    // A. Main Block Panel (Gradient black)
-    if (px.x >= main_left - BG_PAD && px.x <= right_edge + BG_PAD && px.y >= 20.0 - BG_PAD && px.y <= y_top_limit) {
-        float t = (px.x - (main_left - BG_PAD)) / ((right_edge + BG_PAD) - (main_left - BG_PAD));
-        float bgA = lerp(0.75, 0.15, pow(saturate(t), 1.5));
-        return float4(0.0, 0.0, 0.0, bgA);
+    
+    // Separator line under the text
+    if (px.x >= panel_min.x + 95.0 && px.x <= panel_max.x - 15.0 && abs(px.y - sep_y) <= 0.8) {
+        return float4(0.25, 0.25, 0.28, 0.8);
     }
 
-    // B. Status Block Panel
-    if (px.x >= status_left && px.x <= status_right && px.y >= 20.0 - BG_PAD && px.y <= y_top_limit) {
-        return float4(0.0, 0.0, 0.0, 0.6);
-    }
-
-    // C. Notification Panels & Life lines
-    // Notice 0 Box
-    if (Notice0Time > 0.0 && age0 >= 0.0 && age0 < 4.0) {
-        float x_left = lerp(ScreenRes.x, ScreenRes.x - BOX_W - 20.0, saturate(age0 / 0.4) * saturate(age0 / 0.4) * (3.0 - 2.0 * saturate(age0 / 0.4)));
-        float y_bottom = 20.0 + H_S + 5.0 + H_L + BG_PAD + 15.0 + 0.0 * (BOX_H + 10.0);
-        float globalAlpha = saturate((4.0 - age0) / 1.0);
-
-        // Life progress line (white bottom strip)
-        if (px.x >= x_left && px.x <= x_left + saturate((4.0 - age0) / 4.0) * BOX_W && px.y >= y_bottom && px.y <= y_bottom + 2.0) {
-            return float4(1.0, 1.0, 1.0, 0.9 * globalAlpha);
+    // Panel backdrop using rounded box SDF with a sleek border (No red/garbage borders)
+    float2 panel_center = (panel_min + panel_max) * 0.5;
+    float2 panel_half_size = (panel_max - panel_min) * 0.5;
+    float corner_radius = 10.0;
+    float border_t = 1.0;
+    float dist = sdRoundBox(px - panel_center, panel_half_size, corner_radius);
+    
+    if (dist <= 0.0) {
+        if (dist >= -border_t) {
+            return float4(0.2, 0.2, 0.22, 0.9); // sleek dark-grey border
         }
-        // Gradient box
-        if (px.x >= x_left && px.x <= x_left + BOX_W && px.y >= y_bottom && px.y <= y_bottom + BOX_H) {
-            float t = (px.x - x_left) / BOX_W;
-            float bgA = lerp(0.80, 0.20, pow(saturate(t), 1.5)) * globalAlpha;
-            return float4(0.0, 0.0, 0.0, bgA);
-        }
-    }
-
-    // Notice 1 Box
-    if (Notice1Time > 0.0 && age1 >= 0.0 && age1 < 4.0) {
-        float x_left = lerp(ScreenRes.x, ScreenRes.x - BOX_W - 20.0, saturate(age1 / 0.4) * saturate(age1 / 0.4) * (3.0 - 2.0 * saturate(age1 / 0.4)));
-        float y_bottom = 20.0 + H_S + 5.0 + H_L + BG_PAD + 15.0 + 1.0 * (BOX_H + 10.0);
-        float globalAlpha = saturate((4.0 - age1) / 1.0);
-
-        // Life progress line (white bottom strip)
-        if (px.x >= x_left && px.x <= x_left + saturate((4.0 - age1) / 4.0) * BOX_W && px.y >= y_bottom && px.y <= y_bottom + 2.0) {
-            return float4(1.0, 1.0, 1.0, 0.9 * globalAlpha);
-        }
-        // Gradient box
-        if (px.x >= x_left && px.x <= x_left + BOX_W && px.y >= y_bottom && px.y <= y_bottom + BOX_H) {
-            float t = (px.x - x_left) / BOX_W;
-            float bgA = lerp(0.80, 0.20, pow(saturate(t), 1.5)) * globalAlpha;
-            return float4(0.0, 0.0, 0.0, bgA);
-        }
-    }
-
-    // Notice 2 Box
-    if (Notice2Time > 0.0 && age2 >= 0.0 && age2 < 4.0) {
-        float x_left = lerp(ScreenRes.x, ScreenRes.x - BOX_W - 20.0, saturate(age2 / 0.4) * saturate(age2 / 0.4) * (3.0 - 2.0 * saturate(age2 / 0.4)));
-        float y_bottom = 20.0 + H_S + 5.0 + H_L + BG_PAD + 15.0 + 2.0 * (BOX_H + 10.0);
-        float globalAlpha = saturate((4.0 - age2) / 1.0);
-
-        // Life progress line (white bottom strip)
-        if (px.x >= x_left && px.x <= x_left + saturate((4.0 - age2) / 4.0) * BOX_W && px.y >= y_bottom && px.y <= y_bottom + 2.0) {
-            return float4(1.0, 1.0, 1.0, 0.9 * globalAlpha);
-        }
-        // Gradient box
-        if (px.x >= x_left && px.x <= x_left + BOX_W && px.y >= y_bottom && px.y <= y_bottom + BOX_H) {
-            float t = (px.x - x_left) / BOX_W;
-            float bgA = lerp(0.80, 0.20, pow(saturate(t), 1.5)) * globalAlpha;
-            return float4(0.0, 0.0, 0.0, bgA);
-        }
+        return float4(0.01, 0.01, 0.015, 0.92); // very dark, elegant solid backdrop
     }
 
     discard;
