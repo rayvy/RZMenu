@@ -2,9 +2,18 @@
 {% import "modules/core.j2" as core with context %}
 {% import "modules/utils.j2" as utils with context %}
 
+{% set GAME_HASH_MAP = {
+    'ZenlessZoneZero': {
+        'menu': 'ef151633',
+        'world': '59ad4a63',
+        'arena': '6969696969'
+    }
+} %}
+
 {%macro config(mod_file,scene)%}
 [Constants]
 global $active = 0
+global $isGameMenu = 0
 global $LocalVisibility = 0
 global $mspeed = 0.075
 
@@ -369,6 +378,15 @@ global $rayvich_back_values_w110
 {% endif %}
 {{customDrawVars(mod_file,scene)}}
 {{special_generate(mod_file,scene)}}
+
+{% set game_name = (scene.rzm.game.name if (scene and scene.rzm and scene.rzm.game) else (mod_file.game.name if (mod_file and mod_file.game) else 'Default')) %}
+{% set game_hashes = GAME_HASH_MAP.get(game_name, {}) %}
+{% set menu_hash = game_hashes.get('menu', '696969696969') %}
+{% set world_hash = game_hashes.get('world', '696969696969') %}
+{% set arena_hash = game_hashes.get('arena', '696969696969') %}
+[TextureOverrideCheckGameMenu]
+hash = {{ menu_hash }}
+$isGameMenu = 1
 {%endmacro%}
 
 {% macro anchors_generate(mod_file,scene) %}
@@ -418,9 +436,9 @@ global $rayvich_back_values_w110
                             {% set safe_name = utils.format_from_idiot(entry.name) %}
                         global $CDC_{{ safe_name }}_Sandevistan = {{ entry.index_count }}
                         global $CDO_{{ safe_name }}_Sandevistan = {{ entry.index_offset }}
-                        {% else %}
-                        global $CDC_{{ key|replace('CustomDraw', '') }} = {{ entry.index_count }}
-                        global $CDO_{{ key|replace('CustomDraw', '') }} = {{ entry.index_offset }}
+                        {% elif 'XRAY' not in key and 'TRANSPARENT' not in key %}
+                        ;global $CDC_{{ key|replace('CustomDraw', '') }} = {{ entry.index_count }}
+                        ;global $CDO_{{ key|replace('CustomDraw', '') }} = {{ entry.index_offset }}
                         {% endif %}
                     {% endif %}
                 {% endfor %}
