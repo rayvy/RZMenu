@@ -61,6 +61,7 @@ cbuffer cb1 : register(b1) { float4 gCB1[CB1_ROWS]; }
 Texture1D<float4> IniParams : register(t120);
 
 #define CURSOR_PARAMS    IniParams[24]
+#define CLICK_PARAMS     IniParams[25]
 #define TRANSFORM_PARAMS IniParams[26]
 
 groupshared float sBestDepth[THREADS_PER_GROUP];
@@ -275,6 +276,8 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID,
     float2 screenRes = max(CURSOR_PARAMS.zw, float2(1.0f, 1.0f));
     float  padUV     = hitPadPixels / max(screenRes.x, screenRes.y);
 
+    bool isClicked = (CLICK_PARAMS.x > 0.0f);
+
     if (cb0Base + 3u < CB0_ROWS)
     {
         [loop]
@@ -283,14 +286,18 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID,
             float4 entry     = gObjectMap[1u + objectIndex];
             uint firstIndex  = (uint)max(entry.x, 0.0f);
             uint indexCount  = (uint)max(entry.y, 0.0f);
-            uint baseVertex  = (uint)max(entry.z, 0.0f);
+            float objectMode = entry.z;
             float objectID   = entry.w > 0.0f ? entry.w : (float)firstIndex;
 
-            if (indexCount >= 3u)
+            bool isHoverType   = (objectMode <= 3.0f);
+            bool isClickType   = (objectMode >= 4.0f && objectMode <= 6.0f);
+            bool shouldProcess = isHoverType || (isClickType && isClicked);
+
+            if (shouldProcess && indexCount >= 3u)
             {
                 TestTriangleRange(
                     tid,
-                    firstIndex, indexCount, baseVertex, objectID,
+                    firstIndex, indexCount, 0u, objectID,
                     cb0Base, cb1Base, localMode, clipMode,
                     cursor, padUV,
                     bestDepth, bestID, bestFirstIndex, hitCount);

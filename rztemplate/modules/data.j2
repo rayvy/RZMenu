@@ -55,9 +55,12 @@ global $vertex_loaded = 0
 global $di_count = 0
 global $data_offset = 10
 global $pi = 3.14159265
+global $CursorIsMoved
 
 ; --- RZM HOVER DETECT ---
 global $Detected = -1
+global $ObjectDetectAllowed
+
 global $RZM_TRIANGLE_VALID
 
 global $isMouseButtonDown = 0
@@ -528,13 +531,13 @@ global $RZMMenuProfileMode = {{ menu_p.mode }}
 {% macro hoverDetectResources(mod_file, scene) %}
 {% if mod_file and mod_file.components %}
     {% for component in mod_file.components if component.draw_vb != "" %}
-        {# Collect hoverable entries in this component into a plain list #}
+        {# Collect hoverable/clickable entries in this component into a plain list #}
         {% set _hover_entries = [] %}
         {% for part in component.parts if part.vertex_count > 0 %}
             {% for entry in part.objects if entry.vertex_count > 0 %}
                 {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
                 {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
-                    {% if _hover_entries.append(entry) %}{% endif %}
+                    {% if _hover_entries.append((entry, real_obj.get('rzm.Hover', 0) | int)) %}{% endif %}
                 {% endif %}
             {% endfor %}
         {% endfor %}
@@ -546,8 +549,8 @@ type = Buffer
 format = R32G32B32A32_FLOAT
 array = {{ obj_count + 1 }}
 ; [0] = objectCount={{ obj_count }}, 0, 0, 0
-; [1+i] = firstIndex, indexCount, baseVertex, objectID
-data = {{ obj_count }} 0 0 0  {% for entry in _hover_entries %}{{ entry.index_offset if entry.index_offset is defined else entry.first_index if entry.first_index is defined else 0 }} {{ entry.index_count }} 0 0  {% endfor %}
+; [1+i] = firstIndex, indexCount, mode, objectID
+data = {{ obj_count }} 0 0 0  {% for item in _hover_entries %}{% set entry = item[0] %}{% set mode = item[1] %}{{ entry.index_offset if entry.index_offset is defined else entry.first_index if entry.first_index is defined else 0 }} {{ entry.index_count }} {{ mode }} 0  {% endfor %}
 
         {% endif %}
     {% endfor %}

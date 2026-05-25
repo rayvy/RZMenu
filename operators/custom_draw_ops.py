@@ -82,10 +82,13 @@ class RZM_OT_SetHoverMode(bpy.types.Operator):
     """Sets the rzm.Hover detection mode on the active object.
     
     Mode values:
-      0 = remove property (no hover detection)
-      1 = Collider          – registers in ObjectMap, no draw changes
+      0 = remove property (no hover/click detection)
+      1 = Collider          – registers in ObjectMap, no draw changes (Hover)
       2 = HideWhenHovered   – hidden when cursor is over it
       3 = AppearWhenHovered – visible only when cursor is over it
+      4 = ClickCollider     – registers in ObjectMap on click, no draw changes
+      5 = HideWhenClicked   – hidden when clicked
+      6 = AppearWhenClicked – visible only when clicked
     """
     bl_idname = "rzm.set_hover_mode"
     bl_label = "Set Hover Mode"
@@ -94,7 +97,7 @@ class RZM_OT_SetHoverMode(bpy.types.Operator):
     mode: bpy.props.IntProperty(
         name="Mode",
         default=0,
-        min=0, max=3
+        min=0, max=6
     )
 
     def execute(self, context):

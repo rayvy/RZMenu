@@ -520,22 +520,46 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
 
         # --- HOVER DETECT ---
         hover_box = layout.box()
-        hover_box.label(text="Hover Detect", icon='RESTRICT_SELECT_OFF')
+        hover_box.label(text="Hover / Click Detect", icon='RESTRICT_SELECT_OFF')
 
         current_mode = target_obj.get("rzm.Hover", 0)
 
         # Mode descriptions
         HOVER_MODES = [
-            (0, "None",              "No hover detection",                          'X'),
+            (0, "None",              "No hover/click detection",                     'X'),
             (1, "Collider",          "Register in ObjectMap only, no draw changes", 'MESH_CIRCLE'),
             (2, "Hide When Hovered", "Hidden when cursor is over this object",      'HIDE_ON'),
             (3, "Appear When Hov.", "Visible only when cursor is over this object", 'HIDE_OFF'),
         ]
 
-        row = hover_box.row(align=True)
-        for mode_val, label, tooltip, icon in HOVER_MODES:
-            is_active = (current_mode == mode_val) if mode_val != 0 else (current_mode == 0 or "rzm.Hover" not in target_obj)
-            op = row.operator(
+        CLICK_MODES = [
+            (4, "Click Collider",    "Register in ObjectMap on click, no draw changes", 'MESH_CIRCLE'),
+            (5, "Hide When Clicked", "Hidden when object is clicked",                         'HIDE_ON'),
+            (6, "Appear When Click", "Visible only when object is clicked",                   'HIDE_OFF'),
+        ]
+
+        row0 = hover_box.row(align=True)
+        is_none_active = (current_mode == 0 or "rzm.Hover" not in target_obj)
+        op = row0.operator("rzm.set_hover_mode", text="None", icon='X', depress=is_none_active)
+        op.mode = 0
+
+        hover_box.label(text="Hover Modes:")
+        row1 = hover_box.row(align=True)
+        for mode_val, label, tooltip, icon in HOVER_MODES[1:]:
+            is_active = (current_mode == mode_val)
+            op = row1.operator(
+                "rzm.set_hover_mode",
+                text=label,
+                icon=icon,
+                depress=is_active,
+            )
+            op.mode = mode_val
+
+        hover_box.label(text="Click Modes:")
+        row2 = hover_box.row(align=True)
+        for mode_val, label, tooltip, icon in CLICK_MODES:
+            is_active = (current_mode == mode_val)
+            op = row2.operator(
                 "rzm.set_hover_mode",
                 text=label,
                 icon=icon,
@@ -556,6 +580,17 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             hover_box.label(text="draw suppressed when $Detected == firstIndex", icon='INFO')
         elif current_mode == 3:
             hover_box.label(text="drawn only when $Detected == firstIndex", icon='INFO')
+        elif current_mode == 4:
+            hint_box = hover_box.box()
+            hint_box.alert = False
+            hint_col = hint_box.column(align=True)
+            hint_col.label(text="Click Collider: registers in ObjectMap on click.", icon='INFO')
+            hint_col.label(text="No draw suppression or wrapping applied.")
+            hint_col.label(text="Use $Detected == <firstIndex> in other modules.")
+        elif current_mode == 5:
+            hover_box.label(text="draw suppressed when clicked ($Detected == firstIndex)", icon='INFO')
+        elif current_mode == 6:
+            hover_box.label(text="drawn only when clicked ($Detected == firstIndex)", icon='INFO')
 
 
 # ... (Остальные панели без изменений) ...

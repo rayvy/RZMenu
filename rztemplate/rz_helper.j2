@@ -138,39 +138,21 @@
         {% endif %}
     {% endif %}
 
-    {# --- RZM HOVER: dispatch detect before draw (reads live vb0+ib at this point in the pipeline) --- #}
-    {% if _hov.has_hover %}
-        {# Find which component this entry belongs to, to call the right detect shader #}
-        {% set _comp = {'name': ''} %}
-        {% if mod_file and mod_file.components %}
-            {% for component in mod_file.components if component.draw_vb != "" %}
-                {% for part in component.parts %}
-                    {% for e in part.objects %}
-                        {% if e.name == obj_name %}
-                            {% if _comp.update({'name': component.fullname}) %}{% endif %}
-                        {% endif %}
-                    {% endfor %}
-                {% endfor %}
-            {% endfor %}
-        {% endif %}
-        {% if _comp.name %}
-run = CustomShaderRZMDetect{{ _comp.name }}
-        {% endif %}
-    {% endif %}
+
 
     {# --- Actual draw command --- #}
         {% if skip %}
             ;DrawSkip
             ;drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE
-        {% elif _hov.mode == 1 %}
-            {# Collider: normal draw, no wrapping. Object is registered in ObjectMap only. #}
+        {% elif _hov.mode == 1 or _hov.mode == 4 %}
+            {# Collider / Click Collider: normal draw, no wrapping. Object is registered in ObjectMap only. #}
             {# Hint: use $Detected == {{ idx_offset }} in other modules to react to this object. #}
             {% if draw_mode == 'instanced' %}
             drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE
             {% else %}
             drawindexed = {{ idx_count }}, {{ idx_offset }}, 0
             {% endif %}
-        {% elif _hov.mode == 2 %}
+        {% elif _hov.mode == 2 or _hov.mode == 5 %}
 if $Detected != {{ idx_offset }}
             {% if draw_mode == 'instanced' %}
     drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE
@@ -178,7 +160,7 @@ if $Detected != {{ idx_offset }}
     drawindexed = {{ idx_count }}, {{ idx_offset }}, 0
             {% endif %}
 endif
-        {% elif _hov.mode == 3 %}
+        {% elif _hov.mode == 3 or _hov.mode == 6 %}
 if $Detected == {{ idx_offset }}
             {% if draw_mode == 'instanced' %}
     drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE

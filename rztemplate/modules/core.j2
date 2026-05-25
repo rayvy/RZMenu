@@ -264,7 +264,7 @@ x110 = 0
 y110 = 0
 z110 = 0
 w110 = 0
-
+run = CommandListComputeDimensions
 run = CommandListRZMain
 {% if has_any_hover %}
 pre run = CommandListRZMPinDetected
@@ -617,6 +617,7 @@ x24 = $cursorX
 y24 = $cursorY
 z24 = $screenW
 w24 = $screenH
+x25 = $isMouseButtonDown
 x26 = $RZMWorldProfileCB0
 y26 = $RZMWorldProfileCB1
 z26 = $RZMWorldProfileMode
@@ -649,39 +650,71 @@ dispatch = 1, 1, 1
 
 [CommandListRZMPinDetected]
 local $rzm_detect_counter
+local $rzm_detect_threshold = 60
 $rzm_detect_counter = $rzm_detect_counter + 1
-if $rzm_detect_counter >= 30
-    run = CustomShaderRZMPinDetected
-    store = $Detected, ResourceRZMPinnedDetectID, 0
-    $rzm_detect_counter = 0
+
+if $isMouseButtonDown == 1
+    $rzm_detect_counter = $rzm_detect_threshold
+endif
+
+if $inputMode == 0
+
+if $hoveredID > 0
+	$Detected = -1
+    $ObjectDetectAllowed = 0
+else
+    $ObjectDetectAllowed = 1
+	if $rzm_detect_counter >= ($rzm_detect_threshold - $CursorIsMoved * 50)
+		run = CustomShaderRZMPinDetected
+		store = $Detected, ResourceRZMPinnedDetectID, 0
+		$rzm_detect_counter = 0
+	endif
+endif
+
+else 
+	$Detected = -1
+    $ObjectDetectAllowed = 0
 endif
 
 {% endif %}
 {%endmacro%}
 
 {%macro baseCompute(mod_file,scene)%}
-[CommandListBaseDataCompute]
+[CommandListComputeDimensions]
+local $pastCursorX
+local $pastCursorY
+local $cursorJitter
+local $cursorJitterThreshold = 4
+local $cursorMovingDuration
+
+if $CursorIsMoved == 1
+$cursorMovingDuration = $cursorMovingDuration + 1
+if $cursorMovingDuration >= 8
+$CursorIsMoved = 0
+$cursorMovingDuration = 0
+endif
+endif 
 if $inputMode == 0
-    if cursor_x > 0 && cursor_y > 0 && cursor_x < 1 && cursor_y < 1
-        $cursorX = cursor_x
-        $cursorY = 1.0 - cursor_y
-    elif cursor_window_x > 0 && cursor_window_y > 0 && cursor_window_x < 1 && cursor_window_y < 1
-        $cursorX = cursor_window_x / rt_width
-        $cursorY = 1.0 - cursor_window_y / rt_height
-    else
-        $cursorX = cursor_screen_x / rt_height
-        $cursorY = 1.0 - cursor_screen_y / rt_height
-    endif
+	if cursor_x > 0 && cursor_y > 0 && cursor_x < 1 && cursor_y < 1
+		$cursorX = cursor_x
+		$cursorY = 1.0 - cursor_y
+	elif cursor_window_x > 0 && cursor_window_y > 0 && cursor_window_x < 1 && cursor_window_y < 1
+		$cursorX = cursor_window_x / rt_width
+		$cursorY = 1.0 - cursor_window_y / rt_height
+	else
+		$cursorX = cursor_screen_x / rt_height
+		$cursorY = 1.0 - cursor_screen_y / rt_height
+	endif
 endif
 if window_width != 0 && window_height != 0
-  $screenW = window_width
-  $screenH = window_height
+	$screenW = window_width
+	$screenH = window_height
 elif rt_width != 0 && rt_height != 0
-  $screenW = rt_width
-  $screenH = rt_height
+	$screenW = rt_width
+	$screenH = rt_height
 else
-  $screenW = res_width
-  $screenH = res_height
+	$screenW = res_width
+	$screenH = res_height
 endif
 
 if $screenW > $screenH
@@ -691,20 +724,41 @@ else
 endif
 
 if $screenW > $screenH
-    if $canvas_size_y != $screenH
-        $screen_modifier_scale = $canvas_size_y / $screenH
-    endif
+	if $canvas_size_y != $screenH
+		$screen_modifier_scale = $canvas_size_y / $screenH
+	endif
 endif
 
 if $inputMode == 0
-    $cursorX = $cursorX * $screenW
-    $cursorY = $cursorY * $screenH
+	$cursorX = $cursorX * $screenW
+	$cursorY = $cursorY * $screenH
 endif
 
 $cursorX = $cursorX * $screen_modifier_scale
 $cursorY = $cursorY * $screen_modifier_scale
 $screenW = $screenW * $screen_modifier_scale
 $screenH = $screenH * $screen_modifier_scale
+
+$pastCursorX = $pastCursorX - $cursorX
+$mathinA = $pastCursorX
+run = CommandListMathABS
+$cursorJitter = $cursorJitter + $mathout
+
+$pastCursorY = $pastCursorY - $cursorY
+$mathinA = $pastCursorY
+run = CommandListMathABS
+$cursorJitter = $cursorJitter + $mathout
+
+if $cursorJitter > $cursorJitterThreshold && $CursorIsMoved == 0
+	$CursorIsMoved = 1
+	$cursorJitter = 0
+endif
+
+$pastCursorX = $cursorX
+$pastCursorY = $cursorY
+
+[CommandListBaseDataCompute]
+;run = CommandListComputeDimensions
 {% if scene.rzm %}
     {% for grid in scene.rzm.elements %}
         {% if grid.elem_class == 'GRID_CONTAINER' and not (grid.disable_export and not grid.is_preset) %}
