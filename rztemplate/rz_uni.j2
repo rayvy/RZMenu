@@ -25,6 +25,7 @@
         {{ hoyo.overridesibs(mod_file, scene) }}
         {{ hoyo.resourcebuffers(mod_file, scene) }}
         {{ hoyo.resourcetextures(mod_file, scene) }}
+        {{ data.hoverDetectResources(mod_file, scene) }}
     {% endblock %}
 {% endif %}
 {% else %}
@@ -41,6 +42,7 @@
 {{core.entryPoint(mod_file,scene)}}
 {{core.baseCompute(mod_file,scene)}}
 {{core.menuDrawUi(mod_file,scene)}}
+{{core.hoverDetectShaders(mod_file,scene)}}
 {% endblock %}
 
 {{fn.Base()}}
@@ -74,6 +76,7 @@
 {{keymap.generate_keybinds(mod_file,scene)}}
 {{run_links.generate_run_links(mod_file,scene)}}
 {{data.config(mod_file,scene)}}
+{{data.hoverDetectVars(mod_file,scene)}}
 {{data.generate_profiles(mod_file,scene)}}
 
 {% if scene.rzm.game.name == "ArknightsEndfield" %}

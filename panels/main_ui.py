@@ -518,6 +518,44 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 op = r.operator("rzm.remove_custom_draw", text="", icon='X', emboss=False)
                 op.prop_name = key
 
+        # --- HOVER DETECT ---
+        hover_box = layout.box()
+        hover_box.label(text="Hover Detect", icon='RESTRICT_SELECT_OFF')
+
+        current_mode = target_obj.get("rzm.Hover", 0)
+
+        # Mode descriptions
+        HOVER_MODES = [
+            (0, "None",              "No hover detection",                          'X'),
+            (1, "Collider",          "Register in ObjectMap only, no draw changes", 'MESH_CIRCLE'),
+            (2, "Hide When Hovered", "Hidden when cursor is over this object",      'HIDE_ON'),
+            (3, "Appear When Hov.", "Visible only when cursor is over this object", 'HIDE_OFF'),
+        ]
+
+        row = hover_box.row(align=True)
+        for mode_val, label, tooltip, icon in HOVER_MODES:
+            is_active = (current_mode == mode_val) if mode_val != 0 else (current_mode == 0 or "rzm.Hover" not in target_obj)
+            op = row.operator(
+                "rzm.set_hover_mode",
+                text=label,
+                icon=icon,
+                depress=is_active,
+            )
+            op.mode = mode_val
+
+        # Info line for current active mode
+        if current_mode == 1:
+            # Show the firstIndex hint for Collider
+            hint_box = hover_box.box()
+            hint_box.alert = False
+            hint_col = hint_box.column(align=True)
+            hint_col.label(text="Collider: registers in ObjectMap only.", icon='INFO')
+            hint_col.label(text="No draw suppression or wrapping applied.")
+            hint_col.label(text="Use $Detected == <firstIndex> in other modules.")
+        elif current_mode == 2:
+            hover_box.label(text="draw suppressed when $Detected == firstIndex", icon='INFO')
+        elif current_mode == 3:
+            hover_box.label(text="drawn only when $Detected == firstIndex", icon='INFO')
 
 
 # ... (Остальные панели без изменений) ...

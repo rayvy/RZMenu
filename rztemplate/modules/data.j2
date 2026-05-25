@@ -55,6 +55,9 @@ global $vertex_loaded = 0
 global $di_count = 0
 global $data_offset = 10
 global $pi = 3.14159265
+
+; --- RZM HOVER DETECT ---
+global $Detected = -1
 global $RZM_TRIANGLE_VALID
 
 global $isMouseButtonDown = 0
@@ -446,6 +449,134 @@ $isGameMenu = 1
         {% endfor %}
     {% endfor %}
 {%endmacro%}
+
+{# ============================================================
+   hoverDetectVars: Generates global Constants needed by the
+   RZM hover detection system.
+
+   Transform profiles per-game (config map):
+     World profile : cb0, cb1, mode used outside menu
+     Menu  profile : cb0, cb1, mode used in menu (when $isGameMenu == 1)
+
+   mode = localMode * 10 + clipMode
+     localMode: 0=raw vb0, 1=basis cb1, 2=row-dot cb1
+     clipMode:  0=basis cb0, 1=row-dot cb0, 2=basis cb0 + viewport offset
+   ============================================================ #}
+{% macro hoverDetectVars(mod_file, scene) %}
+{% set game_name = (scene.rzm.game.name if (scene and scene.rzm and scene.rzm.game) else (mod_file.game.name if (mod_file and mod_file.game) else 'Default')) %}
+
+{# Per-game transform profile config map #}
+{% set HOVER_PROFILE_MAP = {
+    'ZenlessZoneZero': {
+        'world': {'cb0': 125, 'cb1': 0, 'mode': 10},
+        'menu':  {'cb0': 127, 'cb1': 0, 'mode': 12}
+    },
+    'GenshinImpact': {
+        'world': {'cb0': 64, 'cb1': 0, 'mode': 10},
+        'menu':  {'cb0': 64, 'cb1': 0, 'mode': 10}
+    },
+    'HonkaiStarRail': {
+        'world': {'cb0': 32, 'cb1': 0, 'mode': 10},
+        'menu':  {'cb0': 32, 'cb1': 0, 'mode': 10}
+    },
+    'ArknightsEndfield': {
+        'world': {'cb0': 16, 'cb1': 0, 'mode': 10},
+        'menu':  {'cb0': 16, 'cb1': 0, 'mode': 10}
+    }
+} %}
+{% set profile = HOVER_PROFILE_MAP.get(game_name, {'world': {'cb0': 0, 'cb1': 0, 'mode': 10}, 'menu': {'cb0': 0, 'cb1': 0, 'mode': 10}}) %}
+{% set world_p = profile.get('world') %}
+{% set menu_p  = profile.get('menu') %}
+
+{# Check if any component has hoverable objects (rzm.Hover int > 0) #}
+{% set _has_hover = {'found': false} %}
+{% if mod_file and mod_file.components %}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% for entry in part.objects if entry.vertex_count > 0 %}
+                {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
+                    {% if _has_hover.update({'found': true}) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    {% endfor %}
+{% endif %}
+
+{% if _has_hover.found %}
+[Constants]
+; RZM Hover Detect — transform profiles
+global $RZMWorldProfileCB0 = {{ world_p.cb0 }}
+global $RZMWorldProfileCB1 = {{ world_p.cb1 }}
+global $RZMWorldProfileMode = {{ world_p.mode }}
+global $RZMMenuProfileCB0 = {{ menu_p.cb0 }}
+global $RZMMenuProfileCB1 = {{ menu_p.cb1 }}
+global $RZMMenuProfileMode = {{ menu_p.mode }}
+{% endif %}
+{% endmacro %}
+
+{# ============================================================
+   hoverDetectResources: Generates per-component ObjectMap
+   resources for all components with hoverable objects.
+
+   ObjectMap layout (R32G32B32A32_FLOAT buffer):
+     [0]     = objectCount, 0, 0, 0
+     [1 + i] = firstIndex, indexCount, baseVertex, objectID
+
+   If objectID == 0, shader uses firstIndex as the ID.
+   ============================================================ #}
+{% macro hoverDetectResources(mod_file, scene) %}
+{% if mod_file and mod_file.components %}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {# Collect hoverable entries in this component into a plain list #}
+        {% set _hover_entries = [] %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% for entry in part.objects if entry.vertex_count > 0 %}
+                {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
+                    {% if _hover_entries.append(entry) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+
+        {% if _hover_entries | length > 0 %}
+            {% set obj_count = _hover_entries | length %}
+[ResourceRZMDetect{{ component.fullname }}ObjectMap]
+type = Buffer
+format = R32G32B32A32_FLOAT
+array = {{ obj_count + 1 }}
+; [0] = objectCount={{ obj_count }}, 0, 0, 0
+; [1+i] = firstIndex, indexCount, baseVertex, objectID
+data = {{ obj_count }} 0 0 0  {% for entry in _hover_entries %}{{ entry.index_offset if entry.index_offset is defined else entry.first_index if entry.first_index is defined else 0 }} {{ entry.index_count }} 0 0  {% endfor %}
+
+        {% endif %}
+    {% endfor %}
+
+; RZM Hover Detect accumulator buffers (shared across all components)
+{% set _any_hover = {'found': false} %}
+{% for component in mod_file.components if component.draw_vb != "" %}
+    {% for part in component.parts if part.vertex_count > 0 %}
+        {% for entry in part.objects if entry.vertex_count > 0 %}
+            {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+            {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
+                {% if _any_hover.update({'found': true}) %}{% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+{% endfor %}
+{% if _any_hover.found %}
+[ResourceRZMDetectID]
+type = RWBuffer
+format = R32G32B32A32_FLOAT
+array = 1
+
+[ResourceRZMPinnedDetectID]
+type = RWBuffer
+format = R32_FLOAT
+array = 1
+{% endif %}
+{% endif %}
+{% endmacro %}
 
 {% macro shape_generate(mod_file,scene) %}
     {% for shape in scene.rzm.shapes %}

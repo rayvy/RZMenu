@@ -78,10 +78,45 @@ class RZM_MT_AddCustomDrawMenu(bpy.types.Menu):
             op = layout.operator("rzm.add_custom_draw", text=opt)
             op.draw_type = opt
 
+class RZM_OT_SetHoverMode(bpy.types.Operator):
+    """Sets the rzm.Hover detection mode on the active object.
+    
+    Mode values:
+      0 = remove property (no hover detection)
+      1 = Collider          – registers in ObjectMap, no draw changes
+      2 = HideWhenHovered   – hidden when cursor is over it
+      3 = AppearWhenHovered – visible only when cursor is over it
+    """
+    bl_idname = "rzm.set_hover_mode"
+    bl_label = "Set Hover Mode"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    mode: bpy.props.IntProperty(
+        name="Mode",
+        default=0,
+        min=0, max=3
+    )
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj:
+            return {'CANCELLED'}
+
+        if self.mode == 0:
+            # Remove the property entirely
+            if "rzm.Hover" in obj:
+                del obj["rzm.Hover"]
+        else:
+            obj["rzm.Hover"] = self.mode
+
+        return {'FINISHED'}
+
+
 classes = (
     RZM_OT_AddCustomDraw,
     RZM_OT_RemoveCustomDraw,
     RZM_OT_ToggleSkipDraw,
+    RZM_OT_SetHoverMode,
     RZM_MT_AddCustomDrawMenu,
 )
 

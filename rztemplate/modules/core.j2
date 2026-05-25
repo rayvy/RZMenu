@@ -42,6 +42,26 @@
 {% endmacro %}
 
 {%macro entryPoint(mod_file,scene)%}
+{# --- RZM HOVER DETECT: collect components with hoverable objects --- #}
+{% set _hover_comps = [] %}
+{% if mod_file and mod_file.components %}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% set _comp_has = {'found': false} %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% for entry in part.objects if entry.vertex_count > 0 %}
+                {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
+                    {% if _comp_has.update({'found': true}) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+        {% if _comp_has.found %}
+            {% if _hover_comps.append(component) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+{% endif %}
+{% set has_any_hover = _hover_comps | length > 0 %}
+
 [Present]
 $rayvich_back_values_x23 = x23
 $rayvich_back_values_y23 = y23
@@ -246,6 +266,9 @@ z110 = 0
 w110 = 0
 
 run = CommandListRZMain
+{% if has_any_hover %}
+pre run = CommandListRZMPinDetected
+{% endif %}
 
 x24 = $rayvich_back_values_x24
 y24 = $rayvich_back_values_y24
@@ -545,6 +568,95 @@ endif
 ;drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
 ;endif
 
+{%endmacro%}
+
+{# ========================================================
+   RZM HOVER DETECT: per-component CustomShader definitions
+   and the global pin CommandList.
+
+   Generated only when the mod has hoverable objects.
+   ======================================================== #}
+{%macro hoverDetectShaders(mod_file,scene)%}
+{# Collect components with hoverable objects #}
+{% set _hover_comps = [] %}
+{% if mod_file and mod_file.components %}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% set _comp_has = {'found': false} %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% for entry in part.objects if entry.vertex_count > 0 %}
+                {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
+                    {% if _comp_has.update({'found': true}) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+        {% if _comp_has.found %}
+            {% if _hover_comps.append(component) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+{% endif %}
+
+{% if _hover_comps | length > 0 %}
+; ============================================================
+; RZM Hover Detect - per-component detect shaders
+; ============================================================
+
+{% for component in _hover_comps %}
+[CustomShaderRZMDetect{{ component.fullname }}]
+; Component-level GPU cursor hit detector.
+; cs-t2 = ObjectMap (hoverable objects in this component)
+; cs-u0 = shared accumulator (closest hit across all dispatches)
+cs = /modules/rzm_object_detect.hlsl
+cs-t0 = vb0
+cs-t1 = ib
+cs-t2 = ResourceRZMDetect{{ component.fullname }}ObjectMap
+cs-cb0 = vs-cb0
+cs-cb1 = vs-cb1
+cs-u0 = ResourceRZMDetectID
+x24 = $cursorX
+y24 = $cursorY
+z24 = $screenW
+w24 = $screenH
+x26 = $RZMWorldProfileCB0
+y26 = $RZMWorldProfileCB1
+z26 = $RZMWorldProfileMode
+w26 = 2
+if $isGameMenu == 1
+    x26 = $RZMMenuProfileCB0
+    y26 = $RZMMenuProfileCB1
+    z26 = $RZMMenuProfileMode
+    w26 = 2
+endif
+dispatch = 1, 1, 1
+
+{% endfor %}
+; ============================================================
+; RZM Hover Detect - pin shader
+; Reads best hit from frame accumulator, writes to pinned
+; R32_FLOAT buffer, resets accumulator for next frame.
+; ============================================================
+
+[CustomShaderRZMPinDetected]
+cs = /modules/rzm_pin_detected.hlsl
+cs-u0 = ResourceRZMDetectID
+cs-u1 = ResourceRZMPinnedDetectID
+dispatch = 1, 1, 1
+
+; ============================================================
+; RZM Hover Detect - throttled store (called via pre run)
+; store is expensive (CPU readback). Run once every 30 frames.
+; ============================================================
+
+[CommandListRZMPinDetected]
+local $rzm_detect_counter
+$rzm_detect_counter = $rzm_detect_counter + 1
+if $rzm_detect_counter >= 30
+    run = CustomShaderRZMPinDetected
+    store = $Detected, ResourceRZMPinnedDetectID, 0
+    $rzm_detect_counter = 0
+endif
+
+{% endif %}
 {%endmacro%}
 
 {%macro baseCompute(mod_file,scene)%}
