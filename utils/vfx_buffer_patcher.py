@@ -633,6 +633,79 @@ def patch_buffers(context, cache):
         f.write(all_curve_bytes)
     print(f"[RZM-VFX] Wrote {valid_curve_count} curves ({valid_curve_count * 257 * 40} bytes) to '{curve_buf_path}'")
 
+    # Write curve_weight_data.buf: 32 weight entries per curve, stride=32 (4xfloat + 4xuint)
+    weight_buf_path = os.path.join(res_dir, "curve_weight_data.buf")
+    all_weight_bytes = bytearray()
+    for curve_obj in vfx_curves:
+        if curve_obj.name not in curve_mapping:
+            continue
+        comp_name, target_mesh, part_name = find_associated_mesh_and_component(context, curve_obj)
+        shapes_resampled = curve_shapes_cache.get(curve_obj.name, [])
+        basis_pts = shapes_resampled[0] if shapes_resampled else []
+
+        weight_indices = list(get_curve_prop(curve_obj, "weight_indices", (-1, -1, -1, -1)))
+        weight_values  = list(get_curve_prop(curve_obj, "weight_values", (0.0, 0.0, 0.0, 0.0)))
+        fallback_idx = [int(x) if x != -1 else 0 for x in weight_indices]
+        fallback_w   = [float(w) for w in weight_values]
+
+        # Build KDTree for weight reference if available
+        ref_mesh = curve_obj.rzm_curve_vfx_weight_reference
+        kd_w = None; vg_map_w = {}; bone_to_id_w = {}; ref_data_w = None
+        if ref_mesh and ref_mesh.type == 'MESH':
+            try:
+                depsgraph = context.evaluated_depsgraph_get()
+                ref_data_w = ref_mesh.evaluated_get(depsgraph).data
+                vg_map_w   = {vg.index: vg.name for vg in ref_mesh.vertex_groups}
+                for vg in ref_mesh.vertex_groups:
+                    bone_to_id_w[vg.name] = vg.index
+                from mathutils.kdtree import KDTree
+                kd_w = KDTree(len(ref_data_w.vertices))
+                for vi, v in enumerate(ref_data_w.vertices):
+                    kd_w.insert(ref_mesh.matrix_world @ v.co, vi)
+                kd_w.balance()
+            except Exception as e:
+                print(f"[RZM-VFX] [WARN] Weight KDTree failed for weight export: {e}")
+                kd_w = None
+
+        for pt_idx in range(32):
+            t = pt_idx / 31.0
+            if basis_pts and len(basis_pts) >= 2:
+                pos_local = sample_curve_at_progress(basis_pts, t)
+                wpos = curve_obj.matrix_world @ pos_local
+                if kd_w:
+                    _, ref_idx, _ = kd_w.find(wpos)
+                    v = ref_data_w.vertices[ref_idx]
+                    bone_groups = []
+                    for g in v.groups:
+                        if g.weight > 1e-5:
+                            gname = vg_map_w.get(g.group)
+                            if gname and gname in bone_to_id_w:
+                                bone_groups.append((bone_to_id_w[gname], g.weight))
+                    bone_groups.sort(key=lambda x: x[1], reverse=True)
+                    bone_groups = bone_groups[:4]
+                    if bone_groups:
+                        tw = sum(w for _, w in bone_groups)
+                        bone_groups = [(idx, w / tw) for idx, w in bone_groups] if tw > 0 else bone_groups
+                        while len(bone_groups) < 4:
+                            bone_groups.append((0, 0.0))
+                        out_idx = [bg[0] for bg in bone_groups]
+                        out_w   = [bg[1] for bg in bone_groups]
+                    else:
+                        out_idx, out_w = fallback_idx, fallback_w
+                else:
+                    out_idx, out_w = fallback_idx, fallback_w
+            else:
+                out_idx, out_w = fallback_idx, fallback_w
+
+            all_weight_bytes.extend(struct.pack('<ffffIIII',
+                out_w[0], out_w[1], out_w[2], out_w[3],
+                out_idx[0], out_idx[1], out_idx[2], out_idx[3]))
+
+    with open(weight_buf_path, 'wb') as f:
+        f.write(all_weight_bytes)
+    print(f"[RZM-VFX] Wrote curve_weight_data.buf ({len(all_weight_bytes)} bytes) to '{weight_buf_path}'")
+
+
     # 2. Group curves by target component and part
     curves_by_part = {}
     for curve_obj in vfx_curves:
@@ -843,14 +916,13 @@ def patch_buffers(context, cache):
                     ref_eval = ref_mesh.evaluated_get(depsgraph)
                     ref_mesh_data = ref_eval.data
                     
+                    # vg_map: vg_index -> bone_name (for vertex.groups lookup)
                     vg_map = {vg.index: vg.name for vg in ref_mesh.vertex_groups}
-                    armature = ref_mesh.find_armature()
-                    if armature:
-                        for b_idx, bone in enumerate(armature.data.bones):
-                            bone_to_id[bone.name] = b_idx
-                    else:
-                        for vg in ref_mesh.vertex_groups:
-                            bone_to_id[vg.name] = vg.index
+                    # bone_to_id: bone_name -> game bone ID
+                    # MUST use vg.index — that's what XXMI writes into the VB2 blend buffer.
+                    # DO NOT use enumerate(armature.data.bones): armature bone order ≠ vg order.
+                    for vg in ref_mesh.vertex_groups:
+                        bone_to_id[vg.name] = vg.index
                             
                     from mathutils.kdtree import KDTree
                     kd = KDTree(len(ref_mesh_data.vertices))
@@ -862,6 +934,7 @@ def patch_buffers(context, cache):
                 except Exception as e:
                     print(f"[RZM-VFX] Error building KDTree for reference mesh: {e}")
                     kd = None
+
 
             # ----------------------------------------------------------------------
             # A. Patch VB0 (Position)
@@ -943,24 +1016,32 @@ def patch_buffers(context, cache):
                         _, ref_idx, _ = kd.find(wpos)
                         v = ref_mesh_data.vertices[ref_idx]
                         
-                        best_vg = -1
-                        best_weight = 0.0
+                        # Collect all valid bone groups, sort by weight descending, take top 4
+                        bone_groups = []
                         for g in v.groups:
-                            if g.weight > best_weight:
+                            if g.weight > 1e-5:
                                 group_name = vg_map.get(g.group)
-                                if group_name in bone_to_id:
-                                    best_vg = bone_to_id[group_name]
-                                    best_weight = g.weight
-                                    
-                        if best_vg != -1:
-                            clean_idx = [best_vg, 0, 0, 0]
-                            clean_w = [1.0, 0.0, 0.0, 0.0]
+                                if group_name and group_name in bone_to_id:
+                                    bone_groups.append((bone_to_id[group_name], g.weight))
+                        bone_groups.sort(key=lambda x: x[1], reverse=True)
+                        bone_groups = bone_groups[:4]
+                        
+                        if bone_groups:
+                            total_w = sum(w for _, w in bone_groups)
+                            if total_w > 0:
+                                bone_groups = [(idx, w / total_w) for idx, w in bone_groups]
+                            while len(bone_groups) < 4:
+                                bone_groups.append((0, 0.0))
+                            clean_idx = [bg[0] for bg in bone_groups]
+                            clean_w   = [bg[1] for bg in bone_groups]
                         else:
                             clean_idx = [int(idx) if idx != -1 else 0 for idx in weight_indices]
                             clean_w = [float(w) for w in weight_values]
                     else:
                         clean_idx = [int(idx) if idx != -1 else 0 for idx in weight_indices]
                         clean_w = [float(w) for w in weight_values]
+
+
                         
                     for v_idx in range(v_per_particle):
                         buf = bytearray(stride_b)

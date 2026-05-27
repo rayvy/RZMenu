@@ -320,6 +320,8 @@
                 {% endfor %}
             {% endif %}
             {% if assoc_curves | length > 0 %}
+    {# Weight CS FIRST — so blend weights are updated before position CS #}
+    run = CustomShaderRZM_VFX_Weight_{{ part.fullname }}
     run = CustomShaderRZM_VFX_{{ part.fullname }}
             {% endif %}
         {% endfor %}
@@ -396,6 +398,41 @@
     cs-u5 = null
     ;cs-t50 = null обнулять вообще не нужно их, это не просто бесполезно, это вредно
     ;cs-t120 = null ОСОБЕННО ЭТО, ЭТО ВООБЩЕ ДИКО, нельзя снмиать байнд с 120 слота
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    {# Weight CustomShader blocks — one per part with VFX curves #}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% set assoc_curves = [] %}
+            {% if scene and scene.objects %}
+                {% for curve in curve_list %}
+                    {% for col in curve.users_collection %}
+                        {% for entry in part.objects %}
+                            {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                {% if curve not in assoc_curves %}
+                                    {% if assoc_curves.append(curve) %}{% endif %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
+            {% if assoc_curves | length > 0 %}
+    {% set comp_vfx_verts = get_vfx_vertex_count(scene, component) | int %}
+    {% set total_comp_v = component.vertex_count + comp_vfx_verts %}
+    [CustomShaderRZM_VFX_Weight_{{ part.fullname }}]
+    cs = ./modules/vfx_weight_cs.hlsl
+    cs-u5 = copy Resource{{ component.fullname }}Blend
+    cs-t50 = copy Resource{{ component.fullname }}Position
+    cs-t51 = copy ResourceRZM_CurveData
+    cs-t52 = copy ResourceRZM_CurveWeightData
+    x98 = time
+    x115 = {{ component.vertex_count }}
+    Resource{{ component.fullname }}Blend = ref cs-u5
+    dispatch = {{ ((total_comp_v + 127) // 128) | int }}, 1, 1
+    cs-u5 = null
             {% endif %}
         {% endfor %}
     {% endfor %}
@@ -499,6 +536,11 @@
     type = Buffer
     stride = 40
     filename = res/curve_data.buf
+
+    [ResourceRZM_CurveWeightData]
+    type = Buffer
+    stride = 32
+    filename = res/curve_weight_data.buf
     {% endif %}
 {%endmacro%}
 
