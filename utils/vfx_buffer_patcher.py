@@ -437,16 +437,28 @@ def patch_buffers(context, cache):
         meta_dispersion = float(get_curve_prop(curve_obj, "dispersion_scale", 1.0))
         meta_phase_rand = float(get_curve_prop(curve_obj, "phase_randomness", 1.0))
         meta_pos_rand = float(get_curve_prop(curve_obj, "pos_randomness", 0.0))
-        meta_tl_start = float(get_curve_prop(curve_obj, "timeline_start_pos", 0.0))
-        meta_tl_mid = float(get_curve_prop(curve_obj, "timeline_mid_pos", 0.5))
+        meta_size_rand_min = max(0.0, min(2.0, float(get_curve_prop(curve_obj, "size_rand_min", 1.0))))
+        meta_size_rand_max = max(0.0, min(2.0, float(get_curve_prop(curve_obj, "size_rand_max", 1.0))))
+        meta_tl_start = max(0.0, min(1.0, float(get_curve_prop(curve_obj, "timeline_start_pos", 0.0))))
+        meta_tl_mid = max(0.0, min(1.0, float(get_curve_prop(curve_obj, "timeline_mid_pos", 0.5))))
         meta_tl_end = float(get_curve_prop(curve_obj, "timeline_end_pos", 1.0))
+        
+        # Pack tl_start and tl_mid as: start_int + mid_int * 1000
+        int_start = int(round(meta_tl_start * 100.0))
+        int_mid = int(round(meta_tl_mid * 100.0))
+        packed_tls = float(int_start + int_mid * 1000)
+        
+        # Pack size_rand_min and size_rand_max as: min_int + max_int * 1000
+        int_min = int(round(meta_size_rand_min * 100.0))
+        int_max = int(round(meta_size_rand_max * 100.0))
+        packed_rand = float(int_min + int_max * 1000)
         
         meta_data = struct.pack(
             '<ffffffffff',
             meta_fx_type + meta_tl_end * 0.1, meta_size_base, meta_size_start,  # position.xyz
             meta_size_end, meta_cycle_dur, meta_dispersion,                    # tangent.xyz
-            meta_phase_rand, meta_pos_rand, meta_tl_start,                     # normal.xyz
-            meta_tl_mid                                                        # u
+            meta_phase_rand, meta_pos_rand, packed_tls,                        # normal.xyz
+            packed_rand                                                        # u
         )
         all_curve_bytes.extend(meta_data)
 

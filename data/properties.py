@@ -246,6 +246,8 @@ def ensure_vfx_properties_initialized(self):
         ("RZM.CURVE_VFX.CYCLE_DURATION", 2.0),
         ("RZM.CURVE_VFX.PHASE_RANDOMNESS", 1.0),
         ("RZM.CURVE_VFX.POS_RANDOMNESS", 0.0),
+        ("RZM.CURVE_VFX.SIZE_RAND_MIN", 1.0),
+        ("RZM.CURVE_VFX.SIZE_RAND_MAX", 1.0),
     ]:
         if key not in self:
             self[key] = default
@@ -366,6 +368,18 @@ def get_vfx_pos_randomness(self):
 def set_vfx_pos_randomness(self, value):
     self["RZM.CURVE_VFX.POS_RANDOMNESS"] = value
 
+def get_vfx_size_rand_min(self):
+    return self.get("RZM.CURVE_VFX.SIZE_RAND_MIN", 1.0)
+def set_vfx_size_rand_min(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.SIZE_RAND_MIN"] = value
+
+def get_vfx_size_rand_max(self):
+    return self.get("RZM.CURVE_VFX.SIZE_RAND_MAX", 1.0)
+def set_vfx_size_rand_max(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.SIZE_RAND_MAX"] = value
+
 def get_vfx_type(self):
     val = self.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0)
     try:
@@ -445,25 +459,25 @@ def register():
     )
     bpy.types.Object.rzm_curve_vfx_particle_size_start = FloatProperty(
         name="Start Size Scale",
-        description="Particle size scale factor at start (e.g. 1.0 = 100%)",
+        description="Particle size scale factor at start (e.g. 1.0 = 100%, 2.0 = 200%)",
         min=0.0,
-        max=1.0,
+        max=2.0,
         precision=6,
         get=get_vfx_size_start,
         set=set_vfx_size_start
     )
     bpy.types.Object.rzm_curve_vfx_particle_size_end = FloatProperty(
         name="End Size Scale",
-        description="Particle size scale factor at end (e.g. 0.2 = 20%)",
+        description="Particle size scale factor at end (e.g. 0.2 = 20%, 2.0 = 200%)",
         min=0.0,
-        max=1.0,
+        max=2.0,
         precision=6,
         get=get_vfx_size_end,
         set=set_vfx_size_end
     )
     bpy.types.Object.rzm_curve_vfx_timeline_start_pos = FloatProperty(
-        name="Timeline Start Pos",
-        description="Path progress (0.0 to 1.0) at particle lifetime start (0%)",
+        name="Timeline Start Time",
+        description="Time fraction (0.0 to 1.0) when the particle starts moving from the path start",
         min=0.0,
         max=1.0,
         precision=6,
@@ -471,8 +485,8 @@ def register():
         set=set_vfx_tl_start
     )
     bpy.types.Object.rzm_curve_vfx_timeline_mid_pos = FloatProperty(
-        name="Timeline Mid Pos",
-        description="Path progress (0.0 to 1.0) at particle lifetime middle (50%)",
+        name="Timeline Mid Time",
+        description="Time fraction (0.0 to 1.0) when the particle reaches 50% of the path",
         min=0.0,
         max=1.0,
         precision=6,
@@ -480,8 +494,8 @@ def register():
         set=set_vfx_tl_mid
     )
     bpy.types.Object.rzm_curve_vfx_timeline_end_pos = FloatProperty(
-        name="Timeline End Pos",
-        description="Path progress (0.0 to 1.0) at particle lifetime end (100%)",
+        name="Timeline End Time",
+        description="Time fraction (0.0 to 1.0) when the particle reaches the path end and fades out",
         min=0.0,
         max=1.0,
         precision=6,
@@ -520,6 +534,24 @@ def register():
         precision=6,
         get=get_vfx_pos_randomness,
         set=set_vfx_pos_randomness
+    )
+    bpy.types.Object.rzm_curve_vfx_size_rand_min = FloatProperty(
+        name="Size Randomness Min",
+        description="Minimum random size multiplier (e.g. 0.5 = 50% minimum scale)",
+        min=0.0,
+        max=2.0,
+        precision=6,
+        get=get_vfx_size_rand_min,
+        set=set_vfx_size_rand_min
+    )
+    bpy.types.Object.rzm_curve_vfx_size_rand_max = FloatProperty(
+        name="Size Randomness Max",
+        description="Maximum random size multiplier (e.g. 1.5 = 150% maximum scale)",
+        min=0.0,
+        max=2.0,
+        precision=6,
+        get=get_vfx_size_rand_max,
+        set=set_vfx_size_rand_max
     )
     bpy.types.Object.rzm_curve_vfx_mesh_fx_type = EnumProperty(
         name="Mesh FX Type",
@@ -637,6 +669,8 @@ def unregister():
         "rzm_curve_vfx_cycle_duration",
         "rzm_curve_vfx_phase_randomness",
         "rzm_curve_vfx_pos_randomness",
+        "rzm_curve_vfx_size_rand_min",
+        "rzm_curve_vfx_size_rand_max",
         "rzm_curve_vfx_tri_aspect",
         "rzm_curve_vfx_speed",
         "rzm_curve_vfx_mesh_fx_type",

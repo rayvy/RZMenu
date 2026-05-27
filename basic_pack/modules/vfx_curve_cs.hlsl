@@ -32,8 +32,8 @@ StructuredBuffer<CurvePoint> CurveData : register(t50);
 // Defaults configured for Zenless Zone Zero:
 // (For Genshin Impact and Honkai Star Rail: X=-1, Y=2, Z=3)
 #define AXIS_MAP_X  -1
-#define AXIS_MAP_Y   3
-#define AXIS_MAP_Z   2
+#define AXIS_MAP_Y   2
+#define AXIS_MAP_Z   3
 
 float3 RemapCoords(float3 pos)
 {
@@ -173,8 +173,16 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float CFG_DISPERSION_SCALE = p_meta.tangent.z;
     float CFG_PHASE_RANDOMNESS = p_meta.normal.x;
     float CFG_POS_RANDOMNESS = p_meta.normal.y;
-    float CFG_TL_START   = p_meta.normal.z;
-    float CFG_TL_MID     = p_meta.u;
+    
+    // Unpack packed_tls (p_meta.normal.z = start_int + mid_int * 1000)
+    float packed_tls = p_meta.normal.z + 0.1f;
+    float CFG_TL_MID   = floor(packed_tls / 1000.0f) / 100.0f;
+    float CFG_TL_START = frac(floor(packed_tls) / 1000.0f) * 10.0f;
+    
+    // Unpack packed_rand (p_meta.u = min_int + max_int * 1000)
+    float packed_rand = p_meta.u + 0.1f;
+    float CFG_SIZE_RAND_MAX = floor(packed_rand / 1000.0f) / 100.0f;
+    float CFG_SIZE_RAND_MIN = frac(floor(packed_rand) / 1000.0f) * 10.0f;
 
     uint v_local_id = (uint)rw_buffer[i].tangent.w;
 
@@ -218,6 +226,7 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float p_seed_1 = hash(particle_id * 13 + 7);
     float p_seed_2 = hash(particle_id * 37 + 11);
     float p_seed_3 = hash(particle_id * 59 + 3);
+    float p_seed_4 = hash(particle_id * 97 + 23);
     
     bool is_spark = (p_seed_1 > 0.75f); 
 
@@ -225,12 +234,15 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float phase_offset = phase_offset_raw * CFG_PHASE_RANDOMNESS;
     float cycle = frac(TIME / CFG_CYCLE_DURATION + phase_offset);
 
-    // Timeline Easing (quadratic interpolation passing through TL_START, TL_MID, TL_END)
-    float t = cycle;
-    float c = CFG_TL_START;
-    float b = 4.0f * CFG_TL_MID - 3.0f * CFG_TL_START - CFG_TL_END;
-    float a = 2.0f * (CFG_TL_START + CFG_TL_END - 2.0f * CFG_TL_MID);
-    float path_progress = a * t * t + b * t + c;
+    // Active lifecycle fraction based on timeline start and end times
+    float active_t = clamp((cycle - CFG_TL_START) / max(CFG_TL_END - CFG_TL_START, 1e-5f), 0.0f, 1.0f);
+
+    // Timeline Easing: map active_t (0.0 to 1.0) to path_progress (0.0 to 1.0)
+    // passing through 0.5 at the mid time: k = (TL_MID - TL_START) / (TL_END - TL_START)
+    float k = clamp((CFG_TL_MID - CFG_TL_START) / max(CFG_TL_END - CFG_TL_START, 1e-5f), 0.01f, 0.99f);
+    float A = (0.5f - k) / (k * k - k);
+    float B = 1.0f - A;
+    float path_progress = clamp(A * active_t * active_t + B * active_t, 0.0f, 1.0f);
 
     // Сэмпл кривой
     SampledPoint sampled = SampleCurve(curve_idx, path_progress);
@@ -252,9 +264,21 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float jitter_amount = hash(particle_id * 79 + 5) * CFG_POS_RANDOMNESS;
     final_center += jitter_dir * jitter_amount;
 
-    // Управление размером (базовый размер, умноженный на процентные коэффициенты старта/конца)
-    float current_size = CFG_SIZE_BASE * lerp(CFG_SIZE_START, CFG_SIZE_END, cycle);
-    float fade = smoothstep(0.0f, 0.1f, cycle) * smoothstep(1.0f, 0.9f, cycle);
+    // Управление размером и фейдом в пределах активного жизненного цикла
+    // Размер интерполируется от Start Scale к 1.0 (в середине) и затем от 1.0 к End Scale (в конце)
+    float size_scale = (active_t <= 0.5f) 
+        ? lerp(CFG_SIZE_START, 1.0f, active_t * 2.0f) 
+        : lerp(1.0f, CFG_SIZE_END, (active_t - 0.5f) * 2.0f);
+    
+    float size_rand_mult = lerp(CFG_SIZE_RAND_MIN, CFG_SIZE_RAND_MAX, p_seed_4);
+    float current_size = CFG_SIZE_BASE * size_scale * size_rand_mult;
+    float fade = smoothstep(0.0f, 0.1f, active_t) * smoothstep(1.0f, 0.9f, active_t);
+    
+    // Если мы вне активного окна (cycle < tl_start или cycle > tl_end), полностью скрываем частицу
+    if (cycle < CFG_TL_START || cycle > CFG_TL_END) {
+        fade = 0.0f;
+    }
+    
     current_size *= fade;
 
     if (is_spark) {

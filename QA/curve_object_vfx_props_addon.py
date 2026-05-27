@@ -29,6 +29,8 @@ PROP_KEYS = {
     "cycle_duration": "RZM.CURVE_VFX.CYCLE_DURATION",
     "phase_randomness": "RZM.CURVE_VFX.PHASE_RANDOMNESS",
     "pos_randomness": "RZM.CURVE_VFX.POS_RANDOMNESS",
+    "size_rand_min": "RZM.CURVE_VFX.SIZE_RAND_MIN",
+    "size_rand_max": "RZM.CURVE_VFX.SIZE_RAND_MAX",
     "mesh_fx_type": "RZM.CURVE_VFX.MESH_FX_TYPE",
     "particle_count": "RZM.CURVE_VFX.PARTICLE_COUNT",
     "weight_indices": "RZM.CURVE_VFX.WEIGHT_INDICES",
@@ -83,6 +85,8 @@ def write_object_props(obj, settings):
     obj[PROP_KEYS["cycle_duration"]] = settings.cycle_duration
     obj[PROP_KEYS["phase_randomness"]] = settings.phase_randomness
     obj[PROP_KEYS["pos_randomness"]] = settings.pos_randomness
+    obj[PROP_KEYS["size_rand_min"]] = settings.size_rand_min
+    obj[PROP_KEYS["size_rand_max"]] = settings.size_rand_max
     obj[PROP_KEYS["mesh_fx_type"]] = int(settings.mesh_fx_type)
     obj[PROP_KEYS["particle_count"]] = settings.particle_count
     obj[PROP_KEYS["weight_indices"]] = list(settings.weight_indices)
@@ -597,6 +601,24 @@ class RZM_CurveVFXSettings(PropertyGroup):
         precision=6,
     )
 
+    size_rand_min: FloatProperty(
+        name="Size Randomness Min",
+        description="Minimum random size multiplier",
+        default=1.0,
+        min=0.0,
+        max=2.0,
+        precision=6,
+    )
+
+    size_rand_max: FloatProperty(
+        name="Size Randomness Max",
+        description="Maximum random size multiplier",
+        default=1.0,
+        min=0.0,
+        max=2.0,
+        precision=6,
+    )
+
     mesh_fx_type: bpy.props.EnumProperty(
         name="Mesh FX Type",
         items=[
@@ -762,6 +784,8 @@ class RZM_OT_validate_curve_vfx(Operator):
             cycle_duration = prop_get(curve_obj, PROP_KEYS["cycle_duration"], 2.0, LEGACY_PROP_KEYS["speed"])
             phase_randomness = prop_get(curve_obj, PROP_KEYS["phase_randomness"], 1.0)
             pos_randomness = prop_get(curve_obj, PROP_KEYS["pos_randomness"], 0.0)
+            size_rand_min = prop_get(curve_obj, PROP_KEYS["size_rand_min"], 1.0)
+            size_rand_max = prop_get(curve_obj, PROP_KEYS["size_rand_max"], 1.0)
             mesh_fx_type = curve_obj.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0)
             weight_indices = list(curve_obj.get("RZM.CURVE_VFX.WEIGHT_INDICES", [-1, -1, -1, -1]))
             weight_values = list(curve_obj.get("RZM.CURVE_VFX.WEIGHT_VALUES", [0.0, 0.0, 0.0, 0.0]))
@@ -827,7 +851,7 @@ class RZM_OT_validate_curve_vfx(Operator):
             print(f"[RZM-VFX]       * Timeline Positions: Start={timeline_start_pos:.4f}, Mid={timeline_mid_pos:.4f}, End={timeline_end_pos:.4f}")
             print(f"[RZM-VFX]       * Coordinate Remap (handled on GPU): {coordinate_remap_profile_raw} -> {coordinate_remap_profile}")
             print(f"[RZM-VFX]       * Dispersion Scale: {dispersion_scale:.4f}")
-            print(f"[RZM-VFX]       * Phase / Position Randomness: Phase={phase_randomness:.4f}, Pos={pos_randomness:.4f}")
+            print(f"[RZM-VFX]       * Randomness: Phase={phase_randomness:.4f}, Pos={pos_randomness:.4f}, Size=[{size_rand_min:.4f}, {size_rand_max:.4f}]")
             print(f"[RZM-VFX]       * Curve Spline Control Points Radius: {start_radius:.6f} -> {end_radius:.6f} (Visual bounds: {start_radius*0.01*dispersion_scale:.4f}m -> {end_radius*0.01*dispersion_scale:.4f}m)")
             
             # Weight sum validation
@@ -980,6 +1004,9 @@ class VIEW3D_PT_rzm_curve_vfx(Panel):
         box.prop(settings, "particle_size_base")
         box.prop(settings, "particle_size_start")
         box.prop(settings, "particle_size_end")
+        row = box.row(align=True)
+        row.prop(settings, "size_rand_min", text="Min Rand Scale")
+        row.prop(settings, "size_rand_max", text="Max Rand Scale")
         box.prop(settings, "particle_count")
 
         tbox = layout.box()
