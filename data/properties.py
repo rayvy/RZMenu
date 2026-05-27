@@ -248,10 +248,24 @@ def ensure_vfx_properties_initialized(self):
         ("RZM.CURVE_VFX.POS_RANDOMNESS", 0.0),
         ("RZM.CURVE_VFX.SIZE_RAND_MIN", 1.0),
         ("RZM.CURVE_VFX.SIZE_RAND_MAX", 1.0),
+        ("RZM.CURVE_VFX.VISIBILITY_CONDITION", ""),
     ]:
         if key not in self:
             self[key] = default
             
+    legacy_uv_min = self.get("RZM.CURVE_VFX.UV_MIN")
+    legacy_uv_max = self.get("RZM.CURVE_VFX.UV_MAX")
+    if "RZM.CURVE_VFX.UV_OFFSET" not in self:
+        if legacy_uv_min is not None:
+            self["RZM.CURVE_VFX.UV_OFFSET"] = list(legacy_uv_min)
+        else:
+            self["RZM.CURVE_VFX.UV_OFFSET"] = [0.0, 0.0]
+    if "RZM.CURVE_VFX.UV_SCALE" not in self:
+        if legacy_uv_min is not None and legacy_uv_max is not None:
+            self["RZM.CURVE_VFX.UV_SCALE"] = [legacy_uv_max[0] - legacy_uv_min[0], legacy_uv_max[1] - legacy_uv_min[1]]
+        else:
+            self["RZM.CURVE_VFX.UV_SCALE"] = [1.0, 1.0]
+
     if "RZM.CURVE_VFX.MESH_FX_TYPE" not in self:
         self["RZM.CURVE_VFX.MESH_FX_TYPE"] = "0"
 
@@ -379,6 +393,30 @@ def get_vfx_size_rand_max(self):
 def set_vfx_size_rand_max(self, value):
     ensure_vfx_properties_initialized(self)
     self["RZM.CURVE_VFX.SIZE_RAND_MAX"] = value
+
+def get_vfx_uv_offset(self):
+    val = self.get("RZM.CURVE_VFX.UV_OFFSET", (0.0, 0.0))
+    if len(val) < 2:
+        val = list(val) + [0.0] * (2 - len(val))
+    return tuple(float(x) for x in val[:2])
+def set_vfx_uv_offset(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.UV_OFFSET"] = list(value)
+
+def get_vfx_uv_scale(self):
+    val = self.get("RZM.CURVE_VFX.UV_SCALE", (1.0, 1.0))
+    if len(val) < 2:
+        val = list(val) + [1.0] * (2 - len(val))
+    return tuple(float(x) for x in val[:2])
+def set_vfx_uv_scale(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.UV_SCALE"] = list(value)
+
+def get_vfx_visibility_condition(self):
+    return self.get("RZM.CURVE_VFX.VISIBILITY_CONDITION", "")
+def set_vfx_visibility_condition(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.VISIBILITY_CONDITION"] = value
 
 def get_vfx_type(self):
     val = self.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0)
@@ -553,6 +591,28 @@ def register():
         get=get_vfx_size_rand_max,
         set=set_vfx_size_rand_max
     )
+    bpy.types.Object.rzm_curve_vfx_uv_offset = FloatVectorProperty(
+        name="UV Offset",
+        description="UV coordinates offset (U, V)",
+        size=2,
+        precision=6,
+        get=get_vfx_uv_offset,
+        set=set_vfx_uv_offset
+    )
+    bpy.types.Object.rzm_curve_vfx_uv_scale = FloatVectorProperty(
+        name="UV Scale",
+        description="UV coordinates scale (U, V)",
+        size=2,
+        precision=6,
+        get=get_vfx_uv_scale,
+        set=set_vfx_uv_scale
+    )
+    bpy.types.Object.rzm_curve_vfx_visibility_condition = StringProperty(
+        name="Visibility Condition",
+        description="Optional visibility condition (e.g. $active_anim == 1) to wrap the drawindexed command",
+        get=get_vfx_visibility_condition,
+        set=set_vfx_visibility_condition
+    )
     bpy.types.Object.rzm_curve_vfx_mesh_fx_type = EnumProperty(
         name="Mesh FX Type",
         items=[
@@ -671,6 +731,9 @@ def unregister():
         "rzm_curve_vfx_pos_randomness",
         "rzm_curve_vfx_size_rand_min",
         "rzm_curve_vfx_size_rand_max",
+        "rzm_curve_vfx_uv_offset",
+        "rzm_curve_vfx_uv_scale",
+        "rzm_curve_vfx_visibility_condition",
         "rzm_curve_vfx_tri_aspect",
         "rzm_curve_vfx_speed",
         "rzm_curve_vfx_mesh_fx_type",

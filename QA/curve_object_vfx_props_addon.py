@@ -31,10 +31,13 @@ PROP_KEYS = {
     "pos_randomness": "RZM.CURVE_VFX.POS_RANDOMNESS",
     "size_rand_min": "RZM.CURVE_VFX.SIZE_RAND_MIN",
     "size_rand_max": "RZM.CURVE_VFX.SIZE_RAND_MAX",
+    "uv_offset": "RZM.CURVE_VFX.UV_OFFSET",
+    "uv_scale": "RZM.CURVE_VFX.UV_SCALE",
     "mesh_fx_type": "RZM.CURVE_VFX.MESH_FX_TYPE",
     "particle_count": "RZM.CURVE_VFX.PARTICLE_COUNT",
     "weight_indices": "RZM.CURVE_VFX.WEIGHT_INDICES",
     "weight_values": "RZM.CURVE_VFX.WEIGHT_VALUES",
+    "visibility_condition": "RZM.CURVE_VFX.VISIBILITY_CONDITION",
 }
 
 LEGACY_PROP_KEYS = {
@@ -87,10 +90,13 @@ def write_object_props(obj, settings):
     obj[PROP_KEYS["pos_randomness"]] = settings.pos_randomness
     obj[PROP_KEYS["size_rand_min"]] = settings.size_rand_min
     obj[PROP_KEYS["size_rand_max"]] = settings.size_rand_max
+    obj[PROP_KEYS["uv_offset"]] = list(settings.uv_offset)
+    obj[PROP_KEYS["uv_scale"]] = list(settings.uv_scale)
     obj[PROP_KEYS["mesh_fx_type"]] = int(settings.mesh_fx_type)
     obj[PROP_KEYS["particle_count"]] = settings.particle_count
     obj[PROP_KEYS["weight_indices"]] = list(settings.weight_indices)
     obj[PROP_KEYS["weight_values"]] = list(settings.weight_values)
+    obj[PROP_KEYS["visibility_condition"]] = settings.visibility_condition
 
     # Remove old shape-driving / unused props so the object does not carry stale intent.
     for legacy_key in LEGACY_PROP_KEYS.values():
@@ -619,6 +625,22 @@ class RZM_CurveVFXSettings(PropertyGroup):
         precision=6,
     )
 
+    uv_offset: FloatVectorProperty(
+        name="UV Offset",
+        description="UV coordinates offset",
+        size=2,
+        default=(0.0, 0.0),
+        precision=6,
+    )
+
+    uv_scale: FloatVectorProperty(
+        name="UV Scale",
+        description="UV coordinates scale",
+        size=2,
+        default=(1.0, 1.0),
+        precision=6,
+    )
+
     mesh_fx_type: bpy.props.EnumProperty(
         name="Mesh FX Type",
         items=[
@@ -653,6 +675,12 @@ class RZM_CurveVFXSettings(PropertyGroup):
         min=0.0,
         max=1.0,
         precision=6,
+    )
+
+    visibility_condition: bpy.props.StringProperty(
+        name="Visibility Condition",
+        description="Optional visibility condition (e.g. $active_anim == 1) to wrap the drawindexed command",
+        default="",
     )
 
 
@@ -786,9 +814,12 @@ class RZM_OT_validate_curve_vfx(Operator):
             pos_randomness = prop_get(curve_obj, PROP_KEYS["pos_randomness"], 0.0)
             size_rand_min = prop_get(curve_obj, PROP_KEYS["size_rand_min"], 1.0)
             size_rand_max = prop_get(curve_obj, PROP_KEYS["size_rand_max"], 1.0)
+            uv_offset = prop_get(curve_obj, PROP_KEYS["uv_offset"], (0.0, 0.0))
+            uv_scale = prop_get(curve_obj, PROP_KEYS["uv_scale"], (1.0, 1.0))
             mesh_fx_type = curve_obj.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0)
             weight_indices = list(curve_obj.get("RZM.CURVE_VFX.WEIGHT_INDICES", [-1, -1, -1, -1]))
             weight_values = list(curve_obj.get("RZM.CURVE_VFX.WEIGHT_VALUES", [0.0, 0.0, 0.0, 0.0]))
+            visibility_condition = curve_obj.get("RZM.CURVE_VFX.VISIBILITY_CONDITION", "")
             
             # Resolve association (same collection automatic lookup)
             comp_name, target_mesh, part_name = find_associated_mesh_and_component(context, curve_obj)
@@ -847,8 +878,10 @@ class RZM_OT_validate_curve_vfx(Operator):
             print(f"[RZM-VFX]       * Mesh FX Type: {mesh_fx_type} ({mesh_fx_type_str})")
             print(f"[RZM-VFX]       * Particle Base Size: {particle_size_base:.4f} m")
             print(f"[RZM-VFX]       * Particle Scale Start/End: {particle_size_start:.4f} -> {particle_size_end:.4f}")
+            print(f"[RZM-VFX]       * UV Coordinates: Offset=[{uv_offset[0]:.4f}, {uv_offset[1]:.4f}], Scale=[{uv_scale[0]:.4f}, {uv_scale[1]:.4f}]")
             print(f"[RZM-VFX]       * Cycle Duration: {cycle_duration:.4f} sec")
             print(f"[RZM-VFX]       * Timeline Positions: Start={timeline_start_pos:.4f}, Mid={timeline_mid_pos:.4f}, End={timeline_end_pos:.4f}")
+            print(f"[RZM-VFX]       * Visibility Condition: {visibility_condition if visibility_condition else 'None'}")
             print(f"[RZM-VFX]       * Coordinate Remap (handled on GPU): {coordinate_remap_profile_raw} -> {coordinate_remap_profile}")
             print(f"[RZM-VFX]       * Dispersion Scale: {dispersion_scale:.4f}")
             print(f"[RZM-VFX]       * Randomness: Phase={phase_randomness:.4f}, Pos={pos_randomness:.4f}, Size=[{size_rand_min:.4f}, {size_rand_max:.4f}]")
@@ -960,7 +993,12 @@ class RZM_OT_validate_curve_vfx(Operator):
                 print(f"[RZM-VFX]         -> Expansion: +{new_indices} indices. New Total = {orig_i_count + new_indices} indices")
                 print(f"[RZM-VFX]         -> Particles draw offset: {orig_i_count}")
                 print(f"[RZM-VFX]         -> INI DRAW CONFIG PREVIEW:")
-                print(f"[RZM-VFX]            drawindexed = {new_indices}, {orig_i_count}, 0")
+                if visibility_condition:
+                    print(f"[RZM-VFX]            if {visibility_condition}")
+                    print(f"[RZM-VFX]                drawindexed = {new_indices}, {orig_i_count}, 0")
+                    print(f"[RZM-VFX]            endif")
+                else:
+                    print(f"[RZM-VFX]            drawindexed = {new_indices}, {orig_i_count}, 0")
             else:
                 print_missing_export_file(
                     "IB (Indices)",
@@ -974,7 +1012,12 @@ class RZM_OT_validate_curve_vfx(Operator):
                     ],
                 )
                 print(f"[RZM-VFX]         -> INI DRAW CONFIG PREVIEW (Estimated):")
-                print(f"[RZM-VFX]            drawindexed = {new_indices}, [OriginalIndexCount], 0")
+                if visibility_condition:
+                    print(f"[RZM-VFX]            if {visibility_condition}")
+                    print(f"[RZM-VFX]                drawindexed = {new_indices}, [OriginalIndexCount], 0")
+                    print(f"[RZM-VFX]            endif")
+                else:
+                    print(f"[RZM-VFX]            drawindexed = {new_indices}, [OriginalIndexCount], 0")
                 
         print("\n[RZM-VFX] ==================================================")
         print("[RZM-VFX] VALIDATION COMPLETED")
@@ -1007,6 +1050,9 @@ class VIEW3D_PT_rzm_curve_vfx(Panel):
         row = box.row(align=True)
         row.prop(settings, "size_rand_min", text="Min Rand Scale")
         row.prop(settings, "size_rand_max", text="Max Rand Scale")
+        row_uv = box.row(align=True)
+        row_uv.prop(settings, "uv_offset", text="UV Offset")
+        row_uv.prop(settings, "uv_scale", text="UV Scale")
         box.prop(settings, "particle_count")
 
         tbox = layout.box()
@@ -1014,6 +1060,7 @@ class VIEW3D_PT_rzm_curve_vfx(Panel):
         tbox.prop(settings, "timeline_start_pos")
         tbox.prop(settings, "timeline_mid_pos")
         tbox.prop(settings, "timeline_end_pos")
+        tbox.prop(settings, "visibility_condition", text="Visibility Cond")
         tbox.prop(settings, "start_radius")
         tbox.prop(settings, "end_radius")
         tbox.prop(settings, "curve_right")

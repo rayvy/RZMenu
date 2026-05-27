@@ -377,6 +377,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 gcol.prop(target_obj, "rzm_curve_vfx_particle_size_base", text="Base Size")
                 gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size Scale")
                 gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size Scale")
+                row = gcol.row(align=True)
+                row.prop(target_obj, "rzm_curve_vfx_uv_offset", text="UV Offset")
+                row.prop(target_obj, "rzm_curve_vfx_uv_scale", text="UV Scale")
                 
                 # Section B: Path & Dispersion
                 dbox = box.box()
@@ -398,6 +401,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_start_pos", text="Timeline Start")
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_mid_pos", text="Timeline Mid")
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_end_pos", text="Timeline End")
+                acol.prop(target_obj, "rzm_curve_vfx_visibility_condition", text="Visibility Cond")
                 
                 # Section D: Technical Weights
                 wbox = box.box()

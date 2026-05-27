@@ -211,7 +211,11 @@
                 {% endfor %}
             {% endif %}
             {% if assoc_curves | length > 0 %}
-                {% set part_vfx_indices = [0] %}
+                {% set orig_i_count = [0] %}
+                {% for entry in part.objects %}
+                    {% if orig_i_count.append(orig_i_count.pop() + entry.index_count) %}{% endif %}
+                {% endfor %}
+                {% set current_vfx_offset = [orig_i_count[0]] %}
                 {% for curve in assoc_curves %}
                     {% set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int %}
                     {% set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int %}
@@ -219,13 +223,18 @@
                     {% elif fx_type == 2 %}{% set i_per_part = 15 %}
                     {% else %}{% set i_per_part = 3 %}
                     {% endif %}
-                    {% if part_vfx_indices.append(part_vfx_indices.pop() + p_count * i_per_part) %}{% endif %}
+                    {% set curve_idx_count = p_count * i_per_part %}
+                    {% set visibility_cond = curve.get("RZM.CURVE_VFX.VISIBILITY_CONDITION") | default("") | trim %}
+            ; RZM VFX Curve: {{ curve.name }}
+                    {% if visibility_cond != "" %}
+            ;if {{ visibility_cond }}
+                drawindexed = {{ curve_idx_count }}, {{ current_vfx_offset[0] }}, 0
+            ;endif
+                    {% else %}
+            drawindexed = {{ curve_idx_count }}, {{ current_vfx_offset[0] }}, 0
+                    {% endif %}
+                    {% if current_vfx_offset.append(current_vfx_offset.pop() + curve_idx_count) %}{% endif %}
                 {% endfor %}
-                {% set orig_i_count = [0] %}
-                {% for entry in part.objects %}
-                    {% if orig_i_count.append(orig_i_count.pop() + entry.index_count) %}{% endif %}
-                {% endfor %}
-            drawindexed = {{ part_vfx_indices[0] }}, {{ orig_i_count[0] }}, 0
             {% endif %}
 
             {# Material Transfer Redirection #}

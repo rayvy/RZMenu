@@ -305,7 +305,7 @@ def resolve_part_suffix(component_name, part_name, mesh_name="", mod_name=""):
     return ""
 
 def float_to_half(f):
-    return np.float16(f).view(np.uint16)
+    return int(np.float16(f).view(np.uint16))
 
 
 
@@ -559,6 +559,40 @@ def patch_buffers(context, cache):
         if vb1_path:
             stride_t = find_stride_from_ini(mod_root, f"Resource{mod_name}{comp_name}Texcoord", 20)
 
+        # Auto-detect if UV coordinates are stored as float32 or half-float (float16)
+        uv_format = 'float'  # Default fallback
+        if vb1_path and os.path.exists(vb1_path) and os.path.getsize(vb1_path) >= stride_t:
+            try:
+                with open(vb1_path, 'rb') as f_detect:
+                    for v_idx in range(min(20, original_v_count)):
+                        f_detect.seek(v_idx * stride_t)
+                        v_data = f_detect.read(stride_t)
+                        if len(v_data) >= 8:
+                            f_u, f_v = struct.unpack('<ff', v_data[0:8])
+                            import numpy as np
+                            h_u_raw, h_v_raw = struct.unpack('<HH', v_data[0:4])
+                            h_u = float(np.frombuffer(struct.pack('<H', h_u_raw), dtype=np.float16)[0])
+                            h_v = float(np.frombuffer(struct.pack('<H', h_v_raw), dtype=np.float16)[0])
+                            
+                            # If they are not both zero, make a decision
+                            if (f_u != 0.0 or f_v != 0.0) or (h_u != 0.0 or h_v != 0.0):
+                                float_sensible = (-4.0 <= f_u <= 4.0) and (-4.0 <= f_v <= 4.0) and not (math.isnan(f_u) or math.isnan(f_v))
+                                half_sensible = (-4.0 <= h_u <= 4.0) and (-4.0 <= h_v <= 4.0) and not (math.isnan(h_u) or math.isnan(h_v))
+                                
+                                if float_sensible and half_sensible:
+                                    if 0.0 < abs(f_u) < 1e-4 or 0.0 < abs(f_v) < 1e-4:
+                                        uv_format = 'half'
+                                    else:
+                                        uv_format = 'float'
+                                elif half_sensible:
+                                    uv_format = 'half'
+                                else:
+                                    uv_format = 'float'
+                                break
+                print(f"[RZM-VFX]   * UV Format Detection -> Detected: {uv_format}")
+            except Exception as e:
+                print(f"[RZM-VFX]   * UV Format Detection error: {e}")
+
         # Truncate all buffers to their clean original sizes first!
         print(f"[RZM-VFX] Cleaning and truncating buffers to original state:")
         print(f"[RZM-VFX]   * Original vertex count: {original_v_count}")
@@ -713,31 +747,79 @@ def patch_buffers(context, cache):
             # C. Patch VB1 (Texcoord)
             # ----------------------------------------------------------------------
             if f_vb1:
+                uv_offset = get_curve_prop(curve_obj, "uv_offset", (0.0, 0.0))
+                uv_scale = get_curve_prop(curve_obj, "uv_scale", (1.0, 1.0))
+                u_min, v_min = uv_offset[0], uv_offset[1]
+                u_max, v_max = uv_offset[0] + uv_scale[0], uv_offset[1] + uv_scale[1]
+                u_center = (u_min + u_max) * 0.5
+                v_center = (v_min + v_max) * 0.5
+                u_radius = (u_max - u_min) * 0.5
+                v_radius = (v_max - v_min) * 0.5
+
                 for p in range(particle_count):
                     for v_idx in range(v_per_particle):
                         buf = bytearray(stride_t)
                         if mesh_fx_type == "1": # Quad
-                            uvs = [(0.0, 1.0), (1.0, 1.0), (0.0, 0.0), (1.0, 0.0)]
+                            uvs = [
+                                (u_min, v_max),
+                                (u_max, v_max),
+                                (u_min, v_min),
+                                (u_max, v_min)
+                            ]
                             u, v = uvs[v_idx]
                         elif mesh_fx_type == "2": # Circle (pentagon)
                             if v_idx == 0:
-                                u, v = 0.5, 0.5
+                                u, v = u_center, v_center
                             else:
                                 angle = (v_idx - 1) * (2.0 * math.pi / 5.0)
-                                u, v = 0.5 + 0.5 * math.cos(angle), 0.5 + 0.5 * math.sin(angle)
+                                u = u_center + u_radius * math.cos(angle)
+                                v = v_center + v_radius * math.sin(angle)
                         else: # Triangle
-                            uvs = [(0.5, 1.0), (0.0, 0.0), (1.0, 0.0)]
+                            uvs = [
+                                (u_center, v_max),
+                                (u_min, v_min),
+                                (u_max, v_min)
+                            ]
                             u, v = uvs[v_idx]
 
-                        if stride_t >= 8:
-                            struct.pack_into('<ff', buf, 0, u, v)
-                        if stride_t >= 16:
-                            struct.pack_into('<ff', buf, 8, u, v)
-                        if stride_t >= 24:
-                            if stride_t == 24:
-                                struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
-                            else:
-                                struct.pack_into('<ffff', buf, 16, 1.0, 1.0, 1.0, 1.0)
+                        if uv_format == 'half':
+                            h_u = float_to_half(u)
+                            h_v = float_to_half(v)
+                            # UV0 (offset 0)
+                            if stride_t >= 4:
+                                struct.pack_into('<HH', buf, 0, h_u, h_v)
+                            # UV1 (offset 4)
+                            if stride_t >= 8:
+                                struct.pack_into('<HH', buf, 4, h_u, h_v)
+                            # UV2 (offset 8)
+                            if stride_t >= 12:
+                                struct.pack_into('<HH', buf, 8, h_u, h_v)
+                            # UV3 (offset 12)
+                            if stride_t >= 16:
+                                struct.pack_into('<HH', buf, 12, h_u, h_v)
+                            # Remaining bytes can be filled with color or 1.0 floats
+                            if stride_t >= 20:
+                                if stride_t == 20:
+                                    struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
+                                elif stride_t >= 24:
+                                    struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
+                        else:
+                            # float32 format
+                            # UV0 (offset 0)
+                            if stride_t >= 8:
+                                struct.pack_into('<ff', buf, 0, u, v)
+                            # UV1 (offset 8)
+                            if stride_t >= 16:
+                                struct.pack_into('<ff', buf, 8, u, v)
+                            # Color / Padding
+                            if stride_t >= 20:
+                                if stride_t == 20:
+                                    struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
+                                elif stride_t >= 24:
+                                    if stride_t == 24:
+                                        struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
+                                    else:
+                                        struct.pack_into('<ffff', buf, 16, 1.0, 1.0, 1.0, 1.0)
                         f_vb1.write(buf)
 
             # ----------------------------------------------------------------------
