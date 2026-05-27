@@ -1,23 +1,40 @@
 {% import "rz_helper.j2" as helper with context %}
 {% import "modules/utils.j2" as utils with context %}
 
-{% macro get_vfx_vertex_count(scene, comp_fullname) %}
-    {%- set result = [0] -%}
-    {%- if scene and scene.rzm and scene.rzm.vfx_vertex_counts -%}
-        {%- for item in scene.rzm.vfx_vertex_counts -%}
-            {%- if item.component_name == comp_fullname -%}
-                {%- if result.append(item.vertex_count) %}{% endif -%}
-            {%- endif -%}
+{% macro get_vfx_vertex_count(scene, component) %}
+    {%- set assoc_curves = [] -%}
+    {%- if scene and scene.objects -%}
+        {%- for obj in scene.objects if obj.type == 'CURVE' and obj.get('RZM.CURVE_VFX') -%}
+            {%- for col in obj.users_collection -%}
+                {%- for part in component.parts -%}
+                    {%- for entry in part.objects if entry.vertex_count > 0 -%}
+                        {%- for col_obj in col.objects if col_obj.name == entry.name -%}
+                            {%- if obj not in assoc_curves -%}
+                                {%- if assoc_curves.append(obj) %}{% endif -%}
+                            {%- endif -%}
+                        {%- endfor -%}
+                    {%- endfor -%}
+                {%- endfor -%}
+            {%- endfor -%}
         {%- endfor -%}
     {%- endif -%}
+    {%- set result = [0] -%}
+    {%- for curve in assoc_curves -%}
+        {%- set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int -%}
+        {%- set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int -%}
+        {%- set vpp = 3 -%}
+        {%- if fx_type == 1 -%}{%- set vpp = 4 -%}{%- endif -%}
+        {%- if fx_type == 2 -%}{%- set vpp = 6 -%}{%- endif -%}
+        {%- if result.append(result.pop() + p_count * vpp) %}{% endif -%}
+    {%- endfor -%}
     {{- result[-1] -}}
-{% endmacro %}
+{%- endmacro %}
 
 {% macro overridesbuffers(mod_file,scene) %}
     {{ utils.cm_debug_dump(mod_file, scene) }}
     {#--- ОБРАБОТКА КОМПОНЕНТОВ С BLEND И POSITION БУФЕРАМИ ---#}
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 %}
-        {% set comp_vfx_verts = get_vfx_vertex_count(scene, component.fullname) | int %}
+        {% set comp_vfx_verts = get_vfx_vertex_count(scene, component) | int %}
         {% set total_v_count = component.vertex_count + comp_vfx_verts %}
         ;component.vertex_count: {{component.vertex_count}}
         ;comp_vfx_verts: {{comp_vfx_verts}}
@@ -204,15 +221,18 @@
                     {% for col in curve.users_collection %}
                         {% for entry in part.objects %}
                             {% for col_obj in col.objects if col_obj.name == entry.name %}
-                                {% if assoc_curves.append(curve) %}{% endif %}
+                                {% if curve not in assoc_curves %}
+                                    {% if assoc_curves.append(curve) %}{% endif %}
+                                {% endif %}
                             {% endfor %}
                         {% endfor %}
                     {% endfor %}
                 {% endfor %}
             {% endif %}
             {% if assoc_curves | length > 0 %}
+                {# Sum index_count only from entries that have vertex_count > 0 (real draw entries) #}
                 {% set orig_i_count = [0] %}
-                {% for entry in part.objects %}
+                {% for entry in part.objects if entry.vertex_count > 0 %}
                     {% if orig_i_count.append(orig_i_count.pop() + entry.index_count) %}{% endif %}
                 {% endfor %}
                 {% set current_vfx_offset = [orig_i_count[0]] %}
@@ -291,7 +311,9 @@
                     {% for col in curve.users_collection %}
                         {% for entry in part.objects %}
                             {% for col_obj in col.objects if col_obj.name == entry.name %}
-                                {% if assoc_curves.append(curve) %}{% endif %}
+                                {% if curve not in assoc_curves %}
+                                    {% if assoc_curves.append(curve) %}{% endif %}
+                                {% endif %}
                             {% endfor %}
                         {% endfor %}
                     {% endfor %}
@@ -311,7 +333,9 @@
                     {% for col in curve.users_collection %}
                         {% for entry in part.objects %}
                             {% for col_obj in col.objects if col_obj.name == entry.name %}
-                                {% if assoc_curves.append(curve) %}{% endif %}
+                                {% if curve not in assoc_curves %}
+                                    {% if assoc_curves.append(curve) %}{% endif %}
+                                {% endif %}
                             {% endfor %}
                         {% endfor %}
                     {% endfor %}
@@ -352,10 +376,23 @@
     x98 = time
     w98 = time % 1
     Resource{{ component.fullname }}Position = ref cs-u5
-    {% set comp_vfx_verts = get_vfx_vertex_count(scene, component.fullname) | int %}
-    {% set total_v_count = component.vertex_count + comp_vfx_verts %}
+    {# Per-part VFX vertex count for THIS part's associated curves only #}
+    {% set part_vfx_verts = [0] %}
+    {% for curve in assoc_curves %}
+        {% set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int %}
+        {% set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int %}
+        {% if fx_type == 1 %}{% set vpp = 4 %}
+        {% elif fx_type == 2 %}{% set vpp = 6 %}
+        {% else %}{% set vpp = 3 %}
+        {% endif %}
+        {% if part_vfx_verts.append(part_vfx_verts.pop() + p_count * vpp) %}{% endif %}
+    {% endfor %}
+    {# x115 = cutoff_index in shader = number of ORIGINAL vertices to skip in the shared component Position buffer #}
+    {# dispatch must cover orig_verts + ALL vfx verts appended to this component buffer #}
+    {% set comp_vfx_verts = get_vfx_vertex_count(scene, component) | int %}
+    {% set total_comp_v = component.vertex_count + comp_vfx_verts %}
     x115 = {{ component.vertex_count }}
-    dispatch = {{ ((total_v_count + 127) // 128) | int }}, 1, 1
+    dispatch = {{ ((total_comp_v + 127) // 128) | int }}, 1, 1
     cs-u5 = null
     ;cs-t50 = null обнулять вообще не нужно их, это не просто бесполезно, это вредно
     ;cs-t120 = null ОСОБЕННО ЭТО, ЭТО ВООБЩЕ ДИКО, нельзя снмиать байнд с 120 слота

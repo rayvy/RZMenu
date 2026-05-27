@@ -475,6 +475,20 @@ def find_associated_mesh_and_component(context, curve_obj):
             for comp in cm.components:
                 # Group meshes in scene that match name
                 comp_map[comp.name] = [obj for obj in context.scene.objects if obj.type == 'MESH' and comp.name.lower() in obj.name.lower()]
+
+    # Extract mod name dynamically for prefix cleanup
+    mod_name = ""
+    try:
+        from ..operators.export_cache import get_cache
+        cache = get_cache()
+        if cache:
+            mod_name = cache.get('mod_name', '')
+    except Exception:
+        pass
+    if not mod_name:
+        rzm = getattr(context.scene, "rzm", None)
+        if rzm and hasattr(rzm, "export_settings"):
+            mod_name = getattr(rzm.export_settings, "mod_name", "") or ""
                 
     # Search collections for matching Mesh object
     for col in collections:
@@ -487,13 +501,56 @@ def find_associated_mesh_and_component(context, curve_obj):
                         part_name = obj.name
                         rzm = getattr(context.scene, "rzm", None)
                         if rzm and hasattr(rzm, "component_manager"):
-                            cm = rzm.component_manager
-                            for comp in cm.components:
-                                if comp.name == comp_name:
+                            # Helper functions for prefix and component cleaning
+                            def strip_prefix(val, pref):
+                                if not val or not pref:
+                                    return val
+                                if val.lower().startswith(pref.lower()):
+                                    return val[len(pref):]
+                                return val
+
+                            def clean_comp(name):
+                                if not name: return ""
+                                clean = name.strip()
+                                if mod_name:
+                                    clean = strip_prefix(clean, mod_name).strip()
+                                return clean.lower()
+
+                            target_clean = clean_comp(comp_name)
+                            for comp in rzm.component_manager.components:
+                                if clean_comp(comp.name) == target_clean:
+                                    # Found the matching component!
                                     for part in comp.parts:
-                                        if part.name.lower() in obj.name.lower():
-                                            part_name = part.name
+                                        # Deduce part suffix
+                                        part_suffix = part.name
+                                        if comp_name:
+                                            part_suffix = strip_prefix(part_suffix, comp_name)
+                                        if comp.name:
+                                            part_suffix = strip_prefix(part_suffix, comp.name)
+                                        part_suffix = part_suffix.strip()
+                                        
+                                        # If there's only one part, it must be this one!
+                                        if len(comp.parts) == 1:
+                                            part_name = part_suffix
                                             break
+                                            
+                                        # Otherwise, match via collections
+                                        matched = False
+                                        for c in obj.users_collection:
+                                            c_lower = c.name.lower()
+                                            if (comp_name.lower() + part_suffix.lower()) in c_lower:
+                                                matched = True
+                                                break
+                                            if (comp.name.lower() + part_suffix.lower()) in c_lower:
+                                                matched = True
+                                                break
+                                            if c_lower.endswith(part_suffix.lower()):
+                                                matched = True
+                                                break
+                                        if matched:
+                                            part_name = part_suffix
+                                            break
+                                    break
                         return comp_name, obj, part_name
                         
     return None, None, None

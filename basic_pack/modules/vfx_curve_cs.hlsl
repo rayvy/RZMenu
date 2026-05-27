@@ -120,21 +120,55 @@ struct SampledPoint {
     float radius;
 };
 
-SampledPoint SampleCurve(uint curve_idx, float cycle) {
-    float t_scaled = clamp(cycle, 0.0f, 1.0f) * 31.0f;
-    uint idx0 = (uint)floor(t_scaled);
+SampledPoint SampleCurve(uint curve_idx, float cycle, uint num_shapes) {
+    float t = clamp(cycle, 0.0f, 1.0f);
+    
+    // Determine the shape key indices and factor
+    uint shape_idx0 = 0;
+    uint shape_idx1 = 0;
+    float shape_factor = 0.0f;
+    
+    if (num_shapes > 0) {
+        float t_scaled = t * (float)num_shapes;
+        shape_idx0 = (uint)floor(t_scaled);
+        shape_idx1 = min(shape_idx0 + 1, num_shapes);
+        shape_factor = t_scaled - (float)shape_idx0;
+        if (shape_idx0 >= num_shapes) {
+            shape_idx0 = num_shapes;
+            shape_idx1 = num_shapes;
+            shape_factor = 0.0f;
+        }
+    }
+    
+    // Determine the point index and factor along the curve
+    float t_spline = t * 31.0f;
+    uint idx0 = (uint)floor(t_spline);
     uint idx1 = min(idx0 + 1, 31);
-    float factor = t_scaled - float(idx0);
-
-    uint base_idx = curve_idx * 33; // 33 points per curve block
-    CurvePoint p0 = CurveData[base_idx + idx0];
-    CurvePoint p1 = CurveData[base_idx + idx1];
-
+    float factor = t_spline - float(idx0);
+    
+    uint base_idx = curve_idx * 257; // 257 points per curve block: 8 shapes * 32 points + 1 metadata point
+    
+    // Sample points from shape_idx0
+    CurvePoint p0_s0 = CurveData[base_idx + shape_idx0 * 32 + idx0];
+    CurvePoint p1_s0 = CurveData[base_idx + shape_idx0 * 32 + idx1];
+    float3 pos_s0 = lerp(p0_s0.position, p1_s0.position, factor);
+    float3 tangent_s0 = lerp(p0_s0.tangent, p1_s0.tangent, factor);
+    float3 normal_s0 = lerp(p0_s0.normal, p1_s0.normal, factor);
+    float radius_s0 = lerp(p0_s0.u, p1_s0.u, factor);
+    
+    // Sample points from shape_idx1
+    CurvePoint p0_s1 = CurveData[base_idx + shape_idx1 * 32 + idx0];
+    CurvePoint p1_s1 = CurveData[base_idx + shape_idx1 * 32 + idx1];
+    float3 pos_s1 = lerp(p0_s1.position, p1_s1.position, factor);
+    float3 tangent_s1 = lerp(p0_s1.tangent, p1_s1.tangent, factor);
+    float3 normal_s1 = lerp(p0_s1.normal, p1_s1.normal, factor);
+    float radius_s1 = lerp(p0_s1.u, p1_s1.u, factor);
+    
     SampledPoint result;
-    result.position = lerp(p0.position, p1.position, factor);
-    result.tangent = normalize(lerp(p0.tangent, p1.tangent, factor));
-    result.normal = normalize(lerp(p0.normal, p1.normal, factor));
-    result.radius = lerp(p0.u, p1.u, factor);
+    result.position = lerp(pos_s0, pos_s1, shape_factor);
+    result.tangent = normalize(lerp(tangent_s0, tangent_s1, shape_factor));
+    result.normal = normalize(lerp(normal_s0, normal_s1, shape_factor));
+    result.radius = lerp(radius_s0, radius_s1, shape_factor);
     return result;
 }
 
@@ -161,10 +195,12 @@ void main(uint3 threadID : SV_DispatchThreadID)
     // ==========================================
     uint curve_idx = (uint)rw_buffer[i].normal.z;
     
-    CurvePoint p_meta = CurveData[curve_idx * 33 + 32];
+    CurvePoint p_meta = CurveData[curve_idx * 257 + 256];
     float packed_fx_and_end = p_meta.position.x;
-    uint mesh_fx_type = (uint)floor(packed_fx_and_end + 1e-6f);
-    float CFG_TL_END   = clamp(frac(packed_fx_and_end + 1e-6f) * 10.0f, 0.0f, 1.0f);
+    uint packed_val = (uint)floor(packed_fx_and_end + 1e-6f);
+    uint num_shapes = packed_val / 10;
+    uint mesh_fx_type = packed_val % 10;
+    float CFG_TL_END   = clamp((packed_fx_and_end - (float)packed_val) * 10.0f, 0.0f, 1.0f);
 
     float CFG_SIZE_BASE  = p_meta.position.y;
     float CFG_SIZE_START = p_meta.position.z;
@@ -245,7 +281,7 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float path_progress = clamp(A * active_t * active_t + B * active_t, 0.0f, 1.0f);
 
     // Сэмпл кривой
-    SampledPoint sampled = SampleCurve(curve_idx, path_progress);
+    SampledPoint sampled = SampleCurve(curve_idx, path_progress, num_shapes);
     float3 pos_on_line = sampled.position;
 
     // Направление распыления ортогонально направлению кривой

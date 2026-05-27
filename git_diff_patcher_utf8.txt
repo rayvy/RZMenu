@@ -1,0 +1,469 @@
+﻿diff --git a/utils/vfx_buffer_patcher.py b/utils/vfx_buffer_patcher.py
+index cd0d68e..57a7199 100644
+--- a/utils/vfx_buffer_patcher.py
++++ b/utils/vfx_buffer_patcher.py
+@@ -143,7 +143,21 @@ def find_associated_mesh_and_component(context, curve_obj):
+             cm = rzm.component_manager
+             for comp in cm.components:
+                 comp_map[comp.name] = [obj for obj in context.scene.objects if obj.type == 'MESH' and comp.name.lower() in obj.name.lower()]
+-                
++
++    # Extract mod name dynamically for prefix cleanup
++    mod_name = ""
++    try:
++        from ..operators.export_cache import get_cache
++        cache = get_cache()
++        if cache:
++            mod_name = cache.get('mod_name', '')
++    except Exception:
++        pass
++    if not mod_name:
++        rzm = getattr(context.scene, "rzm", None)
++        if rzm and hasattr(rzm, "export_settings"):
++            mod_name = getattr(rzm.export_settings, "mod_name", "") or ""
++
+     for col in collections:
+         for obj in col.objects:
+             if obj.type == 'MESH':
+@@ -152,12 +166,56 @@ def find_associated_mesh_and_component(context, curve_obj):
+                         part_name = obj.name
+                         rzm = getattr(context.scene, "rzm", None)
+                         if rzm and hasattr(rzm, "component_manager"):
++                            # Helper functions for prefix and component cleaning
++                            def strip_prefix(val, pref):
++                                if not val or not pref:
++                                    return val
++                                if val.lower().startswith(pref.lower()):
++                                    return val[len(pref):]
++                                return val
++
++                            def clean_comp(name):
++                                if not name: return ""
++                                clean = name.strip()
++                                if mod_name:
++                                    clean = strip_prefix(clean, mod_name).strip()
++                                return clean.lower()
++
++                            target_clean = clean_comp(comp_name)
+                             for comp in rzm.component_manager.components:
+-                                if comp.name == comp_name:
++                                if clean_comp(comp.name) == target_clean:
++                                    # Found the matching component!
+                                     for part in comp.parts:
+-                                        if part.name.lower() in obj.name.lower():
+-                                            part_name = part.name
++                                        # Deduce part suffix
++                                        part_suffix = part.name
++                                        if comp_name:
++                                            part_suffix = strip_prefix(part_suffix, comp_name)
++                                        if comp.name:
++                                            part_suffix = strip_prefix(part_suffix, comp.name)
++                                        part_suffix = part_suffix.strip()
++                                        
++                                        # If there's only one part, it must be this one!
++                                        if len(comp.parts) == 1:
++                                            part_name = part_suffix
+                                             break
++                                            
++                                        # Otherwise, match via collections
++                                        matched = False
++                                        for c in obj.users_collection:
++                                            c_lower = c.name.lower()
++                                            if (comp_name.lower() + part_suffix.lower()) in c_lower:
++                                                matched = True
++                                                break
++                                            if (comp.name.lower() + part_suffix.lower()) in c_lower:
++                                                matched = True
++                                                break
++                                            if c_lower.endswith(part_suffix.lower()):
++                                                matched = True
++                                                break
++                                        if matched:
++                                            part_name = part_suffix
++                                            break
++                                    break
+                         return comp_name, obj, part_name
+                         
+     return None, None, None
+@@ -271,6 +329,92 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
+         
+     return resampled_data
+ 
++def evaluate_curve_all_shapes(context, curve_obj, num_samples=32):
++    """
++    Evaluates spline points for all shape keys of the curve sequentially.
++    Returns a list of 8 shapes, each containing 32 sampled (Vector, float) points.
++    """
++    if not curve_obj.data.splines:
++        return [[] for _ in range(8)]
++        
++    shape_keys = curve_obj.data.shape_keys
++    if not shape_keys or not shape_keys.key_blocks:
++        # Static curve fallback: duplicate basis shape 8 times
++        basis_pts = evaluate_curve_spline_points(context, curve_obj, num_samples)
++        return [list(basis_pts) for _ in range(8)]
++        
++    keys = list(shape_keys.key_blocks)
++    spline = curve_obj.data.splines[0]
++    is_bezier = (spline.type == 'BEZIER')
++    
++    # Save original control point positions
++    if is_bezier:
++        orig_cos = [p.co.copy() for p in spline.bezier_points]
++    else:
++        orig_cos = [p.co.copy() for p in spline.points]
++        
++    shapes_pts = []
++    
++    # Process up to 8 shape keys: Basis (index 0) + up to 7 shape keys (indices 1..7)
++    for k_idx, kb in enumerate(keys[:8]):
++        # Temporarily apply shape key coords to the active spline
++        for i, p in enumerate(spline.bezier_points if is_bezier else spline.points):
++            if i < len(kb.data):
++                co = kb.data[i].co
++                if is_bezier:
++                    p.co = co.copy()
++                else:
++                    # Preserve NURBS 4th W weight component
++                    p.co = (co[0], co[1], co[2], orig_cos[i][3])
++                    
++        # Evaluate curve spline points for this shape key configuration
++        pts = evaluate_curve_spline_points(context, curve_obj, num_samples)
++        shapes_pts.append(pts)
++        
++    # Restore original spline control points
++    for i, p in enumerate(spline.bezier_points if is_bezier else spline.points):
++        p.co = orig_cos[i]
++        
++    # Pad to exactly 8 shapes using the last evaluated shape key
++    while len(shapes_pts) < 8:
++        last_shape = shapes_pts[-1] if shapes_pts else []
++        shapes_pts.append(list(last_shape))
++        
++    # Truncate if more than 8 shapes (shouldn't happen because of keys[:8] but just in case)
++    return shapes_pts[:8]
++
++def sample_curve_at_progress(resampled_data, t):
++    """
++    Interpolates a position along the 32 sampled curve points.
++    t is between 0.0 and 1.0.
++    """
++    if not resampled_data:
++        return Vector((0.0, 0.0, 0.0))
++    if len(resampled_data) == 1:
++        return resampled_data[0][0]
++    t = max(0.0, min(1.0, t))
++    t_spline = t * 31.0
++    idx0 = int(math.floor(t_spline))
++    idx1 = min(idx0 + 1, 31)
++    factor = t_spline - idx0
++    
++    pt0 = resampled_data[idx0][0]
++    pt1 = resampled_data[idx1][0]
++    return pt0.lerp(pt1, factor)
++
++def get_path_progress(phase, tl_start, tl_mid, tl_end):
++    """
++    Computes path progress matching vfx_curve_cs.hlsl timeline easing math.
++    """
++    cycle = phase
++    denom = max(tl_end - tl_start, 1e-5)
++    active_t = max(0.0, min(1.0, (cycle - tl_start) / denom))
++    k = max(0.01, min(0.99, (tl_mid - tl_start) / denom))
++    A = (0.5 - k) / (k * k - k)
++    B = 1.0 - A
++    path_progress = max(0.0, min(1.0, A * active_t * active_t + B * active_t))
++    return path_progress
++
+ def find_file(directory, filename):
+     for root, dirs, files in os.walk(directory):
+         for f in files:
+@@ -366,6 +510,7 @@ def patch_buffers(context, cache):
+     all_curve_bytes = bytearray()
+     valid_curve_count = 0
+     curve_mapping = {} # maps curve object name to index in curve_data.buf
++    curve_shapes_cache = {} # maps curve object name to shapes_resampled
+ 
+     for idx, curve_obj in enumerate(vfx_curves):
+         comp_name, target_mesh, part_name = find_associated_mesh_and_component(context, curve_obj)
+@@ -376,55 +521,68 @@ def patch_buffers(context, cache):
+         profile_raw = get_curve_prop(curve_obj, "coordinate_remap_profile", "AUTO")
+         profile = resolve_coordinate_remap_profile(context, profile_raw)
+         
+-        # Sample points (returns list of (pt, radius) tuples)
+-        resampled_data = evaluate_curve_spline_points(context, curve_obj, num_samples=32)
+-        if not resampled_data or len(resampled_data) < 2:
++        # Sample points for all 8 shapes (returns list of 8 lists, each with 32 (pt, radius) tuples)
++        shapes_resampled = evaluate_curve_all_shapes(context, curve_obj, num_samples=32)
++        if not shapes_resampled or any(len(s) < 2 for s in shapes_resampled):
+             print(f"[RZM-VFX] [ERROR] Curve '{curve_obj.name}' evaluation returned insufficient points.")
+             continue
+-
+-        # Remap to target mesh's local coordinates
+-        local_pts = []
+-        radii = []
+-        for pt, r_val in resampled_data:
+-            wpos = curve_obj.matrix_world @ pt
+-            lpos = target_mesh.matrix_world.inverted() @ wpos
+-            local_pts.append(lpos)
+-            radii.append(r_val)
+-
+-        # Apply buffer coordinate remap
+-        remapped_pts = []
+-        for lpos in local_pts:
+-            remap_pt = remap_curve_point_to_buffer(lpos, local_pts[0], profile)
+-            remapped_pts.append(remap_pt)
+-
+-        # Pack and write to curve_data.buf: 33 points, 40 bytes each (32 sampled points + 1 metadata point)
+-        for j in range(32):
+-            pt = remapped_pts[j]
+-            # Tangent
+-            if j < 31:
+-                tangent = (remapped_pts[j+1] - pt).normalized()
+-            else:
+-                tangent = (pt - remapped_pts[j-1]).normalized()
+             
+-            # Normal
+-            ref = Vector((0.0, 1.0, 0.0)) if abs(tangent.dot(Vector((0.0, 0.0, 1.0)))) > 0.9 else Vector((0.0, 0.0, 1.0))
+-            normal = (ref - tangent * tangent.dot(ref)).normalized()
++        curve_shapes_cache[curve_obj.name] = shapes_resampled
++
++        # Process each shape
++        for k in range(8):
++            resampled_data = shapes_resampled[k]
+             
+-            # Pack local radius into the 10th float (point radius * 0.01 meters baseline)
+-            r_packed = radii[j] * 0.01
+-
+-            # Pack
+-            point_data = struct.pack(
+-                '<fffffffff',
+-                pt.x, pt.y, pt.z,
+-                tangent.x, tangent.y, tangent.z,
+-                normal.x, normal.y, normal.z
+-            )
+-            point_data += struct.pack('<f', r_packed)
+-            all_curve_bytes.extend(point_data)
+-
+-        # 33rd point contains metadata (mesh_fx_type, particle_size_base, particle_size_start, particle_size_end, cycle_duration, dispersion_scale, phase_randomness, pos_randomness, timeline positions)
+-        meta_fx_type = float(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
++            # Remap to target mesh's local coordinates
++            local_pts = []
++            radii = []
++            for pt, r_val in resampled_data:
++                wpos = curve_obj.matrix_world @ pt
++                lpos = target_mesh.matrix_world.inverted() @ wpos
++                local_pts.append(lpos)
++                radii.append(r_val)
++
++            # Apply buffer coordinate remap
++            remapped_pts = []
++            for lpos in local_pts:
++                remap_pt = remap_curve_point_to_buffer(lpos, local_pts[0], profile)
++                remapped_pts.append(remap_pt)
++
++            # Pack 32 sampled points for this shape: 40 bytes each
++            for j in range(32):
++                pt = remapped_pts[j]
++                # Tangent
++                if j < 31:
++                    tangent = (remapped_pts[j+1] - pt).normalized()
++                else:
++                    tangent = (pt - remapped_pts[j-1]).normalized()
++                
++                # Normal
++                ref = Vector((0.0, 1.0, 0.0)) if abs(tangent.dot(Vector((0.0, 0.0, 1.0)))) > 0.9 else Vector((0.0, 0.0, 1.0))
++                normal = (ref - tangent * tangent.dot(ref)).normalized()
++                
++                # Pack local radius into the 10th float (point radius * 0.01 meters baseline)
++                r_packed = radii[j] * 0.01
++
++                # Pack
++                point_data = struct.pack(
++                    '<fffffffff',
++                    pt.x, pt.y, pt.z,
++                    tangent.x, tangent.y, tangent.z,
++                    normal.x, normal.y, normal.z
++                )
++                point_data += struct.pack('<f', r_packed)
++                all_curve_bytes.extend(point_data)
++
++        # Determine number of active shape keys
++        num_shapes = 0
++        if curve_obj.data.shape_keys and curve_obj.data.shape_keys.key_blocks:
++            num_shapes = min(7, len(curve_obj.data.shape_keys.key_blocks) - 1)
++
++        # 257th point contains metadata
++        mesh_fx_type = float(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
++        packed_fx_type = mesh_fx_type + float(num_shapes) * 10.0
++        
+         meta_size_base = float(get_curve_prop(curve_obj, "particle_size_base", 0.05))
+         meta_size_start = float(get_curve_prop(curve_obj, "particle_size_start", 1.0))
+         meta_size_end = float(get_curve_prop(curve_obj, "particle_size_end", 0.2))
+@@ -455,10 +613,10 @@ def patch_buffers(context, cache):
+         
+         meta_data = struct.pack(
+             '<ffffffffff',
+-            meta_fx_type + meta_tl_end * 0.1, meta_size_base, meta_size_start,  # position.xyz
+-            meta_size_end, meta_cycle_dur, meta_dispersion,                    # tangent.xyz
+-            meta_phase_rand, meta_pos_rand, packed_tls,                        # normal.xyz
+-            packed_rand                                                        # u
++            packed_fx_type + meta_tl_end * 0.1, meta_size_base, meta_size_start,  # position.xyz
++            meta_size_end, meta_cycle_dur, meta_dispersion,                      # tangent.xyz
++            meta_phase_rand, meta_pos_rand, packed_tls,                          # normal.xyz
++            packed_rand                                                          # u
+         )
+         all_curve_bytes.extend(meta_data)
+ 
+@@ -473,7 +631,7 @@ def patch_buffers(context, cache):
+     # Write the collected curve_data.buf
+     with open(curve_buf_path, 'wb') as f:
+         f.write(all_curve_bytes)
+-    print(f"[RZM-VFX] Wrote {valid_curve_count} curves ({valid_curve_count * 32 * 40} bytes) to '{curve_buf_path}'")
++    print(f"[RZM-VFX] Wrote {valid_curve_count} curves ({valid_curve_count * 257 * 40} bytes) to '{curve_buf_path}'")
+ 
+     # 2. Group curves by target component and part
+     curves_by_part = {}
+@@ -649,33 +807,68 @@ def patch_buffers(context, cache):
+             mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
+             mesh_fx_size_base = get_curve_prop(curve_obj, "mesh_fx_size_base", 0.05)
+             tri_aspect = get_curve_prop(curve_obj, "tri_aspect", 1.0)
++            
+             weight_indices = list(get_curve_prop(curve_obj, "weight_indices", (-1, -1, -1, -1)))
+             weight_values = list(get_curve_prop(curve_obj, "weight_values", (0.0, 0.0, 0.0, 0.0)))
+-
+-            profile_raw = get_curve_prop(curve_obj, "coordinate_remap_profile", "AUTO")
+-            profile = resolve_coordinate_remap_profile(context, profile_raw)
+-
++            
+             if mesh_fx_type == "1":
+                 v_per_particle, i_per_particle = 4, 6
+             elif mesh_fx_type == "2":
+                 v_per_particle, i_per_particle = 6, 15
+             else:
+                 v_per_particle, i_per_particle = 3, 3
+-
+-            # ----------------------------------------------------------------------
+-            # A. Patch VB0 (Position)
+-            # ----------------------------------------------------------------------
++                
++            # Pre-generate particle parameters to share phase offsets between VB0 and VB2 loops
++            particles_params = []
+             for p in range(particle_count):
+                 phase = random.random()
+                 speed_scale = random.uniform(0.8, 1.2)
+-                
+                 # Random unit direction in 3D
+                 theta = random.uniform(0, 2.0 * math.pi)
+                 phi = random.uniform(0, math.pi)
+                 dir_x = math.sin(phi) * math.cos(theta)
+                 dir_y = math.cos(phi)
+                 dir_z = math.sin(phi) * math.sin(theta)
++                particles_params.append((phase, speed_scale, dir_x, dir_y, dir_z))
++
++            # Check if reference mesh is selected and build KDTree
++            ref_mesh = curve_obj.rzm_curve_vfx_weight_reference
++            kd = None
++            vg_map = {}
++            bone_to_id = {}
++            ref_mesh_data = None
++            if ref_mesh and ref_mesh.type == 'MESH':
++                try:
++                    depsgraph = context.evaluated_depsgraph_get()
++                    ref_eval = ref_mesh.evaluated_get(depsgraph)
++                    ref_mesh_data = ref_eval.data
++                    
++                    vg_map = {vg.index: vg.name for vg in ref_mesh.vertex_groups}
++                    armature = ref_mesh.find_armature()
++                    if armature:
++                        for b_idx, bone in enumerate(armature.data.bones):
++                            bone_to_id[bone.name] = b_idx
++                    else:
++                        for vg in ref_mesh.vertex_groups:
++                            bone_to_id[vg.name] = vg.index
++                            
++                    from mathutils.kdtree import KDTree
++                    kd = KDTree(len(ref_mesh_data.vertices))
++                    for v_idx, v in enumerate(ref_mesh_data.vertices):
++                        world_pos = ref_mesh.matrix_world @ v.co
++                        kd.insert(world_pos, v_idx)
++                    kd.balance()
++                    print(f"[RZM-VFX] Built KDTree for weight reference '{ref_mesh.name}' with {len(ref_mesh_data.vertices)} vertices.")
++                except Exception as e:
++                    print(f"[RZM-VFX] Error building KDTree for reference mesh: {e}")
++                    kd = None
+ 
++            # ----------------------------------------------------------------------
++            # A. Patch VB0 (Position)
++            # ----------------------------------------------------------------------
++            for p in range(particle_count):
++                phase, speed_scale, dir_x, dir_y, dir_z = particles_params[p]
++                
+                 for v_idx in range(v_per_particle):
+                     # Define local offsets based on mesh_fx_type
+                     if mesh_fx_type == "1": # Quad
+@@ -717,13 +910,60 @@ def patch_buffers(context, cache):
+             # B. Patch VB2 (Blend)
+             # ----------------------------------------------------------------------
+             if f_vb2:
++                tl_start = get_curve_prop(curve_obj, "timeline_start_pos", 0.0)
++                tl_mid = get_curve_prop(curve_obj, "timeline_mid_pos", 0.5)
++                tl_end = get_curve_prop(curve_obj, "timeline_end_pos", 1.0)
++                
++                num_shapes = 0
++                if curve_obj.data.shape_keys and curve_obj.data.shape_keys.key_blocks:
++                    num_shapes = min(7, len(curve_obj.data.shape_keys.key_blocks) - 1)
++                
++                shapes_resampled = curve_shapes_cache.get(curve_obj.name)
++                if not shapes_resampled:
++                    shapes_resampled = evaluate_curve_all_shapes(context, curve_obj, num_samples=32)
++                
+                 for p in range(particle_count):
+-                    for v_idx in range(v_per_particle):
+-                        buf = bytearray(stride_b)
++                    phase, speed_scale, dir_x, dir_y, dir_z = particles_params[p]
++                    
++                    if kd and shapes_resampled and len(shapes_resampled) > 0:
++                        path_progress = get_path_progress(phase, tl_start, tl_mid, tl_end)
++                        if num_shapes == 0:
++                            pos = sample_curve_at_progress(shapes_resampled[0], path_progress)
++                        else:
++                            t_scaled = path_progress * num_shapes
++                            k0 = int(math.floor(t_scaled))
++                            k1 = min(k0 + 1, num_shapes)
++                            f = t_scaled - k0
++                            pos_k0 = sample_curve_at_progress(shapes_resampled[k0], path_progress)
++                            pos_k1 = sample_curve_at_progress(shapes_resampled[k1], path_progress)
++                            pos = pos_k0.lerp(pos_k1, f)
++                            
++                        # Transform to world space
++                        wpos = curve_obj.matrix_world @ pos
++                        _, ref_idx, _ = kd.find(wpos)
++                        v = ref_mesh_data.vertices[ref_idx]
++                        
++                        best_vg = -1
++                        best_weight = 0.0
++                        for g in v.groups:
++                            if g.weight > best_weight:
++                                group_name = vg_map.get(g.group)
++                                if group_name in bone_to_id:
++                                    best_vg = bone_to_id[group_name]
++                                    best_weight = g.weight
++                                    
++                        if best_vg != -1:
++                            clean_idx = [best_vg, 0, 0, 0]
++                            clean_w = [1.0, 0.0, 0.0, 0.0]
++                        else:
++                            clean_idx = [int(idx) if idx != -1 else 0 for idx in weight_indices]
++                            clean_w = [float(w) for w in weight_values]
++                    else:
+                         clean_idx = [int(idx) if idx != -1 else 0 for idx in weight_indices]
+                         clean_w = [float(w) for w in weight_values]
+-
+-                        # Pack based on stride
++                        
++                    for v_idx in range(v_per_particle):
++                        buf = bytearray(stride_b)
+                         if stride_b == 32:
+                             struct.pack_into('<ffffIIII', buf, 0, clean_w[0], clean_w[1], clean_w[2], clean_w[3], clean_idx[0], clean_idx[1], clean_idx[2], clean_idx[3])
+                         elif stride_b == 24:

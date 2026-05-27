@@ -649,6 +649,12 @@ def register():
         get=get_vfx_weight_values,
         set=set_vfx_weight_values
     )
+    bpy.types.Object.rzm_curve_vfx_weight_reference = PointerProperty(
+        name="Weight Reference Mesh",
+        description="Reference mesh to copy weights from via closest vertex lookup",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'MESH'
+    )
 
     custom_draw_ops.register()
     # Регистрация scene properties
@@ -740,6 +746,7 @@ def unregister():
         "rzm_curve_vfx_particle_count",
         "rzm_curve_vfx_weight_indices",
         "rzm_curve_vfx_weight_values",
+        "rzm_curve_vfx_weight_reference",
         "rzm_curve_vfx_start_radius",
         "rzm_curve_vfx_end_radius",
         "rzm_curve_vfx_curve_right",

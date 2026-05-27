@@ -406,11 +406,20 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 # Section D: Technical Weights
                 wbox = box.box()
                 wbox.label(text="Technical Weights", icon='MOD_VERTEX_WEIGHT')
-                wbox.prop(target_obj, "rzm_curve_vfx_weight_indices", text="Indices")
-                wbox.prop(target_obj, "rzm_curve_vfx_weight_values", text="Values")
+                wbox.prop(target_obj, "rzm_curve_vfx_weight_reference", text="Reference Mesh")
+                
+                ref_mesh = target_obj.rzm_curve_vfx_weight_reference
+                if ref_mesh:
+                    wbox.label(text="Bake Mode: Sampling weights from " + ref_mesh.name, icon='INFO')
+                    
+                col_manual = wbox.column()
+                col_manual.enabled = not ref_mesh
+                col_manual.prop(target_obj, "rzm_curve_vfx_weight_indices", text="Indices")
+                col_manual.prop(target_obj, "rzm_curve_vfx_weight_values", text="Values")
                 
                 # Normalize Weights operator
-                wbox.operator("rzm.normalize_curve_vfx_weight", text="Normalize Weights")
+                if not ref_mesh:
+                    wbox.operator("rzm.normalize_curve_vfx_weight", text="Normalize Weights")
                 
                 # Validation operator
                 box.separator()
