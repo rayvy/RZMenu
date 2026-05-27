@@ -362,6 +362,43 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             layout.label(text="Select an object to see its properties.", icon='INFO')
             return
 
+        if target_obj.type == 'CURVE':
+            box = layout.box()
+            box.label(text="RZ VFX Curve Settings", icon='CURVE_DATA')
+            
+            box.prop(target_obj, "rzm_curve_vfx_enabled", text="Enable Curve VFX")
+            
+            if target_obj.rzm_curve_vfx_enabled:
+                col = box.column(align=True)
+                col.prop(target_obj, "rzm_curve_vfx_coordinate_remap_profile", text="Coord Remap")
+                col.prop(target_obj, "rzm_curve_vfx_mesh_fx_type", text="Mesh Type")
+                col.prop(target_obj, "rzm_curve_vfx_particle_count", text="Particle Count")
+                col.prop(target_obj, "rzm_curve_vfx_mesh_fx_size_base", text="Size Base")
+                col.prop(target_obj, "rzm_curve_vfx_tri_aspect", text="Tri Aspect")
+                col.prop(target_obj, "rzm_curve_vfx_speed", text="Speed")
+                
+                # Radii and Shifts
+                rbox = box.box()
+                rbox.label(text="Radii & Shifts", icon='SPHERE')
+                rbox.prop(target_obj, "rzm_curve_vfx_start_radius", text="Start Radius")
+                rbox.prop(target_obj, "rzm_curve_vfx_end_radius", text="End Radius")
+                rbox.prop(target_obj, "rzm_curve_vfx_curve_right", text="Curve Right")
+                rbox.prop(target_obj, "rzm_curve_vfx_curve_up", text="Curve Up")
+                
+                # Technical Weights
+                wbox = box.box()
+                wbox.label(text="Technical Weights", icon='MOD_VERTEX_WEIGHT')
+                wbox.prop(target_obj, "rzm_curve_vfx_weight_indices", text="Indices")
+                wbox.prop(target_obj, "rzm_curve_vfx_weight_values", text="Values")
+                
+                # Normalize Weights operator
+                wbox.operator("rzm.normalize_curve_vfx_weight", text="Normalize Weights")
+                
+                # Validation operator
+                box.separator()
+                box.operator("rzm.validate_curve_vfx", text="Validate Curve VFX", icon='CHECKMARK')
+            return
+
         # --- MOD PRODUCER TIERS ---
         if context.scene.rzm_editor_mode == 'PRO':
             box = layout.box()

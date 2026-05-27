@@ -1,11 +1,26 @@
 {% import "rz_helper.j2" as helper with context %}
 {% import "modules/utils.j2" as utils with context %}
 
+{% macro get_vfx_vertex_count(scene, comp_fullname) %}
+    {%- set result = [0] -%}
+    {%- if scene and scene.rzm and scene.rzm.vfx_vertex_counts -%}
+        {%- for item in scene.rzm.vfx_vertex_counts -%}
+            {%- if item.component_name == comp_fullname -%}
+                {%- if result.append(item.vertex_count) %}{% endif -%}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- endif -%}
+    {{- result[-1] -}}
+{% endmacro %}
+
 {% macro overridesbuffers(mod_file,scene) %}
     {{ utils.cm_debug_dump(mod_file, scene) }}
     {#--- ОБРАБОТКА КОМПОНЕНТОВ С BLEND И POSITION БУФЕРАМИ ---#}
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != "" and component.vertex_count > 0 %}
-        
+        {% set comp_vfx_verts = get_vfx_vertex_count(scene, component.fullname) | int %}
+        {% set total_v_count = component.vertex_count + comp_vfx_verts %}
+        ;component.vertex_count: {{component.vertex_count}}
+        ;comp_vfx_verts: {{comp_vfx_verts}}
         {# Общий блок для Blend #}
         [TextureOverride{{ component.fullname }}Blend]
         hash = {{ component.blend_vb }}
@@ -16,17 +31,17 @@
             vb2 = Resource{{ component.fullname }}Blend
             if DRAW_TYPE == 1
                 vb0 = Resource{{ component.fullname }}Position
-                draw = {{ component.vertex_count }}, 0
+                draw = {{ total_v_count }}, 0
             elif DRAW_TYPE == 8
                 Resource\SRMI\PositionBuffer = ref Resource{{ component.fullname }}PositionCS
                 Resource\SRMI\BlendBuffer = ref Resource{{ component.fullname }}BlendCS
-                $\SRMI\vertex_count = {{ component.vertex_count }}
+                $\SRMI\vertex_count = {{ total_v_count }}
             endif
         {% elif mod_file.game.name == "ZenlessZoneZero" %}
             vb2 = Resource{{ component.fullname }}Blend
             if DRAW_TYPE == 1
                 vb0 = Resource{{ component.fullname }}Position
-                draw = {{ component.vertex_count }}, 0
+                draw = {{ total_v_count }}, 0
                 ;{{component.fullname}}
                 {% if utils.cm_vb0_enabled(mod_file, scene, component.fullname) == 'True' %}
                 Resource{{component.fullname}}vb0.copy = ref so0
@@ -46,9 +61,9 @@
             run = CustomShaderBlendResize
                 {% endfor %}
             {% endif %}
-            draw = {{ component.vertex_count }}, 0
+            draw = {{ total_v_count }}, 0
         {% endif %}
-
+ 
         {# Общий блок для Texcoord #}
         [TextureOverride{{ component.fullname }}Texcoord]
         hash = {{ component.texcoord_vb }}
@@ -56,7 +71,7 @@
         {# Общий блок для Draw/VertexLimitRaise #}
         [TextureOverride{{ component.fullname }}{% if mod_file.game.name == "HonkaiStarRail" %}Draw{% else %}VertexLimitRaise{% endif %}]
         hash = {{ component.draw_vb }}
-        {% if mod_file.game.name == "GenshinImpact" %};{% endif %}override_vertex_count = {{ component.vertex_count }}
+        {% if mod_file.game.name == "GenshinImpact" %};{% endif %}override_vertex_count = {{ total_v_count }}
         {% if mod_file.game.name == "GenshinImpact" %};{% endif %}override_byte_stride = {{ component.strides.position }}
         {% if mod_file.game.name == "HonkaiStarRail" %}
         uav_byte_stride = 4
@@ -126,6 +141,14 @@
 
 {#--- ГЛАВНЫЙ МАКРОС ДЛЯ ПЕРЕОПРЕДЕЛЕНИЯ ИНДЕКСНЫХ БУФЕРОВ (теперь с под-макросами!) ---#}
 {% macro overridesibs(mod_file,scene) %}
+    {# Collect all RZM.CURVE_VFX curve objects #}
+    {% set curve_list = [] %}
+    {% if scene and scene.objects %}
+        {% for obj in scene.objects if obj.type == 'CURVE' and obj.get('RZM.CURVE_VFX') %}
+            {% if curve_list.append(obj) %}{% endif %}
+        {% endfor %}
+    {% endif %}
+
     {% for component in mod_file.components if component.draw_vb != "" %}
         [TextureOverride{{component.fullname}}IB]
         hash = {{ component.ib }}
@@ -175,6 +198,35 @@
                 ; {{ entry.name }} ({{ entry.vertex_count }})
                 {{ helper.smart_draw(entry, draw_mode='simple') }}
             {% endfor %}
+            {% set assoc_curves = [] %}
+            {% if scene and scene.objects %}
+                {% for curve in curve_list %}
+                    {% for col in curve.users_collection %}
+                        {% for entry in part.objects %}
+                            {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                {% if assoc_curves.append(curve) %}{% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
+            {% if assoc_curves | length > 0 %}
+                {% set part_vfx_indices = [0] %}
+                {% for curve in assoc_curves %}
+                    {% set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int %}
+                    {% set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int %}
+                    {% if fx_type == 1 %}{% set i_per_part = 6 %}
+                    {% elif fx_type == 2 %}{% set i_per_part = 15 %}
+                    {% else %}{% set i_per_part = 3 %}
+                    {% endif %}
+                    {% if part_vfx_indices.append(part_vfx_indices.pop() + p_count * i_per_part) %}{% endif %}
+                {% endfor %}
+                {% set orig_i_count = [0] %}
+                {% for entry in part.objects %}
+                    {% if orig_i_count.append(orig_i_count.pop() + entry.index_count) %}{% endif %}
+                {% endfor %}
+            drawindexed = {{ part_vfx_indices[0] }}, {{ orig_i_count[0] }}, 0
+            {% endif %}
 
             {# Material Transfer Redirection #}
             {% set cm = scene.rzm.component_manager %}
@@ -215,6 +267,67 @@
 
         {% endfor %}
     {% endfor %}
+
+    {# CustomShader and CommandList for VFX Curves #}
+    {% if curve_list | length > 0 %}
+    [Present]
+    run = CommandListRZM_VFX_Present
+
+    [CommandListRZM_VFX_Present]
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% set assoc_curves = [] %}
+            {% if scene and scene.objects %}
+                {% for curve in curve_list %}
+                    {% for col in curve.users_collection %}
+                        {% for entry in part.objects %}
+                            {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                {% if assoc_curves.append(curve) %}{% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
+            {% if assoc_curves | length > 0 %}
+    run = CustomShaderRZM_VFX_{{ part.fullname }}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% set assoc_curves = [] %}
+            {% if scene and scene.objects %}
+                {% for curve in curve_list %}
+                    {% for col in curve.users_collection %}
+                        {% for entry in part.objects %}
+                            {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                {% if assoc_curves.append(curve) %}{% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
+            {% if assoc_curves | length > 0 %}
+    [CustomShaderRZM_VFX_{{ part.fullname }}]
+    cs = ./modules/vfx_curve_cs.hlsl
+    cs-u5 = copy Resource{{ component.fullname }}Position
+    cs-t50 = copy ResourceRZM_CurveData
+    cs-t120 = IniParams
+    x98 = time
+    w98 = time % 1
+    Resource{{ component.fullname }}Position = ref cs-u5
+    {% set comp_vfx_verts = get_vfx_vertex_count(scene, component.fullname) | int %}
+    {% set total_v_count = component.vertex_count + comp_vfx_verts %}
+    dispatch = {{ ((total_v_count + 127) // 128) | int }}, 1, 1
+    x115 = {{ component.vertex_count }}
+    cs-u5 = null
+    cs-t50 = null
+    cs-t120 = null
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    {% endif %}
 
     {#% for component in mod_file.components %}
         {% for part in component.parts %}
@@ -301,6 +414,20 @@
             filename = {{ part.fullname }}.ib
         {% endfor %}
     {% endfor %}
+
+    {# Curve VFX resources #}
+    {% set curve_list = [] %}
+    {% if scene and scene.objects %}
+        {% for obj in scene.objects if obj.type == 'CURVE' and obj.get('RZM.CURVE_VFX') %}
+            {% if curve_list.append(obj) %}{% endif %}
+        {% endfor %}
+    {% endif %}
+    {% if curve_list | length > 0 %}
+    [ResourceRZM_CurveData]
+    type = Buffer
+    stride = 40
+    filename = res/curve_data.buf
+    {% endif %}
 {%endmacro%}
 
 {% macro resourcetextures(mod_file,scene) %}

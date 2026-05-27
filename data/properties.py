@@ -2,7 +2,7 @@
 import bpy
 from bpy.props import (
     StringProperty, IntProperty, FloatProperty, BoolProperty,
-    IntVectorProperty, CollectionProperty, PointerProperty, EnumProperty,
+    IntVectorProperty, FloatVectorProperty, CollectionProperty, PointerProperty, EnumProperty,
 )
 
 # Импорт из под-модулей в той же папке data
@@ -30,6 +30,10 @@ from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMCompon
 from .p_component_manager import RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
 from ..operators import custom_draw_ops
 
+class RZMVFXVertexCount(bpy.types.PropertyGroup):
+    component_name: StringProperty(name="Component Name")
+    vertex_count: IntProperty(name="Vertex Count", default=0)
+
 # --- ГЛАВНЫЙ КЛАСС (ROOT) ---
 class RZMenuProperties(bpy.types.PropertyGroup):
     game: PointerProperty(type=RZMGameSettings)
@@ -51,6 +55,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     export_texture_slots: BoolProperty(name="textureSlots", default=True)
     export_toggle_swap_mode: EnumProperty(name="toggleSwapMode", items=[('None', "None", ""), ('DToggle', "DToggle", ""), ('RToggle', "RToggle", "")], default='None')
     addons: PointerProperty(type=RZMenuAddonSettings)
+    vfx_vertex_counts: CollectionProperty(type=RZMVFXVertexCount)
 
     @property
     def author_name_global(self):
@@ -184,9 +189,90 @@ classes_to_register = [
     RZM_AddonPreferences,
     RZMAutoMenuSettings,
     RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings,
+    RZMVFXVertexCount,
     RZMenuProperties,
     RZModProducerSettings,
 ]
+# Getter/Setter helper functions for VFX Curve properties to sync with custom ID-properties
+def get_vfx_enabled(self):
+    return bool(self.get("RZM.CURVE_VFX", False))
+def set_vfx_enabled(self, value):
+    self["RZM.CURVE_VFX"] = value
+
+def get_vfx_profile(self):
+    val = self.get("RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE", "AUTO")
+    if val not in {"AUTO", "NONE", "ZENLESS_ZONE_ZERO", "GENSHIN_IMPACT"}:
+        return "AUTO"
+    return val
+def set_vfx_profile(self, value):
+    self["RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE"] = value
+
+def get_vfx_size(self):
+    return self.get("RZM.CURVE_VFX.BASE_SIZE", 0.05)
+def set_vfx_size(self, value):
+    self["RZM.CURVE_VFX.BASE_SIZE"] = value
+
+def get_vfx_aspect(self):
+    return self.get("RZM.CURVE_VFX.TRI_ASPECT", 1.0)
+def set_vfx_aspect(self, value):
+    self["RZM.CURVE_VFX.TRI_ASPECT"] = value
+
+def get_vfx_speed(self):
+    return self.get("RZM.CURVE_VFX.SPEED", 0.5)
+def set_vfx_speed(self, value):
+    self["RZM.CURVE_VFX.SPEED"] = value
+
+def get_vfx_type(self):
+    val = str(self.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0))
+    if val not in {"0", "1", "2"}:
+        return "0"
+    return val
+def set_vfx_type(self, value):
+    try:
+        self["RZM.CURVE_VFX.MESH_FX_TYPE"] = int(value)
+    except ValueError:
+        self["RZM.CURVE_VFX.MESH_FX_TYPE"] = 0
+
+def get_vfx_particle_count(self):
+    return self.get("RZM.CURVE_VFX.PARTICLE_COUNT", 1)
+def set_vfx_particle_count(self, value):
+    self["RZM.CURVE_VFX.PARTICLE_COUNT"] = value
+
+def get_vfx_weight_indices(self):
+    val = self.get("RZM.CURVE_VFX.WEIGHT_INDICES", (-1, -1, -1, -1))
+    if len(val) < 4:
+        val = list(val) + [-1] * (4 - len(val))
+    return tuple(int(x) for x in val[:4])
+def set_vfx_weight_indices(self, value):
+    self["RZM.CURVE_VFX.WEIGHT_INDICES"] = list(value)
+
+def get_vfx_weight_values(self):
+    val = self.get("RZM.CURVE_VFX.WEIGHT_VALUES", (0.0, 0.0, 0.0, 0.0))
+    if len(val) < 4:
+        val = list(val) + [0.0] * (4 - len(val))
+    return tuple(float(x) for x in val[:4])
+def set_vfx_weight_values(self, value):
+    self["RZM.CURVE_VFX.WEIGHT_VALUES"] = list(value)
+
+def get_vfx_start_radius(self):
+    return self.get("RZM.CURVE_VFX.START_RADIUS", 0.005)
+def set_vfx_start_radius(self, value):
+    self["RZM.CURVE_VFX.START_RADIUS"] = value
+
+def get_vfx_end_radius(self):
+    return self.get("RZM.CURVE_VFX.END_RADIUS", 0.060)
+def set_vfx_end_radius(self, value):
+    self["RZM.CURVE_VFX.END_RADIUS"] = value
+
+def get_vfx_curve_right(self):
+    return self.get("RZM.CURVE_VFX.CURVE_RIGHT", -0.1)
+def set_vfx_curve_right(self, value):
+    self["RZM.CURVE_VFX.CURVE_RIGHT"] = value
+
+def get_vfx_curve_up(self):
+    return self.get("RZM.CURVE_VFX.CURVE_UP", -0.15)
+def set_vfx_curve_up(self, value):
+    self["RZM.CURVE_VFX.CURVE_UP"] = value
 
 def register():
     for cls in classes_to_register:
@@ -199,6 +285,115 @@ def register():
         name="Export Tiers",
         description="Тиры Mod Producer для этого мэша. Пусто = все тиры."
     )
+    
+    # --- RZM VFX Curve Properties ---
+    bpy.types.Object.rzm_curve_vfx_enabled = BoolProperty(
+        name="VFX Enabled",
+        description="Enable VFX on this curve object",
+        get=get_vfx_enabled,
+        set=set_vfx_enabled
+    )
+    bpy.types.Object.rzm_curve_vfx_coordinate_remap_profile = EnumProperty(
+        name="Coordinate Remap",
+        description="How curve coordinates should be remapped",
+        items=[
+            ("AUTO", "Auto", "Use the current RZM game selection"),
+            ("NONE", "None", "Do not remap curve coordinates"),
+            ("ZENLESS_ZONE_ZERO", "Zenless Zone Zero", "Swap Y/Z for ZZZ buffer space"),
+            ("GENSHIN_IMPACT", "Genshin Impact", "Swap Y/Z, then rotate around point 0 by X Euler -90 degrees"),
+        ],
+        get=get_vfx_profile,
+        set=set_vfx_profile
+    )
+    bpy.types.Object.rzm_curve_vfx_mesh_fx_size_base = FloatProperty(
+        name="MESH_FX_SIZE_BASE",
+        description="Base mesh FX size",
+        min=0.0,
+        precision=6,
+        get=get_vfx_size,
+        set=set_vfx_size
+    )
+    bpy.types.Object.rzm_curve_vfx_tri_aspect = FloatProperty(
+        name="Tri Aspect",
+        description="Tri aspect ratio",
+        min=0.01,
+        precision=6,
+        get=get_vfx_aspect,
+        set=set_vfx_aspect
+    )
+    bpy.types.Object.rzm_curve_vfx_speed = FloatProperty(
+        name="Speed",
+        description="Animation speed",
+        min=0.0,
+        precision=6,
+        get=get_vfx_speed,
+        set=set_vfx_speed
+    )
+    bpy.types.Object.rzm_curve_vfx_mesh_fx_type = EnumProperty(
+        name="Mesh FX Type",
+        items=[
+            ("0", "Triangle", "3 verts, 1 triangle"),
+            ("1", "Quad", "4 verts, 2 triangles"),
+            ("2", "Circle", "6 verts, 4 triangles"),
+        ],
+        get=get_vfx_type,
+        set=set_vfx_type
+    )
+    bpy.types.Object.rzm_curve_vfx_particle_count = IntProperty(
+        name="Particle Count",
+        description="How many particles this curve object should emit",
+        min=0,
+        get=get_vfx_particle_count,
+        set=set_vfx_particle_count
+    )
+    bpy.types.Object.rzm_curve_vfx_weight_indices = IntVectorProperty(
+        name="Weight Indices",
+        description="Up to 4 technical bind indices; -1 means unused",
+        size=4,
+        min=-1,
+        max=999999,
+        get=get_vfx_weight_indices,
+        set=set_vfx_weight_indices
+    )
+    bpy.types.Object.rzm_curve_vfx_weight_values = FloatVectorProperty(
+        name="Weight Values",
+        description="Up to 4 technical bind weights",
+        size=4,
+        min=0.0,
+        max=1.0,
+        precision=6,
+        get=get_vfx_weight_values,
+        set=set_vfx_weight_values
+    )
+    bpy.types.Object.rzm_curve_vfx_start_radius = FloatProperty(
+        name="Start Radius",
+        description="VFX Start Radius",
+        precision=6,
+        get=get_vfx_start_radius,
+        set=set_vfx_start_radius
+    )
+    bpy.types.Object.rzm_curve_vfx_end_radius = FloatProperty(
+        name="End Radius",
+        description="VFX End Radius",
+        precision=6,
+        get=get_vfx_end_radius,
+        set=set_vfx_end_radius
+    )
+    bpy.types.Object.rzm_curve_vfx_curve_right = FloatProperty(
+        name="Curve Right",
+        description="VFX Curve Right Shift",
+        precision=6,
+        get=get_vfx_curve_right,
+        set=set_vfx_curve_right
+    )
+    bpy.types.Object.rzm_curve_vfx_curve_up = FloatProperty(
+        name="Curve Up",
+        description="VFX Curve Up Shift",
+        precision=6,
+        get=get_vfx_curve_up,
+        set=set_vfx_curve_up
+    )
+
     custom_draw_ops.register()
     # Регистрация scene properties
     bpy.types.Scene.rzm_active_element_index = IntProperty(name="Active Element Index")
@@ -263,6 +458,25 @@ def unregister():
     del bpy.types.Scene.rzm_cm_active_part_index
     if hasattr(bpy.types.Object, "rzm_tier_list"):
         del bpy.types.Object.rzm_tier_list
+        
+    for attr in [
+        "rzm_curve_vfx_enabled",
+        "rzm_curve_vfx_coordinate_remap_profile",
+        "rzm_curve_vfx_mesh_fx_size_base",
+        "rzm_curve_vfx_tri_aspect",
+        "rzm_curve_vfx_speed",
+        "rzm_curve_vfx_mesh_fx_type",
+        "rzm_curve_vfx_particle_count",
+        "rzm_curve_vfx_weight_indices",
+        "rzm_curve_vfx_weight_values",
+        "rzm_curve_vfx_start_radius",
+        "rzm_curve_vfx_end_radius",
+        "rzm_curve_vfx_curve_right",
+        "rzm_curve_vfx_curve_up"
+    ]:
+        if hasattr(bpy.types.Object, attr):
+            delattr(bpy.types.Object, attr)
+
     custom_draw_ops.unregister()
     del bpy.types.Scene.rzm_active_element_index
     del bpy.types.Scene.rzm_active_image_index

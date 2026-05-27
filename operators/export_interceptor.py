@@ -64,6 +64,13 @@ def _xxmi_hook(self, *args, **kwargs):
             print(f'[RZM] [CACHE] XXMI export cached: '
                   f'{len(cache["components"])} components  '
                   f'(use rzm_cache_info() in Python console to inspect)')
+            
+            # Run curve VFX patcher
+            try:
+                from ..utils import vfx_buffer_patcher
+                vfx_buffer_patcher.patch_buffers(bpy.context, cache)
+            except Exception as patch_err:
+                print(f"[RZM] [CACHE] VFX buffer patcher failed (non-fatal): {patch_err}")
         else:
             print('[RZM] [CACHE] XXMI export ran but cache build returned None.')
     except Exception as e:
@@ -147,6 +154,13 @@ def _efmi_hook(self, *args, **kwargs):
             save_export_logs(cache)
             print(f'[RZM] [CACHE] EFMI export cached: '
                   f'{len(cache["components"])} components')
+            
+            # Run curve VFX patcher
+            try:
+                from ..utils import vfx_buffer_patcher
+                vfx_buffer_patcher.patch_buffers(bpy.context, cache)
+            except Exception as patch_err:
+                print(f"[RZM] [CACHE] VFX buffer patcher failed (non-fatal): {patch_err}")
         else:
             print('[RZM] [CACHE] EFMI export ran but cache build returned None.')
     except Exception as e:

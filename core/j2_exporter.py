@@ -64,6 +64,13 @@ class RZMenuJ2Exporter:
         # Build context
         mod_file = StubModFile()
         scene = self.context.scene
+
+        # Pre-collect VFX vertex counts from curves before rendering template
+        try:
+            from ..utils.vfx_buffer_patcher import pre_collect_vfx_vertex_counts
+            pre_collect_vfx_vertex_counts(self.context)
+        except Exception as e:
+            print(f"[RZM-VFX] Error pre-collecting VFX vertex counts: {e}")
         
         try:
             from ..operators.export_cache import get_cache
