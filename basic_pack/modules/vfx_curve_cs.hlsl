@@ -29,9 +29,11 @@ StructuredBuffer<CurvePoint> CurveData : register(t50);
 // For example:
 //   To swap Y and Z axes: map Y to 3, and Z to 2.
 // =====================================================================
-#define AXIS_MAP_X   1
-#define AXIS_MAP_Y   2
-#define AXIS_MAP_Z   3
+// Defaults configured for Zenless Zone Zero:
+// (For Genshin Impact and Honkai Star Rail: X=-1, Y=2, Z=3)
+#define AXIS_MAP_X  -1
+#define AXIS_MAP_Y   3
+#define AXIS_MAP_Z   2
 
 float3 RemapCoords(float3 pos)
 {
@@ -160,13 +162,19 @@ void main(uint3 threadID : SV_DispatchThreadID)
     uint curve_idx = (uint)rw_buffer[i].normal.z;
     
     CurvePoint p_meta = CurveData[curve_idx * 33 + 32];
-    uint mesh_fx_type = (uint)p_meta.position.x;
-    float CFG_SIZE_START = p_meta.position.y;
-    float CFG_SIZE_END   = p_meta.position.z;
-    float CFG_CYCLE_DURATION = p_meta.tangent.x;
-    float CFG_DISPERSION_SCALE = p_meta.tangent.y;
-    float CFG_PHASE_RANDOMNESS = p_meta.tangent.z;
-    float CFG_POS_RANDOMNESS = p_meta.normal.x;
+    float packed_fx_and_end = p_meta.position.x;
+    uint mesh_fx_type = (uint)floor(packed_fx_and_end + 1e-6f);
+    float CFG_TL_END   = clamp(frac(packed_fx_and_end + 1e-6f) * 10.0f, 0.0f, 1.0f);
+
+    float CFG_SIZE_BASE  = p_meta.position.y;
+    float CFG_SIZE_START = p_meta.position.z;
+    float CFG_SIZE_END   = p_meta.tangent.x;
+    float CFG_CYCLE_DURATION = p_meta.tangent.y;
+    float CFG_DISPERSION_SCALE = p_meta.tangent.z;
+    float CFG_PHASE_RANDOMNESS = p_meta.normal.x;
+    float CFG_POS_RANDOMNESS = p_meta.normal.y;
+    float CFG_TL_START   = p_meta.normal.z;
+    float CFG_TL_MID     = p_meta.u;
 
     uint v_local_id = (uint)rw_buffer[i].tangent.w;
 
@@ -217,8 +225,15 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float phase_offset = phase_offset_raw * CFG_PHASE_RANDOMNESS;
     float cycle = frac(TIME / CFG_CYCLE_DURATION + phase_offset);
 
+    // Timeline Easing (quadratic interpolation passing through TL_START, TL_MID, TL_END)
+    float t = cycle;
+    float c = CFG_TL_START;
+    float b = 4.0f * CFG_TL_MID - 3.0f * CFG_TL_START - CFG_TL_END;
+    float a = 2.0f * (CFG_TL_START + CFG_TL_END - 2.0f * CFG_TL_MID);
+    float path_progress = a * t * t + b * t + c;
+
     // Сэмпл кривой
-    SampledPoint sampled = SampleCurve(curve_idx, cycle);
+    SampledPoint sampled = SampleCurve(curve_idx, path_progress);
     float3 pos_on_line = sampled.position;
 
     // Направление распыления ортогонально направлению кривой
@@ -237,8 +252,8 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float jitter_amount = hash(particle_id * 79 + 5) * CFG_POS_RANDOMNESS;
     final_center += jitter_dir * jitter_amount;
 
-    // Управление размером (интерполяция от старта к концу с плавным фейдом на границах)
-    float current_size = lerp(CFG_SIZE_START, CFG_SIZE_END, cycle);
+    // Управление размером (базовый размер, умноженный на процентные коэффициенты старта/конца)
+    float current_size = CFG_SIZE_BASE * lerp(CFG_SIZE_START, CFG_SIZE_END, cycle);
     float fade = smoothstep(0.0f, 0.1f, cycle) * smoothstep(1.0f, 0.9f, cycle);
     current_size *= fade;
 

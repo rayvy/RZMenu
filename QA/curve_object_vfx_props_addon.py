@@ -19,8 +19,12 @@ from bpy.types import Operator, Panel, PropertyGroup
 PROP_KEYS = {
     "marker": "RZM.CURVE_VFX",
     "coordinate_remap_profile": "RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE",
+    "particle_size_base": "RZM.CURVE_VFX.PARTICLE_SIZE_BASE",
     "particle_size_start": "RZM.CURVE_VFX.PARTICLE_SIZE_START",
     "particle_size_end": "RZM.CURVE_VFX.PARTICLE_SIZE_END",
+    "timeline_start_pos": "RZM.CURVE_VFX.TIMELINE_START_POS",
+    "timeline_mid_pos": "RZM.CURVE_VFX.TIMELINE_MID_POS",
+    "timeline_end_pos": "RZM.CURVE_VFX.TIMELINE_END_POS",
     "dispersion_scale": "RZM.CURVE_VFX.DISPERSION_SCALE",
     "cycle_duration": "RZM.CURVE_VFX.CYCLE_DURATION",
     "phase_randomness": "RZM.CURVE_VFX.PHASE_RANDOMNESS",
@@ -69,8 +73,12 @@ def prop_get(obj, key, default=None, legacy_key=None):
 def write_object_props(obj, settings):
     obj[PROP_KEYS["marker"]] = True
     obj[PROP_KEYS["coordinate_remap_profile"]] = settings.coordinate_remap_profile
+    obj[PROP_KEYS["particle_size_base"]] = settings.particle_size_base
     obj[PROP_KEYS["particle_size_start"]] = settings.particle_size_start
     obj[PROP_KEYS["particle_size_end"]] = settings.particle_size_end
+    obj[PROP_KEYS["timeline_start_pos"]] = settings.timeline_start_pos
+    obj[PROP_KEYS["timeline_mid_pos"]] = settings.timeline_mid_pos
+    obj[PROP_KEYS["timeline_end_pos"]] = settings.timeline_end_pos
     obj[PROP_KEYS["dispersion_scale"]] = settings.dispersion_scale
     obj[PROP_KEYS["cycle_duration"]] = settings.cycle_duration
     obj[PROP_KEYS["phase_randomness"]] = settings.phase_randomness
@@ -141,14 +149,7 @@ def rotate_x_minus_90_around_origin(vec, origin):
 
 
 def remap_curve_point_to_buffer(local_pos, local_origin, profile):
-    if profile == "ZENLESS_ZONE_ZERO":
-        return swap_yz(local_pos)
-
-    if profile == "GENSHIN_IMPACT":
-        remapped_pos = swap_yz(local_pos)
-        remapped_origin = swap_yz(local_origin)
-        return rotate_x_minus_90_around_origin(remapped_pos, remapped_origin)
-
+    # Remapping is now done on the GPU.
     return local_pos
 
 
@@ -512,19 +513,54 @@ class RZM_CurveVFXSettings(PropertyGroup):
         default="AUTO",
     )
 
-    particle_size_start: FloatProperty(
-        name="Start Size",
-        description="Particle size at the start of the curve (in meters)",
+    particle_size_base: FloatProperty(
+        name="Base Size",
+        description="Base particle size (in meters)",
         default=0.05,
         min=0.0,
         precision=6,
     )
 
-    particle_size_end: FloatProperty(
-        name="End Size",
-        description="Particle size at the end of the curve (in meters)",
-        default=0.01,
+    particle_size_start: FloatProperty(
+        name="Start Size Scale",
+        description="Particle size scale factor at start (e.g. 1.0 = 100%)",
+        default=1.0,
         min=0.0,
+        precision=6,
+    )
+
+    particle_size_end: FloatProperty(
+        name="End Size Scale",
+        description="Particle size scale factor at end (e.g. 0.2 = 20%)",
+        default=0.2,
+        min=0.0,
+        precision=6,
+    )
+
+    timeline_start_pos: FloatProperty(
+        name="Timeline Start Pos",
+        description="Path progress at lifetime start (0%)",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        precision=6,
+    )
+
+    timeline_mid_pos: FloatProperty(
+        name="Timeline Mid Pos",
+        description="Path progress at lifetime middle (50%)",
+        default=0.5,
+        min=0.0,
+        max=1.0,
+        precision=6,
+    )
+
+    timeline_end_pos: FloatProperty(
+        name="Timeline End Pos",
+        description="Path progress at lifetime end (100%)",
+        default=1.0,
+        min=0.0,
+        max=1.0,
         precision=6,
     )
 
@@ -716,8 +752,12 @@ class RZM_OT_validate_curve_vfx(Operator):
             particle_count = curve_obj.get("RZM.CURVE_VFX.PARTICLE_COUNT", 1)
             coordinate_remap_profile_raw = prop_get(curve_obj, PROP_KEYS["coordinate_remap_profile"], "AUTO")
             coordinate_remap_profile = resolve_coordinate_remap_profile(context, coordinate_remap_profile_raw)
-            particle_size_start = prop_get(curve_obj, PROP_KEYS["particle_size_start"], 0.05, LEGACY_PROP_KEYS["mesh_fx_size_base"])
-            particle_size_end = prop_get(curve_obj, PROP_KEYS["particle_size_end"], 0.01)
+            particle_size_base = prop_get(curve_obj, PROP_KEYS["particle_size_base"], 0.05, LEGACY_PROP_KEYS["mesh_fx_size_base"])
+            particle_size_start = prop_get(curve_obj, PROP_KEYS["particle_size_start"], 1.0)
+            particle_size_end = prop_get(curve_obj, PROP_KEYS["particle_size_end"], 0.2)
+            timeline_start_pos = prop_get(curve_obj, PROP_KEYS["timeline_start_pos"], 0.0)
+            timeline_mid_pos = prop_get(curve_obj, PROP_KEYS["timeline_mid_pos"], 0.5)
+            timeline_end_pos = prop_get(curve_obj, PROP_KEYS["timeline_end_pos"], 1.0)
             dispersion_scale = prop_get(curve_obj, PROP_KEYS["dispersion_scale"], 1.0)
             cycle_duration = prop_get(curve_obj, PROP_KEYS["cycle_duration"], 2.0, LEGACY_PROP_KEYS["speed"])
             phase_randomness = prop_get(curve_obj, PROP_KEYS["phase_randomness"], 1.0)
@@ -781,9 +821,11 @@ class RZM_OT_validate_curve_vfx(Operator):
             print(f"[RZM-VFX]       * Particle Count: {particle_count}")
             mesh_fx_type_str = "Triangle" if mesh_fx_type == 0 else ("Quad" if mesh_fx_type == 1 else "Circle")
             print(f"[RZM-VFX]       * Mesh FX Type: {mesh_fx_type} ({mesh_fx_type_str})")
-            print(f"[RZM-VFX]       * Particle Size Start/End: {particle_size_start:.4f} -> {particle_size_end:.4f}")
+            print(f"[RZM-VFX]       * Particle Base Size: {particle_size_base:.4f} m")
+            print(f"[RZM-VFX]       * Particle Scale Start/End: {particle_size_start:.4f} -> {particle_size_end:.4f}")
             print(f"[RZM-VFX]       * Cycle Duration: {cycle_duration:.4f} sec")
-            print(f"[RZM-VFX]       * Coordinate Remap: {coordinate_remap_profile_raw} -> {coordinate_remap_profile}")
+            print(f"[RZM-VFX]       * Timeline Positions: Start={timeline_start_pos:.4f}, Mid={timeline_mid_pos:.4f}, End={timeline_end_pos:.4f}")
+            print(f"[RZM-VFX]       * Coordinate Remap (handled on GPU): {coordinate_remap_profile_raw} -> {coordinate_remap_profile}")
             print(f"[RZM-VFX]       * Dispersion Scale: {dispersion_scale:.4f}")
             print(f"[RZM-VFX]       * Phase / Position Randomness: Phase={phase_randomness:.4f}, Pos={pos_randomness:.4f}")
             print(f"[RZM-VFX]       * Curve Spline Control Points Radius: {start_radius:.6f} -> {end_radius:.6f} (Visual bounds: {start_radius*0.01*dispersion_scale:.4f}m -> {end_radius*0.01*dispersion_scale:.4f}m)")
@@ -934,15 +976,17 @@ class VIEW3D_PT_rzm_curve_vfx(Panel):
 
         box = layout.box()
         box.label(text="Shader Props")
-        box.prop(settings, "coordinate_remap_profile")
-        box.prop(settings, "mesh_fx_size_base")
-        box.prop(settings, "tri_aspect")
-        box.prop(settings, "speed")
         box.prop(settings, "mesh_fx_type")
+        box.prop(settings, "particle_size_base")
+        box.prop(settings, "particle_size_start")
+        box.prop(settings, "particle_size_end")
         box.prop(settings, "particle_count")
 
         tbox = layout.box()
-        tbox.label(text="Radii & Shifts")
+        tbox.label(text="Timeline & Radii")
+        tbox.prop(settings, "timeline_start_pos")
+        tbox.prop(settings, "timeline_mid_pos")
+        tbox.prop(settings, "timeline_end_pos")
         tbox.prop(settings, "start_radius")
         tbox.prop(settings, "end_radius")
         tbox.prop(settings, "curve_right")

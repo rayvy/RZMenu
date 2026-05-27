@@ -20,12 +20,7 @@ def rotate_x_minus_90_around_origin(vec, origin):
     return origin + rotated_delta
 
 def remap_curve_point_to_buffer(local_pos, local_origin, profile):
-    if profile == "ZENLESS_ZONE_ZERO":
-        return swap_yz(local_pos)
-    if profile == "GENSHIN_IMPACT":
-        remapped_pos = swap_yz(local_pos)
-        remapped_origin = swap_yz(local_origin)
-        return rotate_x_minus_90_around_origin(remapped_pos, remapped_origin)
+    # No remapping on Python side; we do it in the compute shader on the GPU.
     return local_pos
 
 def resolve_coordinate_remap_profile(context, requested_profile):
@@ -428,14 +423,11 @@ def patch_buffers(context, cache):
             point_data += struct.pack('<f', r_packed)
             all_curve_bytes.extend(point_data)
 
-        # 33rd point contains metadata (mesh_fx_type, particle_size_start, particle_size_end, cycle_duration, dispersion_scale, phase_randomness, pos_randomness)
+        # 33rd point contains metadata (mesh_fx_type, particle_size_base, particle_size_start, particle_size_end, cycle_duration, dispersion_scale, phase_randomness, pos_randomness, timeline positions)
         meta_fx_type = float(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
-        
-        # start size (fallback to old mesh_fx_size_base and base_size)
-        meta_size_start = float(get_curve_prop(curve_obj, "particle_size_start", None) or get_curve_prop(curve_obj, "mesh_fx_size_base", 0.05))
-        
-        # end size (fallback to start size to prevent 0 width if not configured)
-        meta_size_end = float(get_curve_prop(curve_obj, "particle_size_end", meta_size_start))
+        meta_size_base = float(get_curve_prop(curve_obj, "particle_size_base", 0.05))
+        meta_size_start = float(get_curve_prop(curve_obj, "particle_size_start", 1.0))
+        meta_size_end = float(get_curve_prop(curve_obj, "particle_size_end", 0.2))
         
         # cycle duration (fallback to speed via conversion)
         speed_val = get_curve_prop(curve_obj, "speed", 0.5)
@@ -445,13 +437,16 @@ def patch_buffers(context, cache):
         meta_dispersion = float(get_curve_prop(curve_obj, "dispersion_scale", 1.0))
         meta_phase_rand = float(get_curve_prop(curve_obj, "phase_randomness", 1.0))
         meta_pos_rand = float(get_curve_prop(curve_obj, "pos_randomness", 0.0))
+        meta_tl_start = float(get_curve_prop(curve_obj, "timeline_start_pos", 0.0))
+        meta_tl_mid = float(get_curve_prop(curve_obj, "timeline_mid_pos", 0.5))
+        meta_tl_end = float(get_curve_prop(curve_obj, "timeline_end_pos", 1.0))
         
         meta_data = struct.pack(
             '<ffffffffff',
-            meta_fx_type, meta_size_start, meta_size_end,  # position.xyz
-            meta_cycle_dur, meta_dispersion, meta_phase_rand,  # tangent.xyz
-            meta_pos_rand, 0.0, 0.0,                       # normal.xyz
-            0.0                                            # u
+            meta_fx_type + meta_tl_end * 0.1, meta_size_base, meta_size_start,  # position.xyz
+            meta_size_end, meta_cycle_dur, meta_dispersion,                    # tangent.xyz
+            meta_phase_rand, meta_pos_rand, meta_tl_start,                     # normal.xyz
+            meta_tl_mid                                                        # u
         )
         all_curve_bytes.extend(meta_data)
 

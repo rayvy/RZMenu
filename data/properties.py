@@ -194,10 +194,71 @@ classes_to_register = [
     RZModProducerSettings,
 ]
 # Getter/Setter helper functions for VFX Curve properties to sync with custom ID-properties
+def ensure_vfx_properties_initialized(self):
+    if not self.get("RZM.CURVE_VFX"):
+        return
+
+    # If already migrated/initialized, skip to avoid overwriting edits
+    if "RZM.CURVE_VFX.PARTICLE_SIZE_BASE" in self:
+        return
+
+    # Perform migration from legacy properties
+    legacy_start = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
+    legacy_mesh_base = self.get("RZM.CURVE_VFX.MESH_FX_SIZE_BASE")
+    legacy_base_size = self.get("RZM.CURVE_VFX.BASE_SIZE")
+
+    # 1. Determine base size
+    base_val = 0.05
+    if legacy_start is not None:
+        base_val = legacy_start
+    elif legacy_mesh_base is not None:
+        base_val = legacy_mesh_base
+    elif legacy_base_size is not None:
+        base_val = legacy_base_size
+
+    self["RZM.CURVE_VFX.PARTICLE_SIZE_BASE"] = base_val
+
+    # 2. Determine start scale (always 1.0 on migration, since base_val took its absolute value)
+    self["RZM.CURVE_VFX.PARTICLE_SIZE_START"] = 1.0
+
+    # 3. Determine end scale
+    legacy_end = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_END")
+    if legacy_end is not None:
+        if base_val > 0.0:
+            self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = legacy_end / base_val
+        else:
+            self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = 0.2
+    else:
+        self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = 0.2
+
+    # 4. Initialize timeline positions
+    if "RZM.CURVE_VFX.TIMELINE_START_POS" not in self:
+        self["RZM.CURVE_VFX.TIMELINE_START_POS"] = 0.0
+    if "RZM.CURVE_VFX.TIMELINE_MID_POS" not in self:
+        self["RZM.CURVE_VFX.TIMELINE_MID_POS"] = 0.5
+    if "RZM.CURVE_VFX.TIMELINE_END_POS" not in self:
+        self["RZM.CURVE_VFX.TIMELINE_END_POS"] = 1.0
+
+    # 5. Initialize other properties so they appear in custom properties immediately
+    for key, default in [
+        ("RZM.CURVE_VFX.PARTICLE_COUNT", 1),
+        ("RZM.CURVE_VFX.DISPERSION_SCALE", 1.0),
+        ("RZM.CURVE_VFX.CYCLE_DURATION", 2.0),
+        ("RZM.CURVE_VFX.PHASE_RANDOMNESS", 1.0),
+        ("RZM.CURVE_VFX.POS_RANDOMNESS", 0.0),
+    ]:
+        if key not in self:
+            self[key] = default
+            
+    if "RZM.CURVE_VFX.MESH_FX_TYPE" not in self:
+        self["RZM.CURVE_VFX.MESH_FX_TYPE"] = "0"
+
 def get_vfx_enabled(self):
     return bool(self.get("RZM.CURVE_VFX", False))
 def set_vfx_enabled(self, value):
     self["RZM.CURVE_VFX"] = value
+    if value:
+        ensure_vfx_properties_initialized(self)
 
 def get_vfx_profile(self):
     val = self.get("RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE", "AUTO")
@@ -211,25 +272,72 @@ def set_vfx_profile(self, value):
         val_str = str(value)
     self["RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE"] = val_str
 
-def get_vfx_size_start(self):
+def get_vfx_size_base(self):
+    val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_BASE")
+    if val is not None:
+        return val
+    # Fallback to legacy start or legacy mesh base size or default
     val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
     if val is None:
         val = self.get("RZM.CURVE_VFX.MESH_FX_SIZE_BASE")
         if val is None:
             val = self.get("RZM.CURVE_VFX.BASE_SIZE", 0.05)
     return val
+def set_vfx_size_base(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.PARTICLE_SIZE_BASE"] = value
+
+def get_vfx_size_start(self):
+    val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
+    if val is not None:
+        base = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_BASE")
+        if base is None:
+            return 1.0
+        return val
+    return 1.0
 def set_vfx_size_start(self, value):
+    ensure_vfx_properties_initialized(self)
     self["RZM.CURVE_VFX.PARTICLE_SIZE_START"] = value
 
 def get_vfx_size_end(self):
     val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_END")
-    if val is None:
-        val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
-        if val is None:
-            val = 0.01
-    return val
+    base = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_BASE")
+    if base is None:
+        # Legacy file: return end_abs / start_abs
+        end_abs = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_END")
+        if end_abs is None:
+            return 0.2
+        start_abs = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
+        if start_abs is None:
+            start_abs = self.get("RZM.CURVE_VFX.MESH_FX_SIZE_BASE", 0.05)
+        if start_abs > 0.0:
+            return end_abs / start_abs
+        return 0.2
+    
+    if val is not None:
+        return val
+    return 0.2
 def set_vfx_size_end(self, value):
+    ensure_vfx_properties_initialized(self)
     self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = value
+
+def get_vfx_tl_start(self):
+    return self.get("RZM.CURVE_VFX.TIMELINE_START_POS", 0.0)
+def set_vfx_tl_start(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.TIMELINE_START_POS"] = value
+
+def get_vfx_tl_mid(self):
+    return self.get("RZM.CURVE_VFX.TIMELINE_MID_POS", 0.5)
+def set_vfx_tl_mid(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.TIMELINE_MID_POS"] = value
+
+def get_vfx_tl_end(self):
+    return self.get("RZM.CURVE_VFX.TIMELINE_END_POS", 1.0)
+def set_vfx_tl_end(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.TIMELINE_END_POS"] = value
 
 def get_vfx_dispersion_scale(self):
     return self.get("RZM.CURVE_VFX.DISPERSION_SCALE", 1.0)
@@ -327,21 +435,58 @@ def register():
         get=get_vfx_profile,
         set=set_vfx_profile
     )
-    bpy.types.Object.rzm_curve_vfx_particle_size_start = FloatProperty(
-        name="Start Size",
-        description="Particle size at the start of the curve (in meters)",
+    bpy.types.Object.rzm_curve_vfx_particle_size_base = FloatProperty(
+        name="Base Size",
+        description="Base particle size (in meters)",
         min=0.0,
+        precision=6,
+        get=get_vfx_size_base,
+        set=set_vfx_size_base
+    )
+    bpy.types.Object.rzm_curve_vfx_particle_size_start = FloatProperty(
+        name="Start Size Scale",
+        description="Particle size scale factor at start (e.g. 1.0 = 100%)",
+        min=0.0,
+        max=1.0,
         precision=6,
         get=get_vfx_size_start,
         set=set_vfx_size_start
     )
     bpy.types.Object.rzm_curve_vfx_particle_size_end = FloatProperty(
-        name="End Size",
-        description="Particle size at the end of the curve (in meters)",
+        name="End Size Scale",
+        description="Particle size scale factor at end (e.g. 0.2 = 20%)",
         min=0.0,
+        max=1.0,
         precision=6,
         get=get_vfx_size_end,
         set=set_vfx_size_end
+    )
+    bpy.types.Object.rzm_curve_vfx_timeline_start_pos = FloatProperty(
+        name="Timeline Start Pos",
+        description="Path progress (0.0 to 1.0) at particle lifetime start (0%)",
+        min=0.0,
+        max=1.0,
+        precision=6,
+        get=get_vfx_tl_start,
+        set=set_vfx_tl_start
+    )
+    bpy.types.Object.rzm_curve_vfx_timeline_mid_pos = FloatProperty(
+        name="Timeline Mid Pos",
+        description="Path progress (0.0 to 1.0) at particle lifetime middle (50%)",
+        min=0.0,
+        max=1.0,
+        precision=6,
+        get=get_vfx_tl_mid,
+        set=set_vfx_tl_mid
+    )
+    bpy.types.Object.rzm_curve_vfx_timeline_end_pos = FloatProperty(
+        name="Timeline End Pos",
+        description="Path progress (0.0 to 1.0) at particle lifetime end (100%)",
+        min=0.0,
+        max=1.0,
+        precision=6,
+        get=get_vfx_tl_end,
+        set=set_vfx_tl_end
     )
     bpy.types.Object.rzm_curve_vfx_dispersion_scale = FloatProperty(
         name="Dispersion Scale",
@@ -482,6 +627,16 @@ def unregister():
         "rzm_curve_vfx_enabled",
         "rzm_curve_vfx_coordinate_remap_profile",
         "rzm_curve_vfx_mesh_fx_size_base",
+        "rzm_curve_vfx_particle_size_base",
+        "rzm_curve_vfx_particle_size_start",
+        "rzm_curve_vfx_particle_size_end",
+        "rzm_curve_vfx_timeline_start_pos",
+        "rzm_curve_vfx_timeline_mid_pos",
+        "rzm_curve_vfx_timeline_end_pos",
+        "rzm_curve_vfx_dispersion_scale",
+        "rzm_curve_vfx_cycle_duration",
+        "rzm_curve_vfx_phase_randomness",
+        "rzm_curve_vfx_pos_randomness",
         "rzm_curve_vfx_tri_aspect",
         "rzm_curve_vfx_speed",
         "rzm_curve_vfx_mesh_fx_type",

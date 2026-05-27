@@ -374,14 +374,14 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 gbox.label(text="Particle Geometry", icon='MESH_DATA')
                 gcol = gbox.column(align=True)
                 gcol.prop(target_obj, "rzm_curve_vfx_mesh_fx_type", text="Mesh Type")
-                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size")
-                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size")
+                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_base", text="Base Size")
+                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size Scale")
+                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size Scale")
                 
                 # Section B: Path & Dispersion
                 dbox = box.box()
                 dbox.label(text="Path & Dispersion", icon='SPHERE')
                 dcol = dbox.column(align=True)
-                dcol.prop(target_obj, "rzm_curve_vfx_coordinate_remap_profile", text="Coord Remap")
                 dcol.prop(target_obj, "rzm_curve_vfx_particle_count", text="Particle Count")
                 dcol.prop(target_obj, "rzm_curve_vfx_dispersion_scale", text="Dispersion Scale")
                 
@@ -392,6 +392,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 acol.prop(target_obj, "rzm_curve_vfx_cycle_duration", text="Cycle Duration (sec)")
                 acol.prop(target_obj, "rzm_curve_vfx_phase_randomness", text="Phase Randomness")
                 acol.prop(target_obj, "rzm_curve_vfx_pos_randomness", text="Position Randomness")
+                acol.prop(target_obj, "rzm_curve_vfx_timeline_start_pos", text="Timeline Start")
+                acol.prop(target_obj, "rzm_curve_vfx_timeline_mid_pos", text="Timeline Mid")
+                acol.prop(target_obj, "rzm_curve_vfx_timeline_end_pos", text="Timeline End")
                 
                 # Section D: Technical Weights
                 wbox = box.box()
