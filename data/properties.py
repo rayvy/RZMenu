@@ -201,36 +201,76 @@ def set_vfx_enabled(self, value):
 
 def get_vfx_profile(self):
     val = self.get("RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE", "AUTO")
-    if val not in {"AUTO", "NONE", "ZENLESS_ZONE_ZERO", "GENSHIN_IMPACT"}:
-        return "AUTO"
-    return val
+    mapping = {"AUTO": 0, "NONE": 1, "ZENLESS_ZONE_ZERO": 2, "GENSHIN_IMPACT": 3}
+    return mapping.get(val, 0)
 def set_vfx_profile(self, value):
-    self["RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE"] = value
+    mapping_rev = {0: "AUTO", 1: "NONE", 2: "ZENLESS_ZONE_ZERO", 3: "GENSHIN_IMPACT"}
+    if isinstance(value, int):
+        val_str = mapping_rev.get(value, "AUTO")
+    else:
+        val_str = str(value)
+    self["RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE"] = val_str
 
-def get_vfx_size(self):
-    return self.get("RZM.CURVE_VFX.BASE_SIZE", 0.05)
-def set_vfx_size(self, value):
-    self["RZM.CURVE_VFX.BASE_SIZE"] = value
+def get_vfx_size_start(self):
+    val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
+    if val is None:
+        val = self.get("RZM.CURVE_VFX.MESH_FX_SIZE_BASE")
+        if val is None:
+            val = self.get("RZM.CURVE_VFX.BASE_SIZE", 0.05)
+    return val
+def set_vfx_size_start(self, value):
+    self["RZM.CURVE_VFX.PARTICLE_SIZE_START"] = value
 
-def get_vfx_aspect(self):
-    return self.get("RZM.CURVE_VFX.TRI_ASPECT", 1.0)
-def set_vfx_aspect(self, value):
-    self["RZM.CURVE_VFX.TRI_ASPECT"] = value
+def get_vfx_size_end(self):
+    val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_END")
+    if val is None:
+        val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
+        if val is None:
+            val = 0.01
+    return val
+def set_vfx_size_end(self, value):
+    self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = value
 
-def get_vfx_speed(self):
-    return self.get("RZM.CURVE_VFX.SPEED", 0.5)
-def set_vfx_speed(self, value):
-    self["RZM.CURVE_VFX.SPEED"] = value
+def get_vfx_dispersion_scale(self):
+    return self.get("RZM.CURVE_VFX.DISPERSION_SCALE", 1.0)
+def set_vfx_dispersion_scale(self, value):
+    self["RZM.CURVE_VFX.DISPERSION_SCALE"] = value
+
+def get_vfx_cycle_duration(self):
+    val = self.get("RZM.CURVE_VFX.CYCLE_DURATION")
+    if val is None:
+        speed = self.get("RZM.CURVE_VFX.SPEED")
+        if speed is not None and speed != 0.0:
+            val = 1.0 / speed
+        else:
+            val = 2.0
+    return val
+def set_vfx_cycle_duration(self, value):
+    self["RZM.CURVE_VFX.CYCLE_DURATION"] = value
+
+def get_vfx_phase_randomness(self):
+    return self.get("RZM.CURVE_VFX.PHASE_RANDOMNESS", 1.0)
+def set_vfx_phase_randomness(self, value):
+    self["RZM.CURVE_VFX.PHASE_RANDOMNESS"] = value
+
+def get_vfx_pos_randomness(self):
+    return self.get("RZM.CURVE_VFX.POS_RANDOMNESS", 0.0)
+def set_vfx_pos_randomness(self, value):
+    self["RZM.CURVE_VFX.POS_RANDOMNESS"] = value
 
 def get_vfx_type(self):
-    val = str(self.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0))
-    if val not in {"0", "1", "2"}:
-        return "0"
+    val = self.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0)
+    try:
+        val = int(val)
+    except (ValueError, TypeError):
+        val = 0
+    if val not in {0, 1, 2}:
+        return 0
     return val
 def set_vfx_type(self, value):
     try:
         self["RZM.CURVE_VFX.MESH_FX_TYPE"] = int(value)
-    except ValueError:
+    except (ValueError, TypeError):
         self["RZM.CURVE_VFX.MESH_FX_TYPE"] = 0
 
 def get_vfx_particle_count(self):
@@ -254,25 +294,7 @@ def get_vfx_weight_values(self):
 def set_vfx_weight_values(self, value):
     self["RZM.CURVE_VFX.WEIGHT_VALUES"] = list(value)
 
-def get_vfx_start_radius(self):
-    return self.get("RZM.CURVE_VFX.START_RADIUS", 0.005)
-def set_vfx_start_radius(self, value):
-    self["RZM.CURVE_VFX.START_RADIUS"] = value
 
-def get_vfx_end_radius(self):
-    return self.get("RZM.CURVE_VFX.END_RADIUS", 0.060)
-def set_vfx_end_radius(self, value):
-    self["RZM.CURVE_VFX.END_RADIUS"] = value
-
-def get_vfx_curve_right(self):
-    return self.get("RZM.CURVE_VFX.CURVE_RIGHT", -0.1)
-def set_vfx_curve_right(self, value):
-    self["RZM.CURVE_VFX.CURVE_RIGHT"] = value
-
-def get_vfx_curve_up(self):
-    return self.get("RZM.CURVE_VFX.CURVE_UP", -0.15)
-def set_vfx_curve_up(self, value):
-    self["RZM.CURVE_VFX.CURVE_UP"] = value
 
 def register():
     for cls in classes_to_register:
@@ -305,29 +327,54 @@ def register():
         get=get_vfx_profile,
         set=set_vfx_profile
     )
-    bpy.types.Object.rzm_curve_vfx_mesh_fx_size_base = FloatProperty(
-        name="MESH_FX_SIZE_BASE",
-        description="Base mesh FX size",
+    bpy.types.Object.rzm_curve_vfx_particle_size_start = FloatProperty(
+        name="Start Size",
+        description="Particle size at the start of the curve (in meters)",
         min=0.0,
         precision=6,
-        get=get_vfx_size,
-        set=set_vfx_size
+        get=get_vfx_size_start,
+        set=set_vfx_size_start
     )
-    bpy.types.Object.rzm_curve_vfx_tri_aspect = FloatProperty(
-        name="Tri Aspect",
-        description="Tri aspect ratio",
+    bpy.types.Object.rzm_curve_vfx_particle_size_end = FloatProperty(
+        name="End Size",
+        description="Particle size at the end of the curve (in meters)",
+        min=0.0,
+        precision=6,
+        get=get_vfx_size_end,
+        set=set_vfx_size_end
+    )
+    bpy.types.Object.rzm_curve_vfx_dispersion_scale = FloatProperty(
+        name="Dispersion Scale",
+        description="Overall scale multiplier for curve control point radius",
+        min=0.0,
+        precision=6,
+        get=get_vfx_dispersion_scale,
+        set=set_vfx_dispersion_scale
+    )
+    bpy.types.Object.rzm_curve_vfx_cycle_duration = FloatProperty(
+        name="Cycle Duration",
+        description="Duration of a full animation cycle in seconds",
         min=0.01,
         precision=6,
-        get=get_vfx_aspect,
-        set=set_vfx_aspect
+        get=get_vfx_cycle_duration,
+        set=set_vfx_cycle_duration
     )
-    bpy.types.Object.rzm_curve_vfx_speed = FloatProperty(
-        name="Speed",
-        description="Animation speed",
+    bpy.types.Object.rzm_curve_vfx_phase_randomness = FloatProperty(
+        name="Phase Randomness",
+        description="Randomness of particle birth phases (0 = clump/beam, 1 = continuous stream)",
+        min=0.0,
+        max=1.0,
+        precision=6,
+        get=get_vfx_phase_randomness,
+        set=set_vfx_phase_randomness
+    )
+    bpy.types.Object.rzm_curve_vfx_pos_randomness = FloatProperty(
+        name="Position Randomness",
+        description="Intensity of chaotic position noise / jitter",
         min=0.0,
         precision=6,
-        get=get_vfx_speed,
-        set=set_vfx_speed
+        get=get_vfx_pos_randomness,
+        set=set_vfx_pos_randomness
     )
     bpy.types.Object.rzm_curve_vfx_mesh_fx_type = EnumProperty(
         name="Mesh FX Type",
@@ -364,34 +411,6 @@ def register():
         precision=6,
         get=get_vfx_weight_values,
         set=set_vfx_weight_values
-    )
-    bpy.types.Object.rzm_curve_vfx_start_radius = FloatProperty(
-        name="Start Radius",
-        description="VFX Start Radius",
-        precision=6,
-        get=get_vfx_start_radius,
-        set=set_vfx_start_radius
-    )
-    bpy.types.Object.rzm_curve_vfx_end_radius = FloatProperty(
-        name="End Radius",
-        description="VFX End Radius",
-        precision=6,
-        get=get_vfx_end_radius,
-        set=set_vfx_end_radius
-    )
-    bpy.types.Object.rzm_curve_vfx_curve_right = FloatProperty(
-        name="Curve Right",
-        description="VFX Curve Right Shift",
-        precision=6,
-        get=get_vfx_curve_right,
-        set=set_vfx_curve_right
-    )
-    bpy.types.Object.rzm_curve_vfx_curve_up = FloatProperty(
-        name="Curve Up",
-        description="VFX Curve Up Shift",
-        precision=6,
-        get=get_vfx_curve_up,
-        set=set_vfx_curve_up
     )
 
     custom_draw_ops.register()

@@ -310,20 +310,46 @@
             {% endif %}
             {% if assoc_curves | length > 0 %}
     [CustomShaderRZM_VFX_{{ part.fullname }}]
+    ; TEST: VFX Curves Associated:
+    {% for c in assoc_curves %}
+    ;   - Curve name: "{{ c.name }}"
+    ;     * Type: {{ c.rzm_curve_vfx_mesh_fx_type }}
+    ;     * Start Size: {{ c.rzm_curve_vfx_particle_size_start }}
+    ;     * End Size: {{ c.rzm_curve_vfx_particle_size_end }}
+    ;     * Cycle Duration: {{ c.rzm_curve_vfx_cycle_duration }}
+    ;     * Dispersion Scale: {{ c.rzm_curve_vfx_dispersion_scale }}
+    ;     * Phase Randomness: {{ c.rzm_curve_vfx_phase_randomness }}
+    ;     * Position Randomness: {{ c.rzm_curve_vfx_pos_randomness }}
+        {% if c.data.splines | length > 0 %}
+            {% set spline = c.data.splines[0] %}
+    ;     * Spline Type: {{ spline.type }}
+            {% if spline.type == 'BEZIER' %}
+    ;     * Control Points (Bezier):
+                {% for pt in spline.bezier_points %}
+    ;       Point {{ loop.index0 }}: ({{ "%.4f"|format(pt.co.x) }}, {{ "%.4f"|format(pt.co.y) }}, {{ "%.4f"|format(pt.co.z) }}) | Radius: {{ "%.4f"|format(pt.radius) }}
+                {% endfor %}
+            {% else %}
+    ;     * Control Points (NURBS/Poly):
+                {% for pt in spline.points %}
+    ;       Point {{ loop.index0 }}: ({{ "%.4f"|format(pt.co.x) }}, {{ "%.4f"|format(pt.co.y) }}, {{ "%.4f"|format(pt.co.z) }}) | Radius: {{ "%.4f"|format(pt.radius) }}
+                {% endfor %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
     cs = ./modules/vfx_curve_cs.hlsl
     cs-u5 = copy Resource{{ component.fullname }}Position
     cs-t50 = copy ResourceRZM_CurveData
-    cs-t120 = IniParams
+    ;cs-t120 = IniParams Это кстати вообще не нужно передавать
     x98 = time
     w98 = time % 1
     Resource{{ component.fullname }}Position = ref cs-u5
     {% set comp_vfx_verts = get_vfx_vertex_count(scene, component.fullname) | int %}
     {% set total_v_count = component.vertex_count + comp_vfx_verts %}
-    dispatch = {{ ((total_v_count + 127) // 128) | int }}, 1, 1
     x115 = {{ component.vertex_count }}
+    dispatch = {{ ((total_v_count + 127) // 128) | int }}, 1, 1
     cs-u5 = null
-    cs-t50 = null
-    cs-t120 = null
+    ;cs-t50 = null обнулять вообще не нужно их, это не просто бесполезно, это вредно
+    ;cs-t120 = null ОСОБЕННО ЭТО, ЭТО ВООБЩЕ ДИКО, нельзя снмиать байнд с 120 слота
             {% endif %}
         {% endfor %}
     {% endfor %}

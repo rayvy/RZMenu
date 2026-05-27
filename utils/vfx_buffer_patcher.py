@@ -41,6 +41,23 @@ def resolve_coordinate_remap_profile(context, requested_profile):
         return "GENSHIN_IMPACT"
     return "NONE"
 
+def get_mod_output_path(context):
+    rzm = getattr(context.scene, "rzm", None)
+    if not rzm:
+        return ""
+    game = rzm.game.selection if hasattr(rzm, "game") else "HonkaiStarRail"
+    
+    if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
+        if hasattr(context.scene, "xxmi"):
+            return bpy.path.abspath(context.scene.xxmi.destination_path)
+    elif game == 'ArknightsEndfield':
+        if hasattr(context.scene, "efmi_tools_settings"):
+            return bpy.path.abspath(context.scene.efmi_tools_settings.mod_output_folder)
+    elif game == 'WutheringWaves':
+        if hasattr(context.scene, "wwmi_tools_settings"):
+            return bpy.path.abspath(context.scene.wwmi_tools_settings.mod_output_folder)
+    return ""
+
 def get_curve_prop(obj, name, default):
     attr = f"rzm_curve_vfx_{name}"
     if hasattr(obj, attr):
@@ -152,28 +169,65 @@ def find_associated_mesh_and_component(context, curve_obj):
 
 def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
     depsgraph = context.evaluated_depsgraph_get()
-    try:
-        eval_obj = curve_obj.evaluated_get(depsgraph)
-    except Exception as e:
-        print(f"[RZM-VFX] Error getting evaluated curve: {e}")
+    
+    if not curve_obj.data.splines:
         return []
         
-    if not eval_obj.data.splines:
-        return []
+    # Get control points and radii from the original spline
+    spline = curve_obj.data.splines[0]
+    if spline.type == 'BEZIER':
+        ctrl_points = [p.co.copy() for p in spline.bezier_points]
+        ctrl_radii = [p.radius for p in spline.bezier_points]
+    else:
+        ctrl_points = [p.co.xyz.copy() for p in spline.points]
+        ctrl_radii = [p.radius for p in spline.points]
         
+    ctrl_dists = [0.0]
+    curr_len = 0.0
+    for i in range(1, len(ctrl_points)):
+        dist = (ctrl_points[i] - ctrl_points[i-1]).length
+        curr_len += dist
+        ctrl_dists.append(curr_len)
+        
+    # Temporary copy of curve to evaluate center line without bevel
+    original_data = curve_obj.data
+    temp_data = original_data.copy()
+    temp_data.bevel_depth = 0.0
+    temp_data.extrude = 0.0
+    temp_data.bevel_object = None
+    
+    temp_obj = bpy.data.objects.new("temp_curve_eval", temp_data)
+    context.scene.collection.objects.link(temp_obj)
+    
+    # Match world matrix
+    temp_obj.matrix_world = curve_obj.matrix_world.copy()
+    context.view_layer.update()
+    
     try:
+        eval_obj = temp_obj.evaluated_get(depsgraph)
         temp_mesh = eval_obj.to_mesh()
     except Exception as e:
         print(f"[RZM-VFX] Error converting curve to mesh: {e}")
+        context.scene.collection.objects.unlink(temp_obj)
+        bpy.data.objects.remove(temp_obj)
+        bpy.data.curves.remove(temp_data)
         return []
         
     if not temp_mesh or not temp_mesh.vertices:
         if temp_mesh:
             eval_obj.to_mesh_clear()
+        context.scene.collection.objects.unlink(temp_obj)
+        bpy.data.objects.remove(temp_obj)
+        bpy.data.curves.remove(temp_data)
         return []
         
     verts = [v.co.copy() for v in temp_mesh.vertices]
     eval_obj.to_mesh_clear()
+    
+    # Clean up temporary objects
+    context.scene.collection.objects.unlink(temp_obj)
+    bpy.data.objects.remove(temp_obj)
+    bpy.data.curves.remove(temp_data)
     
     if len(verts) < 2:
         return []
@@ -186,9 +240,11 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
         distances.append(total_len)
         
     if total_len == 0.0:
-        return [verts[0] for _ in range(num_samples)]
+        # Fallback if length is 0
+        r_val = ctrl_radii[0] if ctrl_radii else 1.0
+        return [(verts[0], r_val) for _ in range(num_samples)]
         
-    resampled_verts = []
+    resampled_data = []
     for j in range(num_samples):
         factor = j / (num_samples - 1)
         target_dist = factor * total_len
@@ -202,9 +258,23 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
         t = (target_dist - d0) / (d1 - d0) if d1 > d0 else 0.0
         
         pt = verts[idx] + t * (verts[idx+1] - verts[idx])
-        resampled_verts.append(pt)
         
-    return resampled_verts
+        # Interpolate radius based on factor
+        if curr_len > 0.0 and len(ctrl_radii) >= 2:
+            target_ctrl_dist = factor * curr_len
+            c_idx = 0
+            while c_idx < len(ctrl_dists) - 2 and ctrl_dists[c_idx+1] < target_ctrl_dist:
+                c_idx += 1
+            cd0 = ctrl_dists[c_idx]
+            cd1 = ctrl_dists[c_idx+1]
+            ct = (target_ctrl_dist - cd0) / (cd1 - cd0) if cd1 > cd0 else 0.0
+            r_val = ctrl_radii[c_idx] + ct * (ctrl_radii[c_idx+1] - ctrl_radii[c_idx])
+        else:
+            r_val = ctrl_radii[0] if ctrl_radii else 1.0
+            
+        resampled_data.append((pt, r_val))
+        
+    return resampled_data
 
 def find_file(directory, filename):
     for root, dirs, files in os.walk(directory):
@@ -311,18 +381,20 @@ def patch_buffers(context, cache):
         profile_raw = get_curve_prop(curve_obj, "coordinate_remap_profile", "AUTO")
         profile = resolve_coordinate_remap_profile(context, profile_raw)
         
-        # Sample points
-        resampled_points = evaluate_curve_spline_points(context, curve_obj, num_samples=32)
-        if not resampled_points or len(resampled_points) < 2:
+        # Sample points (returns list of (pt, radius) tuples)
+        resampled_data = evaluate_curve_spline_points(context, curve_obj, num_samples=32)
+        if not resampled_data or len(resampled_data) < 2:
             print(f"[RZM-VFX] [ERROR] Curve '{curve_obj.name}' evaluation returned insufficient points.")
             continue
 
         # Remap to target mesh's local coordinates
         local_pts = []
-        for pt in resampled_points:
+        radii = []
+        for pt, r_val in resampled_data:
             wpos = curve_obj.matrix_world @ pt
             lpos = target_mesh.matrix_world.inverted() @ wpos
             local_pts.append(lpos)
+            radii.append(r_val)
 
         # Apply buffer coordinate remap
         remapped_pts = []
@@ -342,7 +414,9 @@ def patch_buffers(context, cache):
             # Normal
             ref = Vector((0.0, 1.0, 0.0)) if abs(tangent.dot(Vector((0.0, 0.0, 1.0)))) > 0.9 else Vector((0.0, 0.0, 1.0))
             normal = (ref - tangent * tangent.dot(ref)).normalized()
-            u_val = j / 31.0
+            
+            # Pack local radius into the 10th float (point radius * 0.01 meters baseline)
+            r_packed = radii[j] * 0.01
 
             # Pack
             point_data = struct.pack(
@@ -351,25 +425,33 @@ def patch_buffers(context, cache):
                 tangent.x, tangent.y, tangent.z,
                 normal.x, normal.y, normal.z
             )
-            point_data += struct.pack('<f', u_val)
+            point_data += struct.pack('<f', r_packed)
             all_curve_bytes.extend(point_data)
 
-        # 33rd point contains metadata (mesh_fx_type, mesh_fx_size_base, tri_aspect, speed, start_radius, end_radius, curve_right, curve_up)
+        # 33rd point contains metadata (mesh_fx_type, particle_size_start, particle_size_end, cycle_duration, dispersion_scale, phase_randomness, pos_randomness)
         meta_fx_type = float(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
-        meta_size = float(get_curve_prop(curve_obj, "mesh_fx_size_base", 0.05))
-        meta_aspect = float(get_curve_prop(curve_obj, "tri_aspect", 1.0))
-        meta_speed = float(get_curve_prop(curve_obj, "speed", 0.5))
-        start_radius = float(get_curve_prop(curve_obj, "start_radius", 0.005))
-        end_radius = float(get_curve_prop(curve_obj, "end_radius", 0.060))
-        curve_right = float(get_curve_prop(curve_obj, "curve_right", -0.1))
-        curve_up = float(get_curve_prop(curve_obj, "curve_up", -0.15))
+        
+        # start size (fallback to old mesh_fx_size_base and base_size)
+        meta_size_start = float(get_curve_prop(curve_obj, "particle_size_start", None) or get_curve_prop(curve_obj, "mesh_fx_size_base", 0.05))
+        
+        # end size (fallback to start size to prevent 0 width if not configured)
+        meta_size_end = float(get_curve_prop(curve_obj, "particle_size_end", meta_size_start))
+        
+        # cycle duration (fallback to speed via conversion)
+        speed_val = get_curve_prop(curve_obj, "speed", 0.5)
+        default_dur = 1.0 / speed_val if speed_val > 0.0 else 2.0
+        meta_cycle_dur = float(get_curve_prop(curve_obj, "cycle_duration", default_dur))
+        
+        meta_dispersion = float(get_curve_prop(curve_obj, "dispersion_scale", 1.0))
+        meta_phase_rand = float(get_curve_prop(curve_obj, "phase_randomness", 1.0))
+        meta_pos_rand = float(get_curve_prop(curve_obj, "pos_randomness", 0.0))
         
         meta_data = struct.pack(
             '<ffffffffff',
-            meta_fx_type, meta_size, meta_aspect,  # position.xyz
-            meta_speed, start_radius, end_radius,  # tangent.xyz
-            curve_right, curve_up, 0.0,            # normal.xyz
-            0.0                                    # u
+            meta_fx_type, meta_size_start, meta_size_end,  # position.xyz
+            meta_cycle_dur, meta_dispersion, meta_phase_rand,  # tangent.xyz
+            meta_pos_rand, 0.0, 0.0,                       # normal.xyz
+            0.0                                            # u
         )
         all_curve_bytes.extend(meta_data)
 

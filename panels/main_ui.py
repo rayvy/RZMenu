@@ -369,23 +369,31 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             box.prop(target_obj, "rzm_curve_vfx_enabled", text="Enable Curve VFX")
             
             if target_obj.rzm_curve_vfx_enabled:
-                col = box.column(align=True)
-                col.prop(target_obj, "rzm_curve_vfx_coordinate_remap_profile", text="Coord Remap")
-                col.prop(target_obj, "rzm_curve_vfx_mesh_fx_type", text="Mesh Type")
-                col.prop(target_obj, "rzm_curve_vfx_particle_count", text="Particle Count")
-                col.prop(target_obj, "rzm_curve_vfx_mesh_fx_size_base", text="Size Base")
-                col.prop(target_obj, "rzm_curve_vfx_tri_aspect", text="Tri Aspect")
-                col.prop(target_obj, "rzm_curve_vfx_speed", text="Speed")
+                # Section A: Particle Geometry
+                gbox = box.box()
+                gbox.label(text="Particle Geometry", icon='MESH_DATA')
+                gcol = gbox.column(align=True)
+                gcol.prop(target_obj, "rzm_curve_vfx_mesh_fx_type", text="Mesh Type")
+                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size")
+                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size")
                 
-                # Radii and Shifts
-                rbox = box.box()
-                rbox.label(text="Radii & Shifts", icon='SPHERE')
-                rbox.prop(target_obj, "rzm_curve_vfx_start_radius", text="Start Radius")
-                rbox.prop(target_obj, "rzm_curve_vfx_end_radius", text="End Radius")
-                rbox.prop(target_obj, "rzm_curve_vfx_curve_right", text="Curve Right")
-                rbox.prop(target_obj, "rzm_curve_vfx_curve_up", text="Curve Up")
+                # Section B: Path & Dispersion
+                dbox = box.box()
+                dbox.label(text="Path & Dispersion", icon='SPHERE')
+                dcol = dbox.column(align=True)
+                dcol.prop(target_obj, "rzm_curve_vfx_coordinate_remap_profile", text="Coord Remap")
+                dcol.prop(target_obj, "rzm_curve_vfx_particle_count", text="Particle Count")
+                dcol.prop(target_obj, "rzm_curve_vfx_dispersion_scale", text="Dispersion Scale")
                 
-                # Technical Weights
+                # Section C: Animation & Chaos
+                abox = box.box()
+                abox.label(text="Animation & Chaos", icon='TIME')
+                acol = abox.column(align=True)
+                acol.prop(target_obj, "rzm_curve_vfx_cycle_duration", text="Cycle Duration (sec)")
+                acol.prop(target_obj, "rzm_curve_vfx_phase_randomness", text="Phase Randomness")
+                acol.prop(target_obj, "rzm_curve_vfx_pos_randomness", text="Position Randomness")
+                
+                # Section D: Technical Weights
                 wbox = box.box()
                 wbox.label(text="Technical Weights", icon='MOD_VERTEX_WEIGHT')
                 wbox.prop(target_obj, "rzm_curve_vfx_weight_indices", text="Indices")

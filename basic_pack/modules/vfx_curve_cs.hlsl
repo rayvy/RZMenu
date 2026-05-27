@@ -115,6 +115,7 @@ struct SampledPoint {
     float3 position;
     float3 tangent;
     float3 normal;
+    float radius;
 };
 
 SampledPoint SampleCurve(uint curve_idx, float cycle) {
@@ -131,6 +132,7 @@ SampledPoint SampleCurve(uint curve_idx, float cycle) {
     result.position = lerp(p0.position, p1.position, factor);
     result.tangent = normalize(lerp(p0.tangent, p1.tangent, factor));
     result.normal = normalize(lerp(p0.normal, p1.normal, factor));
+    result.radius = lerp(p0.u, p1.u, factor);
     return result;
 }
 
@@ -159,37 +161,36 @@ void main(uint3 threadID : SV_DispatchThreadID)
     
     CurvePoint p_meta = CurveData[curve_idx * 33 + 32];
     uint mesh_fx_type = (uint)p_meta.position.x;
-    float CFG_BASE_SIZE = p_meta.position.y;
-    float CFG_TRI_ASPECT = p_meta.position.z;
-    float CFG_SPEED = p_meta.tangent.x;
-    float CFG_START_RADIUS = p_meta.tangent.y;
-    float CFG_END_RADIUS   = p_meta.tangent.z;
-    float CFG_CURVE_RIGHT  = p_meta.normal.x;
-    float CFG_CURVE_UP     = p_meta.normal.y;
+    float CFG_SIZE_START = p_meta.position.y;
+    float CFG_SIZE_END   = p_meta.position.z;
+    float CFG_CYCLE_DURATION = p_meta.tangent.x;
+    float CFG_DISPERSION_SCALE = p_meta.tangent.y;
+    float CFG_PHASE_RANDOMNESS = p_meta.tangent.z;
+    float CFG_POS_RANDOMNESS = p_meta.normal.x;
 
     uint v_local_id = (uint)rw_buffer[i].tangent.w;
 
     float3 local_pos = float3(0.0f, 0.0f, 0.0f);
     if (mesh_fx_type == 1) { // Quad
         float3 quad_verts[4] = {
-            float3(-0.5f * CFG_TRI_ASPECT, -0.5f, 0.0f),
-            float3( 0.5f * CFG_TRI_ASPECT, -0.5f, 0.0f),
-            float3(-0.5f * CFG_TRI_ASPECT,  0.5f, 0.0f),
-            float3( 0.5f * CFG_TRI_ASPECT,  0.5f, 0.0f)
+            float3(-0.5f, -0.5f, 0.0f),
+            float3( 0.5f, -0.5f, 0.0f),
+            float3(-0.5f,  0.5f, 0.0f),
+            float3( 0.5f,  0.5f, 0.0f)
         };
         local_pos = quad_verts[v_local_id % 4];
-    } else if (mesh_fx_type == 2) { // Circle (pentagon)
+    } else if (mesh_fx_type == 2) { // Circle
         if (v_local_id == 0) {
             local_pos = float3(0.0f, 0.0f, 0.0f);
         } else {
             float angle = float(v_local_id - 1) * (2.0f * 3.14159265f / 5.0f);
-            local_pos = float3(cos(angle) * CFG_TRI_ASPECT, sin(angle), 0.0f);
+            local_pos = float3(cos(angle), sin(angle), 0.0f);
         }
     } else { // Triangle
         float3 tri_verts[3] = {
             float3(0.0f, 1.0f, 0.0f),
-            float3(-0.866f * CFG_TRI_ASPECT, -0.5f, 0.0f),
-            float3( 0.866f * CFG_TRI_ASPECT, -0.5f, 0.0f)
+            float3(-0.866f, -0.5f, 0.0f),
+            float3( 0.866f, -0.5f, 0.0f)
         };
         local_pos = tri_verts[v_local_id % 3];
     }
@@ -202,7 +203,7 @@ void main(uint3 threadID : SV_DispatchThreadID)
     uint particle_id = active_i / v_per_particle;
 
     // Извлекаем уникальные для частицы фазу, скорость и направление
-    float phase = rw_buffer[i].normal.x;
+    float phase_offset_raw = rw_buffer[i].normal.x;
     float speed_scale = rw_buffer[i].normal.y;
     float3 spread_dir = rw_buffer[i].tangent.xyz;
 
@@ -212,46 +213,50 @@ void main(uint3 threadID : SV_DispatchThreadID)
     
     bool is_spark = (p_seed_1 > 0.75f); 
 
-    // СИНУСОИДАЛЬНЫЙ ЦИКЛ ДЛЯ ПЛАВНОГО ДВИЖЕНИЯ
-    float angle_time = TIME * 1.57079f * (CFG_SPEED * speed_scale) + (phase * 6.28318f);
-    float raw_cycle = sin(angle_time) * 0.5f + 0.5f;
-    float cycle = pow(raw_cycle, 1.2f); 
+    // Линейный цикл с учетом настройки фазовой случайности
+    float phase_offset = phase_offset_raw * CFG_PHASE_RANDOMNESS;
+    float cycle = frac(TIME / CFG_CYCLE_DURATION + phase_offset);
 
     // Сэмпл кривой
     SampledPoint sampled = SampleCurve(curve_idx, cycle);
-    
-    // Apply shifts in local curve space: right is cross(tangent, normal), up is normal
-    float3 right_dir = normalize(cross(sampled.tangent, sampled.normal));
-    float3 pos_on_line = sampled.position + sampled.normal * CFG_CURVE_UP + right_dir * CFG_CURVE_RIGHT;
+    float3 pos_on_line = sampled.position;
 
     // Направление распыления ортогонально направлению кривой
     float3 plane_dir = normalize(spread_dir - sampled.tangent * dot(spread_dir, sampled.tangent));
 
-    float current_radius = lerp(CFG_START_RADIUS, CFG_END_RADIUS, cycle);
+    // Вычисляем локальный радиус распыления (scaled by CFG_DISPERSION_SCALE)
+    float local_radius = sampled.radius * CFG_DISPERSION_SCALE;
     if (is_spark) {
-        current_radius *= 3.0f;
+        local_radius *= 3.0f;
     }
     
-    float3 final_center = pos_on_line + plane_dir * (p_seed_3 * current_radius);
+    float3 final_center = pos_on_line + plane_dir * (p_seed_3 * local_radius);
 
-    // Управление размером (Затухание к концу)
-    float current_size = CFG_BASE_SIZE;
-    float distance_fade = 1.0f - cycle;
-    current_size *= distance_fade;
+    // Вносим хаотичное смещение позиции (Position Randomness)
+    float3 jitter_dir = normalize(float3(p_seed_1 - 0.5f, p_seed_2 - 0.5f, p_seed_3 - 0.5f));
+    float jitter_amount = hash(particle_id * 79 + 5) * CFG_POS_RANDOMNESS;
+    final_center += jitter_dir * jitter_amount;
 
-    if (is_spark) current_size *= (0.3f + p_seed_2 * 0.4f);
+    // Управление размером (интерполяция от старта к концу с плавным фейдом на границах)
+    float current_size = lerp(CFG_SIZE_START, CFG_SIZE_END, cycle);
+    float fade = smoothstep(0.0f, 0.1f, cycle) * smoothstep(1.0f, 0.9f, cycle);
+    current_size *= fade;
 
-    // Плавное появление у основания
-    current_size *= smoothstep(0.01f, 0.15f, raw_cycle); 
+    if (is_spark) {
+        current_size *= (0.3f + p_seed_2 * 0.4f);
+    }
 
     // Вращение
     float3 rot_axis = normalize(float3(p_seed_1, p_seed_2, p_seed_3) * 2.0f - 1.0f);
-    float rot_speed = is_spark ? 15.0f : 5.0f; 
-    float current_rot = sin(TIME * (CFG_SPEED * speed_scale) + p_seed_2) * rot_speed + (p_seed_1 * 30.0f); 
+    float rot_speed_factor = 2.0f * 3.14159f / CFG_CYCLE_DURATION;
+    float current_rot = (TIME * rot_speed_factor * speed_scale) + (p_seed_1 * 6.28f); 
+    if (is_spark) {
+        current_rot *= 2.5f;
+    }
     
     float4 q_rot = q_from_axis_angle(rot_axis, current_rot);
     local_pos = q_rotate(local_pos, q_rot) * current_size;
 
-    // Запись геометрии (Сохраняем normal и tangent с метаданными нетронутыми!)
+    // Запись геометрии
     rw_buffer[i].position = RemapCoords(final_center + local_pos);
 }

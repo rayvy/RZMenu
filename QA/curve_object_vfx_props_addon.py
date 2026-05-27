@@ -19,24 +19,30 @@ from bpy.types import Operator, Panel, PropertyGroup
 PROP_KEYS = {
     "marker": "RZM.CURVE_VFX",
     "coordinate_remap_profile": "RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE",
-    "mesh_fx_size_base": "RZM.CURVE_VFX.MESH_FX_SIZE_BASE",
-    "tri_aspect": "RZM.CURVE_VFX.TRI_ASPECT",
-    "speed": "RZM.CURVE_VFX.SPEED",
+    "particle_size_start": "RZM.CURVE_VFX.PARTICLE_SIZE_START",
+    "particle_size_end": "RZM.CURVE_VFX.PARTICLE_SIZE_END",
+    "dispersion_scale": "RZM.CURVE_VFX.DISPERSION_SCALE",
+    "cycle_duration": "RZM.CURVE_VFX.CYCLE_DURATION",
+    "phase_randomness": "RZM.CURVE_VFX.PHASE_RANDOMNESS",
+    "pos_randomness": "RZM.CURVE_VFX.POS_RANDOMNESS",
     "mesh_fx_type": "RZM.CURVE_VFX.MESH_FX_TYPE",
     "particle_count": "RZM.CURVE_VFX.PARTICLE_COUNT",
     "weight_indices": "RZM.CURVE_VFX.WEIGHT_INDICES",
     "weight_values": "RZM.CURVE_VFX.WEIGHT_VALUES",
-    "offset": "RZM.CURVE_VFX.OFFSET",
-    "rotation": "RZM.CURVE_VFX.ROTATION",
-    "flip_x": "RZM.CURVE_VFX.FLIP_X",
 }
 
 LEGACY_PROP_KEYS = {
-    "curve_up": "RZM.CURVE_VFX.CURVE_UP",
-    "curve_right": "RZM.CURVE_VFX.CURVE_RIGHT",
+    "base_size": "RZM.CURVE_VFX.BASE_SIZE",
+    "mesh_fx_size_base": "RZM.CURVE_VFX.MESH_FX_SIZE_BASE",
+    "tri_aspect": "RZM.CURVE_VFX.TRI_ASPECT",
+    "speed": "RZM.CURVE_VFX.SPEED",
     "start_radius": "RZM.CURVE_VFX.START_RADIUS",
     "end_radius": "RZM.CURVE_VFX.END_RADIUS",
-    "base_size": "RZM.CURVE_VFX.BASE_SIZE",
+    "curve_right": "RZM.CURVE_VFX.CURVE_RIGHT",
+    "curve_up": "RZM.CURVE_VFX.CURVE_UP",
+    "offset": "RZM.CURVE_VFX.OFFSET",
+    "rotation": "RZM.CURVE_VFX.ROTATION",
+    "flip_x": "RZM.CURVE_VFX.FLIP_X",
 }
 
 
@@ -63,24 +69,19 @@ def prop_get(obj, key, default=None, legacy_key=None):
 def write_object_props(obj, settings):
     obj[PROP_KEYS["marker"]] = True
     obj[PROP_KEYS["coordinate_remap_profile"]] = settings.coordinate_remap_profile
-    obj[PROP_KEYS["mesh_fx_size_base"]] = settings.mesh_fx_size_base
-    obj[PROP_KEYS["tri_aspect"]] = settings.tri_aspect
-    obj[PROP_KEYS["speed"]] = settings.speed
+    obj[PROP_KEYS["particle_size_start"]] = settings.particle_size_start
+    obj[PROP_KEYS["particle_size_end"]] = settings.particle_size_end
+    obj[PROP_KEYS["dispersion_scale"]] = settings.dispersion_scale
+    obj[PROP_KEYS["cycle_duration"]] = settings.cycle_duration
+    obj[PROP_KEYS["phase_randomness"]] = settings.phase_randomness
+    obj[PROP_KEYS["pos_randomness"]] = settings.pos_randomness
     obj[PROP_KEYS["mesh_fx_type"]] = int(settings.mesh_fx_type)
     obj[PROP_KEYS["particle_count"]] = settings.particle_count
     obj[PROP_KEYS["weight_indices"]] = list(settings.weight_indices)
     obj[PROP_KEYS["weight_values"]] = list(settings.weight_values)
-    obj[PROP_KEYS["offset"]] = list(settings.offset)
-    obj[PROP_KEYS["rotation"]] = list(settings.rotation)
-    obj[PROP_KEYS["flip_x"]] = settings.flip_x
 
-    # Remove old shape-driving props so the object does not carry stale intent.
-    for legacy_key in (
-        LEGACY_PROP_KEYS["curve_up"],
-        LEGACY_PROP_KEYS["curve_right"],
-        LEGACY_PROP_KEYS["start_radius"],
-        LEGACY_PROP_KEYS["end_radius"],
-    ):
+    # Remove old shape-driving / unused props so the object does not carry stale intent.
+    for legacy_key in LEGACY_PROP_KEYS.values():
         if legacy_key in obj:
             del obj[legacy_key]
 
@@ -511,24 +512,51 @@ class RZM_CurveVFXSettings(PropertyGroup):
         default="AUTO",
     )
 
-    mesh_fx_size_base: FloatProperty(
-        name="MESH_FX_SIZE_BASE",
-        description="Base mesh FX size. Renamed from Base Size to avoid confusing it with curve radius.",
+    particle_size_start: FloatProperty(
+        name="Start Size",
+        description="Particle size at the start of the curve (in meters)",
         default=0.05,
         min=0.0,
         precision=6,
     )
 
-    tri_aspect: FloatProperty(
-        name="Tri Aspect",
+    particle_size_end: FloatProperty(
+        name="End Size",
+        description="Particle size at the end of the curve (in meters)",
+        default=0.01,
+        min=0.0,
+        precision=6,
+    )
+
+    dispersion_scale: FloatProperty(
+        name="Dispersion Scale",
+        description="Overall scale multiplier for curve control point radius",
         default=1.0,
+        min=0.0,
+        precision=6,
+    )
+
+    cycle_duration: FloatProperty(
+        name="Cycle Duration",
+        description="Duration of a full animation cycle in seconds",
+        default=2.0,
         min=0.01,
         precision=6,
     )
 
-    speed: FloatProperty(
-        name="Speed",
-        default=0.5,
+    phase_randomness: FloatProperty(
+        name="Phase Randomness",
+        description="Randomness of particle birth phases (0 = clump/beam, 1 = continuous stream)",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+        precision=6,
+    )
+
+    pos_randomness: FloatProperty(
+        name="Position Randomness",
+        description="Intensity of chaotic position noise / jitter",
+        default=0.0,
         min=0.0,
         precision=6,
     )
@@ -567,28 +595,6 @@ class RZM_CurveVFXSettings(PropertyGroup):
         min=0.0,
         max=1.0,
         precision=6,
-    )
-
-    offset: FloatVectorProperty(
-        name="Offset",
-        description="Position offset relative to target mesh origin",
-        size=3,
-        default=(0.0, 0.0, 0.0),
-        precision=6,
-    )
-
-    rotation: FloatVectorProperty(
-        name="Rotation",
-        description="Euler XYZ rotation angles in degrees",
-        size=3,
-        default=(0.0, 0.0, 0.0),
-        precision=6,
-    )
-
-    flip_x: BoolProperty(
-        name="Flip X",
-        description="Flip X coordinate",
-        default=False,
     )
 
 
@@ -710,9 +716,12 @@ class RZM_OT_validate_curve_vfx(Operator):
             particle_count = curve_obj.get("RZM.CURVE_VFX.PARTICLE_COUNT", 1)
             coordinate_remap_profile_raw = prop_get(curve_obj, PROP_KEYS["coordinate_remap_profile"], "AUTO")
             coordinate_remap_profile = resolve_coordinate_remap_profile(context, coordinate_remap_profile_raw)
-            mesh_fx_size_base = prop_get(curve_obj, PROP_KEYS["mesh_fx_size_base"], 0.05, LEGACY_PROP_KEYS["base_size"])
-            tri_aspect = curve_obj.get("RZM.CURVE_VFX.TRI_ASPECT", 1.0)
-            speed = curve_obj.get("RZM.CURVE_VFX.SPEED", 1.0)
+            particle_size_start = prop_get(curve_obj, PROP_KEYS["particle_size_start"], 0.05, LEGACY_PROP_KEYS["mesh_fx_size_base"])
+            particle_size_end = prop_get(curve_obj, PROP_KEYS["particle_size_end"], 0.01)
+            dispersion_scale = prop_get(curve_obj, PROP_KEYS["dispersion_scale"], 1.0)
+            cycle_duration = prop_get(curve_obj, PROP_KEYS["cycle_duration"], 2.0, LEGACY_PROP_KEYS["speed"])
+            phase_randomness = prop_get(curve_obj, PROP_KEYS["phase_randomness"], 1.0)
+            pos_randomness = prop_get(curve_obj, PROP_KEYS["pos_randomness"], 0.0)
             mesh_fx_type = curve_obj.get("RZM.CURVE_VFX.MESH_FX_TYPE", 0)
             weight_indices = list(curve_obj.get("RZM.CURVE_VFX.WEIGHT_INDICES", [-1, -1, -1, -1]))
             weight_values = list(curve_obj.get("RZM.CURVE_VFX.WEIGHT_VALUES", [0.0, 0.0, 0.0, 0.0]))
@@ -770,11 +779,14 @@ class RZM_OT_validate_curve_vfx(Operator):
             # 3. Parameters check
             print(f"[RZM-VFX]   -> Parameters:")
             print(f"[RZM-VFX]       * Particle Count: {particle_count}")
-            print(f"[RZM-VFX]       * Mesh FX Type: {mesh_fx_type} (Triangle)")
-            print(f"[RZM-VFX]       * MESH_FX_SIZE_BASE: {mesh_fx_size_base:.4f} | Tri Aspect: {tri_aspect:.4f}")
-            print(f"[RZM-VFX]       * Speed: {speed:.4f}")
+            mesh_fx_type_str = "Triangle" if mesh_fx_type == 0 else ("Quad" if mesh_fx_type == 1 else "Circle")
+            print(f"[RZM-VFX]       * Mesh FX Type: {mesh_fx_type} ({mesh_fx_type_str})")
+            print(f"[RZM-VFX]       * Particle Size Start/End: {particle_size_start:.4f} -> {particle_size_end:.4f}")
+            print(f"[RZM-VFX]       * Cycle Duration: {cycle_duration:.4f} sec")
             print(f"[RZM-VFX]       * Coordinate Remap: {coordinate_remap_profile_raw} -> {coordinate_remap_profile}")
-            print(f"[RZM-VFX]       * Curve Point Radius Range: {start_radius:.6f} -> {end_radius:.6f}")
+            print(f"[RZM-VFX]       * Dispersion Scale: {dispersion_scale:.4f}")
+            print(f"[RZM-VFX]       * Phase / Position Randomness: Phase={phase_randomness:.4f}, Pos={pos_randomness:.4f}")
+            print(f"[RZM-VFX]       * Curve Spline Control Points Radius: {start_radius:.6f} -> {end_radius:.6f} (Visual bounds: {start_radius*0.01*dispersion_scale:.4f}m -> {end_radius*0.01*dispersion_scale:.4f}m)")
             
             # Weight sum validation
             active_weights = [v for i, v in enumerate(weight_values) if weight_indices[i] != -1]
@@ -820,9 +832,15 @@ class RZM_OT_validate_curve_vfx(Operator):
             vb2_path = find_exact_export_file(mod_output_dir, expected_vb2_name)
             ib_path = find_exact_export_file(mod_output_dir, expected_ib_name)
             
-            # Calculate additions
-            new_verts = particle_count * 3
-            new_indices = particle_count * 3
+            # Calculate additions based on mesh_fx_type
+            if str(mesh_fx_type) == "1":
+                v_per_p, i_per_p = 4, 6
+            elif str(mesh_fx_type) == "2":
+                v_per_p, i_per_p = 6, 15
+            else:
+                v_per_p, i_per_p = 3, 3
+            new_verts = particle_count * v_per_p
+            new_indices = particle_count * i_per_p
             
             # VB0 positioning
             if vb0_path:
@@ -924,10 +942,11 @@ class VIEW3D_PT_rzm_curve_vfx(Panel):
         box.prop(settings, "particle_count")
 
         tbox = layout.box()
-        tbox.label(text="Bake Transform (Local)")
-        tbox.prop(settings, "offset")
-        tbox.prop(settings, "rotation")
-        tbox.prop(settings, "flip_x")
+        tbox.label(text="Radii & Shifts")
+        tbox.prop(settings, "start_radius")
+        tbox.prop(settings, "end_radius")
+        tbox.prop(settings, "curve_right")
+        tbox.prop(settings, "curve_up")
 
         wbox = layout.box()
         wbox.label(text="Technical Weights")
