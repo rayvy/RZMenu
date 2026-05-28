@@ -634,6 +634,36 @@ def resolve_part_suffix(component_name, part_name, mesh_name="", mod_name=""):
             return value
     return ""
 
+def cache_object_matches_part(obj_name, component_name, part_suffix):
+    """
+    Match cache objects that belong to the same rendered part.
+    Handles numbered Blender duplicates such as "HairB.001".
+    """
+    if not obj_name:
+        return False
+
+    name = str(obj_name).lower().strip()
+    component = str(component_name).lower().strip()
+    suffix = str(part_suffix).lower().strip()
+    base_name = f"{component}{suffix}" if suffix else component
+    if not suffix:
+        return True
+
+    if name == base_name:
+        return True
+    if name.startswith(base_name + "."):
+        return True
+    if name.startswith(base_name + "-"):
+        return True
+    if name.startswith(base_name + "_"):
+        return True
+    if name.endswith(base_name):
+        return True
+    if f"{base_name}-" in name or f"_{base_name}" in name:
+        return True
+
+    return False
+
 def float_to_half(f):
     return int(np.float16(f).view(np.uint16))
 
@@ -702,7 +732,8 @@ def patch_buffers(context, cache):
             
         splines_particles = curve_obj.get("RZM.CURVE_VFX.SPLINES_PARTICLES", [])
         num_splines = len(curve_obj.data.splines)
-        if not splines_particles or len(splines_particles) != num_splines:
+        target_budget = curve_obj.get("RZM.CURVE_VFX.PARTICLE_COUNT", 1)
+        if not splines_particles or len(splines_particles) != num_splines or sum(splines_particles) != target_budget:
             splines_particles = distribute_particles(curve_obj)
             curve_obj["RZM.CURVE_VFX.SPLINES_PARTICLES"] = splines_particles
             
@@ -985,21 +1016,32 @@ def patch_buffers(context, cache):
             vb0_size = os.path.getsize(vb0_path)
             original_v_count = vb0_size // 40
             
-        # Get original index count of the submesh part from the cache
-        original_i_count = None
+        # Get original index count of the rendered part from the cache.
+        # Sum all matched draw entries so numbered Blender duplicates are included.
+        original_i_count = 0
+        matched_ib_entries = []
         for obj in comp_cache.get('objects', []):
-            obj_name = obj.get('name', '').lower()
-            if part_suffix:
-                match_part = part_suffix.lower()
-                if obj_name.endswith(match_part) or f"{match_part}-" in obj_name or f"_{match_part}" in obj_name:
-                    original_i_count = obj.get('ib_count')
-                    break
+            ib_count = int(obj.get('ib_count') or 0)
+            if ib_count <= 0:
+                continue
+
+            obj_name = obj.get('name', '')
+            if not cache_object_matches_part(obj_name, comp_name, part_suffix):
+                continue
+
+            original_i_count += ib_count
+            matched_ib_entries.append((obj_name, ib_count))
+
+        if matched_ib_entries:
+            if len(matched_ib_entries) > 1:
+                match_desc = ", ".join(f"{name}({count})" for name, count in matched_ib_entries)
+                print(f"[RZM-VFX]   * IB cache matches for '{comp_name}/{part_name}': {match_desc} -> total {original_i_count}")
             else:
-                original_i_count = obj.get('ib_count')
-                break
+                match_name, match_count = matched_ib_entries[0]
+                print(f"[RZM-VFX]   * IB cache match for '{comp_name}/{part_name}': {match_name}({match_count}) -> total {original_i_count}")
 
         # Fallback for original_i_count if not found in cache
-        if original_i_count is None or original_i_count == 0:
+        if original_i_count == 0:
             if ib_path:
                 ib_size_before = os.path.getsize(ib_path)
                 stride_i = 4 if ib_size_before % 4 == 0 else 2

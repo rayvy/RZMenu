@@ -241,16 +241,21 @@
                     {% set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int %}
                     {% set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int %}
                     {% if fx_type == 1 %}{% set i_per_part = 6 %}
-                    {% elif fx_type == 2 %}{% set i_per_part = 15 %}
+                    {% elif fx_type == 2 %}{% set i_per_part = 18 %}
                     {% else %}{% set i_per_part = 3 %}
                     {% endif %}
                     {% set curve_idx_count = p_count * i_per_part %}
-                    {% set visibility_cond = curve.get("RZM.CURVE_VFX.VISIBILITY_CONDITION") | default("") | trim %}
+                    {% set raw_cond = curve.get("RZM.CURVE_VFX.VISIBILITY_CONDITION") %}
+                    {% if raw_cond is none or raw_cond == None or raw_cond == "None" or raw_cond | string | trim == "" or raw_cond | string | trim == "None" %}
+                        {% set visibility_cond = "" %}
+                    {% else %}
+                        {% set visibility_cond = raw_cond | string | trim %}
+                    {% endif %}
             ; RZM VFX Curve: {{ curve.name }}
                     {% if visibility_cond != "" %}
-            ;if {{ visibility_cond }}
+            if {{ visibility_cond }}
                 drawindexed = {{ curve_idx_count }}, {{ current_vfx_offset[0] }}, 0
-            ;endif
+            endif
                     {% else %}
             drawindexed = {{ curve_idx_count }}, {{ current_vfx_offset[0] }}, 0
                     {% endif %}
