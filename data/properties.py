@@ -695,8 +695,17 @@ def register():
         default=(32, 32),
         min=1
     )
+    bpy.types.Object.rzm_curve_vfx_preview_time = FloatProperty(
+        name="Preview Time (sec)",
+        description="Simulated time in seconds for the VFX GeoNodes preview. Not used in export.",
+        default=0.0,
+        min=0.0,
+        soft_max=10.0,
+        step=10,
+        precision=2,
+        subtype='TIME_ABSOLUTE'
+    )
 
-    custom_draw_ops.register()
     # Регистрация scene properties
     bpy.types.Scene.rzm_active_element_index = IntProperty(name="Active Element Index")
     bpy.types.Scene.rzm_active_image_index = IntProperty(name="Active Image Index")
@@ -792,6 +801,7 @@ def unregister():
         "rzm_curve_vfx_particle_size_px",
         "rzm_curve_vfx_uv_px_offset",
         "rzm_curve_vfx_uv_px_size",
+        "rzm_curve_vfx_preview_time",
         "rzm_curve_vfx_start_radius",
         "rzm_curve_vfx_end_radius",
         "rzm_curve_vfx_curve_right",

@@ -378,18 +378,11 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 is_custom_mesh = (target_obj.rzm_curve_vfx_mesh_fx_type == "3")
 
                 if is_custom_mesh:
-                    # Custom Mesh picker
                     gcol.separator()
-                    gcol.prop(target_obj, "rzm_curve_vfx_custom_mesh", text="Particle Mesh", icon='MESH_DATA')
-                    if not target_obj.rzm_curve_vfx_custom_mesh:
-                        gcol.label(text="Select a mesh to use as particle shape", icon='INFO')
-                    else:
-                        cm = target_obj.rzm_curve_vfx_custom_mesh
-                        v_count = len(cm.data.vertices) if cm.data else 0
-                        t_count = len(cm.data.polygons) if cm.data else 0
-                        gcol.label(text=f"Mesh: {cm.name}  ({v_count} verts, {t_count} polys)", icon='CHECKMARK')
+                    gcol.label(text="Custom Mesh mode will be implemented someday —", icon='INFO')
+                    gcol.label(text="though honestly, as the author, I have no intention")
+                    gcol.label(text="to do so since I have no need for it myself.")
                     gcol.separator()
-                    gcol.label(text="[Stage 2] Base Size and UV from mesh \u2014 fallback: Triangle", icon='INFO')
                     gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size Scale")
                     gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size Scale")
                 else:
@@ -491,6 +484,13 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
 
                 ubox.operator("rzm.compute_vfx_uv",
                               text="Compute & Write UV", icon='FILE_REFRESH')
+
+                ubox.separator()
+                ubox.label(text="Preview", icon='RESTRICT_VIEW_OFF')
+                prev_row = ubox.row(align=True)
+                prev_row.prop(target_obj, "rzm_curve_vfx_preview_time", text="Time (sec)")
+                ubox.operator("rzm.apply_vfx_preview",
+                              text="Apply GeoNodes Preview", icon='NODETREE')
 
                 # Validation
                 box.separator()
