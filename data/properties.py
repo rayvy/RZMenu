@@ -290,15 +290,21 @@ def set_vfx_profile(self, value):
 
 def get_vfx_size_base(self):
     val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_BASE")
-    if val is not None:
-        return val
-    # Fallback to legacy start or legacy mesh base size or default
-    val = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
-    if val is None:
-        val = self.get("RZM.CURVE_VFX.MESH_FX_SIZE_BASE")
-        if val is None:
-            val = self.get("RZM.CURVE_VFX.BASE_SIZE", 0.05)
-    return val
+    if val is not None and val > 0.0:
+        return float(val)
+    # Compute from pixel size if available
+    px = getattr(self, "rzm_curve_vfx_particle_size_px", 32)
+    tex_w = getattr(self, "rzm_curve_vfx_texture_size", (512, 512))[0]
+    if px and tex_w:
+        return float(px) / max(int(tex_w), 1)
+    # Fallback to legacy
+    fallback = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
+    if fallback is None:
+        fallback = self.get("RZM.CURVE_VFX.MESH_FX_SIZE_BASE")
+        if fallback is None:
+            fallback = self.get("RZM.CURVE_VFX.BASE_SIZE", 0.05)
+    return float(fallback)
+
 def set_vfx_size_base(self, value):
     ensure_vfx_properties_initialized(self)
     self["RZM.CURVE_VFX.PARTICLE_SIZE_BASE"] = value
@@ -655,6 +661,33 @@ def register():
         type=bpy.types.Object,
         poll=lambda self, obj: obj.type == 'MESH'
     )
+    bpy.types.Object.rzm_curve_vfx_texture_size = IntVectorProperty(
+        name="Texture Size",
+        description="Particle texture dimensions in pixels (W, H). Used to compute Base Size float.",
+        size=2,
+        default=(512, 512),
+        min=1
+    )
+    bpy.types.Object.rzm_curve_vfx_particle_size_px = IntProperty(
+        name="Particle Size (px)",
+        description="Particle size in pixels. Converted to float: px / Texture Width. Set Base Size > 0 to override.",
+        default=32,
+        min=1
+    )
+    bpy.types.Object.rzm_curve_vfx_uv_px_offset = IntVectorProperty(
+        name="UV Sprite Offset (px)",
+        description="Top-left corner of the sprite in the atlas, in pixels (U, V)",
+        size=2,
+        default=(0, 0),
+        min=0
+    )
+    bpy.types.Object.rzm_curve_vfx_uv_px_size = IntVectorProperty(
+        name="UV Sprite Size (px)",
+        description="Width and height of the sprite in the atlas, in pixels",
+        size=2,
+        default=(32, 32),
+        min=1
+    )
 
     custom_draw_ops.register()
     # Регистрация scene properties
@@ -747,6 +780,10 @@ def unregister():
         "rzm_curve_vfx_weight_indices",
         "rzm_curve_vfx_weight_values",
         "rzm_curve_vfx_weight_reference",
+        "rzm_curve_vfx_texture_size",
+        "rzm_curve_vfx_particle_size_px",
+        "rzm_curve_vfx_uv_px_offset",
+        "rzm_curve_vfx_uv_px_size",
         "rzm_curve_vfx_start_radius",
         "rzm_curve_vfx_end_radius",
         "rzm_curve_vfx_curve_right",

@@ -137,7 +137,62 @@ class RZM_OT_validate_curve_vfx(Operator):
         self.report({"INFO"}, "VFX Curve validation completed. See console.")
         return {"FINISHED"}
 
+
+class RZM_OT_toggle_curve_bevel(Operator):
+    bl_idname = "rzm.toggle_curve_bevel"
+    bl_label = "Toggle Bevel Preview"
+    bl_description = "Set bevel_depth=0.01 on selected curves for preview; if already 0.01, set to 0.0"
+
+    def execute(self, context):
+        targets = [obj for obj in context.selected_objects if obj.type == 'CURVE']
+        if not targets:
+            self.report({'WARNING'}, "No curve objects selected")
+            return {'CANCELLED'}
+        for obj in targets:
+            if abs(obj.data.bevel_depth - 0.01) < 1e-6:
+                obj.data.bevel_depth = 0.0
+            else:
+                obj.data.bevel_depth = 0.01
+        return {'FINISHED'}
+
+
+
+class RZM_OT_compute_vfx_uv(Operator):
+    bl_idname = "rzm.compute_vfx_uv"
+    bl_label = "Compute & Write UV"
+    bl_description = (
+        "Compute UV offset and scale from canvas size + pixel offset + sprite size, "
+        "then write the result to UV Offset / UV Scale"
+    )
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or obj.type != 'CURVE':
+            self.report({'WARNING'}, "No active curve object")
+            return {'CANCELLED'}
+
+        tex_w, tex_h = obj.rzm_curve_vfx_texture_size
+        off_u, off_v   = obj.rzm_curve_vfx_uv_px_offset
+        sz_w,  sz_h    = obj.rzm_curve_vfx_uv_px_size
+
+        tw = max(tex_w, 1)
+        th = max(tex_h, 1)
+
+        uv_offset = (off_u / tw, off_v / th)
+        uv_scale  = (sz_w  / tw, sz_h  / th)
+
+        obj.rzm_curve_vfx_uv_offset = uv_offset
+        obj.rzm_curve_vfx_uv_scale  = uv_scale
+
+        self.report({'INFO'},
+            f"UV written → Offset=({uv_offset[0]:.4f}, {uv_offset[1]:.4f})  "
+            f"Scale=({uv_scale[0]:.4f}, {uv_scale[1]:.4f})")
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_normalize_weight_value,
-    RZM_OT_validate_curve_vfx
+    RZM_OT_validate_curve_vfx,
+    RZM_OT_toggle_curve_bevel,
+    RZM_OT_compute_vfx_uv,
 ]

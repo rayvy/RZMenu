@@ -369,25 +369,38 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             box.prop(target_obj, "rzm_curve_vfx_enabled", text="Enable Curve VFX")
             
             if target_obj.rzm_curve_vfx_enabled:
-                # Section A: Particle Geometry
+                # Section A: Texture & Particle Size
                 gbox = box.box()
                 gbox.label(text="Particle Geometry", icon='MESH_DATA')
                 gcol = gbox.column(align=True)
                 gcol.prop(target_obj, "rzm_curve_vfx_mesh_fx_type", text="Mesh Type")
+
+
+                # ── Pixel size + live float preview ──
+                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_px", text="Particle Size (px)")
+                tex_w = max(target_obj.rzm_curve_vfx_texture_size[0], 1)
+                override_float = target_obj.rzm_curve_vfx_particle_size_base
+                if override_float > 0.0:
+                    gcol.label(text=f"\u2192 float override: {override_float:.6f}")
+                else:
+                    computed = target_obj.rzm_curve_vfx_particle_size_px / tex_w
+                    gcol.label(text=f"\u2192 float export: {computed:.6f}  ({target_obj.rzm_curve_vfx_particle_size_px}px / {tex_w})")
                 gcol.prop(target_obj, "rzm_curve_vfx_particle_size_base", text="Base Size")
+
                 gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size Scale")
                 gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size Scale")
-                row = gcol.row(align=True)
-                row.prop(target_obj, "rzm_curve_vfx_uv_offset", text="UV Offset")
-                row.prop(target_obj, "rzm_curve_vfx_uv_scale", text="UV Scale")
-                
+                # UV info (read-only)
+                uv_off = target_obj.rzm_curve_vfx_uv_offset
+                uv_sc  = target_obj.rzm_curve_vfx_uv_scale
+                gcol.label(text=f"UV  Off=({uv_off[0]:.4f}, {uv_off[1]:.4f})  Scale=({uv_sc[0]:.4f}, {uv_sc[1]:.4f})", icon='IMAGE_DATA')
+
                 # Section B: Path & Dispersion
                 dbox = box.box()
                 dbox.label(text="Path & Dispersion", icon='SPHERE')
                 dcol = dbox.column(align=True)
                 dcol.prop(target_obj, "rzm_curve_vfx_particle_count", text="Particle Count")
                 dcol.prop(target_obj, "rzm_curve_vfx_dispersion_scale", text="Dispersion Scale")
-                
+
                 # Section C: Animation & Chaos
                 abox = box.box()
                 abox.label(text="Animation & Chaos", icon='TIME')
@@ -402,26 +415,68 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_mid_pos", text="Timeline Mid")
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_end_pos", text="Timeline End")
                 acol.prop(target_obj, "rzm_curve_vfx_visibility_condition", text="Visibility Cond")
-                
+
                 # Section D: Technical Weights
                 wbox = box.box()
                 wbox.label(text="Technical Weights", icon='MOD_VERTEX_WEIGHT')
                 wbox.prop(target_obj, "rzm_curve_vfx_weight_reference", text="Reference Mesh")
-                
+
                 ref_mesh = target_obj.rzm_curve_vfx_weight_reference
                 if ref_mesh:
                     wbox.label(text="Bake Mode: Sampling weights from " + ref_mesh.name, icon='INFO')
-                    
+
                 col_manual = wbox.column()
                 col_manual.enabled = not ref_mesh
                 col_manual.prop(target_obj, "rzm_curve_vfx_weight_indices", text="Indices")
                 col_manual.prop(target_obj, "rzm_curve_vfx_weight_values", text="Values")
-                
-                # Normalize Weights operator
+
                 if not ref_mesh:
                     wbox.operator("rzm.normalize_curve_vfx_weight", text="Normalize Weights")
-                
-                # Validation operator
+
+                # Section E: Utilities
+                ubox = box.box()
+                ubox.label(text="Utilities", icon='TOOL_SETTINGS')
+                ubox.operator("rzm.toggle_curve_bevel",
+                              text="Toggle Bevel Preview (0.01 \u2194 0)", icon='CURVE_DATA')
+
+                ubox.separator()
+                ubox.label(text="UV Calculator", icon='IMAGE_DATA')
+                ucol = ubox.column(align=True)
+
+                # Canvas size
+                crow = ucol.row(align=True)
+                crow.label(text="Canvas:")
+                crow.prop(target_obj, "rzm_curve_vfx_texture_size", text="", index=0)
+                crow.label(text="\u00d7")
+                crow.prop(target_obj, "rzm_curve_vfx_texture_size", text="", index=1)
+                crow.label(text="px")
+
+                # Sprite offset in atlas
+                orow = ucol.row(align=True)
+                orow.label(text="Offset:")
+                orow.prop(target_obj, "rzm_curve_vfx_uv_px_offset", text="", index=0)
+                orow.prop(target_obj, "rzm_curve_vfx_uv_px_offset", text="", index=1)
+                orow.label(text="px (U, V)")
+
+                # Sprite size in atlas
+                srow = ucol.row(align=True)
+                srow.label(text="Sprite:")
+                srow.prop(target_obj, "rzm_curve_vfx_uv_px_size", text="", index=0)
+                srow.label(text="\u00d7")
+                srow.prop(target_obj, "rzm_curve_vfx_uv_px_size", text="", index=1)
+                srow.label(text="px")
+
+                # Live result preview
+                _tw = max(target_obj.rzm_curve_vfx_texture_size[0], 1)
+                _th = max(target_obj.rzm_curve_vfx_texture_size[1], 1)
+                _ou, _ov = target_obj.rzm_curve_vfx_uv_px_offset
+                _sw, _sh = target_obj.rzm_curve_vfx_uv_px_size
+                ucol.label(text=f"\u2192 Off=({_ou/_tw:.4f}, {_ov/_th:.4f})  Scale=({_sw/_tw:.4f}, {_sh/_th:.4f})")
+
+                ubox.operator("rzm.compute_vfx_uv",
+                              text="Compute & Write UV", icon='FILE_REFRESH')
+
+                # Validation
                 box.separator()
                 box.operator("rzm.validate_curve_vfx", text="Validate Curve VFX", icon='CHECKMARK')
             return

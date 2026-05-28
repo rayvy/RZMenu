@@ -78,7 +78,12 @@ def prop_get(obj, key, default=None, legacy_key=None):
 def write_object_props(obj, settings):
     obj[PROP_KEYS["marker"]] = True
     obj[PROP_KEYS["coordinate_remap_profile"]] = settings.coordinate_remap_profile
-    obj[PROP_KEYS["particle_size_base"]] = settings.particle_size_base
+    # Pixel → float conversion: px / texture_width. Falls back to direct float if px_base = 0.
+    if settings.particle_size_base > 0.0:
+        size_base_float = settings.particle_size_base
+    else:
+        size_base_float = settings.particle_size_px / max(settings.texture_size_x, 1)
+    obj[PROP_KEYS["particle_size_base"]] = size_base_float
     obj[PROP_KEYS["particle_size_start"]] = settings.particle_size_start
     obj[PROP_KEYS["particle_size_end"]] = settings.particle_size_end
     obj[PROP_KEYS["timeline_start_pos"]] = settings.timeline_start_pos
@@ -580,10 +585,30 @@ class RZM_CurveVFXSettings(PropertyGroup):
         default="AUTO",
     )
 
+    # --- Texture & pixel size ---
+    texture_size_x: bpy.props.IntProperty(
+        name="Texture Width",
+        description="Width of the particle texture in pixels",
+        default=512, min=1,
+    )
+
+    texture_size_y: bpy.props.IntProperty(
+        name="Texture Height",
+        description="Height of the particle texture in pixels",
+        default=512, min=1,
+    )
+
+    particle_size_px: bpy.props.IntProperty(
+        name="Particle Size (px)",
+        description="Desired particle size in pixels. Converted to float: px / texture_width",
+        default=32, min=1,
+    )
+
+    # kept for fallback / direct override
     particle_size_base: FloatProperty(
-        name="Base Size",
-        description="Base particle size (in meters)",
-        default=0.05,
+        name="Base Size (float override)",
+        description="Direct float override for particle size. Leave 0 to use pixel-based calculation.",
+        default=0.0,
         min=0.0,
         precision=6,
     )
@@ -1084,6 +1109,24 @@ class RZM_OT_validate_curve_vfx(Operator):
         return {"FINISHED"}
 
 
+class RZM_OT_toggle_curve_bevel(bpy.types.Operator):
+    bl_idname = "rzm.toggle_curve_bevel"
+    bl_label = "Toggle Bevel Preview"
+    bl_description = "Set bevel_depth=0.01 on selected curves for preview; if already 0.01, set to 0.0"
+
+    def execute(self, context):
+        targets = [obj for obj in context.selected_objects if obj.type == 'CURVE']
+        if not targets:
+            self.report({'WARNING'}, "No curve objects selected")
+            return {'CANCELLED'}
+        for obj in targets:
+            if abs(obj.data.bevel_depth - 0.01) < 1e-6:
+                obj.data.bevel_depth = 0.0
+            else:
+                obj.data.bevel_depth = 0.01
+        return {'FINISHED'}
+
+
 class VIEW3D_PT_rzm_curve_vfx(Panel):
     bl_label = "RZM Curve VFX"
     bl_idname = "VIEW3D_PT_rzm_curve_vfx"
@@ -1098,47 +1141,70 @@ class VIEW3D_PT_rzm_curve_vfx(Panel):
         layout.prop(settings, "enabled")
         layout.prop(settings, "mark_selected_only")
 
+        # ── Texture & Particle Size ──────────────────────────────────────
+        szbox = layout.box()
+        szbox.label(text="Texture & Particle Size")
+        row_tex = szbox.row(align=True)
+        row_tex.prop(settings, "texture_size_x", text="W")
+        row_tex.label(text="×")
+        row_tex.prop(settings, "texture_size_y", text="H")
+        szbox.prop(settings, "particle_size_px", text="Particle Size (px)")
+        # Live preview of computed float
+        computed = settings.particle_size_px / max(settings.texture_size_x, 1)
+        override_active = settings.particle_size_base > 0.0
+        if override_active:
+            szbox.label(text=f"→ float override: {settings.particle_size_base:.6f}")
+        else:
+            szbox.label(text=f"→ float export: {computed:.6f}  ({settings.particle_size_px}px / {settings.texture_size_x})")
+        szbox.prop(settings, "particle_size_base", text="Float Override (0=auto)")
+
+        # ── Shader Props ─────────────────────────────────────────────────
         box = layout.box()
         box.label(text="Shader Props")
         box.prop(settings, "mesh_fx_type")
-        box.prop(settings, "particle_size_base")
         box.prop(settings, "particle_size_start")
         box.prop(settings, "particle_size_end")
         row = box.row(align=True)
-        row.prop(settings, "size_rand_min", text="Min Rand Scale")
-        row.prop(settings, "size_rand_max", text="Max Rand Scale")
+        row.prop(settings, "size_rand_min", text="Min Rand")
+        row.prop(settings, "size_rand_max", text="Max Rand")
         row_uv = box.row(align=True)
-        row_uv.prop(settings, "uv_offset", text="UV Offset")
+        row_uv.prop(settings, "uv_offset", text="UV Off")
         row_uv.prop(settings, "uv_scale", text="UV Scale")
         box.prop(settings, "particle_count")
 
+        # ── Timeline ─────────────────────────────────────────────────────
         tbox = layout.box()
-        tbox.label(text="Timeline & Radii")
-        tbox.prop(settings, "timeline_start_pos")
-        tbox.prop(settings, "timeline_mid_pos")
-        tbox.prop(settings, "timeline_end_pos")
+        tbox.label(text="Timeline")
+        tbox.prop(settings, "cycle_duration")
+        tbox.prop(settings, "dispersion_scale")
+        tbox.prop(settings, "phase_randomness")
+        tbox.prop(settings, "pos_randomness")
+        row_tl = tbox.row(align=True)
+        row_tl.prop(settings, "timeline_start_pos", text="Start")
+        row_tl.prop(settings, "timeline_mid_pos", text="Mid")
+        row_tl.prop(settings, "timeline_end_pos", text="End")
         tbox.prop(settings, "visibility_condition", text="Visibility Cond")
-        tbox.prop(settings, "start_radius")
-        tbox.prop(settings, "end_radius")
-        tbox.prop(settings, "curve_right")
-        tbox.prop(settings, "curve_up")
 
+        # ── Weights ──────────────────────────────────────────────────────
         wbox = layout.box()
         wbox.label(text="Technical Weights")
         wbox.prop(settings, "weight_indices")
         wbox.prop(settings, "weight_values")
         wbox.operator("rzm.normalize_curve_vfx_weight", text="Normalize Weight")
 
-        row = layout.row(align=True)
-        row.operator("rzm.write_curve_vfx_props", text="Write To Curves")
-        row.operator("rzm.clear_curve_vfx_props", text="Clear")
+        # ── Utilities ────────────────────────────────────────────────────
+        ubox = layout.box()
+        ubox.label(text="Utilities")
+        ubox.operator("rzm.toggle_curve_bevel", text="Toggle Bevel Preview (0.01 ↔ 0)", icon='CURVE_DATA')
+        ubox.prop(settings, "coordinate_remap_profile")
 
+        # ── Actions ──────────────────────────────────────────────────────
+        row = layout.row(align=True)
+        row.operator("rzm.write_curve_vfx_props", text="Write To Curves", icon='EXPORT')
+        row.operator("rzm.clear_curve_vfx_props", text="Clear", icon='X')
         layout.operator("rzm.validate_curve_vfx", text="Validate Curve VFX", icon='CHECKMARK')
 
         layout.label(text="NURBS curves only for export payload.")
-        layout.label(text="Bezier curves are debug-printed but invalid.")
-        layout.label(text="Marker key: RZM.CURVE_VFX = True")
-        layout.label(text="Mesh FX type is stored as an index: 0/1/2")
 
 
 classes = (
@@ -1147,6 +1213,7 @@ classes = (
     RZM_OT_clear_curve_vfx_props,
     RZM_OT_normalize_weight_value,
     RZM_OT_validate_curve_vfx,
+    RZM_OT_toggle_curve_bevel,
     VIEW3D_PT_rzm_curve_vfx,
 )
 

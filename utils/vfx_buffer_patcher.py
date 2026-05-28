@@ -1171,45 +1171,23 @@ def patch_buffers(context, cache):
                             ]
                             u, v = uvs[v_idx]
 
-                        if uv_format == 'half':
-                            h_u = float_to_half(u)
-                            h_v = float_to_half(v)
-                            # UV0 (offset 0)
-                            if stride_t >= 4:
-                                struct.pack_into('<HH', buf, 0, h_u, h_v)
-                            # UV1 (offset 4)
-                            if stride_t >= 8:
-                                struct.pack_into('<HH', buf, 4, h_u, h_v)
-                            # UV2 (offset 8)
-                            if stride_t >= 12:
-                                struct.pack_into('<HH', buf, 8, h_u, h_v)
-                            # UV3 (offset 12)
-                            if stride_t >= 16:
-                                struct.pack_into('<HH', buf, 12, h_u, h_v)
-                            # Remaining bytes can be filled with color or 1.0 floats
-                            if stride_t >= 20:
-                                if stride_t == 20:
-                                    struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
-                                elif stride_t >= 24:
-                                    struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
-                        else:
-                            # float32 format
-                            # UV0 (offset 0)
-                            if stride_t >= 8:
-                                struct.pack_into('<ff', buf, 0, u, v)
-                            # UV1 (offset 8)
-                            if stride_t >= 16:
-                                struct.pack_into('<ff', buf, 8, u, v)
-                            # Color / Padding
-                            if stride_t >= 20:
-                                if stride_t == 20:
-                                    struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
-                                elif stride_t >= 24:
-                                    if stride_t == 24:
-                                        struct.pack_into('<BBBB', buf, 16, 255, 255, 255, 255)
-                                    else:
-                                        struct.pack_into('<ffff', buf, 16, 1.0, 1.0, 1.0, 1.0)
+                        # VFX vertex shader is the same for all components → always half-float UV.
+                        # (uv_format reflects the original mesh format, but VFX particles
+                        #  are always written in half to match the shared VFX vertex shader.)
+                        h_u = float_to_half(u)
+                        h_v = float_to_half(v)
+                        uv_slot_bytes = 4  # 2×float16
+                        num_slots = stride_t // uv_slot_bytes
+                        for slot in range(num_slots):
+                            struct.pack_into('<HH', buf, slot * uv_slot_bytes, h_u, h_v)
+                        # Pad any trailing bytes (e.g. RGBA color) with 0xFF
+                        leftover_start = num_slots * uv_slot_bytes
+                        for byte_i in range(leftover_start, stride_t):
+                            buf[byte_i] = 0xFF
                         f_vb1.write(buf)
+
+
+
 
             # ----------------------------------------------------------------------
             # D. Patch IB (Indices)
