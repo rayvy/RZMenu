@@ -333,55 +333,119 @@ def evaluate_curve_all_shapes(context, curve_obj, num_samples=32):
     """
     Evaluates spline points for all shape keys of the curve sequentially.
     Returns a list of 8 shapes, each containing 32 sampled (Vector, float) points.
+    Sets kb.value=1.0 on the original curve per shape, gets a fresh depsgraph,
+    evaluates the centre-line (bevel=0), then restores all values.
     """
     if not curve_obj.data.splines:
         return [[] for _ in range(8)]
-        
+
     shape_keys = curve_obj.data.shape_keys
     if not shape_keys or not shape_keys.key_blocks:
-        # Static curve fallback: duplicate basis shape 8 times
+        # Static curve: duplicate basis shape 8 times
         basis_pts = evaluate_curve_spline_points(context, curve_obj, num_samples)
         return [list(basis_pts) for _ in range(8)]
-        
-    keys = list(shape_keys.key_blocks)
-    spline = curve_obj.data.splines[0]
-    is_bezier = (spline.type == 'BEZIER')
-    
-    # Save original control point positions
-    if is_bezier:
-        orig_cos = [p.co.copy() for p in spline.bezier_points]
-    else:
-        orig_cos = [p.co.copy() for p in spline.points]
-        
+
+    keys = list(shape_keys.key_blocks)  # keys[0] = Basis, keys[1..] = actual SKs
+
+    # Save original shape key values
+    orig_values = [kb.value for kb in keys]
+
+    # Temporarily zero bevel so to_mesh() gives only the centre-line
+    orig_bevel_depth  = curve_obj.data.bevel_depth
+    orig_bevel_obj    = curve_obj.data.bevel_object
+    orig_extrude      = curve_obj.data.extrude
+    curve_obj.data.bevel_depth  = 0.0
+    curve_obj.data.bevel_object = None
+    curve_obj.data.extrude      = 0.0
+
     shapes_pts = []
-    
-    # Process up to 8 shape keys: Basis (index 0) + up to 7 shape keys (indices 1..7)
-    for k_idx, kb in enumerate(keys[:8]):
-        # Temporarily apply shape key coords to the active spline
-        for i, p in enumerate(spline.bezier_points if is_bezier else spline.points):
-            if i < len(kb.data):
-                co = kb.data[i].co
-                if is_bezier:
-                    p.co = co.copy()
+
+    try:
+        for k_idx in range(min(len(keys), 8)):
+            # Reset all shape key values, then activate the target one
+            for kb in keys:
+                kb.value = 0.0
+            if k_idx > 0:
+                keys[k_idx].value = 1.0   # Basis has no "value" that matters — skip it
+
+            # Re-request depsgraph AFTER changing values so it's up to date
+            context.view_layer.update()
+            depsgraph = context.evaluated_depsgraph_get()
+
+            eval_obj  = curve_obj.evaluated_get(depsgraph)
+            try:
+                temp_mesh = eval_obj.to_mesh()
+            except Exception as e:
+                print(f"[RZM-VFX] Shape {k_idx} eval error: {e}")
+                shapes_pts.append([])
+                eval_obj.to_mesh_clear()
+                continue
+
+            verts = [v.co.copy() for v in temp_mesh.vertices]
+            eval_obj.to_mesh_clear()
+
+            if len(verts) < 2:
+                shapes_pts.append([])
+                continue
+
+            # Arc-length resample to num_samples points
+            # Radius: interpolated from the ctrl-point radii of the evaluated spline
+            spline = curve_obj.data.splines[0]
+            if spline.type == 'BEZIER':
+                ctrl_radii = [p.radius for p in eval_obj.data.splines[0].bezier_points]
+            else:
+                ctrl_radii = [p.radius for p in eval_obj.data.splines[0].points]
+
+            distances = [0.0]
+            total_len = 0.0
+            for i in range(1, len(verts)):
+                total_len += (verts[i] - verts[i-1]).length
+                distances.append(total_len)
+
+            if total_len == 0.0:
+                r_val = ctrl_radii[0] if ctrl_radii else 1.0
+                shapes_pts.append([(verts[0], r_val)] * num_samples)
+                continue
+
+            resampled = []
+            ctrl_len = sum((ctrl_radii[i] - ctrl_radii[i-1]) for i in range(1, len(ctrl_radii))) if len(ctrl_radii) > 1 else 0.0
+            for j in range(num_samples):
+                factor = j / (num_samples - 1)
+                target  = factor * total_len
+                idx = 0
+                while idx < len(distances) - 2 and distances[idx+1] < target:
+                    idx += 1
+                d0, d1 = distances[idx], distances[idx+1]
+                t  = (target - d0) / (d1 - d0) if d1 > d0 else 0.0
+                pt = verts[idx].lerp(verts[min(idx+1, len(verts)-1)], t)
+                # Radius from ctrl-points via factor
+                if len(ctrl_radii) >= 2:
+                    ri = min(int(factor * (len(ctrl_radii)-1)), len(ctrl_radii)-2)
+                    rf = factor * (len(ctrl_radii)-1) - ri
+                    r_val = ctrl_radii[ri] + rf * (ctrl_radii[ri+1] - ctrl_radii[ri])
                 else:
-                    # Preserve NURBS 4th W weight component
-                    p.co = (co[0], co[1], co[2], orig_cos[i][3])
-                    
-        # Evaluate curve spline points for this shape key configuration
-        pts = evaluate_curve_spline_points(context, curve_obj, num_samples)
-        shapes_pts.append(pts)
-        
-    # Restore original spline control points
-    for i, p in enumerate(spline.bezier_points if is_bezier else spline.points):
-        p.co = orig_cos[i]
-        
-    # Pad to exactly 8 shapes using the last evaluated shape key
+                    r_val = ctrl_radii[0] if ctrl_radii else 1.0
+                resampled.append((pt, r_val))
+
+            shapes_pts.append(resampled)
+
+    finally:
+        # Restore shape key values and bevel
+        for kb, v in zip(keys, orig_values):
+            kb.value = v
+        curve_obj.data.bevel_depth  = orig_bevel_depth
+        curve_obj.data.bevel_object = orig_bevel_obj
+        curve_obj.data.extrude      = orig_extrude
+        context.view_layer.update()
+
+    # Pad to exactly 8 shapes with last evaluated shape
     while len(shapes_pts) < 8:
-        last_shape = shapes_pts[-1] if shapes_pts else []
-        shapes_pts.append(list(last_shape))
-        
-    # Truncate if more than 8 shapes (shouldn't happen because of keys[:8] but just in case)
+        last = shapes_pts[-1] if shapes_pts else []
+        shapes_pts.append(list(last))
+
     return shapes_pts[:8]
+
+
 
 def sample_curve_at_progress(resampled_data, t):
     """

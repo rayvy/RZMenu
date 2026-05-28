@@ -120,16 +120,19 @@ struct SampledPoint {
     float radius;
 };
 
-SampledPoint SampleCurve(uint curve_idx, float cycle, uint num_shapes) {
-    float t = clamp(cycle, 0.0f, 1.0f);
-    
-    // Determine the shape key indices and factor
+// Shape blend slots: one per curve (supports up to 4 curves with independent shapes)
+// IniParams[116].x = shape blend for curve 0, IniParams[117].x = curve 1, etc.
+
+SampledPoint SampleCurve(uint curve_idx, float path_progress, uint num_shapes, float shape_blend) {
+    float t = clamp(path_progress, 0.0f, 1.0f);
+
+    // Shape selection: driven by SEPARATE shape_blend value [0..1], NOT path_progress
     uint shape_idx0 = 0;
     uint shape_idx1 = 0;
     float shape_factor = 0.0f;
-    
+
     if (num_shapes > 0) {
-        float t_scaled = t * (float)num_shapes;
+        float t_scaled = clamp(shape_blend, 0.0f, 1.0f) * (float)num_shapes;
         shape_idx0 = (uint)floor(t_scaled);
         shape_idx1 = min(shape_idx0 + 1, num_shapes);
         shape_factor = t_scaled - (float)shape_idx0;
@@ -139,38 +142,37 @@ SampledPoint SampleCurve(uint curve_idx, float cycle, uint num_shapes) {
             shape_factor = 0.0f;
         }
     }
-    
-    // Determine the point index and factor along the curve
+
+    // Curve position sampling: driven by path_progress independently
     float t_spline = t * 31.0f;
     uint idx0 = (uint)floor(t_spline);
     uint idx1 = min(idx0 + 1, 31);
     float factor = t_spline - float(idx0);
-    
-    uint base_idx = curve_idx * 257; // 257 points per curve block: 8 shapes * 32 points + 1 metadata point
-    
-    // Sample points from shape_idx0
+
+    uint base_idx = curve_idx * 257;
+
     CurvePoint p0_s0 = CurveData[base_idx + shape_idx0 * 32 + idx0];
     CurvePoint p1_s0 = CurveData[base_idx + shape_idx0 * 32 + idx1];
-    float3 pos_s0 = lerp(p0_s0.position, p1_s0.position, factor);
-    float3 tangent_s0 = lerp(p0_s0.tangent, p1_s0.tangent, factor);
-    float3 normal_s0 = lerp(p0_s0.normal, p1_s0.normal, factor);
-    float radius_s0 = lerp(p0_s0.u, p1_s0.u, factor);
-    
-    // Sample points from shape_idx1
+    float3 pos_s0    = lerp(p0_s0.position, p1_s0.position, factor);
+    float3 tan_s0    = lerp(p0_s0.tangent,  p1_s0.tangent,  factor);
+    float3 nor_s0    = lerp(p0_s0.normal,   p1_s0.normal,   factor);
+    float  rad_s0    = lerp(p0_s0.u,        p1_s0.u,        factor);
+
     CurvePoint p0_s1 = CurveData[base_idx + shape_idx1 * 32 + idx0];
     CurvePoint p1_s1 = CurveData[base_idx + shape_idx1 * 32 + idx1];
-    float3 pos_s1 = lerp(p0_s1.position, p1_s1.position, factor);
-    float3 tangent_s1 = lerp(p0_s1.tangent, p1_s1.tangent, factor);
-    float3 normal_s1 = lerp(p0_s1.normal, p1_s1.normal, factor);
-    float radius_s1 = lerp(p0_s1.u, p1_s1.u, factor);
-    
+    float3 pos_s1    = lerp(p0_s1.position, p1_s1.position, factor);
+    float3 tan_s1    = lerp(p0_s1.tangent,  p1_s1.tangent,  factor);
+    float3 nor_s1    = lerp(p0_s1.normal,   p1_s1.normal,   factor);
+    float  rad_s1    = lerp(p0_s1.u,        p1_s1.u,        factor);
+
     SampledPoint result;
     result.position = lerp(pos_s0, pos_s1, shape_factor);
-    result.tangent = normalize(lerp(tangent_s0, tangent_s1, shape_factor));
-    result.normal = normalize(lerp(normal_s0, normal_s1, shape_factor));
-    result.radius = lerp(radius_s0, radius_s1, shape_factor);
+    result.tangent  = normalize(lerp(tan_s0, tan_s1, shape_factor));
+    result.normal   = normalize(lerp(nor_s0, nor_s1, shape_factor));
+    result.radius   = lerp(rad_s0, rad_s1, shape_factor);
     return result;
 }
+
 
 [numthreads(128, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
@@ -280,8 +282,11 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float B = 1.0f - A;
     float path_progress = clamp(A * active_t * active_t + B * active_t, 0.0f, 1.0f);
 
-    // Сэмпл кривой
-    SampledPoint sampled = SampleCurve(curve_idx, path_progress, num_shapes);
+    // Shape blend: глобальное время делит цикл на N равных сегментов.
+    // Basis→SK1→SK2→...→SKN циклично за CFG_CYCLE_DURATION секунд.
+    float shape_blend = frac(TIME / max(CFG_CYCLE_DURATION, 1e-5f));
+    SampledPoint sampled = SampleCurve(curve_idx, path_progress, num_shapes, shape_blend);
+
     float3 pos_on_line = sampled.position;
 
     // Направление распыления ортогонально направлению кривой
