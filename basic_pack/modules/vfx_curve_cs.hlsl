@@ -233,11 +233,11 @@ void main(uint3 threadID : SV_DispatchThreadID)
             float3( 0.5f,  0.5f, 0.0f)
         };
         local_pos = quad_verts[v_local_id % 4];
-    } else if (mesh_fx_type == 2) { // Circle
+    } else if (mesh_fx_type == 2) { // Circle (hexagon: center + 6 outer)
         if (v_local_id == 0) {
             local_pos = float3(0.0f, 0.0f, 0.0f);
         } else {
-            float angle = float(v_local_id - 1) * (2.0f * 3.14159265f / 5.0f);
+            float angle = float(v_local_id - 1) * (2.0f * 3.14159265f / 6.0f);
             local_pos = float3(cos(angle), sin(angle), 0.0f);
         }
     } else { // Triangle
@@ -251,7 +251,7 @@ void main(uint3 threadID : SV_DispatchThreadID)
 
     uint v_per_particle = 3;
     if (mesh_fx_type == 1) v_per_particle = 4;
-    else if (mesh_fx_type == 2) v_per_particle = 6;
+    else if (mesh_fx_type == 2) v_per_particle = 7;
 
     uint active_i = i - cutoff_index;
     uint particle_id = active_i / v_per_particle;

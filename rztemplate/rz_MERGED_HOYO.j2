@@ -24,7 +24,8 @@
         {%- set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int -%}
         {%- set vpp = 3 -%}
         {%- if fx_type == 1 -%}{%- set vpp = 4 -%}{%- endif -%}
-        {%- if fx_type == 2 -%}{%- set vpp = 6 -%}{%- endif -%}
+        {%- if fx_type == 2 -%}{%- set vpp = 7 -%}{%- endif -%}
+        {# fx_type 3 = Custom Mesh stub → fallback triangle (vpp stays 3) #}
         {%- if result.append(result.pop() + p_count * vpp) %}{% endif -%}
     {%- endfor -%}
     {{- result[-1] -}}
