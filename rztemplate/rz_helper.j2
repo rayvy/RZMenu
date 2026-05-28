@@ -208,3 +208,28 @@ endif
     ;[META-INFO] [END] [DELETE] [MESH] [{{ obj_name }}] {{ mesh_tags }}
     {% endif %}
 {% endmacro %}
+
+{% macro curve_custom_draw(curve, idx_count, idx_offset) -%}
+    {% set real_obj = scene.objects.get(curve.name) if scene and scene.objects else none %}
+    {% if real_obj %}
+        {% set cd_draw_type = 4 if scene.rzm.game.selection == 'ArknightsEndfield' else 2 %}
+        {% for key, value in real_obj.items() if key.startswith('CustomDraw.') %}
+            {% set cd_name = key[11:] %}
+            {% if not cd_name.startswith('RabbitFxPreset') %}
+            $CD_INDEX_COUNT = {{ idx_count }}
+            $CD_INSTANCE_COUNT = INSTANCE_COUNT
+            $CD_FIRST_INDEX = {{ idx_offset }}
+            $CD_FIRST_VERTEX = 0
+            $CD_FIRST_INSTANCE = FIRST_INSTANCE
+            $CD_draw_type = {{ cd_draw_type }}
+            {% endif %}
+            {% if cd_name == 'FRAMETRACE' and scene.rzm.addons.frame_trace == 1 %}
+                {% set safe_name = utils.format_from_idiot(real_obj.name) %}
+            run = CustomShader{{ safe_name }}Sandevistan
+            run = CustomShader.rzm.CustomDraw.FRAMETRACE
+            {% else %}
+            run = CustomShader.rzm.CustomDraw.{{ cd_name }}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{%- endmacro %}

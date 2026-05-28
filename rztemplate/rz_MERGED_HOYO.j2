@@ -252,6 +252,7 @@
                         {% set visibility_cond = raw_cond | string | trim %}
                     {% endif %}
             ; RZM VFX Curve: {{ curve.name }}
+                    {{ helper.curve_custom_draw(curve, curve_idx_count, current_vfx_offset[0]) }}
                     {% if visibility_cond != "" %}
             if {{ visibility_cond }}
                 drawindexed = {{ curve_idx_count }}, {{ current_vfx_offset[0] }}, 0

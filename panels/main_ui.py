@@ -492,8 +492,6 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 # Validation
                 box.separator()
                 box.operator("rzm.validate_curve_vfx", text="Validate Curve VFX", icon='CHECKMARK')
-            return
-
         # --- MOD PRODUCER TIERS ---
         if context.scene.rzm_editor_mode == 'PRO':
             box = layout.box()

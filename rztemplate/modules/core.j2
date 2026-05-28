@@ -44,6 +44,15 @@
 {%macro entryPoint(mod_file,scene)%}
 {# --- RZM HOVER DETECT: collect components with hoverable objects --- #}
 {% set _hover_comps = [] %}
+{% set _cd_flags = {
+    'xray': false,
+    'frametrace': false,
+    'rabbit0': false,
+    'rabbit1': false,
+    'rabbit2': false,
+    'rabbit3': false,
+    'rabbit4': false,
+} %}
 {% if mod_file and mod_file.components %}
     {% for component in mod_file.components if component.draw_vb != "" %}
         {% set _comp_has = {'found': false} %}
@@ -58,6 +67,28 @@
         {% if _comp_has.found %}
             {% if _hover_comps.append(component) %}{% endif %}
         {% endif %}
+    {% endfor %}
+{% endif %}
+{% if scene and scene.objects %}
+    {% for obj in scene.objects %}
+        {% for key in obj.keys() if key.startswith('CustomDraw.') %}
+            {% set cd_name = key[11:] %}
+            {% if cd_name.startswith('XRAY') %}
+                {% if _cd_flags.update({'xray': true}) %}{% endif %}
+            {% elif cd_name == 'FRAMETRACE' %}
+                {% if _cd_flags.update({'frametrace': true}) %}{% endif %}
+            {% elif cd_name == 'RabbitFxPreset0' %}
+                {% if _cd_flags.update({'rabbit0': true}) %}{% endif %}
+            {% elif cd_name == 'RabbitFxPreset1' %}
+                {% if _cd_flags.update({'rabbit1': true}) %}{% endif %}
+            {% elif cd_name == 'RabbitFxPreset2' %}
+                {% if _cd_flags.update({'rabbit2': true}) %}{% endif %}
+            {% elif cd_name == 'RabbitFxPreset3' %}
+                {% if _cd_flags.update({'rabbit3': true}) %}{% endif %}
+            {% elif cd_name == 'RabbitFxPreset4' %}
+                {% if _cd_flags.update({'rabbit4': true}) %}{% endif %}
+            {% endif %}
+        {% endfor %}
     {% endfor %}
 {% endif %}
 {% set has_any_hover = _hover_comps | length > 0 %}
@@ -472,6 +503,7 @@ if $inputMode == 0
     endif
 endif
 
+{% if _cd_flags.xray %}
 [CustomShader.rzm.CustomDraw.XRAY.ENHANCED]
 cull = front
 alpha_to_coverage = false
@@ -554,7 +586,9 @@ drawindexed = $CD_INDEX_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX
 elif $CD_draw_type == 4
 drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
 endif
+{% endif %}
 
+{% if _cd_flags.frametrace %}
 [CustomShader.rzm.CustomDraw.FRAMETRACE]
 ;depth_bias = 500
 ;slope_scaled_depth_bias = 1.0
@@ -567,6 +601,74 @@ endif
 ;elif $CD_draw_type == 4
 ;drawindexedinstanced = $CD_INDEX_COUNT, $CD_INSTANCE_COUNT, $CD_FIRST_INDEX, $CD_FIRST_VERTEX, $CD_FIRST_INSTANCE
 ;endif
+{% endif %}
+
+
+{% if _cd_flags.rabbit0 %}
+[CustomShader.rzm.CustomDraw.RabbitFxPreset0]
+$\rabbitfx\blendmode = 1
+$\RabbitFX\brightness = 20
+Resource\RabbitFX\Glowmap = ref ResourceModuleTexR
+run = CommandList\RabbitFX\Run
+drawindexed = 1380, 6114, 0
+{% endif %}
+
+{% if _cd_flags.rabbit1 %}
+[CustomShader.rzm.CustomDraw.RabbitFxPreset1]
+$\rabbitfx\blendmode = 1
+$\RabbitFX\brightness = 20
+Resource\RabbitFX\Glowmap = ref ResourceModuleTexRB
+run = CommandList\RabbitFX\Run
+drawindexed = 1380, 6114, 0
+{% endif %}
+
+{% if _cd_flags.rabbit2 %}
+[CustomShader.rzm.CustomDraw.RabbitFxPreset2]
+$\rabbitfx\blendmode = 1
+$\RabbitFX\brightness = 20
+Resource\RabbitFX\Glowmap = ref ResourceModuleTexBlueG
+run = CommandList\RabbitFX\Run
+drawindexed = 1380, 6114, 0
+{% endif %}
+
+{% if _cd_flags.rabbit3 %}
+[CustomShader.rzm.CustomDraw.RabbitFxPreset3]
+$\rabbitfx\blendmode = 1
+$\RabbitFX\brightness = 20
+Resource\RabbitFX\Glowmap = ref ResourceModuleTexBlue
+run = CommandList\RabbitFX\Run
+drawindexed = 1380, 6114, 0
+{% endif %}
+
+{% if _cd_flags.rabbit4 %}
+[CustomShader.rzm.CustomDraw.RabbitFxPreset4]
+$\rabbitfx\blendmode = 1
+$\RabbitFX\brightness = 20
+Resource\RabbitFX\Glowmap = ref ResourceModuleTexW
+run = CommandList\RabbitFX\Run
+drawindexed = 1380, 6114, 0
+{% endif %}
+
+{% if _cd_flags.rabbit0 or _cd_flags.rabbit1 or _cd_flags.rabbit2 or _cd_flags.rabbit3 or _cd_flags.rabbit4 %}
+[ResourceModuleTexW]
+type = Texture2D
+filename = ./modules/w.dds
+[ResourceModuleTexB]
+type = Texture2D
+filename = ./modules/b.dds
+[ResourceModuleTexR]
+type = Texture2D
+filename = ./modules/r.dds
+[ResourceModuleTexRB]
+type = Texture2D
+filename = ./modules/rb.dds
+[ResourceModuleTexBlue]
+type = Texture2D
+filename = ./modules/blue.dds
+[ResourceModuleTexBlueG]
+type = Texture2D
+filename = ./modules/blueG.dds
+{% endif %}
 
 {%endmacro%}
 
