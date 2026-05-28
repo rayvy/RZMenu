@@ -697,15 +697,15 @@ def patch_buffers(context, cache):
         f.write(all_curve_bytes)
     print(f"[RZM-VFX] Wrote {valid_curve_count} curves ({valid_curve_count * 257 * 40} bytes) to '{curve_buf_path}'")
 
-    # Write curve_weight_data.buf: 32 weight entries per curve, stride=32 (4xfloat + 4xuint)
+    # Write curve_weight_data.buf: 8 shapes × 32 points per curve, stride=32 (4xfloat + 4xuint)
+    # Layout mirrors curve_data.buf: curve_idx * 256 + shape_idx * 32 + point_idx
     weight_buf_path = os.path.join(res_dir, "curve_weight_data.buf")
     all_weight_bytes = bytearray()
     for curve_obj in vfx_curves:
         if curve_obj.name not in curve_mapping:
             continue
         comp_name, target_mesh, part_name = find_associated_mesh_and_component(context, curve_obj)
-        shapes_resampled = curve_shapes_cache.get(curve_obj.name, [])
-        basis_pts = shapes_resampled[0] if shapes_resampled else []
+        shapes_resampled = curve_shapes_cache.get(curve_obj.name, [])  # list of 8 shape lists
 
         weight_indices = list(get_curve_prop(curve_obj, "weight_indices", (-1, -1, -1, -1)))
         weight_values  = list(get_curve_prop(curve_obj, "weight_values", (0.0, 0.0, 0.0, 0.0)))
@@ -731,43 +731,47 @@ def patch_buffers(context, cache):
                 print(f"[RZM-VFX] [WARN] Weight KDTree failed for weight export: {e}")
                 kd_w = None
 
-        for pt_idx in range(32):
-            t = pt_idx / 31.0
-            if basis_pts and len(basis_pts) >= 2:
-                pos_local = sample_curve_at_progress(basis_pts, t)
-                wpos = curve_obj.matrix_world @ pos_local
-                if kd_w:
-                    _, ref_idx, _ = kd_w.find(wpos)
-                    v = ref_data_w.vertices[ref_idx]
-                    bone_groups = []
-                    for g in v.groups:
-                        if g.weight > 1e-5:
-                            gname = vg_map_w.get(g.group)
-                            if gname and gname in bone_to_id_w:
-                                bone_groups.append((bone_to_id_w[gname], g.weight))
-                    bone_groups.sort(key=lambda x: x[1], reverse=True)
-                    bone_groups = bone_groups[:4]
-                    if bone_groups:
-                        tw = sum(w for _, w in bone_groups)
-                        bone_groups = [(idx, w / tw) for idx, w in bone_groups] if tw > 0 else bone_groups
-                        while len(bone_groups) < 4:
-                            bone_groups.append((0, 0.0))
-                        out_idx = [bg[0] for bg in bone_groups]
-                        out_w   = [bg[1] for bg in bone_groups]
-                    else:
-                        out_idx, out_w = fallback_idx, fallback_w
+        def sample_weight_at_world_pos(wpos):
+            """Look up top-4 bone weights at a world-space position via KDTree."""
+            if not kd_w:
+                return fallback_idx, fallback_w
+            _, ref_idx, _ = kd_w.find(wpos)
+            v = ref_data_w.vertices[ref_idx]
+            bone_groups = []
+            for g in v.groups:
+                if g.weight > 1e-5:
+                    gname = vg_map_w.get(g.group)
+                    if gname and gname in bone_to_id_w:
+                        bone_groups.append((bone_to_id_w[gname], g.weight))
+            bone_groups.sort(key=lambda x: x[1], reverse=True)
+            bone_groups = bone_groups[:4]
+            if bone_groups:
+                tw = sum(w for _, w in bone_groups)
+                bone_groups = [(idx, w / tw) for idx, w in bone_groups] if tw > 0 else bone_groups
+                while len(bone_groups) < 4:
+                    bone_groups.append((0, 0.0))
+                return [bg[0] for bg in bone_groups], [bg[1] for bg in bone_groups]
+            return fallback_idx, fallback_w
+
+        # Write 8 shapes × 32 points — mirrors curve_data.buf layout exactly
+        for shape_idx in range(8):
+            shape_pts = shapes_resampled[shape_idx] if shape_idx < len(shapes_resampled) else []
+            for pt_idx in range(32):
+                t = pt_idx / 31.0
+                if shape_pts and len(shape_pts) >= 2:
+                    pos_local = sample_curve_at_progress(shape_pts, t)
+                    wpos = curve_obj.matrix_world @ pos_local
+                    out_idx, out_w = sample_weight_at_world_pos(wpos)
                 else:
                     out_idx, out_w = fallback_idx, fallback_w
-            else:
-                out_idx, out_w = fallback_idx, fallback_w
-
-            all_weight_bytes.extend(struct.pack('<ffffIIII',
-                out_w[0], out_w[1], out_w[2], out_w[3],
-                out_idx[0], out_idx[1], out_idx[2], out_idx[3]))
+                all_weight_bytes.extend(struct.pack('<ffffIIII',
+                    out_w[0], out_w[1], out_w[2], out_w[3],
+                    out_idx[0], out_idx[1], out_idx[2], out_idx[3]))
 
     with open(weight_buf_path, 'wb') as f:
         f.write(all_weight_bytes)
-    print(f"[RZM-VFX] Wrote curve_weight_data.buf ({len(all_weight_bytes)} bytes) to '{weight_buf_path}'")
+    print(f"[RZM-VFX] Wrote curve_weight_data.buf ({len(all_weight_bytes)} bytes, 8shapes×32pts per curve) to '{weight_buf_path}'")
+
 
 
     # 2. Group curves by target component and part
