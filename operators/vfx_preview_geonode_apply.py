@@ -308,6 +308,8 @@ class RZM_OT_apply_vfx_preview(bpy.types.Operator):
         except Exception:
             pass
 
+        curve_radius_input = new_node("GeometryNodeInputRadius", -300, -250)
+
         random_x = new_node("FunctionNodeRandomValue", -760, -900)
         try:
             random_x.data_type = 'FLOAT'
@@ -363,6 +365,15 @@ class RZM_OT_apply_vfx_preview(bpy.types.Operator):
 
         dispersion_mul_seed = new_node("ShaderNodeMath", 140, -1320)
         dispersion_mul_seed.operation = 'MULTIPLY'
+
+        # Scale curve point radius by 0.01
+        radius_scale = new_node("ShaderNodeMath", -300, -1500)
+        radius_scale.operation = 'MULTIPLY'
+        set_input(radius_scale, 0.01, "Value_001", "Value 2")
+
+        # Multiply by Dispersion Scale from Group Input
+        dispersion_scale_mul = new_node("ShaderNodeMath", -80, -1500)
+        dispersion_scale_mul.operation = 'MULTIPLY'
 
         dispersion_vector = new_node("ShaderNodeVectorMath", 800, -1080)
         dispersion_vector.operation = 'SCALE'
@@ -601,6 +612,7 @@ class RZM_OT_apply_vfx_preview(bpy.types.Operator):
 
         make_link(group_input, ("Geometry",), sample_curve, ("Curve", "Geometry"))
         make_link(active_t, ("Value",), sample_curve, ("Factor",))
+        make_link(curve_radius_input, ("Radius",), sample_curve, ("Value",))
 
         make_link(random_x, ("Value",), combine_rand_dir, ("X",))
         make_link(random_y, ("Value",), combine_rand_dir, ("Y",))
@@ -619,7 +631,12 @@ class RZM_OT_apply_vfx_preview(bpy.types.Operator):
 
         make_link(plane_subtract, ("Vector",), plane_normalize, ("Vector",))
 
-        make_link(group_input, ("Dispersion Scale",), dispersion_mul_seed, ("Value",))
+        # Wire dispersion factor scaling: 0.01 * Curve.Radius * Dispersion Scale
+        make_link(sample_curve, ("Value",), radius_scale, ("Value",))
+        make_link(radius_scale, ("Value",), dispersion_scale_mul, ("Value",))
+        make_link(group_input, ("Dispersion Scale",), dispersion_scale_mul, ("Value_001", "Value 2"))
+
+        make_link(dispersion_scale_mul, ("Value",), dispersion_mul_seed, ("Value",))
         make_link(random_radius, ("Value",), dispersion_mul_seed, ("Value_001", "Value 2"))
 
         make_link(plane_normalize, ("Vector",), dispersion_vector, ("Vector",))
@@ -804,9 +821,7 @@ class RZM_OT_apply_vfx_preview(bpy.types.Operator):
             "Dispersion Scale",
             "RZM.CURVE_VFX.DISPERSION_SCALE",
             dispersion_scale,
-            # Match HLSL: local_radius = sampled.radius * CFG_DISPERSION_SCALE
-            # Preview approximation: dispersion_scale * 0.01 * bevel_depth
-            f"max(v,0)*0.01*{bevel_r:.6f}"
+            "max(v,0)"
         )
 
         add_driver(
