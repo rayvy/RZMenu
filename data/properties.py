@@ -28,7 +28,6 @@ from .p_settings import (
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
 from .p_component_manager import RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
-from ..operators import custom_draw_ops
 
 class RZMVFXVertexCount(bpy.types.PropertyGroup):
     component_name: StringProperty(name="Component Name")
@@ -820,7 +819,6 @@ def unregister():
         if hasattr(bpy.types.Object, attr):
             delattr(bpy.types.Object, attr)
 
-    custom_draw_ops.unregister()
     del bpy.types.Scene.rzm_active_element_index
     del bpy.types.Scene.rzm_active_image_index
     del bpy.types.Scene.rzm_active_value_index

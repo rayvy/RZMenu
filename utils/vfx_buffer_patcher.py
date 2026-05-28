@@ -59,10 +59,70 @@ def get_curve_prop(obj, name, default):
         return getattr(obj, attr)
     return default
 
+def distribute_particles(obj):
+    """
+    Distributes the total particle budget of a curve object among its splines
+    proportionally to their volume (length * avg_radius^2).
+    """
+    total_budget = obj.get("RZM.CURVE_VFX.PARTICLE_COUNT", 1)
+    if total_budget < 1:
+        total_budget = 1
+        
+    spline_list = obj.data.splines
+    if not spline_list:
+        return []
+        
+    spline_weights = []
+    total_weight = 0.0
+    
+    # 1. Compute spline weights
+    for spline in spline_list:
+        points = spline.bezier_points if spline.type == 'BEZIER' else spline.points
+        
+        # Length (approximation from control points)
+        length = 0.0
+        for i in range(len(points) - 1):
+            p0 = points[i].co if spline.type == 'BEZIER' else points[i].co.xyz
+            p1 = points[i+1].co if spline.type == 'BEZIER' else points[i+1].co.xyz
+            length += (p0 - p1).length
+            
+        # Average radius
+        avg_radius = sum([p.radius for p in points]) / len(points) if len(points) > 0 else 1.0
+        
+        # Weight = length * cross-sectional area (r^2)
+        weight = length * (avg_radius ** 2)
+        if weight <= 0.0:
+            weight = 1e-5
+        spline_weights.append(weight)
+        total_weight += weight
+        
+    # 2. Distribute with normalization remaining
+    final_counts = []
+    assigned_sum = 0
+    
+    for w in spline_weights:
+        if total_weight > 0.0:
+            count = int(round(total_budget * (w / total_weight)))
+        else:
+            count = 0
+        final_counts.append(count)
+        assigned_sum += count
+        
+    # 3. Rounding error fix
+    diff = total_budget - assigned_sum
+    if diff != 0 and spline_weights:
+        max_idx = spline_weights.index(max(spline_weights))
+        final_counts[max_idx] += diff
+        if final_counts[max_idx] < 0:
+            final_counts[max_idx] = 0
+            
+    return final_counts
+
 def pre_collect_vfx_vertex_counts(context):
     """
     Scans the scene for Curve VFX objects, computes their vertex counts,
     and populates context.scene.rzm.vfx_vertex_counts BEFORE rendering J2 template.
+    Also calculates and stores spline particle distributions on Curve objects.
     """
     rzm = getattr(context.scene, "rzm", None)
     if not rzm:
@@ -74,7 +134,7 @@ def pre_collect_vfx_vertex_counts(context):
         print(f"[RZM-VFX] Failed to clear vfx_vertex_counts: {e}")
         return
 
-    # Find all curves in the scene with VFX enabled (either via native property or custom property)
+    # Find all curves in the scene with VFX enabled
     vfx_curves = [
         obj for obj in context.scene.objects 
         if obj.type == 'CURVE' and (getattr(obj, "rzm_curve_vfx_enabled", False) or obj.get("RZM.CURVE_VFX"))
@@ -83,6 +143,15 @@ def pre_collect_vfx_vertex_counts(context):
         return
 
     print(f"[RZM-VFX] Pre-collecting vertex counts for {len(vfx_curves)} Curve VFX objects.")
+
+    # Distribute particles among splines and store them
+    for curve_obj in vfx_curves:
+        try:
+            splines_particles = distribute_particles(curve_obj)
+            curve_obj["RZM.CURVE_VFX.SPLINES_PARTICLES"] = splines_particles
+            print(f"[RZM-VFX] Distributed particles for '{curve_obj.name}': {splines_particles}")
+        except Exception as e:
+            print(f"[RZM-VFX] Failed to distribute particles for curve '{curve_obj.name}': {e}")
 
     mod_name = getattr(rzm.export_settings, "mod_name", "") or ""
     
@@ -99,7 +168,10 @@ def pre_collect_vfx_vertex_counts(context):
     for comp_name, curve_list in curves_by_comp.items():
         total_new_verts = 0
         for curve_obj in curve_list:
-            particle_count = get_curve_prop(curve_obj, "particle_count", 1)
+            # Re-read spline particle counts
+            splines_particles = curve_obj.get("RZM.CURVE_VFX.SPLINES_PARTICLES", [])
+            particle_count = sum(splines_particles) if splines_particles else get_curve_prop(curve_obj, "particle_count", 1)
+            
             mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
             if mesh_fx_type == "1":    # Quad
                 v_per_particle = 4
@@ -110,7 +182,6 @@ def pre_collect_vfx_vertex_counts(context):
             total_new_verts += particle_count * v_per_particle
             
         comp_fullname = f"{mod_name}{comp_name}"
-        # Avoid duplicates
         item = None
         for x in rzm.vfx_vertex_counts:
             if x.component_name == comp_fullname:
@@ -220,20 +291,19 @@ def find_associated_mesh_and_component(context, curve_obj):
                         
     return None, None, None
 
-def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
+def evaluate_curve_spline_points(context, curve_obj, spline_idx, num_samples=32):
     depsgraph = context.evaluated_depsgraph_get()
     
-    if not curve_obj.data.splines:
+    if not curve_obj.data.splines or spline_idx >= len(curve_obj.data.splines):
         return []
         
-    # Get control points and radii from the original spline
-    spline = curve_obj.data.splines[0]
-    if spline.type == 'BEZIER':
-        ctrl_points = [p.co.copy() for p in spline.bezier_points]
-        ctrl_radii = [p.radius for p in spline.bezier_points]
+    orig_spline = curve_obj.data.splines[spline_idx]
+    if orig_spline.type == 'BEZIER':
+        ctrl_points = [p.co.copy() for p in orig_spline.bezier_points]
+        ctrl_radii = [p.radius for p in orig_spline.bezier_points]
     else:
-        ctrl_points = [p.co.xyz.copy() for p in spline.points]
-        ctrl_radii = [p.radius for p in spline.points]
+        ctrl_points = [p.co.xyz.copy() for p in orig_spline.points]
+        ctrl_radii = [p.radius for p in orig_spline.points]
         
     ctrl_dists = [0.0]
     curr_len = 0.0
@@ -242,9 +312,15 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
         curr_len += dist
         ctrl_dists.append(curr_len)
         
-    # Temporary copy of curve to evaluate center line without bevel
+    # Temporary copy of curve to evaluate center line of ONLY this spline without bevel
     original_data = curve_obj.data
     temp_data = original_data.copy()
+    
+    # Keep only the target spline
+    for s_i in reversed(range(len(temp_data.splines))):
+        if s_i != spline_idx:
+            temp_data.splines.remove(temp_data.splines[s_i])
+            
     temp_data.bevel_depth = 0.0
     temp_data.extrude = 0.0
     temp_data.bevel_object = None
@@ -252,6 +328,10 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
     temp_obj = bpy.data.objects.new("temp_curve_eval", temp_data)
     context.scene.collection.objects.link(temp_obj)
     
+    # Clear shape keys to prevent corruption on spline removal
+    if temp_obj.data.shape_keys:
+        temp_obj.shape_key_clear()
+        
     # Match world matrix
     temp_obj.matrix_world = curve_obj.matrix_world.copy()
     context.view_layer.update()
@@ -260,7 +340,7 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
         eval_obj = temp_obj.evaluated_get(depsgraph)
         temp_mesh = eval_obj.to_mesh()
     except Exception as e:
-        print(f"[RZM-VFX] Error converting curve to mesh: {e}")
+        print(f"[RZM-VFX] Error converting curve spline {spline_idx} to mesh: {e}")
         context.scene.collection.objects.unlink(temp_obj)
         bpy.data.objects.remove(temp_obj)
         bpy.data.curves.remove(temp_data)
@@ -293,7 +373,6 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
         distances.append(total_len)
         
     if total_len == 0.0:
-        # Fallback if length is 0
         r_val = ctrl_radii[0] if ctrl_radii else 1.0
         return [(verts[0], r_val) for _ in range(num_samples)]
         
@@ -329,120 +408,163 @@ def evaluate_curve_spline_points(context, curve_obj, num_samples=32):
         
     return resampled_data
 
-def evaluate_curve_all_shapes(context, curve_obj, num_samples=32):
-    """
-    Evaluates spline points for all shape keys of the curve sequentially.
-    Returns a list of 8 shapes, each containing 32 sampled (Vector, float) points.
-    Sets kb.value=1.0 on the original curve per shape, gets a fresh depsgraph,
-    evaluates the centre-line (bevel=0), then restores all values.
-    """
-    if not curve_obj.data.splines:
-        return [[] for _ in range(8)]
+def get_spline_raw_vertex_counts(context, curve_obj):
+    counts = []
+    for s_idx in range(len(curve_obj.data.splines)):
+        # Copy curve data
+        temp_data = curve_obj.data.copy()
+        # Keep only target spline
+        for s_i in reversed(range(len(temp_data.splines))):
+            if s_i != s_idx:
+                temp_data.splines.remove(temp_data.splines[s_i])
+        temp_data.bevel_depth = 0.0
+        temp_data.extrude = 0.0
+        temp_data.bevel_object = None
+        
+        temp_obj = bpy.data.objects.new("temp_count", temp_data)
+        context.scene.collection.objects.link(temp_obj)
+        
+        # Clear shape keys to prevent corruption
+        if temp_obj.data.shape_keys:
+            temp_obj.shape_key_clear()
+            
+        context.view_layer.update()
+        depsgraph = context.evaluated_depsgraph_get()
+        try:
+            eval_obj = temp_obj.evaluated_get(depsgraph)
+            mesh = eval_obj.to_mesh()
+            counts.append(len(mesh.vertices))
+            eval_obj.to_mesh_clear()
+        except Exception as e:
+            print(f"[RZM-VFX] Error getting vertex count for spline {s_idx}: {e}")
+            counts.append(0)
+        finally:
+            context.scene.collection.objects.unlink(temp_obj)
+            bpy.data.objects.remove(temp_obj)
+            bpy.data.curves.remove(temp_data)
+    return counts
 
+def evaluate_curve_all_shapes(context, curve_obj, spline_idx, num_samples=32):
+    """
+    Evaluates spline points for all shape keys of the curve sequentially for a single spline.
+    """
+    if not curve_obj.data.splines or spline_idx >= len(curve_obj.data.splines):
+        return [[] for _ in range(8)]
+        
     shape_keys = curve_obj.data.shape_keys
-    if not shape_keys or not shape_keys.key_blocks:
-        # Static curve: duplicate basis shape 8 times
-        basis_pts = evaluate_curve_spline_points(context, curve_obj, num_samples)
+    if not shape_keys or len(shape_keys.key_blocks) <= 1:
+        # Static curve spline: evaluate once and duplicate 8 times
+        basis_pts = evaluate_curve_spline_points(context, curve_obj, spline_idx, num_samples)
         return [list(basis_pts) for _ in range(8)]
 
-    keys = list(shape_keys.key_blocks)  # keys[0] = Basis, keys[1..] = actual SKs
+    # Multi-spline shape keys:
+    # 1. Get raw vertex counts for each spline to slice the evaluated mesh
+    counts = get_spline_raw_vertex_counts(context, curve_obj)
+    start_v = sum(counts[:spline_idx])
+    end_v = start_v + counts[spline_idx]
 
-    # Save original shape key values
-    orig_values = [kb.value for kb in keys]
-
-    # Temporarily zero bevel so to_mesh() gives only the centre-line
-    orig_bevel_depth  = curve_obj.data.bevel_depth
-    orig_bevel_obj    = curve_obj.data.bevel_object
-    orig_extrude      = curve_obj.data.extrude
-    curve_obj.data.bevel_depth  = 0.0
-    curve_obj.data.bevel_object = None
-    curve_obj.data.extrude      = 0.0
-
+    # Create temporary copy of curve data to evaluate (keeping all splines to preserve shape keys layout)
+    orig_data = curve_obj.data
+    temp_data = orig_data.copy()
+    
+    temp_data.bevel_depth = 0.0
+    temp_data.bevel_object = None
+    temp_data.extrude = 0.0
+    
+    temp_obj = bpy.data.objects.new("temp_curve_eval_shapes", temp_data)
+    context.scene.collection.objects.link(temp_obj)
+    temp_obj.matrix_world = curve_obj.matrix_world.copy()
+    
     shapes_pts = []
-
+    
     try:
+        keys = list(temp_obj.data.shape_keys.key_blocks)
+        orig_values = [kb.value for kb in keys]
+        
         for k_idx in range(min(len(keys), 8)):
-            # Reset all shape key values, then activate the target one
             for kb in keys:
                 kb.value = 0.0
             if k_idx > 0:
-                keys[k_idx].value = 1.0   # Basis has no "value" that matters — skip it
-
-            # Re-request depsgraph AFTER changing values so it's up to date
+                keys[k_idx].value = 1.0
+                
             context.view_layer.update()
             depsgraph = context.evaluated_depsgraph_get()
-
-            eval_obj  = curve_obj.evaluated_get(depsgraph)
+            eval_obj = temp_obj.evaluated_get(depsgraph)
+            
             try:
                 temp_mesh = eval_obj.to_mesh()
             except Exception as e:
-                print(f"[RZM-VFX] Shape {k_idx} eval error: {e}")
+                print(f"[RZM-VFX] Spline {spline_idx} Shape {k_idx} eval error: {e}")
                 shapes_pts.append([])
-                eval_obj.to_mesh_clear()
                 continue
-
-            verts = [v.co.copy() for v in temp_mesh.vertices]
+                
+            verts = [v.co.copy() for v in temp_mesh.vertices[start_v:end_v]]
             eval_obj.to_mesh_clear()
-
+            
             if len(verts) < 2:
                 shapes_pts.append([])
                 continue
-
-            # Arc-length resample to num_samples points
-            # Radius: interpolated from the ctrl-point radii of the evaluated spline
-            spline = curve_obj.data.splines[0]
+                
+            # Control points and radii from the target spline
+            spline = temp_obj.data.splines[spline_idx]
             if spline.type == 'BEZIER':
-                ctrl_radii = [p.radius for p in eval_obj.data.splines[0].bezier_points]
+                ctrl_points = [p.co.copy() for p in spline.bezier_points]
+                ctrl_radii = [p.radius for p in spline.bezier_points]
             else:
-                ctrl_radii = [p.radius for p in eval_obj.data.splines[0].points]
-
+                ctrl_points = [p.co.xyz.copy() for p in spline.points]
+                ctrl_radii = [p.radius for p in spline.points]
+                
+            ctrl_dists = [0.0]
+            curr_len = 0.0
+            for i in range(1, len(ctrl_points)):
+                curr_len += (ctrl_points[i] - ctrl_points[i-1]).length
+                ctrl_dists.append(curr_len)
+                
             distances = [0.0]
             total_len = 0.0
             for i in range(1, len(verts)):
                 total_len += (verts[i] - verts[i-1]).length
                 distances.append(total_len)
-
+                
             if total_len == 0.0:
                 r_val = ctrl_radii[0] if ctrl_radii else 1.0
                 shapes_pts.append([(verts[0], r_val)] * num_samples)
                 continue
-
+                
             resampled = []
-            ctrl_len = sum((ctrl_radii[i] - ctrl_radii[i-1]) for i in range(1, len(ctrl_radii))) if len(ctrl_radii) > 1 else 0.0
             for j in range(num_samples):
                 factor = j / (num_samples - 1)
-                target  = factor * total_len
+                target = factor * total_len
                 idx = 0
                 while idx < len(distances) - 2 and distances[idx+1] < target:
                     idx += 1
                 d0, d1 = distances[idx], distances[idx+1]
-                t  = (target - d0) / (d1 - d0) if d1 > d0 else 0.0
+                t = (target - d0) / (d1 - d0) if d1 > d0 else 0.0
                 pt = verts[idx].lerp(verts[min(idx+1, len(verts)-1)], t)
+                
                 # Radius from ctrl-points via factor
-                if len(ctrl_radii) >= 2:
-                    ri = min(int(factor * (len(ctrl_radii)-1)), len(ctrl_radii)-2)
-                    rf = factor * (len(ctrl_radii)-1) - ri
-                    r_val = ctrl_radii[ri] + rf * (ctrl_radii[ri+1] - ctrl_radii[ri])
+                if curr_len > 0.0 and len(ctrl_radii) >= 2:
+                    target_ctrl_dist = factor * curr_len
+                    c_idx = 0
+                    while c_idx < len(ctrl_dists) - 2 and ctrl_dists[c_idx+1] < target_ctrl_dist:
+                        c_idx += 1
+                    cd0, cd1 = ctrl_dists[c_idx], ctrl_dists[c_idx+1]
+                    ct = (target_ctrl_dist - cd0) / (cd1 - cd0) if cd1 > cd0 else 0.0
+                    r_val = ctrl_radii[c_idx] + ct * (ctrl_radii[c_idx+1] - ctrl_radii[c_idx])
                 else:
                     r_val = ctrl_radii[0] if ctrl_radii else 1.0
                 resampled.append((pt, r_val))
-
+                
             shapes_pts.append(resampled)
-
     finally:
-        # Restore shape key values and bevel
-        for kb, v in zip(keys, orig_values):
-            kb.value = v
-        curve_obj.data.bevel_depth  = orig_bevel_depth
-        curve_obj.data.bevel_object = orig_bevel_obj
-        curve_obj.data.extrude      = orig_extrude
-        context.view_layer.update()
-
-    # Pad to exactly 8 shapes with last evaluated shape
+        context.scene.collection.objects.unlink(temp_obj)
+        bpy.data.objects.remove(temp_obj)
+        bpy.data.curves.remove(temp_data)
+        
     while len(shapes_pts) < 8:
         last = shapes_pts[-1] if shapes_pts else []
         shapes_pts.append(list(last))
-
+        
     return shapes_pts[:8]
 
 
@@ -570,28 +692,53 @@ def patch_buffers(context, cache):
     os.makedirs(res_dir, exist_ok=True)
     curve_buf_path = os.path.join(res_dir, "curve_data.buf")
 
-    # Let's accumulate all curve data points
-    all_curve_bytes = bytearray()
-    valid_curve_count = 0
-    curve_mapping = {} # maps curve object name to index in curve_data.buf
-    curve_shapes_cache = {} # maps curve object name to shapes_resampled
-
-    for idx, curve_obj in enumerate(vfx_curves):
+    # Build list of virtual curves (one per spline)
+    virtual_curves = []
+    for curve_obj in vfx_curves:
         comp_name, target_mesh, part_name = find_associated_mesh_and_component(context, curve_obj)
         if not target_mesh:
             print(f"[RZM-VFX] [ERROR] Curve '{curve_obj.name}' is invalid: no associated mesh component.")
             continue
+            
+        splines_particles = curve_obj.get("RZM.CURVE_VFX.SPLINES_PARTICLES", [])
+        num_splines = len(curve_obj.data.splines)
+        if not splines_particles or len(splines_particles) != num_splines:
+            splines_particles = distribute_particles(curve_obj)
+            curve_obj["RZM.CURVE_VFX.SPLINES_PARTICLES"] = splines_particles
+            
+        for s_idx in range(num_splines):
+            p_count = splines_particles[s_idx]
+            virtual_curves.append({
+                'obj': curve_obj,
+                'spline_idx': s_idx,
+                'particle_count': p_count,
+                'comp_name': comp_name,
+                'target_mesh': target_mesh,
+                'part_name': part_name
+            })
+
+    # Let's accumulate all curve data points
+    all_curve_bytes = bytearray()
+    valid_curve_count = 0
+    curve_mapping = {} # maps (curve_name, spline_idx) to index in curve_data.buf
+    curve_shapes_cache = {} # maps (curve_name, spline_idx) to shapes_resampled
+
+    for idx, v_curve in enumerate(virtual_curves):
+        curve_obj = v_curve['obj']
+        s_idx = v_curve['spline_idx']
+        comp_name = v_curve['comp_name']
+        target_mesh = v_curve['target_mesh']
 
         profile_raw = get_curve_prop(curve_obj, "coordinate_remap_profile", "AUTO")
         profile = resolve_coordinate_remap_profile(context, profile_raw)
         
         # Sample points for all 8 shapes (returns list of 8 lists, each with 32 (pt, radius) tuples)
-        shapes_resampled = evaluate_curve_all_shapes(context, curve_obj, num_samples=32)
+        shapes_resampled = evaluate_curve_all_shapes(context, curve_obj, s_idx, num_samples=32)
         if not shapes_resampled or any(len(s) < 2 for s in shapes_resampled):
-            print(f"[RZM-VFX] [ERROR] Curve '{curve_obj.name}' evaluation returned insufficient points.")
+            print(f"[RZM-VFX] [ERROR] Curve '{curve_obj.name}' spline {s_idx} evaluation returned insufficient points.")
             continue
             
-        curve_shapes_cache[curve_obj.name] = shapes_resampled
+        curve_shapes_cache[(curve_obj.name, s_idx)] = shapes_resampled
 
         # Process each shape
         for k in range(8):
@@ -684,9 +831,9 @@ def patch_buffers(context, cache):
         )
         all_curve_bytes.extend(meta_data)
 
-        curve_mapping[curve_obj.name] = valid_curve_count
+        curve_mapping[(curve_obj.name, s_idx)] = valid_curve_count
         valid_curve_count += 1
-        print(f"[RZM-VFX] Curve '{curve_obj.name}' exported at index {valid_curve_count-1} for component '{comp_name}'")
+        print(f"[RZM-VFX] Curve '{curve_obj.name}' spline {s_idx} exported at index {valid_curve_count-1} for component '{comp_name}'")
 
     if valid_curve_count == 0:
         print("[RZM-VFX] [WARNING] No valid curves were exported. Aborting patch.")
@@ -695,41 +842,52 @@ def patch_buffers(context, cache):
     # Write the collected curve_data.buf
     with open(curve_buf_path, 'wb') as f:
         f.write(all_curve_bytes)
-    print(f"[RZM-VFX] Wrote {valid_curve_count} curves ({valid_curve_count * 257 * 40} bytes) to '{curve_buf_path}'")
+    print(f"[RZM-VFX] Wrote {valid_curve_count} curve splines ({valid_curve_count * 257 * 40} bytes) to '{curve_buf_path}'")
 
     # Write curve_weight_data.buf: 8 shapes × 32 points per curve, stride=32 (4xfloat + 4xuint)
-    # Layout mirrors curve_data.buf: curve_idx * 256 + shape_idx * 32 + point_idx
     weight_buf_path = os.path.join(res_dir, "curve_weight_data.buf")
     all_weight_bytes = bytearray()
-    for curve_obj in vfx_curves:
-        if curve_obj.name not in curve_mapping:
+    
+    # Cache KDTree evaluations per reference mesh name to avoid redundant builds
+    ref_kd_cache = {}
+    
+    for v_curve in virtual_curves:
+        curve_obj = v_curve['obj']
+        s_idx = v_curve['spline_idx']
+        if (curve_obj.name, s_idx) not in curve_mapping:
             continue
-        comp_name, target_mesh, part_name = find_associated_mesh_and_component(context, curve_obj)
-        shapes_resampled = curve_shapes_cache.get(curve_obj.name, [])  # list of 8 shape lists
+            
+        shapes_resampled = curve_shapes_cache.get((curve_obj.name, s_idx), [])
 
         weight_indices = list(get_curve_prop(curve_obj, "weight_indices", (-1, -1, -1, -1)))
         weight_values  = list(get_curve_prop(curve_obj, "weight_values", (0.0, 0.0, 0.0, 0.0)))
         fallback_idx = [int(x) if x != -1 else 0 for x in weight_indices]
         fallback_w   = [float(w) for w in weight_values]
 
-        # Build KDTree for weight reference if available
+        # Build/get KDTree for weight reference
         ref_mesh = curve_obj.rzm_curve_vfx_weight_reference
         kd_w = None; vg_map_w = {}; bone_to_id_w = {}; ref_data_w = None
+        
         if ref_mesh and ref_mesh.type == 'MESH':
-            try:
-                depsgraph = context.evaluated_depsgraph_get()
-                ref_data_w = ref_mesh.evaluated_get(depsgraph).data
-                vg_map_w   = {vg.index: vg.name for vg in ref_mesh.vertex_groups}
-                for vg in ref_mesh.vertex_groups:
-                    bone_to_id_w[vg.name] = vg.index
-                from mathutils.kdtree import KDTree
-                kd_w = KDTree(len(ref_data_w.vertices))
-                for vi, v in enumerate(ref_data_w.vertices):
-                    kd_w.insert(ref_mesh.matrix_world @ v.co, vi)
-                kd_w.balance()
-            except Exception as e:
-                print(f"[RZM-VFX] [WARN] Weight KDTree failed for weight export: {e}")
-                kd_w = None
+            if ref_mesh.name in ref_kd_cache:
+                kd_w, vg_map_w, bone_to_id_w, ref_data_w = ref_kd_cache[ref_mesh.name]
+            else:
+                try:
+                    depsgraph = context.evaluated_depsgraph_get()
+                    ref_data_w = ref_mesh.evaluated_get(depsgraph).data
+                    vg_map_w   = {vg.index: vg.name for vg in ref_mesh.vertex_groups}
+                    for vg in ref_mesh.vertex_groups:
+                        bone_to_id_w[vg.name] = vg.index
+                    from mathutils.kdtree import KDTree
+                    kd_w = KDTree(len(ref_data_w.vertices))
+                    for vi, v in enumerate(ref_data_w.vertices):
+                        kd_w.insert(ref_mesh.matrix_world @ v.co, vi)
+                    kd_w.balance()
+                    # Cache it
+                    ref_kd_cache[ref_mesh.name] = (kd_w, vg_map_w, bone_to_id_w, ref_data_w)
+                except Exception as e:
+                    print(f"[RZM-VFX] [WARN] Weight KDTree failed for weight export: {e}")
+                    kd_w = None
 
         def sample_weight_at_world_pos(wpos):
             """Look up top-4 bone weights at a world-space position via KDTree."""
@@ -753,7 +911,7 @@ def patch_buffers(context, cache):
                 return [bg[0] for bg in bone_groups], [bg[1] for bg in bone_groups]
             return fallback_idx, fallback_w
 
-        # Write 8 shapes × 32 points — mirrors curve_data.buf layout exactly
+        # Write 8 shapes × 32 points
         for shape_idx in range(8):
             shape_pts = shapes_resampled[shape_idx] if shape_idx < len(shapes_resampled) else []
             for pt_idx in range(32):
@@ -770,38 +928,39 @@ def patch_buffers(context, cache):
 
     with open(weight_buf_path, 'wb') as f:
         f.write(all_weight_bytes)
-    print(f"[RZM-VFX] Wrote curve_weight_data.buf ({len(all_weight_bytes)} bytes, 8shapes×32pts per curve) to '{weight_buf_path}'")
-
-
+    print(f"[RZM-VFX] Wrote curve_weight_data.buf ({len(all_weight_bytes)} bytes, 8shapes×32pts per curve spline) to '{weight_buf_path}'")
 
     # 2. Group curves by target component and part
     curves_by_part = {}
-    for curve_obj in vfx_curves:
-        if curve_obj.name not in curve_mapping:
+    for v_curve in virtual_curves:
+        curve_obj = v_curve['obj']
+        s_idx = v_curve['spline_idx']
+        if (curve_obj.name, s_idx) not in curve_mapping:
             continue
-        comp_name, target_mesh, part_name = find_associated_mesh_and_component(context, curve_obj)
-        if not target_mesh:
-            continue
+        comp_name = v_curve['comp_name']
+        part_name = v_curve['part_name']
+        target_mesh = v_curve['target_mesh']
         key = (comp_name, part_name, target_mesh)
         if key not in curves_by_part:
             curves_by_part[key] = []
-        curves_by_part[key].append(curve_obj)
+        curves_by_part[key].append(v_curve)
 
     # 3. Patch component buffers per group
-    for (comp_name, part_name, target_mesh), curve_list in curves_by_part.items():
+    for (comp_name, part_name, target_mesh), v_curve_list in curves_by_part.items():
         # Calculate total vertices and indices to be appended
         total_new_verts = 0
         total_new_indices = 0
-        for curve_obj in curve_list:
-            particle_count = get_curve_prop(curve_obj, "particle_count", 1)
-            mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
+        for v_curve in v_curve_list:
+            particle_count = v_curve['particle_count']
+            mesh_fx_type = str(get_curve_prop(v_curve['obj'], "mesh_fx_type", "0"))
             if mesh_fx_type == "1":    # Quad
                 v_per_particle, i_per_particle = 4, 6
             elif mesh_fx_type == "2": # Circle (hexagon: 7 verts, 6 tris = 18 indices)
                 v_per_particle, i_per_particle = 7, 18
             else:                     # Triangle (type 0) or Custom Mesh stub (type 3)
                 v_per_particle, i_per_particle = 3, 3
-
+            total_new_verts += particle_count * v_per_particle
+            total_new_indices += particle_count * i_per_particle
 
         # Resolve filenames
         part_suffix = resolve_part_suffix(comp_name, part_name, target_mesh.name, mod_name)
@@ -940,10 +1099,13 @@ def patch_buffers(context, cache):
 
         current_v_count = original_v_count
 
-        # Iterate and write each curve's data
-        for curve_obj in curve_list:
-            curve_idx = curve_mapping[curve_obj.name]
-            particle_count = get_curve_prop(curve_obj, "particle_count", 1)
+        # Iterate and write each virtual curve's data
+        for v_curve in v_curve_list:
+            curve_obj = v_curve['obj']
+            s_idx = v_curve['spline_idx']
+            curve_idx = curve_mapping[(curve_obj.name, s_idx)]
+            particle_count = v_curve['particle_count']
+            
             mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
             mesh_fx_size_base = get_curve_prop(curve_obj, "mesh_fx_size_base", 0.05)
             tri_aspect = get_curve_prop(curve_obj, "tri_aspect", 1.0)
@@ -971,37 +1133,36 @@ def patch_buffers(context, cache):
                 dir_z = math.sin(phi) * math.sin(theta)
                 particles_params.append((phase, speed_scale, dir_x, dir_y, dir_z))
 
-            # Check if reference mesh is selected and build KDTree
+            # Build/get KDTree for weight reference
             ref_mesh = curve_obj.rzm_curve_vfx_weight_reference
             kd = None
             vg_map = {}
             bone_to_id = {}
             ref_mesh_data = None
             if ref_mesh and ref_mesh.type == 'MESH':
-                try:
-                    depsgraph = context.evaluated_depsgraph_get()
-                    ref_eval = ref_mesh.evaluated_get(depsgraph)
-                    ref_mesh_data = ref_eval.data
-                    
-                    # vg_map: vg_index -> bone_name (for vertex.groups lookup)
-                    vg_map = {vg.index: vg.name for vg in ref_mesh.vertex_groups}
-                    # bone_to_id: bone_name -> game bone ID
-                    # MUST use vg.index — that's what XXMI writes into the VB2 blend buffer.
-                    # DO NOT use enumerate(armature.data.bones): armature bone order ≠ vg order.
-                    for vg in ref_mesh.vertex_groups:
-                        bone_to_id[vg.name] = vg.index
-                            
-                    from mathutils.kdtree import KDTree
-                    kd = KDTree(len(ref_mesh_data.vertices))
-                    for v_idx, v in enumerate(ref_mesh_data.vertices):
-                        world_pos = ref_mesh.matrix_world @ v.co
-                        kd.insert(world_pos, v_idx)
-                    kd.balance()
-                    print(f"[RZM-VFX] Built KDTree for weight reference '{ref_mesh.name}' with {len(ref_mesh_data.vertices)} vertices.")
-                except Exception as e:
-                    print(f"[RZM-VFX] Error building KDTree for reference mesh: {e}")
-                    kd = None
-
+                if ref_mesh.name in ref_kd_cache:
+                    kd, vg_map, bone_to_id, ref_mesh_data = ref_kd_cache[ref_mesh.name]
+                else:
+                    try:
+                        depsgraph = context.evaluated_depsgraph_get()
+                        ref_eval = ref_mesh.evaluated_get(depsgraph)
+                        ref_mesh_data = ref_eval.data
+                        vg_map = {vg.index: vg.name for vg in ref_mesh.vertex_groups}
+                        for vg in ref_mesh.vertex_groups:
+                            bone_to_id[vg.name] = vg.index
+                                
+                        from mathutils.kdtree import KDTree
+                        kd = KDTree(len(ref_mesh_data.vertices))
+                        for v_idx, v in enumerate(ref_mesh_data.vertices):
+                            world_pos = ref_mesh.matrix_world @ v.co
+                            kd.insert(world_pos, v_idx)
+                        kd.balance()
+                        # Cache it
+                        ref_kd_cache[ref_mesh.name] = (kd, vg_map, bone_to_id, ref_mesh_data)
+                        print(f"[RZM-VFX] Built KDTree for weight reference '{ref_mesh.name}' with {len(ref_mesh_data.vertices)} vertices.")
+                    except Exception as e:
+                        print(f"[RZM-VFX] Error building KDTree for reference mesh: {e}")
+                        kd = None
 
             # ----------------------------------------------------------------------
             # A. Patch VB0 (Position)
@@ -1039,11 +1200,12 @@ def patch_buffers(context, cache):
 
                     # Pack into 40-byte stride VB0
                     v_data = struct.pack(
-                        '<ffffffffff',
+                        '<fffffffff',
                         pos_x, pos_y, pos_z,
                         phase, speed_scale, float(curve_idx),
-                        dir_x, dir_y, dir_z, float(v_idx)
+                        dir_x, dir_y, dir_z
                     )
+                    v_data += struct.pack('<f', float(v_idx))
                     f_vb0.write(v_data)
 
             # ----------------------------------------------------------------------
@@ -1058,9 +1220,9 @@ def patch_buffers(context, cache):
                 if curve_obj.data.shape_keys and curve_obj.data.shape_keys.key_blocks:
                     num_shapes = min(7, len(curve_obj.data.shape_keys.key_blocks) - 1)
                 
-                shapes_resampled = curve_shapes_cache.get(curve_obj.name)
+                shapes_resampled = curve_shapes_cache.get((curve_obj.name, s_idx))
                 if not shapes_resampled:
-                    shapes_resampled = evaluate_curve_all_shapes(context, curve_obj, num_samples=32)
+                    shapes_resampled = evaluate_curve_all_shapes(context, curve_obj, s_idx, num_samples=32)
                 
                 for p in range(particle_count):
                     phase, speed_scale, dir_x, dir_y, dir_z = particles_params[p]
@@ -1170,16 +1332,12 @@ def patch_buffers(context, cache):
                             ]
                             u, v = uvs[v_idx]
 
-                        # VFX vertex shader is the same for all components → always half-float UV.
-                        # (uv_format reflects the original mesh format, but VFX particles
-                        #  are always written in half to match the shared VFX vertex shader.)
                         h_u = float_to_half(u)
                         h_v = float_to_half(v)
                         uv_slot_bytes = 4  # 2×float16
                         num_slots = stride_t // uv_slot_bytes
                         for slot in range(num_slots):
                             struct.pack_into('<HH', buf, slot * uv_slot_bytes, h_u, h_v)
-                        # Pad any trailing bytes (e.g. RGBA color) with 0xFF
                         leftover_start = num_slots * uv_slot_bytes
                         for byte_i in range(leftover_start, stride_t):
                             buf[byte_i] = 0xFF
@@ -1203,7 +1361,7 @@ def patch_buffers(context, cache):
                             v_start, v_start + 3, v_start + 4,
                             v_start, v_start + 4, v_start + 5,
                             v_start, v_start + 5, v_start + 6,
-                            v_start, v_start + 6, v_start + 1,  # close back to first outer vert
+                            v_start, v_start + 6, v_start + 1,
                         ]
                     else: # Triangle (type 0 or Custom Mesh stub type 3)
                         idx_list = [v_start, v_start + 1, v_start + 2]

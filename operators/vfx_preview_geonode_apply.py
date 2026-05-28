@@ -76,14 +76,6 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
         0.1
     )
 
-    # Curve bevel radius — used to scale dispersion the same way as the HLSL shader:
-    # local_radius = sampled.radius * CFG_DISPERSION_SCALE
-    # We approximate sampled.radius with the curve's bevel_depth (or 0.05 fallback).
-    bevel_r = max(
-        float(obj.data.bevel_depth) if (obj.data and hasattr(obj.data, "bevel_depth")) else 0.05,
-        0.001
-    )
-
     phase_randomness = get_number(
         "rzm_curve_vfx_phase_randomness",
         "RZM.CURVE_VFX.PHASE_RANDOMNESS",
@@ -232,147 +224,30 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
     group_output = new_node("NodeGroupOutput", 1600, 0)
     group_output.is_active_output = True
 
-    mesh_line = new_node("GeometryNodeMeshLine", -1650, 0)
-    try:
-        mesh_line.mode = 'OFFSET'
-    except Exception:
-        pass
-    set_input(mesh_line, particle_count, "Count")
-    set_input(mesh_line, (0.0, 0.0, 0.0), "Offset")
-
-    index_node = new_node("GeometryNodeInputIndex", -1650, -260)
-
-    scene_time = new_node("GeometryNodeInputSceneTime", -1650, -520)
-
-    duration_max = new_node("ShaderNodeMath", -1420, -600)
+    # Common time and timeline calculation nodes
+    scene_time = new_node("GeometryNodeInputSceneTime", -1600, -600)
+    
+    duration_max = new_node("ShaderNodeMath", -1400, -700)
     duration_max.operation = 'MAXIMUM'
     set_input(duration_max, 0.0001, "Value_001", "Value 2")
-
-    time_divide = new_node("ShaderNodeMath", -1200, -520)
+    make_link(group_input, ("Cycle Duration",), duration_max, ("Value",))
+    
+    time_divide = new_node("ShaderNodeMath", -1200, -600)
     time_divide.operation = 'DIVIDE'
+    make_link(scene_time, ("Seconds",), time_divide, ("Value",))
+    make_link(duration_max, ("Value",), time_divide, ("Value_001", "Value 2"))
 
-    rand_phase = new_node("FunctionNodeRandomValue", -1420, -260)
-    try:
-        rand_phase.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(rand_phase, 0.0, "Min")
-    set_input(rand_phase, 1.0, "Max")
-    set_input(rand_phase, 17, "Seed")
-
-    phase_mul = new_node("ShaderNodeMath", -1200, -260)
-    phase_mul.operation = 'MULTIPLY'
-
-    cycle_add = new_node("ShaderNodeMath", -980, -420)
-    cycle_add.operation = 'ADD'
-
-    cycle_frac = new_node("ShaderNodeMath", -760, -420)
-    cycle_frac.operation = 'FRACT'
-
-    tl_span = new_node("ShaderNodeMath", -760, -650)
+    tl_span = new_node("ShaderNodeMath", -1400, -900)
     tl_span.operation = 'SUBTRACT'
+    make_link(group_input, ("Timeline End",), tl_span, ("Value",))
+    make_link(group_input, ("Timeline Start",), tl_span, ("Value_001", "Value 2"))
 
-    tl_span_safe = new_node("ShaderNodeMath", -540, -650)
+    tl_span_safe = new_node("ShaderNodeMath", -1200, -900)
     tl_span_safe.operation = 'MAXIMUM'
     set_input(tl_span_safe, 0.0001, "Value_001", "Value 2")
+    make_link(tl_span, ("Value",), tl_span_safe, ("Value",))
 
-    cycle_minus_start = new_node("ShaderNodeMath", -540, -420)
-    cycle_minus_start.operation = 'SUBTRACT'
-
-    active_t = new_node("ShaderNodeMath", -320, -420)
-    active_t.operation = 'DIVIDE'
-    try:
-        active_t.use_clamp = True
-    except Exception:
-        pass
-
-    sample_curve = new_node("GeometryNodeSampleCurve", -80, -160)
-    try:
-        sample_curve.mode = 'FACTOR'
-    except Exception:
-        pass
-
-    curve_radius_input = new_node("GeometryNodeInputRadius", -300, -250)
-
-    random_x = new_node("FunctionNodeRandomValue", -760, -900)
-    try:
-        random_x.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(random_x, -1.0, "Min")
-    set_input(random_x, 1.0, "Max")
-    set_input(random_x, 101, "Seed")
-
-    random_y = new_node("FunctionNodeRandomValue", -760, -1080)
-    try:
-        random_y.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(random_y, -1.0, "Min")
-    set_input(random_y, 1.0, "Max")
-    set_input(random_y, 202, "Seed")
-
-    random_z = new_node("FunctionNodeRandomValue", -760, -1260)
-    try:
-        random_z.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(random_z, -1.0, "Min")
-    set_input(random_z, 1.0, "Max")
-    set_input(random_z, 303, "Seed")
-
-    combine_rand_dir = new_node("ShaderNodeCombineXYZ", -520, -1080)
-
-    normalize_rand_dir = new_node("ShaderNodeVectorMath", -300, -1080)
-    normalize_rand_dir.operation = 'NORMALIZE'
-
-    dot_rand_tangent = new_node("ShaderNodeVectorMath", -80, -980)
-    dot_rand_tangent.operation = 'DOT_PRODUCT'
-
-    tangent_scaled = new_node("ShaderNodeVectorMath", 140, -980)
-    tangent_scaled.operation = 'SCALE'
-
-    plane_subtract = new_node("ShaderNodeVectorMath", 360, -1080)
-    plane_subtract.operation = 'SUBTRACT'
-
-    plane_normalize = new_node("ShaderNodeVectorMath", 580, -1080)
-    plane_normalize.operation = 'NORMALIZE'
-
-    random_radius = new_node("FunctionNodeRandomValue", -300, -1320)
-    try:
-        random_radius.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(random_radius, 0.0, "Min")
-    set_input(random_radius, 1.0, "Max")
-    set_input(random_radius, 404, "Seed")
-
-    dispersion_mul_seed = new_node("ShaderNodeMath", 140, -1320)
-    dispersion_mul_seed.operation = 'MULTIPLY'
-
-    # Scale curve point radius by 0.01
-    radius_scale = new_node("ShaderNodeMath", -300, -1500)
-    radius_scale.operation = 'MULTIPLY'
-    set_input(radius_scale, 0.01, "Value_001", "Value 2")
-
-    # Multiply by Dispersion Scale from Group Input
-    dispersion_scale_mul = new_node("ShaderNodeMath", -80, -1500)
-    dispersion_scale_mul.operation = 'MULTIPLY'
-
-    dispersion_vector = new_node("ShaderNodeVectorMath", 800, -1080)
-    dispersion_vector.operation = 'SCALE'
-
-    jitter_vector = new_node("ShaderNodeVectorMath", 800, -1260)
-    jitter_vector.operation = 'SCALE'
-
-    offset_add = new_node("ShaderNodeVectorMath", 1040, -1160)
-    offset_add.operation = 'ADD'
-
-    final_position = new_node("ShaderNodeVectorMath", 1260, -600)
-    final_position.operation = 'ADD'
-
-    set_position = new_node("GeometryNodeSetPosition", 140, 0)
-
+    # Common particle shapes
     tri_mesh = new_node("GeometryNodeMeshCircle", -80, 420)
     try:
         tri_mesh.fill_type = 'TRIANGLE_FAN'
@@ -401,6 +276,7 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
         compare_quad.operation = 'EQUAL'
     except Exception:
         pass
+    make_link(group_input, ("Mesh FX Type",), compare_quad, ("A",))
     set_input(compare_quad, 1, "B")
 
     compare_hex = new_node("FunctionNodeCompare", 180, 520)
@@ -409,6 +285,7 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
         compare_hex.operation = 'EQUAL'
     except Exception:
         pass
+    make_link(group_input, ("Mesh FX Type",), compare_hex, ("A",))
     set_input(compare_hex, 2, "B")
 
     switch_tri_hex = new_node("GeometryNodeSwitch", 420, 520)
@@ -416,294 +293,391 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
         switch_tri_hex.input_type = 'GEOMETRY'
     except Exception:
         pass
+    make_link(compare_hex, ("Result",), switch_tri_hex, ("Switch",))
+    make_link(tri_mesh, ("Mesh",), switch_tri_hex, ("False",))
+    make_link(hex_mesh, ("Mesh",), switch_tri_hex, ("True",))
 
     switch_shape = new_node("GeometryNodeSwitch", 680, 360)
     try:
         switch_shape.input_type = 'GEOMETRY'
     except Exception:
         pass
-
-    instance_on_points = new_node("GeometryNodeInstanceOnPoints", 420, 0)
-
-    rand_rot_speed = new_node("FunctionNodeRandomValue", 420, -300)
-    try:
-        rand_rot_speed.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(rand_rot_speed, 0.5, "Min")
-    set_input(rand_rot_speed, 2.0, "Max")
-    set_input(rand_rot_speed, 505, "Seed")
-
-    rand_rot_offset = new_node("FunctionNodeRandomValue", 420, -480)
-    try:
-        rand_rot_offset.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(rand_rot_offset, 0.0, "Min")
-    set_input(rand_rot_offset, math.tau, "Max")
-    set_input(rand_rot_offset, 606, "Seed")
-
-    rot_base = new_node("ShaderNodeMath", 650, -300)
-    rot_base.operation = 'DIVIDE'
-
-    rot_tau = new_node("ShaderNodeMath", 870, -300)
-    rot_tau.operation = 'MULTIPLY'
-    set_input(rot_tau, math.tau, "Value_001", "Value 2")
-
-    rot_speed_mul = new_node("ShaderNodeMath", 1090, -300)
-    rot_speed_mul.operation = 'MULTIPLY'
-
-    rot_add_offset = new_node("ShaderNodeMath", 1310, -300)
-    rot_add_offset.operation = 'ADD'
-
-    rotation_xyz = new_node("ShaderNodeCombineXYZ", 1310, -120)
-    set_input(rotation_xyz, 0.0, "X")
-    set_input(rotation_xyz, 0.0, "Y")
-
-    rotate_instances = new_node("GeometryNodeRotateInstances", 650, 0)
-
-    half_compare = new_node("FunctionNodeCompare", -80, -760)
-    try:
-        half_compare.data_type = 'FLOAT'
-        half_compare.operation = 'LESS_EQUAL'
-    except Exception:
-        pass
-    set_input(half_compare, 0.5, "B")
-
-    size_start_map = new_node("ShaderNodeMapRange", 140, -760)
-    set_input(size_start_map, 0.0, "From Min")
-    set_input(size_start_map, 0.5, "From Max")
-    set_input(size_start_map, 1.0, "To Max")
-    try:
-        size_start_map.clamp = True
-    except Exception:
-        pass
-
-    size_end_map = new_node("ShaderNodeMapRange", 140, -540)
-    set_input(size_end_map, 0.5, "From Min")
-    set_input(size_end_map, 1.0, "From Max")
-    set_input(size_end_map, 1.0, "To Min")
-    try:
-        size_end_map.clamp = True
-    except Exception:
-        pass
-
-    size_switch = new_node("ShaderNodeMix", 420, -660)
-    try:
-        size_switch.data_type = 'FLOAT'
-        size_switch.factor_mode = 'UNIFORM'
-    except Exception:
-        pass
-
-    rand_size = new_node("FunctionNodeRandomValue", 140, -900)
-    try:
-        rand_size.data_type = 'FLOAT'
-    except Exception:
-        pass
-    set_input(rand_size, 0.0, "Min")
-    set_input(rand_size, 1.0, "Max")
-    set_input(rand_size, 707, "Seed")
-
-    size_rand_map = new_node("ShaderNodeMapRange", 420, -900)
-    set_input(size_rand_map, 0.0, "From Min")
-    set_input(size_rand_map, 1.0, "From Max")
-    try:
-        size_rand_map.clamp = True
-    except Exception:
-        pass
-
-    fade_in = new_node("ShaderNodeMapRange", 420, -1100)
-    set_input(fade_in, 0.0, "From Min")
-    set_input(fade_in, 0.1, "From Max")
-    set_input(fade_in, 0.0, "To Min")
-    set_input(fade_in, 1.0, "To Max")
-    try:
-        fade_in.clamp = True
-        fade_in.interpolation_type = 'SMOOTHSTEP'
-    except Exception:
-        pass
-
-    fade_out = new_node("ShaderNodeMapRange", 420, -1280)
-    set_input(fade_out, 0.9, "From Min")
-    set_input(fade_out, 1.0, "From Max")
-    set_input(fade_out, 1.0, "To Min")
-    set_input(fade_out, 0.0, "To Max")
-    try:
-        fade_out.clamp = True
-        fade_out.interpolation_type = 'SMOOTHSTEP'
-    except Exception:
-        pass
-
-    fade_mul = new_node("ShaderNodeMath", 650, -1180)
-    fade_mul.operation = 'MULTIPLY'
-
-    size_base_mul = new_node("ShaderNodeMath", 650, -760)
-    size_base_mul.operation = 'MULTIPLY'
-
-    size_rand_mul = new_node("ShaderNodeMath", 870, -760)
-    size_rand_mul.operation = 'MULTIPLY'
-
-    size_fade_mul = new_node("ShaderNodeMath", 1090, -760)
-    size_fade_mul.operation = 'MULTIPLY'
-
-    # Rotation: random 3D axis (matching HLSL q_from_axis_angle(rand_axis, current_rot))
-    # We approximate by scaling normalize_rand_dir (our random unit vector) by current_rot,
-    # which gives an Euler close to axis-angle for small angles and visually identical rotation.
-    rot_axis_scale = new_node("ShaderNodeVectorMath", 1310, -300)
-    rot_axis_scale.operation = 'SCALE'
-
-    rot_sep_xyz = new_node("ShaderNodeSeparateXYZ", 1530, -300)
-
-    scale_instances = new_node("GeometryNodeScaleInstances", 900, 0)
-
-    realize_instances = new_node("GeometryNodeRealizeInstances", 1180, 0)
-
-    make_link(group_input, ("Particle Count",), mesh_line, ("Count",))
-    make_link(mesh_line, ("Mesh",), set_position, ("Geometry",))
-
-    for random_node in (
-        rand_phase,
-        random_x,
-        random_y,
-        random_z,
-        random_radius,
-        rand_rot_speed,
-        rand_rot_offset,
-        rand_size,
-    ):
-        make_link(index_node, ("Index",), random_node, ("ID",))
-
-    make_link(scene_time, ("Seconds",), time_divide, ("Value",))
-    make_link(group_input, ("Cycle Duration",), duration_max, ("Value",))
-    make_link(duration_max, ("Value",), time_divide, ("Value_001", "Value 2"))
-
-    make_link(rand_phase, ("Value",), phase_mul, ("Value",))
-    make_link(group_input, ("Phase Randomness",), phase_mul, ("Value_001", "Value 2"))
-
-    make_link(time_divide, ("Value",), cycle_add, ("Value",))
-    make_link(phase_mul, ("Value",), cycle_add, ("Value_001", "Value 2"))
-    make_link(cycle_add, ("Value",), cycle_frac, ("Value",))
-
-    make_link(group_input, ("Timeline End",), tl_span, ("Value",))
-    make_link(group_input, ("Timeline Start",), tl_span, ("Value_001", "Value 2"))
-    make_link(tl_span, ("Value",), tl_span_safe, ("Value",))
-
-    make_link(cycle_frac, ("Value",), cycle_minus_start, ("Value",))
-    make_link(group_input, ("Timeline Start",), cycle_minus_start, ("Value_001", "Value 2"))
-
-    make_link(cycle_minus_start, ("Value",), active_t, ("Value",))
-    make_link(tl_span_safe, ("Value",), active_t, ("Value_001", "Value 2"))
-
-    make_link(group_input, ("Geometry",), sample_curve, ("Curve", "Geometry"))
-    make_link(active_t, ("Value",), sample_curve, ("Factor",))
-    make_link(curve_radius_input, ("Radius",), sample_curve, ("Value",))
-
-    make_link(random_x, ("Value",), combine_rand_dir, ("X",))
-    make_link(random_y, ("Value",), combine_rand_dir, ("Y",))
-    make_link(random_z, ("Value",), combine_rand_dir, ("Z",))
-
-    make_link(combine_rand_dir, ("Vector",), normalize_rand_dir, ("Vector",))
-
-    make_link(normalize_rand_dir, ("Vector",), dot_rand_tangent, ("Vector",))
-    make_link(sample_curve, ("Tangent",), dot_rand_tangent, ("Vector_001", "Vector 2"))
-
-    make_link(sample_curve, ("Tangent",), tangent_scaled, ("Vector",))
-    make_link(dot_rand_tangent, ("Value",), tangent_scaled, ("Scale",))
-
-    make_link(normalize_rand_dir, ("Vector",), plane_subtract, ("Vector",))
-    make_link(tangent_scaled, ("Vector",), plane_subtract, ("Vector_001", "Vector 2"))
-
-    make_link(plane_subtract, ("Vector",), plane_normalize, ("Vector",))
-
-    # Wire dispersion factor scaling: 0.01 * Curve.Radius * Dispersion Scale
-    make_link(sample_curve, ("Value",), radius_scale, ("Value",))
-    make_link(radius_scale, ("Value",), dispersion_scale_mul, ("Value",))
-    make_link(group_input, ("Dispersion Scale",), dispersion_scale_mul, ("Value_001", "Value 2"))
-
-    make_link(dispersion_scale_mul, ("Value",), dispersion_mul_seed, ("Value",))
-    make_link(random_radius, ("Value",), dispersion_mul_seed, ("Value_001", "Value 2"))
-
-    make_link(plane_normalize, ("Vector",), dispersion_vector, ("Vector",))
-    make_link(dispersion_mul_seed, ("Value",), dispersion_vector, ("Scale",))
-
-    make_link(normalize_rand_dir, ("Vector",), jitter_vector, ("Vector",))
-    make_link(group_input, ("Pos Randomness",), jitter_vector, ("Scale",))
-
-    make_link(dispersion_vector, ("Vector",), offset_add, ("Vector",))
-    make_link(jitter_vector, ("Vector",), offset_add, ("Vector_001", "Vector 2"))
-
-    make_link(sample_curve, ("Position",), final_position, ("Vector",))
-    make_link(offset_add, ("Vector",), final_position, ("Vector_001", "Vector 2"))
-
-    make_link(final_position, ("Vector",), set_position, ("Position",))
-
-    make_link(group_input, ("Mesh FX Type",), compare_quad, ("A",))
-    make_link(group_input, ("Mesh FX Type",), compare_hex, ("A",))
-
-    make_link(compare_hex, ("Result",), switch_tri_hex, ("Switch",))
-    make_link(tri_mesh, ("Mesh",), switch_tri_hex, ("False",))
-    make_link(hex_mesh, ("Mesh",), switch_tri_hex, ("True",))
-
     make_link(compare_quad, ("Result",), switch_shape, ("Switch",))
     make_link(switch_tri_hex, ("Output",), switch_shape, ("False",))
     make_link(quad_mesh, ("Mesh",), switch_shape, ("True",))
 
-    make_link(set_position, ("Geometry",), instance_on_points, ("Points",))
-    make_link(switch_shape, ("Output",), instance_on_points, ("Instance",))
+    # Join geometry node to collect all branches
+    join_geo = new_node("GeometryNodeJoinGeometry", 1000, 0)
 
-    make_link(scene_time, ("Seconds",), rot_base, ("Value",))
-    make_link(duration_max, ("Value",), rot_base, ("Value_001", "Value 2"))
-    make_link(rot_base, ("Value",), rot_tau, ("Value",))
-    make_link(rot_tau, ("Value",), rot_speed_mul, ("Value",))
-    make_link(rand_rot_speed, ("Value",), rot_speed_mul, ("Value_001", "Value 2"))
-    make_link(rot_speed_mul, ("Value",), rot_add_offset, ("Value",))
-    make_link(rand_rot_offset, ("Value",), rot_add_offset, ("Value_001", "Value 2"))
-    # rot_add_offset is current_rot scalar; scale the random 3D unit axis by it
-    make_link(normalize_rand_dir, ("Vector",), rot_axis_scale, ("Vector",))
-    make_link(rot_add_offset, ("Value",), rot_axis_scale, ("Scale",))
-    # Decompose scaled axis-vector into Euler channels
-    make_link(rot_axis_scale, ("Vector",), rot_sep_xyz, ("Vector",))
-    make_link(rot_sep_xyz, ("X",), rotation_xyz, ("X",))
-    make_link(rot_sep_xyz, ("Y",), rotation_xyz, ("Y",))
-    make_link(rot_sep_xyz, ("Z",), rotation_xyz, ("Z",))
+    # For each spline, build a separate branch
+    from ..utils.vfx_buffer_patcher import distribute_particles
+    splines_particles = distribute_particles(obj)
+    obj["RZM.CURVE_VFX.SPLINES_PARTICLES"] = splines_particles
+    num_splines = len(obj.data.splines) if obj.data else 0
 
-    make_link(instance_on_points, ("Instances",), rotate_instances, ("Instances",))
-    make_link(rotation_xyz, ("Vector",), rotate_instances, ("Rotation",))
+    for s_i in range(num_splines):
+        p_count = splines_particles[s_i]
+        if p_count <= 0:
+            continue
+            
+        y_offset = -s_i * 1500  # Offset nodes for each spline to avoid overlap
+        
+        # 1. Mesh Line for this spline's particles
+        mesh_line = new_node("GeometryNodeMeshLine", -1600, y_offset + 100)
+        try:
+            mesh_line.mode = 'OFFSET'
+        except Exception:
+            pass
+        set_input(mesh_line, p_count, "Count")
+        set_input(mesh_line, (0.0, 0.0, 0.0), "Offset")
+        
+        index_node = new_node("GeometryNodeInputIndex", -1600, y_offset - 100)
+        
+        # 2. Phase calculations
+        rand_phase = new_node("FunctionNodeRandomValue", -1400, y_offset - 100)
+        try:
+            rand_phase.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(rand_phase, 0.0, "Min")
+        set_input(rand_phase, 1.0, "Max")
+        set_input(rand_phase, 17 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), rand_phase, ("ID",))
+        
+        phase_mul = new_node("ShaderNodeMath", -1200, y_offset - 100)
+        phase_mul.operation = 'MULTIPLY'
+        make_link(rand_phase, ("Value",), phase_mul, ("Value",))
+        make_link(group_input, ("Phase Randomness",), phase_mul, ("Value_001", "Value 2"))
+        
+        cycle_add = new_node("ShaderNodeMath", -1000, y_offset - 100)
+        cycle_add.operation = 'ADD'
+        make_link(time_divide, ("Value",), cycle_add, ("Value",))
+        make_link(phase_mul, ("Value",), cycle_add, ("Value_001", "Value 2"))
+        
+        cycle_frac = new_node("ShaderNodeMath", -800, y_offset - 100)
+        cycle_frac.operation = 'FRACT'
+        make_link(cycle_add, ("Value",), cycle_frac, ("Value",))
+        
+        cycle_minus_start = new_node("ShaderNodeMath", -600, y_offset - 100)
+        cycle_minus_start.operation = 'SUBTRACT'
+        make_link(cycle_frac, ("Value",), cycle_minus_start, ("Value",))
+        make_link(group_input, ("Timeline Start",), cycle_minus_start, ("Value_001", "Value 2"))
+        
+        active_t = new_node("ShaderNodeMath", -400, y_offset - 100)
+        active_t.operation = 'DIVIDE'
+        try:
+            active_t.use_clamp = True
+        except Exception:
+            pass
+        make_link(cycle_minus_start, ("Value",), active_t, ("Value",))
+        make_link(tl_span_safe, ("Value",), active_t, ("Value_001", "Value 2"))
+        
+        # 3. Sample Curve for this specific spline index
+        sample_curve = new_node("GeometryNodeSampleCurve", -100, y_offset)
+        try:
+            sample_curve.mode = 'FACTOR'
+        except Exception:
+            pass
+        make_link(group_input, ("Geometry",), sample_curve, ("Curve", "Geometry"))
+        make_link(active_t, ("Value",), sample_curve, ("Factor",))
+        
+        # Pass spline index to sample curve
+        set_input(sample_curve, s_i, "Curve Index", "Index")
+        
+        curve_radius_input = new_node("GeometryNodeInputRadius", -300, y_offset - 150)
+        make_link(curve_radius_input, ("Radius",), sample_curve, ("Value",))
+        
+        # 4. Random direction and dispersion
+        random_x = new_node("FunctionNodeRandomValue", -800, y_offset - 600)
+        try:
+            random_x.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(random_x, -1.0, "Min")
+        set_input(random_x, 1.0, "Max")
+        set_input(random_x, 101 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), random_x, ("ID",))
+        
+        random_y = new_node("FunctionNodeRandomValue", -800, y_offset - 750)
+        try:
+            random_y.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(random_y, -1.0, "Min")
+        set_input(random_y, 1.0, "Max")
+        set_input(random_y, 202 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), random_y, ("ID",))
+        
+        random_z = new_node("FunctionNodeRandomValue", -800, y_offset - 900)
+        try:
+            random_z.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(random_z, -1.0, "Min")
+        set_input(random_z, 1.0, "Max")
+        set_input(random_z, 303 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), random_z, ("ID",))
+        
+        combine_rand_dir = new_node("ShaderNodeCombineXYZ", -600, y_offset - 750)
+        make_link(random_x, ("Value",), combine_rand_dir, ("X",))
+        make_link(random_y, ("Value",), combine_rand_dir, ("Y",))
+        make_link(random_z, ("Value",), combine_rand_dir, ("Z",))
+        
+        normalize_rand_dir = new_node("ShaderNodeVectorMath", -400, y_offset - 750)
+        normalize_rand_dir.operation = 'NORMALIZE'
+        make_link(combine_rand_dir, ("Vector",), normalize_rand_dir, ("Vector",))
+        
+        dot_rand_tangent = new_node("ShaderNodeVectorMath", -200, y_offset - 750)
+        dot_rand_tangent.operation = 'DOT_PRODUCT'
+        make_link(normalize_rand_dir, ("Vector",), dot_rand_tangent, ("Vector",))
+        make_link(sample_curve, ("Tangent",), dot_rand_tangent, ("Vector_001", "Vector 2"))
+        
+        tangent_scaled = new_node("ShaderNodeVectorMath", 0, y_offset - 750)
+        tangent_scaled.operation = 'SCALE'
+        make_link(sample_curve, ("Tangent",), tangent_scaled, ("Vector",))
+        make_link(dot_rand_tangent, ("Value",), tangent_scaled, ("Scale",))
+        
+        plane_subtract = new_node("ShaderNodeVectorMath", 200, y_offset - 750)
+        plane_subtract.operation = 'SUBTRACT'
+        make_link(normalize_rand_dir, ("Vector",), plane_subtract, ("Vector",))
+        make_link(tangent_scaled, ("Vector",), plane_subtract, ("Vector_001", "Vector 2"))
+        
+        plane_normalize = new_node("ShaderNodeVectorMath", 400, y_offset - 750)
+        plane_normalize.operation = 'NORMALIZE'
+        make_link(plane_subtract, ("Vector",), plane_normalize, ("Vector",))
+        
+        random_radius = new_node("FunctionNodeRandomValue", -200, y_offset - 950)
+        try:
+            random_radius.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(random_radius, 0.0, "Min")
+        set_input(random_radius, 1.0, "Max")
+        set_input(random_radius, 404 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), random_radius, ("ID",))
+        
+        # Scaling dispersion scale by curve's point radius and 0.01 (meters baseline)
+        radius_scale = new_node("ShaderNodeMath", -200, y_offset - 1100)
+        radius_scale.operation = 'MULTIPLY'
+        make_link(sample_curve, ("Value",), radius_scale, ("Value",))
+        set_input(radius_scale, 0.01, "Value_001", "Value 2")
+        
+        dispersion_scale_mul = new_node("ShaderNodeMath", 0, y_offset - 1100)
+        dispersion_scale_mul.operation = 'MULTIPLY'
+        make_link(radius_scale, ("Value",), dispersion_scale_mul, ("Value",))
+        make_link(group_input, ("Dispersion Scale",), dispersion_scale_mul, ("Value_001", "Value 2"))
+        
+        dispersion_mul_seed = new_node("ShaderNodeMath", 200, y_offset - 1100)
+        dispersion_mul_seed.operation = 'MULTIPLY'
+        make_link(dispersion_scale_mul, ("Value",), dispersion_mul_seed, ("Value",))
+        make_link(random_radius, ("Value",), dispersion_mul_seed, ("Value_001", "Value 2"))
+        
+        dispersion_vector = new_node("ShaderNodeVectorMath", 600, y_offset - 750)
+        dispersion_vector.operation = 'SCALE'
+        make_link(plane_normalize, ("Vector",), dispersion_vector, ("Vector",))
+        make_link(dispersion_mul_seed, ("Value",), dispersion_vector, ("Scale",))
+        
+        jitter_vector = new_node("ShaderNodeVectorMath", 600, y_offset - 900)
+        jitter_vector.operation = 'SCALE'
+        make_link(normalize_rand_dir, ("Vector",), jitter_vector, ("Vector",))
+        make_link(group_input, ("Pos Randomness",), jitter_vector, ("Scale",))
+        
+        offset_add = new_node("ShaderNodeVectorMath", 800, y_offset - 800)
+        offset_add.operation = 'ADD'
+        make_link(dispersion_vector, ("Vector",), offset_add, ("Vector",))
+        make_link(jitter_vector, ("Vector",), offset_add, ("Vector_001", "Vector 2"))
+        
+        final_position = new_node("ShaderNodeVectorMath", 1000, y_offset - 500)
+        final_position.operation = 'ADD'
+        make_link(sample_curve, ("Position",), final_position, ("Vector",))
+        make_link(offset_add, ("Vector",), final_position, ("Vector_001", "Vector 2"))
+        
+        # 5. Set Position
+        set_position = new_node("GeometryNodeSetPosition", 200, y_offset)
+        make_link(mesh_line, ("Mesh",), set_position, ("Geometry",))
+        make_link(final_position, ("Vector",), set_position, ("Position",))
+        
+        # 6. Instance on Points
+        instance_on_points = new_node("GeometryNodeInstanceOnPoints", 400, y_offset)
+        make_link(set_position, ("Geometry",), instance_on_points, ("Points",))
+        make_link(switch_shape, ("Output",), instance_on_points, ("Instance",))
+        
+        # 7. Rotation (euler axis-angle approximation)
+        rand_rot_speed = new_node("FunctionNodeRandomValue", 0, y_offset - 1300)
+        try:
+            rand_rot_speed.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(rand_rot_speed, 0.5, "Min")
+        set_input(rand_rot_speed, 2.0, "Max")
+        set_input(rand_rot_speed, 505 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), rand_rot_speed, ("ID",))
+        
+        rand_rot_offset = new_node("FunctionNodeRandomValue", 0, y_offset - 1450)
+        try:
+            rand_rot_offset.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(rand_rot_offset, 0.0, "Min")
+        set_input(rand_rot_offset, math.tau, "Max")
+        set_input(rand_rot_offset, 606 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), rand_rot_offset, ("ID",))
+        
+        rot_base = new_node("ShaderNodeMath", 200, y_offset - 1300)
+        rot_base.operation = 'DIVIDE'
+        make_link(scene_time, ("Seconds",), rot_base, ("Value",))
+        make_link(duration_max, ("Value",), rot_base, ("Value_001", "Value 2"))
+        
+        rot_tau = new_node("ShaderNodeMath", 400, y_offset - 1300)
+        rot_tau.operation = 'MULTIPLY'
+        make_link(rot_base, ("Value",), rot_tau, ("Value",))
+        set_input(rot_tau, math.tau, "Value_001", "Value 2")
+        
+        rot_speed_mul = new_node("ShaderNodeMath", 600, y_offset - 1300)
+        rot_speed_mul.operation = 'MULTIPLY'
+        make_link(rot_tau, ("Value",), rot_speed_mul, ("Value",))
+        make_link(rand_rot_speed, ("Value",), rot_speed_mul, ("Value_001", "Value 2"))
+        
+        rot_add_offset = new_node("ShaderNodeMath", 800, y_offset - 1300)
+        rot_add_offset.operation = 'ADD'
+        make_link(rot_speed_mul, ("Value",), rot_add_offset, ("Value",))
+        make_link(rand_rot_offset, ("Value",), rot_add_offset, ("Value_001", "Value 2"))
+        
+        rot_axis_scale = new_node("ShaderNodeVectorMath", 1000, y_offset - 1300)
+        rot_axis_scale.operation = 'SCALE'
+        make_link(normalize_rand_dir, ("Vector",), rot_axis_scale, ("Vector",))
+        make_link(rot_add_offset, ("Value",), rot_axis_scale, ("Scale",))
+        
+        rot_sep_xyz = new_node("ShaderNodeSeparateXYZ", 1200, y_offset - 1300)
+        make_link(rot_axis_scale, ("Vector",), rot_sep_xyz, ("Vector",))
+        
+        rotation_xyz = new_node("ShaderNodeCombineXYZ", 1400, y_offset - 1300)
+        make_link(rot_sep_xyz, ("X",), rotation_xyz, ("X",))
+        make_link(rot_sep_xyz, ("Y",), rotation_xyz, ("Y",))
+        make_link(rot_sep_xyz, ("Z",), rotation_xyz, ("Z",))
+        
+        # 8. Scale and sizes
+        half_compare = new_node("FunctionNodeCompare", -200, y_offset - 1650)
+        try:
+            half_compare.data_type = 'FLOAT'
+            half_compare.operation = 'LESS_EQUAL'
+        except Exception:
+            pass
+        make_link(active_t, ("Value",), half_compare, ("A",))
+        set_input(half_compare, 0.5, "B")
+        
+        size_start_map = new_node("ShaderNodeMapRange", 0, y_offset - 1650)
+        set_input(size_start_map, 0.0, "From Min")
+        set_input(size_start_map, 0.5, "From Max")
+        set_input(size_start_map, 1.0, "To Max")
+        try:
+            size_start_map.clamp = True
+        except Exception:
+            pass
+        make_link(active_t, ("Value",), size_start_map, ("Value",))
+        make_link(group_input, ("Size Start",), size_start_map, ("To Min",))
+        
+        size_end_map = new_node("ShaderNodeMapRange", 0, y_offset - 1800)
+        set_input(size_end_map, 0.5, "From Min")
+        set_input(size_end_map, 1.0, "From Max")
+        set_input(size_end_map, 1.0, "To Min")
+        try:
+            size_end_map.clamp = True
+        except Exception:
+            pass
+        make_link(active_t, ("Value",), size_end_map, ("Value",))
+        make_link(group_input, ("Size End",), size_end_map, ("To Max",))
+        
+        size_switch = new_node("ShaderNodeMix", 200, y_offset - 1700)
+        try:
+            size_switch.data_type = 'FLOAT'
+            size_switch.factor_mode = 'UNIFORM'
+        except Exception:
+            pass
+        make_link(half_compare, ("Result",), size_switch, ("Factor",))
+        make_link(size_end_map, ("Result",), size_switch, ("A", "Float A"))
+        make_link(size_start_map, ("Result",), size_switch, ("B", "Float B"))
+        
+        rand_size = new_node("FunctionNodeRandomValue", 0, y_offset - 1950)
+        try:
+            rand_size.data_type = 'FLOAT'
+        except Exception:
+            pass
+        set_input(rand_size, 0.0, "Min")
+        set_input(rand_size, 1.0, "Max")
+        set_input(rand_size, 707 + s_i * 1000, "Seed")
+        make_link(index_node, ("Index",), rand_size, ("ID",))
+        
+        size_rand_map = new_node("ShaderNodeMapRange", 200, y_offset - 1950)
+        set_input(size_rand_map, 0.0, "From Min")
+        set_input(size_rand_map, 1.0, "From Max")
+        try:
+            size_rand_map.clamp = True
+        except Exception:
+            pass
+        make_link(rand_size, ("Value",), size_rand_map, ("Value",))
+        make_link(group_input, ("Size Rand Min",), size_rand_map, ("To Min",))
+        make_link(group_input, ("Size Rand Max",), size_rand_map, ("To Max",))
+        
+        fade_in = new_node("ShaderNodeMapRange", 200, y_offset - 2150)
+        set_input(fade_in, 0.0, "From Min")
+        set_input(fade_in, 0.1, "From Max")
+        set_input(fade_in, 0.0, "To Min")
+        set_input(fade_in, 1.0, "To Max")
+        try:
+            fade_in.clamp = True
+            fade_in.interpolation_type = 'SMOOTHSTEP'
+        except Exception:
+            pass
+        make_link(active_t, ("Value",), fade_in, ("Value",))
+        
+        fade_out = new_node("ShaderNodeMapRange", 200, y_offset - 2300)
+        set_input(fade_out, 0.9, "From Min")
+        set_input(fade_out, 1.0, "From Max")
+        set_input(fade_out, 1.0, "To Min")
+        set_input(fade_out, 0.0, "To Max")
+        try:
+            fade_out.clamp = True
+            fade_out.interpolation_type = 'SMOOTHSTEP'
+        except Exception:
+            pass
+        make_link(active_t, ("Value",), fade_out, ("Value",))
+        
+        fade_mul = new_node("ShaderNodeMath", 400, y_offset - 2200)
+        fade_mul.operation = 'MULTIPLY'
+        make_link(fade_in, ("Result",), fade_mul, ("Value",))
+        make_link(fade_out, ("Result",), fade_mul, ("Value_001", "Value 2"))
+        
+        size_base_mul = new_node("ShaderNodeMath", 400, y_offset - 1700)
+        size_base_mul.operation = 'MULTIPLY'
+        make_link(group_input, ("Size Base",), size_base_mul, ("Value",))
+        make_link(size_switch, ("Result",), size_base_mul, ("Value_001", "Value 2"))
+        
+        size_rand_mul = new_node("ShaderNodeMath", 600, y_offset - 1700)
+        size_rand_mul.operation = 'MULTIPLY'
+        make_link(size_base_mul, ("Value",), size_rand_mul, ("Value",))
+        make_link(size_rand_map, ("Result",), size_rand_mul, ("Value_001", "Value 2"))
+        
+        size_fade_mul = new_node("ShaderNodeMath", 800, y_offset - 1700)
+        size_fade_mul.operation = 'MULTIPLY'
+        make_link(size_rand_mul, ("Value",), size_fade_mul, ("Value",))
+        make_link(fade_mul, ("Value",), size_fade_mul, ("Value_001", "Value 2"))
+        
+        # 9. Rotate and Scale Instances
+        rotate_instances = new_node("GeometryNodeRotateInstances", 600, y_offset)
+        make_link(instance_on_points, ("Instances",), rotate_instances, ("Instances",))
+        make_link(rotation_xyz, ("Vector",), rotate_instances, ("Rotation",))
+        
+        scale_instances = new_node("GeometryNodeScaleInstances", 800, y_offset)
+        make_link(rotate_instances, ("Instances",), scale_instances, ("Instances",))
+        make_link(size_fade_mul, ("Value",), scale_instances, ("Scale",))
+        
+        # Link this spline's branch to Join Geometry
+        make_link(scale_instances, ("Instances",), join_geo, ("Geometry",))
 
-    make_link(active_t, ("Value",), half_compare, ("A",))
-
-    make_link(active_t, ("Value",), size_start_map, ("Value",))
-    make_link(group_input, ("Size Start",), size_start_map, ("To Min",))
-
-    make_link(active_t, ("Value",), size_end_map, ("Value",))
-    make_link(group_input, ("Size End",), size_end_map, ("To Max",))
-
-    make_link(half_compare, ("Result",), size_switch, ("Factor",))
-    make_link(size_end_map, ("Result",), size_switch, ("A", "Float A"))
-    make_link(size_start_map, ("Result",), size_switch, ("B", "Float B"))
-
-    make_link(rand_size, ("Value",), size_rand_map, ("Value",))
-    make_link(group_input, ("Size Rand Min",), size_rand_map, ("To Min",))
-    make_link(group_input, ("Size Rand Max",), size_rand_map, ("To Max",))
-
-    make_link(active_t, ("Value",), fade_in, ("Value",))
-    make_link(active_t, ("Value",), fade_out, ("Value",))
-    make_link(fade_in, ("Result",), fade_mul, ("Value",))
-    make_link(fade_out, ("Result",), fade_mul, ("Value_001", "Value 2"))
-
-    make_link(group_input, ("Size Base",), size_base_mul, ("Value",))
-    make_link(size_switch, ("Result",), size_base_mul, ("Value_001", "Value 2"))
-
-    make_link(size_base_mul, ("Value",), size_rand_mul, ("Value",))
-    make_link(size_rand_map, ("Result",), size_rand_mul, ("Value_001", "Value 2"))
-
-    make_link(size_rand_mul, ("Value",), size_fade_mul, ("Value",))
-    make_link(fade_mul, ("Value",), size_fade_mul, ("Value_001", "Value 2"))
-
-    make_link(rotate_instances, ("Instances",), scale_instances, ("Instances",))
-    make_link(size_fade_mul, ("Value",), scale_instances, ("Scale",))
-
-    make_link(scale_instances, ("Instances",), realize_instances, ("Geometry", "Instances"))
+    # Realize Instances at the end
+    realize_instances = new_node("GeometryNodeRealizeInstances", 1200, 0)
+    make_link(join_geo, ("Geometry",), realize_instances, ("Geometry", "Instances"))
     make_link(realize_instances, ("Geometry",), group_output, ("Geometry",))
 
     modifier = obj.modifiers.new(MOD_NAME, 'NODES')
@@ -888,9 +862,6 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
     )
 
     return {'FINISHED'}
-
-
-
 
 
 class RZM_OT_apply_vfx_preview(bpy.types.Operator):

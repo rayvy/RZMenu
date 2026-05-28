@@ -533,12 +533,12 @@
     {% endif %}
     {% if curve_list | length > 0 %}
     [ResourceRZM_CurveData]
-    type = Buffer
+    type = StructuredBuffer
     stride = 40
     filename = res/curve_data.buf
 
     [ResourceRZM_CurveWeightData]
-    type = Buffer
+    type = StructuredBuffer
     stride = 32
     filename = res/curve_weight_data.buf
     {% endif %}

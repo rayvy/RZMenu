@@ -115,18 +115,10 @@ class RZM_OT_SetHoverMode(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (
+classes_to_register = (
     RZM_OT_AddCustomDraw,
     RZM_OT_RemoveCustomDraw,
     RZM_OT_ToggleSkipDraw,
     RZM_OT_SetHoverMode,
     RZM_MT_AddCustomDrawMenu,
 )
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
