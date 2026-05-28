@@ -101,11 +101,11 @@ def pre_collect_vfx_vertex_counts(context):
         for curve_obj in curve_list:
             particle_count = get_curve_prop(curve_obj, "particle_count", 1)
             mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
-            if mesh_fx_type == "1":
+            if mesh_fx_type == "1":    # Quad
                 v_per_particle = 4
-            elif mesh_fx_type == "2":
-                v_per_particle = 6
-            else:
+            elif mesh_fx_type == "2": # Circle (hexagon fan)
+                v_per_particle = 7
+            else:                     # Triangle (type 0) or Custom Mesh stub (type 3)
                 v_per_particle = 3
             total_new_verts += particle_count * v_per_particle
             
@@ -795,14 +795,13 @@ def patch_buffers(context, cache):
         for curve_obj in curve_list:
             particle_count = get_curve_prop(curve_obj, "particle_count", 1)
             mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
-            if mesh_fx_type == "1":
+            if mesh_fx_type == "1":    # Quad
                 v_per_particle, i_per_particle = 4, 6
-            elif mesh_fx_type == "2":
-                v_per_particle, i_per_particle = 6, 15
-            else:
+            elif mesh_fx_type == "2": # Circle (hexagon: 7 verts, 6 tris = 18 indices)
+                v_per_particle, i_per_particle = 7, 18
+            else:                     # Triangle (type 0) or Custom Mesh stub (type 3)
                 v_per_particle, i_per_particle = 3, 3
-            total_new_verts += particle_count * v_per_particle
-            total_new_indices += particle_count * i_per_particle
+
 
         # Resolve filenames
         part_suffix = resolve_part_suffix(comp_name, part_name, target_mesh.name, mod_name)
@@ -952,11 +951,11 @@ def patch_buffers(context, cache):
             weight_indices = list(get_curve_prop(curve_obj, "weight_indices", (-1, -1, -1, -1)))
             weight_values = list(get_curve_prop(curve_obj, "weight_values", (0.0, 0.0, 0.0, 0.0)))
             
-            if mesh_fx_type == "1":
+            if mesh_fx_type == "1":    # Quad
                 v_per_particle, i_per_particle = 4, 6
-            elif mesh_fx_type == "2":
-                v_per_particle, i_per_particle = 6, 15
-            else:
+            elif mesh_fx_type == "2": # Circle (hexagon: 7 verts, 6 tris = 18 indices)
+                v_per_particle, i_per_particle = 7, 18
+            else:                     # Triangle (type 0) or Custom Mesh stub (type 3)
                 v_per_particle, i_per_particle = 3, 3
                 
             # Pre-generate particle parameters to share phase offsets between VB0 and VB2 loops
@@ -1020,13 +1019,13 @@ def patch_buffers(context, cache):
                             ( 0.5 * tri_aspect,  0.5, 0.0),
                         ]
                         local_pos = quad_verts[v_idx]
-                    elif mesh_fx_type == "2": # Circle (pentagon)
+                    elif mesh_fx_type == "2": # Circle (hexagon fan: center + 6 outer)
                         if v_idx == 0:
                             local_pos = (0.0, 0.0, 0.0)
                         else:
-                            angle = (v_idx - 1) * (2.0 * math.pi / 5.0)
+                            angle = (v_idx - 1) * (2.0 * math.pi / 6.0)
                             local_pos = (math.cos(angle) * tri_aspect, math.sin(angle), 0.0)
-                    else: # Triangle
+                    else: # Triangle (type 0 or Custom Mesh stub type 3)
                         tri_verts = [
                             (0.0, 1.0, 0.0),
                             (-0.866 * tri_aspect, -0.5, 0.0),
@@ -1156,14 +1155,14 @@ def patch_buffers(context, cache):
                                 (u_max, v_min)
                             ]
                             u, v = uvs[v_idx]
-                        elif mesh_fx_type == "2": # Circle (pentagon)
+                        elif mesh_fx_type == "2": # Circle (hexagon fan)
                             if v_idx == 0:
                                 u, v = u_center, v_center
                             else:
-                                angle = (v_idx - 1) * (2.0 * math.pi / 5.0)
+                                angle = (v_idx - 1) * (2.0 * math.pi / 6.0)
                                 u = u_center + u_radius * math.cos(angle)
                                 v = v_center + v_radius * math.sin(angle)
-                        else: # Triangle
+                        else: # Triangle (type 0 or Custom Mesh stub type 3)
                             uvs = [
                                 (u_center, v_max),
                                 (u_min, v_min),
@@ -1197,15 +1196,16 @@ def patch_buffers(context, cache):
                     v_start = current_v_count + p * v_per_particle
                     if mesh_fx_type == "1": # Quad
                         idx_list = [v_start, v_start + 1, v_start + 2, v_start + 2, v_start + 1, v_start + 3]
-                    elif mesh_fx_type == "2": # Circle (pentagon)
+                    elif mesh_fx_type == "2": # Circle (hexagon fan: 6 tris)
                         idx_list = [
                             v_start, v_start + 1, v_start + 2,
                             v_start, v_start + 2, v_start + 3,
                             v_start, v_start + 3, v_start + 4,
                             v_start, v_start + 4, v_start + 5,
-                            v_start, v_start + 5, v_start + 1,
+                            v_start, v_start + 5, v_start + 6,
+                            v_start, v_start + 6, v_start + 1,  # close back to first outer vert
                         ]
-                    else: # Triangle
+                    else: # Triangle (type 0 or Custom Mesh stub type 3)
                         idx_list = [v_start, v_start + 1, v_start + 2]
                     
                     for idx_val in idx_list:

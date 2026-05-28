@@ -430,7 +430,7 @@ def get_vfx_type(self):
         val = int(val)
     except (ValueError, TypeError):
         val = 0
-    if val not in {0, 1, 2}:
+    if val not in {0, 1, 2, 3}:
         return 0
     return val
 def set_vfx_type(self, value):
@@ -622,9 +622,10 @@ def register():
     bpy.types.Object.rzm_curve_vfx_mesh_fx_type = EnumProperty(
         name="Mesh FX Type",
         items=[
-            ("0", "Triangle", "3 verts, 1 triangle"),
-            ("1", "Quad", "4 verts, 2 triangles"),
-            ("2", "Circle", "6 verts, 4 triangles"),
+            ("0", "Triangle",    "3 verts, 1 triangle"),
+            ("1", "Quad",        "4 verts, 2 triangles"),
+            ("2", "Circle",      "7 verts, 6 triangles (hexagon fan)"),
+            ("3", "Custom Mesh", "Use an arbitrary mesh object as particle shape (Stage 2)"),
         ],
         get=get_vfx_type,
         set=set_vfx_type
@@ -658,6 +659,12 @@ def register():
     bpy.types.Object.rzm_curve_vfx_weight_reference = PointerProperty(
         name="Weight Reference Mesh",
         description="Reference mesh to copy weights from via closest vertex lookup",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'MESH'
+    )
+    bpy.types.Object.rzm_curve_vfx_custom_mesh = PointerProperty(
+        name="Custom Particle Mesh",
+        description="(Stage 2) Arbitrary mesh to use as particle shape. When set, particle_size_base and UV settings are ignored.",
         type=bpy.types.Object,
         poll=lambda self, obj: obj.type == 'MESH'
     )
@@ -780,6 +787,7 @@ def unregister():
         "rzm_curve_vfx_weight_indices",
         "rzm_curve_vfx_weight_values",
         "rzm_curve_vfx_weight_reference",
+        "rzm_curve_vfx_custom_mesh",
         "rzm_curve_vfx_texture_size",
         "rzm_curve_vfx_particle_size_px",
         "rzm_curve_vfx_uv_px_offset",

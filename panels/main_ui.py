@@ -375,24 +375,40 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 gcol = gbox.column(align=True)
                 gcol.prop(target_obj, "rzm_curve_vfx_mesh_fx_type", text="Mesh Type")
 
+                is_custom_mesh = (target_obj.rzm_curve_vfx_mesh_fx_type == "3")
 
-                # ── Pixel size + live float preview ──
-                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_px", text="Particle Size (px)")
-                tex_w = max(target_obj.rzm_curve_vfx_texture_size[0], 1)
-                override_float = target_obj.rzm_curve_vfx_particle_size_base
-                if override_float > 0.0:
-                    gcol.label(text=f"\u2192 float override: {override_float:.6f}")
+                if is_custom_mesh:
+                    # Custom Mesh picker
+                    gcol.separator()
+                    gcol.prop(target_obj, "rzm_curve_vfx_custom_mesh", text="Particle Mesh", icon='MESH_DATA')
+                    if not target_obj.rzm_curve_vfx_custom_mesh:
+                        gcol.label(text="Select a mesh to use as particle shape", icon='INFO')
+                    else:
+                        cm = target_obj.rzm_curve_vfx_custom_mesh
+                        v_count = len(cm.data.vertices) if cm.data else 0
+                        t_count = len(cm.data.polygons) if cm.data else 0
+                        gcol.label(text=f"Mesh: {cm.name}  ({v_count} verts, {t_count} polys)", icon='CHECKMARK')
+                    gcol.separator()
+                    gcol.label(text="[Stage 2] Base Size and UV from mesh \u2014 fallback: Triangle", icon='INFO')
+                    gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size Scale")
+                    gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size Scale")
                 else:
-                    computed = target_obj.rzm_curve_vfx_particle_size_px / tex_w
-                    gcol.label(text=f"\u2192 float export: {computed:.6f}  ({target_obj.rzm_curve_vfx_particle_size_px}px / {tex_w})")
-                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_base", text="Base Size")
-
-                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size Scale")
-                gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size Scale")
-                # UV info (read-only)
-                uv_off = target_obj.rzm_curve_vfx_uv_offset
-                uv_sc  = target_obj.rzm_curve_vfx_uv_scale
-                gcol.label(text=f"UV  Off=({uv_off[0]:.4f}, {uv_off[1]:.4f})  Scale=({uv_sc[0]:.4f}, {uv_sc[1]:.4f})", icon='IMAGE_DATA')
+                    # Standard size controls
+                    tex_w = max(target_obj.rzm_curve_vfx_texture_size[0], 1)
+                    gcol.prop(target_obj, "rzm_curve_vfx_particle_size_px", text="Particle Size (px)")
+                    override_float = target_obj.rzm_curve_vfx_particle_size_base
+                    if override_float > 0.0:
+                        gcol.label(text=f"\u2192 float override: {override_float:.6f}")
+                    else:
+                        computed = target_obj.rzm_curve_vfx_particle_size_px / tex_w
+                        gcol.label(text=f"\u2192 float: {computed:.6f}  ({target_obj.rzm_curve_vfx_particle_size_px}px / {tex_w})")
+                    gcol.prop(target_obj, "rzm_curve_vfx_particle_size_base", text="Base Size")
+                    gcol.prop(target_obj, "rzm_curve_vfx_particle_size_start", text="Start Size Scale")
+                    gcol.prop(target_obj, "rzm_curve_vfx_particle_size_end", text="End Size Scale")
+                    # UV info (read-only)
+                    uv_off = target_obj.rzm_curve_vfx_uv_offset
+                    uv_sc  = target_obj.rzm_curve_vfx_uv_scale
+                    gcol.label(text=f"UV  Off=({uv_off[0]:.4f}, {uv_off[1]:.4f})  Scale=({uv_sc[0]:.4f}, {uv_sc[1]:.4f})", icon='IMAGE_DATA')
 
                 # Section B: Path & Dispersion
                 dbox = box.box()
