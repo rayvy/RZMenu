@@ -445,14 +445,24 @@ def set_vfx_particle_count(self, value):
     self["RZM.CURVE_VFX.PARTICLE_COUNT"] = value
 
 def get_vfx_weight_indices(self):
-    val = self.get("RZM.CURVE_VFX.WEIGHT_INDICES", (-1, -1, -1, -1))
+    val = self.get("RZM.CURVE_VFX.WEIGHT_INDICES", (0, 0, 0, 0))
     if len(val) < 4:
-        val = list(val) + [-1] * (4 - len(val))
-    return tuple(int(x) for x in val[:4])
+        val = list(val) + [0] * (4 - len(val))
+    lst = list(val[:4])
+    if lst[0] < 0:
+        lst[0] = 0
+    return tuple(int(x) for x in lst)
 def set_vfx_weight_indices(self, value):
-    self["RZM.CURVE_VFX.WEIGHT_INDICES"] = list(value)
+    val_list = list(value)
+    if val_list:
+        if val_list[0] < 0:
+            val_list[0] = 0
+        self["RZM.CURVE_VFX.WEIGHT_VALUES"] = [1.0, 0.0, 0.0, 0.0]
+    self["RZM.CURVE_VFX.WEIGHT_INDICES"] = val_list
 
 def get_vfx_weight_values(self):
+    if not self.rzm_curve_vfx_weight_reference:
+        return (1.0, 0.0, 0.0, 0.0)
     val = self.get("RZM.CURVE_VFX.WEIGHT_VALUES", (0.0, 0.0, 0.0, 0.0))
     if len(val) < 4:
         val = list(val) + [0.0] * (4 - len(val))
@@ -639,9 +649,9 @@ def register():
     )
     bpy.types.Object.rzm_curve_vfx_weight_indices = IntVectorProperty(
         name="Weight Indices",
-        description="Up to 4 technical bind indices; -1 means unused",
+        description="Up to 4 technical bind indices",
         size=4,
-        min=-1,
+        min=0,
         max=999999,
         get=get_vfx_weight_indices,
         set=set_vfx_weight_indices

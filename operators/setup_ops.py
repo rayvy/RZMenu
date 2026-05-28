@@ -124,6 +124,11 @@ class RZM_OT_FullExport(bpy.types.Operator):
     execute_post: bpy.props.BoolProperty(default=True)
 
     def execute(self, context):
+        from ..utils.safe_export import SafeExport
+        with SafeExport(context):
+            return self.execute_internal(context)
+
+    def execute_internal(self, context):
         rzm = context.scene.rzm
         game = rzm.game.selection
         target_path = get_target_path(context)
@@ -462,6 +467,11 @@ class RZM_OT_BatchExport(bpy.types.Operator):
         return True
 
     def execute(self, context):
+        from ..utils.safe_export import SafeExport
+        with SafeExport(context):
+            return self.execute_internal(context)
+
+    def execute_internal(self, context):
         rzm = context.scene.rzm
         game = rzm.game.selection
         target_path = get_target_path(context)

@@ -433,14 +433,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 ref_mesh = target_obj.rzm_curve_vfx_weight_reference
                 if ref_mesh:
                     wbox.label(text="Bake Mode: Sampling weights from " + ref_mesh.name, icon='INFO')
-
-                col_manual = wbox.column()
-                col_manual.enabled = not ref_mesh
-                col_manual.prop(target_obj, "rzm_curve_vfx_weight_indices", text="Indices")
-                col_manual.prop(target_obj, "rzm_curve_vfx_weight_values", text="Values")
-
-                if not ref_mesh:
-                    wbox.operator("rzm.normalize_curve_vfx_weight", text="Normalize Weights")
+                else:
+                    col_manual = wbox.column()
+                    col_manual.prop(target_obj, "rzm_curve_vfx_weight_indices", index=0, text="Bone Index")
 
                 # Section E: Utilities
                 ubox = box.box()
@@ -487,10 +482,12 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
 
                 ubox.separator()
                 ubox.label(text="Preview", icon='RESTRICT_VIEW_OFF')
-                prev_row = ubox.row(align=True)
-                prev_row.prop(target_obj, "rzm_curve_vfx_preview_time", text="Time (sec)")
-                ubox.operator("rzm.apply_vfx_preview",
-                              text="Apply GeoNodes Preview", icon='NODETREE')
+                
+                op_row = ubox.row(align=True)
+                op_row.operator("rzm.apply_vfx_preview",
+                                text="Apply Preview", icon='NODETREE')
+                op_row.operator("rzm.remove_vfx_preview",
+                                text="Remove Preview", icon='X')
 
                 # Validation
                 box.separator()
