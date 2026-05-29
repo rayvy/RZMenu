@@ -1,0 +1,284 @@
+================================================================================
+RZM VFX CURVE COORD & HIERARCHY DIAGNOSTIC REPORT
+================================================================================
+Blender Version: 5.0.1
+Scene Name: Scene
+File Path: G:\XXMI\ZZMI\Mods\Projects\PromeiaCYBER6.blend
+
+[SUCCESS] Successfully imported RZMenu functions.
+[WARNING] Export cache is empty.
+Found 4 Curve objects with VFX enabled in the scene.
+
+------------------------------------------------------------
+CURVE OBJECT: 'TestNurbs'
+------------------------------------------------------------
+  * Loc: (0.0, 0.0, 0.0)
+  * Rot (Euler): (0.0, 0.0, 0.0)
+  * Scale: (1.0, 1.0, 1.0)
+  * Parent: None
+  * Collections: ['PromeiaHairB']
+  * Matrix World:
+    Row 0: (1.0, 0.0, 0.0, 0.0)
+    Row 1: (0.0, 1.0, 0.0, 0.0)
+    Row 2: (0.0, 0.0, 1.0, 0.0)
+    Row 3: (0.0, 0.0, 0.0, 1.0)
+  * Resolved Association:
+    - Component: Hair
+    - Target Mesh: 'HairB'
+    - Part Name: B
+  * Target Mesh 'HairB' details:
+    - Loc: (0.0, 0.0, 0.0)
+    - Rot (Euler): (0.0, 0.0, 0.0)
+    - Scale: (1.0, 1.0, 1.0)
+    - Parent: None
+    - Matrix World:
+      Row 0: (1.0, 0.0, 0.0, 0.0)
+      Row 1: (0.0, 1.0, 0.0, 0.0)
+      Row 2: (0.0, 0.0, 1.0, 0.0)
+      Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Resolved Root/Armature: 'HairB'
+      * Root Type: MESH
+      * Root Loc: (0.0, 0.0, 0.0)
+      * Root Rot (Euler): (0.0, 0.0, 0.0)
+      * Root Scale: (1.0, 1.0, 1.0)
+      * Root Matrix World:
+        Row 0: (1.0, 0.0, 0.0, 0.0)
+        Row 1: (0.0, 1.0, 0.0, 0.0)
+        Row 2: (0.0, 0.0, 1.0, 0.0)
+        Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Weight Reference Mesh: None
+  * Spline Coordinates Evaluation:
+    Spline 0:
+      Point 0 (Local Curve): (0.046658, -0.038887, 1.601055)
+      Point 0 (World Space): (0.046658, -0.038887, 1.601055)
+      Point 0 (Mesh Local Space): (0.046658, -0.038887, 1.601055)
+      Point 0 (Armature Local Space): (0.046658, -0.038887, 1.601055)
+      Closest Vertex on Mesh 'HairB':
+        - Vertex Index: 605
+        - Distance: 0.011112 meters
+        - Local Pos: (0.057759, -0.038501, 1.601347)
+        - World Pos: (0.057759, -0.038501, 1.601347)
+        - Vertex Bone Weights: 3 (Index 3): 0.6746, 2 (Index 2): 0.2521, 23 (Index 23): 0.0604, 0 (Index 0): 0.0129
+
+    Spline 1:
+      Point 0 (Local Curve): (0.073175, -0.017599, 1.633897)
+      Point 0 (World Space): (0.073175, -0.017599, 1.633897)
+      Point 0 (Mesh Local Space): (0.073175, -0.017599, 1.633897)
+      Point 0 (Armature Local Space): (0.073175, -0.017599, 1.633897)
+      Closest Vertex on Mesh 'HairB':
+        - Vertex Index: 354
+        - Distance: 0.005579 meters
+        - Local Pos: (0.06852, -0.016268, 1.636669)
+        - World Pos: (0.06852, -0.016268, 1.636669)
+        - Vertex Bone Weights: 2 (Index 2): 0.3907, 3 (Index 3): 0.3458, 0 (Index 0): 0.2635
+
+    Spline 2:
+      Point 0 (Local Curve): (0.08781, -0.030324, 1.606053)
+      Point 0 (World Space): (0.08781, -0.030324, 1.606053)
+      Point 0 (Mesh Local Space): (0.08781, -0.030324, 1.606053)
+      Point 0 (Armature Local Space): (0.08781, -0.030324, 1.606053)
+      Closest Vertex on Mesh 'HairB':
+        - Vertex Index: 212
+        - Distance: 0.008451 meters
+        - Local Pos: (0.079651, -0.028166, 1.606503)
+        - World Pos: (0.079651, -0.028166, 1.606503)
+        - Vertex Bone Weights: 3 (Index 3): 0.6567, 2 (Index 2): 0.2633, 23 (Index 23): 0.0407, 0 (Index 0): 0.0393
+
+    Spline 3:
+      Point 0 (Local Curve): (0.028387, -0.021225, 1.582374)
+      Point 0 (World Space): (0.028387, -0.021225, 1.582374)
+      Point 0 (Mesh Local Space): (0.028387, -0.021225, 1.582374)
+      Point 0 (Armature Local Space): (0.028387, -0.021225, 1.582374)
+      Closest Vertex on Mesh 'HairB':
+        - Vertex Index: 235
+        - Distance: 0.032104 meters
+        - Local Pos: (0.049777, -0.037031, 1.564393)
+        - World Pos: (0.049777, -0.037031, 1.564393)
+        - Vertex Bone Weights: 23 (Index 23): 0.9758, 3 (Index 3): 0.0242
+
+    Spline 4:
+      Point 0 (Local Curve): (0.036628, -0.028129, 1.582646)
+      Point 0 (World Space): (0.036628, -0.028129, 1.582646)
+      Point 0 (Mesh Local Space): (0.036628, -0.028129, 1.582646)
+      Point 0 (Armature Local Space): (0.036628, -0.028129, 1.582646)
+      Closest Vertex on Mesh 'HairB':
+        - Vertex Index: 227
+        - Distance: 0.023386 meters
+        - Local Pos: (0.053717, -0.035992, 1.568752)
+        - World Pos: (0.053717, -0.035992, 1.568752)
+        - Vertex Bone Weights: 23 (Index 23): 0.9186, 3 (Index 3): 0.0814
+
+------------------------------------------------------------
+CURVE OBJECT: 'NurbsPath'
+------------------------------------------------------------
+  * Loc: (0.0, 0.0, 0.0)
+  * Rot (Euler): (0.0, 0.0, 0.0)
+  * Scale: (1.0, 1.0, 1.0)
+  * Parent: None
+  * Collections: ['PromeiaHairB']
+  * Matrix World:
+    Row 0: (1.0, 0.0, 0.0, 0.0)
+    Row 1: (0.0, 1.0, 0.0, 0.0)
+    Row 2: (0.0, 0.0, 1.0, 0.0)
+    Row 3: (0.0, 0.0, 0.0, 1.0)
+  * Resolved Association:
+    - Component: Hair
+    - Target Mesh: 'HairB'
+    - Part Name: B
+  * Target Mesh 'HairB' details:
+    - Loc: (0.0, 0.0, 0.0)
+    - Rot (Euler): (0.0, 0.0, 0.0)
+    - Scale: (1.0, 1.0, 1.0)
+    - Parent: None
+    - Matrix World:
+      Row 0: (1.0, 0.0, 0.0, 0.0)
+      Row 1: (0.0, 1.0, 0.0, 0.0)
+      Row 2: (0.0, 0.0, 1.0, 0.0)
+      Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Resolved Root/Armature: 'HairB'
+      * Root Type: MESH
+      * Root Loc: (0.0, 0.0, 0.0)
+      * Root Rot (Euler): (0.0, 0.0, 0.0)
+      * Root Scale: (1.0, 1.0, 1.0)
+      * Root Matrix World:
+        Row 0: (1.0, 0.0, 0.0, 0.0)
+        Row 1: (0.0, 1.0, 0.0, 0.0)
+        Row 2: (0.0, 0.0, 1.0, 0.0)
+        Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Weight Reference Mesh: None
+  * Spline Coordinates Evaluation:
+    Spline 0:
+      Point 0 (Local Curve): (-0.650903, 0.131376, 1.421067)
+      Point 0 (World Space): (-0.650903, 0.131376, 1.421067)
+      Point 0 (Mesh Local Space): (-0.650903, 0.131376, 1.421067)
+      Point 0 (Armature Local Space): (-0.650903, 0.131376, 1.421067)
+      Closest Vertex on Mesh 'HairB':
+        - Vertex Index: 408
+        - Distance: 0.596569 meters
+        - Local Pos: (-0.083981, 0.011309, 1.562765)
+        - World Pos: (-0.083981, 0.011309, 1.562765)
+        - Vertex Bone Weights: 29 (Index 29): 0.5853, 28 (Index 28): 0.4122, 0 (Index 0): 0.0025
+
+------------------------------------------------------------
+CURVE OBJECT: 'TestNurbs.001'
+------------------------------------------------------------
+  * Loc: (0.0, 0.0, 0.0)
+  * Rot (Euler): (0.0, 0.0, 0.0)
+  * Scale: (1.0, 1.0, 1.0)
+  * Parent: None
+  * Collections: ['PromeiaLegsA']
+  * Matrix World:
+    Row 0: (1.0, 0.0, 0.0, 0.0)
+    Row 1: (0.0, 1.0, 0.0, 0.0)
+    Row 2: (0.0, 0.0, 1.0, 0.0)
+    Row 3: (0.0, 0.0, 0.0, 1.0)
+  * Resolved Association:
+    - Component: Legs
+    - Target Mesh: '!!!BaseMesh.ZZZ.M.Inner'
+    - Part Name: A
+  * Target Mesh '!!!BaseMesh.ZZZ.M.Inner' details:
+    - Loc: (0.0, 0.0, 0.0)
+    - Rot (Euler): (0.0, 0.0, 0.0)
+    - Scale: (1.0, 1.0, 1.0)
+    - Parent: None
+    - Matrix World:
+      Row 0: (1.0, 0.0, 0.0, 0.0)
+      Row 1: (0.0, 1.0, 0.0, 0.0)
+      Row 2: (0.0, 0.0, 1.0, 0.0)
+      Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Resolved Root/Armature: '!!!BaseMesh.ZZZ.M.Inner'
+      * Root Type: MESH
+      * Root Loc: (0.0, 0.0, 0.0)
+      * Root Rot (Euler): (0.0, 0.0, 0.0)
+      * Root Scale: (1.0, 1.0, 1.0)
+      * Root Matrix World:
+        Row 0: (1.0, 0.0, 0.0, 0.0)
+        Row 1: (0.0, 1.0, 0.0, 0.0)
+        Row 2: (0.0, 0.0, 1.0, 0.0)
+        Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Weight Reference Mesh: '!!!LEGS'
+      * Weight Ref Matrix World:
+        Row 0: (1.0, 0.0, 0.0, 0.0)
+        Row 1: (0.0, 1.0, 0.0, 0.0)
+        Row 2: (0.0, 0.0, 1.0, 0.0)
+        Row 3: (0.0, 0.0, 0.0, 1.0)
+  * Spline Coordinates Evaluation:
+    Spline 0:
+      Point 0 (Local Curve): (-0.096667, 0.049475, 0.206842)
+      Point 0 (World Space): (-0.096667, 0.049475, 0.206842)
+      Point 0 (Mesh Local Space): (-0.096667, 0.049475, 0.206842)
+      Point 0 (Armature Local Space): (-0.096667, 0.049475, 0.206842)
+      Closest Vertex on Mesh '!!!BaseMesh.ZZZ.M.Inner':
+        - Vertex Index: 804
+        - Distance: 0.742604 meters
+        - Local Pos: (-0.002113, 0.048628, 0.943401)
+        - World Pos: (-0.002113, 0.048628, 0.943401)
+        - Vertex Bone Weights: Bip001 Pelvis (Index 0): 0.9998, Bip001 Spine (Index 1): 0.0002, Bip001 Spine1 (Index 2): 0.0, SknThigh_Twist.L (Index 72): 0.0, SknThigh_Twist.R (Index 82): 0.0, Bip001 Finger4.L (Index 23): 0.0, Bip001 Finger4.R (Index 50): 0.0
+
+------------------------------------------------------------
+CURVE OBJECT: 'TestNurbs.002'
+------------------------------------------------------------
+  * Loc: (0.0, 0.0, 0.0)
+  * Rot (Euler): (0.0, 0.0, 0.0)
+  * Scale: (1.0, 1.0, 1.0)
+  * Parent: None
+  * Collections: ['PromeiaCoatA']
+  * Matrix World:
+    Row 0: (1.0, 0.0, 0.0, 0.0)
+    Row 1: (0.0, 1.0, 0.0, 0.0)
+    Row 2: (0.0, 0.0, 1.0, 0.0)
+    Row 3: (0.0, 0.0, 0.0, 1.0)
+  * Resolved Association:
+    - Component: Coat
+    - Target Mesh: 'CoatA'
+    - Part Name: A
+  * Target Mesh 'CoatA' details:
+    - Loc: (0.0, 0.0, 0.0)
+    - Rot (Euler): (0.0, 0.0, 0.0)
+    - Scale: (1.0, 1.0, 1.0)
+    - Parent: None
+    - Matrix World:
+      Row 0: (1.0, 0.0, 0.0, 0.0)
+      Row 1: (0.0, 1.0, 0.0, 0.0)
+      Row 2: (0.0, 0.0, 1.0, 0.0)
+      Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Resolved Root/Armature: 'CoatA'
+      * Root Type: MESH
+      * Root Loc: (0.0, 0.0, 0.0)
+      * Root Rot (Euler): (0.0, 0.0, 0.0)
+      * Root Scale: (1.0, 1.0, 1.0)
+      * Root Matrix World:
+        Row 0: (1.0, 0.0, 0.0, 0.0)
+        Row 1: (0.0, 1.0, 0.0, 0.0)
+        Row 2: (0.0, 0.0, 1.0, 0.0)
+        Row 3: (0.0, 0.0, 0.0, 1.0)
+    - Weight Reference Mesh: 'CoatA'
+      * Weight Ref Matrix World:
+        Row 0: (1.0, 0.0, 0.0, 0.0)
+        Row 1: (0.0, 1.0, 0.0, 0.0)
+        Row 2: (0.0, 0.0, 1.0, 0.0)
+        Row 3: (0.0, 0.0, 0.0, 1.0)
+  * Spline Coordinates Evaluation:
+    Spline 0:
+      Point 0 (Local Curve): (0.029546, 0.080585, 1.455085)
+      Point 0 (World Space): (0.029546, 0.080585, 1.455085)
+      Point 0 (Mesh Local Space): (0.029546, 0.080585, 1.455085)
+      Point 0 (Armature Local Space): (0.029546, 0.080585, 1.455085)
+      Closest Vertex on Mesh 'CoatA':
+        - Vertex Index: 96
+        - Distance: 0.010479 meters
+        - Local Pos: (0.028293, 0.070363, 1.453145)
+        - World Pos: (0.028293, 0.070363, 1.453145)
+        - Vertex Bone Weights: 21 (Index 21): 0.5809, 42.R (Index 13): 0.1963, 54 (Index 54): 0.15, 56.R (Index 55): 0.0728
+
+    Spline 1:
+      Point 0 (Local Curve): (-0.029546, 0.080585, 1.455085)
+      Point 0 (World Space): (-0.029546, 0.080585, 1.455085)
+      Point 0 (Mesh Local Space): (-0.029546, 0.080585, 1.455085)
+      Point 0 (Armature Local Space): (-0.029546, 0.080585, 1.455085)
+      Closest Vertex on Mesh 'CoatA':
+        - Vertex Index: 290
+        - Distance: 0.010479 meters
+        - Local Pos: (-0.028293, 0.070363, 1.453145)
+        - World Pos: (-0.028293, 0.070363, 1.453145)
+        - Vertex Bone Weights: 21 (Index 21): 0.5809, 42.L (Index 42): 0.1963, 54 (Index 54): 0.15, 56.L (Index 56): 0.0728

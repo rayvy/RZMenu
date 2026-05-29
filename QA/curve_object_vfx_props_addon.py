@@ -135,8 +135,7 @@ def get_armature_or_root(obj):
 
 def local_from_world(target_mesh, world_pos):
     if target_mesh:
-        root_obj = get_armature_or_root(target_mesh)
-        return root_obj.matrix_world.inverted() @ world_pos
+        return target_mesh.matrix_world.inverted() @ world_pos
     return world_pos
 
 
@@ -515,6 +514,8 @@ def find_associated_mesh_and_component(context, curve_obj):
         if rzm and hasattr(rzm, "export_settings"):
             mod_name = getattr(rzm.export_settings, "mod_name", "") or ""
                 
+    candidates = []
+
     # Search collections for matching Mesh object
     for col in collections:
         for obj in col.objects:
@@ -522,8 +523,21 @@ def find_associated_mesh_and_component(context, curve_obj):
                 # Cross-reference with our components
                 for comp_name, meshes in comp_map.items():
                     if obj in meshes:
-                        # Determine subcomponent full name
+                        # Rank candidates to choose the actual character mesh / anchor over helpers
+                        score = 0
+                        obj_name_lower = obj.name.lower()
+                        comp_name_lower = comp_name.lower()
+                        mod_name_lower = mod_name.lower() if mod_name else ""
+
+                        # Heavy penalty for helper/setup meshes that aren't parts of the character
+                        helper_keywords = ['setup', 'color_setup', 'outline', 'shadow', 'helper', 'ignore', 'hidden', 'dummy', 'temp', 'anchor']
+                        for kw in helper_keywords:
+                            if kw in obj_name_lower:
+                                score -= 100
+
+                        # Deduce part_name and part_suffix (e.g. 'B')
                         part_name = obj.name
+                        part_suffix = ""
                         rzm = getattr(context.scene, "rzm", None)
                         if rzm and hasattr(rzm, "component_manager"):
                             # Helper functions for prefix and component cleaning
@@ -547,38 +561,84 @@ def find_associated_mesh_and_component(context, curve_obj):
                                     # Found the matching component!
                                     for part in comp.parts:
                                         # Deduce part suffix
-                                        part_suffix = part.name
+                                        p_suf = part.name
                                         if comp_name:
-                                            part_suffix = strip_prefix(part_suffix, comp_name)
+                                            p_suf = strip_prefix(p_suf, comp_name)
                                         if comp.name:
-                                            part_suffix = strip_prefix(part_suffix, comp.name)
-                                        part_suffix = part_suffix.strip()
+                                            p_suf = strip_prefix(p_suf, comp.name)
+                                        p_suf = p_suf.strip()
                                         
                                         # If there's only one part, it must be this one!
                                         if len(comp.parts) == 1:
-                                            part_name = part_suffix
+                                            part_name = p_suf
+                                            part_suffix = p_suf
                                             break
                                             
                                         # Otherwise, match via collections
                                         matched = False
                                         for c in obj.users_collection:
                                             c_lower = c.name.lower()
-                                            if (comp_name.lower() + part_suffix.lower()) in c_lower:
+                                            if (comp_name.lower() + p_suf.lower()) in c_lower:
                                                 matched = True
                                                 break
-                                            if (comp.name.lower() + part_suffix.lower()) in c_lower:
+                                            if (comp.name.lower() + p_suf.lower()) in c_lower:
                                                 matched = True
                                                 break
-                                            if c_lower.endswith(part_suffix.lower()):
+                                            if c_lower.endswith(p_suf.lower()):
                                                 matched = True
                                                 break
                                         if matched:
-                                            part_name = part_suffix
+                                            part_name = p_suf
+                                            part_suffix = p_suf
                                             break
                                     break
-                        return comp_name, obj, part_name
+
+                        # Target name patterns from User's specification:
+                        # CharacterName (mod_name) + ComponentName (comp_name) + PartName (part_suffix)
+                        part_suf_lower = part_suffix.lower() if part_suffix else ""
                         
+                        # Pattern 1: mod_name + comp_name + part_suffix (e.g. promeiahairb)
+                        if mod_name_lower and comp_name_lower:
+                            p1 = mod_name_lower + comp_name_lower + part_suf_lower
+                            if p1 in obj_name_lower:
+                                score += 1000
+
+                        # Pattern 2: comp_name + part_suffix (e.g. hairb)
+                        if comp_name_lower:
+                            p2 = comp_name_lower + part_suf_lower
+                            if p2 in obj_name_lower:
+                                score += 500
+
+                        # Pattern 3: mod_name + comp_name (e.g. promeiahair)
+                        if mod_name_lower and comp_name_lower:
+                            p3 = mod_name_lower + comp_name_lower
+                            if p3 in obj_name_lower:
+                                score += 200
+
+                        # Pattern 4: comp_name (e.g. hair)
+                        if comp_name_lower:
+                            p4 = comp_name_lower
+                            if p4 in obj_name_lower:
+                                score += 100
+
+                        # Pattern 5: if the object name ends with '-keepempty' (indicating it is the export anchor)
+                        if obj_name_lower.endswith('-keepempty'):
+                            score += 2000
+
+                        # Reward meshes with vertex groups (indicating they are rigged meshes)
+                        if hasattr(obj, "vertex_groups") and len(obj.vertex_groups) > 0:
+                            score += 50
+
+                        candidates.append((score, comp_name, obj, part_name))
+
+    if candidates:
+        # Sort by score descending, then by name length ascending (prefer shorter name if tie)
+        candidates.sort(key=lambda x: (x[0], -len(x[2].name)), reverse=True)
+        best_score, best_comp, best_obj, best_part = candidates[0]
+        return best_comp, best_obj, best_part
+
     return None, None, None
+
 
 
 class RZM_CurveVFXSettings(PropertyGroup):
