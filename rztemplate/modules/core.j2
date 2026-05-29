@@ -421,6 +421,23 @@ if $active
                     {% if mod_file.game.name == "HonkaiStarRail" %}
                     Resource{{ component.fullname }}PositionCS = copyResource{{ component.fullname }}CS_Base
                     {% endif %}
+                    {% set comp_has_uv_anim = [false] %}
+                    {% if scene and scene.objects %}
+                        {% for curve in scene.objects if curve.type == 'CURVE' and curve.get('RZM.CURVE_VFX') and curve.rzm_curve_vfx_animated_uv %}
+                            {% for col in curve.users_collection %}
+                                {% for part in component.parts %}
+                                    {% for entry in part.objects %}
+                                        {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                            {% if comp_has_uv_anim.append(true) %}{% endif %}
+                                        {% endfor %}
+                                    {% endfor %}
+                                {% endfor %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endif %}
+                    {% if comp_has_uv_anim[-1] %}
+                    Resource{{ component.fullname }}Texcoord = copy Resource{{ component.fullname }}Texcoord_Base
+                    {% endif %}
                 {% endif %}
             {% endfor %}
             run = CustomShaderComputeShapes
@@ -608,9 +625,8 @@ endif
 [CustomShader.rzm.CustomDraw.RabbitFxPreset0]
 $\rabbitfx\blendmode = 1
 $\RabbitFX\brightness = 20
-Resource\RabbitFX\Glowmap = ref ResourceModuleTexR
+Resource\RabbitFX\Glowmap = ref ResourceModuleTexRGB
 run = CommandList\RabbitFX\Run
-drawindexed = 1380, 6114, 0
 {% endif %}
 
 {% if _cd_flags.rabbit1 %}
@@ -619,7 +635,6 @@ $\rabbitfx\blendmode = 1
 $\RabbitFX\brightness = 20
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexRB
 run = CommandList\RabbitFX\Run
-drawindexed = 1380, 6114, 0
 {% endif %}
 
 {% if _cd_flags.rabbit2 %}
@@ -628,7 +643,6 @@ $\rabbitfx\blendmode = 1
 $\RabbitFX\brightness = 20
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexBlueG
 run = CommandList\RabbitFX\Run
-drawindexed = 1380, 6114, 0
 {% endif %}
 
 {% if _cd_flags.rabbit3 %}
@@ -637,7 +651,6 @@ $\rabbitfx\blendmode = 1
 $\RabbitFX\brightness = 20
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexBlue
 run = CommandList\RabbitFX\Run
-drawindexed = 1380, 6114, 0
 {% endif %}
 
 {% if _cd_flags.rabbit4 %}
@@ -646,10 +659,12 @@ $\rabbitfx\blendmode = 1
 $\RabbitFX\brightness = 20
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexW
 run = CommandList\RabbitFX\Run
-drawindexed = 1380, 6114, 0
 {% endif %}
 
 {% if _cd_flags.rabbit0 or _cd_flags.rabbit1 or _cd_flags.rabbit2 or _cd_flags.rabbit3 or _cd_flags.rabbit4 %}
+[ResourceModuleTexRGB]
+type = Texture2D
+filename = ./modules/rgb.dds
 [ResourceModuleTexW]
 type = Texture2D
 filename = ./modules/w.dds

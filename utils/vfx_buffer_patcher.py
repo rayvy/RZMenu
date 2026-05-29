@@ -53,6 +53,40 @@ def get_mod_output_path(context):
             return bpy.path.abspath(context.scene.wwmi_tools_settings.mod_output_folder)
     return ""
 
+def update_ini_uv_format(mod_root, comp_name, uv_format_val):
+    import re
+    for f in os.listdir(mod_root):
+        if f.lower().endswith('.ini') and not f.lower().startswith('disabled'):
+            ini_path = os.path.join(mod_root, f)
+            try:
+                with open(ini_path, 'r', encoding='utf-8', errors='ignore') as file_in:
+                    content = file_in.read()
+                
+                blocks = re.split(r'(\[CustomShaderRZM_VFX_UV_[^\]]+\])', content)
+                changed = False
+                for idx in range(1, len(blocks), 2):
+                    block_header = blocks[idx]
+                    block_body = blocks[idx+1]
+                    
+                    if comp_name.lower() in block_header.lower():
+                        new_body, count = re.subn(
+                            r'(z116\s*=\s*)\d+', 
+                            r'\g<1>' + str(int(uv_format_val)), 
+                            block_body, 
+                            flags=re.IGNORECASE
+                        )
+                        if count > 0:
+                            blocks[idx+1] = new_body
+                            changed = True
+                            print(f"[RZM-VFX] Updated z116 to {int(uv_format_val)} in block {block_header} of {f}")
+                
+                if changed:
+                    new_content = "".join(blocks)
+                    with open(ini_path, 'w', encoding='utf-8') as file_out:
+                        file_out.write(new_content)
+            except Exception as e:
+                print(f"[RZM-VFX] Failed to update UV format in {f}: {e}")
+
 def get_curve_prop(obj, name, default):
     attr = f"rzm_curve_vfx_{name}"
     if hasattr(obj, attr):
@@ -961,6 +995,37 @@ def patch_buffers(context, cache):
         f.write(all_weight_bytes)
     print(f"[RZM-VFX] Wrote curve_weight_data.buf ({len(all_weight_bytes)} bytes, 8shapes×32pts per curve spline) to '{weight_buf_path}'")
 
+    has_any_animated_uv = any(getattr(v_curve['obj'], "rzm_curve_vfx_animated_uv", False) for v_curve in virtual_curves)
+    if has_any_animated_uv:
+        uv_buf_path = os.path.join(res_dir, "curve_uv_data.buf")
+        all_uv_bytes = bytearray()
+        for v_curve in virtual_curves:
+            curve_obj = v_curve['obj']
+            s_idx = v_curve['spline_idx']
+            if (curve_obj.name, s_idx) not in curve_mapping:
+                continue
+            if getattr(curve_obj, "rzm_curve_vfx_animated_uv", False):
+                dup_start = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_start", (0.0, 0.0)))
+                dup_end = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_end", (0.0, 0.0)))
+            else:
+                dup_start = [0.0, 0.0]
+                dup_end = [0.0, 0.0]
+            all_uv_bytes.extend(struct.pack('<ffff', dup_start[0], dup_start[1], dup_end[0], dup_end[1]))
+            
+        with open(uv_buf_path, 'wb') as f:
+            f.write(all_uv_bytes)
+        print(f"[RZM-VFX] Wrote curve_uv_data.buf ({len(all_uv_bytes)} bytes) to '{uv_buf_path}'")
+
+        # Copy compute shader to mod modules directory
+        addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        src_shader = os.path.join(addon_dir, "basic_pack", "modules", "vfx_uv_cs.hlsl")
+        dst_shader_dir = os.path.join(mod_root, "modules")
+        if os.path.exists(src_shader):
+            os.makedirs(dst_shader_dir, exist_ok=True)
+            import shutil
+            shutil.copy2(src_shader, os.path.join(dst_shader_dir, "vfx_uv_cs.hlsl"))
+            print(f"[RZM-VFX] Copied vfx_uv_cs.hlsl to {dst_shader_dir}")
+
     # 2. Group curves by target component and part
     curves_by_part = {}
     for v_curve in virtual_curves:
@@ -1089,6 +1154,10 @@ def patch_buffers(context, cache):
                                     uv_format = 'float'
                                 break
                 print(f"[RZM-VFX]   * UV Format Detection -> Detected: {uv_format}")
+                uv_format_val = 1 if uv_format == 'half' else 0
+                has_comp_animated_uv = any(getattr(vc['obj'], "rzm_curve_vfx_animated_uv", False) for vc in v_curve_list)
+                if has_comp_animated_uv:
+                    update_ini_uv_format(mod_root, comp_name, uv_format_val)
             except Exception as e:
                 print(f"[RZM-VFX]   * UV Format Detection error: {e}")
 

@@ -330,6 +330,13 @@
     {# Weight CS FIRST — so blend weights are updated before position CS #}
     run = CustomShaderRZM_VFX_Weight_{{ part.fullname }}
     run = CustomShaderRZM_VFX_{{ part.fullname }}
+            {% set has_animated_uv = {'val': false} %}
+            {% for c in assoc_curves if c.rzm_curve_vfx_animated_uv %}
+                {% if has_animated_uv.update({'val': true}) %}{% endif %}
+            {% endfor %}
+            {% if has_animated_uv.val %}
+    run = CustomShaderRZM_VFX_UV_{{ part.fullname }}
+            {% endif %}
             {% endif %}
         {% endfor %}
     {% endfor %}
@@ -442,6 +449,44 @@
             {% endif %}
         {% endfor %}
     {% endfor %}
+    {# UV CustomShader blocks — one per part with VFX curves having animated UV enabled #}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% set assoc_uv_curves = [] %}
+            {% if scene and scene.objects %}
+                {% for curve in curve_list if curve.rzm_curve_vfx_animated_uv %}
+                    {% for col in curve.users_collection %}
+                        {% for entry in part.objects %}
+                            {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                {% if curve not in assoc_uv_curves %}
+                                    {% if assoc_uv_curves.append(curve) %}{% endif %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
+            {% if assoc_uv_curves | length > 0 %}
+    {% set comp_vfx_verts = get_vfx_vertex_count(scene, component) | int %}
+    {% set total_comp_v = component.vertex_count + comp_vfx_verts %}
+    [CustomShaderRZM_VFX_UV_{{ part.fullname }}]
+    cs = ./modules/vfx_uv_cs.hlsl
+    cs-u5 = copy Resource{{ component.fullname }}Texcoord
+    cs-t50 = copy Resource{{ component.fullname }}Position
+    cs-t51 = copy ResourceRZM_CurveData
+    cs-t52 = copy ResourceRZM_CurveUVData
+    cs-t53 = copy Resource{{ component.fullname }}Texcoord_Base
+    x98 = time
+    x115 = {{ component.vertex_count }}
+    x116 = {{ component.strides.texcoord }}
+    y116 = 0
+    z116 = 1
+    Resource{{ component.fullname }}Texcoord = ref cs-u5
+    dispatch = {{ ((total_comp_v + 127) // 128) | int }}, 1, 1
+    cs-u5 = null
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
     {% endif %}
 
     {#% for component in mod_file.components %}
@@ -482,10 +527,34 @@
                 {% endfor %}
             {% endif %}
 
+            {% set comp_has_uv_anim = [false] %}
+            {% if scene and scene.objects %}
+                {% for curve in scene.objects if curve.type == 'CURVE' and curve.get('RZM.CURVE_VFX') and curve.rzm_curve_vfx_animated_uv %}
+                    {% for col in curve.users_collection %}
+                        {% for part in component.parts %}
+                            {% for entry in part.objects %}
+                                {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                    {% if comp_has_uv_anim.append(true) %}{% endif %}
+                                {% endfor %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
+
+            {% if comp_has_uv_anim[-1] %}
+            [Resource{{ component.fullname }}Texcoord]
+
+            [Resource{{ component.fullname }}Texcoord_Base]
+            type = Buffer
+            stride = {{ component.strides.texcoord }}
+            filename = {{ component.fullname }}Texcoord.buf
+            {% else %}
             [Resource{{ component.fullname }}Texcoord]
             type = Buffer
             stride = {{ component.strides.texcoord }}
             filename = {{ component.fullname }}Texcoord.buf
+            {% endif %}
  
             {# HSR дополнительно требует StructuredBuffer #}
             {% if mod_file.game.name == "HonkaiStarRail" %}
@@ -531,10 +600,14 @@
     {% endfor %}
 
     {# Curve VFX resources #}
+    {% set curve_uv_list = [] %}
     {% set curve_list = [] %}
     {% if scene and scene.objects %}
         {% for obj in scene.objects if obj.type == 'CURVE' and obj.get('RZM.CURVE_VFX') %}
             {% if curve_list.append(obj) %}{% endif %}
+            {% if obj.rzm_curve_vfx_animated_uv %}
+                {% if curve_uv_list.append(obj) %}{% endif %}
+            {% endif %}
         {% endfor %}
     {% endif %}
     {% if curve_list | length > 0 %}
@@ -547,6 +620,13 @@
     type = StructuredBuffer
     stride = 32
     filename = res/curve_weight_data.buf
+    {% endif %}
+    {% if curve_uv_list | length > 0 %}
+
+    [ResourceRZM_CurveUVData]
+    type = StructuredBuffer
+    stride = 16
+    filename = res/curve_uv_data.buf
     {% endif %}
 {%endmacro%}
 

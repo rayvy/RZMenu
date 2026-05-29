@@ -268,6 +268,12 @@ def ensure_vfx_properties_initialized(self):
 
     if "RZM.CURVE_VFX.MESH_FX_TYPE" not in self:
         self["RZM.CURVE_VFX.MESH_FX_TYPE"] = "0"
+    if "RZM.CURVE_VFX.ANIMATED_UV" not in self:
+        self["RZM.CURVE_VFX.ANIMATED_UV"] = False
+    if "RZM.CURVE_VFX.UV_DUP_START" not in self:
+        self["RZM.CURVE_VFX.UV_DUP_START"] = [0.0, 0.0]
+    if "RZM.CURVE_VFX.UV_DUP_END" not in self:
+        self["RZM.CURVE_VFX.UV_DUP_END"] = [0.0, 0.0]
 
 def get_vfx_enabled(self):
     return bool(self.get("RZM.CURVE_VFX", False))
@@ -275,6 +281,30 @@ def set_vfx_enabled(self, value):
     self["RZM.CURVE_VFX"] = value
     if value:
         ensure_vfx_properties_initialized(self)
+
+def get_vfx_animated_uv(self):
+    return bool(self.get("RZM.CURVE_VFX.ANIMATED_UV", False))
+def set_vfx_animated_uv(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.ANIMATED_UV"] = value
+
+def get_vfx_uv_dup_start(self):
+    val = self.get("RZM.CURVE_VFX.UV_DUP_START")
+    if val is not None:
+        return list(val)
+    return [0.0, 0.0]
+def set_vfx_uv_dup_start(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.UV_DUP_START"] = list(value)
+
+def get_vfx_uv_dup_end(self):
+    val = self.get("RZM.CURVE_VFX.UV_DUP_END")
+    if val is not None:
+        return list(val)
+    return [0.0, 0.0]
+def set_vfx_uv_dup_end(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.UV_DUP_END"] = list(value)
 
 def get_vfx_profile(self):
     val = self.get("RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE", "AUTO")
@@ -495,6 +525,26 @@ def register():
         description="Enable VFX on this curve object",
         get=get_vfx_enabled,
         set=set_vfx_enabled
+    )
+    bpy.types.Object.rzm_curve_vfx_animated_uv = BoolProperty(
+        name="Animated UV",
+        description="Enable animated UV spline buffer tracking for this curve",
+        get=get_vfx_animated_uv,
+        set=set_vfx_animated_uv
+    )
+    bpy.types.Object.rzm_curve_vfx_uv_dup_start = FloatVectorProperty(
+        name="UV Duplication Start",
+        description="UV duplication coordinate for start of the curve",
+        size=2,
+        get=get_vfx_uv_dup_start,
+        set=set_vfx_uv_dup_start
+    )
+    bpy.types.Object.rzm_curve_vfx_uv_dup_end = FloatVectorProperty(
+        name="UV Duplication End",
+        description="UV duplication coordinate for end of the curve",
+        size=2,
+        get=get_vfx_uv_dup_end,
+        set=set_vfx_uv_dup_end
     )
     bpy.types.Object.rzm_curve_vfx_coordinate_remap_profile = EnumProperty(
         name="Coordinate Remap",
@@ -789,6 +839,9 @@ def unregister():
         
     for attr in [
         "rzm_curve_vfx_enabled",
+        "rzm_curve_vfx_animated_uv",
+        "rzm_curve_vfx_uv_dup_start",
+        "rzm_curve_vfx_uv_dup_end",
         "rzm_curve_vfx_coordinate_remap_profile",
         "rzm_curve_vfx_mesh_fx_size_base",
         "rzm_curve_vfx_particle_size_base",

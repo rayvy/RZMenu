@@ -53,6 +53,7 @@ void main(uint3 threadID : SV_DispatchThreadID)
     uint  num_shapes  = packed_val / 10u;
     float CFG_TL_END  = clamp((packed_fx - (float)packed_val) * 10.0f, 0.0f, 1.0f);
     float CFG_CYCLE_DURATION = p_meta.tangent.y;
+    float CFG_PHASE_RANDOMNESS = p_meta.normal.x;
 
     float packed_tls   = p_meta.normal.z + 0.1f;
     float CFG_TL_MID   = floor(packed_tls / 1000.0f) / 100.0f;
@@ -60,7 +61,8 @@ void main(uint3 threadID : SV_DispatchThreadID)
 
     // Per-particle path_progress (same easing as position CS)
     float phase    = vb0[i].normal.x;
-    float cycle    = frac(TIME / max(CFG_CYCLE_DURATION, 1e-5f) + phase);
+    float phase_offset = phase * CFG_PHASE_RANDOMNESS;
+    float cycle    = frac(TIME / max(CFG_CYCLE_DURATION, 1e-5f) + phase_offset);
     float active_t = clamp((cycle - CFG_TL_START) / max(CFG_TL_END - CFG_TL_START, 1e-5f), 0.0f, 1.0f);
     float k = clamp((CFG_TL_MID - CFG_TL_START) / max(CFG_TL_END - CFG_TL_START, 1e-5f), 0.01f, 0.99f);
     float A = (0.5f - k) / (k * k - k);

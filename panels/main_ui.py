@@ -425,7 +425,16 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_end_pos", text="Timeline End")
                 acol.prop(target_obj, "rzm_curve_vfx_visibility_condition", text="Visibility Cond")
 
-                # Section D: Technical Weights
+                # Section D: Animated UV
+                uvbox = box.box()
+                uvbox.label(text="Animated UV (Dynamic UV duplication)", icon='IMAGE_DATA')
+                uvbox.prop(target_obj, "rzm_curve_vfx_animated_uv", text="Enable Animated UV")
+                if target_obj.rzm_curve_vfx_animated_uv:
+                    uvcol = uvbox.column(align=True)
+                    uvcol.prop(target_obj, "rzm_curve_vfx_uv_dup_start", text="UV Dup Start")
+                    uvcol.prop(target_obj, "rzm_curve_vfx_uv_dup_end", text="UV Dup End")
+
+                # Section E: Technical Weights
                 wbox = box.box()
                 wbox.label(text="Technical Weights", icon='MOD_VERTEX_WEIGHT')
                 wbox.prop(target_obj, "rzm_curve_vfx_weight_reference", text="Reference Mesh")
