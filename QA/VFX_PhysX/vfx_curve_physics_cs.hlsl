@@ -295,8 +295,15 @@ void main(uint3 threadID : SV_DispatchThreadID)
     uint write_slot = (uint)(state.z + 0.5f);
 
     float max_lag_frames = 30.0f; // <-- TUNE: trail strength (frames)
-    uint K = (uint)(path_progress * max_lag_frames);
-    uint hist_slot = (write_slot - K + len) % len;
+
+    // Fractional K: instead of snapping to one history slot, interpolate between two
+    float K_f = path_progress * max_lag_frames;
+    uint  K0  = (uint)K_f;                          // floor slot
+    uint  K1  = min(K0 + 1, len - 1);               // ceil slot (clamped to buffer)
+    float Kfrac = K_f - (float)K0;                  // interpolation factor [0..1)
+
+    uint hist_slot0 = (write_slot - K0 + len) % len;
+    uint hist_slot1 = (write_slot - K1 + len) % len;
 
     // Current frame: columns of local->world rotation, c3 = world position
     float4 c0 = CoordsHistory[write_slot * 4 + 0];
@@ -304,29 +311,34 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float4 c2 = CoordsHistory[write_slot * 4 + 2];
     float4 c3 = CoordsHistory[write_slot * 4 + 3];
 
-    // Historical frame K frames ago: h3 = old world position
-    float4 h3 = CoordsHistory[hist_slot * 4 + 3];
+    // Historical positions at K0 and K1 frames ago
+    float4 h3_K0 = CoordsHistory[hist_slot0 * 4 + 3];
+    float4 h3_K1 = CoordsHistory[hist_slot1 * 4 + 3];
 
-    // Safety: snap if uninitialized or character teleported (> 2.0 world units)
-    if (h3.w < 0.5f || distance(h3.xyz, c3.xyz) > 2.0f) { // <-- TUNE: snap threshold
-        h3 = c3;
+    // Safety: snap uninitialized slots to current position
+    if (h3_K0.w < 0.5f) h3_K0 = c3;
+    if (h3_K1.w < 0.5f) h3_K1 = c3;
+
+    // Sub-frame interpolated historical position
+    float3 h3_pos = lerp(h3_K0.xyz, h3_K1.xyz, Kfrac);
+
+    // Teleport snap: if history is too far away, collapse to current
+    if (distance(h3_pos, c3.xyz) > 2.0f) { // <-- TUNE: snap threshold (world units)
+        h3_pos = c3.xyz;
     }
 
-    // Delta in world space: vector from old position to current position = direction of travel.
-    // We negate it so particles offset BACKWARD (opposite to movement direction).
-    float3 world_delta = c3.xyz - h3.xyz; // <-- inversion: flip to trail behind
+    // Delta in world space: direction of travel (current - old = forward vector)
+    // Negated so particles trail BEHIND the character
+    float3 world_delta = c3.xyz - h3_pos;
 
-    // Rotate world_delta into current LOCAL game space
-    // (transpose of rotation = inverse for orthonormal matrix)
+    // Rotate world_delta into current LOCAL game space via transpose (orthonormal inverse)
     float3 local_delta = float3(
         dot(world_delta, c0.xyz),
         dot(world_delta, c1.xyz),
         dot(world_delta, c2.xyz)
     );
 
-    // Apply: remap final_center to game space, then offset by scaled delta
-    // path_progress=0 (root, attached) -> no offset
-    // path_progress=1 (tip, free)      -> full delta offset
+    // Apply offset: root (path_progress=0) stays fixed, tip (path_progress=1) gets full delta
     float3 game_center = RemapCoords(final_center) + local_delta * path_progress;
     final_center = game_center;
     // ----------------------------------------------------------------------
