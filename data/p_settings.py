@@ -356,20 +356,48 @@ class RZMCreditItem(bpy.types.PropertyGroup):
         default=""
     )
 
+def sync_subproperties_to_active(self, context):
+    try:
+        global _updating_profile
+        if _updating_profile:
+            return
+        prefs = context.preferences.addons.get('RZMenu')
+        if prefs and prefs.preferences:
+            prefs.preferences.save_to_profile(prefs.preferences.active_profile_index)
+    except Exception:
+        pass
+
 class RZM_ContactItem(bpy.types.PropertyGroup):
     """Single contact entry (e.g. Discord: rayvich)"""
-    contact_type: StringProperty(name="Type", default="Discord")
-    contact_value: StringProperty(name="Value", default="")
+    contact_type: StringProperty(
+        name="Type",
+        default="Discord",
+        update=sync_subproperties_to_active
+    )
+    contact_value: StringProperty(
+        name="Value",
+        default="",
+        update=sync_subproperties_to_active
+    )
 
 class RZM_BuildProfile(bpy.types.PropertyGroup):
     """Preset for a batch export (e.g. 'Lite Version' with only Tier0)"""
-    name: StringProperty(name="Profile Name", default="New Profile")
+    name: StringProperty(
+        name="Profile Name",
+        default="New Profile",
+        update=sync_subproperties_to_active
+    )
     active_tiers: StringProperty(
         name="Active Tiers", 
         description="Comma-separated tier IDs, e.g. 'Tier0, Tier1'",
-        default="Tier0"
+        default="Tier0",
+        update=sync_subproperties_to_active
     )
-    zip_output: BoolProperty(name="Zip Result", default=True)
+    zip_output: BoolProperty(
+        name="Zip Result",
+        default=True,
+        update=sync_subproperties_to_active
+    )
 
 class RZMFeatureItem(bpy.types.PropertyGroup):
     """Класс для списка фичей (Features)"""
@@ -401,24 +429,28 @@ class RZMTierDefinition(bpy.types.PropertyGroup):
     tier_id: StringProperty(
         name="Tier ID",
         description="Short unique ID used in export_tiers field, e.g. 'Tier0', 'TierPremium'",
-        default="Tier0"
+        default="Tier0",
+        update=sync_subproperties_to_active
     )
     display_name: StringProperty(
         name="Display Name",
         description="Human-readable label shown in UI",
-        default="Public"
+        default="Public",
+        update=sync_subproperties_to_active
     )
     tier_color: FloatVectorProperty(
         name="Color",
         subtype='COLOR',
         size=3,
         default=(0.4, 0.6, 0.4),
-        min=0.0, max=1.0
+        min=0.0, max=1.0,
+        update=sync_subproperties_to_active
     )
     parent_tier_id: StringProperty(
         name="Parent Tier ID",
         description="ID of the tier this one inherits from (automatically includes its tags)",
-        default=""
+        default="",
+        update=sync_subproperties_to_active
     )
 
 # ─── META DATA ───────────────────────────────────────────────────────────────
@@ -524,8 +556,102 @@ class RZMAutoMenuSettings(bpy.types.PropertyGroup):
     
     auto_menu_log: StringProperty(name="Log", default="Ready.")
 
+class RZM_ArtistProfile(bpy.types.PropertyGroup):
+    name: StringProperty(name="Profile Name", default="New Profile")
+    author_name: StringProperty(
+        name="Global Author Name",
+        description="Your name used for Mod Producer and metadata by default",
+        default="UNKNOWN"
+    )
+    pre_description: StringProperty(
+        name="Global Pre-Description",
+        description="Text added BEFORE the mod lore (e.g. Greetings, Credits)",
+        default=""
+    )
+    post_description: StringProperty(
+        name="Global Post-Description",
+        description="Text added AFTER the mod lore (e.g. Links, Terms of Use)",
+        default=""
+    )
+    contacts: CollectionProperty(type=RZM_ContactItem)
+    contacts_index: IntProperty(default=0)
+    tier_definitions: CollectionProperty(type=RZMTierDefinition)
+    tier_definitions_index: IntProperty(default=0)
+    build_profiles: CollectionProperty(type=RZM_BuildProfile)
+    build_profiles_index: IntProperty(default=0)
+    batch_build_path: StringProperty(
+        name="Global Batch Build Path",
+        description="Path to central Mod Producer output (e.g. Server/Remote). If empty, siblings of the mod folder are used.",
+        subtype='DIR_PATH',
+        default=""
+    )
+
+# Глобальный флаг для блокирования циклического обновления при синхронизации профилей
+_updating_profile = False
+
+def update_active_profile(self, context):
+    global _updating_profile
+    if _updating_profile:
+        return
+    _updating_profile = True
+    try:
+        old_idx = self.last_active_profile_index
+        new_idx = self.active_profile_index
+        
+        # 1. Автосохранение текущих значений в предыдущий профиль
+        if 0 <= old_idx < len(self.artist_profiles):
+            self.save_to_profile(old_idx)
+            
+        # 2. Загрузка значений из нового активного профиля
+        if 0 <= new_idx < len(self.artist_profiles):
+            self.load_from_profile(new_idx)
+            self.last_active_profile_index = new_idx
+    finally:
+        _updating_profile = False
+
+def sync_to_active_profile(self, context):
+    global _updating_profile
+    if _updating_profile:
+        return
+    _updating_profile = True
+    try:
+        idx = self.active_profile_index
+        if 0 <= idx < len(self.artist_profiles):
+            prof = self.artist_profiles[idx]
+            prof.author_name = self.author_name
+            prof.pre_description = self.pre_description
+            prof.post_description = self.post_description
+            prof.batch_build_path = self.batch_build_path
+    finally:
+        _updating_profile = False
+
+def get_profile_items(self, context):
+    items = []
+    for i, prof in enumerate(self.artist_profiles):
+        items.append((str(i), prof.name, ""))
+    if not items:
+        items.append(("0", "Default Profile", ""))
+    return items
+
+def update_profile_enum(self, context):
+    global _updating_profile
+    if _updating_profile:
+        return
+    try:
+        idx = int(self.active_profile_enum)
+        if 0 <= idx < len(self.artist_profiles):
+            self.active_profile_index = idx
+    except ValueError:
+        pass
+
 class RZM_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__.split(".")[0] if "." in __package__ else __package__
+
+    active_profile_enum: EnumProperty(
+        name="Active Profile",
+        items=get_profile_items,
+        update=update_profile_enum
+    )
 
     custom_asset_library: StringProperty(
         name="Custom Asset Library",
@@ -533,6 +659,14 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         subtype='DIR_PATH',
         default=""
     )
+
+    custom_basic_pack: StringProperty(
+        name="Custom Basic Pack",
+        description="Path to a custom basic pack directory containing shaders, modules, etc. (copied over the default pack)",
+        subtype='DIR_PATH',
+        default=""
+    )
+
 
     move_to_npanel: BoolProperty(
         name="Detach Mesh & Toggles to N-Panel",
@@ -553,27 +687,152 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
     )
 
     # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
+    artist_profiles: CollectionProperty(type=RZM_ArtistProfile)
+    active_profile_index: IntProperty(default=0, update=update_active_profile)
+    last_active_profile_index: IntProperty(default=0)
+
     author_name: StringProperty(
         name="Global Author Name",
         description="Your name used for Mod Producer and metadata by default",
-        default="UNKNOWN"
+        default="UNKNOWN",
+        update=sync_to_active_profile
     )
     pre_description: StringProperty(
         name="Global Pre-Description",
         description="Text added BEFORE the mod lore (e.g. Greetings, Credits)",
         default="",
+        update=sync_to_active_profile
     )
     post_description: StringProperty(
         name="Global Post-Description",
         description="Text added AFTER the mod lore (e.g. Links, Terms of Use)",
         default="",
+        update=sync_to_active_profile
     )
     contacts: CollectionProperty(type=RZM_ContactItem)
     contacts_index: IntProperty(default=0)
 
-    mod_logo_url: StringProperty(name="Mod Logo URL", default="")
-    mod_banner_url: StringProperty(name="Mod Banner URL", default="")
-    
+    def save_to_profile(self, index):
+        if not (0 <= index < len(self.artist_profiles)):
+            return
+        
+        global _updating_profile
+        if _updating_profile:
+            return
+        _updating_profile = True
+        try:
+            prof = self.artist_profiles[index]
+            prof.author_name = self.author_name
+            prof.pre_description = self.pre_description
+            prof.post_description = self.post_description
+            prof.batch_build_path = self.batch_build_path
+            
+            prof.contacts.clear()
+            for c in self.contacts:
+                new_c = prof.contacts.add()
+                new_c.contact_type = c.contact_type
+                new_c.contact_value = c.contact_value
+            prof.contacts_index = self.contacts_index
+            
+            prof.tier_definitions.clear()
+            for t in self.tier_definitions:
+                new_t = prof.tier_definitions.add()
+                new_t.tier_id = t.tier_id
+                new_t.display_name = t.display_name
+                new_t.tier_color = t.tier_color
+                new_t.parent_tier_id = t.parent_tier_id
+            prof.tier_definitions_index = self.tier_definitions_index
+
+            prof.build_profiles.clear()
+            for bp in self.build_profiles:
+                new_bp = prof.build_profiles.add()
+                new_bp.name = bp.name
+                new_bp.active_tiers = bp.active_tiers
+                new_bp.zip_output = bp.zip_output
+            prof.build_profiles_index = self.build_profiles_index
+        finally:
+            _updating_profile = False
+
+    def load_from_profile(self, index):
+        if not (0 <= index < len(self.artist_profiles)):
+            return
+        prof = self.artist_profiles[index]
+        
+        global _updating_profile
+        _updating_profile = True
+        try:
+            self.author_name = prof.author_name
+            self.pre_description = prof.pre_description
+            self.post_description = prof.post_description
+            self.batch_build_path = prof.batch_build_path
+            
+            self.contacts.clear()
+            for c in prof.contacts:
+                new_c = self.contacts.add()
+                new_c.contact_type = c.contact_type
+                new_c.contact_value = c.contact_value
+            self.contacts_index = prof.contacts_index
+            
+            self.tier_definitions.clear()
+            for t in prof.tier_definitions:
+                new_t = self.tier_definitions.add()
+                new_t.tier_id = t.tier_id
+                new_t.display_name = t.display_name
+                new_t.tier_color = t.tier_color
+                new_t.parent_tier_id = t.parent_tier_id
+            self.tier_definitions_index = prof.tier_definitions_index
+
+            self.build_profiles.clear()
+            for bp in prof.build_profiles:
+                new_bp = self.build_profiles.add()
+                new_bp.name = bp.name
+                new_bp.active_tiers = bp.active_tiers
+                new_bp.zip_output = bp.zip_output
+            self.build_profiles_index = prof.build_profiles_index
+            
+            self.active_profile_enum = str(index)
+        finally:
+            _updating_profile = False
+
+    def ensure_default_profile(self):
+        """Гарантирует, что есть хотя бы один профиль на старте."""
+        if len(self.artist_profiles) == 0:
+            prof = self.artist_profiles.add()
+            prof.name = "Default Profile"
+            prof.author_name = self.author_name
+            prof.pre_description = self.pre_description
+            prof.post_description = self.post_description
+            prof.batch_build_path = self.batch_build_path
+            
+            # Скопируем текущие контакты
+            for c in self.contacts:
+                new_c = prof.contacts.add()
+                new_c.contact_type = c.contact_type
+                new_c.contact_value = c.contact_value
+            prof.contacts_index = self.contacts_index
+            
+            # Скопируем тиры
+            self.ensure_default_tiers()
+            for t in self.tier_definitions:
+                new_t = prof.tier_definitions.add()
+                new_t.tier_id = t.tier_id
+                new_t.display_name = t.display_name
+                new_t.tier_color = t.tier_color
+                new_t.parent_tier_id = t.parent_tier_id
+            prof.tier_definitions_index = self.tier_definitions_index
+
+            # Скопируем сборочные профили
+            for bp in self.build_profiles:
+                new_bp = prof.build_profiles.add()
+                new_bp.name = bp.name
+                new_bp.active_tiers = bp.active_tiers
+                new_bp.zip_output = bp.zip_output
+            prof.build_profiles_index = self.build_profiles_index
+            
+            self.active_profile_index = 0
+            self.last_active_profile_index = 0
+
+
     default_template_path: StringProperty(
         name="Default Template",
         description="Default .rzmct file to use for new menus",
@@ -589,7 +848,8 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         name="Global Batch Build Path",
         description="Path to central Mod Producer output (e.g. Server/Remote). If empty, siblings of the mod folder are used.",
         subtype='DIR_PATH',
-        default=""
+        default="",
+        update=sync_to_active_profile
     )
 
     # ─── TIER DEFINITIONS ───────────────────────────────────────────────────
@@ -619,6 +879,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
                 t.tier_color = col
 
     def draw(self, context):
+        self.ensure_default_profile()
         layout = self.layout
         rzm = context.scene.rzm
         wm = context.window_manager
@@ -679,10 +940,25 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         # ─── 1. ARTIST PROFILE ────────────────────────────────────────────────
         box = layout.box()
         box.label(text="Artist Profile (Global)", icon='USER')
+        
+        # Profile Selector Bar
+        prof_row = box.row(align=True)
+        prof_row.prop(self, "active_profile_enum", text="Profile")
+        prof_row.operator("rzm.duplicate_artist_profile", text="", icon='DUPLICATE')
+        prof_row.operator("rzm.add_artist_profile", text="", icon='ADD')
+        
+        # Remove only if multiple profiles exist
+        remove_op = prof_row.operator("rzm.remove_artist_profile", text="", icon='REMOVE')
+        
+        if 0 <= self.active_profile_index < len(self.artist_profiles):
+            prof = self.artist_profiles[self.active_profile_index]
+            box.prop(prof, "name", text="Rename Profile")
+            
+        box.separator()
         col = box.column(align=True)
         col.prop(self, "author_name")
-        col.prop(self, "mod_logo_url")
-        col.prop(self, "mod_banner_url")
+        col.prop(self, "pre_description", text="Pre-Description (Readme Start)")
+        col.prop(self, "post_description", text="Post-Description (Readme End)")
         col.prop(self, "default_template_path")
         
         box.separator()
@@ -763,6 +1039,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         box.label(text="System Settings", icon='SETTINGS')
         col = box.column()
         col.prop(self, "custom_asset_library")
+        col.prop(self, "custom_basic_pack")
         col.prop(self, "move_to_npanel")
         col.prop(self, "modifier_blacklist")
         col.prop(self, "create_backup")

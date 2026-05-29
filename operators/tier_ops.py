@@ -70,6 +70,7 @@ class RZM_OT_AddTierDefinition(bpy.types.Operator):
         t.tier_id = new_id
         t.display_name = f"Tier {n}"
         prefs.tier_definitions_index = len(prefs.tier_definitions) - 1
+        prefs.save_to_profile(prefs.active_profile_index)
         return {'FINISHED'}
 
 
@@ -87,6 +88,7 @@ class RZM_OT_RemoveTierDefinition(bpy.types.Operator):
         if 0 <= idx < len(prefs.tier_definitions):
             prefs.tier_definitions.remove(idx)
             prefs.tier_definitions_index = max(0, idx - 1)
+            prefs.save_to_profile(prefs.active_profile_index)
         return {'FINISHED'}
 
 
@@ -107,6 +109,7 @@ class RZM_OT_ResetTierDefinitions(bpy.types.Operator):
         prefs.tier_definitions.clear()
         prefs.ensure_default_tiers()
         prefs.tier_definitions_index = 0
+        prefs.save_to_profile(prefs.active_profile_index)
         self.report({'INFO'}, "Tier definitions reset to defaults.")
         return {'FINISHED'}
 
@@ -123,6 +126,7 @@ class RZM_OT_AddContact(bpy.types.Operator):
         if prefs:
             prefs.contacts.add()
             prefs.contacts_index = len(prefs.contacts) - 1
+            prefs.save_to_profile(prefs.active_profile_index)
         return {'FINISHED'}
 
 class RZM_OT_RemoveContact(bpy.types.Operator):
@@ -136,6 +140,7 @@ class RZM_OT_RemoveContact(bpy.types.Operator):
         if prefs and 0 <= prefs.contacts_index < len(prefs.contacts):
             prefs.contacts.remove(prefs.contacts_index)
             prefs.contacts_index = max(0, prefs.contacts_index - 1)
+            prefs.save_to_profile(prefs.active_profile_index)
         return {'FINISHED'}
 
 # ─── Build Profile CRUD ───────────────────────────────────────────────────────
@@ -152,6 +157,7 @@ class RZM_OT_AddBuildProfile(bpy.types.Operator):
             p = prefs.build_profiles.add()
             p.name = f"Build Profile {len(prefs.build_profiles)}"
             prefs.build_profiles_index = len(prefs.build_profiles) - 1
+            prefs.save_to_profile(prefs.active_profile_index)
         return {'FINISHED'}
 
 class RZM_OT_RemoveBuildProfile(bpy.types.Operator):
@@ -165,6 +171,7 @@ class RZM_OT_RemoveBuildProfile(bpy.types.Operator):
         if prefs and 0 <= prefs.build_profiles_index < len(prefs.build_profiles):
             prefs.build_profiles.remove(prefs.build_profiles_index)
             prefs.build_profiles_index = max(0, prefs.build_profiles_index - 1)
+            prefs.save_to_profile(prefs.active_profile_index)
         return {'FINISHED'}
 
 

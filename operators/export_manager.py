@@ -187,10 +187,21 @@ class RZM_OT_InitializeMod(bpy.types.Operator):
             self.report({'ERROR'}, f"Critical: 'basic_pack' folder missing in addon! Path: {basic_pack_src}")
             return {'CANCELLED'}
             
+        from .tier_ops import get_prefs
+        prefs = get_prefs(context)
+        custom_basic_pack_src = None
+        if prefs and prefs.custom_basic_pack:
+            custom_basic_pack_src = Path(bpy.path.abspath(prefs.custom_basic_pack))
+            if not custom_basic_pack_src.exists():
+                self.report({'WARNING'}, f"Custom Basic Pack folder not found: {custom_basic_pack_src}")
+                custom_basic_pack_src = None
+            
         # 2. Копирование файлов
         copied_count = 0
+        copied_from_core = set()
+        
         try:
-            # Рекурсивный обход папки
+            # 2.1 Копирование файлов ядра (basic_pack)
             for root, dirs, files in os.walk(basic_pack_src):
                 rel_path = Path(root).relative_to(basic_pack_src)
                 target_dir = Path(target_path) / rel_path
@@ -206,7 +217,29 @@ class RZM_OT_InitializeMod(bpy.types.Operator):
                     if not dst_file.exists() or settings.overwrite_scripts:
                         shutil.copy2(src_file, dst_file)
                         copied_count += 1
+                        copied_from_core.add(str(dst_file.resolve()))
                         
+            # 2.2 Копирование файлов кастомного пака поверх
+            if custom_basic_pack_src:
+                for root, dirs, files in os.walk(custom_basic_pack_src):
+                    rel_path = Path(root).relative_to(custom_basic_pack_src)
+                    target_dir = Path(target_path) / rel_path
+                    
+                    if not target_dir.exists():
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        
+                    for file in files:
+                        src_file = Path(root) / file
+                        dst_file = target_dir / file
+                        
+                        # Перезаписываем если:
+                        # - файла не было в target_path
+                        # - или включена перезапись
+                        # - или файл был только что скопирован из ядра
+                        if not dst_file.exists() or settings.overwrite_scripts or str(dst_file.resolve()) in copied_from_core:
+                            shutil.copy2(src_file, dst_file)
+                            copied_count += 1
+                            
         except Exception as e:
             self.report({'ERROR'}, f"Copy Failed: {e}")
             import traceback

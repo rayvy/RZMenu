@@ -24,7 +24,7 @@ from .p_ui import (
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
     RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition,
-    RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer, RZMLanguage
+    RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer, RZMLanguage, RZM_ArtistProfile
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
 from .p_component_manager import RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
@@ -184,6 +184,7 @@ classes_to_register = [
     RZMTierDefinition,
     RZM_ContactItem,
     RZM_BuildProfile,
+    RZM_ArtistProfile,
     RZMCollectionPointer,
     RZM_AddonPreferences,
     RZMAutoMenuSettings,

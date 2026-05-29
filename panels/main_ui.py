@@ -1717,8 +1717,6 @@ class VIEW3D_PT_RZConstructorAdvancedPanel(bpy.types.Panel):
         if prefs:
             row = box.row()
             row.label(text=f"Author: {prefs.author_name}", icon='USER')
-            row.operator("wm.url_open", text="Logo", icon='IMAGE_DATA').url = prefs.mod_logo_url
-            row.operator("wm.url_open", text="Banner", icon='IMAGE_DATA').url = prefs.mod_banner_url
 
         # --- MOD INFO / METADATA ---
         meta_box = layout.box()
