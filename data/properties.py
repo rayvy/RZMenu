@@ -482,6 +482,11 @@ def register():
         name="Export Tiers",
         description="Тиры Mod Producer для этого мэша. Пусто = все тиры."
     )
+    bpy.types.Object.DrawCondition = StringProperty(
+        name="Draw Condition",
+        description="Condition to draw this object (e.g. $active_anim == 1)",
+        default=""
+    )
     
     # --- RZM VFX Curve Properties ---
     bpy.types.Object.rzm_curve_vfx_enabled = BoolProperty(
@@ -778,6 +783,8 @@ def unregister():
     del bpy.types.Scene.rzm_cm_active_part_index
     if hasattr(bpy.types.Object, "rzm_tier_list"):
         del bpy.types.Object.rzm_tier_list
+    if hasattr(bpy.types.Object, "DrawCondition"):
+        del bpy.types.Object.DrawCondition
         
     for attr in [
         "rzm_curve_vfx_enabled",

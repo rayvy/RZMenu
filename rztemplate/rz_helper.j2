@@ -52,6 +52,16 @@
         {% set skip = true %}
     {% endif %}
 
+    {# 3.5. Логика DrawCondition #}
+    {% set draw_cond = "" %}
+    {% if real_obj %}
+        {% if real_obj.get("DrawCondition") is not none %}
+            {% set draw_cond = real_obj.get("DrawCondition") | string %}
+        {% elif real_obj.DrawCondition is defined and real_obj.DrawCondition %}
+            {% set draw_cond = real_obj.DrawCondition | string %}
+        {% endif %}
+    {% endif %}
+
     {# 4. Тогглы #}
     {% set active_toggles = [] %}
     {% if real_obj %}
@@ -141,6 +151,9 @@
 
 
     {# --- Actual draw command --- #}
+    {% if draw_cond %}
+if {{ utils.normalize_all_vars(draw_cond, none, scene) }}
+    {% endif %}
         {% if skip %}
             ;DrawSkip
             ;drawindexedinstanced = {{ idx_count }}, INSTANCE_COUNT, {{ idx_offset }}, 0, FIRST_INSTANCE
@@ -173,6 +186,9 @@ endif
         {% else %}
             drawindexed = {{ idx_count }}, {{ idx_offset }}, 0
         {% endif %}
+    {% if draw_cond %}
+endif
+    {% endif %}
 
     {# 6. CUSTOM SHADERS (XXMI Logic) #}
     {% if real_obj %}
