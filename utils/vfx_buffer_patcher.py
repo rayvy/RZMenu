@@ -725,6 +725,24 @@ def find_stride_from_ini(mod_root, resource_name, default_stride):
         print(f"[RZM-VFX] Error reading stride from ini for {resource_name}: {e}")
     return default_stride
 
+def get_armature_or_root(obj):
+    if not obj:
+        return None
+    if hasattr(obj, "modifiers"):
+        for mod in obj.modifiers:
+            if mod.type == 'ARMATURE' and mod.object:
+                return mod.object
+    parent = obj.parent
+    last_valid = obj
+    while parent:
+        if parent.type == 'ARMATURE':
+            return parent
+        if parent.type == 'EMPTY' and not parent.parent:
+            return parent
+        last_valid = parent
+        parent = parent.parent
+    return last_valid
+
 def patch_buffers(context, cache):
     """
     Main post-export entry point for curve-based VFX buffer patching.
@@ -812,9 +830,10 @@ def patch_buffers(context, cache):
             # Remap to target mesh's local coordinates
             local_pts = []
             radii = []
+            root_obj = get_armature_or_root(target_mesh)
             for pt, r_val in resampled_data:
                 wpos = curve_obj.matrix_world @ pt
-                lpos = target_mesh.matrix_world.inverted() @ wpos
+                lpos = root_obj.matrix_world.inverted() @ wpos
                 local_pts.append(lpos)
                 radii.append(r_val)
 

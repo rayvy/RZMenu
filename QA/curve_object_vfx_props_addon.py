@@ -114,9 +114,29 @@ def v3(value):
     return tuple(round(float(c), 6) for c in value[:3])
 
 
+def get_armature_or_root(obj):
+    if not obj:
+        return None
+    if hasattr(obj, "modifiers"):
+        for mod in obj.modifiers:
+            if mod.type == 'ARMATURE' and mod.object:
+                return mod.object
+    parent = obj.parent
+    last_valid = obj
+    while parent:
+        if parent.type == 'ARMATURE':
+            return parent
+        if parent.type == 'EMPTY' and not parent.parent:
+            return parent
+        last_valid = parent
+        parent = parent.parent
+    return last_valid
+
+
 def local_from_world(target_mesh, world_pos):
     if target_mesh:
-        return target_mesh.matrix_world.inverted() @ world_pos
+        root_obj = get_armature_or_root(target_mesh)
+        return root_obj.matrix_world.inverted() @ world_pos
     return world_pos
 
 
