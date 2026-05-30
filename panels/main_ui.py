@@ -1007,6 +1007,17 @@ def draw_toolbox_content(self, context):
     scene = context.scene
     rzm = scene.rzm
     
+    # ─── TAB SELECTION AT THE VERY TOP ───
+    row_tab = layout.row(align=True)
+    row_tab.prop(scene, "rzm_toolbox_mode", expand=True)
+    
+    layout.separator()
+    
+    if scene.rzm_toolbox_mode == 'SHAITAN':
+        from ..shaitan_toolbox.ui import draw_shaitan_toolbox
+        draw_shaitan_toolbox(self, context, layout)
+        return
+
     # 1. ALWAYS SHOW MESH PROPERTIES AT TOP
     VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)
 

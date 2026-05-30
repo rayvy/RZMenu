@@ -644,8 +644,40 @@ def update_profile_enum(self, context):
     except ValueError:
         pass
 
+class RZM_ST_ColorPreset(bpy.types.PropertyGroup):
+    name: StringProperty(name="Preset Name", default="Preset")
+    color: FloatVectorProperty(
+        name="Color",
+        subtype='COLOR',
+        size=4,
+        default=(1.0, 1.0, 1.0, 1.0)
+    )
+
 class RZM_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__.split(".")[0] if "." in __package__ else __package__
+
+    rzm_st_palette: CollectionProperty(type=RZM_ST_ColorPreset)
+    rzm_st_palette_index: IntProperty(default=0)
+
+    def ensure_default_palette(self):
+        """Гарантирует наличие 16 слотов палитры на старте."""
+        if len(self.rzm_st_palette) == 0:
+            defaults = [
+                ("FF8080 (A=0.4)", (1.0, 0.216, 0.216, 0.4)),
+                ("FF80CB33 (A=0.2)", (1.0, 0.216, 0.597, 0.2)),
+                ("FF80CB66 (A=0.4)", (1.0, 0.216, 0.597, 0.4)),
+                ("10_05_07_01 (A=0.1)", (1.0, 0.5, 0.7, 0.1)),
+            ]
+            for name, color in defaults:
+                item = self.rzm_st_palette.add()
+                item.name = name
+                item.color = color
+            
+            # Добавляем еще 12 пустых слотов для кастомизации
+            for i in range(12):
+                item = self.rzm_st_palette.add()
+                item.name = f"Slot {i + 5}"
+                item.color = (0.5, 0.5, 0.5, 1.0)
 
     active_profile_enum: EnumProperty(
         name="Active Profile",
@@ -880,6 +912,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         self.ensure_default_profile()
+        self.ensure_default_palette()
         layout = self.layout
         rzm = context.scene.rzm
         wm = context.window_manager

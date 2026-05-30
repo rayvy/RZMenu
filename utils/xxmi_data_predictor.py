@@ -217,15 +217,16 @@ class XXMIMissingDataPredictorSubModule:
         """
         target_names = set()
         
-        # 1. Читаем из texcoord_list в сцене
-        try:
-            lst = context.scene.texcoord_list
-            if lst:
-                for item in lst:
-                    if item.target_name:
-                        target_names.add(item.target_name)
-        except Exception:
-            pass
+        # 1. Читаем из rzm_st_texcoord_list и старого texcoord_list в сцене
+        for list_name in ("rzm_st_texcoord_list", "texcoord_list"):
+            try:
+                lst = getattr(context.scene, list_name, None)
+                if lst:
+                    for item in lst:
+                        if item.target_name:
+                            target_names.add(item.target_name)
+            except Exception:
+                pass
 
         # 2. Добавляем имена UV слоев, найденные у любых других мешей сцены
         for o in context.scene.objects:
@@ -243,10 +244,16 @@ class XXMIMissingDataPredictorSubModule:
         for name in sorted(target_names):
             gx, gy, px, py = 1, 1, 0, 0
             try:
-                lst = context.scene.texcoord_list
-                for item in lst:
-                    if item.target_name == name:
-                        gx, gy, px, py = item.grid_x, item.grid_y, item.pos_x, item.pos_y
+                found = False
+                for list_name in ("rzm_st_texcoord_list", "texcoord_list"):
+                    lst = getattr(context.scene, list_name, None)
+                    if lst:
+                        for item in lst:
+                            if item.target_name == name:
+                                gx, gy, px, py = item.grid_x, item.grid_y, item.pos_x, item.pos_y
+                                found = True
+                                break
+                    if found:
                         break
             except Exception:
                 pass

@@ -41,11 +41,13 @@ from .data import properties
 from . import operators
 from . import panels
 from . import core 
+from . import shaitan_toolbox
 
 # Формируем список модулей для загрузки
 modules = [
     properties,
     core,       # Тут лежит deps_manager, он нужен всегда
+    shaitan_toolbox,
     operators,
     panels,     # Тут должен быть интерфейс кнопки "Установить"
 ]

@@ -24,10 +24,22 @@ from .p_ui import (
 from .p_settings import (
     RZMenuConfig, DependencyStatus, RZMCustomScript, RZMExportSettings, RZMenuAddonSettings, RZMGameSettings, RZMMetaDataSettings, 
     RZMCreditItem, RZMFeatureItem, RZM_AddonPreferences, RZMAutoMenuSettings, RZMTierDefinition,
-    RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer, RZMLanguage, RZM_ArtistProfile
+    RZM_ContactItem, RZM_BuildProfile, RZMCollectionPointer, RZMLanguage, RZM_ArtistProfile,
+    RZM_ST_ColorPreset
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
 from .p_component_manager import RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
+
+class RZM_ST_TexCoordItem(bpy.types.PropertyGroup):
+    target_name: StringProperty(
+        name="Name", 
+        default="TEXCOORD.xy",
+        description="Имя целевого UV слоя"
+    )
+    grid_x: IntProperty(name="Grid X", default=2, min=1, max=32)
+    grid_y: IntProperty(name="Grid Y", default=2, min=1, max=32)
+    pos_x: IntProperty(name="Pos X", default=0, min=0)
+    pos_y: IntProperty(name="Pos Y", default=0, min=0)
 
 class RZMVFXVertexCount(bpy.types.PropertyGroup):
     component_name: StringProperty(name="Component Name")
@@ -186,10 +198,12 @@ classes_to_register = [
     RZM_BuildProfile,
     RZM_ArtistProfile,
     RZMCollectionPointer,
+    RZM_ST_ColorPreset,
     RZM_AddonPreferences,
     RZMAutoMenuSettings,
     RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings,
     RZMVFXVertexCount,
+    RZM_ST_TexCoordItem,
     RZMenuProperties,
     RZModProducerSettings,
 ]
@@ -813,10 +827,72 @@ def register():
         default='TOGGLES'
     )
     
+    # --- RZM Shaitan Toolbox properties ---
+    bpy.types.Scene.rzm_toolbox_mode = EnumProperty(
+        name="Toolbox Mode",
+        items=[
+            ('RZ', "RZ Constructor", "RZ Constructor Toolbox"),
+            ('SHAITAN', "Shaitan", "Shaitan Toolbox")
+        ],
+        default='RZ'
+    )
+    bpy.types.Scene.rzm_st_sub_tab = EnumProperty(
+        name="Shaitan Sub Tab",
+        items=[
+            ('BASE_MESH', "Base Mesh Setup", "Base Mesh Setup"),
+            ('UV_PACKER', "TexCoord Packer", "TexCoord Packer"),
+            ('COLOR_ATTR', "Color Attribute", "Color Attribute Presets / Painting")
+        ],
+        default='BASE_MESH'
+    )
+    bpy.types.Scene.rzm_st_base_mesh_sub_tab = EnumProperty(
+        name="Base Mesh Sub Tab",
+        items=[
+            ('PRIMARY', "Primary Setup", "Primary Armature & Setup"),
+            ('SMALL_TOOLS', "Small Tools", "Vertex Groups & Weights Tools")
+        ],
+        default='PRIMARY'
+    )
+    bpy.types.Scene.rzm_st_target_armature = PointerProperty(
+        name="Target Armature",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'ARMATURE'
+    )
+    bpy.types.Scene.rzm_st_reference_mesh = PointerProperty(
+        name="Reference Mesh",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'MESH'
+    )
+    bpy.types.Scene.rzm_st_symmetry_direction = EnumProperty(
+        name="Symmetry Direction",
+        items=[
+            ("DEFAULT", "Default (L=Right, R=Left)", ""),
+            ("INVERTED", "Inverted (L=Left, R=Right)", "")
+        ],
+        default='INVERTED'
+    )
+    bpy.types.Scene.rzm_st_rename_associated_bones = BoolProperty(
+        name="Rename Associated Bones",
+        description="Rename bones in the armature linked to the mesh",
+        default=True
+    )
+    bpy.types.Scene.rzm_st_texcoord_list = CollectionProperty(type=RZM_ST_TexCoordItem)
+    bpy.types.Scene.rzm_st_texcoord_list_index = IntProperty()
+    
     bpy.types.WindowManager.rzm_context_atlas_index = IntProperty(default=-1)
     bpy.types.WindowManager.rzm_dependency_install_status = StringProperty()
 
 def unregister():
+    del bpy.types.Scene.rzm_toolbox_mode
+    del bpy.types.Scene.rzm_st_sub_tab
+    del bpy.types.Scene.rzm_st_base_mesh_sub_tab
+    del bpy.types.Scene.rzm_st_target_armature
+    del bpy.types.Scene.rzm_st_reference_mesh
+    del bpy.types.Scene.rzm_st_symmetry_direction
+    del bpy.types.Scene.rzm_st_rename_associated_bones
+    del bpy.types.Scene.rzm_st_texcoord_list
+    del bpy.types.Scene.rzm_st_texcoord_list_index
+
     del bpy.types.WindowManager.rzm_dependency_install_status
     del bpy.types.WindowManager.rzm_context_atlas_index
     del bpy.types.Scene.rzm_show_captures_preview
