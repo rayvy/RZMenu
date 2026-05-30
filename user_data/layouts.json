@@ -3,17 +3,17 @@
         "type": "SPLITTER",
         "orientation": 1,
         "sizes": [
-            760,
-            925,
-            857
+            762,
+            927,
+            859
         ],
         "children": [
             {
                 "type": "SPLITTER",
                 "orientation": 1,
                 "sizes": [
-                    484,
-                    272
+                    352,
+                    406
                 ],
                 "children": [
                     {
@@ -34,8 +34,8 @@
                 "type": "SPLITTER",
                 "orientation": 1,
                 "sizes": [
-                    427,
-                    426
+                    428,
+                    427
                 ],
                 "children": [
                     {
@@ -46,8 +46,8 @@
                         "type": "SPLITTER",
                         "orientation": 2,
                         "sizes": [
-                            466,
-                            465
+                            482,
+                            481
                         ],
                         "children": [
                             {

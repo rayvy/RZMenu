@@ -33,15 +33,12 @@ class VertexGroupReorderSubModule:
     """
     Sub-module to ensure consistent Vertex Group (VG) ordering.
     It moves vertex groups starting with 'mask' (case-insensitive) to the end of the list,
-    preserving their relative order, and restores their original order after export.
+    preserving their relative order. This change is permanent and not restored.
     """
     def __init__(self):
-        # Stores {obj_name: [original_vg_names_in_order]}
-        self._original_orders = {}
+        pass
 
     def pre_export(self, context):
-        self._original_orders.clear()
-        
         # Получаем только экспортируемые объекты через функцию предиктора
         from .xxmi_data_predictor import get_export_targets
         targets = get_export_targets(context)
@@ -52,9 +49,7 @@ class VertexGroupReorderSubModule:
             if obj.type != 'MESH' or not obj.vertex_groups:
                 continue
                 
-            # Сохраняем исходный порядок
             orig_names = [vg.name for vg in obj.vertex_groups]
-            self._original_orders[obj.name] = orig_names
             
             # Разделяем на обычные группы и маски
             non_masks = []
@@ -71,20 +66,10 @@ class VertexGroupReorderSubModule:
             self._reorder_vertex_groups(obj, target_order)
 
     def post_export(self, context):
-        if not self._original_orders:
-            return
-            
-        print(f"[SafeExport] [VGReorder] Восстановление исходного порядка Vertex Groups для {len(self._original_orders)} мешей...")
-        
-        for obj_name, orig_names in self._original_orders.items():
-            obj = context.scene.objects.get(obj_name)
-            if obj and obj.type == 'MESH':
-                self._reorder_vertex_groups(obj, orig_names)
-                
-        self._original_orders.clear()
+        pass
 
     def restore(self, context):
-        self.post_export(context)
+        pass
 
     def _reorder_vertex_groups(self, obj, target_order):
         vgs = obj.vertex_groups
@@ -96,6 +81,9 @@ class VertexGroupReorderSubModule:
             
         # Сохраняем имя активной группы
         active_name = vgs.active.name if vgs.active else None
+        
+        # Сохраняем состояния блокировок (lock_weight)
+        vg_locks = {vg.name: vg.lock_weight for vg in vgs}
         
         # Сохраняем веса всех вершин
         vert_weights = {}
@@ -122,6 +110,13 @@ class VertexGroupReorderSubModule:
                 if name in name_to_vg:
                     name_to_vg[name].add([v_idx], weight, 'REPLACE')
                     
+        # Устанавливаем блокировки (все MASK-группы принудительно лочим)
+        for name, vg in name_to_vg.items():
+            if name.lower().startswith("mask"):
+                vg.lock_weight = True
+            else:
+                vg.lock_weight = vg_locks.get(name, False)
+                
         # Восстанавливаем активную группу
         if active_name and active_name in vgs:
             vgs.active = vgs[active_name]
