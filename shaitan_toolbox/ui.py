@@ -15,55 +15,74 @@ def draw_shaitan_toolbox(self, context, layout):
     
     active_tab = scene.rzm_st_sub_tab
     
-    if active_tab == 'BASE_MESH':
+    if active_tab == 'SETUP_SCRIPTS':
+        draw_setup_scripts_ui(self, context, layout)
+    elif active_tab == 'BASE_MESH':
         draw_base_mesh_setup_ui(self, context, layout)
     elif active_tab == 'UV_PACKER':
         draw_uv_packer_ui(self, context, layout)
     elif active_tab == 'COLOR_ATTR':
         draw_color_attr_ui(self, context, layout)
 
-def draw_base_mesh_setup_ui(self, context, layout):
+def draw_setup_scripts_ui(self, context, layout):
     scene = context.scene
     
-    # Под-табы для Base Mesh Setup
-    row = layout.row(align=True)
-    row.prop(scene, "rzm_st_base_mesh_sub_tab", expand=True)
+    # ─── Smart Weight Transfer ───
+    box_transfer = layout.box()
+    box_transfer.label(text="Smart Weight Transfer", icon='MOD_VERTEX_WEIGHT')
     
+    selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
+    active_obj = context.active_object
+    
+    col_info = box_transfer.column(align=True)
+    if len(selected_meshes) == 2 and active_obj and active_obj.type == 'MESH':
+        donor = [obj for obj in selected_meshes if obj != active_obj][0]
+        col_info.label(text=f"Donor (Source): {donor.name}", icon='MESH_DATA')
+        col_info.label(text=f"Target (Active): {active_obj.name}", icon='CHECKMARK')
+        box_transfer.separator()
+        row_btn = box_transfer.row()
+        row_btn.scale_y = 1.3
+        row_btn.operator("rzm_st.smart_transfer", text="Run Smart Weight Transfer", icon='FILE_REFRESH')
+    else:
+        col_info.label(text="Select exactly 2 meshes to enable Smart Transfer", icon='INFO')
+        col_info.label(text="(Active object will be the destination/target)", icon='QUESTION')
+        box_transfer.separator()
+        row_btn = box_transfer.row()
+        row_btn.enabled = False
+        row_btn.scale_y = 1.3
+        row_btn.operator("rzm_st.smart_transfer", text="Smart Weight Transfer (Requires 2 Selected Meshes)", icon='FILE_REFRESH')
+
     layout.separator()
+
+    # ─── Mesh & Vertex Group Tools ───
+    box_tools = layout.box()
+    box_tools.label(text="Mesh & Vertex Group Tools", icon='TOOL_SETTINGS')
     
-    sub_tab = scene.rzm_st_base_mesh_sub_tab
+    col_tools = box_tools.column(align=True)
+    col_tools.scale_y = 1.2
     
-    if sub_tab == 'PRIMARY':
-        box = layout.box()
-        box.label(text="Armature & Project Setup (Phase 3 Placeholder)", icon='ARMATURE_DATA')
-        
-        col = box.column(align=True)
-        col.prop(scene, "rzm_st_target_armature")
-        col.prop(scene, "rzm_st_reference_mesh")
-        
-        box.separator()
-        box.operator("rzm_st.body_rename_placeholder", text="Rename Components", icon='SORTALPHA')
-        box.label(text="Полная логика ренеймера будет подключена в Фазе 3.", icon='INFO')
-        
-    elif sub_tab == 'SMALL_TOOLS':
-        box = layout.box()
-        box.label(text="Vertex Group Symmetry (Symmetrize VG)", icon='MOD_MIRROR')
-        
-        col = box.column(align=True)
-        col.prop(scene, "rzm_st_symmetry_direction")
-        col.prop(scene, "rzm_st_rename_associated_bones")
-        
-        box.separator()
-        box.operator("rzm_st.symmetrize_vg_names", text="Symmetrize Active VG Name", icon='FILE_REFRESH')
-        
-        # Заглушки для других будущих инструментов
-        box.separator()
-        box.label(text="Другие инструменты (Фаза 3):", icon='TOOL_SETTINGS')
-        col_coming = box.column(align=True)
-        col_coming.active = False
-        col_coming.label(text="- Project Index Map")
-        col_coming.label(text="- Weight Reorder/Remap")
-        col_coming.label(text="- Armature Clean")
+    col_tools.operator("rzm_st.mirror_cut", text="Mirror Cut X (Clear Left)", icon='MOD_MIRROR')
+    col_tools.operator("rzm_st.vg_sym_rename_all", text="Symmetrize VG Names (Median)", icon='MOD_MIRROR')
+    
+    # Опасная зона
+    box_tools.separator()
+    col_destructive = box_tools.column(align=True)
+    col_destructive.scale_y = 1.2
+    col_destructive.operator("rzm_st.delete_all_vg", text="Delete All Vertex Groups", icon='TRASH')
+
+def draw_base_mesh_setup_ui(self, context, layout):
+    box = layout.box()
+    box.label(text="Base Mesh Setup (Coming Soon in Phase 3)", icon='ARMATURE_DATA')
+    
+    col = box.column(align=True)
+    col.active = False
+    col.prop(context.scene, "rzm_st_target_armature")
+    col.prop(context.scene, "rzm_st_reference_mesh")
+    
+    box.separator()
+    row = box.row()
+    row.enabled = False
+    row.operator("rzm_st.body_rename_placeholder", text="Rename Components (Coming Soon)", icon='SORTALPHA')
 
 def draw_uv_packer_ui(self, context, layout):
     scene = context.scene

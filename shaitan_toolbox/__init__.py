@@ -4,10 +4,11 @@ from . import ops_uv
 from . import ops_vg_sym
 from . import ops_color_attr
 from . import base_mesh_setup
+from . import ops_setup_scripts
 
 # Собираем все классы для регистрации из подмодулей
 classes = []
-for module in (ops_uv, ops_vg_sym, ops_color_attr, base_mesh_setup):
+for module in (ops_uv, ops_vg_sym, ops_color_attr, base_mesh_setup, ops_setup_scripts):
     if hasattr(module, "classes_to_register"):
         classes.extend(module.classes_to_register)
 

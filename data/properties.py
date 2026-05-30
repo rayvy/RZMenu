@@ -850,11 +850,12 @@ def register():
     bpy.types.Scene.rzm_st_sub_tab = EnumProperty(
         name="Shaitan Sub Tab",
         items=[
+            ('SETUP_SCRIPTS', "Setup Scripts", "Setup Scripts"),
             ('BASE_MESH', "Base Mesh Setup", "Base Mesh Setup"),
             ('UV_PACKER', "TexCoord Packer", "TexCoord Packer"),
             ('COLOR_ATTR', "Color Attribute", "Color Attribute Presets / Painting")
         ],
-        default='BASE_MESH'
+        default='SETUP_SCRIPTS'
     )
     bpy.types.Scene.rzm_st_base_mesh_sub_tab = EnumProperty(
         name="Base Mesh Sub Tab",

@@ -1,0 +1,412 @@
+import bpy
+import bmesh
+import time
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
+
+IGNORE_PREFIX = "mask"
+
+# Аналог настройки:
+# Vertex Mapping -> Nearest Face Interpolated
+VERTEX_MAPPING = "POLYINTERP_NEAREST"
+
+
+# ============================================================
+# UTILS
+# ============================================================
+
+def is_mask(name: str) -> bool:
+    """
+    Игнорируем группы, которые начинаются с mask.
+    Регистр не имеет значения:
+    mask, MASK, Mask 124 и т.д.
+    """
+    return name.casefold().startswith(IGNORE_PREFIX.casefold())
+
+
+def get_group_names(obj, include_masks=True):
+    if include_masks:
+        return [vg.name for vg in obj.vertex_groups]
+
+    return [
+        vg.name
+        for vg in obj.vertex_groups
+        if not is_mask(vg.name)
+    ]
+
+
+def ensure_object_mode(obj):
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+
+    if bpy.context.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def remove_group(obj, name):
+    vg = obj.vertex_groups.get(name)
+
+    if vg is not None:
+        obj.vertex_groups.remove(vg)
+
+
+def capture_weights(obj, allowed_names=None):
+    """
+    Сохраняет веса одним линейным проходом по вершинам.
+
+    Результат:
+    [
+        {"Pelvis": 0.8, "Belly": 0.2},
+        {"Pelvis": 1.0},
+        ...
+    ]
+    """
+    names_by_index = {
+        vg.index: vg.name
+        for vg in obj.vertex_groups
+    }
+
+    result = []
+
+    for vertex in obj.data.vertices:
+        vertex_weights = {}
+
+        for element in vertex.groups:
+            name = names_by_index.get(element.group)
+
+            if name is None:
+                continue
+
+            if allowed_names is not None and name not in allowed_names:
+                continue
+
+            vertex_weights[name] = element.weight
+
+        result.append(vertex_weights)
+
+    return result
+
+
+def rebuild_groups_and_weights(obj, ordered_names, weights_by_vertex):
+    """
+    Быстро пересобирает список Vertex Groups в нужном порядке.
+
+    В отличие от сотен вызовов vertex_group_move(),
+    здесь порядок создаётся сразу корректным.
+    """
+    ensure_object_mode(obj)
+
+    # На случай, если маски уже были залочены:
+    # временно снимаем lock, иначе удаление всех групп может вести
+    # себя непредсказуемо.
+    for vg in obj.vertex_groups:
+        vg.lock_weight = False
+
+    # Быстро удалить все группы одним нативным оператором.
+    bpy.ops.object.vertex_group_remove(all=True)
+
+    # Создать заново сразу в правильном порядке.
+    for name in ordered_names:
+        obj.vertex_groups.new(name=name)
+
+    index_by_name = {
+        vg.name: vg.index
+        for vg in obj.vertex_groups
+    }
+
+    # Напрямую записываем deform weights через BMesh.
+    # Без медленного vg.add() для каждой отдельной вершины.
+    bm = bmesh.new()
+
+    try:
+        bm.from_mesh(obj.data)
+
+        deform_layer = bm.verts.layers.deform.verify()
+        bm.verts.ensure_lookup_table()
+
+        if len(bm.verts) != len(weights_by_vertex):
+            raise RuntimeError(
+                "Количество вершин изменилось во время операции. "
+                "Скрипт остановлен, чтобы не записать веса криво."
+            )
+
+        for bm_vertex, vertex_weights in zip(bm.verts, weights_by_vertex):
+            deform = bm_vertex[deform_layer]
+
+            # Очистить старые индексы групп.
+            for group_index in list(deform.keys()):
+                del deform[group_index]
+
+            # Записать веса уже с новыми индексами.
+            for name, weight in vertex_weights.items():
+                new_index = index_by_name.get(name)
+
+                if new_index is not None and weight != 0.0:
+                    deform[new_index] = weight
+
+        bm.to_mesh(obj.data)
+        obj.data.update()
+
+    finally:
+        bm.free()
+
+
+def run_native_weight_transfer(donor, target):
+    """
+    Выполняет один стандартный Blender Data Transfer.
+
+    SRC = ALL
+    DST = NAME
+
+    Группы на таргете создаются заранее вручную.
+    Blender ничего самостоятельно плодить не должен.
+    """
+    bpy.ops.object.select_all(action="DESELECT")
+
+    donor.select_set(True)
+    target.select_set(True)
+
+    bpy.context.view_layer.objects.active = target
+
+    bpy.ops.object.data_transfer(
+        data_type="VGROUP_WEIGHTS",
+        use_create=False,
+        vert_mapping=VERTEX_MAPPING,
+        layers_select_src="ALL",
+        layers_select_dst="NAME",
+        mix_mode="REPLACE",
+        mix_factor=1.0
+    )
+
+
+# ============================================================
+# MAIN LOGIC
+# ============================================================
+
+def synchronize_weights(donor, target):
+    started_at = time.perf_counter()
+
+    print("\n" + "=" * 72)
+    print(f"TARGET : {target.name}")
+    print(f"DONOR  : {donor.name}")
+    print("=" * 72)
+
+    ensure_object_mode(target)
+
+    # Если Mesh Data случайно используется несколькими объектами,
+    # отделяем таргет. Иначе изменение весов затронет его близнеца.
+    if target.data.users > 1:
+        print("Target Mesh Data has multiple users -> creating single-user copy.")
+        target.data = target.data.copy()
+
+    donor_order = get_group_names(donor, include_masks=False)
+    donor_set = set(donor_order)
+
+    target_masks = [
+        vg.name
+        for vg in target.vertex_groups
+        if is_mask(vg.name)
+    ]
+
+    target_normal = get_group_names(target, include_masks=False)
+
+    common = [
+        name
+        for name in target_normal
+        if name in donor_set
+    ]
+
+    missing = [
+        name
+        for name in donor_order
+        if target.vertex_groups.get(name) is None
+    ]
+
+    extra = [
+        name
+        for name in target_normal
+        if name not in donor_set
+    ]
+
+    print(f"Common existing groups : {len(common)}")
+    print(f"Missing groups         : {len(missing)}")
+    print(f"Extra groups removed   : {len(extra)}")
+    print(f"Mask groups preserved  : {len(target_masks)}")
+
+    # --------------------------------------------------------
+    # 1. Удалить лишние группы таргета, кроме mask
+    # --------------------------------------------------------
+
+    stage = time.perf_counter()
+
+    for name in extra:
+        remove_group(target, name)
+
+    print(f"[1] Remove extras       : {time.perf_counter() - stage:.3f} sec")
+
+    # --------------------------------------------------------
+    # 2. Создать отсутствующие группы заранее
+    # --------------------------------------------------------
+
+    stage = time.perf_counter()
+
+    for name in missing:
+        if target.vertex_groups.get(name) is None:
+            target.vertex_groups.new(name=name)
+
+    print(f"[2] Create missing      : {time.perf_counter() - stage:.3f} sec")
+
+    # --------------------------------------------------------
+    # 3. Сохранить общие веса и маски
+    #
+    # Маски игнорируются полностью.
+    # Общие веса обязаны остаться такими, какими были на таргете.
+    # --------------------------------------------------------
+
+    protected_names = set(common) | set(target_masks)
+
+    stage = time.perf_counter()
+
+    protected_weights = capture_weights(
+        target,
+        allowed_names=protected_names
+    )
+
+    print(f"[3] Backup protected    : {time.perf_counter() - stage:.3f} sec")
+
+    # --------------------------------------------------------
+    # 4. Временно поставить замки
+    # --------------------------------------------------------
+
+    for vg in target.vertex_groups:
+        vg.lock_weight = (
+            vg.name in protected_names
+        )
+
+    # --------------------------------------------------------
+    # 5. Выполнить обычный Data Transfer только один раз
+    # --------------------------------------------------------
+
+    if missing:
+        stage = time.perf_counter()
+
+        run_native_weight_transfer(donor, target)
+
+        print(f"[4] Native transfer     : {time.perf_counter() - stage:.3f} sec")
+    else:
+        print("[4] Native transfer     : skipped, nothing is missing")
+
+    # --------------------------------------------------------
+    # 6. Собрать итоговые веса
+    #
+    # Всё, что уже существовало на таргете, восстанавливаем
+    # из backup. Missing-группы берём из результата трансфера.
+    # --------------------------------------------------------
+
+    stage = time.perf_counter()
+
+    transferred_weights = capture_weights(target)
+
+    final_weights = []
+
+    for transferred, protected in zip(
+        transferred_weights,
+        protected_weights
+    ):
+        merged = {
+            name: weight
+            for name, weight in transferred.items()
+            if name not in protected_names
+        }
+
+        merged.update(protected)
+        final_weights.append(merged)
+
+    print(f"[5] Merge weights       : {time.perf_counter() - stage:.3f} sec")
+
+    # --------------------------------------------------------
+    # 7. Пересобрать порядок без медленного bubble-sort
+    #
+    # Сначала группы донора.
+    # Затем mask-группы таргета.
+    # --------------------------------------------------------
+
+    final_order = donor_order + target_masks
+    current_order = get_group_names(target, include_masks=True)
+
+    if current_order != final_order or missing or extra:
+        stage = time.perf_counter()
+
+        rebuild_groups_and_weights(
+            target,
+            ordered_names=final_order,
+            weights_by_vertex=final_weights
+        )
+
+        print(f"[6] Fast reorder rebuild: {time.perf_counter() - stage:.3f} sec")
+    else:
+        print("[6] Fast reorder rebuild: skipped, order already matches")
+
+    # --------------------------------------------------------
+    # 8. Финальные замки
+    #
+    # mask -> locked
+    # всё остальное -> unlocked
+    # --------------------------------------------------------
+
+    for vg in target.vertex_groups:
+        vg.lock_weight = is_mask(vg.name)
+
+    bpy.context.view_layer.objects.active = target
+    target.select_set(True)
+
+    elapsed = time.perf_counter() - started_at
+
+    print("-" * 72)
+    print(f"Final groups           : {len(target.vertex_groups)}")
+    print(f"Final donor groups     : {len(donor_order)}")
+    print(f"Final mask groups      : {len(target_masks)}")
+    print(f"TOTAL                  : {elapsed:.3f} sec")
+    print("DONE")
+    print("=" * 72)
+
+
+def main():
+    selected_meshes = [
+        obj
+        for obj in bpy.context.selected_objects
+        if obj.type == "MESH"
+    ]
+
+    target = bpy.context.view_layer.objects.active
+
+    if target is None or target.type != "MESH":
+        raise RuntimeError(
+            "Активный объект должен быть Mesh-таргетом."
+        )
+
+    donors = [
+        obj
+        for obj in selected_meshes
+        if obj != target
+    ]
+
+    if len(donors) != 1:
+        raise RuntimeError(
+            "Нужно выделить ровно два Mesh-объекта:\n"
+            "1. Донор\n"
+            "2. Таргет, выбранный последним и являющийся активным объектом."
+        )
+
+    donor = donors[0]
+
+    synchronize_weights(
+        donor=donor,
+        target=target
+    )
+
+
+main()
