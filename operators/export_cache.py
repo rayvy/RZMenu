@@ -298,6 +298,9 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
 
             objects, vb_offset = [], 0
             for part in comp.parts:
+                part_suffix = ""
+                if part.fullname.startswith(comp.fullname):
+                    part_suffix = part.fullname[len(comp.fullname):]
                 for sub in part.objects:
                     if sub.vertex_count == 0: 
                         vb_offset += sub.vertex_count
@@ -348,12 +351,14 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                         else:
                             # If it's disabled, we don't print every vertex, but we can log that it's skipped
                             pass
-
+ 
                     if eval_mesh:
                         sub.obj.to_mesh_clear()
                     
                     objects.append({
                         'name': sub.name, 
+                        'part_suffix': part_suffix,
+                        'part_fullname': part.fullname,
                         'vb_offset': vb_offset, 
                         'vb_count': sub.vertex_count,
                         'ib_count': getattr(sub, 'index_count', 0),

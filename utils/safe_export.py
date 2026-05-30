@@ -32,7 +32,8 @@ import bpy
 class VertexGroupReorderSubModule:
     """
     Sub-module to ensure consistent Vertex Group (VG) ordering.
-    It sorts vertex groups alphabetically before export and restores their original order after export.
+    It moves vertex groups starting with 'mask' (case-insensitive) to the end of the list,
+    preserving their relative order, and restores their original order after export.
     """
     def __init__(self):
         # Stores {obj_name: [original_vg_names_in_order]}
@@ -45,7 +46,7 @@ class VertexGroupReorderSubModule:
         from .xxmi_data_predictor import get_export_targets
         targets = get_export_targets(context)
         
-        print(f"[SafeExport] [VGReorder] Сортировка Vertex Groups по алфавиту для {len(targets)} мешей...")
+        print(f"[SafeExport] [VGReorder] Сдвиг вертекс-групп MASK в конец для {len(targets)} мешей...")
         
         for obj in targets:
             if obj.type != 'MESH' or not obj.vertex_groups:
@@ -55,8 +56,19 @@ class VertexGroupReorderSubModule:
             orig_names = [vg.name for vg in obj.vertex_groups]
             self._original_orders[obj.name] = orig_names
             
-            # Сортируем по алфавиту
-            self._reorder_vertex_groups(obj, sorted(orig_names))
+            # Разделяем на обычные группы и маски
+            non_masks = []
+            masks = []
+            for name in orig_names:
+                if name.lower().startswith("mask"):
+                    masks.append(name)
+                else:
+                    non_masks.append(name)
+            
+            # Целевой порядок: обычные группы первыми, маски в самом конце
+            target_order = non_masks + masks
+            
+            self._reorder_vertex_groups(obj, target_order)
 
     def post_export(self, context):
         if not self._original_orders:

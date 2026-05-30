@@ -29,8 +29,8 @@ StructuredBuffer<CurvePoint>  CurveData    : register(t51);
 StructuredBuffer<BlendData>   CurveWeightData : register(t52);
 
 Texture1D<float4> IniParams : register(t120);
-#define ORIG_V_COUNT ((uint)round(IniParams[115].x))
-#define TIME         IniParams[98].x
+#define ORIG_V_COUNT ((uint)round(IniParams.Load(int2(115, 0)).x))
+#define TIME         IniParams.Load(int2(98, 0)).x
 
 [numthreads(32, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)

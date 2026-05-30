@@ -1174,32 +1174,36 @@ def patch_buffers(context, cache):
             print(f"[RZM-VFX] [ERROR] Position buffer '{expected_vb0_name}' not found. Cannot patch.")
             continue
 
-        # Get original vertex count — cache is the SOURCE OF TRUTH (baked at export time,
-        # before VFX patching). File-size fallback risks returning an inflated value if the
-        # buffer was already patched in a previous export run.
+        # Determine original vertex and index counts.
         comp_cache = cache.get('components', {}).get(comp_name, {})
-        original_v_count = comp_cache.get('n_verts')
-        if original_v_count is None:
-            # Fallback: read from file — only safe on a CLEAN (un-patched) buffer.
-            # We assume the file on disk still matches the original export if we reach here.
-            vb0_size = os.path.getsize(vb0_path)
-            original_v_count = vb0_size // 40
-            print(f"[RZM-VFX]   * [WARN] n_verts not in cache for '{comp_name}', "
-                  f"reading from file: {original_v_count} verts. "
-                  f"Ensure this is the first export run or the file is not yet patched.")
-        else:
-            # Sanity-check: if the file is already larger (was patched), the cache value
-            # should still be smaller than the file size. Log if something seems off.
-            vb0_size_on_disk = os.path.getsize(vb0_path)
-            vb0_count_on_disk = vb0_size_on_disk // 40
-            if vb0_count_on_disk < original_v_count:
-                print(f"[RZM-VFX]   * [WARN] File has fewer verts ({vb0_count_on_disk}) than "
-                      f"cache ({original_v_count}) for '{comp_name}'. Using file count.")
-                original_v_count = vb0_count_on_disk
+        
+        # 1. Determine original_v_count from Cache
+        cache_v_count = comp_cache.get('n_verts')
+        if cache_v_count is None:
+            # Fallback: assume the file size on disk is the clean size
+            file_size_vb0 = os.path.getsize(vb0_path)
+            cache_v_count = file_size_vb0 // 40
             
-        # Get original index count of the rendered part from the cache.
-        # Sum all matched draw entries so numbered Blender duplicates are included.
-        original_i_count = 0
+        # Check if the VB0 file on disk was already patched in a previous run.
+        # It is considered patched if and only if its size is exactly equal to (cache_v_count + total_new_verts) * 40.
+        expected_patched_vb0_size = (cache_v_count + total_new_verts) * 40
+        file_size_vb0 = os.path.getsize(vb0_path)
+        
+        is_vb0_already_patched = (file_size_vb0 == expected_patched_vb0_size and total_new_verts > 0)
+        
+        if is_vb0_already_patched:
+            # Revert the previous patch by truncating back to the clean size
+            original_v_count = cache_v_count
+            print(f"[RZM-VFX]   * Detected previously patched VB0 ({file_size_vb0} bytes). Truncating to clean size {original_v_count * 40} bytes.")
+            with open(vb0_path, 'r+b') as f:
+                f.truncate(original_v_count * 40)
+        else:
+            # Trust the file size on disk as the clean original vertex count!
+            original_v_count = file_size_vb0 // 40
+            print(f"[RZM-VFX]   * Trusting VB0 size on disk as original size: {file_size_vb0} bytes -> {original_v_count} vertices.")
+
+        # 2. Determine original_i_count from Cache
+        cache_i_count = 0
         matched_ib_entries = []
         for obj in comp_cache.get('objects', []):
             ib_count = int(obj.get('ib_count') or 0)
@@ -1207,28 +1211,61 @@ def patch_buffers(context, cache):
                 continue
 
             obj_name = obj.get('name', '')
-            if not cache_object_matches_part(obj_name, comp_name, part_suffix):
-                continue
+            obj_part_suffix = obj.get('part_suffix')
+            if obj_part_suffix is not None:
+                if str(obj_part_suffix).lower().strip() != str(part_suffix).lower().strip():
+                    continue
+            else:
+                if not cache_object_matches_part(obj_name, comp_name, part_suffix):
+                    continue
 
-            original_i_count += ib_count
+            cache_i_count += ib_count
             matched_ib_entries.append((obj_name, ib_count))
 
         if matched_ib_entries:
             if len(matched_ib_entries) > 1:
                 match_desc = ", ".join(f"{name}({count})" for name, count in matched_ib_entries)
-                print(f"[RZM-VFX]   * IB cache matches for '{comp_name}/{part_name}': {match_desc} -> total {original_i_count}")
+                print(f"[RZM-VFX]   * IB cache matches for '{comp_name}/{part_name}': {match_desc} -> total {cache_i_count}")
             else:
                 match_name, match_count = matched_ib_entries[0]
-                print(f"[RZM-VFX]   * IB cache match for '{comp_name}/{part_name}': {match_name}({match_count}) -> total {original_i_count}")
+                print(f"[RZM-VFX]   * IB cache match for '{comp_name}/{part_name}': {match_name}({match_count}) -> total {cache_i_count}")
 
-        # Fallback for original_i_count if not found in cache
-        if original_i_count == 0:
+        if cache_i_count == 0:
+            # Fallback: assume the file size on disk is the clean size
             if ib_path:
                 ib_size_before = os.path.getsize(ib_path)
-                stride_i = 4 if ib_size_before % 4 == 0 else 2
-                original_i_count = ib_size_before // stride_i
+                stride_i_temp = 4 if ib_size_before % 4 == 0 else 2
+                cache_i_count = ib_size_before // stride_i_temp
             else:
-                original_i_count = 0
+                cache_i_count = 0
+
+        # Check if the IB file on disk was already patched in a previous run.
+        # We determine the index stride first
+        stride_i = 4
+        is_ib_already_patched = False
+        if ib_path:
+            file_size_ib = os.path.getsize(ib_path)
+            # Stride check: if we assume it's patched, the total indices would be cache_i_count + total_new_indices
+            if file_size_ib == (cache_i_count + total_new_indices) * 4 and total_new_indices > 0:
+                stride_i = 4
+                is_ib_already_patched = True
+            elif file_size_ib == (cache_i_count + total_new_indices) * 2 and total_new_indices > 0:
+                stride_i = 2
+                is_ib_already_patched = True
+            else:
+                stride_i = 4 if file_size_ib % 4 == 0 else 2
+
+            if is_ib_already_patched:
+                original_i_count = cache_i_count
+                print(f"[RZM-VFX]   * Detected previously patched IB ({file_size_ib} bytes). Truncating to clean size {original_i_count * stride_i} bytes.")
+                with open(ib_path, 'r+b') as f:
+                    f.truncate(original_i_count * stride_i)
+            else:
+                # Trust the file size on disk as the clean original index count!
+                original_i_count = file_size_ib // stride_i
+                print(f"[RZM-VFX]   * Trusting IB size on disk as original size: {file_size_ib} bytes -> {original_i_count} indices.")
+        else:
+            original_i_count = 0
 
         # Determine strides using find_stride_from_ini
         stride_b = 32
@@ -1277,21 +1314,15 @@ def patch_buffers(context, cache):
             except Exception as e:
                 print(f"[RZM-VFX]   * UV Format Detection error: {e}")
 
-        # Truncate all buffers to their clean original sizes first!
-        print(f"[RZM-VFX] Cleaning and truncating buffers to original state:")
+        # Truncate and clean up previously patched bytes if detected
+        print(f"[RZM-VFX] Cleaning and preparing buffers for patching:")
         print(f"[RZM-VFX]   * Original vertex count: {original_v_count}")
         print(f"[RZM-VFX]   * Original index count: {original_i_count}")
         print(f"[RZM-VFX]   * Strides - Position: 40, Blend: {stride_b}, Texcoord: {stride_t}")
         
-        # Position (always stride 40)
-        clean_vb0_size = original_v_count * 40
-        if os.path.getsize(vb0_path) > clean_vb0_size:
-            print(f"[RZM-VFX]   * Truncating VB0 to {clean_vb0_size} bytes")
-            with open(vb0_path, 'r+b') as f:
-                f.truncate(clean_vb0_size)
-                
+        # Position (already truncated in the check phase if is_vb0_already_patched)
         # Blend (Weights)
-        if vb2_path:
+        if vb2_path and is_vb0_already_patched:
             clean_vb2_size = original_v_count * stride_b
             if os.path.getsize(vb2_path) > clean_vb2_size:
                 print(f"[RZM-VFX]   * Truncating VB2 to {clean_vb2_size} bytes")
@@ -1299,24 +1330,15 @@ def patch_buffers(context, cache):
                     f.truncate(clean_vb2_size)
                     
         # Texcoord
-        if vb1_path:
+        if vb1_path and is_vb0_already_patched:
             clean_vb1_size = original_v_count * stride_t
             if os.path.getsize(vb1_path) > clean_vb1_size:
                 print(f"[RZM-VFX]   * Truncating VB1 to {clean_vb1_size} bytes")
                 with open(vb1_path, 'r+b') as f:
                     f.truncate(clean_vb1_size)
                     
-        # IB (Indices)
-        stride_i = 4
-        if ib_path:
-            ib_size_before = os.path.getsize(ib_path)
-            stride_i = 4 if ib_size_before % 4 == 0 else 2
-            fmt = '<I' if stride_i == 4 else '<H'
-            clean_ib_size = original_i_count * stride_i
-            if os.path.getsize(ib_path) > clean_ib_size:
-                print(f"[RZM-VFX]   * Truncating IB to {clean_ib_size} bytes")
-                with open(ib_path, 'r+b') as f:
-                    f.truncate(clean_ib_size)
+        # IB (Indices) (already truncated in the check phase if is_ib_already_patched)
+        fmt = '<I' if stride_i == 4 else '<H'
 
         # Open files for appending
         f_vb0 = open(vb0_path, 'ab')

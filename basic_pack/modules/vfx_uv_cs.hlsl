@@ -27,9 +27,9 @@ struct CurveUVPoint {
     float2 end_uv;
 };
 
-#define TIME            IniParams[98].x
-#define ORIG_V_COUNT    ((uint)round(IniParams[115].x))
-#define FORMAT          ((uint)IniParams[116].z)
+#define TIME            IniParams.Load(int2(98, 0)).x
+#define ORIG_V_COUNT    ((uint)round(IniParams.Load(int2(115, 0)).x))
+#define FORMAT          ((uint)IniParams.Load(int2(116, 0)).z)
 
 RWStructuredBuffer<TexcoordVertex> rw_texcoord : register(u5);
 Texture1D<float4> IniParams : register(t120);
