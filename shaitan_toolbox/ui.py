@@ -119,29 +119,99 @@ def draw_uv_packer_ui(self, context, layout):
         box.label(text="Добавьте слой в список кнопкой +", icon='INFO')
 
 def draw_color_attr_ui(self, context, layout):
-    prefs = context.preferences.addons.get('RZMenu')
-    if not prefs:
+    prefs_addon = context.preferences.addons.get('RZMenu')
+    if not prefs_addon:
         layout.label(text="Error loading Addon Preferences", icon='ERROR')
         return
         
-    prefs = prefs.preferences
+    prefs = prefs_addon.preferences
+    scene = context.scene
+    rzm = scene.rzm
+    game = rzm.game.selection
     
-    box = layout.box()
-    box.label(text="Color Attribute Paint (Phase 2 Placeholder)", icon='COLOR')
+    # ─── 1. GLOBAL PALETTE PRESETS (4x4 Grid) ───
+    box_palette = layout.box()
+    box_palette.label(text="Global Palette Presets (16 slots):", icon='NONE')
     
-    # Отобразим список пресетов палитры для теста
-    box.label(text="Global Palette (Addon level):", icon='GROUP')
-    
-    # 4 дефолтных пресета
-    grid = box.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
-    for item in prefs.rzm_st_palette[:4]:
-        row = grid.row(align=True)
-        # Маленький цветной квадрат
-        row.prop(item, "color", text="", emboss=False)
-        op = row.operator("rzm_st.apply_color_preset", text=item.name)
-        op.preset_name = item.name
+    grid = box_palette.grid_flow(columns=4, align=True)
+    for i, item in enumerate(prefs.rzm_st_palette):
+        col_slot = grid.column(align=True)
+        col_slot.prop(item, "color", text="")
         
-    box.separator()
-    box.label(text="Полная логика палитры (до 16 слотов), direct picker,", icon='INFO')
-    box.label(text="определение выделенных вершин в Edit Mode и шпаргалка", icon='INFO')
-    box.label(text="будут реализованы в Фазе 2.", icon='INFO')
+        row_btn = col_slot.row(align=True)
+        # Small buttons for load/save
+        load_op = row_btn.operator("rzm_st.load_preset", text="L")
+        load_op.index = i
+        save_op = row_btn.operator("rzm_st.save_preset", text="S")
+        save_op.index = i
+        
+    layout.separator()
+    
+    # ─── 2. DIRECT COLOR PICKER & TARGET LAYER ───
+    box_picker = layout.box()
+    box_picker.label(text="Direct Color Picker:", icon='COLOR')
+    
+    # Color wheel + Alpha slider
+    box_picker.prop(scene, "rzm_st_paint_color", text="")
+    
+    row_target = box_picker.row(align=True)
+    row_target.prop(scene, "rzm_st_paint_target", text="Target Layer")
+    
+    # Display selected median color
+    row_median = box_picker.row(align=True)
+    row_median.prop(scene, "rzm_st_median_color", text="Selected Median")
+    
+    # Paint buttons
+    layout.separator()
+    col_ops = layout.column(align=True)
+    col_ops.scale_y = 1.5
+    col_ops.operator("rzm_st.paint_color", text="PAINT ACTIVE COLOR", icon='BRUSH_DATA')
+    
+    col_clear = layout.column(align=True)
+    col_clear.operator("rzm_st.clear_color", text="Remove Target Layer", icon='TRASH')
+    
+    layout.separator()
+    
+    # ─── 3. GAME-SPECIFIC CHEAT SHEET ───
+    box_cheat = layout.box()
+    box_cheat.label(text=f"Cheat Sheet: {game}", icon='INFO')
+    
+    # Define channels config based on game
+    if game == 'GenshinImpact':
+        channels = [
+            ('R', 'Metallic (1.0: Metal, 0.0: Non-metal)', [(1.0, "Metal"), (0.0, "Non-Metal")]),
+            ('G', 'Ambient Occlusion / Light Shadow', [(1.0, "Light"), (0.0, "Shadow")]),
+            ('B', 'Z-Index (Render Depth / Layers)', [(0.0, "Default")]),
+            ('A', 'Outline Thickness', [(0.4, "Standard"), (0.2, "Thin"), (0.1, "Very Thin"), (0.0, "None")]),
+        ]
+    elif game == 'HonkaiStarRail':
+        channels = [
+            ('R', 'Roughness / Metallic (Surface Details)', [(1.0, "Max"), (0.0, "Min")]),
+            ('G', 'Glossiness (Specular reflections)', [(1.0, "Glossy"), (0.0, "Matte")]),
+            ('B', 'Z-Index (Render Depth)', [(0.0, "Default")]),
+            ('A', 'Outline Thickness / Width', [(0.4, "Standard"), (0.2, "Thin"), (0.0, "None")]),
+        ]
+    elif game == 'ZenlessZoneZero':
+        channels = [
+            ('R', 'Roughness Map', [(1.0, "Max"), (0.0, "Min")]),
+            ('G', 'Metallic Map', [(1.0, "Metal"), (0.0, "Non-Metal")]),
+            ('B', 'Custom / Emission / Hair Shadow', [(0.0, "Default")]),
+            ('A', 'Outline Thickness (Border)', [(0.4, "Standard"), (0.2, "Thin"), (0.0, "None")]),
+        ]
+    else: # Default/EFMI
+        channels = [
+            ('R', 'Red Channel (Game Specific)', [(1.0, "1.0"), (0.0, "0.0")]),
+            ('G', 'Green Channel (Game Specific)', [(1.0, "1.0"), (0.0, "0.0")]),
+            ('B', 'Blue Channel (Game Specific)', [(1.0, "1.0"), (0.0, "0.0")]),
+            ('A', 'Alpha Channel (Outline / Depth)', [(1.0, "1.0"), (0.4, "0.4"), (0.0, "0.0")]),
+        ]
+        
+    for char, desc, helpers in channels:
+        col_chan = box_cheat.column(align=True)
+        col_chan.label(text=f"{char}: {desc}")
+        
+        row_help = col_chan.row(align=True)
+        for val, label in helpers:
+            op = row_help.operator("rzm_st.set_channel_value", text=label)
+            op.channel = char
+            op.value = val

@@ -878,6 +878,35 @@ def register():
     )
     bpy.types.Scene.rzm_st_texcoord_list = CollectionProperty(type=RZM_ST_TexCoordItem)
     bpy.types.Scene.rzm_st_texcoord_list_index = IntProperty()
+
+    # --- RZM Shaitan Toolbox Color Attribute Paint properties ---
+    bpy.types.Scene.rzm_st_paint_color = FloatVectorProperty(
+        name="Paint Color",
+        subtype='COLOR',
+        size=4,
+        default=(1.0, 1.0, 1.0, 1.0)
+    )
+    bpy.types.Scene.rzm_st_paint_target = StringProperty(
+        name="Attribute Name",
+        default="COLOR"
+    )
+
+    def get_median_color_prop(self):
+        try:
+            from ..shaitan_toolbox.ops_color_attr import get_selected_median_color
+            color = get_selected_median_color(bpy.context)
+            if color is not None:
+                return color
+        except Exception:
+            pass
+        return (0.0, 0.0, 0.0, 0.0)
+
+    bpy.types.Scene.rzm_st_median_color = FloatVectorProperty(
+        name="Selected Median",
+        subtype='COLOR',
+        size=4,
+        get=get_median_color_prop
+    )
     
     bpy.types.WindowManager.rzm_context_atlas_index = IntProperty(default=-1)
     bpy.types.WindowManager.rzm_dependency_install_status = StringProperty()
@@ -892,6 +921,9 @@ def unregister():
     del bpy.types.Scene.rzm_st_rename_associated_bones
     del bpy.types.Scene.rzm_st_texcoord_list
     del bpy.types.Scene.rzm_st_texcoord_list_index
+    del bpy.types.Scene.rzm_st_paint_color
+    del bpy.types.Scene.rzm_st_paint_target
+    del bpy.types.Scene.rzm_st_median_color
 
     del bpy.types.WindowManager.rzm_dependency_install_status
     del bpy.types.WindowManager.rzm_context_atlas_index

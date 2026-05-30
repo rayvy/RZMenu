@@ -122,7 +122,14 @@ def apply_uv_math(obj, target_name, grid_x, grid_y, pos_x, pos_y):
 
 
 def get_export_targets(context):
-    """Возвращает целевые MESH объекты для экспорта, используя ComponentCollector."""
+    """
+    Возвращает целевые MESH объекты для экспорта, используя ComponentCollector.
+
+    ВАЖНО: Включаем ВСЕ меши компонентов — в том числе скрытые в viewport
+    (например !!!BASE_TORSO.002), т.к. XXMI Tools экспортирует их независимо
+    от viewport-visibility. Если Predictor их пропустит — XXMI выдаст
+    RuntimeError «missing UV layers».
+    """
     from .component_collector import ComponentCollector
     collector = ComponentCollector(context)
     components = collector.get_components()
@@ -133,13 +140,12 @@ def get_export_targets(context):
             for obj in objs:
                 if obj and obj.type == 'MESH' and obj.data is not None:
                     if obj not in targets:
-                        # Фильтруем скрытые объекты в соответствии с настройками экспортера
-                        if obj.hide_viewport or not obj.visible_get():
-                            if collector.settings.get('ignore_hidden_obj', True):
-                                continue
+                        # Пропускаем только наши внутренние backup-объекты
+                        if "RZM_BACKUP" in obj.name or "_RZM_SAFE" in obj.name:
+                            continue
                         targets.append(obj)
                         
-    # Фолбек на видимые меши сцены если коллектор пуст
+    # Фолбек: берём ВСЕ видимые меши сцены если коллектор пуст
     if not targets:
         for obj in context.scene.objects:
             if obj.type != 'MESH' or obj.data is None:

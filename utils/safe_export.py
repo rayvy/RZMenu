@@ -180,6 +180,15 @@ class SafeExport:
 
     def __enter__(self):
         print("[SafeExport] ═══ Старт pre-export ═══")
+
+        # Принудительная синхронизация depsgraph перед началом работы.
+        # Предотвращает EXCEPTION_ACCESS_VIOLATION в build_materials при
+        # работе с мешами у которых есть модификаторы или shape keys.
+        try:
+            self.context.view_layer.update()
+        except Exception as e:
+            print(f"[SafeExport] WARN: view_layer.update() failed: {e}")
+
         for sub in self.sub_modules:
             try:
                 sub.pre_export(self.context)
@@ -187,6 +196,14 @@ class SafeExport:
                 import traceback
                 print(f"[SafeExport] ОШИБКА в pre_export ({sub.__class__.__name__}): {e}")
                 traceback.print_exc()
+
+        # Повторная синхронизация после добавления UV/COLOR слоёв предиктором,
+        # чтобы XXMI Tools видел актуальное состояние мешей.
+        try:
+            self.context.view_layer.update()
+        except Exception as e:
+            print(f"[SafeExport] WARN: post-pre_export view_layer.update() failed: {e}")
+
         print("[SafeExport] ═══ pre-export завершён ═══")
         return self
 
