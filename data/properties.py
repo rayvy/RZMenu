@@ -227,9 +227,9 @@ def ensure_vfx_properties_initialized(self):
         if base_val > 0.0:
             self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = legacy_end / base_val
         else:
-            self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = 0.2
+            self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = 0.25
     else:
-        self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = 0.2
+        self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = 0.25
 
     # 4. Initialize timeline positions
     if "RZM.CURVE_VFX.TIMELINE_START_POS" not in self:
@@ -241,9 +241,9 @@ def ensure_vfx_properties_initialized(self):
 
     # 5. Initialize other properties so they appear in custom properties immediately
     for key, default in [
-        ("RZM.CURVE_VFX.PARTICLE_COUNT", 1),
+        ("RZM.CURVE_VFX.PARTICLE_COUNT", 64),
         ("RZM.CURVE_VFX.DISPERSION_SCALE", 1.0),
-        ("RZM.CURVE_VFX.CYCLE_DURATION", 2.0),
+        ("RZM.CURVE_VFX.CYCLE_DURATION", 1.0),
         ("RZM.CURVE_VFX.PHASE_RANDOMNESS", 1.0),
         ("RZM.CURVE_VFX.POS_RANDOMNESS", 0.0),
         ("RZM.CURVE_VFX.SIZE_RAND_MIN", 1.0),
@@ -264,16 +264,16 @@ def ensure_vfx_properties_initialized(self):
         if legacy_uv_min is not None and legacy_uv_max is not None:
             self["RZM.CURVE_VFX.UV_SCALE"] = [legacy_uv_max[0] - legacy_uv_min[0], legacy_uv_max[1] - legacy_uv_min[1]]
         else:
-            self["RZM.CURVE_VFX.UV_SCALE"] = [1.0, 1.0]
+            self["RZM.CURVE_VFX.UV_SCALE"] = [0.005, 0.005]
 
     if "RZM.CURVE_VFX.MESH_FX_TYPE" not in self:
         self["RZM.CURVE_VFX.MESH_FX_TYPE"] = "0"
     if "RZM.CURVE_VFX.ANIMATED_UV" not in self:
         self["RZM.CURVE_VFX.ANIMATED_UV"] = False
     if "RZM.CURVE_VFX.UV_DUP_START" not in self:
-        self["RZM.CURVE_VFX.UV_DUP_START"] = [0.0, 0.0]
+        self["RZM.CURVE_VFX.UV_DUP_START"] = [0.005, 0.0]
     if "RZM.CURVE_VFX.UV_DUP_END" not in self:
-        self["RZM.CURVE_VFX.UV_DUP_END"] = [0.0, 0.0]
+        self["RZM.CURVE_VFX.UV_DUP_END"] = [0.995, 0.0]
 
 def get_vfx_enabled(self):
     return bool(self.get("RZM.CURVE_VFX", False))
@@ -292,7 +292,7 @@ def get_vfx_uv_dup_start(self):
     val = self.get("RZM.CURVE_VFX.UV_DUP_START")
     if val is not None:
         return list(val)
-    return [0.0, 0.0]
+    return [0.005, 0.0]
 def set_vfx_uv_dup_start(self, value):
     ensure_vfx_properties_initialized(self)
     self["RZM.CURVE_VFX.UV_DUP_START"] = list(value)
@@ -301,7 +301,7 @@ def get_vfx_uv_dup_end(self):
     val = self.get("RZM.CURVE_VFX.UV_DUP_END")
     if val is not None:
         return list(val)
-    return [0.0, 0.0]
+    return [0.995, 0.0]
 def set_vfx_uv_dup_end(self, value):
     ensure_vfx_properties_initialized(self)
     self["RZM.CURVE_VFX.UV_DUP_END"] = list(value)
@@ -358,17 +358,17 @@ def get_vfx_size_end(self):
         # Legacy file: return end_abs / start_abs
         end_abs = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_END")
         if end_abs is None:
-            return 0.2
+            return 0.25
         start_abs = self.get("RZM.CURVE_VFX.PARTICLE_SIZE_START")
         if start_abs is None:
             start_abs = self.get("RZM.CURVE_VFX.MESH_FX_SIZE_BASE", 0.05)
         if start_abs > 0.0:
             return end_abs / start_abs
-        return 0.2
+        return 0.25
     
     if val is not None:
         return val
-    return 0.2
+    return 0.25
 def set_vfx_size_end(self, value):
     ensure_vfx_properties_initialized(self)
     self["RZM.CURVE_VFX.PARTICLE_SIZE_END"] = value
@@ -403,7 +403,7 @@ def get_vfx_cycle_duration(self):
         if speed is not None and speed != 0.0:
             val = 1.0 / speed
         else:
-            val = 2.0
+            val = 1.0
     return val
 def set_vfx_cycle_duration(self, value):
     self["RZM.CURVE_VFX.CYCLE_DURATION"] = value
@@ -440,9 +440,9 @@ def set_vfx_uv_offset(self, value):
     self["RZM.CURVE_VFX.UV_OFFSET"] = list(value)
 
 def get_vfx_uv_scale(self):
-    val = self.get("RZM.CURVE_VFX.UV_SCALE", (1.0, 1.0))
+    val = self.get("RZM.CURVE_VFX.UV_SCALE", (0.005, 0.005))
     if len(val) < 2:
-        val = list(val) + [1.0] * (2 - len(val))
+        val = list(val) + [0.005] * (2 - len(val))
     return tuple(float(x) for x in val[:2])
 def set_vfx_uv_scale(self, value):
     ensure_vfx_properties_initialized(self)
@@ -470,7 +470,7 @@ def set_vfx_type(self, value):
         self["RZM.CURVE_VFX.MESH_FX_TYPE"] = 0
 
 def get_vfx_particle_count(self):
-    return self.get("RZM.CURVE_VFX.PARTICLE_COUNT", 1)
+    return self.get("RZM.CURVE_VFX.PARTICLE_COUNT", 64)
 def set_vfx_particle_count(self, value):
     self["RZM.CURVE_VFX.PARTICLE_COUNT"] = value
 

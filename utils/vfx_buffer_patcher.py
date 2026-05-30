@@ -277,7 +277,11 @@ def find_associated_mesh_and_component(context, curve_obj):
                         mod_name_lower = mod_name.lower() if mod_name else ""
 
                         # Heavy penalty for helper/setup meshes that aren't parts of the character
-                        helper_keywords = ['setup', 'color_setup', 'outline', 'shadow', 'helper', 'ignore', 'hidden', 'dummy', 'temp', 'anchor']
+                        helper_keywords = [
+                            'setup', 'color_setup', 'outline', 'shadow', 'helper',
+                            'ignore', 'hidden', 'dummy', 'temp', 'anchor',
+                            '_extra', '_ref', '_base', 'extra_', 'ref_',
+                        ]
                         for kw in helper_keywords:
                             if kw in obj_name_lower:
                                 score -= 100
@@ -385,7 +389,16 @@ def find_associated_mesh_and_component(context, curve_obj):
         print(f"[RZM-VFX] Curve '{curve_obj.name}' association candidates:")
         for score, comp_name, obj, part_name in candidates:
             print(f"  - Mesh '{obj.name}' -> Score: {score} (Component: {comp_name}, Part: {part_name})")
-        print(f"[RZM-VFX] Selected '{best_obj.name}' as best match.")
+
+        # PRECISION GUARD: Reject matches that are clearly helper/setup objects
+        # A negative score means ONLY helper-keyword objects were found (no real character mesh)
+        if best_score < 0:
+            print(f"[RZM-VFX] [ERROR] Curve '{curve_obj.name}': Best candidate '{best_obj.name}' "
+                  f"has negative score ({best_score}). This is a setup/helper mesh, not a character mesh. "
+                  f"Skipping — place the curve in the same collection as the actual character mesh.")
+            return None, None, None
+
+        print(f"[RZM-VFX] Selected '{best_obj.name}' as best match (score={best_score}).")
         return best_comp, best_obj, best_part
 
     return None, None, None
@@ -1161,12 +1174,28 @@ def patch_buffers(context, cache):
             print(f"[RZM-VFX] [ERROR] Position buffer '{expected_vb0_name}' not found. Cannot patch.")
             continue
 
-        # Get original vertex count from cache metadata if available, otherwise fallback
+        # Get original vertex count — cache is the SOURCE OF TRUTH (baked at export time,
+        # before VFX patching). File-size fallback risks returning an inflated value if the
+        # buffer was already patched in a previous export run.
         comp_cache = cache.get('components', {}).get(comp_name, {})
         original_v_count = comp_cache.get('n_verts')
         if original_v_count is None:
+            # Fallback: read from file — only safe on a CLEAN (un-patched) buffer.
+            # We assume the file on disk still matches the original export if we reach here.
             vb0_size = os.path.getsize(vb0_path)
             original_v_count = vb0_size // 40
+            print(f"[RZM-VFX]   * [WARN] n_verts not in cache for '{comp_name}', "
+                  f"reading from file: {original_v_count} verts. "
+                  f"Ensure this is the first export run or the file is not yet patched.")
+        else:
+            # Sanity-check: if the file is already larger (was patched), the cache value
+            # should still be smaller than the file size. Log if something seems off.
+            vb0_size_on_disk = os.path.getsize(vb0_path)
+            vb0_count_on_disk = vb0_size_on_disk // 40
+            if vb0_count_on_disk < original_v_count:
+                print(f"[RZM-VFX]   * [WARN] File has fewer verts ({vb0_count_on_disk}) than "
+                      f"cache ({original_v_count}) for '{comp_name}'. Using file count.")
+                original_v_count = vb0_count_on_disk
             
         # Get original index count of the rendered part from the cache.
         # Sum all matched draw entries so numbered Blender duplicates are included.

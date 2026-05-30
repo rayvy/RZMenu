@@ -29,10 +29,10 @@ StructuredBuffer<CurvePoint>  CurveData    : register(t51);
 StructuredBuffer<BlendData>   CurveWeightData : register(t52);
 
 Texture1D<float4> IniParams : register(t120);
-#define ORIG_V_COUNT IniParams[115].x
+#define ORIG_V_COUNT ((uint)round(IniParams[115].x))
 #define TIME         IniParams[98].x
 
-[numthreads(128, 1, 1)]
+[numthreads(32, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;
@@ -41,7 +41,8 @@ void main(uint3 threadID : SV_DispatchThreadID)
     if (i >= vertex_count) return;
 
     // Skip original mesh vertices — only touch VFX particles
-    uint cutoff = (uint)ORIG_V_COUNT;
+    // round() prevents float→uint truncation errors
+    uint cutoff = ORIG_V_COUNT;
     if (i < cutoff) return;
 
     // Read timing metadata for shape blend (matches position CS exactly)

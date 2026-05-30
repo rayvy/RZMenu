@@ -8,7 +8,7 @@ RWStructuredBuffer<VertexAttributes> rw_buffer : register(u5);
 Texture1D<float4> IniParams : register(t120);
 
 #define TIME IniParams[98].x
-#define ORIG_V_COUNT IniParams[115].x
+#define ORIG_V_COUNT ((uint)round(IniParams[115].x))
 
 struct CurvePoint {
     float3 position;
@@ -174,7 +174,7 @@ SampledPoint SampleCurve(uint curve_idx, float path_progress, uint num_shapes, f
 }
 
 
-[numthreads(128, 1, 1)]
+[numthreads(32, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;
@@ -185,7 +185,8 @@ void main(uint3 threadID : SV_DispatchThreadID)
     // ==========================================
     // 1. НАСТРОЙКА ОФФСЕТИНГА (БЕЗОПАСНАЯ)
     // ==========================================
-    uint cutoff_index = (uint)ORIG_V_COUNT;
+    // round() предотвращает потерю точности при передаче float→uint через IniParams
+    uint cutoff_index = ORIG_V_COUNT;
 
     // Не трогаем оригинальные вершины меша персонажа!
     if (i < cutoff_index) {

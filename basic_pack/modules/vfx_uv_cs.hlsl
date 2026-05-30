@@ -28,7 +28,7 @@ struct CurveUVPoint {
 };
 
 #define TIME            IniParams[98].x
-#define ORIG_V_COUNT    (uint)IniParams[115].x
+#define ORIG_V_COUNT    ((uint)round(IniParams[115].x))
 #define FORMAT          ((uint)IniParams[116].z)
 
 RWStructuredBuffer<TexcoordVertex> rw_texcoord : register(u5);
@@ -39,7 +39,7 @@ StructuredBuffer<CurvePoint> CurveData : register(t51);
 StructuredBuffer<CurveUVPoint> CurveUVData : register(t52);
 StructuredBuffer<TexcoordVertex> original_texcoord : register(t53);
 
-[numthreads(128, 1, 1)]
+[numthreads(32, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;
@@ -49,7 +49,8 @@ void main(uint3 threadID : SV_DispatchThreadID)
     if (i >= vertex_count) return;
 
     // Skip original mesh vertices
-    uint cutoff = (uint)ORIG_V_COUNT;
+    // round() prevents float→uint truncation loss
+    uint cutoff = ORIG_V_COUNT;
     if (i < cutoff) return;
 
     // 1. Unpack curve index and parameters from PositionData

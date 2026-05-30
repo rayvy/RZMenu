@@ -20,7 +20,12 @@
     {%- endif -%}
     {%- set result = [0] -%}
     {%- for curve in assoc_curves -%}
-        {%- set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int -%}
+        {%- set splines_particles = curve.get("RZM.CURVE_VFX.SPLINES_PARTICLES") -%}
+        {%- if splines_particles is iterable and splines_particles is not string and splines_particles | length > 0 -%}
+            {%- set p_count = splines_particles | sum | int -%}
+        {%- else -%}
+            {%- set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int -%}
+        {%- endif -%}
         {%- set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int -%}
         {%- set vpp = 3 -%}
         {%- if fx_type == 1 -%}{%- set vpp = 4 -%}{%- endif -%}
@@ -238,7 +243,12 @@
                 {% endfor %}
                 {% set current_vfx_offset = [orig_i_count[0]] %}
                 {% for curve in assoc_curves %}
-                    {% set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int %}
+                    {%- set sp = curve.get("RZM.CURVE_VFX.SPLINES_PARTICLES") -%}
+                    {%- if sp is iterable and sp is not string and sp | length > 0 -%}
+                        {%- set p_count = sp | sum | int -%}
+                    {%- else -%}
+                        {%- set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int -%}
+                    {%- endif -%}
                     {% set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int %}
                     {% if fx_type == 1 %}{% set i_per_part = 6 %}
                     {% elif fx_type == 2 %}{% set i_per_part = 18 %}
@@ -394,10 +404,15 @@
     {# Per-part VFX vertex count for THIS part's associated curves only #}
     {% set part_vfx_verts = [0] %}
     {% for curve in assoc_curves %}
-        {% set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int %}
+        {%- set p_count_raw = curve.get("RZM.CURVE_VFX.SPLINES_PARTICLES") -%}
+        {%- if p_count_raw is iterable and p_count_raw is not string -%}
+            {%- set p_count = p_count_raw | sum | int -%}
+        {%- else -%}
+            {%- set p_count = curve.get("RZM.CURVE_VFX.PARTICLE_COUNT") | default(1) | int -%}
+        {%- endif -%}
         {% set fx_type = curve.get("RZM.CURVE_VFX.MESH_FX_TYPE") | default(0) | int %}
         {% if fx_type == 1 %}{% set vpp = 4 %}
-        {% elif fx_type == 2 %}{% set vpp = 6 %}
+        {% elif fx_type == 2 %}{% set vpp = 7 %}
         {% else %}{% set vpp = 3 %}
         {% endif %}
         {% if part_vfx_verts.append(part_vfx_verts.pop() + p_count * vpp) %}{% endif %}
@@ -407,7 +422,7 @@
     {% set comp_vfx_verts = get_vfx_vertex_count(scene, component) | int %}
     {% set total_comp_v = component.vertex_count + comp_vfx_verts %}
     x115 = {{ component.vertex_count }}
-    dispatch = {{ ((total_comp_v + 127) // 128) | int }}, 1, 1
+    dispatch = {{ ((total_comp_v + 31) // 32) | int }}, 1, 1
     cs-u5 = null
     ;cs-t50 = null обнулять вообще не нужно их, это не просто бесполезно, это вредно
     ;cs-t120 = null ОСОБЕННО ЭТО, ЭТО ВООБЩЕ ДИКО, нельзя снмиать байнд с 120 слота
@@ -444,7 +459,7 @@
     x98 = time
     x115 = {{ component.vertex_count }}
     Resource{{ component.fullname }}Blend = ref cs-u5
-    dispatch = {{ ((total_comp_v + 127) // 128) | int }}, 1, 1
+    dispatch = {{ ((total_comp_v + 31) // 32) | int }}, 1, 1
     cs-u5 = null
             {% endif %}
         {% endfor %}
@@ -482,7 +497,7 @@
     y116 = 0
     z116 = 1
     Resource{{ component.fullname }}Texcoord = ref cs-u5
-    dispatch = {{ ((total_comp_v + 127) // 128) | int }}, 1, 1
+    dispatch = {{ ((total_comp_v + 31) // 32) | int }}, 1, 1
     cs-u5 = null
             {% endif %}
         {% endfor %}
