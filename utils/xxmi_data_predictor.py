@@ -8,7 +8,7 @@
 #   post_export → удаляет всё что добавил (откат в исходное состояние)
 #   restore     → то же самое (вызывается при ошибке экспорта)
 #
-# ТОЛЬКО для XXMI-игр: GenshinImpact, ZenlessZoneZero, HonkaiStarRail
+# ТОЛЬКО для XXMI-игры: GenshinImpact, ZenlessZoneZero, HonkaiStarRail
 
 import bpy
 import numpy as np
@@ -121,13 +121,85 @@ def apply_uv_math(obj, target_name, grid_x, grid_y, pos_x, pos_y):
         return False
 
 
+def get_export_targets(context):
+    """Возвращает целевые MESH объекты для экспорта, используя ComponentCollector."""
+    from .component_collector import ComponentCollector
+    collector = ComponentCollector(context)
+    components = collector.get_components()
+    
+    targets = []
+    if components:
+        for objs in components.values():
+            for obj in objs:
+                if obj and obj.type == 'MESH' and obj.data is not None:
+                    if obj not in targets:
+                        # Фильтруем скрытые объекты в соответствии с настройками экспортера
+                        if obj.hide_viewport or not obj.visible_get():
+                            if collector.settings.get('ignore_hidden_obj', True):
+                                continue
+                        targets.append(obj)
+                        
+    # Фолбек на видимые меши сцены если коллектор пуст
+    if not targets:
+        for obj in context.scene.objects:
+            if obj.type != 'MESH' or obj.data is None:
+                continue
+            if obj.hide_viewport or not obj.visible_get():
+                continue
+            if "RZM_BACKUP" in obj.name or "_RZM_SAFE" in obj.name:
+                continue
+            targets.append(obj)
+            
+    return targets
+
+
+def get_export_issues(context):
+    """
+    Сканирует меши на наличие проблем перед экспортом (отсутствие UV, COLOR, доп. слоев).
+    Возвращает список [(obj, ["описание проблемы", ...]), ...]
+    """
+    targets = get_export_targets(context)
+    issues = []
+    
+    if not targets:
+        return issues
+
+    predictor = XXMIMissingDataPredictorSubModule()
+    
+    # Валидация актуальна только для XXMI игр
+    game = predictor._get_game(context)
+    if game not in XXMI_GAMES:
+        return issues
+        
+    expected_uvs = predictor._get_texcoord_targets(context)
+    expected_colors = predictor._get_target_colors(context)
+
+    for obj in targets:
+        obj_issues = []
+        if not obj.data.uv_layers:
+            obj_issues.append("Missing all UV maps (Needs unwrap)")
+        else:
+            for (name, gx, gy, px, py) in expected_uvs:
+                if name not in obj.data.uv_layers:
+                    obj_issues.append(f"Missing UV layer '{name}'")
+                    
+        for col_name in expected_colors:
+            if col_name not in obj.data.vertex_colors:
+                obj_issues.append(f"Missing Color layer '{col_name}'")
+                
+        if obj_issues:
+            issues.append((obj, obj_issues))
+            
+    return issues
+
+
 class XXMIMissingDataPredictorSubModule:
     """
     Предиктор недостающих данных для XXMI экспорта.
     """
 
     def __init__(self):
-        self._added_color   = []   # list of obj_name str
+        self._added_color   = []   # list of (obj_name, col_name)
         self._added_uv      = []   # list of (obj_name, uv_layer_name)
         self._active        = False
 
@@ -169,7 +241,6 @@ class XXMIMissingDataPredictorSubModule:
         # Конструируем параметры (по умолчанию 1x1 сдвиг)
         targets = []
         for name in sorted(target_names):
-            # Если в списке есть конкретные параметры, берем их
             gx, gy, px, py = 1, 1, 0, 0
             try:
                 lst = context.scene.texcoord_list
@@ -218,16 +289,12 @@ class XXMIMissingDataPredictorSubModule:
 
         print("[SafeExport] [Predictor] Проверка недостающих данных для XXMI...")
 
-        # Собираем ожидаемые слои
+        # Получаем только экспортируемые меши
+        targets = get_export_targets(context)
         expected_uvs = self._get_texcoord_targets(context)
         expected_colors = self._get_target_colors(context)
 
-        for obj in context.scene.objects:
-            if obj.type != 'MESH' or obj.data is None:
-                continue
-            if obj.hide_viewport or not obj.visible_get():
-                continue
-
+        for obj in targets:
             try:
                 # 1. Проверяем развертку вообще
                 if not obj.data.uv_layers:

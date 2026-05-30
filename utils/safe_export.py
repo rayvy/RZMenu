@@ -43,17 +43,9 @@ class MeshBackupSubModule:
     def pre_export(self, context):
         self._backups.clear()
         
-        # Находим все видимые меши на сцене
-        targets = []
-        for obj in context.scene.objects:
-            if obj.type != 'MESH' or obj.data is None:
-                continue
-            # Игнорируем скрытые и наши собственные временные объекты
-            if obj.hide_viewport or not obj.visible_get():
-                continue
-            if "RZM_BACKUP" in obj.name or "_RZM_SAFE" in obj.name:
-                continue
-            targets.append(obj)
+        # Получаем только экспортируемые объекты через функцию предиктора
+        from .xxmi_data_predictor import get_export_targets
+        targets = get_export_targets(context)
             
         print(f"[SafeExport] [MeshBackup] Создание резервных копий для {len(targets)} мешей...")
         

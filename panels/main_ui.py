@@ -326,6 +326,32 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             opts_row = q_col.row(align=True)
             opts_row.prop(settings, "quick_update_resources", text="Resources", icon='IMAGE_DATA', toggle=True)
             opts_row.prop(settings, "quick_update_run_scripts", text="Scripts", icon='FILE_SCRIPT', toggle=True)
+            
+        # --- EXPORT VALIDATION / WARNINGS ---
+        try:
+            from ..utils.xxmi_data_predictor import get_export_issues
+            issues = get_export_issues(context)
+            if issues:
+                box.separator()
+                val_box = box.box()
+                val_box.label(text=f"Export Warnings ({len(issues)}):", icon='ERROR')
+                
+                # List issues
+                for obj, obj_issues in issues[:8]:
+                    obj_row = val_box.row(align=True)
+                    obj_row.label(text=obj.name, icon='OUTLINER_OB_MESH')
+                    
+                    # Draw sub-column for specific warnings of this object
+                    warn_col = obj_row.column(align=True)
+                    for msg in obj_issues:
+                        warn_col.label(text=msg, icon='ALERT')
+                        
+                if len(issues) > 8:
+                    val_box.label(text=f"... and {len(issues) - 8} more objects", icon='MORE')
+                    
+                val_box.operator("rzm.select_problematic_objects", text="Select All Problematic", icon='RESTRICT_SELECT_OFF')
+        except Exception as e:
+            pass
         
         # --- EXPERIMENTAL OPTIMIZATION ---
         if is_pro:
