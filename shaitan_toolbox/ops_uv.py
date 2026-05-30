@@ -16,8 +16,6 @@ def ensure_uvmap_exists(obj):
     """
     mesh = obj.data
     if not mesh.uv_layers:
-        # Пытаемся создать базовую разметку, если слоев вообще нет
-        # (это поведение мы также переиспользуем в xxmi_data_predictor)
         try:
             mesh.uv_layers.new(name="UVMap")
         except:
@@ -32,52 +30,165 @@ def ensure_uvmap_exists(obj):
     target.active_render = True
     return True
 
-def apply_uv_math(obj, target_name, grid_x, grid_y, pos_x, pos_y):
+def apply_uv_math(context, obj, target_name, grid_x, grid_y, pos_x, pos_y, packing_mode='SHIFT'):
     """
-    Ядро математики UV Packer.
-    pos_x, pos_y: Координаты из UI (0,0 - Верх-Лево).
+    Применяет математику или проекцию для указанного UV-слоя.
     """
+    original_mode = obj.mode
+    
+    # 1. Если объект в Edit Mode, переключаем в Object Mode для безопасного манипулирования слоями
+    if original_mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
     mesh = obj.data
     
-    # 1. Активируем UVMap как источник
+    # 2. Активируем/создаем базовый слой UVMap как источник
+    if not ensure_uvmap_exists(obj):
+        if obj.mode != original_mode:
+            bpy.ops.object.mode_set(mode=original_mode)
+        return False
+        
     src_uv = mesh.uv_layers.get("UVMap")
-    if not src_uv: return False
+    if not src_uv:
+        if obj.mode != original_mode:
+            bpy.ops.object.mode_set(mode=original_mode)
+        return False
     mesh.uv_layers.active = src_uv
     
-    # 2. Удаляем целевой слой, если есть (для обновления)
+    # 3. Удаляем целевой слой, если есть (для полного обновления)
     if target_name in mesh.uv_layers:
         mesh.uv_layers.remove(mesh.uv_layers[target_name])
         
-    # 3. Создаем новый слой (копирует данные из active)
+    # 4. Создаем новый слой (копирует данные из active, то есть из UVMap)
     try:
         target_layer = mesh.uv_layers.new(name=target_name)
-    except:
+    except Exception as e:
+        print(f"Failed to create UV layer {target_name}: {e}")
+        if obj.mode != original_mode:
+            bpy.ops.object.mode_set(mode=original_mode)
         return False
         
-    if not target_layer: return False
+    if not target_layer:
+        if obj.mode != original_mode:
+            bpy.ops.object.mode_set(mode=original_mode)
+        return False
     
-    # 4. Numpy Математика
     layer_len = len(mesh.loops)
-    if layer_len == 0: return True
+    if layer_len == 0:
+        if obj.mode != original_mode:
+            bpy.ops.object.mode_set(mode=original_mode)
+        return True
 
-    uvs = np.empty(layer_len * 2, dtype=np.float32)
-    target_layer.data.foreach_get("uv", uvs)
-    uvs = uvs.reshape(-1, 2)
-    
-    # Инвертируем Y индекс для математики
-    math_pos_y = (grid_y - 1) - pos_y
-    
-    scale_x = 1.0 / max(1, grid_x)
-    scale_y = 1.0 / max(1, grid_y)
-    
-    offset_x = pos_x * scale_x
-    offset_y = math_pos_y * scale_y
-    
-    # Применяем: Сжать + Сдвинуть
-    uvs[:, 0] = uvs[:, 0] * scale_x + offset_x
-    uvs[:, 1] = uvs[:, 1] * scale_y + offset_y
-    
-    target_layer.data.foreach_set("uv", uvs.flatten())
+    # Убеждаемся, что целевой слой активен
+    mesh.uv_layers.active = target_layer
+
+    if packing_mode == 'SHIFT':
+        # Сдвиг/масштаб по сетке
+        uvs = np.empty(layer_len * 2, dtype=np.float32)
+        target_layer.data.foreach_get("uv", uvs)
+        uvs = uvs.reshape(-1, 2)
+        
+        math_pos_y = (grid_y - 1) - pos_y
+        scale_x = 1.0 / max(1, grid_x)
+        scale_y = 1.0 / max(1, grid_y)
+        offset_x = pos_x * scale_x
+        offset_y = math_pos_y * scale_y
+        
+        uvs[:, 0] = uvs[:, 0] * scale_x + offset_x
+        uvs[:, 1] = uvs[:, 1] * scale_y + offset_y
+        target_layer.data.foreach_set("uv", uvs.flatten())
+
+    elif packing_mode == 'OCTAHEDRAL':
+        # Октаэдрическая упаковка нормалей вершин в диапазон [-1, 1]
+        try:
+            verts_normals = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+            mesh.vertices.foreach_get("normal", verts_normals)
+            verts_normals = verts_normals.reshape(-1, 3)
+            
+            loop_verts = np.empty(layer_len, dtype=np.int32)
+            mesh.loops.foreach_get("vertex_index", loop_verts)
+            
+            normals = verts_normals[loop_verts]
+            norms = np.linalg.norm(normals, axis=1, keepdims=True)
+            norms[norms == 0.0] = 1.0
+            normals = normals / norms
+            
+            x = normals[:, 0]
+            y = normals[:, 1]
+            z = normals[:, 2]
+            
+            l1 = np.abs(x) + np.abs(y) + np.abs(z)
+            l1[l1 == 0.0] = 1.0
+            
+            u = x / l1
+            v = y / l1
+            
+            neg_z = z < 0.0
+            if np.any(neg_z):
+                sign_u = np.where(u >= 0.0, 1.0, -1.0)
+                sign_v = np.where(v >= 0.0, 1.0, -1.0)
+                u_fold = (1.0 - np.abs(v)) * sign_u
+                v_fold = (1.0 - np.abs(u)) * sign_v
+                u = np.where(neg_z, u_fold, u)
+                v = np.where(neg_z, v_fold, v)
+                
+            uvs = np.stack([u, v], axis=1)
+            target_layer.data.foreach_set("uv", uvs.flatten())
+        except Exception as e:
+            print(f"Error in Octahedral encoding: {e}")
+            if obj.mode != original_mode:
+                bpy.ops.object.mode_set(mode=original_mode)
+            return False
+
+    elif packing_mode in {'PROJECT', 'PROJECT_INV'}:
+        # Переключаемся в Edit Mode для выполнения проекции
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Выделяем все вершины для полной проекции
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # Находим VIEW_3D область для безопасного вызова
+        area_override = None
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area_override = area
+                    break
+            if area_override:
+                break
+                
+        try:
+            if area_override:
+                with context.temp_override(area=area_override):
+                    bpy.ops.uv.project_from_view(scale_to_bounds=False)
+            else:
+                bpy.ops.uv.project_from_view(scale_to_bounds=False)
+        except Exception as e:
+            print(f"Projection failed: {e}")
+            
+        # Сразу переключаемся обратно в Object Mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Переполучаем ссылки на меш и слой после изменения режима (инвалидация)
+        mesh = obj.data
+        target_layer = mesh.uv_layers.get(target_name)
+            
+        # Если PROJECT_INV, инвертируем Y координату
+        if packing_mode == 'PROJECT_INV' and target_layer:
+            uvs = np.empty(layer_len * 2, dtype=np.float32)
+            target_layer.data.foreach_get("uv", uvs)
+            uvs = uvs.reshape(-1, 2)
+            uvs[:, 1] = -uvs[:, 1]
+            target_layer.data.foreach_set("uv", uvs.flatten())
+            
+    # Обновляем меш
+    obj.data.update()
+
+    # Возвращаем исходный режим
+    if obj.mode != original_mode:
+        bpy.ops.object.mode_set(mode=original_mode)
+            
     return True
 
 class RZM_ST_OT_SetGridCell(bpy.types.Operator):
@@ -98,86 +209,64 @@ class RZM_ST_OT_SetGridCell(bpy.types.Operator):
 
 class RZM_ST_OT_ProcessActiveLayer(bpy.types.Operator):
     bl_idname = "rzm_st.process_active_layer"
-    bl_label = "Записать и Применить (Активный)"
-    bl_description = "Записывает параметры и создает развертку ТОЛЬКО для выделенной строки списка"
+    bl_label = "Обработать слои"
+    bl_description = "Записывает параметр активного слоя и/или применяет все слои из списка"
     bl_options = {'REGISTER', 'UNDO'}
     
     mode: bpy.props.StringProperty(default="BOTH") # "PARAM", "APPLY", "BOTH"
 
     def execute(self, context):
-        item = get_active_item(context)
-        if not item: return {'CANCELLED'}
+        scene = context.scene
+        presets = scene.rzm_st_texcoord_list
+        active_item = get_active_item(context)
         
-        objects = context.selected_objects
-        if not objects: return {'CANCELLED'}
-        
-        data_array = [item.grid_x, item.grid_y, item.pos_x, item.pos_y]
-        
-        for obj in objects:
-            if obj.type != 'MESH': continue
-            
-            if not ensure_uvmap_exists(obj): continue
-            
-            if self.mode in {'PARAM', 'BOTH'}:
-                obj["TEXCOORD_POS_SIZE"] = data_array
-            
-            if self.mode in {'APPLY', 'BOTH'}:
-                g_x, g_y, p_x, p_y = item.grid_x, item.grid_y, item.pos_x, item.pos_y
-                
-                if self.mode == 'APPLY' and "TEXCOORD_POS_SIZE" in obj:
-                    try:
-                        p = obj["TEXCOORD_POS_SIZE"]
-                        g_x, g_y, p_x, p_y = p[0], p[1], p[2], p[3]
-                    except:
-                        pass
-                
-                apply_uv_math(obj, item.target_name, g_x, g_y, p_x, p_y)
-
-        self.report({'INFO'}, f"Обработан активный слой: {item.target_name}")
-        return {'FINISHED'}
-
-class RZM_ST_OT_ProcessAllLayers(bpy.types.Operator):
-    bl_idname = "rzm_st.process_all_layers"
-    bl_label = "Записать и Применить (Всё из списка)"
-    bl_description = "Проходит по всему списку пресетов и создает слои по очереди для всех объектов"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        presets = context.scene.rzm_st_texcoord_list
-        objects = context.selected_objects
-        
-        if not presets:
-            self.report({'WARNING'}, "Список пуст")
-            return {'CANCELLED'}
-        
+        objects = [o for o in context.selected_objects if o.type == 'MESH' and o.data]
         if not objects:
-            self.report({'WARNING'}, "Выберите объекты")
+            self.report({'WARNING'}, "Нет выделенных мешей")
             return {'CANCELLED'}
             
-        count_obj = 0
-        
-        for obj in objects:
-            if obj.type != 'MESH': continue
-            
-            if not ensure_uvmap_exists(obj):
-                self.report({'WARNING'}, f"Объект {obj.name} не имеет UV")
-                continue
-                
-            count_obj += 1
-            
-            for item in presets:
-                data_array = [item.grid_x, item.grid_y, item.pos_x, item.pos_y]
+        # 1. Записать параметр (если PARAM или BOTH)
+        if self.mode in {'PARAM', 'BOTH'}:
+            if not active_item:
+                self.report({'WARNING'}, "Нет активного элемента списка для записи параметра")
+                return {'CANCELLED'}
+            data_array = [active_item.grid_x, active_item.grid_y, active_item.pos_x, active_item.pos_y]
+            for obj in objects:
                 obj["TEXCOORD_POS_SIZE"] = data_array
-                apply_uv_math(obj, item.target_name, item.grid_x, item.grid_y, item.pos_x, item.pos_y)
                 
-        self.report({'INFO'}, f"Обработано {count_obj} объектов ({len(presets)} слоев каждый)")
+        # 2. Применить сдвиг (если APPLY или BOTH) для ВСЕХ слоев из списка
+        if self.mode in {'APPLY', 'BOTH'}:
+            if not presets:
+                self.report({'WARNING'}, "Список слоев пуст")
+                return {'CANCELLED'}
+                
+            count_applied = 0
+            for obj in objects:
+                for item in presets:
+                    apply_uv_math(
+                        context,
+                        obj,
+                        item.target_name,
+                        item.grid_x,
+                        item.grid_y,
+                        item.pos_x,
+                        item.pos_y,
+                        item.packing_mode
+                    )
+                count_applied += 1
+            self.report({'INFO'}, f"Применены все слои ({len(presets)} шт.) для {count_applied} объектов")
+            
         return {'FINISHED'}
 
 class RZM_ST_UL_List(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             layout.prop(item, "target_name", text="", emboss=False, icon='TEXTURE')
-            layout.label(text=f"[{item.grid_x}x{item.grid_y}] @ ({item.pos_x}, {item.pos_y})")
+            # Отображаем режим упаковки и параметры сетки
+            if item.packing_mode == 'SHIFT':
+                layout.label(text=f"[{item.grid_x}x{item.grid_y}] ({item.pos_x},{item.pos_y})")
+            else:
+                layout.label(text=f"[{item.packing_mode}]")
 
 class RZM_ST_OT_TexCoordListAdd(bpy.types.Operator):
     bl_idname = "rzm_st.texcoord_list_add"
@@ -204,7 +293,6 @@ class RZM_ST_OT_TexCoordListRemove(bpy.types.Operator):
 classes_to_register = [
     RZM_ST_OT_SetGridCell,
     RZM_ST_OT_ProcessActiveLayer,
-    RZM_ST_OT_ProcessAllLayers,
     RZM_ST_UL_List,
     RZM_ST_OT_TexCoordListAdd,
     RZM_ST_OT_TexCoordListRemove,

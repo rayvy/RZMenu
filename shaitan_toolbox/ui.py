@@ -87,22 +87,24 @@ def draw_uv_packer_ui(self, context, layout):
         
         box_item = box.box()
         box_item.prop(item, "target_name", text="Target UV Name")
+        box_item.prop(item, "packing_mode", text="Pack Mode")
         
-        row_grid = box_item.row(align=True)
-        row_grid.prop(item, "grid_x", text="Grid X")
-        row_grid.prop(item, "grid_y", text="Grid Y")
-        
-        # Квадратная сетка кнопок для выбора ячейки
-        grid_box = box_item.box()
-        grid_box.label(text="Position Selector (Top-Left is 0,0)", icon='GRID')
-        
-        for y in range(item.grid_y):
-            row_cell = grid_box.row(align=True)
-            for x in range(item.grid_x):
-                is_selected = (item.pos_x == x and item.pos_y == y)
-                op = row_cell.operator("rzm_st.set_grid_cell", text=f"{x},{y}", depress=is_selected)
-                op.x = x
-                op.y = y
+        if item.packing_mode == 'SHIFT':
+            row_grid = box_item.row(align=True)
+            row_grid.prop(item, "grid_x", text="Grid X")
+            row_grid.prop(item, "grid_y", text="Grid Y")
+            
+            # Квадратная сетка кнопок для выбора ячейки
+            grid_box = box_item.box()
+            grid_box.label(text="Position Selector (Top-Left is 0,0)", icon='GRID')
+            
+            for y in range(item.grid_y):
+                row_cell = grid_box.row(align=True)
+                for x in range(item.grid_x):
+                    is_selected = (item.pos_x == x and item.pos_y == y)
+                    op = row_cell.operator("rzm_st.set_grid_cell", text=f"{x},{y}", depress=is_selected)
+                    op.x = x
+                    op.y = y
                 
         # Опциональные кнопки
         row_ops = box_item.row(align=True)
@@ -135,15 +137,12 @@ def draw_color_attr_ui(self, context, layout):
     
     grid = box_palette.grid_flow(columns=4, align=True)
     for i, item in enumerate(prefs.rzm_st_palette):
-        col_slot = grid.column(align=True)
-        col_slot.prop(item, "color", text="")
-        
-        row_btn = col_slot.row(align=True)
-        # Small buttons for load/save
-        load_op = row_btn.operator("rzm_st.load_preset", text="L")
-        load_op.index = i
-        save_op = row_btn.operator("rzm_st.save_preset", text="S")
-        save_op.index = i
+        row = grid.row(align=True)
+        # Swatch to see color
+        row.prop(item, "color", text="")
+        # Direct brush paint button
+        op = row.operator("rzm_st.paint_preset_color", text="", icon='BRUSH_DATA')
+        op.index = i
         
     layout.separator()
     
@@ -175,43 +174,25 @@ def draw_color_attr_ui(self, context, layout):
     # ─── 3. GAME-SPECIFIC CHEAT SHEET ───
     box_cheat = layout.box()
     box_cheat.label(text=f"Cheat Sheet: {game}", icon='INFO')
+    col_guide = box_cheat.column(align=True)
     
-    # Define channels config based on game
     if game == 'GenshinImpact':
-        channels = [
-            ('R', 'Metallic (1.0: Metal, 0.0: Non-metal)', [(1.0, "Metal"), (0.0, "Non-Metal")]),
-            ('G', 'Ambient Occlusion / Light Shadow', [(1.0, "Light"), (0.0, "Shadow")]),
-            ('B', 'Z-Index (Render Depth / Layers)', [(0.0, "Default")]),
-            ('A', 'Outline Thickness', [(0.4, "Standard"), (0.2, "Thin"), (0.1, "Very Thin"), (0.0, "None")]),
-        ]
+        col_guide.label(text="R: Metallic (1.0 - Metal, 0.0 - Non-metal)")
+        col_guide.label(text="G: Ambient Occlusion / Shadow (1.0 - Light, 0.0 - Dark)")
+        col_guide.label(text="B: Z-Index / Render Depth (0.0 - Default)")
+        col_guide.label(text="A: Outline Thickness (0.4 - Std, 0.2 - Thin, 0.0 - None)")
     elif game == 'HonkaiStarRail':
-        channels = [
-            ('R', 'Roughness / Metallic (Surface Details)', [(1.0, "Max"), (0.0, "Min")]),
-            ('G', 'Glossiness (Specular reflections)', [(1.0, "Glossy"), (0.0, "Matte")]),
-            ('B', 'Z-Index (Render Depth)', [(0.0, "Default")]),
-            ('A', 'Outline Thickness / Width', [(0.4, "Standard"), (0.2, "Thin"), (0.0, "None")]),
-        ]
+        col_guide.label(text="R: Roughness / Metallic (Surface Details)")
+        col_guide.label(text="G: Glossiness (Specular reflections)")
+        col_guide.label(text="B: Z-Index (Render Depth)")
+        col_guide.label(text="A: Outline Thickness (0.4 - Std, 0.2 - Thin, 0.0 - None)")
     elif game == 'ZenlessZoneZero':
-        channels = [
-            ('R', 'Roughness Map', [(1.0, "Max"), (0.0, "Min")]),
-            ('G', 'Metallic Map', [(1.0, "Metal"), (0.0, "Non-Metal")]),
-            ('B', 'Custom / Emission / Hair Shadow', [(0.0, "Default")]),
-            ('A', 'Outline Thickness (Border)', [(0.4, "Standard"), (0.2, "Thin"), (0.0, "None")]),
-        ]
-    else: # Default/EFMI
-        channels = [
-            ('R', 'Red Channel (Game Specific)', [(1.0, "1.0"), (0.0, "0.0")]),
-            ('G', 'Green Channel (Game Specific)', [(1.0, "1.0"), (0.0, "0.0")]),
-            ('B', 'Blue Channel (Game Specific)', [(1.0, "1.0"), (0.0, "0.0")]),
-            ('A', 'Alpha Channel (Outline / Depth)', [(1.0, "1.0"), (0.4, "0.4"), (0.0, "0.0")]),
-        ]
-        
-    for char, desc, helpers in channels:
-        col_chan = box_cheat.column(align=True)
-        col_chan.label(text=f"{char}: {desc}")
-        
-        row_help = col_chan.row(align=True)
-        for val, label in helpers:
-            op = row_help.operator("rzm_st.set_channel_value", text=label)
-            op.channel = char
-            op.value = val
+        col_guide.label(text="R: Roughness Map")
+        col_guide.label(text="G: Metallic Map")
+        col_guide.label(text="B: God knows")
+        col_guide.label(text="A: Outline Thickness (0.4 - Std, 0.2 - Thin, 0.0 - None)")
+    else: # Default/EFMI/WWMI
+        col_guide.label(text="R: Red Channel (Game Specific)")
+        col_guide.label(text="G: Green Channel (Game Specific)")
+        col_guide.label(text="B: Blue Channel (Game Specific)")
+        col_guide.label(text="A: Alpha Channel (Outline / Depth)")

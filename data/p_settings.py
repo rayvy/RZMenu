@@ -1066,7 +1066,17 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         except:
             box.label(text="Scene properties not available", icon='INFO')
 
-        # ─── 5. SYSTEM SETTINGS ───────────────────────────────────────────────
+        # ─── 5. SHAITAN PALETTE SETTINGS ──────────────────────────────────────
+        layout.separator()
+        box = layout.box()
+        box.label(text="Shaitan Toolbox Palette (16 Presets)", icon='COLOR')
+        grid = box.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
+        for idx, item in enumerate(self.rzm_st_palette):
+            row = grid.row(align=True)
+            row.prop(item, "color", text="")
+            row.prop(item, "name", text="")
+
+        # ─── 6. SYSTEM SETTINGS ───────────────────────────────────────────────
         layout.separator()
         box = layout.box()
         box.label(text="System Settings", icon='SETTINGS')

@@ -40,6 +40,17 @@ class RZM_ST_TexCoordItem(bpy.types.PropertyGroup):
     grid_y: IntProperty(name="Grid Y", default=2, min=1, max=32)
     pos_x: IntProperty(name="Pos X", default=0, min=0)
     pos_y: IntProperty(name="Pos Y", default=0, min=0)
+    packing_mode: EnumProperty(
+        name="Pack Mode",
+        description="Метод упаковки UV координат",
+        items=[
+            ('SHIFT',       "Shift",        "Сдвиг/масштаб текущей развёртки в ячейку сетки (дефолт)"),
+            ('OCTAHEDRAL',  "Octahedral",   "Октаэдрическая упаковка нормалей вершин в диапазон [-1, 1]"),
+            ('PROJECT',     "Project",      "Проекция с вида (bpy.ops.uv.project_from_view)"),
+            ('PROJECT_INV', "Project Inv Y","Проекция с вида с инверсией по Y (вверх тормашками)"),
+        ],
+        default='SHIFT'
+    )
 
 class RZMVFXVertexCount(bpy.types.PropertyGroup):
     component_name: StringProperty(name="Component Name")

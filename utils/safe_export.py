@@ -26,7 +26,97 @@
 import bpy
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  SUB-MODULE 0: Mesh Backup (All visible meshes)
+#  SUB-MODULE 00: Vertex Group Reorder
+# ══════════════════════════════════════════════════════════════════════════════
+
+class VertexGroupReorderSubModule:
+    """
+    Sub-module to ensure consistent Vertex Group (VG) ordering.
+    It sorts vertex groups alphabetically before export and restores their original order after export.
+    """
+    def __init__(self):
+        # Stores {obj_name: [original_vg_names_in_order]}
+        self._original_orders = {}
+
+    def pre_export(self, context):
+        self._original_orders.clear()
+        
+        # Получаем только экспортируемые объекты через функцию предиктора
+        from .xxmi_data_predictor import get_export_targets
+        targets = get_export_targets(context)
+        
+        print(f"[SafeExport] [VGReorder] Сортировка Vertex Groups по алфавиту для {len(targets)} мешей...")
+        
+        for obj in targets:
+            if obj.type != 'MESH' or not obj.vertex_groups:
+                continue
+                
+            # Сохраняем исходный порядок
+            orig_names = [vg.name for vg in obj.vertex_groups]
+            self._original_orders[obj.name] = orig_names
+            
+            # Сортируем по алфавиту
+            self._reorder_vertex_groups(obj, sorted(orig_names))
+
+    def post_export(self, context):
+        if not self._original_orders:
+            return
+            
+        print(f"[SafeExport] [VGReorder] Восстановление исходного порядка Vertex Groups для {len(self._original_orders)} мешей...")
+        
+        for obj_name, orig_names in self._original_orders.items():
+            obj = context.scene.objects.get(obj_name)
+            if obj and obj.type == 'MESH':
+                self._reorder_vertex_groups(obj, orig_names)
+                
+        self._original_orders.clear()
+
+    def restore(self, context):
+        self.post_export(context)
+
+    def _reorder_vertex_groups(self, obj, target_order):
+        vgs = obj.vertex_groups
+        current_names = [vg.name for vg in vgs]
+        
+        # Если порядок уже совпадает с целевым, ничего не делаем
+        if current_names == target_order:
+            return
+            
+        # Сохраняем имя активной группы
+        active_name = vgs.active.name if vgs.active else None
+        
+        # Сохраняем веса всех вершин
+        vert_weights = {}
+        for v in obj.data.vertices:
+            v_weights = []
+            for g in v.groups:
+                if g.group < len(current_names):
+                    name = current_names[g.group]
+                    v_weights.append((name, g.weight))
+            if v_weights:
+                vert_weights[v.index] = v_weights
+                
+        # Очищаем все группы вершин
+        vgs.clear()
+        
+        # Создаем их заново в новом порядке
+        name_to_vg = {}
+        for name in target_order:
+            name_to_vg[name] = vgs.new(name=name)
+            
+        # Восстанавливаем веса вершин
+        for v_idx, weights in vert_weights.items():
+            for name, weight in weights:
+                if name in name_to_vg:
+                    name_to_vg[name].add([v_idx], weight, 'REPLACE')
+                    
+        # Восстанавливаем активную группу
+        if active_name and active_name in vgs:
+            vgs.active = vgs[active_name]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SUB-MODULE 1: Mesh Backup (All visible meshes)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class MeshBackupSubModule:
@@ -173,9 +263,10 @@ class SafeExport:
         from .xxmi_data_predictor import XXMIMissingDataPredictorSubModule
 
         self.sub_modules = [
-            MeshBackupSubModule(),               # [0] Бэкап всех мешей — ПЕРВЫМ
-            XXMIMissingDataPredictorSubModule(), # [1] Добавляем COLOR/TEXCOORD
-            CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
+            VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
+            MeshBackupSubModule(),               # [1] Бэкап всех мешей
+            XXMIMissingDataPredictorSubModule(), # [2] Добавляем COLOR/TEXCOORD
+            CurveVFXPreviewSubModule(),          # [3] Убираем VFX preview
         ]
 
     def __enter__(self):
