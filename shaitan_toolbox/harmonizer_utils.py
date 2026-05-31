@@ -356,7 +356,8 @@ def build_assignment_conflicts(prepared, floor: float, rival_margin: float):
         best_score = candidates[0][1]
         for reference_fp, score in candidates:
             if score >= floor and best_score - score <= rival_margin:
-                contenders[reference_fp["name"]].append((target_fp["index"], score))
+                key = (target_fp["object_name"], target_fp["index"])
+                contenders[reference_fp["name"]].append((key, score))
     conflicts = defaultdict(set)
     for reference_name, rows in contenders.items():
         if len(rows) < 2:

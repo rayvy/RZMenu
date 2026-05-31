@@ -33,6 +33,14 @@ class RZMWeightSettings(PropertyGroup):
     unique_margin: FloatProperty(name="Margin", default=0.10, min=0.0, max=1.0, precision=2)
     assignment_margin: FloatProperty(name="Rival", default=0.10, min=0.0, max=1.0, precision=2)
     unknown_cluster_threshold: FloatProperty(name="Merge", default=0.82, min=0.0, max=1.0, precision=2)
+    consensus_threshold: FloatProperty(
+        name="Consensus",
+        description="Минимальная схожесть для объединения групп разных компонентов перед сопоставлением с референсом",
+        default=0.85,
+        min=0.0,
+        max=1.0,
+        precision=2,
+    )
 
     create_missing_bones: BoolProperty(name="Создавать недостающие кости", default=True)
     ignore_multiple_toe: BoolProperty(

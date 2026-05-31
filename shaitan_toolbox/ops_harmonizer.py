@@ -68,6 +68,7 @@ class RZM_OT_build_plan(Operator):
         generated_reserved.update(canonical_name_for_mapping(fp["name"], settings) for fp in reference_fps)
         unknown_registry = []
 
+        all_target_fps = []
         for target_obj in sorted(target_meshes, key=lambda obj: obj.name.casefold()):
             try:
                 target_fps = collect_group_fingerprints(target_obj, depsgraph, bone_segments, character_scale)
@@ -75,58 +76,149 @@ class RZM_OT_build_plan(Operator):
                 self.report({"ERROR"}, str(error))
                 return {"CANCELLED"}
 
-            claimed = set()
-            prepared = []
             for fp in target_fps:
+                fp["object_name"] = target_obj.name
+                fp["target_obj"] = target_obj
                 if is_mask_group(fp["name"]):
                     add_plan_item(scene, target_obj, fp, "IGNORED", fp["name"], 1.0, 1.0, [], reason="Mask* ignored")
+                else:
+                    all_target_fps.append(fp)
+
+        # Группировка схожих групп разных компонентов (кластеризация)
+        clusters = []
+        from .harmonizer_utils import fingerprint_similarity
+
+        for fp in all_target_fps:
+            best_cluster = None
+            best_sim = -1.0
+            for cluster in clusters:
+                if any(other["object_name"] == fp["object_name"] for other in cluster):
                     continue
-                from .harmonizer_utils import top_candidates
-                prepared.append((fp, top_candidates(fp, reference_fps, character_scale, settings, limit=5)))
+                leader = cluster[0]
+                sim = fingerprint_similarity(fp, leader, character_scale)
+                if sim >= settings.consensus_threshold and sim > best_sim:
+                    best_cluster = cluster
+                    best_sim = sim
 
-            prepared.sort(key=lambda row: row[1][0][1] if row[1] else 0.0, reverse=True)
-            assignment_conflicts = build_assignment_conflicts(prepared, settings.conflict_threshold, settings.assignment_margin)
+            if best_cluster is not None:
+                best_cluster.append(fp)
+            else:
+                clusters.append([fp])
 
-            for fp, candidates in prepared:
-                from .harmonizer_utils import fingerprint_similarity
-                available = [row for row in candidates if row[0]["name"] not in claimed]
-                best = available[0] if available else (candidates[0] if candidates else None)
-                second = available[1] if len(available) > 1 else None
-                best_score = best[1] if best else 0.0
-                second_score = second[1] if second else 0.0
-                margin = best_score - second_score
+        # Печать логов кластеризации в консоль
+        print(f"\n--- [RZM Weight Harmonizer] Clustered {len(all_target_fps)} groups into {len(clusters)} clusters ---")
+        multi_member_clusters_count = 0
+        for i, cluster in enumerate(clusters):
+            if len(cluster) > 1:
+                multi_member_clusters_count += 1
+                leader = cluster[0]
+                print(f"Cluster {multi_member_clusters_count} (Leader: {leader['object_name']}[{leader['index']:03d}] {leader['name']}):")
+                for fp in cluster:
+                    sim = fingerprint_similarity(fp, leader, character_scale) if fp != leader else 1.0
+                    print(f"  * {fp['object_name']}[{fp['index']:03d}] {fp['name']} (similarity to leader: {sim * 100:.1f}%)")
+        if multi_member_clusters_count == 0:
+            print("No multi-mesh clusters found.")
+        print("-" * 50 + "\n")
 
-                if best and best_score >= settings.conflict_threshold:
-                    resolved_name = best[0]["name"]
-                    claimed.add(resolved_name)
-                    cluster = sorted(assignment_conflicts.get(fp["index"], set()))
-                    has_local_rival = second is not None and second_score >= settings.conflict_threshold and margin < settings.unique_margin
-                    has_assignment_rival = bool(cluster)
-                    if has_local_rival or has_assignment_rival:
-                        reasons = []
-                        if has_local_rival:
-                            reasons.append("close candidate")
-                        if has_assignment_rival:
-                            reasons.append("multiple weights compete")
-                        status = "CONFLICT"
-                        reason = ", ".join(reasons)
-                    else:
-                        status = "APPROVED"
-                        reason = "strong score" if best_score >= settings.approved_threshold else "clean isolated match promoted above Floor"
-                    add_plan_item(scene, target_obj, fp, status, resolved_name, best_score, margin, candidates, resolved_name not in armature_names, reason, ", ".join(cluster))
-                    continue
+        # Расчет консенсусных кандидатов для каждого кластера
+        from .harmonizer_utils import top_candidates
+        fp_candidates = {}
 
-                clustered_name = None
+        for cluster in clusters:
+            bone_max_scores = {}
+            bone_fps = {}
+            for fp in cluster:
+                candidates = top_candidates(fp, reference_fps, character_scale, settings, limit=5)
+                fp_candidates[(fp["object_name"], fp["index"])] = candidates
+                for ref_fp, score in candidates:
+                    ref_name = ref_fp["name"]
+                    if score > bone_max_scores.get(ref_name, -1.0):
+                        bone_max_scores[ref_name] = score
+                        bone_fps[ref_name] = ref_fp
+
+            consensus_candidates = []
+            for ref_name, max_score in sorted(bone_max_scores.items(), key=lambda item: item[1], reverse=True):
+                consensus_candidates.append((bone_fps[ref_name], max_score))
+            consensus_candidates = consensus_candidates[:5]
+
+            for fp in cluster:
+                fp_candidates[(fp["object_name"], fp["index"])] = consensus_candidates
+
+        # Подготовка глобального списка prepared
+        prepared = []
+        for fp in all_target_fps:
+            candidates = fp_candidates[(fp["object_name"], fp["index"])]
+            prepared.append((fp, candidates))
+
+        prepared.sort(key=lambda row: row[1][0][1] if row[1] else 0.0, reverse=True)
+        assignment_conflicts = build_assignment_conflicts(prepared, settings.conflict_threshold, settings.assignment_margin)
+
+        claimed_by_object = defaultdict(set)
+        cluster_aux_name = {}
+
+        for fp, candidates in prepared:
+            target_obj = fp["target_obj"]
+            claimed = claimed_by_object[target_obj.name]
+
+            available = [row for row in candidates if row[0]["name"] not in claimed]
+            best = available[0] if available else (candidates[0] if candidates else None)
+            second = available[1] if len(available) > 1 else None
+            best_score = best[1] if best else 0.0
+            second_score = second[1] if second else 0.0
+            margin = best_score - second_score
+
+            if best and best_score >= settings.conflict_threshold:
+                resolved_name = best[0]["name"]
+                claimed.add(resolved_name)
+                cluster_key = (fp["object_name"], fp["index"])
+                conflict_names = sorted(assignment_conflicts.get(cluster_key, set()))
+                has_local_rival = second is not None and second_score >= settings.conflict_threshold and margin < settings.unique_margin
+                has_assignment_rival = bool(conflict_names)
+
+                if has_local_rival or has_assignment_rival:
+                    reasons = []
+                    if has_local_rival:
+                        reasons.append("close candidate")
+                    if has_assignment_rival:
+                        reasons.append("multiple weights compete")
+                    status = "CONFLICT"
+                    reason = ", ".join(reasons)
+                else:
+                    status = "APPROVED"
+                    reason = "strong score" if best_score >= settings.approved_threshold else "clean isolated match promoted above Floor"
+
+                # Вычисляем оригинальный скор без консенсуса для вывода инфо
+                individual_candidates = top_candidates(fp, reference_fps, character_scale, settings, limit=1)
+                orig_score = individual_candidates[0][1] if individual_candidates else 0.0
+                if orig_score < settings.conflict_threshold and best_score >= settings.conflict_threshold:
+                    reason += f" (consensus boost from {orig_score*100:.0f}%)"
+
+                add_plan_item(scene, target_obj, fp, status, resolved_name, best_score, margin, candidates, resolved_name not in armature_names, reason, ", ".join(conflict_names))
+                continue
+
+            # Определение Aux-имени для UNKNOWN
+            leader_fp = None
+            for c in clusters:
+                if fp in c:
+                    leader_fp = c[0]
+                    break
+            leader_key = (leader_fp["object_name"], leader_fp["index"]) if leader_fp else (fp["object_name"], fp["index"])
+
+            clustered_name = cluster_aux_name.get(leader_key)
+            if clustered_name is None:
                 for registry in unknown_registry:
                     if registry["object_name"] == target_obj.name:
                         continue
                     if fingerprint_similarity(fp, registry["fingerprint"], character_scale) >= settings.unknown_cluster_threshold:
                         clustered_name = registry["resolved_name"]
                         break
-                if clustered_name is None:
-                    clustered_name = generated_aux_name(fp["nearest_bone"], fp["name"], generated_reserved)
-                    unknown_registry.append({"object_name": target_obj.name, "fingerprint": fp, "resolved_name": clustered_name})
-                add_plan_item(scene, target_obj, fp, "UNKNOWN", clustered_name, best_score, margin, candidates, True, "no candidate above Floor")
+
+            if clustered_name is None:
+                clustered_name = generated_aux_name(fp["nearest_bone"], fp["name"], generated_reserved)
+                unknown_registry.append({"object_name": target_obj.name, "fingerprint": fp, "resolved_name": clustered_name})
+
+            cluster_aux_name[leader_key] = clustered_name
+            add_plan_item(scene, target_obj, fp, "UNKNOWN", clustered_name, best_score, margin, candidates, True, "no candidate above Floor")
 
         rebuild_matrix_and_summary(scene, target_meshes)
         self.report({"INFO"}, "Remap Plan построен")
