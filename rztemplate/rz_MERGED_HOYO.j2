@@ -143,11 +143,19 @@
 
 
 {% macro assign_textures(mod_file, part) %}
+    {# --- TOGGLE FOR GENSHIN: set to true for Resource\GIMI\ (new) or false for ps-tN (old) --- #}
+    {% set use_new_gimi_textures = true %}
+    
     {% if mod_file.game.name == "ZenlessZoneZero" and scene.rzm.export_texture_slots %}
         {% for texture in part.textures %}
             Resource\ZZMI\{{ texture.name }} = ref Resource{{ part.fullname }}{{ texture.name }}
         {% endfor %}
         run = CommandList\ZZMI\SetTextures
+    {% elif mod_file.game.name == "GenshinImpact" and scene.rzm.export_texture_slots and use_new_gimi_textures %}
+        {% for texture in part.textures %}
+            Resource\GIMI\{{ texture.name }} = ref Resource{{ part.fullname }}{{ texture.name }}
+        {% endfor %}
+        run = CommandList\GIMI\SetTextures
     {% elif mod_file.game.name == "GenshinImpact" %}
         {% if scene.rzm is defined and scene.rzm.export_texture_slots %}
             {% for texture in part.textures %}

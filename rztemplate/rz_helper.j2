@@ -85,6 +85,7 @@
 
     {# 4.5. КАСТОМННЫЕ ТЕКСТУРЫ (TexSlot & TexCond) #}
     {% set found_textures = [] %}
+    {% set tex_ns = 'GIMI' if scene.rzm.game.selection == 'GenshinImpact' else 'ZZMI' %}
     {% if real_obj %}
         {# 1. Сбор уникальных условий для текстур #}
         {% set unique_conditions = [] %}
@@ -109,7 +110,7 @@
                 {% if safe_val.startswith('Resource\\') %}{% set safe_val = safe_val[9:] %}
                 {% elif safe_val.startswith('Resource') %}{% set safe_val = safe_val[8:] %}
                 {% endif %}
-            Resource\ZZMI\{{ clean_slot_id }} = ref Resource{{ safe_val }}
+            Resource\{{ tex_ns }}\{{ clean_slot_id }} = ref Resource{{ safe_val }}
                 {% set _ = found_textures.append(1) %}
             {% endif %}
         {% endfor %}
@@ -127,7 +128,7 @@
                     {% if safe_val.startswith('Resource\\') %}{% set safe_val = safe_val[9:] %}
                     {% elif safe_val.startswith('Resource') %}{% set safe_val = safe_val[8:] %}
                     {% endif %}
-                Resource\ZZMI\{{ clean_slot_id }} = ref Resource{{ safe_val }}
+                Resource\{{ tex_ns }}\{{ clean_slot_id }} = ref Resource{{ safe_val }}
                     {% set _ = found_textures.append(1) %}
                 {% endif %}
             {% endfor %}
@@ -136,7 +137,7 @@
     {% endif %}
     {# Если в массиве есть хотя бы один элемент, значит текстуры были #}
     {% if found_textures %}
-        run = CommandList\ZZMI\SetTextures
+        run = CommandList\{{ tex_ns }}\SetTextures
     {% endif %}
     {# 5. КОМАНДА ОТРИСОВКИ #}
     {# --- RZM HOVER: read integer mode (1=Collider, 2=HideWhenHovered, 3=AppearWhenHovered) --- #}

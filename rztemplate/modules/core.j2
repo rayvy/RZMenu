@@ -678,42 +678,48 @@ run = CommandList\RabbitFX\Run
 
 {% if _cd_flags.tex0 %}
 [CustomShader.rzm.CustomDraw.TexFxPreset0]
-$\texfx\blendmode = 1
-$\TexFX\brightness = 20
-Resource\TexFX\Glowmap = ref ResourceModuleTexRGB
-run = CommandList\TexFX\Run
+; $\texfx\blendmode = 1
+$\TexFx\bloom = 0
+$\TexFx\glow = 20
+Resource\GIMI\Diffuse = ref ResourceModuleTexRGB
+ps-t69 = ref ResourceModuleTexFXTex
+run = CommandList\TexFx\T
 {% endif %}
 
 {% if _cd_flags.tex1 %}
 [CustomShader.rzm.CustomDraw.TexFxPreset1]
-$\texfx\blendmode = 1
-$\TexFX\brightness = 20
-Resource\TexFX\Glowmap = ref ResourceModuleTexRB
-run = CommandList\TexFX\Run
+; $\texfx\blendmode = 1
+$\TexFx\bloom = 20
+$\TexFx\glow = 0
+ps-t69 = ref ResourceModuleTexBlue
+run = CommandList\TexFx\T
 {% endif %}
 
 {% if _cd_flags.tex2 %}
 [CustomShader.rzm.CustomDraw.TexFxPreset2]
-$\texfx\blendmode = 1
-$\TexFX\brightness = 20
-Resource\TexFX\Glowmap = ref ResourceModuleTexBlueG
-run = CommandList\TexFX\Run
+; $\texfx\blendmode = 1
+$\TexFx\bloom = 20
+$\TexFx\glow = 20
+ps-t69 = ref ResourceModuleTexBlueG
+run = CommandList\TexFx\T
 {% endif %}
 
 {% if _cd_flags.tex3 %}
 [CustomShader.rzm.CustomDraw.TexFxPreset3]
-$\texfx\blendmode = 1
-$\TexFX\brightness = 20
-Resource\TexFX\Glowmap = ref ResourceModuleTexBlue
-run = CommandList\TexFX\Run
+; $\texfx\blendmode = 1
+$\TexFx\bloom = 0
+$\TexFx\glow = 0
+ps-t69 = ref ResourceModuleTexW
+run = CommandList\TexFx\T
 {% endif %}
 
 {% if _cd_flags.tex4 %}
 [CustomShader.rzm.CustomDraw.TexFxPreset4]
-$\texfx\blendmode = 1
-$\TexFX\brightness = 20
-Resource\TexFX\Glowmap = ref ResourceModuleTexW
-run = CommandList\TexFX\Run
+; $\texfx\blendmode = 1
+$\TexFx\bloom = 20
+$\TexFx\glow = 20
+ps-t69 = ref ResourceModuleTexRB
+run = CommandList\TexFx\T
 {% endif %}
 
 {% if _cd_flags.rabbit0 or _cd_flags.rabbit1 or _cd_flags.rabbit2 or _cd_flags.rabbit3 or _cd_flags.rabbit4 or _cd_flags.tex0 or _cd_flags.tex1 or _cd_flags.tex2 or _cd_flags.tex3 or _cd_flags.tex4 %}
@@ -738,6 +744,9 @@ filename = ./modules/blue.dds
 [ResourceModuleTexBlueG]
 type = Texture2D
 filename = ./modules/blueG.dds
+[ResourceModuleTexFXTex]
+type = Texture2D
+filename = ./modules/TexFXTex.dds
 {% endif %}
 
 {%endmacro%}
