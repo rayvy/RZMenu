@@ -302,6 +302,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Export Management", icon='INFO')
         
+        # Expose texture slots checkbox directly near the export buttons
+        box.prop(rzm, "export_texture_slots", text="Export Texture Slots", icon='TEXTURE_DATA')
+        
         is_pro = (scene.rzm_editor_mode == 'PRO')
         
         # --- PRIMARY EXPORT ---
@@ -320,6 +323,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         q_row = q_col.row(align=True)
         q_row.scale_y = 1.5
         q_row.operator("rzm.quick_export_menu", text="⚡ Quick Update", icon='FILE_REFRESH')
+        q_row.operator("rzm.quick_export_game_buffers", text="⚡ Game Buffers", icon='MESH_DATA')
         
         if is_pro:
             # Options immediately below the button

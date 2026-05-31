@@ -655,6 +655,9 @@ class RZM_OT_restore_backup(Operator):
                 if old_active is not None and old_active.name in bpy.data.objects:
                     context.view_layer.objects.active = old_active
 
+        try: context.view_layer.update()
+        except: pass
+
         self.report({"INFO"}, "Исходные имена VG восстановлены, созданные кости удалены")
         return {"FINISHED"}
 

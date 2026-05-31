@@ -130,4 +130,115 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
             print(f"RZMenu Error during mod block extraction: {e}")
             return "", False
 
-classes_to_register = [RZM_OT_QuickExportMenu]
+class RZM_OT_QuickExportGameBuffers(bpy.types.Operator):
+    """Export only game buffers (XXMI/EFMI/WWMI) without regenerating RZMenu UI assets or Atlas."""
+    bl_idname = "rzm.quick_export_game_buffers"
+    bl_label = "Quick Export Game Buffers"
+    bl_description = "Не экспортирует ресурсные буфферы rzm, только игровые от XXMI и EFMI + VFX патчер если есть VFX эффекты"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from ..utils.safe_export import SafeExport
+        with SafeExport(context):
+            return self.execute_internal(context)
+
+    def execute_internal(self, context):
+        rzm = context.scene.rzm
+        game = rzm.game.selection
+        target_path = get_target_path(context)
+        
+        if not target_path:
+            self.report({'ERROR'}, "Export path not set! Initialize path in settings first.")
+            return {'CANCELLED'}
+
+        # Save original states of properties
+        saved_xxmi = {}
+        saved_efmi = {}
+
+        # Get instances of settings
+        xxmi = getattr(context.scene, "xxmi", None)
+        efmi = getattr(context.scene, "efmi_tools_settings", None)
+
+        # XXMI properties to save
+        if xxmi:
+            for prop in ["write_ini", "write_buffers"]:
+                if hasattr(xxmi, prop):
+                    saved_xxmi[prop] = getattr(xxmi, prop)
+
+        # EFMI properties to save
+        if efmi:
+            for prop in ["write_ini"]:
+                if hasattr(efmi, prop):
+                    saved_efmi[prop] = getattr(efmi, prop)
+
+        # Apply forced values
+        try:
+            if xxmi:
+                if "write_ini" in saved_xxmi:
+                    xxmi.write_ini = False
+                if "write_buffers" in saved_xxmi:
+                    xxmi.write_buffers = True
+            if efmi:
+                if "write_ini" in saved_efmi:
+                    efmi.write_ini = False
+
+            # Just target game export (without atlas, fonts, or rzm buffer packing)
+            if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
+                if hasattr(bpy.ops, "xxmi"):
+                    bpy.ops.xxmi.exportadvanced()
+                else:
+                    self.report({'ERROR'}, "XXMI Tools not found. Cannot export mod.")
+                    return {'CANCELLED'}
+                    
+            elif game == 'WutheringWaves':
+                if hasattr(bpy.ops, "wwmi_tools"):
+                    bpy.ops.wwmi_tools.export_mod()
+                else:
+                    self.report({'ERROR'}, "WWMI Tools not found. Cannot export mod.")
+                    return {'CANCELLED'}
+
+            elif game == 'ArknightsEndfield':
+                if hasattr(bpy.ops, "efmi_tools"):
+                    bpy.ops.efmi_tools.export_mod()
+                else:
+                    self.report({'ERROR'}, "EFMI Tools not found. Cannot export mod.")
+                    return {'CANCELLED'}
+
+            # Run Puppet Master Baking (Automated Post-Export) if enabled
+            if getattr(rzm.addons, "export_shapekeys", False):
+                try:
+                    print("[RZM Quick Game Buffers] Triggering Puppet Master Baking (Full Mode)...")
+                    bpy.ops.rzm.puppet_master_bake(full_export_mode=True)
+                except Exception as e:
+                    self.report({'WARNING'}, f"Puppet Master bake failed: {e}")
+
+            # Run custom post-export scripts
+            run_custom_scripts(context, target_path)
+
+        except Exception as export_err:
+            self.report({'ERROR'}, f"Export failed: {export_err}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+        finally:
+            # Restore saved states
+            if xxmi:
+                for prop, val in saved_xxmi.items():
+                    try:
+                        setattr(xxmi, prop, val)
+                    except Exception:
+                        pass
+            if efmi:
+                for prop, val in saved_efmi.items():
+                    try:
+                        setattr(efmi, prop, val)
+                    except Exception:
+                        pass
+
+        self.report({'INFO'}, "Quick Game Buffers Export Successful!")
+        return {'FINISHED'}
+
+classes_to_register = [
+    RZM_OT_QuickExportMenu,
+    RZM_OT_QuickExportGameBuffers,
+]

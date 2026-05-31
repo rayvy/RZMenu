@@ -606,6 +606,9 @@ class RZM_ST_OT_GenerateBones(bpy.types.Operator):
                 
             processed_count += 1
 
+        try: context.view_layer.update()
+        except: pass
+
         self.report({'INFO'}, f"Processed {processed_count} mesh(es). Created {total_bones_created} missing bones, deleted {total_bones_deleted} mask bones.")
         return {'FINISHED'}
 

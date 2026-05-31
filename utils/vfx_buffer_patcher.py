@@ -474,6 +474,8 @@ def evaluate_curve_spline_points(context, curve_obj, spline_idx, num_samples=32)
     context.scene.collection.objects.unlink(temp_obj)
     bpy.data.objects.remove(temp_obj)
     bpy.data.curves.remove(temp_data)
+    try: context.view_layer.update()
+    except: pass
     
     if len(verts) < 2:
         return []
@@ -555,6 +557,8 @@ def get_spline_raw_vertex_counts(context, curve_obj):
             context.scene.collection.objects.unlink(temp_obj)
             bpy.data.objects.remove(temp_obj)
             bpy.data.curves.remove(temp_data)
+            try: context.view_layer.update()
+            except: pass
     return counts
 
 def evaluate_curve_all_shapes(context, curve_obj, spline_idx, num_samples=32):
@@ -673,6 +677,8 @@ def evaluate_curve_all_shapes(context, curve_obj, spline_idx, num_samples=32):
         context.scene.collection.objects.unlink(temp_obj)
         bpy.data.objects.remove(temp_obj)
         bpy.data.curves.remove(temp_data)
+        try: context.view_layer.update()
+        except: pass
         
     while len(shapes_pts) < 8:
         last = shapes_pts[-1] if shapes_pts else []

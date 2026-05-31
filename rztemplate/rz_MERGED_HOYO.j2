@@ -149,7 +149,7 @@
         {% endfor %}
         run = CommandList\ZZMI\SetTextures
     {% elif mod_file.game.name == "GenshinImpact" %}
-        {% if scene.rzm is defined and scene.rzm.export_texture_slots == 0 %}
+        {% if scene.rzm is defined and scene.rzm.export_texture_slots %}
             {% for texture in part.textures %}
                 ps-t{{ loop.index0 }} = Resource{{ part.fullname }}{{ texture.name }}
             {% endfor %}

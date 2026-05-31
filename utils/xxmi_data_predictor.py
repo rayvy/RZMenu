@@ -404,11 +404,11 @@ class XXMIMissingDataPredictorSubModule:
             print(f"[SafeExport] [Predictor] Откат предиктора: удалено {removed_color} COLOR, {removed_uv} UV слоёв.")
 
     def restore(self, context):
-        if not self._active:
+        if not self._active or getattr(self, "disable_cleanup", False):
             return
         self._cleanup(context)
 
     def post_export(self, context):
-        if not self._active:
+        if not self._active or getattr(self, "disable_cleanup", False):
             return
         self._cleanup(context)

@@ -600,6 +600,9 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                 try: bpy.data.images.remove(bl_img)
                 except: pass
             
+            try: context.view_layer.update()
+            except: pass
+            
             if not exported_success:
                 return {'CANCELLED'}
         else:
@@ -712,6 +715,8 @@ class RZM_OT_RemoveImage(bpy.types.Operator):
             
             if bl_image_to_remove and bl_image_to_remove.users == 0:
                 bpy.data.images.remove(bl_image_to_remove)
+                try: context.view_layer.update()
+                except: pass
             
             active_idx = context.scene.rzm_active_image_index
             if active_idx >= index_to_remove and active_idx > 0:

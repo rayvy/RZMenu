@@ -420,6 +420,8 @@ class RZM_OT_shape_key_apply_modifiers(bpy.types.Operator):
 
         obj.show_only_shape_key, obj.active_shape_key_index = saved_show, saved_idx
         bpy.data.meshes.remove(mesh_copy)
+        try: context.view_layer.update()
+        except: pass
         return {'FINISHED'}
 
 def register():

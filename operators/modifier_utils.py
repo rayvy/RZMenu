@@ -179,5 +179,8 @@ def apply_modifiers_for_object_with_shape_keys(context, selectedModifiers, disab
         for modifier in disabled_armature_modifiers:
             modifier.show_viewport = True
             
+    try: context.view_layer.update()
+    except: pass
+
     return True, None
 

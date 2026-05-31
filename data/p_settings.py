@@ -724,6 +724,13 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         default=True
     )
 
+    safe_export_temp_cleanup: BoolProperty(
+        name="Temporary Layers Cleanup (Experimental)",
+        description="Alternative export mode: deletes added COLOR/TEXCOORD layers after export. WARNING: experimental, can cause depsgraph crash",
+        default=False
+    )
+
+
     # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
     artist_profiles: CollectionProperty(type=RZM_ArtistProfile)
     active_profile_index: IntProperty(default=0, update=update_active_profile)
@@ -1093,6 +1100,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "modifier_blacklist")
         col.prop(self, "create_backup")
         col.prop(self, "show_vg_stats")
+        col.prop(self, "safe_export_temp_cleanup")
         col.separator()
         col.prop(self, "batch_build_path")
 

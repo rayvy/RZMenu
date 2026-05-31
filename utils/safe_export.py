@@ -269,12 +269,30 @@ class SafeExport:
         # Импортируем здесь чтобы избежать circular imports при загрузке модуля
         from .xxmi_data_predictor import XXMIMissingDataPredictorSubModule
 
-        self.sub_modules = [
-            VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
-            MeshBackupSubModule(),               # [1] Бэкап всех мешей
-            XXMIMissingDataPredictorSubModule(), # [2] Добавляем COLOR/TEXCOORD
-            CurveVFXPreviewSubModule(),          # [3] Убираем VFX preview
-        ]
+        # Читаем настройку очистки временных слоев из настроек аддона
+        addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+        pref = context.preferences.addons[addon_name].preferences
+        temp_cleanup = getattr(pref, "safe_export_temp_cleanup", False)
+
+        if temp_cleanup:
+            # Альтернативный экспериментальный режим (удаление слоев после экспорта)
+            self.sub_modules = [
+                VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
+                MeshBackupSubModule(),               # [1] Бэкап всех мешей
+                XXMIMissingDataPredictorSubModule(), # [2] Добавляем COLOR/TEXCOORD
+                CurveVFXPreviewSubModule(),          # [3] Убираем VFX preview
+            ]
+        else:
+            # Режим по умолчанию (COLOR/TEXCOORD добавляются перманентно)
+            predictor = XXMIMissingDataPredictorSubModule()
+            predictor.disable_cleanup = True
+
+            self.sub_modules = [
+                VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
+                predictor,                           # [1] Добавляем COLOR/TEXCOORD перманентно
+                MeshBackupSubModule(),               # [2] Бэкап всех мешей (уже содержащих слои)
+                CurveVFXPreviewSubModule(),          # [3] Убираем VFX preview
+            ]
 
     def __enter__(self):
         print("[SafeExport] ═══ Старт pre-export ═══")
