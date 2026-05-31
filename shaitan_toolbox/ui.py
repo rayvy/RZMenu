@@ -71,18 +71,8 @@ def draw_setup_scripts_ui(self, context, layout):
     col_destructive.operator("rzm_st.delete_all_vg", text="Delete All Vertex Groups", icon='TRASH')
 
 def draw_base_mesh_setup_ui(self, context, layout):
-    box = layout.box()
-    box.label(text="Base Mesh Setup (Coming Soon in Phase 3)", icon='ARMATURE_DATA')
-    
-    col = box.column(align=True)
-    col.active = False
-    col.prop(context.scene, "rzm_st_target_armature")
-    col.prop(context.scene, "rzm_st_reference_mesh")
-    
-    box.separator()
-    row = box.row()
-    row.enabled = False
-    row.operator("rzm_st.body_rename_placeholder", text="Rename Components (Coming Soon)", icon='SORTALPHA')
+    from .ui_harmonizer import draw_base_mesh_setup_ui as draw_harmonizer
+    draw_harmonizer(self, context, layout)
 
 def draw_uv_packer_ui(self, context, layout):
     scene = context.scene

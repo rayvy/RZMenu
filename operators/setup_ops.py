@@ -765,6 +765,11 @@ class RZM_OT_CompleteExport(bpy.types.Operator):
             if original_objects:
                 try: context.view_layer.objects.active = original_objects[0]
                 except ReferenceError: pass
+
+            try:
+                context.view_layer.update()
+            except Exception as e:
+                print(f"[RZM Complete] view_layer.update() failed during cleanup: {e}")
                 
             print("====== COMPLETE EXPORT DONE ======")
 

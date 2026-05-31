@@ -1,0 +1,124 @@
+import bpy
+from bpy.props import (
+    BoolProperty,
+    CollectionProperty,
+    EnumProperty,
+    FloatProperty,
+    FloatVectorProperty,
+    IntProperty,
+    PointerProperty,
+    StringProperty,
+)
+from bpy.types import PropertyGroup
+
+def poll_armature(self, obj):
+    return obj is not None and obj.type == "ARMATURE"
+
+def poll_mesh(self, obj):
+    return obj is not None and obj.type == "MESH"
+
+def trigger_redraw(self, context):
+    try:
+        from .harmonizer_utils import tag_view3d_redraw
+        tag_view3d_redraw()
+    except ImportError:
+        pass
+
+class RZMWeightSettings(PropertyGroup):
+    target_armature: PointerProperty(name="Таргетная арматура", type=bpy.types.Object, poll=poll_armature)
+    reference_mesh: PointerProperty(name="Канонический референс-мэш", type=bpy.types.Object, poll=poll_mesh)
+
+    approved_threshold: FloatProperty(name="Strong", default=0.72, min=0.0, max=1.0, precision=2)
+    conflict_threshold: FloatProperty(name="Floor", default=0.34, min=0.0, max=1.0, precision=2)
+    unique_margin: FloatProperty(name="Margin", default=0.10, min=0.0, max=1.0, precision=2)
+    assignment_margin: FloatProperty(name="Rival", default=0.10, min=0.0, max=1.0, precision=2)
+    unknown_cluster_threshold: FloatProperty(name="Merge", default=0.82, min=0.0, max=1.0, precision=2)
+
+    create_missing_bones: BoolProperty(name="Создавать недостающие кости", default=True)
+    ignore_multiple_toe: BoolProperty(
+        name="IgnoreMultipleToe",
+        description="Схлопывает Toe-подобные цели в Toes.L / Toes.R",
+        default=True,
+    )
+    show_overlay: BoolProperty(name="Overlay", default=True, update=trigger_redraw)
+    overlay_all_components: BoolProperty(name="All components", default=True, update=trigger_redraw)
+    overlay_point_size: FloatProperty(name="Dots", default=6.0, min=1.0, max=20.0, update=trigger_redraw)
+    matrix_only_incomplete: BoolProperty(name="Only holes", default=False)
+
+    active_tab: EnumProperty(
+        items=[
+            ("APPROVED", "Approved Matrix", "Канонические кости и компоненты"),
+            ("CONFLICT", "Conflict", "Неоднозначные назначения"),
+            ("UNKNOWN", "Unknown", "Новые доп. кости"),
+            ("IGNORED", "Mask*", "Игнорируемые группы"),
+        ],
+        default="APPROVED",
+        update=trigger_redraw,
+    )
+
+    approved_row_index: IntProperty(default=0, update=trigger_redraw)
+    approved_detail_index: IntProperty(default=-1, update=trigger_redraw)
+    matrix_editor_object: StringProperty(default="")
+    matrix_manual_group_index: IntProperty(name="VG index", default=-1, min=-1)
+    conflict_index: IntProperty(default=0, update=trigger_redraw)
+    unknown_index: IntProperty(default=0, update=trigger_redraw)
+    ignored_index: IntProperty(default=0, update=trigger_redraw)
+
+
+class RZMWeightPlanItem(PropertyGroup):
+    object_name: StringProperty()
+    group_index: IntProperty()
+    original_name: StringProperty()
+    resolved_name: StringProperty()
+    status: EnumProperty(items=[("APPROVED", "Approved", ""), ("CONFLICT", "Conflict", ""), ("UNKNOWN", "Unknown", ""), ("IGNORED", "Ignored", "")])
+    confidence: FloatProperty(min=0.0, max=1.0)
+    margin: FloatProperty(min=0.0, max=1.0)
+    nearest_bone: StringProperty()
+    nearest_distance: FloatProperty()
+    centroid: FloatVectorProperty(size=3, subtype="XYZ")
+    radius: FloatProperty(default=0.0)
+    bbox_size: FloatVectorProperty(size=3, subtype="XYZ")
+    side: StringProperty(default="C")
+    create_bone: BoolProperty(default=False)
+    manual_override: BoolProperty(default=False)
+    candidate_1: StringProperty()
+    candidate_1_score: FloatProperty()
+    candidate_2: StringProperty()
+    candidate_2_score: FloatProperty()
+    candidate_3: StringProperty()
+    candidate_3_score: FloatProperty()
+    decision_reason: StringProperty()
+    conflict_cluster: StringProperty()
+
+
+class RZMApprovedCell(PropertyGroup):
+    object_name: StringProperty()
+    display_text: StringProperty()
+    plan_index: IntProperty(default=-1)
+
+
+class RZMApprovedBoneRow(PropertyGroup):
+    canonical_name: StringProperty()
+    cells: CollectionProperty(type=RZMApprovedCell)
+
+
+class RZMComponentSummary(PropertyGroup):
+    object_name: StringProperty()
+    total_groups: IntProperty()
+    default_total: IntProperty()
+    occupied_default: IntProperty()
+    approved: IntProperty()
+    conflict: IntProperty()
+    unknown: IntProperty()
+    ignored: IntProperty()
+    duplicate_approved: IntProperty()
+    missing_default: IntProperty()
+
+
+classes_to_register = [
+    RZMWeightSettings,
+    RZMWeightPlanItem,
+    RZMApprovedCell,
+    RZMApprovedBoneRow,
+    RZMComponentSummary,
+]

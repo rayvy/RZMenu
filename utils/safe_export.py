@@ -329,6 +329,11 @@ class SafeExport:
                 print(f"[SafeExport] ОШИБКА в post_export ({sub.__class__.__name__}): {e}")
                 traceback.print_exc()
 
+        try:
+            self.context.view_layer.update()
+        except Exception as e:
+            print(f"[SafeExport] WARN: post-export view_layer.update() failed: {e}")
+
         print("[SafeExport] ═══ Done ═══")
 
         # False = не подавляем исключение. Blender сам покажет ошибку оператору.
