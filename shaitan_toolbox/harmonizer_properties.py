@@ -51,6 +51,7 @@ def update_resolved_name(self, context):
             other.resolved_name = self.resolved_name
             other.status = self.status
             other.create_bone = self.create_bone
+            other.is_helper = self.is_helper
             other["_updating_cluster"] = False
     self["_updating_cluster"] = False
     
@@ -129,6 +130,7 @@ class RZMWeightPlanItem(PropertyGroup):
     bbox_size: FloatVectorProperty(size=3, subtype="XYZ")
     side: StringProperty(default="C")
     create_bone: BoolProperty(default=False)
+    is_helper: BoolProperty(default=False, update=update_resolved_name)
     manual_override: BoolProperty(default=False)
     candidate_1: StringProperty()
     candidate_1_score: FloatProperty()

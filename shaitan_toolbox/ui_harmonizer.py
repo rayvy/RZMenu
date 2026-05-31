@@ -10,6 +10,14 @@ from .harmonizer_utils import (
 )
 
 
+def get_existing_helpers(scene, armature_obj):
+    helpers = set()
+    for item in scene.rzm_weight_plan:
+        if item.resolved_name and item.is_helper:
+            helpers.add(item.resolved_name)
+    return sorted(list(helpers))
+
+
 class RZM_UL_approved_matrix(UIList):
     def filter_items(self, context, data, propname):
         rows = getattr(data, propname)
@@ -115,7 +123,35 @@ def draw_weight_paint_helper(layout, context, scene, settings):
             
             row_attach = det.row(align=True)
             row_attach.prop(plan_item, "resolved_name", text="Attachment")
-            
+            if plan_item.resolved_name:
+                row_attach.prop(plan_item, "is_helper", text="Helper", toggle=True)
+
+            # Helper attachment options
+            armature_obj = settings.target_armature
+            helpers = get_existing_helpers(scene, armature_obj)
+
+            box_hlp = det.box()
+            row_hlp_title = box_hlp.row()
+            row_hlp_title.label(text="Helper Bones:", icon='BONE_DATA')
+
+            new_hlp_name = f"hlp_{plan_item.original_name}"
+            op_new = row_hlp_title.operator("rzm_weights.quick_attach_bone", text=f"Create {new_hlp_name}", icon='ADD')
+            op_new.bone_name = new_hlp_name
+            op_new.object_name = plan_item.object_name
+            op_new.group_index = plan_item.group_index
+            op_new.is_helper = True
+
+            filtered_helpers = [h for h in helpers if h != new_hlp_name]
+            if filtered_helpers:
+                col_hlp = box_hlp.column(align=True)
+                for hlp_name in filtered_helpers:
+                    row_h = col_hlp.row(align=True)
+                    op_h = row_h.operator("rzm_weights.quick_attach_bone", text=f"Attach to {hlp_name}", icon='LINKED')
+                    op_h.bone_name = hlp_name
+                    op_h.object_name = plan_item.object_name
+                    op_h.group_index = plan_item.group_index
+                    op_h.is_helper = True
+
             row_info = det.row(align=True)
             row_info.label(text=f"Nearest: {plan_item.nearest_bone or '—'} ({plan_item.nearest_distance:.3f} m)")
             
@@ -286,12 +322,17 @@ def draw_clusters_tab(layout, scene, settings):
     layout.label(text="Clusters Management", icon='GROUP')
 
     active_obj = bpy.context.active_object
+    active_cid = None
     if active_obj and active_obj.type == 'MESH':
         active_vg = active_obj.vertex_groups.active
         if active_vg:
             row_join = layout.row()
             row_join.label(text=f"Active: {active_obj.name} | {active_vg.name}")
             row_join.operator("wm.call_menu", text="Join other group...", icon='LINKED').name = "RZM_MT_cluster_merge_candidates"
+            for item in plan:
+                if item.object_name == active_obj.name and item.group_index == active_vg.index:
+                    active_cid = item.cluster_id
+                    break
         else:
             layout.label(text="Select a vertex group in Blender to start manual clustering", icon='INFO')
     else:
@@ -303,10 +344,17 @@ def draw_clusters_tab(layout, scene, settings):
         layout.label(text="No clusters currently found. Run plan or join groups manually.", icon='INFO')
         return
 
-    for cid, members in sorted(clusters.items()):
+    sorted_cids = sorted(clusters.keys())
+    if active_cid and active_cid in clusters:
+        sorted_cids.remove(active_cid)
+        sorted_cids.insert(0, active_cid)
+
+    for cid in sorted_cids:
+        members = clusters[cid]
         box = layout.box()
         row_header = box.row()
-        row_header.label(text=f"Cluster: {cid} ({len(members)} members)", icon='GROUP')
+        is_active_highlight = " (Active)" if cid == active_cid else ""
+        row_header.label(text=f"Cluster: {cid}{is_active_highlight} ({len(members)} members)", icon='GROUP')
         op_disband = row_header.operator("rzm_weights.cluster_disband", text="Disband", icon='X')
         op_disband.cluster_id = cid
 

@@ -4,7 +4,7 @@ from collections import defaultdict, Counter
 from datetime import datetime
 from mathutils import Vector
 from bpy.types import Operator
-from bpy.props import StringProperty, IntProperty
+from bpy.props import StringProperty, IntProperty, BoolProperty
 
 from .harmonizer_utils import (
     invalidate_matrix_suggestion_cache,
@@ -80,7 +80,7 @@ class RZM_OT_build_plan(Operator):
                 fp["object_name"] = target_obj.name
                 fp["target_obj"] = target_obj
                 if is_mask_group(fp["name"]):
-                    add_plan_item(scene, target_obj, fp, "IGNORED", fp["name"], 1.0, 1.0, [], reason="Mask* ignored")
+                    add_plan_item(scene, target_obj, fp, "IGNORED", fp["name"], 1.0, 1.0, [], False, False, reason="Mask* ignored")
                 else:
                     all_target_fps.append(fp)
 
@@ -211,6 +211,7 @@ class RZM_OT_build_plan(Operator):
                     margin,
                     candidates,
                     resolved_name not in armature_names,
+                    False,
                     reason,
                     ", ".join(conflict_names),
                     cluster_id=fp_to_cluster_id.get((fp["object_name"], fp["index"]), "")
@@ -249,6 +250,7 @@ class RZM_OT_build_plan(Operator):
                 margin,
                 candidates,
                 True,
+                False,
                 "no candidate above Floor",
                 cluster_id=fp_to_cluster_id.get((fp["object_name"], fp["index"]), "")
             )
@@ -279,11 +281,11 @@ class RZM_OT_assign_matrix_suggestion(Operator):
     canonical_name: StringProperty()
 
     def execute(self, context):
-        displaced, error = assign_plan_item_to_canonical(context.scene, self.plan_index, self.canonical_name)
+        displaced, error, cl_info = assign_plan_item_to_canonical(context.scene, self.plan_index, self.canonical_name)
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
-        self.report({"INFO"}, "Назначено" + ("; прежний владелец возвращён in Conflict" if displaced else ""))
+        self.report({"INFO"}, f"Назначено{cl_info}" + ("; прежний владелец возвращён in Conflict" if displaced else ""))
         return {"FINISHED"}
 
 
@@ -307,11 +309,11 @@ class RZM_OT_assign_matrix_manual_index(Operator):
             self.report({"ERROR"}, f"VG index {settings.matrix_manual_group_index} не найден в {settings.matrix_editor_object}")
             return {"CANCELLED"}
 
-        displaced, error = assign_plan_item_to_canonical(scene, plan_index, row.canonical_name)
+        displaced, error, cl_info = assign_plan_item_to_canonical(scene, plan_index, row.canonical_name)
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
-        self.report({"INFO"}, "Назначено вручную" + ("; прежний владелец возвращён in Conflict" if displaced else ""))
+        self.report({"INFO"}, f"Назначено вручную{cl_info}" + ("; прежний владелец возвращён in Conflict" if displaced else ""))
         return {"FINISHED"}
 
 
@@ -349,11 +351,11 @@ class RZM_OT_assign_selected_to_matrix_row(Operator):
         if item is None or item.status not in {"CONFLICT", "UNKNOWN"}:
             self.report({"ERROR"}, "Выбери Conflict или Unknown")
             return {"CANCELLED"}
-        displaced, error = assign_plan_item_to_canonical(scene, item_index, row.canonical_name)
+        displaced, error, cl_info = assign_plan_item_to_canonical(scene, item_index, row.canonical_name)
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
-        self.report({"INFO"}, "Назначено" + ("; старый владелец возвращён в Conflict" if displaced else ""))
+        self.report({"INFO"}, f"Назначено{cl_info}" + ("; старый владелец возвращён в Conflict" if displaced else ""))
         return {"FINISHED"}
 
 
@@ -421,8 +423,21 @@ class RZM_OT_assign_candidate(Operator):
         item = scene.rzm_weight_plan[self.item_index]
         value = getattr(item, f"candidate_{self.slot}")
         if value:
-            item.resolved_name = value
+            cluster_info = ""
+            if item.cluster_id:
+                other_members = [other for other in scene.rzm_weight_plan if other.cluster_id == item.cluster_id and other != item]
+                if other_members:
+                    names = [f"{other.object_name} ({other.original_name})" for other in other_members]
+                    cluster_info = " (Кластер: также изменены " + ", ".join(names) + ")"
+            is_helper = (value.startswith("hlp_") or 
+                         value.startswith("Helper_") or 
+                         any(other.is_helper for other in scene.rzm_weight_plan if other.resolved_name == value))
+            item.status = "APPROVED"
+            item.create_bone = is_helper
+            item.is_helper = is_helper
             item.manual_override = True
+            item.resolved_name = value
+            self.report({"INFO"}, f"Кандидат назначен: {value}{cluster_info}")
         tag_view3d_redraw()
         return {"FINISHED"}
 
@@ -440,9 +455,12 @@ class RZM_OT_force_aux_name(Operator):
         armature = scene.rzm_weight_settings.target_armature
         reserved = {bone.name for bone in armature.data.bones} if armature else set()
         reserved.update(row.resolved_name for row in scene.rzm_weight_plan if row.resolved_name)
-        item.resolved_name = generated_aux_name(item.nearest_bone, item.original_name, reserved)
+        aux_name = generated_aux_name(item.nearest_bone, item.original_name, reserved)
+        item.status = "APPROVED"
         item.create_bone = True
+        item.is_helper = True
         item.manual_override = True
+        item.resolved_name = aux_name
         tag_view3d_redraw()
         return {"FINISHED"}
 
@@ -498,6 +516,15 @@ def create_missing_bones(context, armature_obj, requests):
             bone.parent = parent
             generated.append(bone.name)
         bpy.ops.object.mode_set(mode="OBJECT")
+        if generated:
+            hidden_coll = armature_obj.data.collections.get("Hidden Helpers")
+            if hidden_coll is None:
+                hidden_coll = armature_obj.data.collections.new("Hidden Helpers")
+                hidden_coll.is_visible = False
+            for bname in generated:
+                bone = armature_obj.data.bones.get(bname)
+                if bone:
+                    hidden_coll.assign(bone)
         return generated
     finally:
         if context.view_layer.objects.active is not None and context.view_layer.objects.active.mode != "OBJECT":
@@ -539,9 +566,10 @@ class RZM_OT_apply_plan(Operator):
                     requested = generated_aux_name(item.nearest_bone, item.original_name, reserved)
                     item.resolved_name = requested
                     item.create_bone = True
+                    item.is_helper = True
                     item.decision_reason = "duplicate prevented during Apply"
                 local_reserved.add(requested)
-                if requested not in bone_names and settings.create_missing_bones:
+                if requested not in bone_names:
                     creation_rows[requested].append(item)
 
         requests = {}
@@ -550,7 +578,7 @@ class RZM_OT_apply_plan(Operator):
             parents = Counter(item.nearest_bone for item in items if item.nearest_bone)
             requests[name] = {"centroid": centroid, "parent": parents.most_common(1)[0][0] if parents else ""}
 
-        generated = create_missing_bones(context, armature, requests) if settings.create_missing_bones else []
+        generated = create_missing_bones(context, armature, requests)
         serialize_backup(scene, armature, generated)
 
         for object_name, items in grouped.items():
@@ -788,6 +816,7 @@ class RZM_OT_quick_attach_bone(Operator):
     bone_name: StringProperty()
     object_name: StringProperty()
     group_index: IntProperty()
+    is_helper: BoolProperty(default=False)
 
     def execute(self, context):
         scene = context.scene
@@ -803,9 +832,22 @@ class RZM_OT_quick_attach_bone(Operator):
             self.report({"ERROR"}, "Plan item not found")
             return {'CANCELLED'}
 
-        found_item.resolved_name = self.bone_name
+        cluster_info = ""
+        if found_item.cluster_id:
+            other_members = [other for other in plan if other.cluster_id == found_item.cluster_id and other != found_item]
+            if other_members:
+                names = [f"{other.object_name} ({other.original_name})" for other in other_members]
+                cluster_info = " (Кластер: также изменены " + ", ".join(names) + ")"
+
+        is_helper = (self.is_helper or
+                     self.bone_name.startswith("hlp_") or 
+                     self.bone_name.startswith("Helper_") or 
+                     any(other.is_helper for other in plan if other.resolved_name == self.bone_name))
         found_item.status = "APPROVED"
+        found_item.create_bone = is_helper
+        found_item.is_helper = is_helper
         found_item.manual_override = True
+        found_item.resolved_name = self.bone_name
 
         try:
             target_names = {item.object_name for item in plan}
@@ -815,7 +857,7 @@ class RZM_OT_quick_attach_bone(Operator):
             print("Error rebuilding matrix:", e)
 
         tag_view3d_redraw()
-        self.report({"INFO"}, f"Группа прикреплена к кости '{self.bone_name}'")
+        self.report({"INFO"}, f"Группа прикреплена к кости '{self.bone_name}'{cluster_info}")
         return {'FINISHED'}
 
 
@@ -852,7 +894,32 @@ class RZM_MT_quick_attach(bpy.types.Menu):
             layout.label(text=f"Group '{active_vg.name}' not found in Plan. Build Plan first.", icon='WARNING')
             return
 
+        # 1. Create Helper Option
+        new_hlp_name = f"hlp_{active_vg.name}"
+        op_new = layout.operator("rzm_weights.quick_attach_bone", text=f"Create Helper: {new_hlp_name}", icon='ADD')
+        op_new.bone_name = new_hlp_name
+        op_new.object_name = active_obj.name
+        op_new.group_index = active_vg.index
+        op_new.is_helper = True
+
+        # 2. Existing Helpers
+        from .ui_harmonizer import get_existing_helpers
+        helpers = get_existing_helpers(scene, armature_obj)
+        # Don't list the potential new one in the existing list
+        filtered_helpers = [h for h in helpers if h != new_hlp_name]
+        if filtered_helpers:
+            layout.separator()
+            layout.label(text="Existing Helpers:")
+            for hlp_name in filtered_helpers:
+                op_h = layout.operator("rzm_weights.quick_attach_bone", text=hlp_name, icon='LINKED')
+                op_h.bone_name = hlp_name
+                op_h.object_name = active_obj.name
+                op_h.group_index = active_vg.index
+                op_h.is_helper = True
+
+        layout.separator()
         centroid = Vector(plan_item.centroid)
+        layout.label(text=f"Closest Armature Bones (Centroid: {centroid.x:.2f}, {centroid.y:.2f}, {centroid.z:.2f}):")
 
         bone_distances = []
         for bone in armature_obj.data.bones:
@@ -862,12 +929,9 @@ class RZM_MT_quick_attach(bpy.types.Menu):
             bone_distances.append((bone.name, dist))
 
         bone_distances.sort(key=lambda x: x[1])
-        top_5 = bone_distances[:5]
+        top_10 = bone_distances[:10]
 
-        layout.label(text=f"VG: {active_vg.name} (Centroid: {centroid.x:.2f}, {centroid.y:.2f}, {centroid.z:.2f})")
-        layout.separator()
-
-        for bone_name, dist in top_5:
+        for bone_name, dist in top_10:
             label = f"{bone_name} ({dist:.3f} m)"
             op = layout.operator("rzm_weights.quick_attach_bone", text=label, icon='BONE_DATA')
             op.bone_name = bone_name
@@ -902,17 +966,27 @@ class RZM_MT_cluster_merge_candidates(bpy.types.Menu):
         layout.label(text="Выберите группу для объединения:")
         layout.separator()
 
-        has_candidates = False
+        source_item = scene.rzm_weight_plan[source_idx]
+        source_center = Vector(source_item.centroid)
+
+        candidates = []
         for idx, item in enumerate(scene.rzm_weight_plan):
             if item.object_name != active_obj.name and item.status != "IGNORED":
-                has_candidates = True
-                label = f"{item.object_name} | {item.original_name} (→ {item.resolved_name or '—'})"
-                op = layout.operator("rzm_weights.cluster_merge_groups", text=label)
-                op.source_index = source_idx
-                op.target_index = idx
+                dist = (source_center - Vector(item.centroid)).length
+                candidates.append((idx, item, dist))
 
-        if not has_candidates:
+        # Sort by distance ascending
+        candidates.sort(key=lambda x: x[2])
+
+        if not candidates:
             layout.label(text="Нет доступных групп на других объектах")
+            return
+
+        for idx, item, dist in candidates:
+            label = f"{item.object_name} | {item.original_name} (→ {item.resolved_name or '—'}) - {dist:.3f} m"
+            op = layout.operator("rzm_weights.cluster_merge_groups", text=label)
+            op.source_index = source_idx
+            op.target_index = idx
 
 
 classes_to_register = [

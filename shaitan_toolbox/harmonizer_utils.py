@@ -370,7 +370,7 @@ def build_assignment_conflicts(prepared, floor: float, rival_margin: float):
     return conflicts
 
 
-def add_plan_item(scene, target_obj, fp, status, resolved_name, confidence, margin, candidates, create_bone=False, reason="", cluster="", cluster_id=""):
+def add_plan_item(scene, target_obj, fp, status, resolved_name, confidence, margin, candidates, create_bone=False, is_helper=False, reason="", cluster="", cluster_id=""):
     item = scene.rzm_weight_plan.add()
     item.object_name = target_obj.name
     item.group_index = fp["index"]
@@ -382,6 +382,7 @@ def add_plan_item(scene, target_obj, fp, status, resolved_name, confidence, marg
     item.nearest_bone = fp["nearest_bone"]
     item.nearest_distance = fp["nearest_distance"]
     item.create_bone = create_bone
+    item.is_helper = is_helper
     item.decision_reason = reason
     item.conflict_cluster = cluster
     item.cluster_id = cluster_id
@@ -714,22 +715,34 @@ def find_plan_item_by_object_and_group_index(scene, object_name: str, group_inde
 
 def assign_plan_item_to_canonical(scene, plan_index: int, desired_name: str):
     if not (0 <= plan_index < len(scene.rzm_weight_plan)):
-        return None, "Некорректный plan index"
+        return None, "Некорректный plan index", ""
 
     item = scene.rzm_weight_plan[plan_index]
     if item.status == "IGNORED":
-        return None, "Mask* нельзя назначать как рабочий вес"
+        return None, "Mask* нельзя назначать как рабочий вес", ""
 
     displaced = displace_existing_approved(scene, plan_index, item.object_name, desired_name)
     armature = scene.rzm_weight_settings.target_armature
-    item.resolved_name = desired_name
+    
+    cluster_info = ""
+    if item.cluster_id:
+        other_members = [other for other in scene.rzm_weight_plan if other.cluster_id == item.cluster_id and other != item]
+        if other_members:
+            names = [f"{other.object_name} ({other.original_name})" for other in other_members]
+            cluster_info = " (Кластер: также изменены " + ", ".join(names) + ")"
+
     item.status = "APPROVED"
     item.manual_override = True
     item.decision_reason = "manual matrix assignment"
     item.conflict_cluster = ""
-    item.create_bone = armature is not None and desired_name not in {bone.name for bone in armature.data.bones}
+    is_helper = (desired_name.startswith("hlp_") or 
+                 desired_name.startswith("Helper_") or 
+                 any(other.is_helper for other in scene.rzm_weight_plan if other.resolved_name == desired_name))
+    item.create_bone = is_helper
+    item.is_helper = is_helper
+    item.resolved_name = desired_name
     refresh_matrix_and_summary(scene)
-    return displaced, ""
+    return displaced, "", cluster_info
 
 
 def displace_existing_approved(scene, current_index: int, object_name: str, desired_name: str):
