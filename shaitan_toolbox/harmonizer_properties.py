@@ -24,6 +24,44 @@ def trigger_redraw(self, context):
     except ImportError:
         pass
 
+def update_object_plan_index(self, context):
+    active_obj = context.active_object
+    if not active_obj or active_obj.type != 'MESH':
+        return
+    if active_obj.mode != 'PAINT_WEIGHT':
+        return
+    plan = context.scene.rzm_weight_plan
+    idx = self.object_plan_index
+    if 0 <= idx < len(plan):
+        item = plan[idx]
+        if item.object_name == active_obj.name:
+            vg = active_obj.vertex_groups.get(item.original_name)
+            if vg:
+                active_obj.vertex_groups.active = vg
+
+def update_resolved_name(self, context):
+    if self.get("_updating_cluster"):
+        return
+    if not self.cluster_id:
+        return
+    self["_updating_cluster"] = True
+    for other in context.scene.rzm_weight_plan:
+        if other != self and other.cluster_id == self.cluster_id:
+            other["_updating_cluster"] = True
+            other.resolved_name = self.resolved_name
+            other.status = self.status
+            other.create_bone = self.create_bone
+            other["_updating_cluster"] = False
+    self["_updating_cluster"] = False
+    
+    try:
+        from .ops_harmonizer import rebuild_matrix_and_summary
+        target_names = {item.object_name for item in context.scene.rzm_weight_plan}
+        target_meshes = [bpy.data.objects.get(name) for name in target_names if bpy.data.objects.get(name)]
+        rebuild_matrix_and_summary(context.scene, target_meshes)
+    except Exception as e:
+        print("Error rebuilding matrix in update callback:", e)
+
 class RZMWeightSettings(PropertyGroup):
     target_armature: PointerProperty(name="Таргетная арматура", type=bpy.types.Object, poll=poll_armature)
     reference_mesh: PointerProperty(name="Канонический референс-мэш", type=bpy.types.Object, poll=poll_mesh)
@@ -59,6 +97,7 @@ class RZMWeightSettings(PropertyGroup):
             ("CONFLICT", "Conflict", "Неоднозначные назначения"),
             ("UNKNOWN", "Unknown", "Новые доп. кости"),
             ("IGNORED", "Mask*", "Игнорируемые группы"),
+            ("CLUSTERS", "Clusters", "Управление кластерами"),
         ],
         default="APPROVED",
         update=trigger_redraw,
@@ -71,13 +110,15 @@ class RZMWeightSettings(PropertyGroup):
     conflict_index: IntProperty(default=0, update=trigger_redraw)
     unknown_index: IntProperty(default=0, update=trigger_redraw)
     ignored_index: IntProperty(default=0, update=trigger_redraw)
+    object_plan_index: IntProperty(default=0, update=update_object_plan_index)
 
 
 class RZMWeightPlanItem(PropertyGroup):
     object_name: StringProperty()
     group_index: IntProperty()
     original_name: StringProperty()
-    resolved_name: StringProperty()
+    resolved_name: StringProperty(update=update_resolved_name)
+    cluster_id: StringProperty(name="Cluster ID")
     status: EnumProperty(items=[("APPROVED", "Approved", ""), ("CONFLICT", "Conflict", ""), ("UNKNOWN", "Unknown", ""), ("IGNORED", "Ignored", "")])
     confidence: FloatProperty(min=0.0, max=1.0)
     margin: FloatProperty(min=0.0, max=1.0)

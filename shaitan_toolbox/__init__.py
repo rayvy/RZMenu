@@ -26,6 +26,22 @@ for module in (
     if hasattr(module, "classes_to_register"):
         classes.extend(module.classes_to_register)
 
+addon_keymaps = []
+
+def register_keymaps():
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.addon
+    if kc:
+        km = kc.keymaps.new(name="Weight Paint", space_type="EMPTY")
+        kmi = km.keymap_items.new("wm.call_menu", "V", "PRESS", alt=True)
+        kmi.properties.name = "RZM_MT_quick_attach"
+        addon_keymaps.append((km, kmi))
+
+def unregister_keymaps():
+    for km, kmi in addon_keymaps:
+        km.keymap_items.remove(kmi)
+    addon_keymaps.clear()
+
 def register():
     # 1. Регистрация всех классов (PropertyGroups, Operators, UILists)
     for cls in classes:
@@ -45,8 +61,14 @@ def register():
         harmonizer_utils.draw_weight_overlay_pixel, (), "WINDOW", "POST_PIXEL"
     )
 
+    # 4. Регистрация keymaps
+    register_keymaps()
+
 def unregister():
-    # 1. Удаление draw-хэндлеров оверлеев
+    # 1. Удаление keymaps
+    unregister_keymaps()
+
+    # 2. Удаление draw-хэндлеров оверлеев
     if harmonizer_utils.OVERLAY_VIEW_HANDLE is not None:
         bpy.types.SpaceView3D.draw_handler_remove(harmonizer_utils.OVERLAY_VIEW_HANDLE, "WINDOW")
         harmonizer_utils.OVERLAY_VIEW_HANDLE = None
@@ -54,11 +76,11 @@ def unregister():
         bpy.types.SpaceView3D.draw_handler_remove(harmonizer_utils.OVERLAY_PIXEL_HANDLE, "WINDOW")
         harmonizer_utils.OVERLAY_PIXEL_HANDLE = None
 
-    # 2. Удаление Scene свойств
+    # 3. Удаление Scene свойств
     for prop in ("rzm_component_summary", "rzm_approved_matrix", "rzm_weight_plan", "rzm_weight_settings"):
         if hasattr(bpy.types.Scene, prop):
             delattr(bpy.types.Scene, prop)
 
-    # 3. Анрегистрация классов
+    # 4. Анрегистрация классов
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

@@ -370,7 +370,7 @@ def build_assignment_conflicts(prepared, floor: float, rival_margin: float):
     return conflicts
 
 
-def add_plan_item(scene, target_obj, fp, status, resolved_name, confidence, margin, candidates, create_bone=False, reason="", cluster=""):
+def add_plan_item(scene, target_obj, fp, status, resolved_name, confidence, margin, candidates, create_bone=False, reason="", cluster="", cluster_id=""):
     item = scene.rzm_weight_plan.add()
     item.object_name = target_obj.name
     item.group_index = fp["index"]
@@ -384,6 +384,7 @@ def add_plan_item(scene, target_obj, fp, status, resolved_name, confidence, marg
     item.create_bone = create_bone
     item.decision_reason = reason
     item.conflict_cluster = cluster
+    item.cluster_id = cluster_id
     item.centroid = fp["centroid"] if fp["centroid"] is not None else (0.0, 0.0, 0.0)
     item.radius = fp.get("radius", 0.0)
     item.bbox_size = fp.get("bbox_size", (0.0, 0.0, 0.0))

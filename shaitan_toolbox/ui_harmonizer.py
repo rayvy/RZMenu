@@ -55,6 +55,106 @@ class RZM_UL_ignored(RZM_UL_weight_plan):
     filter_status = "IGNORED"
 
 
+class RZM_UL_object_weight_plan(UIList):
+    def filter_items(self, context, data, propname):
+        items = getattr(data, propname)
+        active_obj = context.active_object
+        if not active_obj:
+            return [], []
+        return [self.bitflag_filter_item if item.object_name == active_obj.name else 0 for item in items], []
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        active_vg = context.active_object.vertex_groups.active
+        is_active = active_vg is not None and active_vg.index == item.group_index
+        
+        op = row.operator("rzm_weights.switch_active_vg", text=f"[{item.group_index:03d}] {item.original_name}", depress=is_active)
+        op.group_index = item.group_index
+        
+        row.label(text="→")
+        row.prop(item, "resolved_name", text="")
+        
+        status_icon = "CHECKMARK" if item.status == "APPROVED" else \
+                      "ERROR" if item.status == "CONFLICT" else \
+                      "QUESTION" if item.status == "UNKNOWN" else "CANCEL"
+        row.label(text="", icon=status_icon)
+
+
+def draw_weight_paint_helper(layout, context, scene, settings):
+    active_obj = context.active_object
+    active_vg = active_obj.vertex_groups.active
+    
+    box = layout.box()
+    box.label(text=f"Weight Paint Helper: {active_obj.name}", icon='WPAINT_HLT')
+    
+    if not scene.rzm_weight_plan:
+        box.label(text="Remap Plan empty. Build Plan first.", icon='INFO')
+        return
+
+    row_list = box.row()
+    row_list.template_list("RZM_UL_object_weight_plan", "", scene, "rzm_weight_plan", settings, "object_plan_index", rows=6)
+
+    if active_vg:
+        plan_item = None
+        plan_item_idx = -1
+        for idx, item in enumerate(scene.rzm_weight_plan):
+            if item.object_name == active_obj.name and item.group_index == active_vg.index:
+                plan_item = item
+                plan_item_idx = idx
+                break
+                
+        if plan_item:
+            det = box.box()
+            status_icon = "CHECKMARK" if plan_item.status == "APPROVED" else \
+                          "ERROR" if plan_item.status == "CONFLICT" else \
+                          "QUESTION" if plan_item.status == "UNKNOWN" else "CANCEL"
+            
+            row_title = det.row(align=True)
+            row_title.label(text=f"Active: [{plan_item.group_index:03d}] {plan_item.original_name}", icon='BONE_DATA')
+            row_title.label(text=f"Status: {plan_item.status}", icon=status_icon)
+            
+            row_attach = det.row(align=True)
+            row_attach.prop(plan_item, "resolved_name", text="Attachment")
+            
+            row_info = det.row(align=True)
+            row_info.label(text=f"Nearest: {plan_item.nearest_bone or '—'} ({plan_item.nearest_distance:.3f} m)")
+            
+            row_cands = det.row(align=True)
+            for slot in (1, 2, 3):
+                cand = getattr(plan_item, f"candidate_{slot}")
+                score = getattr(plan_item, f"candidate_{slot}_score")
+                if cand:
+                    op = row_cands.operator("rzm_weights.assign_candidate", text=f"#{slot} {cand} ({score*100:.0f}%)")
+                    op.item_index = plan_item_idx
+                    op.slot = slot
+            
+            if plan_item.cluster_id:
+                cl_box = det.box()
+                cl_box.label(text=f"Cluster: {plan_item.cluster_id} (Sync Mode)", icon='GROUP')
+                
+                members = [other for other in scene.rzm_weight_plan if other.cluster_id == plan_item.cluster_id and other != plan_item]
+                if members:
+                    row_memb = cl_box.row()
+                    col_m = row_memb.column()
+                    col_m.label(text="Synced other objects:")
+                    for m in members:
+                        col_m.label(text=f"  * {m.object_name}[{m.group_index:03d}] {m.original_name} (→ {m.resolved_name or '—'})")
+                
+                row_split = cl_box.row(align=True)
+                op_split = row_split.operator("rzm_weights.cluster_split_item", text="Remove from Cluster", icon='UNLINKED')
+                op_split.plan_index = plan_item_idx
+                
+                op_disband = row_split.operator("rzm_weights.cluster_disband", text="Disband Cluster", icon='X')
+                op_disband.cluster_id = plan_item.cluster_id
+            else:
+                row_join = det.row(align=True)
+                row_join.operator("wm.call_menu", text="Join / Create Cluster...", icon='LINKED').name = "RZM_MT_cluster_merge_candidates"
+        else:
+            box.label(text="Active VG not in Plan", icon='WARNING')
+    else:
+        box.label(text="Select a Vertex Group to paint", icon='INFO')
+
+
 def draw_component_summary(layout, scene):
     box = layout.box()
     box.label(text="Заполненность компонентов", icon="INFO")
@@ -176,18 +276,62 @@ def draw_issue_tab(layout, scene, settings, status):
         layout.operator("rzm_weights.assign_selected_to_matrix_row", text="ASSIGN TO SELECTED MATRIX ROW", icon="CHECKMARK")
 
 
+def draw_clusters_tab(layout, scene, settings):
+    plan = scene.rzm_weight_plan
+    clusters = {}
+    for idx, item in enumerate(plan):
+        if item.cluster_id:
+            clusters.setdefault(item.cluster_id, []).append((idx, item))
+
+    layout.label(text="Clusters Management", icon='GROUP')
+
+    active_obj = bpy.context.active_object
+    if active_obj and active_obj.type == 'MESH':
+        active_vg = active_obj.vertex_groups.active
+        if active_vg:
+            row_join = layout.row()
+            row_join.label(text=f"Active: {active_obj.name} | {active_vg.name}")
+            row_join.operator("wm.call_menu", text="Join other group...", icon='LINKED').name = "RZM_MT_cluster_merge_candidates"
+        else:
+            layout.label(text="Select a vertex group in Blender to start manual clustering", icon='INFO')
+    else:
+        layout.label(text="Select a mesh object in Blender to start manual clustering", icon='INFO')
+
+    layout.separator()
+
+    if not clusters:
+        layout.label(text="No clusters currently found. Run plan or join groups manually.", icon='INFO')
+        return
+
+    for cid, members in sorted(clusters.items()):
+        box = layout.box()
+        row_header = box.row()
+        row_header.label(text=f"Cluster: {cid} ({len(members)} members)", icon='GROUP')
+        op_disband = row_header.operator("rzm_weights.cluster_disband", text="Disband", icon='X')
+        op_disband.cluster_id = cid
+
+        for idx, item in members:
+            row_memb = box.row()
+            row_memb.label(text=f"  * {item.object_name} | {item.original_name} (→ {item.resolved_name or '—'})")
+            op_split = row_memb.operator("rzm_weights.cluster_split_item", text="", icon='UNLINKED')
+            op_split.plan_index = idx
+
+
 def draw_base_mesh_setup_ui(self, context, layout):
     scene = context.scene
     settings = scene.rzm_weight_settings
     counts = status_counts(scene)
 
     actions = layout.box()
-    row = actions.row(align=True)
-    row.operator("rzm_weights.apply_plan", icon="MOD_ARMATURE")
-    row.operator("rzm_weights.restore_backup", icon="LOOP_BACK")
-    row = actions.row(align=True)
-    row.operator("rzm_weights.build_plan", icon="VIEWZOOM")
-    row.operator("rzm_weights.clear_plan", icon="TRASH")
+    if scene.rzm_weight_plan:
+        row = actions.row(align=True)
+        row.operator("rzm_weights.apply_plan", icon="MOD_ARMATURE")
+        row.operator("rzm_weights.restore_backup", icon="LOOP_BACK")
+        row = actions.row(align=True)
+        row.operator("rzm_weights.build_plan", icon="VIEWZOOM")
+        row.operator("rzm_weights.clear_plan", icon="TRASH")
+    else:
+        actions.operator("rzm_weights.build_plan", icon="VIEWZOOM")
 
     refs = layout.box()
     row = refs.row(align=True)
@@ -210,16 +354,25 @@ def draw_base_mesh_setup_ui(self, context, layout):
     row.prop(settings, "overlay_all_components", toggle=True)
     row.prop(settings, "overlay_point_size", text="Dots")
 
+    active_obj = context.active_object
+    is_wpaint = active_obj and active_obj.type == 'MESH' and (active_obj.mode == 'WEIGHT_PAINT' or context.mode == 'PAINT_WEIGHT')
+    if is_wpaint:
+        layout.separator()
+        draw_weight_paint_helper(layout, context, scene, settings)
+
     if not scene.rzm_weight_plan:
         layout.label(text="Выбери armature + reference, выдели компоненты, построй Plan")
         return
 
+    num_clusters = len({item.cluster_id for item in scene.rzm_weight_plan if item.cluster_id})
     draw_component_summary(layout, scene)
     tabs = layout.box()
     tabs.prop(settings, "active_tab", expand=True)
-    tabs.label(text=f"Approved {counts['APPROVED']} | Conflict {counts['CONFLICT']} | Unknown {counts['UNKNOWN']} | Mask* {counts['IGNORED']}")
+    tabs.label(text=f"Approved {counts['APPROVED']} | Conflict {counts['CONFLICT']} | Unknown {counts['UNKNOWN']} | Mask* {counts['IGNORED']} | Clusters {num_clusters}")
     if settings.active_tab == "APPROVED":
         draw_approved_tab(tabs, scene, settings)
+    elif settings.active_tab == "CLUSTERS":
+        draw_clusters_tab(tabs, scene, settings)
     else:
         draw_issue_tab(tabs, scene, settings, settings.active_tab)
 
@@ -230,4 +383,5 @@ classes_to_register = [
     RZM_UL_conflict,
     RZM_UL_unknown,
     RZM_UL_ignored,
+    RZM_UL_object_weight_plan,
 ]

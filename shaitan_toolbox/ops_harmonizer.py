@@ -120,6 +120,14 @@ class RZM_OT_build_plan(Operator):
             print("No multi-mesh clusters found.")
         print("-" * 50 + "\n")
 
+        # Map each fingerprint back to its cluster ID
+        fp_to_cluster_id = {}
+        for i, cluster in enumerate(clusters):
+            if len(cluster) > 1:
+                cid = f"cluster_{i}"
+                for fp in cluster:
+                    fp_to_cluster_id[(fp["object_name"], fp["index"])] = cid
+
         # Расчет консенсусных кандидатов для каждого кластера
         from .harmonizer_utils import top_candidates
         fp_candidates = {}
@@ -193,7 +201,20 @@ class RZM_OT_build_plan(Operator):
                 if orig_score < settings.conflict_threshold and best_score >= settings.conflict_threshold:
                     reason += f" (consensus boost from {orig_score*100:.0f}%)"
 
-                add_plan_item(scene, target_obj, fp, status, resolved_name, best_score, margin, candidates, resolved_name not in armature_names, reason, ", ".join(conflict_names))
+                add_plan_item(
+                    scene,
+                    target_obj,
+                    fp,
+                    status,
+                    resolved_name,
+                    best_score,
+                    margin,
+                    candidates,
+                    resolved_name not in armature_names,
+                    reason,
+                    ", ".join(conflict_names),
+                    cluster_id=fp_to_cluster_id.get((fp["object_name"], fp["index"]), "")
+                )
                 continue
 
             # Определение Aux-имени для UNKNOWN
@@ -218,7 +239,19 @@ class RZM_OT_build_plan(Operator):
                 unknown_registry.append({"object_name": target_obj.name, "fingerprint": fp, "resolved_name": clustered_name})
 
             cluster_aux_name[leader_key] = clustered_name
-            add_plan_item(scene, target_obj, fp, "UNKNOWN", clustered_name, best_score, margin, candidates, True, "no candidate above Floor")
+            add_plan_item(
+                scene,
+                target_obj,
+                fp,
+                "UNKNOWN",
+                clustered_name,
+                best_score,
+                margin,
+                candidates,
+                True,
+                "no candidate above Floor",
+                cluster_id=fp_to_cluster_id.get((fp["object_name"], fp["index"]), "")
+            )
 
         rebuild_matrix_and_summary(scene, target_meshes)
         self.report({"INFO"}, "Remap Plan построен")
@@ -620,6 +653,268 @@ class RZM_OT_refresh_overlay(Operator):
         return {"FINISHED"}
 
 
+def distance_to_segment(point: Vector, start: Vector, end: Vector) -> float:
+    line_vec = end - start
+    point_vec = point - start
+    line_len_sq = line_vec.length_squared
+    if line_len_sq == 0.0:
+        return point_vec.length
+    t = max(0.0, min(1.0, point_vec.dot(line_vec) / line_len_sq))
+    projection = start + t * line_vec
+    return (point - projection).length
+
+
+class RZM_OT_cluster_disband(Operator):
+    bl_idname = "rzm_weights.cluster_disband"
+    bl_label = "Disband Cluster"
+    bl_description = "Разъединить все вейт-группы в данном кластере"
+    cluster_id: StringProperty()
+
+    def execute(self, context):
+        if not self.cluster_id:
+            return {'CANCELLED'}
+        for item in context.scene.rzm_weight_plan:
+            if item.cluster_id == self.cluster_id:
+                item.cluster_id = ""
+        tag_view3d_redraw()
+        self.report({"INFO"}, "Кластер расформирован")
+        return {'FINISHED'}
+
+
+class RZM_OT_cluster_split_item(Operator):
+    bl_idname = "rzm_weights.cluster_split_item"
+    bl_label = "Remove from Cluster"
+    bl_description = "Убрать выбранную группу из кластера"
+    plan_index: IntProperty()
+
+    def execute(self, context):
+        plan = context.scene.rzm_weight_plan
+        if 0 <= self.plan_index < len(plan):
+            item = plan[self.plan_index]
+            item.cluster_id = ""
+            tag_view3d_redraw()
+            self.report({"INFO"}, f"Группа {item.original_name} убрана из кластера")
+            return {'FINISHED'}
+        return {'CANCELLED'}
+
+
+class RZM_OT_cluster_merge_groups(Operator):
+    bl_idname = "rzm_weights.cluster_merge_groups"
+    bl_label = "Merge Groups into Cluster"
+    bl_description = "Объединить две группы в один кластер для синхронного редактирования"
+    source_index: IntProperty()
+    target_index: IntProperty()
+
+    def execute(self, context):
+        scene = context.scene
+        plan = scene.rzm_weight_plan
+        if not (0 <= self.source_index < len(plan) and 0 <= self.target_index < len(plan)):
+            return {'CANCELLED'}
+
+        src = plan[self.source_index]
+        tgt = plan[self.target_index]
+
+        cid = src.cluster_id or tgt.cluster_id
+        if not cid:
+            existing_ids = {item.cluster_id for item in plan if item.cluster_id}
+            i = 0
+            while f"cluster_manual_{i}" in existing_ids:
+                i += 1
+            cid = f"cluster_manual_{i}"
+
+        src.cluster_id = cid
+        tgt.cluster_id = cid
+
+        best_resolved_name = tgt.resolved_name or src.resolved_name
+        best_status = tgt.status if tgt.resolved_name else src.status
+        best_create_bone = tgt.create_bone if tgt.resolved_name else src.create_bone
+
+        src["_updating_cluster"] = True
+        tgt["_updating_cluster"] = True
+        src.resolved_name = best_resolved_name
+        src.status = best_status
+        src.create_bone = best_create_bone
+        tgt.resolved_name = best_resolved_name
+        tgt.status = best_status
+        tgt.create_bone = best_create_bone
+        src["_updating_cluster"] = False
+        tgt["_updating_cluster"] = False
+
+        for other in plan:
+            if other.cluster_id == cid:
+                other["_updating_cluster"] = True
+                other.resolved_name = best_resolved_name
+                other.status = best_status
+                other.create_bone = best_create_bone
+                other["_updating_cluster"] = False
+
+        try:
+            target_names = {item.object_name for item in plan}
+            target_meshes = [bpy.data.objects.get(name) for name in target_names if bpy.data.objects.get(name)]
+            rebuild_matrix_and_summary(scene, target_meshes)
+        except Exception as e:
+            print("Error rebuilding matrix:", e)
+
+        tag_view3d_redraw()
+        self.report({"INFO"}, f"Группы объединены в кластер '{cid}'")
+        return {'FINISHED'}
+
+
+class RZM_OT_switch_active_vg(Operator):
+    bl_idname = "rzm_weights.switch_active_vg"
+    bl_label = "Switch Active Vertex Group"
+    bl_description = "Переключить активную вершинную группу на объекте"
+    group_index: IntProperty()
+
+    def execute(self, context):
+        active_obj = context.active_object
+        if not active_obj or active_obj.type != 'MESH':
+            return {'CANCELLED'}
+        if 0 <= self.group_index < len(active_obj.vertex_groups):
+            active_obj.vertex_groups.active_index = self.group_index
+            for idx, item in enumerate(context.scene.rzm_weight_plan):
+                if item.object_name == active_obj.name and item.group_index == self.group_index:
+                    context.scene.rzm_weight_settings.object_plan_index = idx
+                    break
+            tag_view3d_redraw()
+            return {'FINISHED'}
+        return {'CANCELLED'}
+
+
+class RZM_OT_quick_attach_bone(Operator):
+    bl_idname = "rzm_weights.quick_attach_bone"
+    bl_label = "Quick Attach Bone"
+    bl_description = "Прикрепить вершинную группу к выбранной кости"
+    bone_name: StringProperty()
+    object_name: StringProperty()
+    group_index: IntProperty()
+
+    def execute(self, context):
+        scene = context.scene
+        plan = scene.rzm_weight_plan
+
+        found_item = None
+        for item in plan:
+            if item.object_name == self.object_name and item.group_index == self.group_index:
+                found_item = item
+                break
+
+        if not found_item:
+            self.report({"ERROR"}, "Plan item not found")
+            return {'CANCELLED'}
+
+        found_item.resolved_name = self.bone_name
+        found_item.status = "APPROVED"
+        found_item.manual_override = True
+
+        try:
+            target_names = {item.object_name for item in plan}
+            target_meshes = [bpy.data.objects.get(name) for name in target_names if bpy.data.objects.get(name)]
+            rebuild_matrix_and_summary(scene, target_meshes)
+        except Exception as e:
+            print("Error rebuilding matrix:", e)
+
+        tag_view3d_redraw()
+        self.report({"INFO"}, f"Группа прикреплена к кости '{self.bone_name}'")
+        return {'FINISHED'}
+
+
+class RZM_MT_quick_attach(bpy.types.Menu):
+    bl_label = "Быстрый аттачмент (ближайшие кости)"
+    bl_idname = "RZM_MT_quick_attach"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        settings = scene.rzm_weight_settings
+        armature_obj = settings.target_armature
+        if not armature_obj:
+            layout.label(text="Error: Target Armature is not set in Settings", icon='ERROR')
+            return
+
+        active_obj = context.active_object
+        if not active_obj or active_obj.type != 'MESH':
+            layout.label(text="Error: Active object must be a Mesh", icon='ERROR')
+            return
+
+        active_vg = active_obj.vertex_groups.active
+        if not active_vg:
+            layout.label(text="Error: No active vertex group", icon='ERROR')
+            return
+
+        plan_item = None
+        for item in scene.rzm_weight_plan:
+            if item.object_name == active_obj.name and item.group_index == active_vg.index:
+                plan_item = item
+                break
+
+        if not plan_item:
+            layout.label(text=f"Group '{active_vg.name}' not found in Plan. Build Plan first.", icon='WARNING')
+            return
+
+        centroid = Vector(plan_item.centroid)
+
+        bone_distances = []
+        for bone in armature_obj.data.bones:
+            head_w = armature_obj.matrix_world @ bone.head_local
+            tail_w = armature_obj.matrix_world @ bone.tail_local
+            dist = distance_to_segment(centroid, head_w, tail_w)
+            bone_distances.append((bone.name, dist))
+
+        bone_distances.sort(key=lambda x: x[1])
+        top_5 = bone_distances[:5]
+
+        layout.label(text=f"VG: {active_vg.name} (Centroid: {centroid.x:.2f}, {centroid.y:.2f}, {centroid.z:.2f})")
+        layout.separator()
+
+        for bone_name, dist in top_5:
+            label = f"{bone_name} ({dist:.3f} m)"
+            op = layout.operator("rzm_weights.quick_attach_bone", text=label, icon='BONE_DATA')
+            op.bone_name = bone_name
+            op.object_name = active_obj.name
+            op.group_index = active_vg.index
+
+
+class RZM_MT_cluster_merge_candidates(bpy.types.Menu):
+    bl_label = "Объединить в кластер"
+    bl_idname = "RZM_MT_cluster_merge_candidates"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        active_obj = context.active_object
+        if not active_obj or active_obj.type != 'MESH':
+            return
+        active_vg = active_obj.vertex_groups.active
+        if not active_vg:
+            return
+
+        source_idx = -1
+        for idx, item in enumerate(scene.rzm_weight_plan):
+            if item.object_name == active_obj.name and item.group_index == active_vg.index:
+                source_idx = idx
+                break
+
+        if source_idx == -1:
+            layout.label(text="Active group not found in Plan")
+            return
+
+        layout.label(text="Выберите группу для объединения:")
+        layout.separator()
+
+        has_candidates = False
+        for idx, item in enumerate(scene.rzm_weight_plan):
+            if item.object_name != active_obj.name and item.status != "IGNORED":
+                has_candidates = True
+                label = f"{item.object_name} | {item.original_name} (→ {item.resolved_name or '—'})"
+                op = layout.operator("rzm_weights.cluster_merge_groups", text=label)
+                op.source_index = source_idx
+                op.target_index = idx
+
+        if not has_candidates:
+            layout.label(text="Нет доступных групп на других объектах")
+
+
 classes_to_register = [
     RZM_OT_build_plan,
     RZM_OT_open_matrix_cell_editor,
@@ -636,4 +931,11 @@ classes_to_register = [
     RZM_OT_restore_backup,
     RZM_OT_clear_plan,
     RZM_OT_refresh_overlay,
+    RZM_OT_cluster_disband,
+    RZM_OT_cluster_split_item,
+    RZM_OT_cluster_merge_groups,
+    RZM_OT_switch_active_vg,
+    RZM_OT_quick_attach_bone,
+    RZM_MT_quick_attach,
+    RZM_MT_cluster_merge_candidates,
 ]
