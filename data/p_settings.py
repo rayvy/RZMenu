@@ -718,6 +718,12 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         default=True
     )
 
+    show_vg_stats: BoolProperty(
+        name="Show Vertex Group Stats",
+        description="Display vertex group counts (Total, Clear, Mask) at the top of default Vertex Groups panel",
+        default=True
+    )
+
     # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
     artist_profiles: CollectionProperty(type=RZM_ArtistProfile)
     active_profile_index: IntProperty(default=0, update=update_active_profile)
@@ -1086,6 +1092,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "move_to_npanel")
         col.prop(self, "modifier_blacklist")
         col.prop(self, "create_backup")
+        col.prop(self, "show_vg_stats")
         col.separator()
         col.prop(self, "batch_build_path")
 

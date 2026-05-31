@@ -63,6 +63,14 @@ def draw_setup_scripts_ui(self, context, layout):
     
     col_tools.operator("rzm_st.mirror_cut", text="Mirror Cut X (Clear Left)", icon='MOD_MIRROR')
     col_tools.operator("rzm_st.vg_sym_rename_all", text="Symmetrize VG Names (Median)", icon='MOD_MIRROR')
+    col_tools.operator("rzm_weights.vg_name_transfer", text="VG Name Transfer (by index)", icon='FILE_REFRESH')
+    col_tools.operator("rzm_st.generate_bones", text="Generate Missing Bones", icon='BONE_DATA')
+    
+    # Comparison Mode Selector
+    box_tools.separator()
+    box_tools.label(text="Compare Vertex Groups:", icon='VIEW_PAN')
+    row = box_tools.row(align=True)
+    row.prop(scene, "rzm_st_vg_compare_mode", expand=True)
     
     # Опасная зона
     box_tools.separator()

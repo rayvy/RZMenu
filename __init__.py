@@ -42,6 +42,7 @@ from . import operators
 from . import panels
 from . import core 
 from . import shaitan_toolbox
+from .utils import overlay_pdiddy
 
 # Формируем список модулей для загрузки
 modules = [
@@ -50,6 +51,7 @@ modules = [
     shaitan_toolbox,
     operators,
     panels,     # Тут должен быть интерфейс кнопки "Установить"
+    overlay_pdiddy,
 ]
 
 # --- ОПАСНЫЙ ИМПОРТ ---

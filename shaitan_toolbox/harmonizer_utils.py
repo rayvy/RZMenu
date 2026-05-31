@@ -552,6 +552,8 @@ def draw_weight_overlay_view():
     scene = getattr(bpy.context, "scene", None)
     if scene is None or not hasattr(scene, "rzm_weight_settings") or not scene.rzm_weight_settings.show_overlay:
         return
+    if getattr(scene, "rzm_st_sub_tab", "") != 'BASE_MESH':
+        return
     try:
         groups = cached_overlay_groups(scene)
     except Exception:
@@ -588,6 +590,8 @@ def draw_weight_overlay_pixel():
     context = bpy.context
     scene = getattr(context, "scene", None)
     if scene is None or not hasattr(scene, "rzm_weight_settings") or not scene.rzm_weight_settings.show_overlay:
+        return
+    if getattr(scene, "rzm_st_sub_tab", "") != 'BASE_MESH':
         return
     if context.region is None or context.region_data is None:
         return
@@ -757,5 +761,6 @@ def displace_existing_approved(scene, current_index: int, object_name: str, desi
             other.status = "CONFLICT"
             other.decision_reason = "displaced by manual assignment"
             other.conflict_cluster = desired_name
-            break
     return displaced
+
+

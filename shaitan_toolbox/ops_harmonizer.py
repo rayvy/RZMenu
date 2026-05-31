@@ -989,6 +989,52 @@ class RZM_MT_cluster_merge_candidates(bpy.types.Menu):
             op.target_index = idx
 
 
+class RZM_OT_vg_name_transfer(Operator):
+    bl_idname = "rzm_weights.vg_name_transfer"
+    bl_label = "VG Name Transfer"
+    bl_description = "Перенести имена вершинных групп с донорского объекта на активный по индексу"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.type == 'MESH'
+
+    def execute(self, context):
+        active_obj = context.active_object
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if len(selected_meshes) != 2:
+            self.report({'ERROR'}, "Выделите ровно 2 меш-объекта (активный будет Target, второй - Donor)")
+            return {'CANCELLED'}
+
+        donor_obj = selected_meshes[0] if selected_meshes[1] == active_obj else selected_meshes[1]
+
+        target_vgs = active_obj.vertex_groups
+        donor_vgs = donor_obj.vertex_groups
+
+        if len(target_vgs) != len(donor_vgs):
+            self.report({'ERROR'}, f"Несовпадение количества групп: Target={len(target_vgs)}, Donor={len(donor_vgs)}")
+            return {'CANCELLED'}
+
+        # Perform transfer
+        renamed_count = 0
+        for i in range(len(target_vgs)):
+            old_name = target_vgs[i].name
+            new_name = donor_vgs[i].name
+            if old_name != new_name:
+                target_vgs[i].name = new_name
+                renamed_count += 1
+
+        try:
+            from .harmonizer_utils import invalidate_overlay_cache
+            invalidate_matrix_suggestion_cache()
+            invalidate_overlay_cache()
+        except Exception:
+            pass
+
+        self.report({'INFO'}, f"Успешно перенесено {renamed_count} имен групп с {donor_obj.name} на {active_obj.name}")
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_build_plan,
     RZM_OT_open_matrix_cell_editor,
@@ -1010,6 +1056,7 @@ classes_to_register = [
     RZM_OT_cluster_merge_groups,
     RZM_OT_switch_active_vg,
     RZM_OT_quick_attach_bone,
+    RZM_OT_vg_name_transfer,
     RZM_MT_quick_attach,
     RZM_MT_cluster_merge_candidates,
 ]

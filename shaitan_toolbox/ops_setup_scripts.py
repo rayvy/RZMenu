@@ -430,10 +430,191 @@ class RZM_ST_OT_SmartTransfer(bpy.types.Operator):
             self.report({'ERROR'}, f"Ошибка при Smart Transfer: {str(e)}")
             return {'CANCELLED'}
 
+
+class RZM_ST_OT_GenerateBones(bpy.types.Operator):
+    bl_idname = "rzm_st.generate_bones"
+    bl_label = "Generate Missing Bones"
+    bl_description = "Generate armature bones for missing vertex groups (hidden and grouped, excluding masks)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return any(obj.type == 'MESH' for obj in context.selected_objects)
+
+    def execute(self, context):
+        selected_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not selected_objects:
+            self.report({'WARNING'}, "No MESH objects selected")
+            return {'CANCELLED'}
+
+        processed_count = 0
+        total_bones_created = 0
+        total_bones_deleted = 0
+
+        # Helper to check for mask prefix
+        def is_mask(name: str) -> bool:
+            return name.strip().casefold().startswith("mask")
+
+        # Let's helper function to calculate VG centroids (world space)
+        def get_vg_centroids(obj):
+            vgs = obj.vertex_groups
+            centroids = {}
+            if not vgs:
+                return centroids
+            group_sums = {vg.index: Vector((0.0, 0.0, 0.0)) for vg in vgs}
+            group_counts = {vg.index: 0 for vg in vgs}
+            matrix_world = obj.matrix_world
+            
+            for v in obj.data.vertices:
+                co = matrix_world @ v.co
+                for g in v.groups:
+                    idx = g.group
+                    if idx in group_sums:
+                        group_sums[idx] += co
+                        group_counts[idx] += 1
+                        
+            for vg in vgs:
+                idx = vg.index
+                count = group_counts[idx]
+                if count > 0:
+                    centroids[vg.name] = group_sums[idx] / count
+                else:
+                    # Fallback to local center
+                    local_center = sum((Vector(corner) for corner in obj.bound_box), Vector()) / 8
+                    centroids[vg.name] = matrix_world @ local_center
+            return centroids
+
+        for obj in selected_objects:
+            # Look for armature modifier
+            armature_modifier = None
+            for mod in obj.modifiers:
+                if mod.type == 'ARMATURE' and mod.object and mod.object.type == 'ARMATURE':
+                    armature_modifier = mod
+                    break
+            
+            if not armature_modifier:
+                continue
+
+            armature_obj = armature_modifier.object
+            armature = armature_obj.data
+            
+            # Save original active & selection
+            orig_selection = list(context.selected_objects)
+            orig_active = context.view_layer.objects.active
+            orig_obj_mode = obj.mode
+            
+            # 1. Calculate vertex group centroids
+            centroids = get_vg_centroids(obj)
+            
+            # Find non-mask vertex groups
+            mesh_vg_names = [vg.name for vg in obj.vertex_groups if not is_mask(vg.name)]
+            
+            # Identify missing bones
+            existing_bones = {bone.name for bone in armature.bones}
+            missing_bone_names = [name for name in mesh_vg_names if name not in existing_bones]
+            
+            # Identify mask bones to delete
+            mask_bones_to_delete = [bone.name for bone in armature.bones if is_mask(bone.name)]
+
+            # Switch armature to edit mode
+            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.select_all(action='DESELECT')
+            
+            context.view_layer.objects.active = armature_obj
+            armature_obj.select_set(True)
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+            edit_bones = armature.edit_bones
+            
+            # A. Delete mask bones
+            deleted_count = 0
+            for name in mask_bones_to_delete:
+                eb = edit_bones.get(name)
+                if eb:
+                    edit_bones.remove(eb)
+                    deleted_count += 1
+            total_bones_deleted += deleted_count
+            
+            # B. Generate missing bones
+            created_count = 0
+            new_bone_names = []
+            
+            for name in missing_bone_names:
+                # Calculate local coordinate for head from world centroid
+                world_co = centroids.get(name)
+                if world_co is None:
+                    local_head = Vector((0.0, 0.0, 0.0))
+                else:
+                    local_head = armature_obj.matrix_world.inverted() @ world_co
+                
+                # Edit bone creation
+                eb = edit_bones.new(name)
+                eb.head = local_head
+                eb.tail = local_head + Vector((0.0, 0.05, 0.0)) # Small offset
+                
+                # Find closest existing bone to parent to (excluding newly created ones)
+                closest_bone = None
+                min_dist = float('inf')
+                
+                for other_eb in edit_bones:
+                    if other_eb.name == name or other_eb.name in missing_bone_names:
+                        continue
+                    dist = (other_eb.head - local_head).length
+                    if dist < min_dist:
+                        min_dist = dist
+                        closest_bone = other_eb
+                
+                # If we found a closest bone and it is within 0.4 meters (local units)
+                if closest_bone and min_dist < 0.4:
+                    eb.parent = closest_bone
+                    eb.use_connect = False
+                
+                # Hide edit bone
+                eb.hide = True
+                new_bone_names.append(name)
+                created_count += 1
+                
+            total_bones_created += created_count
+            
+            # Go back to object mode
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # C. Assign bones to "Hidden Helpers" bone collection and hide them (in object mode)
+            if new_bone_names:
+                hidden_coll = armature.collections.get("Hidden Helpers")
+                if hidden_coll is None:
+                    hidden_coll = armature.collections.new("Hidden Helpers")
+                    hidden_coll.is_visible = False
+                
+                for bname in new_bone_names:
+                    bone = armature.bones.get(bname)
+                    if bone:
+                        hidden_coll.assign(bone)
+                        bone.hide = True
+            
+            # Restore selection and active
+            bpy.ops.object.select_all(action='DESELECT')
+            for sel_obj in orig_selection:
+                if sel_obj.name in bpy.data.objects:
+                    sel_obj.select_set(True)
+            context.view_layer.objects.active = orig_active
+            if orig_active and orig_active.mode != orig_obj_mode:
+                try:
+                    bpy.ops.object.mode_set(mode=orig_obj_mode)
+                except Exception:
+                    pass
+                
+            processed_count += 1
+
+        self.report({'INFO'}, f"Processed {processed_count} mesh(es). Created {total_bones_created} missing bones, deleted {total_bones_deleted} mask bones.")
+        return {'FINISHED'}
+
+
 # Регистрация классов
 classes_to_register = [
     RZM_ST_OT_MirrorCut,
     RZM_ST_OT_VGSymRename,
     RZM_ST_OT_DeleteAllVG,
     RZM_ST_OT_SmartTransfer,
+    RZM_ST_OT_GenerateBones,
 ]

@@ -65,6 +65,7 @@ def register():
     register_keymaps()
 
 def unregister():
+
     # 1. Удаление keymaps
     unregister_keymaps()
 

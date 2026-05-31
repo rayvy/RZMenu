@@ -847,6 +847,11 @@ def register():
         ],
         default='RZ'
     )
+    def tag_view3d_redraw_st(self, context):
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
     bpy.types.Scene.rzm_st_sub_tab = EnumProperty(
         name="Shaitan Sub Tab",
         items=[
@@ -855,7 +860,24 @@ def register():
             ('UV_PACKER', "TexCoord Packer", "TexCoord Packer"),
             ('COLOR_ATTR', "Color Attribute", "Color Attribute Presets / Painting")
         ],
-        default='SETUP_SCRIPTS'
+        default='SETUP_SCRIPTS',
+        update=tag_view3d_redraw_st
+    )
+
+    def tag_view3d_redraw_compare(self, context):
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
+    bpy.types.Scene.rzm_st_vg_compare_mode = EnumProperty(
+        name="VG Comparison Mode",
+        items=[
+            ('OFF', "None", "Disable comparison overlay"),
+            ('IDENTICAL', "Show identical", "Show identical vertex groups in 3D viewport"),
+            ('DIFFERENT', "Show difference", "Show differing vertex groups in 3D viewport"),
+        ],
+        default='OFF',
+        update=tag_view3d_redraw_compare
     )
     bpy.types.Scene.rzm_st_base_mesh_sub_tab = EnumProperty(
         name="Base Mesh Sub Tab",
@@ -924,6 +946,7 @@ def register():
     bpy.types.WindowManager.rzm_dependency_install_status = StringProperty()
 
 def unregister():
+    del bpy.types.Scene.rzm_st_vg_compare_mode
     del bpy.types.Scene.rzm_toolbox_mode
     del bpy.types.Scene.rzm_st_sub_tab
     del bpy.types.Scene.rzm_st_base_mesh_sub_tab
