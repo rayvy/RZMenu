@@ -536,7 +536,10 @@ def cached_overlay_groups(scene):
             continue
         groups.append(
             {
-                "item": item,
+                "object_name": item.object_name,
+                "group_index": item.group_index,
+                "original_name": item.original_name,
+                "resolved_name": item.resolved_name,
                 "points": collect_weighted_world_vertices(obj, item.group_index, depsgraph, sample_step=4),
                 "centroid": Vector(item.centroid),
             }
@@ -558,7 +561,7 @@ def draw_weight_overlay_view():
     gpu.state.depth_test_set("NONE")
     try:
         for group in groups:
-            color = color_for_object(scene, group["item"].object_name)
+            color = color_for_object(scene, group["object_name"])
             bins = [[], [], []]
             for position, weight in group["points"]:
                 bins[0 if weight < 0.34 else 1 if weight < 0.67 else 2].append(position)
@@ -595,13 +598,12 @@ def draw_weight_overlay_pixel():
     font_id = 0
     blf.size(font_id, 13)
     for group in groups:
-        item = group["item"]
         screen = view3d_utils.location_3d_to_region_2d(context.region, context.region_data, group["centroid"])
         if screen is None:
             continue
-        color = color_for_object(scene, item.object_name)
+        color = color_for_object(scene, group["object_name"])
         x, y = screen.x + 12, screen.y + 12
-        for line in (f"{item.object_name}[{item.group_index:03d}] {item.original_name}", f"-> {item.resolved_name}"):
+        for line in (f"{group['object_name']}[{group['group_index']:03d}] {group['original_name']}", f"-> {group['resolved_name']}"):
             blf.position(font_id, x, y, 0)
             blf.color(font_id, color[0], color[1], color[2], 1.0)
             blf.draw(font_id, line)
