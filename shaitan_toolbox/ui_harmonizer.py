@@ -126,44 +126,7 @@ def draw_weight_paint_helper(layout, context, scene, settings):
             if plan_item.resolved_name:
                 row_attach.prop(plan_item, "is_helper", text="Helper", toggle=True)
 
-            # Helper attachment options
-            armature_obj = settings.target_armature
-            helpers = get_existing_helpers(scene, armature_obj)
-
-            box_hlp = det.box()
-            row_hlp_title = box_hlp.row()
-            row_hlp_title.label(text="Helper Bones:", icon='BONE_DATA')
-
-            new_hlp_name = f"hlp_{plan_item.original_name}"
-            op_new = row_hlp_title.operator("rzm_weights.quick_attach_bone", text=f"Create {new_hlp_name}", icon='ADD')
-            op_new.bone_name = new_hlp_name
-            op_new.object_name = plan_item.object_name
-            op_new.group_index = plan_item.group_index
-            op_new.is_helper = True
-
-            filtered_helpers = [h for h in helpers if h != new_hlp_name]
-            if filtered_helpers:
-                col_hlp = box_hlp.column(align=True)
-                for hlp_name in filtered_helpers:
-                    row_h = col_hlp.row(align=True)
-                    op_h = row_h.operator("rzm_weights.quick_attach_bone", text=f"Attach to {hlp_name}", icon='LINKED')
-                    op_h.bone_name = hlp_name
-                    op_h.object_name = plan_item.object_name
-                    op_h.group_index = plan_item.group_index
-                    op_h.is_helper = True
-
-            row_info = det.row(align=True)
-            row_info.label(text=f"Nearest: {plan_item.nearest_bone or '—'} ({plan_item.nearest_distance:.3f} m)")
-            
-            row_cands = det.row(align=True)
-            for slot in (1, 2, 3):
-                cand = getattr(plan_item, f"candidate_{slot}")
-                score = getattr(plan_item, f"candidate_{slot}_score")
-                if cand:
-                    op = row_cands.operator("rzm_weights.assign_candidate", text=f"#{slot} {cand} ({score*100:.0f}%)")
-                    op.item_index = plan_item_idx
-                    op.slot = slot
-            
+            # 1. Cluster Info box (Moved Up)
             if plan_item.cluster_id:
                 cl_box = det.box()
                 cl_box.label(text=f"Cluster: {plan_item.cluster_id} (Sync Mode)", icon='GROUP')
@@ -185,6 +148,58 @@ def draw_weight_paint_helper(layout, context, scene, settings):
             else:
                 row_join = det.row(align=True)
                 row_join.operator("wm.call_menu", text="Join / Create Cluster...", icon='LINKED').name = "RZM_MT_cluster_merge_candidates"
+
+            # 2. Helper attachment options (Limited to 5 by default)
+            armature_obj = settings.target_armature
+            helpers = get_existing_helpers(scene, armature_obj)
+
+            box_hlp = det.box()
+            row_hlp_title = box_hlp.row()
+            row_hlp_title.label(text="Helper Bones:", icon='BONE_DATA')
+            row_hlp_title.prop(settings, "show_all_helpers", text="All", toggle=True)
+
+            new_hlp_name = f"hlp_{plan_item.original_name}"
+            op_new = row_hlp_title.operator("rzm_weights.quick_attach_bone", text=f"Create {new_hlp_name}", icon='ADD')
+            op_new.bone_name = new_hlp_name
+            op_new.object_name = plan_item.object_name
+            op_new.group_index = plan_item.group_index
+            op_new.is_helper = True
+
+            filtered_helpers = [h for h in helpers if h != new_hlp_name]
+            if filtered_helpers:
+                col_hlp = box_hlp.column(align=True)
+                
+                display_helpers = filtered_helpers
+                is_truncated = False
+                if not settings.show_all_helpers and len(filtered_helpers) > 5:
+                    display_helpers = filtered_helpers[:5]
+                    is_truncated = True
+
+                for hlp_name in display_helpers:
+                    row_h = col_hlp.row(align=True)
+                    op_h = row_h.operator("rzm_weights.quick_attach_bone", text=f"Attach to {hlp_name}", icon='LINKED')
+                    op_h.bone_name = hlp_name
+                    op_h.object_name = plan_item.object_name
+                    op_h.group_index = plan_item.group_index
+                    op_h.is_helper = True
+
+                if is_truncated:
+                    row_more = col_hlp.row()
+                    row_more.alignment = 'CENTER'
+                    row_more.label(text=f"... and {len(filtered_helpers) - 5} more helpers (toggle 'All' to show)")
+
+            # 3. Nearest & Candidates Info
+            row_info = det.row(align=True)
+            row_info.label(text=f"Nearest: {plan_item.nearest_bone or '—'} ({plan_item.nearest_distance:.3f} m)")
+            
+            row_cands = det.row(align=True)
+            for slot in (1, 2, 3):
+                cand = getattr(plan_item, f"candidate_{slot}")
+                score = getattr(plan_item, f"candidate_{slot}_score")
+                if cand:
+                    op = row_cands.operator("rzm_weights.assign_candidate", text=f"#{slot} {cand} ({score*100:.0f}%)")
+                    op.item_index = plan_item_idx
+                    op.slot = slot
         else:
             box.label(text="Active VG not in Plan", icon='WARNING')
     else:

@@ -91,6 +91,7 @@ class RZMWeightSettings(PropertyGroup):
     overlay_all_components: BoolProperty(name="All components", default=True, update=trigger_redraw)
     overlay_point_size: FloatProperty(name="Dots", default=6.0, min=1.0, max=20.0, update=trigger_redraw)
     matrix_only_incomplete: BoolProperty(name="Only holes", default=False)
+    show_all_helpers: BoolProperty(name="Show All Helpers", default=False)
 
     active_tab: EnumProperty(
         items=[
