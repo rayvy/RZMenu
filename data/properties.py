@@ -274,6 +274,7 @@ def ensure_vfx_properties_initialized(self):
         ("RZM.CURVE_VFX.SIZE_RAND_MIN", 1.0),
         ("RZM.CURVE_VFX.SIZE_RAND_MAX", 1.0),
         ("RZM.CURVE_VFX.VISIBILITY_CONDITION", ""),
+        ("RZM.CURVE_VFX.COLOR", [1.0, 1.0, 1.0, 1.0]),
     ]:
         if key not in self:
             self[key] = default
@@ -296,9 +297,9 @@ def ensure_vfx_properties_initialized(self):
     if "RZM.CURVE_VFX.ANIMATED_UV" not in self:
         self["RZM.CURVE_VFX.ANIMATED_UV"] = False
     if "RZM.CURVE_VFX.UV_DUP_START" not in self:
-        self["RZM.CURVE_VFX.UV_DUP_START"] = [0.005, 0.0]
+        self["RZM.CURVE_VFX.UV_DUP_START"] = [0, 0]
     if "RZM.CURVE_VFX.UV_DUP_END" not in self:
-        self["RZM.CURVE_VFX.UV_DUP_END"] = [0.995, 0.0]
+        self["RZM.CURVE_VFX.UV_DUP_END"] = [512, 0]
 
 def get_vfx_enabled(self):
     return bool(self.get("RZM.CURVE_VFX", False))
@@ -316,20 +317,20 @@ def set_vfx_animated_uv(self, value):
 def get_vfx_uv_dup_start(self):
     val = self.get("RZM.CURVE_VFX.UV_DUP_START")
     if val is not None:
-        return list(val)
-    return [0.005, 0.0]
+        return tuple(int(x) for x in val[:2])
+    return (0, 0)
 def set_vfx_uv_dup_start(self, value):
     ensure_vfx_properties_initialized(self)
-    self["RZM.CURVE_VFX.UV_DUP_START"] = list(value)
+    self["RZM.CURVE_VFX.UV_DUP_START"] = [int(x) for x in value]
 
 def get_vfx_uv_dup_end(self):
     val = self.get("RZM.CURVE_VFX.UV_DUP_END")
     if val is not None:
-        return list(val)
-    return [0.995, 0.0]
+        return tuple(int(x) for x in val[:2])
+    return (512, 0)
 def set_vfx_uv_dup_end(self, value):
     ensure_vfx_properties_initialized(self)
-    self["RZM.CURVE_VFX.UV_DUP_END"] = list(value)
+    self["RZM.CURVE_VFX.UV_DUP_END"] = [int(x) for x in value]
 
 def get_vfx_profile(self):
     val = self.get("RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE", "AUTO")
@@ -525,6 +526,15 @@ def get_vfx_weight_values(self):
 def set_vfx_weight_values(self, value):
     self["RZM.CURVE_VFX.WEIGHT_VALUES"] = list(value)
 
+def get_vfx_color(self):
+    val = self.get("RZM.CURVE_VFX.COLOR", (1.0, 1.0, 1.0, 1.0))
+    if len(val) < 4:
+        val = list(val) + [1.0] * (4 - len(val))
+    return tuple(float(x) for x in val[:4])
+def set_vfx_color(self, value):
+    ensure_vfx_properties_initialized(self)
+    self["RZM.CURVE_VFX.COLOR"] = list(value)
+
 
 
 def register():
@@ -557,16 +567,16 @@ def register():
         get=get_vfx_animated_uv,
         set=set_vfx_animated_uv
     )
-    bpy.types.Object.rzm_curve_vfx_uv_dup_start = FloatVectorProperty(
+    bpy.types.Object.rzm_curve_vfx_uv_dup_start = IntVectorProperty(
         name="UV Duplication Start",
-        description="UV duplication coordinate for start of the curve",
+        description="UV duplication coordinate for start of the curve (in pixels)",
         size=2,
         get=get_vfx_uv_dup_start,
         set=set_vfx_uv_dup_start
     )
-    bpy.types.Object.rzm_curve_vfx_uv_dup_end = FloatVectorProperty(
+    bpy.types.Object.rzm_curve_vfx_uv_dup_end = IntVectorProperty(
         name="UV Duplication End",
-        description="UV duplication coordinate for end of the curve",
+        description="UV duplication coordinate for end of the curve (in pixels)",
         size=2,
         get=get_vfx_uv_dup_end,
         set=set_vfx_uv_dup_end
@@ -745,6 +755,16 @@ def register():
         precision=6,
         get=get_vfx_weight_values,
         set=set_vfx_weight_values
+    )
+    bpy.types.Object.rzm_curve_vfx_color = FloatVectorProperty(
+        name="ATTRIBUTE COLOR (Not the Diffuse Color!)",
+        description="RGBA color values to write to the vertex Color buffer (useful for Genshin/ZZZ outlines/styling. Not the diffuse texture/material color!)",
+        subtype='COLOR',
+        size=4,
+        min=0.0,
+        max=1.0,
+        get=get_vfx_color,
+        set=set_vfx_color
     )
     bpy.types.Object.rzm_curve_vfx_weight_reference = PointerProperty(
         name="Weight Reference Mesh",

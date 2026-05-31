@@ -52,6 +52,11 @@
     'rabbit2': false,
     'rabbit3': false,
     'rabbit4': false,
+    'tex0': false,
+    'tex1': false,
+    'tex2': false,
+    'tex3': false,
+    'tex4': false,
 } %}
 {% if mod_file and mod_file.components %}
     {% for component in mod_file.components if component.draw_vb != "" %}
@@ -87,6 +92,16 @@
                 {% if _cd_flags.update({'rabbit3': true}) %}{% endif %}
             {% elif cd_name == 'RabbitFxPreset4' %}
                 {% if _cd_flags.update({'rabbit4': true}) %}{% endif %}
+            {% elif cd_name == 'TexFxPreset0' %}
+                {% if _cd_flags.update({'tex0': true}) %}{% endif %}
+            {% elif cd_name == 'TexFxPreset1' %}
+                {% if _cd_flags.update({'tex1': true}) %}{% endif %}
+            {% elif cd_name == 'TexFxPreset2' %}
+                {% if _cd_flags.update({'tex2': true}) %}{% endif %}
+            {% elif cd_name == 'TexFxPreset3' %}
+                {% if _cd_flags.update({'tex3': true}) %}{% endif %}
+            {% elif cd_name == 'TexFxPreset4' %}
+                {% if _cd_flags.update({'tex4': true}) %}{% endif %}
             {% endif %}
         {% endfor %}
     {% endfor %}
@@ -661,7 +676,47 @@ Resource\RabbitFX\Glowmap = ref ResourceModuleTexW
 run = CommandList\RabbitFX\Run
 {% endif %}
 
-{% if _cd_flags.rabbit0 or _cd_flags.rabbit1 or _cd_flags.rabbit2 or _cd_flags.rabbit3 or _cd_flags.rabbit4 %}
+{% if _cd_flags.tex0 %}
+[CustomShader.rzm.CustomDraw.TexFxPreset0]
+$\texfx\blendmode = 1
+$\TexFX\brightness = 20
+Resource\TexFX\Glowmap = ref ResourceModuleTexRGB
+run = CommandList\TexFX\Run
+{% endif %}
+
+{% if _cd_flags.tex1 %}
+[CustomShader.rzm.CustomDraw.TexFxPreset1]
+$\texfx\blendmode = 1
+$\TexFX\brightness = 20
+Resource\TexFX\Glowmap = ref ResourceModuleTexRB
+run = CommandList\TexFX\Run
+{% endif %}
+
+{% if _cd_flags.tex2 %}
+[CustomShader.rzm.CustomDraw.TexFxPreset2]
+$\texfx\blendmode = 1
+$\TexFX\brightness = 20
+Resource\TexFX\Glowmap = ref ResourceModuleTexBlueG
+run = CommandList\TexFX\Run
+{% endif %}
+
+{% if _cd_flags.tex3 %}
+[CustomShader.rzm.CustomDraw.TexFxPreset3]
+$\texfx\blendmode = 1
+$\TexFX\brightness = 20
+Resource\TexFX\Glowmap = ref ResourceModuleTexBlue
+run = CommandList\TexFX\Run
+{% endif %}
+
+{% if _cd_flags.tex4 %}
+[CustomShader.rzm.CustomDraw.TexFxPreset4]
+$\texfx\blendmode = 1
+$\TexFX\brightness = 20
+Resource\TexFX\Glowmap = ref ResourceModuleTexW
+run = CommandList\TexFX\Run
+{% endif %}
+
+{% if _cd_flags.rabbit0 or _cd_flags.rabbit1 or _cd_flags.rabbit2 or _cd_flags.rabbit3 or _cd_flags.rabbit4 or _cd_flags.tex0 or _cd_flags.tex1 or _cd_flags.tex2 or _cd_flags.tex3 or _cd_flags.tex4 %}
 [ResourceModuleTexRGB]
 type = Texture2D
 filename = ./modules/rgb.dds

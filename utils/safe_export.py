@@ -278,9 +278,9 @@ class SafeExport:
             # Альтернативный экспериментальный режим (удаление слоев после экспорта)
             self.sub_modules = [
                 VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
-                MeshBackupSubModule(),               # [1] Бэкап всех мешей
-                XXMIMissingDataPredictorSubModule(), # [2] Добавляем COLOR/TEXCOORD
-                CurveVFXPreviewSubModule(),          # [3] Убираем VFX preview
+                # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
+                XXMIMissingDataPredictorSubModule(), # [1] Добавляем COLOR/TEXCOORD
+                CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
             ]
         else:
             # Режим по умолчанию (COLOR/TEXCOORD добавляются перманентно)
@@ -290,8 +290,8 @@ class SafeExport:
             self.sub_modules = [
                 VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
                 predictor,                           # [1] Добавляем COLOR/TEXCOORD перманентно
-                MeshBackupSubModule(),               # [2] Бэкап всех мешей (уже содержащих слои)
-                CurveVFXPreviewSubModule(),          # [3] Убираем VFX preview
+                # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
+                CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
             ]
 
     def __enter__(self):

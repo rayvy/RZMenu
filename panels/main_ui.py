@@ -386,6 +386,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
 
     def draw_object_properties(self, context, layout):
         from ..core.utils import get_toggle_slot_occupancy, find_toggle_def
+        scene = context.scene
         
         target_obj = context.active_object
         if not target_obj:
@@ -439,6 +440,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 dcol = dbox.column(align=True)
                 dcol.prop(target_obj, "rzm_curve_vfx_particle_count", text="Particle Count")
                 dcol.prop(target_obj, "rzm_curve_vfx_dispersion_scale", text="Dispersion Scale")
+                if scene.rzm.game.selection in ("GenshinImpact", "ZenlessZoneZero"):
+                    dcol.separator()
+                    dcol.prop(target_obj, "rzm_curve_vfx_color", text="ATTRIBUTE COLOR (Not the Diffuse Color!)")
 
                 # Section C: Animation & Chaos
                 abox = box.box()
@@ -455,42 +459,35 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_end_pos", text="Timeline End")
                 acol.prop(target_obj, "rzm_curve_vfx_visibility_condition", text="Visibility Cond")
 
-                # Section D: Animated UV
+                # Section D: UV Settings & Calculator
                 uvbox = box.box()
-                uvbox.label(text="Animated UV (Dynamic UV duplication)", icon='IMAGE_DATA')
-                uvbox.prop(target_obj, "rzm_curve_vfx_animated_uv", text="Enable Animated UV")
+                uvbox.label(text="UV Settings & Calculator", icon='IMAGE_DATA')
+                
+                # --- Animated UV Sub-section ---
+                uvcol = uvbox.column(align=True)
+                uvcol.prop(target_obj, "rzm_curve_vfx_animated_uv", text="Enable Animated UV")
                 if target_obj.rzm_curve_vfx_animated_uv:
-                    uvcol = uvbox.column(align=True)
                     uvcol.prop(target_obj, "rzm_curve_vfx_uv_dup_start", text="UV Dup Start")
                     uvcol.prop(target_obj, "rzm_curve_vfx_uv_dup_end", text="UV Dup End")
-
-                # Section E: Technical Weights
-                wbox = box.box()
-                wbox.label(text="Technical Weights", icon='MOD_VERTEX_WEIGHT')
-                wbox.prop(target_obj, "rzm_curve_vfx_weight_reference", text="Reference Mesh")
-
-                ref_mesh = target_obj.rzm_curve_vfx_weight_reference
-                if ref_mesh:
-                    wbox.label(text="Bake Mode: Sampling weights from " + ref_mesh.name, icon='INFO')
-                else:
-                    col_manual = wbox.column()
-                    col_manual.prop(target_obj, "rzm_curve_vfx_weight_indices", index=0, text="Bone Index")
-
-                # Section E: Utilities
-                ubox = box.box()
-                ubox.label(text="Utilities", icon='TOOL_SETTINGS')
-                ubox.operator("rzm.toggle_curve_bevel",
-                              text="Toggle Bevel Preview (0.01 \u2194 0)", icon='CURVE_DATA')
-
-                ubox.separator()
-                ubox.label(text="UV Calculator", icon='IMAGE_DATA')
-                ucol = ubox.column(align=True)
+                    
+                    # Float preview for Animated UV duplication
+                    _tw = max(target_obj.rzm_curve_vfx_texture_size[0], 1)
+                    _th = max(target_obj.rzm_curve_vfx_texture_size[1], 1)
+                    _su, _sv = target_obj.rzm_curve_vfx_uv_dup_start
+                    _eu, _ev = target_obj.rzm_curve_vfx_uv_dup_end
+                    uvcol.label(text=f"→ Float: Start=({_su/_tw:.4f}, {_sv/_th:.4f})  End=({_eu/_tw:.4f}, {_ev/_th:.4f})")
+                
+                uvbox.separator()
+                
+                # --- UV Calculator Sub-section ---
+                uvbox.label(text="UV Calculator Helper", icon='IMAGE_DATA')
+                ucol = uvbox.column(align=True)
 
                 # Canvas size
                 crow = ucol.row(align=True)
                 crow.label(text="Canvas:")
                 crow.prop(target_obj, "rzm_curve_vfx_texture_size", text="", index=0)
-                crow.label(text="\u00d7")
+                crow.label(text="×")
                 crow.prop(target_obj, "rzm_curve_vfx_texture_size", text="", index=1)
                 crow.label(text="px")
 
@@ -505,7 +502,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 srow = ucol.row(align=True)
                 srow.label(text="Sprite:")
                 srow.prop(target_obj, "rzm_curve_vfx_uv_px_size", text="", index=0)
-                srow.label(text="\u00d7")
+                srow.label(text="×")
                 srow.prop(target_obj, "rzm_curve_vfx_uv_px_size", text="", index=1)
                 srow.label(text="px")
 
@@ -514,10 +511,28 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 _th = max(target_obj.rzm_curve_vfx_texture_size[1], 1)
                 _ou, _ov = target_obj.rzm_curve_vfx_uv_px_offset
                 _sw, _sh = target_obj.rzm_curve_vfx_uv_px_size
-                ucol.label(text=f"\u2192 Off=({_ou/_tw:.4f}, {_ov/_th:.4f})  Scale=({_sw/_tw:.4f}, {_sh/_th:.4f})")
+                ucol.label(text=f"→ Off=({_ou/_tw:.4f}, {_ov/_th:.4f})  Scale=({_sw/_tw:.4f}, {_sh/_th:.4f})")
 
-                ubox.operator("rzm.compute_vfx_uv",
+                uvbox.operator("rzm.compute_vfx_uv",
                               text="Compute & Write UV", icon='FILE_REFRESH')
+
+                # Section E: Technical Weights
+                wbox = box.box()
+                wbox.label(text="Technical Weights", icon='MOD_VERTEX_WEIGHT')
+                wbox.prop(target_obj, "rzm_curve_vfx_weight_reference", text="Reference Mesh")
+
+                ref_mesh = target_obj.rzm_curve_vfx_weight_reference
+                if ref_mesh:
+                    wbox.label(text="Bake Mode: Sampling weights from " + ref_mesh.name, icon='INFO')
+                else:
+                    col_manual = wbox.column()
+                    col_manual.prop(target_obj, "rzm_curve_vfx_weight_indices", index=0, text="Bone Index")
+
+                # Section G: Utilities
+                ubox = box.box()
+                ubox.label(text="Utilities", icon='TOOL_SETTINGS')
+                ubox.operator("rzm.toggle_curve_bevel",
+                              text="Toggle Bevel Preview (0.01 \u2194 0)", icon='CURVE_DATA')
 
                 ubox.separator()
                 ubox.label(text="Preview", icon='RESTRICT_VIEW_OFF')

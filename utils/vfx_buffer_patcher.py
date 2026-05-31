@@ -786,6 +786,24 @@ def cache_object_matches_part(obj_name, component_name, part_suffix):
 def float_to_half(f):
     return int(np.float16(f).view(np.uint16))
 
+def pack_color(color_rgba, stride):
+    buf = bytearray(stride)
+    r, g, b, a = color_rgba
+    if stride == 4:
+        r_b = int(max(0.0, min(1.0, r)) * 255)
+        g_b = int(max(0.0, min(1.0, g)) * 255)
+        b_b = int(max(0.0, min(1.0, b)) * 255)
+        a_b = int(max(0.0, min(1.0, a)) * 255)
+        struct.pack_into('<BBBB', buf, 0, r_b, g_b, b_b, a_b)
+    elif stride == 16:
+        struct.pack_into('<ffff', buf, 0, float(r), float(g), float(b), float(a))
+    else:
+        for i in range(min(stride, 4)):
+            buf[i] = int(max(0.0, min(1.0, color_rgba[i])) * 255)
+        for i in range(4, stride):
+            buf[i] = 0
+    return buf
+
 
 
 def find_stride_from_ini(mod_root, resource_name, default_stride):
@@ -1111,8 +1129,14 @@ def patch_buffers(context, cache):
             if (curve_obj.name, s_idx) not in curve_mapping:
                 continue
             if getattr(curve_obj, "rzm_curve_vfx_animated_uv", False):
-                dup_start = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_start", (0.0, 0.0)))
-                dup_end = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_end", (0.0, 0.0)))
+                dup_start_px = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_start", (0, 0)))
+                dup_end_px = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_end", (0, 0)))
+                # Normalize using texture size
+                tex_size = list(getattr(curve_obj, "rzm_curve_vfx_texture_size", (512, 512)))
+                tw = max(tex_size[0], 1)
+                th = max(tex_size[1], 1)
+                dup_start = [dup_start_px[0] / tw, dup_start_px[1] / th]
+                dup_end = [dup_end_px[0] / tw, dup_end_px[1] / th]
             else:
                 dup_start = [0.0, 0.0]
                 dup_end = [0.0, 0.0]
@@ -1175,6 +1199,12 @@ def patch_buffers(context, cache):
         vb2_path = find_file(mod_root, expected_vb2_name)
         vb1_path = find_file(mod_root, expected_vb1_name)
         ib_path = find_file(mod_root, expected_ib_name)
+
+        rzm = getattr(context.scene, "rzm", None)
+        game_sel = rzm.game.selection if rzm and hasattr(rzm, "game") else ""
+        is_hoyo_game = game_sel in ("GenshinImpact", "ZenlessZoneZero")
+        expected_color_name = f"{mod_name}{comp_name}Color.buf"
+        color_path = find_file(mod_root, expected_color_name) if is_hoyo_game else None
 
         if not vb0_path:
             print(f"[RZM-VFX] [ERROR] Position buffer '{expected_vb0_name}' not found. Cannot patch.")
@@ -1282,6 +1312,10 @@ def patch_buffers(context, cache):
         if vb1_path:
             stride_t = find_stride_from_ini(mod_root, f"Resource{mod_name}{comp_name}Texcoord", 20)
 
+        stride_c = 4
+        if color_path:
+            stride_c = find_stride_from_ini(mod_root, f"Resource{mod_name}{comp_name}Color", 4)
+
         # Auto-detect if UV coordinates are stored as float32 or half-float (float16)
         uv_format = 'float'  # Default fallback
         if vb1_path and os.path.exists(vb1_path) and os.path.getsize(vb1_path) >= stride_t:
@@ -1342,6 +1376,14 @@ def patch_buffers(context, cache):
                 print(f"[RZM-VFX]   * Truncating VB1 to {clean_vb1_size} bytes")
                 with open(vb1_path, 'r+b') as f:
                     f.truncate(clean_vb1_size)
+
+        # Color
+        if color_path and is_vb0_already_patched:
+            clean_color_size = original_v_count * stride_c
+            if os.path.getsize(color_path) > clean_color_size:
+                print(f"[RZM-VFX]   * Truncating Color to {clean_color_size} bytes")
+                with open(color_path, 'r+b') as f:
+                    f.truncate(clean_color_size)
                     
         # IB (Indices) (already truncated in the check phase if is_ib_already_patched)
         fmt = '<I' if stride_i == 4 else '<H'
@@ -1350,6 +1392,7 @@ def patch_buffers(context, cache):
         f_vb0 = open(vb0_path, 'ab')
         f_vb2 = open(vb2_path, 'ab') if vb2_path else None
         f_vb1 = open(vb1_path, 'ab') if vb1_path else None
+        f_color = open(color_path, 'ab') if color_path else None
         f_ib = open(ib_path, 'ab') if ib_path else None
 
         current_v_count = original_v_count
@@ -1600,8 +1643,15 @@ def patch_buffers(context, cache):
                             buf[byte_i] = 0xFF
                         f_vb1.write(buf)
 
-
-
+            # ----------------------------------------------------------------------
+            # E. Patch Color
+            # ----------------------------------------------------------------------
+            if f_color:
+                color_rgba = get_curve_prop(curve_obj, "color", (1.0, 1.0, 1.0, 1.0))
+                for p in range(particle_count):
+                    for v_idx in range(v_per_particle):
+                        buf = pack_color(color_rgba, stride_c)
+                        f_color.write(buf)
 
             # ----------------------------------------------------------------------
             # D. Patch IB (Indices)
@@ -1633,6 +1683,7 @@ def patch_buffers(context, cache):
         f_vb0.close()
         if f_vb2: f_vb2.close()
         if f_vb1: f_vb1.close()
+        if f_color: f_color.close()
         
         if f_ib:
             f_ib.close()
@@ -1643,6 +1694,8 @@ def patch_buffers(context, cache):
                 print(f"[RZM-VFX]   -> VB2 (Weights) patched: appended {total_new_verts} vertices. Stride={stride_b}. Path: '{os.path.basename(vb2_path)}'")
             if vb1_path:
                 print(f"[RZM-VFX]   -> VB1 (Texcoord) patched: appended {total_new_verts} vertices. Stride={stride_t}. Path: '{os.path.basename(vb1_path)}'")
+            if color_path:
+                print(f"[RZM-VFX]   -> Color patched: appended {total_new_verts} vertices. Stride={stride_c}. Path: '{os.path.basename(color_path)}'")
             print(f"[RZM-VFX]   -> IB (Indices) patched: appended {total_new_indices} indices. Format={'R32_UINT' if stride_i==4 else 'R16_UINT'}. Path: '{os.path.basename(ib_path)}'")
             print(f"[RZM-VFX]      * INI Draw Override Setup:")
             print(f"[RZM-VFX]      * DrawIndexed = {total_new_indices}, {original_i_count}, 0")

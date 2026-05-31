@@ -231,7 +231,7 @@ endif
         {% set cd_draw_type = 4 if scene.rzm.game.selection == 'ArknightsEndfield' else 2 %}
         {% for key, value in real_obj.items() if key.startswith('CustomDraw.') %}
             {% set cd_name = key[11:] %}
-            {% if not cd_name.startswith('RabbitFxPreset') %}
+            {% if not cd_name.startswith('RabbitFxPreset') and not cd_name.startswith('TexFxPreset') %}
             $CD_INDEX_COUNT = {{ idx_count }}
             $CD_INSTANCE_COUNT = INSTANCE_COUNT
             $CD_FIRST_INDEX = {{ idx_offset }}
