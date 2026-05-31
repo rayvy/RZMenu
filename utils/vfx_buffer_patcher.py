@@ -1632,13 +1632,23 @@ def patch_buffers(context, cache):
                             ]
                             u, v = uvs[v_idx]
 
-                        h_u = float_to_half(u)
-                        h_v = float_to_half(v)
-                        uv_slot_bytes = 4  # 2×float16
-                        num_slots = stride_t // uv_slot_bytes
-                        for slot in range(num_slots):
-                            struct.pack_into('<HH', buf, slot * uv_slot_bytes, h_u, h_v)
-                        leftover_start = num_slots * uv_slot_bytes
+                        if uv_format == 'half':
+                            h_u = float_to_half(u)
+                            h_v = float_to_half(v)
+                            uv_slot_bytes = 4  # 2×float16
+                            num_slots = stride_t // uv_slot_bytes
+                            for slot in range(num_slots):
+                                if slot * uv_slot_bytes + 4 <= stride_t:
+                                    struct.pack_into('<HH', buf, slot * uv_slot_bytes, h_u, h_v)
+                            leftover_start = num_slots * uv_slot_bytes
+                        else:
+                            uv_slot_bytes = 8  # 2×float32
+                            num_slots = stride_t // uv_slot_bytes
+                            for slot in range(num_slots):
+                                if slot * uv_slot_bytes + 8 <= stride_t:
+                                    struct.pack_into('<ff', buf, slot * uv_slot_bytes, float(u), float(v))
+                            leftover_start = num_slots * uv_slot_bytes
+
                         for byte_i in range(leftover_start, stride_t):
                             buf[byte_i] = 0xFF
                         f_vb1.write(buf)

@@ -486,7 +486,7 @@
     {% set total_comp_v = component.vertex_count + comp_vfx_verts %}
     [CustomShaderRZM_VFX_UV_{{ part.fullname }}]
     cs = ./modules/vfx_uv_cs.hlsl
-    cs-u5 = copy Resource{{ component.fullname }}Texcoord
+    cs-u5 = copy Resource{{ component.fullname }}Texcoord_Base
     cs-t50 = copy Resource{{ component.fullname }}Position
     cs-t51 = copy ResourceRZM_CurveData
     cs-t52 = copy ResourceRZM_CurveUVData
