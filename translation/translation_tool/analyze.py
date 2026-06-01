@@ -44,18 +44,44 @@ def discover_locale_files():
     return human_files, auto_files
 
 
-def prompt_locale_selection(human_files):
-    if not human_files:
+def locale_base_name(filename):
+    if filename.endswith("_auto.json"):
+        return filename[:-10]
+    return filename[:-5]
+
+
+def discover_locale_families(human_files, auto_files):
+    families = {}
+
+    for filename in human_files + auto_files:
+        lang = locale_base_name(filename)
+        families.setdefault(lang, {"human": None, "auto": None})
+        if filename.endswith("_auto.json"):
+            families[lang]["auto"] = filename
+        else:
+            families[lang]["human"] = filename
+
+    return [families[key] for key in sorted(families)]
+
+
+def prompt_locale_selection(locale_families):
+    if not locale_families:
         return []
 
-    print("Select human translation file(s) to analyze:")
-    print("  0) All human translation files")
-    for index, filename in enumerate(human_files, start=1):
-        print(f"  {index}) {filename}")
+    print("Select translation file(s) to analyze:")
+    print("  0) All available translation sets")
+    for index, family in enumerate(locale_families, start=1):
+        parts = []
+        if family["human"]:
+            parts.append(family["human"])
+        if family["auto"]:
+            parts.append(family["auto"])
+        label = ", ".join(parts) if parts else "<empty>"
+        print(f"  {index}) {label}")
 
     raw = input("Enter numbers separated by commas (default: 0): ").strip()
     if not raw or raw == "0":
-        return human_files
+        return locale_families
 
     selected = []
     seen = set()
@@ -67,11 +93,11 @@ def prompt_locale_selection(human_files):
             idx = int(token)
         except ValueError:
             continue
-        if 1 <= idx <= len(human_files) and idx not in seen:
+        if 1 <= idx <= len(locale_families) and idx not in seen:
             seen.add(idx)
-            selected.append(human_files[idx - 1])
+            selected.append(locale_families[idx - 1])
 
-    return selected or human_files
+    return selected or locale_families
 
 
 def extract_strings_from_codebase():
@@ -142,19 +168,33 @@ def load_json_file(filename):
         return {}
 
 
-def analyze_human_translation(filename, code_strings):
-    human = load_json_file(filename)
+def load_merged_translation_set(family):
+    merged = {}
+    auto_file = family["auto"]
+    human_file = family["human"]
+
+    if auto_file:
+        merged.update(load_json_file(auto_file))
+    if human_file:
+        merged.update(load_json_file(human_file))
+
+    return merged
+
+
+def analyze_translation_family(family, code_strings):
+    merged = load_merged_translation_set(family)
     total = len(code_strings)
+    family_name = locale_base_name(family["human"] or family["auto"])
 
     if total == 0:
-        print(f"No source strings found to translate for {filename}.")
+        print(f"No source strings found to translate for {family_name}.")
         return
 
     translated = 0
     missing = []
 
     for s in code_strings:
-        if s in human:
+        if s in merged:
             translated += 1
         else:
             missing.append(s)
@@ -163,11 +203,15 @@ def analyze_human_translation(filename, code_strings):
     pct_missing = 100 - pct_total
 
     print("=" * 72)
-    print(f" HUMAN TRANSLATION: {filename}")
+    print(f" TRANSLATION SET: {family_name}")
     print("=" * 72)
+    if family["human"]:
+        print(f"Human JSON: {family['human']}")
+    if family["auto"]:
+        print(f"Auto JSON:  {family['auto']}")
     print(f"Source strings:            {total}")
-    print(f"Translated in human JSON:  {translated} ({pct_total:.1f}%)")
-    print(f"Missing from human JSON:    {len(missing)} ({pct_missing:.1f}%)")
+    print(f"Translated in set:         {translated} ({pct_total:.1f}%)")
+    print(f"Missing from set:          {len(missing)} ({pct_missing:.1f}%)")
     print("-" * 72)
 
     if missing:
@@ -183,29 +227,26 @@ def analyze_human_translation(filename, code_strings):
 def main():
     print("Scanning RZMenu codebase for user-facing UI strings...")
     human_files, auto_files = discover_locale_files()
+    locale_families = discover_locale_families(human_files, auto_files)
     code_strings = extract_strings_from_codebase()
 
     print(f"Scan complete. Found {len(code_strings)} unique UI strings.\n")
 
-    if human_files:
-        print("Available human translation files:")
+    if human_files or auto_files:
+        print("Available translation files:")
         for filename in human_files:
             print(f"  - {filename}")
-        print()
-    else:
-        print("No human translation files found in locales.\n")
-
-    if auto_files:
-        print("Auto translation files found but ignored by this report:")
         for filename in auto_files:
             print(f"  - {filename}")
         print()
+    else:
+        print("No translation files found in locales.\n")
 
-    selected_files = prompt_locale_selection(human_files)
+    selected_files = prompt_locale_selection(locale_families)
     print()
 
-    for filename in selected_files:
-        analyze_human_translation(filename, code_strings)
+    for family in selected_files:
+        analyze_translation_family(family, code_strings)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-# RZMenu/translation/__init__.py
 import json
 import os
 
@@ -23,27 +22,45 @@ def _load_json_file(path):
         return {}
 
 
-def discover_human_locale_files():
+def discover_locale_files():
     if not os.path.isdir(LOCALES_DIR):
-        return []
+        return [], []
 
     human_files = []
+    auto_files = []
     for filename in os.listdir(LOCALES_DIR):
         if not filename.endswith(".json"):
             continue
         if filename.endswith("_auto.json"):
-            continue
-        human_files.append(filename)
-    return sorted(human_files)
+            auto_files.append(filename)
+        else:
+            human_files.append(filename)
+    return sorted(human_files), sorted(auto_files)
+
+
+def _locale_base_name(filename):
+    if filename.endswith("_auto.json"):
+        return filename[:-10]
+    return filename[:-5]
 
 
 def _locale_targets_for_file(filename):
-    lang = filename[:-5]
+    lang = _locale_base_name(filename)
     if lang == "ru":
         return ["ru_RU"]
     if lang == "zh_CN":
-        return ["zh_CN", "zh_TW"]
+        return ["zh_CN", "zh_HANS"]
+    if lang == "zh_TW":
+        return ["zh_TW", "zh_HANT"]
     return [lang]
+
+
+def _normalize_blender_language(language):
+    if language == "zh_HANS":
+        return "zh_CN"
+    if language == "zh_HANT":
+        return "zh_TW"
+    return language
 
 
 def load_and_merge_all_translations():
@@ -53,26 +70,27 @@ def load_and_merge_all_translations():
         print(f"RZMenu Translation Warning: Locales directory not found at {LOCALES_DIR}")
         return
 
-    for human_file in discover_human_locale_files():
-        lang = human_file[:-5]
-        auto_file = f"{lang}_auto.json"
-        human_path = os.path.join(LOCALES_DIR, human_file)
-        auto_path = os.path.join(LOCALES_DIR, auto_file)
+    human_files, auto_files = discover_locale_files()
+    all_locale_files = sorted(set(auto_files + human_files))
 
+    for locale_file in all_locale_files:
+        lang = _locale_base_name(locale_file)
+        human_path = os.path.join(LOCALES_DIR, f"{lang}.json")
+        auto_path = os.path.join(LOCALES_DIR, f"{lang}_auto.json")
         merged = {}
         merged.update(_load_json_file(auto_path))
         merged.update(_load_json_file(human_path))
 
-        for locale in _locale_targets_for_file(human_file):
+        for locale in _locale_targets_for_file(locale_file):
             MERGED_TRANSLATIONS[locale] = merged
 
 
 def get_current_blender_language():
     try:
-        return bpy.context.preferences.view.language
+        return _normalize_blender_language(bpy.context.preferences.view.language)
     except AttributeError:
         try:
-            return bpy.context.preferences.system.language
+            return _normalize_blender_language(bpy.context.preferences.system.language)
         except AttributeError:
             return "en_US"
 
