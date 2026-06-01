@@ -1,6 +1,7 @@
 import bpy
 import bmesh
 import time
+import re
 from mathutils import Vector
 
 # ============================================================
@@ -218,6 +219,83 @@ class RZM_ST_OT_VGSymRename(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode=original_mode)
             self.report({'ERROR'}, f"Ошибка при симметризации: {str(e)}")
             return {'CANCELLED'}
+
+
+# ============================================================
+# 2.5. CLEAN DUPLICATE SIDE SUFFIXES
+# ============================================================
+
+SIDE_MARKER_RE = re.compile(r"\.[LR](?=$|[A-Z0-9_.-])", re.IGNORECASE)
+
+
+def clean_duplicate_side_markers(name: str) -> str:
+    matches = list(SIDE_MARKER_RE.finditer(name))
+    if len(matches) <= 1:
+        return name
+
+    parts = []
+    cursor = 0
+    for match in matches[:-1]:
+        parts.append(name[cursor:match.start()])
+        cursor = match.end()
+    parts.append(name[cursor:])
+    return "".join(parts)
+
+
+def linked_armatures_for_meshes(meshes):
+    armatures = []
+    seen = set()
+    for obj in meshes:
+        for mod in obj.modifiers:
+            armature_obj = getattr(mod, "object", None)
+            if mod.type == "ARMATURE" and armature_obj and armature_obj.type == "ARMATURE":
+                if armature_obj.name not in seen:
+                    seen.add(armature_obj.name)
+                    armatures.append(armature_obj)
+    return armatures
+
+
+class RZM_ST_OT_CleanDuplicateSideMarkers(bpy.types.Operator):
+    bl_idname = "rzm_st.clean_duplicate_side_markers"
+    bl_label = "Clean Duplicate .L/.R Markers"
+    bl_description = "Remove duplicate .L/.R/.l/.r markers from selected vertex groups and linked armature bones, keeping the last one"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return any(obj.type == 'MESH' for obj in context.selected_objects)
+
+    def execute(self, context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        if not selected_meshes:
+            self.report({'WARNING'}, "No selected mesh objects")
+            return {'CANCELLED'}
+
+        renamed_groups = 0
+        renamed_bones = 0
+
+        for obj in selected_meshes:
+            for vg in obj.vertex_groups:
+                new_name = clean_duplicate_side_markers(vg.name)
+                if new_name != vg.name:
+                    vg.name = new_name
+                    renamed_groups += 1
+
+        for armature_obj in linked_armatures_for_meshes(selected_meshes):
+            for bone in armature_obj.data.bones:
+                new_name = clean_duplicate_side_markers(bone.name)
+                if new_name != bone.name:
+                    bone.name = new_name
+                    renamed_bones += 1
+
+        try:
+            context.view_layer.update()
+        except Exception:
+            pass
+
+        self.report({'INFO'}, f"Cleaned side markers: {renamed_groups} vertex groups, {renamed_bones} bones")
+        return {'FINISHED'}
+
 
 # ============================================================
 # 3. DELETE ALL VERTEX GROUPS
@@ -617,6 +695,7 @@ class RZM_ST_OT_GenerateBones(bpy.types.Operator):
 classes_to_register = [
     RZM_ST_OT_MirrorCut,
     RZM_ST_OT_VGSymRename,
+    RZM_ST_OT_CleanDuplicateSideMarkers,
     RZM_ST_OT_DeleteAllVG,
     RZM_ST_OT_SmartTransfer,
     RZM_ST_OT_GenerateBones,

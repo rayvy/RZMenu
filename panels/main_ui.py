@@ -459,33 +459,57 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 acol.prop(target_obj, "rzm_curve_vfx_timeline_end_pos", text="Timeline End")
                 acol.prop(target_obj, "rzm_curve_vfx_visibility_condition", text="Visibility Cond")
 
-                # Section D: UV Settings & Calculator
+                # Section D: UV Settings
                 uvbox = box.box()
-                uvbox.label(text="UV Settings & Calculator", icon='IMAGE_DATA')
-                
-                # --- Animated UV Sub-section ---
-                uvcol = uvbox.column(align=True)
-                uvcol.prop(target_obj, "rzm_curve_vfx_animated_uv", text="Enable Animated UV")
+                uvbox.label(text="UV Settings", icon='IMAGE_DATA')
+                ucol = uvbox.column(align=True)
+
+                size_col = ucol.column(align=True)
+                size_col.label(text="UV PARTICLE SIZE")
+                size_row = size_col.row(align=True)
+                size_row.prop(target_obj, "rzm_curve_vfx_uv_scale", text="", index=0)
+                size_row.prop(target_obj, "rzm_curve_vfx_uv_scale", text="", index=1)
+
+                ucol.separator()
+                ucol.prop(target_obj, "rzm_curve_vfx_animated_uv", text="Enable Animated UV")
+
+                labels = ucol.row(align=True)
+                labels.label(text="START")
+                labels.label(text="MAIN")
+                labels.label(text="END")
+
+                uvrow = ucol.row(align=True)
+                start_col = uvrow.column(align=True)
+                start_col.enabled = target_obj.rzm_curve_vfx_animated_uv
+                start_col.prop(target_obj, "rzm_curve_vfx_uv_dup_start", text="", index=0)
+                start_col.prop(target_obj, "rzm_curve_vfx_uv_dup_start", text="", index=1)
+
+                main_col = uvrow.column(align=True)
+                main_col.prop(target_obj, "rzm_curve_vfx_uv_offset", text="", index=0)
+                main_col.prop(target_obj, "rzm_curve_vfx_uv_offset", text="", index=1)
+
+                end_col = uvrow.column(align=True)
+                end_col.enabled = target_obj.rzm_curve_vfx_animated_uv
+                end_col.prop(target_obj, "rzm_curve_vfx_uv_dup_end", text="", index=0)
+                end_col.prop(target_obj, "rzm_curve_vfx_uv_dup_end", text="", index=1)
+
+                _ou, _ov = target_obj.rzm_curve_vfx_uv_offset
+                _sw, _sh = target_obj.rzm_curve_vfx_uv_scale
+                _su, _sv = target_obj.rzm_curve_vfx_uv_dup_start
+                _eu, _ev = target_obj.rzm_curve_vfx_uv_dup_end
+                ucol.label(text=f"Offset=({_ou:.6f}, {_ov:.6f})  Scale=({_sw:.6f}, {_sh:.6f})")
                 if target_obj.rzm_curve_vfx_animated_uv:
-                    uvcol.prop(target_obj, "rzm_curve_vfx_uv_dup_start", text="UV Dup Start")
-                    uvcol.prop(target_obj, "rzm_curve_vfx_uv_dup_end", text="UV Dup End")
-                    
-                    # Float preview for Animated UV duplication
-                    _tw = max(target_obj.rzm_curve_vfx_texture_size[0], 1)
-                    _th = max(target_obj.rzm_curve_vfx_texture_size[1], 1)
-                    _su, _sv = target_obj.rzm_curve_vfx_uv_dup_start
-                    _eu, _ev = target_obj.rzm_curve_vfx_uv_dup_end
+                    ucol.label(text=f"Start=({_su:.6f}, {_sv:.6f})  End=({_eu:.6f}, {_ev:.6f})")
+                '''
                     uvcol.label(text=f"→ Float: Start=({_su/_tw:.4f}, {_sv/_th:.4f})  End=({_eu/_tw:.4f}, {_ev/_th:.4f})")
                 
                 uvbox.separator()
                 
                 # --- UV Calculator Sub-section ---
-                uvbox.label(text="UV Calculator Helper", icon='IMAGE_DATA')
                 ucol = uvbox.column(align=True)
 
                 # Canvas size
                 crow = ucol.row(align=True)
-                crow.label(text="Canvas:")
                 crow.prop(target_obj, "rzm_curve_vfx_texture_size", text="", index=0)
                 crow.label(text="×")
                 crow.prop(target_obj, "rzm_curve_vfx_texture_size", text="", index=1)
@@ -494,27 +518,19 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 # Sprite offset in atlas
                 orow = ucol.row(align=True)
                 orow.label(text="Offset:")
-                orow.prop(target_obj, "rzm_curve_vfx_uv_px_offset", text="", index=0)
-                orow.prop(target_obj, "rzm_curve_vfx_uv_px_offset", text="", index=1)
                 orow.label(text="px (U, V)")
 
                 # Sprite size in atlas
                 srow = ucol.row(align=True)
-                srow.label(text="Sprite:")
-                srow.prop(target_obj, "rzm_curve_vfx_uv_px_size", text="", index=0)
                 srow.label(text="×")
-                srow.prop(target_obj, "rzm_curve_vfx_uv_px_size", text="", index=1)
                 srow.label(text="px")
 
                 # Live result preview
                 _tw = max(target_obj.rzm_curve_vfx_texture_size[0], 1)
                 _th = max(target_obj.rzm_curve_vfx_texture_size[1], 1)
-                _ou, _ov = target_obj.rzm_curve_vfx_uv_px_offset
-                _sw, _sh = target_obj.rzm_curve_vfx_uv_px_size
                 ucol.label(text=f"→ Off=({_ou/_tw:.4f}, {_ov/_th:.4f})  Scale=({_sw/_tw:.4f}, {_sh/_th:.4f})")
 
-                uvbox.operator("rzm.compute_vfx_uv",
-                              text="Compute & Write UV", icon='FILE_REFRESH')
+                '''
 
                 # Section E: Technical Weights
                 wbox = box.box()

@@ -297,9 +297,9 @@ def ensure_vfx_properties_initialized(self):
     if "RZM.CURVE_VFX.ANIMATED_UV" not in self:
         self["RZM.CURVE_VFX.ANIMATED_UV"] = False
     if "RZM.CURVE_VFX.UV_DUP_START" not in self:
-        self["RZM.CURVE_VFX.UV_DUP_START"] = [0, 0]
+        self["RZM.CURVE_VFX.UV_DUP_START"] = [0.0, 0.0]
     if "RZM.CURVE_VFX.UV_DUP_END" not in self:
-        self["RZM.CURVE_VFX.UV_DUP_END"] = [512, 0]
+        self["RZM.CURVE_VFX.UV_DUP_END"] = [1.0, 0.0]
 
 def get_vfx_enabled(self):
     return bool(self.get("RZM.CURVE_VFX", False))
@@ -317,20 +317,20 @@ def set_vfx_animated_uv(self, value):
 def get_vfx_uv_dup_start(self):
     val = self.get("RZM.CURVE_VFX.UV_DUP_START")
     if val is not None:
-        return tuple(int(x) for x in val[:2])
-    return (0, 0)
+        return tuple(float(x) for x in val[:2])
+    return (0.0, 0.0)
 def set_vfx_uv_dup_start(self, value):
     ensure_vfx_properties_initialized(self)
-    self["RZM.CURVE_VFX.UV_DUP_START"] = [int(x) for x in value]
+    self["RZM.CURVE_VFX.UV_DUP_START"] = [float(x) for x in value]
 
 def get_vfx_uv_dup_end(self):
     val = self.get("RZM.CURVE_VFX.UV_DUP_END")
     if val is not None:
-        return tuple(int(x) for x in val[:2])
-    return (512, 0)
+        return tuple(float(x) for x in val[:2])
+    return (1.0, 0.0)
 def set_vfx_uv_dup_end(self, value):
     ensure_vfx_properties_initialized(self)
-    self["RZM.CURVE_VFX.UV_DUP_END"] = [int(x) for x in value]
+    self["RZM.CURVE_VFX.UV_DUP_END"] = [float(x) for x in value]
 
 def get_vfx_profile(self):
     val = self.get("RZM.CURVE_VFX.COORDINATE_REMAP_PROFILE", "AUTO")
@@ -567,17 +567,21 @@ def register():
         get=get_vfx_animated_uv,
         set=set_vfx_animated_uv
     )
-    bpy.types.Object.rzm_curve_vfx_uv_dup_start = IntVectorProperty(
+    bpy.types.Object.rzm_curve_vfx_uv_dup_start = FloatVectorProperty(
         name="UV Duplication Start",
-        description="UV duplication coordinate for start of the curve (in pixels)",
+        description="UV duplication coordinate for start of the curve",
         size=2,
+        default=(0.0, 0.0),
+        precision=6,
         get=get_vfx_uv_dup_start,
         set=set_vfx_uv_dup_start
     )
-    bpy.types.Object.rzm_curve_vfx_uv_dup_end = IntVectorProperty(
+    bpy.types.Object.rzm_curve_vfx_uv_dup_end = FloatVectorProperty(
         name="UV Duplication End",
-        description="UV duplication coordinate for end of the curve (in pixels)",
+        description="UV duplication coordinate for end of the curve",
         size=2,
+        default=(1.0, 0.0),
+        precision=6,
         get=get_vfx_uv_dup_end,
         set=set_vfx_uv_dup_end
     )
@@ -789,20 +793,6 @@ def register():
         name="Particle Size (px)",
         description="Particle size in pixels. Converted to float: px / Texture Width. Set Base Size > 0 to override.",
         default=32,
-        min=1
-    )
-    bpy.types.Object.rzm_curve_vfx_uv_px_offset = IntVectorProperty(
-        name="UV Sprite Offset (px)",
-        description="Top-left corner of the sprite in the atlas, in pixels (U, V)",
-        size=2,
-        default=(0, 0),
-        min=0
-    )
-    bpy.types.Object.rzm_curve_vfx_uv_px_size = IntVectorProperty(
-        name="UV Sprite Size (px)",
-        description="Width and height of the sprite in the atlas, in pixels",
-        size=2,
-        default=(32, 32),
         min=1
     )
     bpy.types.Object.rzm_curve_vfx_preview_time = FloatProperty(

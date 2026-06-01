@@ -12,6 +12,9 @@ class RZM_OT_normalize_weight_value(Operator):
     bl_description = "Normalize the active weight slots so they sum to 1"
 
     def execute(self, context):
+        self.report({'WARNING'}, "UV calculator was removed; edit UV float values directly")
+        return {'CANCELLED'}
+
         obj = context.active_object
         if not obj or obj.type != 'CURVE':
             self.report({"WARNING"}, "No active curve object")
@@ -159,7 +162,7 @@ class RZM_OT_toggle_curve_bevel(Operator):
 
 class RZM_OT_compute_vfx_uv(Operator):
     bl_idname = "rzm.compute_vfx_uv"
-    bl_label = "Compute & Write UV"
+    bl_label = "Deprecated UV Calculator"
     bl_description = (
         "Compute UV offset and scale from canvas size + pixel offset + sprite size, "
         "then write the result to UV Offset / UV Scale"
@@ -172,8 +175,6 @@ class RZM_OT_compute_vfx_uv(Operator):
             return {'CANCELLED'}
 
         tex_w, tex_h = obj.rzm_curve_vfx_texture_size
-        off_u, off_v   = obj.rzm_curve_vfx_uv_px_offset
-        sz_w,  sz_h    = obj.rzm_curve_vfx_uv_px_size
 
         tw = max(tex_w, 1)
         th = max(tex_h, 1)
@@ -194,5 +195,4 @@ classes_to_register = [
     RZM_OT_normalize_weight_value,
     RZM_OT_validate_curve_vfx,
     RZM_OT_toggle_curve_bevel,
-    RZM_OT_compute_vfx_uv,
 ]

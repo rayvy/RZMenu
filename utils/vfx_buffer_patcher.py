@@ -1129,14 +1129,8 @@ def patch_buffers(context, cache):
             if (curve_obj.name, s_idx) not in curve_mapping:
                 continue
             if getattr(curve_obj, "rzm_curve_vfx_animated_uv", False):
-                dup_start_px = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_start", (0, 0)))
-                dup_end_px = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_end", (0, 0)))
-                # Normalize using texture size
-                tex_size = list(getattr(curve_obj, "rzm_curve_vfx_texture_size", (512, 512)))
-                tw = max(tex_size[0], 1)
-                th = max(tex_size[1], 1)
-                dup_start = [dup_start_px[0] / tw, dup_start_px[1] / th]
-                dup_end = [dup_end_px[0] / tw, dup_end_px[1] / th]
+                dup_start = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_start", (0.0, 0.0)))
+                dup_end = list(getattr(curve_obj, "rzm_curve_vfx_uv_dup_end", (0.0, 0.0)))
             else:
                 dup_start = [0.0, 0.0]
                 dup_end = [0.0, 0.0]
