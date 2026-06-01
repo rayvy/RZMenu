@@ -187,14 +187,22 @@ def export_vertex_evolution_debug(obj_name, mod_root, comp_name,
 
 # ── Builder: XXMI (SPATIAL MAPPING) ───────────────────────────────────────────
 
-def _build_spatial_map_xxmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: mathutils.Matrix, buf_xyz: np.ndarray, max_dist_threshold: float = 0.5) -> tuple[list[int] | None, int]:
+def _build_spatial_map_xxmi(obj_name: str, blender_source, mat: mathutils.Matrix, buf_xyz: np.ndarray, max_dist_threshold: float = 0.5) -> tuple[list[int] | None, int]:
     """Robust Many-to-1 Mapping for XXMI: Blender-centric search with quality validation.
     
     max_dist_threshold: maximum allowed distance between a buffer vertex and its mapped
     Blender vertex. If any match exceeds this, the mapping is considered wrong-space
     and None is returned so the caller can retry with a different matrix.
     """
+    eval_obj = None
     try:
+        if hasattr(blender_source, "evaluated_get"):
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+            eval_obj = blender_source.evaluated_get(depsgraph)
+            blender_mesh = eval_obj.to_mesh()
+        else:
+            blender_mesh = blender_source
+
         v_cnt = len(blender_mesh.vertices)
         if v_cnt == 0: return None, -1
         blender_tree = mathutils.kdtree.KDTree(v_cnt)
@@ -210,10 +218,14 @@ def _build_spatial_map_xxmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: ma
                 max_dist = dist
         if max_dist > max_dist_threshold:
             return None, -1  # Quality too low — likely wrong coordinate space
+        print(f"[RZM] [CACHE] {obj_name}: XXMI spatial map OK (dist {max_dist:.6f})")
         return v_map, 0
     except Exception as e:
         print(f"[RZM] [CACHE] XXMI spatial map exception for {obj_name}: {e}")
         return None, -1
+    finally:
+        if eval_obj is not None:
+            eval_obj.to_mesh_clear()
 
 def _build_spatial_map_efmi(obj_name: str, blender_mesh: bpy.types.Mesh, mat: mathutils.Matrix, tree: mathutils.kdtree.KDTree, coord_hash: dict, v_map_input: list[int] | None = None) -> tuple[list[int] | None, int]:
     """Legacy 1-to-1 Mapping for EFMI fallback: Buffer-centric search."""
@@ -296,6 +308,10 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                 classifications=comp_classifications
             )
 
+            root_obj = None
+            if comp.parts and comp.parts[0].objects:
+                root_obj = comp.parts[0].objects[0].obj
+
             objects, vb_offset = [], 0
             for part in comp.parts:
                 part_suffix = ""
@@ -322,26 +338,32 @@ def build_cache_from_xxmi(mod_exporter) -> dict | None:
                     
                     applied_v_count = len(eval_mesh.vertices) if eval_mesh else -1
                     
-                    # Try to get mapping from the evaluated mesh
                     v_map = None
                     m_idx = -1
                     eval_v_count = orig_v_count
                     has_id = True
-                    
-                    if eval_mesh:
-                        res = reconstruct_vertex_map_from_mesh(eval_mesh, sub.obj, stride, flip_winding=flip_winding)
-                        if res:
-                            v_map, eval_v_count, has_id = res
-                    
-                    # Fallback to spatial mapping if topology reconstruction failed
-                    if v_map is None:
-                        # XXMI buffers are always in World Space.
-                        v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, sub.obj.matrix_world, buf_slice)
+
+                    # XXMI/GIMI authority is the exported Position.buf order.
+                    # Signature parity may have the right count but wrong slot order.
+                    v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj, sub.obj.matrix_world, buf_slice)
+                    if v_map is not None:
+                        m_idx = 1
+                    else:
+                        v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj, mathutils.Matrix.Identity(4), buf_slice)
                         if v_map is not None:
-                            m_idx = 1
-                        else:
-                            v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj.data, mathutils.Matrix.Identity(4), buf_slice)
                             m_idx = 0
+                        elif root_obj and root_obj != sub.obj:
+                            root_mat = root_obj.matrix_world.inverted() @ sub.obj.matrix_world
+                            v_map, m_idx = _build_spatial_map_xxmi(sub.name, sub.obj, root_mat, buf_slice)
+                            if v_map is not None:
+                                m_idx = 2
+
+                    # Fallback to signature mapping only if spatial mapping failed.
+                    if v_map is None:
+                        if eval_mesh:
+                            res = reconstruct_vertex_map_from_mesh(eval_mesh, sub.obj, stride, flip_winding=flip_winding)
+                            if res:
+                                v_map, eval_v_count, has_id = res
                     
                     if v_map:
                         is_debug_enabled = getattr(bpy.context.scene.rzm.addons, 'export_vertex_debug', False)
@@ -580,11 +602,10 @@ def _parity_map_from_triangulated(tri_mesh: bpy.types.Mesh,
         sig_bytes = sig.tobytes()
         if sig_bytes not in indexed_vertices:
             eval_v = int(v_indices[loop_idx])
-            # Store EVAL vertex index (same as EFMI/WWMI exporters).
-            # puppet_master_ops uses has_real_id to decide ORIG vs EVAL route:
-            # - has_real_id=True  → v_map indices are orig-range → ORIG mode
-            # - has_real_id=False → v_map indices are eval-range → EVAL mode
-            indexed_vertices[sig_bytes] = eval_v
+            # Store the shape-key-addressable vertex index. With a real .id this
+            # maps generated/evaluated vertices back to original mesh vertices;
+            # without .id, identity is correct for plain/applied meshes.
+            indexed_vertices[sig_bytes] = int(orig_idx_arr[eval_v])
 
     results = list(indexed_vertices.values())
     has_id  = id_attr is not None
