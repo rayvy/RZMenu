@@ -147,8 +147,8 @@ if not _ensure_pyside6():
 
 
 try:
-    from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
-    from PySide6.QtGui import QAction, QIcon, QPixmap
+    from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QSortFilterProxyModel, Qt, QThread, QTimer, Signal
+    from PySide6.QtGui import QAction, QColor, QIcon, QPixmap
     from PySide6.QtWidgets import (
         QApplication,
         QAbstractItemView,
@@ -176,6 +176,7 @@ try:
         QSplitter,
         QStyle,
         QTabWidget,
+        QTableView,
         QTableWidget,
         QTableWidgetItem,
         QTextEdit,
@@ -1222,6 +1223,156 @@ class AddLocaleDialog(QDialog):
         self.accept()
 
 
+class TranslationTableModel(QAbstractTableModel):
+    COLUMNS = ["Status", "Source text", "Translation", "Author", "Location"]
+    STATUS_LABELS = {
+        "draft": "Draft",
+        "missing": "Missing",
+        "auto-only": "Auto",
+        "human": "Human",
+    }
+    STATUS_COLORS = {
+        "draft": ("#342a17", "#f2bf5c"),
+        "missing": ("#351d23", "#ff7a90"),
+        "auto-only": ("#182c34", "#5fd3f3"),
+        "human": ("#183024", "#70e0a4"),
+    }
+    translationEdited = Signal(str)
+
+    def __init__(self, repo: Repository, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self.repo = repo
+        self.rows: list[RowRecord] = []
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.beginResetModel()
+        self.rows = self.repo.rows()
+        self.endResetModel()
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # type: ignore[override]
+        return 0 if parent.isValid() else len(self.rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # type: ignore[override]
+        return 0 if parent.isValid() else len(self.COLUMNS)
+
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole) -> Any:  # type: ignore[override]
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal and 0 <= section < len(self.COLUMNS):
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:  # type: ignore[override]
+        if not index.isValid() or not 0 <= index.row() < len(self.rows):
+            return None
+        record = self.rows[index.row()]
+        column = index.column()
+
+        if role in (Qt.DisplayRole, Qt.EditRole):
+            if column == 0:
+                return self.STATUS_LABELS.get(record.status, record.status)
+            if column == 1:
+                return record.key
+            if column == 2:
+                return record.effective
+            if column == 3:
+                return record.author
+            if column == 4:
+                return record.source.location
+        if role == Qt.ToolTipRole:
+            if column == 1:
+                return record.key
+            if column == 2:
+                return record.effective
+            if column == 4:
+                return record.source.context
+        if role == Qt.UserRole:
+            return record
+        if role == Qt.TextAlignmentRole and column == 0:
+            return Qt.AlignCenter
+        if role in (Qt.BackgroundRole, Qt.ForegroundRole) and column == 0:
+            bg, fg = self.STATUS_COLORS.get(record.status, ("#202329", "#e8e9ec"))
+            return QColor(bg if role == Qt.BackgroundRole else fg)
+        return None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:  # type: ignore[override]
+        flags = super().flags(index)
+        if index.isValid() and index.column() == 2:
+            flags |= Qt.ItemIsEditable
+        return flags
+
+    def setData(self, index: QModelIndex, value: Any, role: int = Qt.EditRole) -> bool:  # type: ignore[override]
+        if role != Qt.EditRole or not index.isValid() or index.column() != 2:
+            return False
+        record = self.rows[index.row()]
+        self.repo.edit_translation(record.key, str(value))
+        self.refresh()
+        self.translationEdited.emit(record.key)
+        return True
+
+
+class TranslationFilterProxyModel(QSortFilterProxyModel):
+    STATUS_ORDER = {"draft": 0, "missing": 1, "auto-only": 2, "human": 3}
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self.query = ""
+        self.filter_name = "All strings"
+        self.setDynamicSortFilter(False)
+
+    def set_query(self, query: str) -> None:
+        self.query = query.strip().casefold()
+        self.invalidateFilter()
+
+    def set_filter_name(self, filter_name: str) -> None:
+        self.filter_name = filter_name
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:  # type: ignore[override]
+        model = self.sourceModel()
+        if not isinstance(model, TranslationTableModel):
+            return True
+        if not 0 <= source_row < len(model.rows):
+            return False
+        record = model.rows[source_row]
+        if self.query and self.query not in record.search_blob:
+            return False
+        status = record.status
+        if self.filter_name == "Missing" and status != "missing":
+            return False
+        if self.filter_name == "Translated" and status == "missing":
+            return False
+        if self.filter_name == "Auto-only" and status != "auto-only":
+            return False
+        if self.filter_name == "Human" and not record.human:
+            return False
+        if self.filter_name == "Draft" and record.draft is None:
+            return False
+        if self.filter_name == "Placeholders" and not PLACEHOLDER_RE.search(record.key):
+            return False
+        if self.filter_name == "Long strings" and len(record.key) < LONG_TEXT_THRESHOLD:
+            return False
+        return True
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:  # type: ignore[override]
+        model = self.sourceModel()
+        if not isinstance(model, TranslationTableModel):
+            return super().lessThan(left, right)
+        left_record = model.rows[left.row()]
+        right_record = model.rows[right.row()]
+        column = left.column()
+        if column == 0:
+            return self.STATUS_ORDER.get(left_record.status, 99) < self.STATUS_ORDER.get(right_record.status, 99)
+        if column == 1:
+            return left_record.key.casefold() < right_record.key.casefold()
+        if column == 2:
+            return left_record.effective.casefold() < right_record.effective.casefold()
+        if column == 3:
+            return left_record.author.casefold() < right_record.author.casefold()
+        if column == 4:
+            return left_record.source.location.casefold() < right_record.source.location.casefold()
+        return super().lessThan(left, right)
+
+
 # ---------------------------------- UI -------------------------------------
 
 
@@ -1229,18 +1380,15 @@ class MainWindow(QMainWindow):
     def __init__(self, repo: Repository) -> None:
         super().__init__()
         self.repo = repo
-        self._refreshing_table = False
-        self._current_rows: list[RowRecord] = []
-        self._current_rows_by_key: dict[str, RowRecord] = {}
-        self._render_generation = 0
-        self._render_row = 0
         self._filter_name = "All strings"
+        self._sort_column = -1
+        self._sort_order = Qt.AscendingOrder
         self._auto_thread: Optional[QThread] = None
         self._auto_worker: Optional[AutoTranslateWorker] = None
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(SEARCH_DEBOUNCE_MS)
-        self._search_timer.timeout.connect(self.refresh_table)
+        self._search_timer.timeout.connect(self.apply_table_filter)
         self.setWindowTitle(f"{APP_NAME} · {repo.root.name}")
         self.resize(1480, 860)
         self.setMinimumSize(1020, 680)
@@ -1329,7 +1477,7 @@ class MainWindow(QMainWindow):
         refresh_button = QPushButton("↻")
         refresh_button.setObjectName("iconButton")
         refresh_button.setFixedWidth(40)
-        refresh_button.setToolTip("Refresh project strings")
+        refresh_button.setToolTip("Reload current translation files")
         refresh_button.clicked.connect(self.refresh_project)
         controls.addWidget(refresh_button)
         layout.addLayout(controls)
@@ -1379,20 +1527,35 @@ class MainWindow(QMainWindow):
         layout.addLayout(filter_row)
 
         splitter = QSplitter(Qt.Horizontal)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Status", "Source text", "Translation", "Author", "Location"])
+        self.table_model = TranslationTableModel(self.repo, self)
+        self.table_model.translationEdited.connect(self.on_translation_edited)
+        self.proxy_model = TranslationFilterProxyModel(self)
+        self.proxy_model.setSourceModel(self.table_model)
+
+        self.table = QTableView()
+        self.table.setModel(self.proxy_model)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Interactive)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Interactive)
+        self.table.setColumnWidth(1, 430)
+        self.table.setColumnWidth(2, 430)
+        self.table.setColumnWidth(4, 330)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(False)
+        self.table.setTextElideMode(Qt.ElideRight)
+        self.table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.table.verticalHeader().setVisible(False)
-        self.table.setSortingEnabled(True)
+        self.table.setSortingEnabled(False)
+        self.table.horizontalHeader().setSectionsClickable(True)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        self.table.horizontalHeader().sectionClicked.connect(self.on_table_header_clicked)
         self.table.verticalHeader().setDefaultSectionSize(38)
-        self.table.itemChanged.connect(self.on_table_item_changed)
-        self.table.itemSelectionChanged.connect(self.update_details)
+        self.table.selectionModel().selectionChanged.connect(self.update_details)
         splitter.addWidget(self.table)
 
         details = QWidget()
@@ -1565,89 +1728,37 @@ class MainWindow(QMainWindow):
             self._filter_name = FILTERS[button_id]
             self.schedule_table_refresh()
 
-    def filtered_rows(self) -> list[RowRecord]:
-        query = self.search_edit.text().strip().casefold()
-        filter_name = self._filter_name
-        rows = self.repo.rows()
-        result: list[RowRecord] = []
-        for record in rows:
-            if query and query not in record.search_blob:
-                continue
-            status = record.status
-            if filter_name == "Missing" and status != "missing":
-                continue
-            if filter_name == "Translated" and status == "missing":
-                continue
-            if filter_name == "Auto-only" and status != "auto-only":
-                continue
-            if filter_name == "Human" and not record.human:
-                continue
-            if filter_name == "Draft" and record.draft is None:
-                continue
-            if filter_name == "Placeholders" and not PLACEHOLDER_RE.search(record.key):
-                continue
-            if filter_name == "Long strings" and len(record.key) < LONG_TEXT_THRESHOLD:
-                continue
-            result.append(record)
-        return result
+    def apply_table_filter(self) -> None:
+        self.proxy_model.set_query(self.search_edit.text())
+        self.proxy_model.set_filter_name(self._filter_name)
+        visible = self.proxy_model.rowCount()
+        self.update_details()
+        self.status_label.setText(
+            f"Ready. Showing {visible} rows." if visible else "No rows match the current search and filter."
+        )
 
     def refresh_table(self) -> None:
         if not self.repo.locale:
             return
         self._search_timer.stop()
-        self._render_generation += 1
-        generation = self._render_generation
-        self._refreshing_table = True
-        rows = self.filtered_rows()
-        self._current_rows = rows
-        self._current_rows_by_key = {record.key: record for record in rows}
-        self._render_row = 0
         self.table.setUpdatesEnabled(False)
-        self.table.blockSignals(True)
-        self.table.setSortingEnabled(False)
-        self.table.clearContents()
-        self.table.setRowCount(len(rows))
-        self.status_label.setText(f"Rendering {len(rows)} rows...")
-        QTimer.singleShot(0, lambda: self._render_table_batch(generation))
+        try:
+            self.table_model.refresh()
+            self.apply_table_filter()
+            if self._sort_column >= 0:
+                self.proxy_model.sort(self._sort_column, self._sort_order)
+            self.update_summary()
+        finally:
+            self.table.setUpdatesEnabled(True)
 
-    def _render_table_batch(self, generation: int) -> None:
-        if generation != self._render_generation:
-            return
-
-        end = min(self._render_row + TABLE_RENDER_BATCH, len(self._current_rows))
-        for row in range(self._render_row, end):
-            record = self._current_rows[row]
-            status_item = QTableWidgetItem(record.status)
-            status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
-            source_item = QTableWidgetItem(record.key)
-            source_item.setFlags(source_item.flags() & ~Qt.ItemIsEditable)
-            translation_item = QTableWidgetItem(record.effective)
-            translation_item.setData(Qt.UserRole, record.key)
-            author_item = QTableWidgetItem(record.author)
-            author_item.setFlags(author_item.flags() & ~Qt.ItemIsEditable)
-            location_item = QTableWidgetItem(record.source.location)
-            location_item.setFlags(location_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row, 0, status_item)
-            self.table.setItem(row, 1, source_item)
-            self.table.setItem(row, 2, translation_item)
-            self.table.setItem(row, 3, author_item)
-            self.table.setItem(row, 4, location_item)
-
-        self._render_row = end
-        if self._render_row < len(self._current_rows):
-            QTimer.singleShot(0, lambda: self._render_table_batch(generation))
-            return
-
-        self.table.blockSignals(False)
-        self.table.setSortingEnabled(True)
-        self.table.setUpdatesEnabled(True)
-        self._refreshing_table = False
-        self.update_summary()
-        self.update_details()
-        if self._current_rows:
-            self.status_label.setText(f"Ready. Showing {len(self._current_rows)} rows.")
+    def on_table_header_clicked(self, column: int) -> None:
+        if column == self._sort_column:
+            self._sort_order = Qt.DescendingOrder if self._sort_order == Qt.AscendingOrder else Qt.AscendingOrder
         else:
-            self.status_label.setText("No rows match the current search and filter.")
+            self._sort_column = column
+            self._sort_order = Qt.AscendingOrder
+        self.table.horizontalHeader().setSortIndicator(column, self._sort_order)
+        self.proxy_model.sort(column, self._sort_order)
 
     def update_summary(self) -> None:
         rows = self.repo.rows()
@@ -1665,35 +1776,20 @@ class MainWindow(QMainWindow):
         self.apply_button.setEnabled(bool(drafts))
         self.package_button.setEnabled(bool(drafts))
 
-    def on_table_item_changed(self, item: QTableWidgetItem) -> None:
-        if self._refreshing_table or item.column() != 2:
-            return
-        key = item.data(Qt.UserRole)
-        if not isinstance(key, str):
-            return
-        try:
-            self.repo.edit_translation(key, item.text())
-            self.status_label.setText("Draft autosaved")
-            self.refresh_table()
-            self.refresh_auto_panel()
-        except Exception as exc:
-            self.show_error("Could not autosave draft", exc)
+    def on_translation_edited(self, key: str) -> None:
+        self.status_label.setText("Draft autosaved")
+        self.update_draft_banner()
+        self.apply_table_filter()
+        self.update_summary()
+        self.refresh_auto_panel()
 
-    def update_details(self) -> None:
-        selected = self.table.selectedItems()
-        if not selected:
+    def update_details(self, *args: Any) -> None:
+        record = self.selected_record()
+        if record is None:
             self.details_text.clear()
             self.restore_button.setEnabled(False)
             return
-        row = selected[0].row()
-        source_item = self.table.item(row, 1)
-        if source_item is None:
-            return
-        key = source_item.text()
-        record = self._current_rows_by_key.get(key)
-        if record is None:
-            return
-        history = self.repo.history_for(key)
+        history = self.repo.history_for(record.key)
         history_lines: list[str] = []
         for revision in history[:20]:
             history_lines.append(
@@ -1723,11 +1819,20 @@ class MainWindow(QMainWindow):
         self.restore_button.setEnabled(bool(history))
 
     def selected_key(self) -> Optional[str]:
-        selected = self.table.selectedItems()
-        if not selected:
+        record = self.selected_record()
+        return record.key if record is not None else None
+
+    def selected_record(self) -> Optional[RowRecord]:
+        selection = self.table.selectionModel()
+        if selection is None or not selection.hasSelection():
             return None
-        source_item = self.table.item(selected[0].row(), 1)
-        return source_item.text() if source_item else None
+        selected_rows = selection.selectedRows()
+        if not selected_rows:
+            return None
+        proxy_index = selected_rows[0]
+        source_index = self.proxy_model.mapToSource(proxy_index)
+        record = self.table_model.data(source_index, Qt.UserRole)
+        return record if isinstance(record, RowRecord) else None
 
     def restore_previous(self) -> None:
         key = self.selected_key()
@@ -1750,10 +1855,9 @@ class MainWindow(QMainWindow):
 
     def refresh_project(self) -> None:
         try:
-            self.set_busy(True, "Refreshing project strings...")
+            self.set_busy(True, "Reloading translation files...")
             current = self.repo.locale
             self.repo.meta = self.repo._load_meta()
-            self.repo.scan_sources()
             self.repo.load_locale(current)
             locales = self.repo.available_locales()
             self.locale_combo.blockSignals(True)
@@ -1763,7 +1867,7 @@ class MainWindow(QMainWindow):
             self.locale_combo.blockSignals(False)
             self.refresh_table()
             self.refresh_auto_panel()
-            self.status_label.setText("Project refreshed")
+            self.status_label.setText("Translation files reloaded")
         except Exception as exc:
             self.show_error("Could not refresh project", exc)
         finally:
@@ -1992,7 +2096,7 @@ QFrame#draftBanner {
     border: 1px solid #3c4655;
     border-radius: 7px;
 }
-QLineEdit, QComboBox, QTextEdit, QTableWidget {
+QLineEdit, QComboBox, QTextEdit, QTableWidget, QTableView {
     background: #202329;
     border: 1px solid #343944;
     border-radius: 6px;
@@ -2000,8 +2104,9 @@ QLineEdit, QComboBox, QTextEdit, QTableWidget {
     selection-background-color: #6d4aff;
     selection-color: #ffffff;
 }
-QTableWidget { gridline-color: #30343d; padding: 0; alternate-background-color: #1b1e23; }
-QTableWidget::item { padding: 6px 5px; }
+QTableWidget, QTableView { gridline-color: #30343d; padding: 0; alternate-background-color: #1b1e23; }
+QTableWidget::item, QTableView::item { padding: 6px 5px; border-bottom: 1px solid #252a33; }
+QTableView::item:selected { background: #463a78; color: #ffffff; }
 QHeaderView::section {
     background: #262a31;
     color: #d8dbe2;
