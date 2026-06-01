@@ -11,7 +11,7 @@
 {% macro _macro_shared_constants_and_present(rzm) %}
 [Constants]
 global persist $SKC_LastTime = 0
-{% for config in rzm.shape_configs if not config.disable_export %}
+{% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
     global persist ${{ var_name }} = 0
     {% if config.shape_type == "Anim" %}
@@ -26,7 +26,7 @@ run = CommandListSKPresent
 local $shape_changed = 0
 $dt = time - $SKC_LastTime
 
-{% for config in rzm.shape_configs if not config.disable_export %}
+{% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set var_name = "SKC_" ~ utils.format_var(config.shape_name) %}
     local ${{ var_name }}Past
     local ${{ var_name }}Input
@@ -190,12 +190,12 @@ cs-u5 = copy Resource{{ comp_name }}_Base
 ; comp_name: {{ comp_name }}
 ; affected_names for this component: {{ affected_names }}
 {% endif %}
-{% for config in rzm.shape_configs if not config.disable_export %}
+{% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set affected_list = [] %}
 {% if rzm.addons.debugger_info %}
 ; --- Config: {{ config.shape_name }} ---
 {% endif %}
-    {% for ref in config.affected_objects %}
+    {% for ref in config.export_runtime_affected_objects %}
         {% set names_to_check = [] %}
         {% if ref.obj_name %}
             {% set _ = names_to_check.append(ref.obj_name | lower) %}
@@ -261,9 +261,9 @@ type = Buffer
 stride = {{ stride }}
 filename = {{ base_filename }}
 
-{% for config in rzm.shape_configs if not config.disable_export %}
+{% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set affected_list = [] %}
-    {% for ref in config.affected_objects %}
+    {% for ref in config.export_runtime_affected_objects %}
         {% set names_to_check = [] %}
         {% if ref.obj_name %}
             {% set _ = names_to_check.append(ref.obj_name | lower) %}

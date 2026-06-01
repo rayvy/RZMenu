@@ -216,6 +216,15 @@ class RZM_OT_FullExport(bpy.types.Operator):
             import traceback
             traceback.print_exc()
 
+        try:
+            from ..utils.shape_export_filter import prepare_shape_config_export_runtime
+            prepare_shape_config_export_runtime(rzm)
+        except Exception as e:
+            self.report({'ERROR'}, f"ShapeKey export filter preparation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+
         # 3. Target Game Export
         if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
             if hasattr(bpy.ops, "xxmi"):
@@ -342,6 +351,15 @@ class RZM_OT_BatchExport(bpy.types.Operator):
             self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
             import traceback
             traceback.print_exc()
+
+        try:
+            from ..utils.shape_export_filter import prepare_shape_config_export_runtime
+            prepare_shape_config_export_runtime(context.scene.rzm)
+        except Exception as e:
+            self.report({'ERROR'}, f"ShapeKey export filter preparation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
         return True
 

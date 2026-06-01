@@ -60,6 +60,9 @@ class RZM_OT_EmulatorExport(bpy.types.Operator):
             env = Environment(loader=FileSystemLoader(str(templates_path)))
             # Регистрация фильтра fromjson для парсинга метаданных анимации
             env.filters['fromjson'] = json.loads
+
+            from ..utils.shape_export_filter import prepare_shape_config_export_runtime
+            prepare_shape_config_export_runtime(rzm)
             
             # Simplified Dummy Objects for Test Export (Empty components skips model code)
             class DummyObject:

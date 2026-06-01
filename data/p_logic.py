@@ -372,3 +372,15 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         name="Affected Objects",
         description="List of objects that contain this shape key name."
     )
+    export_runtime_disabled: BoolProperty(
+        name="Runtime Export Disabled",
+        description="Prepared export-only disabled state after lock/mute/value-link filtering.",
+        default=True,
+        options={'HIDDEN'}
+    )
+    export_runtime_affected_objects: CollectionProperty(
+        type=RZMObjectRef,
+        name="Runtime Export Objects",
+        description="Prepared export-only affected object list after lock/mute filtering.",
+        options={'HIDDEN'}
+    )

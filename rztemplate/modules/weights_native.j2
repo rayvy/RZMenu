@@ -3,7 +3,7 @@
 
 {# 0. Проверка наличия активных весов для запекания #}
 {% macro has_active_weights(rzm) -%}
-    {{- (rzm.shape_configs | selectattr("bake_weights", "equalto", True) | selectattr("disable_export", "equalto", False) | list | length > 0) -}}
+    {{- (rzm.shape_configs | selectattr("bake_weights", "equalto", True) | selectattr("export_runtime_disabled", "equalto", False) | list | length > 0) -}}
 {%- endmacro %}
 
 {# 1. ГЛАВНЫЙ ГЕНЕРАТОР ВЕСОВ #}
@@ -74,9 +74,9 @@
 cs = {{ shader_path }}
 cs-u5 = copy Resource{{ comp_name }}_VB2_Base
 
-{% for config in rzm.shape_configs if not config.disable_export and config.bake_weights %}
+{% for config in rzm.shape_configs if not config.export_runtime_disabled and config.bake_weights %}
     {% set affected_list = [] %}
-    {% for ref in config.affected_objects %}
+    {% for ref in config.export_runtime_affected_objects %}
         {% set names_to_check = [] %}
         {% if ref.obj_name %}
             {% set _ = names_to_check.append(ref.obj_name | lower) %}
@@ -130,9 +130,9 @@ type = Buffer
 stride = {{ stride }}
 filename = {{ base_filename }}
 
-{% for config in rzm.shape_configs if not config.disable_export and config.bake_weights %}
+{% for config in rzm.shape_configs if not config.export_runtime_disabled and config.bake_weights %}
     {% set affected_list = [] %}
-    {% for ref in config.affected_objects %}
+    {% for ref in config.export_runtime_affected_objects %}
         {% set names_to_check = [] %}
         {% if ref.obj_name %}
             {% set _ = names_to_check.append(ref.obj_name | lower) %}

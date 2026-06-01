@@ -173,6 +173,9 @@ class RZM_OT_QuickExportGameBuffers(bpy.types.Operator):
 
         # Apply forced values
         try:
+            from ..utils.shape_export_filter import prepare_shape_config_export_runtime
+            prepare_shape_config_export_runtime(rzm)
+
             if xxmi:
                 if "write_ini" in saved_xxmi:
                     xxmi.write_ini = False

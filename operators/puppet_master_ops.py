@@ -29,6 +29,13 @@ from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 from . import blendworks_baker
 from . import rzm_surface_baker
+from ..utils.shape_export_filter import (
+    active_shape_configs,
+    active_weight_shape_configs,
+    object_shape_key_is_exportable,
+    prepare_shape_config_export_runtime,
+    shape_key_block_is_exportable,
+)
 
 # ---------------------------------------------------------------------------
 # HELPERS
@@ -115,7 +122,7 @@ def _scan_sk_owners(comp_objects, all_keys):
             if obj.data and obj.data.shape_keys:
                 sk_blk = obj.data.shape_keys.key_blocks.get(sk_name)
                 ba_blk = obj.data.shape_keys.reference_key
-                if sk_blk and ba_blk and sk_blk.data and ba_blk.data:
+                if shape_key_block_is_exportable(sk_blk) and ba_blk and sk_blk.data and ba_blk.data:
                     sk_co = np.array([kp.co for kp in sk_blk.data], dtype=np.float32)
                     ba_co = np.array([kp.co for kp in ba_blk.data], dtype=np.float32)
                     if np.any(np.abs(sk_co - ba_co) > 1e-7):
@@ -123,10 +130,12 @@ def _scan_sk_owners(comp_objects, all_keys):
 
             is_via_target = False
             for mod in obj.modifiers:
-                if (mod.type in {'SURFACE_DEFORM', 'SHRINKWRAP'}
+                if not (mod.type in {'SURFACE_DEFORM', 'SHRINKWRAP'}
                         and mod.show_viewport and mod.target
-                        and mod.target.data and mod.target.data.shape_keys
-                        and sk_name in mod.target.data.shape_keys.key_blocks):
+                        and mod.target.data and mod.target.data.shape_keys):
+                    continue
+                target_key = mod.target.data.shape_keys.key_blocks.get(sk_name)
+                if shape_key_block_is_exportable(target_key):
                     is_via_target = True
                     break
 
@@ -142,6 +151,11 @@ def _scan_sk_owners(comp_objects, all_keys):
             result[sk_name] = {'direct_raw': direct_raw, 'direct_bake': direct_bake, 'via_target': via_target}
             
     return result
+
+def _object_has_direct_shape_key(obj, shape_name):
+    if not obj or not getattr(obj, "data", None) or not getattr(obj.data, "shape_keys", None):
+        return False
+    return obj.data.shape_keys.key_blocks.get(shape_name) is not None
 
 def should_mirror_mesh(context, game_name):
     """
@@ -670,7 +684,7 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
         return
     
     rzm = context.scene.rzm
-    weight_keys = [c for c in rzm.shape_configs if c.shape_name in all_keys and c.bake_weights and not c.disable_export]
+    weight_keys = [c for c in active_weight_shape_configs(rzm) if c.shape_name in all_keys]
     
     if not weight_keys:
         return
@@ -749,6 +763,12 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
                 continue
 
             donor = dt_mod.object
+            if _object_has_direct_shape_key(obj, sk_name):
+                if not object_shape_key_is_exportable(obj, sk_name, include_modifier_targets=False):
+                    continue
+            elif not object_shape_key_is_exportable(donor, sk_name, include_modifier_targets=False):
+                continue
+
             entry = cache_objects.get(obj.name)
             vb_off = entry.get('vb_offset', 0) if entry else 0
             vb_cnt = entry.get('vb_count', 0) if entry else 0
@@ -919,8 +939,11 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                                 break
 
     rzm      = context.scene.rzm
-    all_keys = ({single_shape_name} if single_shape_name
-                else {c.shape_name for c in rzm.shape_configs if not c.disable_export})
+    prepare_shape_config_export_runtime(rzm)
+    active_configs = active_shape_configs(rzm)
+    active_key_names = {c.shape_name for c in active_configs}
+    all_keys = ({single_shape_name} & active_key_names if single_shape_name
+                else active_key_names)
     
     if not all_keys:
         return True
@@ -928,7 +951,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
     
     # [NEW] Check for weight morphs too
-    weight_keys = [c for c in rzm.shape_configs if c.shape_name in all_keys and c.bake_weights and not c.disable_export]
+    weight_keys = [c for c in active_weight_shape_configs(rzm) if c.shape_name in all_keys]
 
     if not sk_owner_map and not weight_keys:
         return True
@@ -948,7 +971,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
 
     # Создаем заглушки-буферы
-    for sk_name in all_keys:
+    for sk_name in sk_owner_map.keys():
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         with open(os.path.join(output_dir, out_name), "wb") as f:
             f.write(original_bytes)
@@ -996,7 +1019,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                     tgt = mod.target
                     if tgt.data and tgt.data.shape_keys:
                         for sk_name in all_keys:
-                            if sk_name in tgt.data.shape_keys.key_blocks:
+                            target_key = tgt.data.shape_keys.key_blocks.get(sk_name)
+                            if shape_key_block_is_exportable(target_key):
                                 if not obj.data or not obj.data.shape_keys or sk_name not in obj.data.shape_keys.key_blocks:
                                     keys_to_transfer.append(sk_name)
                     if keys_to_transfer:
@@ -1010,7 +1034,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
             has_direct_keys = False
             if obj.data and obj.data.shape_keys:
                 for sk_name in all_keys:
-                    if sk_name in obj.data.shape_keys.key_blocks:
+                    if object_shape_key_is_exportable(obj, sk_name, include_modifier_targets=False):
                         has_direct_keys = True
                         break
 
