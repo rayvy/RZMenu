@@ -6,6 +6,7 @@ import sys
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 TRANSLATION_DIR = os.path.dirname(TOOL_DIR)
+ADDON_DIR = os.path.dirname(TRANSLATION_DIR)
 LOCALES_DIR = os.path.join(TRANSLATION_DIR, "locales")
 
 EXCLUDE_DIRS = {
@@ -43,11 +44,41 @@ def discover_locale_files():
     return human_files, auto_files
 
 
+def prompt_locale_selection(human_files):
+    if not human_files:
+        return []
+
+    print("Select human translation file(s) to analyze:")
+    print("  0) All human translation files")
+    for index, filename in enumerate(human_files, start=1):
+        print(f"  {index}) {filename}")
+
+    raw = input("Enter numbers separated by commas (default: 0): ").strip()
+    if not raw or raw == "0":
+        return human_files
+
+    selected = []
+    seen = set()
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            idx = int(token)
+        except ValueError:
+            continue
+        if 1 <= idx <= len(human_files) and idx not in seen:
+            seen.add(idx)
+            selected.append(human_files[idx - 1])
+
+    return selected or human_files
+
+
 def extract_strings_from_codebase():
     """Scans RZMenu python files and extracts potential UI strings using AST parsing."""
     found_strings = set()
 
-    for root, dirs, files in os.walk(TRANSLATION_DIR):
+    for root, dirs, files in os.walk(ADDON_DIR):
         dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
 
         for file in files:
@@ -170,7 +201,10 @@ def main():
             print(f"  - {filename}")
         print()
 
-    for filename in human_files:
+    selected_files = prompt_locale_selection(human_files)
+    print()
+
+    for filename in selected_files:
         analyze_human_translation(filename, code_strings)
 
 
