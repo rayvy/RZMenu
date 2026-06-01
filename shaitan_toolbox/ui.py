@@ -138,6 +138,8 @@ def draw_uv_packer_ui(self, context, layout):
         box.label(text="Add a layer to the list using the + button", icon='INFO')
 
 def draw_color_attr_ui(self, context, layout):
+    from .ops_color_attr import format_color_info, get_selected_average_color, is_color_attr_panel_active
+
     prefs_addon = context.preferences.addons.get('RZMenu')
     if not prefs_addon:
         layout.label(text="Error loading Addon Preferences", icon='ERROR')
@@ -169,13 +171,17 @@ def draw_color_attr_ui(self, context, layout):
     
     # Color wheel + Alpha slider
     box_picker.prop(scene, "rzm_st_paint_color", text="")
+    box_picker.label(text=f"Current: {format_color_info(scene.rzm_st_paint_color)}")
     
     row_target = box_picker.row(align=True)
     row_target.prop(scene, "rzm_st_paint_target", text="Target Layer")
     
-    # Display selected median color
+    # Display selected average color
+    selected_color = get_selected_average_color(context) if is_color_attr_panel_active(context) else None
     row_median = box_picker.row(align=True)
-    row_median.prop(scene, "rzm_st_median_color", text="Selected Median")
+    row_median.label(text="Selected Average:")
+    row_median.operator("rzm_st.sample_color", text="Copy", icon='EYEDROPPER')
+    box_picker.label(text=f"Selected: {format_color_info(selected_color)}")
     
     # Paint buttons
     layout.separator()

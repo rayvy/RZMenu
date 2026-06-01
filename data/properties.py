@@ -947,8 +947,10 @@ def register():
 
     def get_median_color_prop(self):
         try:
-            from ..shaitan_toolbox.ops_color_attr import get_selected_median_color
-            color = get_selected_median_color(bpy.context)
+            from ..shaitan_toolbox.ops_color_attr import get_selected_average_color, is_color_attr_panel_active
+            if not is_color_attr_panel_active(bpy.context):
+                return (0.0, 0.0, 0.0, 0.0)
+            color = get_selected_average_color(bpy.context)
             if color is not None:
                 return color
         except Exception:
@@ -956,7 +958,7 @@ def register():
         return (0.0, 0.0, 0.0, 0.0)
 
     bpy.types.Scene.rzm_st_median_color = FloatVectorProperty(
-        name="Selected Median",
+        name="Selected Average",
         subtype='COLOR',
         size=4,
         get=get_median_color_prop
