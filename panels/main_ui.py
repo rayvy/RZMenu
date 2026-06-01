@@ -1204,6 +1204,10 @@ def draw_toolbox_content(self, context):
 
             row.operator("rzm.puppet_master_bake", text="Bake ALL", icon='NONE')
             row.operator("rzm.puppet_master_bake_single", text="Bake THIS", icon='SHAPEKEY_DATA')
+
+            sk_export_box = box.box()
+            sk_export_box.label(text="ShapeKey Export Settings:", icon='MOD_MIRROR')
+            sk_export_box.prop(rzm.addons, "shape_key_invert_x", text="InvertX")
             
             # --- GLOBAL VIEWPORT MASTER ---
             gm_box = box.box()

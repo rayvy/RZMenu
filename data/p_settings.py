@@ -273,6 +273,11 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
         default=False,
         description="Apply X-axis mirroring to mesh and deltas (Standard for Legacy/EFMI games)"
     )
+    shape_key_invert_x: BoolProperty(
+        name="InvertX",
+        default=False,
+        description="Force X-axis inversion for all exported native shape key deltas"
+    )
     export_vertex_debug: BoolProperty(
         name="Export Vertex Debug",
         default=False,

@@ -155,6 +155,10 @@ def should_mirror_mesh(context, game_name):
     rzm = context.scene.rzm
     return rzm.addons.mirror_mesh
 
+def should_invert_shape_key_x(context):
+    rzm = context.scene.rzm
+    return getattr(rzm.addons, "shape_key_invert_x", False)
+
 def _find_xxmi_anchor(context, mod_name, comp_name, classifications):
     """
     Dynamically finds the unique visible anchor object for an XXMI component.
@@ -241,6 +245,7 @@ def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, origina
 
     orient_mat = orient_mat if orient_mat is not None else mu.Matrix.Identity(4)
     mirror_enabled = mirror_enabled if mirror_enabled is not None else False
+    invert_x_enabled = should_invert_shape_key_x(context)
 
     for sk_name, owners in sk_owner_map.items():
         buf_f32 = np.frombuffer(bytes(original_bytes), dtype=np.float32).reshape(buf_v_count, stride_f32).copy()
@@ -296,6 +301,9 @@ def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, origina
             
             if mirror_enabled:
                 # Mirror Path (Deltas must be standard space for standard buffer)
+                deltas_all[:, 0] *= -1
+
+            if invert_x_enabled:
                 deltas_all[:, 0] *= -1
 
             if vb_off + vb_cnt > buf_v_count:
@@ -503,6 +511,7 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
     try:
         orient_mat = orient_mat if orient_mat is not None else mu.Matrix.Identity(4)
         mirror_enabled = mirror_enabled if mirror_enabled is not None else False
+        invert_x_enabled = should_invert_shape_key_x(context)
 
         for a_obj in all_involved:
             if a_obj.data and a_obj.data.shape_keys:
@@ -606,6 +615,9 @@ def _run_slow_path(context, sk_owner_map_slow, comp_cache, original_bytes,
 
                 if mirror_enabled:
                     # Flip back to standard space for standard buffer
+                    valid_deltas[:, 0] *= -1
+
+                if invert_x_enabled:
                     valid_deltas[:, 0] *= -1
 
                 new_xyz = (buf_xyz[indices] + valid_deltas).astype(np.float32)
