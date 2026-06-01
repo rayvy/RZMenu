@@ -157,10 +157,10 @@ def generate_readme(context, target_path):
         return False
 
 class RZM_OT_InitializeMod(bpy.types.Operator):
-    """Копирует файлы Basic Pack и создает структуру мода."""
+    """Copies the Basic Pack files and creates the mod structure."""
     bl_idname = "rzm.initialize_mod"
     bl_label = "Initialize Mod Files"
-    bl_description = "Копирует скрипты и шейдеры из RZMenu Basic Pack в папку мода"
+    bl_description = "Copies scripts and shaders from the RZMenu Basic Pack into the mod folder"
     
     def execute(self, context):
         settings = context.scene.rzm.export_settings

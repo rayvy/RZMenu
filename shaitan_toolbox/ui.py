@@ -126,16 +126,16 @@ def draw_uv_packer_ui(self, context, layout):
         # Опциональные кнопки
         row_ops = box_item.row(align=True)
         row_ops.scale_y = 1.2
-        row_ops.operator("rzm_st.process_active_layer", text="Записать параметр", icon="DRIVER").mode = "PARAM"
-        row_ops.operator("rzm_st.process_active_layer", text="Применить сдвиг", icon="UV").mode = "APPLY"
+        row_ops.operator("rzm_st.process_active_layer", text="Write parameter", icon="DRIVER").mode = "PARAM"
+        row_ops.operator("rzm_st.process_active_layer", text="Apply offset", icon="UV").mode = "APPLY"
         
         # Кнопки применения
         box.separator()
         row_apply = box.row()
         row_apply.scale_y = 1.6
-        row_apply.operator("rzm_st.process_active_layer", text="ЗАПИСАТЬ И ПРИМЕНИТЬ (АКТИВНЫЙ)", icon="CHECKMARK").mode = "BOTH"
+        row_apply.operator("rzm_st.process_active_layer", text="WRITE AND APPLY (ACTIVE)", icon="CHECKMARK").mode = "BOTH"
     else:
-        box.label(text="Добавьте слой в список кнопкой +", icon='INFO')
+        box.label(text="Add a layer to the list using the + button", icon='INFO')
 
 def draw_color_attr_ui(self, context, layout):
     prefs_addon = context.preferences.addons.get('RZMenu')

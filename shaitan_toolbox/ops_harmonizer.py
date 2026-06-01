@@ -30,7 +30,7 @@ from .harmonizer_utils import (
 
 class RZM_OT_build_plan(Operator):
     bl_idname = "rzm_weights.build_plan"
-    bl_label = "Построить Remap Plan"
+    bl_label = "Build Remap Plan"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -39,14 +39,14 @@ class RZM_OT_build_plan(Operator):
         armature_obj = settings.target_armature
         reference_obj = settings.reference_mesh
         if armature_obj is None or armature_obj.type != "ARMATURE":
-            self.report({"ERROR"}, "Укажи таргетную арматуру")
+            self.report({"ERROR"}, "Specify the target armature")
             return {"CANCELLED"}
         if reference_obj is None or reference_obj.type != "MESH":
-            self.report({"ERROR"}, "Укажи канонический reference mesh")
+            self.report({"ERROR"}, "Specify the canonical reference mesh")
             return {"CANCELLED"}
         target_meshes = [obj for obj in context.selected_objects if obj.type == "MESH" and obj != reference_obj]
         if not target_meshes:
-            self.report({"ERROR"}, "Выдели целевые компоненты")
+            self.report({"ERROR"}, "Select the target components")
             return {"CANCELLED"}
 
         scene.rzm_weight_plan.clear()
@@ -256,7 +256,7 @@ class RZM_OT_build_plan(Operator):
             )
 
         rebuild_matrix_and_summary(scene, target_meshes)
-        self.report({"INFO"}, "Remap Plan построен")
+        self.report({"INFO"}, "Remap plan built")
         tag_view3d_redraw()
         return {"FINISHED"}
 
@@ -285,7 +285,7 @@ class RZM_OT_assign_matrix_suggestion(Operator):
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Назначено{cl_info}" + ("; прежний владелец возвращён in Conflict" if displaced else ""))
+        self.report({"INFO"}, f"Assigned{cl_info}" + ("; previous owner returned to Conflict" if displaced else ""))
         return {"FINISHED"}
 
 
@@ -298,22 +298,22 @@ class RZM_OT_assign_matrix_manual_index(Operator):
         settings = scene.rzm_weight_settings
         row = selected_approved_row(scene)
         if row is None:
-            self.report({"ERROR"}, "Сначала выбери строку Approved Matrix")
+            self.report({"ERROR"}, "Select an Approved Matrix row first")
             return {"CANCELLED"}
         if not settings.matrix_editor_object:
-            self.report({"ERROR"}, "Сначала выбери компонент кнопкой Edit")
+            self.report({"ERROR"}, "Select a component using the Edit button first")
             return {"CANCELLED"}
 
         plan_index, item = find_plan_item_by_object_and_group_index(scene, settings.matrix_editor_object, settings.matrix_manual_group_index)
         if item is None:
-            self.report({"ERROR"}, f"VG index {settings.matrix_manual_group_index} не найден в {settings.matrix_editor_object}")
+            self.report({"ERROR"}, f"VG index {settings.matrix_manual_group_index} was not found in {settings.matrix_editor_object}")
             return {"CANCELLED"}
 
         displaced, error, cl_info = assign_plan_item_to_canonical(scene, plan_index, row.canonical_name)
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Назначено вручную{cl_info}" + ("; прежний владелец возвращён in Conflict" if displaced else ""))
+        self.report({"INFO"}, f"Assigned manually{cl_info}" + ("; previous owner returned to Conflict" if displaced else ""))
         return {"FINISHED"}
 
 
@@ -331,7 +331,7 @@ class RZM_OT_clear_matrix_cell(Operator):
                 item.decision_reason = "manually cleared from matrix"
                 item.conflict_cluster = self.canonical_name
                 refresh_matrix_and_summary(scene)
-                self.report({"INFO"}, "Ячейка очищена; прежний VG отправлен в Conflict")
+                self.report({"INFO"}, "Cell cleared; previous VG sent to Conflict")
                 return {"FINISHED"}
         return {"CANCELLED"}
 
@@ -346,16 +346,16 @@ class RZM_OT_assign_selected_to_matrix_row(Operator):
         row = selected_approved_row(scene)
         item, item_index = selected_issue_item(scene)
         if row is None:
-            self.report({"ERROR"}, "Сначала выбери каноническую строку в Approved Matrix")
+            self.report({"ERROR"}, "Select a canonical row in Approved Matrix first")
             return {"CANCELLED"}
         if item is None or item.status not in {"CONFLICT", "UNKNOWN"}:
-            self.report({"ERROR"}, "Выбери Conflict или Unknown")
+            self.report({"ERROR"}, "Choose Conflict or Unknown")
             return {"CANCELLED"}
         displaced, error, cl_info = assign_plan_item_to_canonical(scene, item_index, row.canonical_name)
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Назначено{cl_info}" + ("; старый владелец возвращён в Conflict" if displaced else ""))
+        self.report({"INFO"}, f"Assigned{cl_info}" + ("; old owner returned to Conflict" if displaced else ""))
         return {"FINISHED"}
 
 
@@ -394,7 +394,7 @@ class RZM_OT_select_approved_cell(Operator):
 
 class RZM_OT_demote_approved_detail(Operator):
     bl_idname = "rzm_weights.demote_approved_detail"
-    bl_label = "Вернуть в Conflict"
+    bl_label = "Return to Conflict"
 
     def execute(self, context):
         scene = context.scene
@@ -412,7 +412,7 @@ class RZM_OT_demote_approved_detail(Operator):
 
 class RZM_OT_assign_candidate(Operator):
     bl_idname = "rzm_weights.assign_candidate"
-    bl_label = "Назначить кандидата"
+    bl_label = "Assign Candidate"
     item_index: IntProperty()
     slot: IntProperty(min=1, max=3)
 
@@ -428,7 +428,7 @@ class RZM_OT_assign_candidate(Operator):
                 other_members = [other for other in scene.rzm_weight_plan if other.cluster_id == item.cluster_id and other != item]
                 if other_members:
                     names = [f"{other.object_name} ({other.original_name})" for other in other_members]
-                    cluster_info = " (Кластер: также изменены " + ", ".join(names) + ")"
+                    cluster_info = " (Cluster: also changed " + ", ".join(names) + ")"
             is_helper = (value.startswith("hlp_") or 
                          value.startswith("Helper_") or 
                          any(other.is_helper for other in scene.rzm_weight_plan if other.resolved_name == value))
@@ -437,14 +437,14 @@ class RZM_OT_assign_candidate(Operator):
             item.is_helper = is_helper
             item.manual_override = True
             item.resolved_name = value
-            self.report({"INFO"}, f"Кандидат назначен: {value}{cluster_info}")
+            self.report({"INFO"}, f"Candidate assigned: {value}{cluster_info}")
         tag_view3d_redraw()
         return {"FINISHED"}
 
 
 class RZM_OT_force_aux_name(Operator):
     bl_idname = "rzm_weights.force_aux_name"
-    bl_label = "Отдельная доп. кость"
+    bl_label = "Separate Helper Bone"
     item_index: IntProperty()
 
     def execute(self, context):
@@ -597,7 +597,7 @@ class RZM_OT_apply_plan(Operator):
             obj["rzm_weight_harmonizer_mapping"] = json.dumps(mapping, ensure_ascii=False)
 
         refresh_matrix_and_summary(scene)
-        self.report({"INFO"}, f"Готово. Новых костей: {len(generated)}. VG order и vertex order не менялись")
+        self.report({"INFO"}, f"Done. New bones: {len(generated)}. VG order and vertex order were not changed")
         return {"FINISHED"}
 
 
@@ -609,7 +609,7 @@ class RZM_OT_restore_backup(Operator):
     def execute(self, context):
         text = bpy.data.texts.get(BACKUP_TEXT)
         if text is None:
-            self.report({"WARNING"}, "Бэкап не найден")
+            self.report({"WARNING"}, "Backup not found")
             return {"CANCELLED"}
         backup = json.loads(text.as_string())
         for object_name, rows in backup.get("objects", {}).items():
@@ -658,13 +658,13 @@ class RZM_OT_restore_backup(Operator):
         try: context.view_layer.update()
         except: pass
 
-        self.report({"INFO"}, "Исходные имена VG восстановлены, созданные кости удалены")
+        self.report({"INFO"}, "Original VG names restored, generated bones removed")
         return {"FINISHED"}
 
 
 class RZM_OT_clear_plan(Operator):
     bl_idname = "rzm_weights.clear_plan"
-    bl_label = "Очистить Plan"
+    bl_label = "Clear Plan"
 
     def execute(self, context):
         context.scene.rzm_weight_plan.clear()
@@ -698,7 +698,7 @@ def distance_to_segment(point: Vector, start: Vector, end: Vector) -> float:
 class RZM_OT_cluster_disband(Operator):
     bl_idname = "rzm_weights.cluster_disband"
     bl_label = "Disband Cluster"
-    bl_description = "Разъединить все вейт-группы в данном кластере"
+    bl_description = "Disband all weight groups in this cluster"
     cluster_id: StringProperty()
 
     def execute(self, context):
@@ -708,14 +708,14 @@ class RZM_OT_cluster_disband(Operator):
             if item.cluster_id == self.cluster_id:
                 item.cluster_id = ""
         tag_view3d_redraw()
-        self.report({"INFO"}, "Кластер расформирован")
+        self.report({"INFO"}, "Cluster disbanded")
         return {'FINISHED'}
 
 
 class RZM_OT_cluster_split_item(Operator):
     bl_idname = "rzm_weights.cluster_split_item"
     bl_label = "Remove from Cluster"
-    bl_description = "Убрать выбранную группу из кластера"
+    bl_description = "Remove the selected group from the cluster"
     plan_index: IntProperty()
 
     def execute(self, context):
@@ -724,7 +724,7 @@ class RZM_OT_cluster_split_item(Operator):
             item = plan[self.plan_index]
             item.cluster_id = ""
             tag_view3d_redraw()
-            self.report({"INFO"}, f"Группа {item.original_name} убрана из кластера")
+            self.report({"INFO"}, f"Group {item.original_name} removed from the cluster")
             return {'FINISHED'}
         return {'CANCELLED'}
 
@@ -732,7 +732,7 @@ class RZM_OT_cluster_split_item(Operator):
 class RZM_OT_cluster_merge_groups(Operator):
     bl_idname = "rzm_weights.cluster_merge_groups"
     bl_label = "Merge Groups into Cluster"
-    bl_description = "Объединить две группы в один кластер для синхронного редактирования"
+    bl_description = "Merge two groups into one cluster for synchronized editing"
     source_index: IntProperty()
     target_index: IntProperty()
 
@@ -787,14 +787,14 @@ class RZM_OT_cluster_merge_groups(Operator):
             print("Error rebuilding matrix:", e)
 
         tag_view3d_redraw()
-        self.report({"INFO"}, f"Группы объединены в кластер '{cid}'")
+        self.report({"INFO"}, f"Groups merged into cluster '{cid}'")
         return {'FINISHED'}
 
 
 class RZM_OT_switch_active_vg(Operator):
     bl_idname = "rzm_weights.switch_active_vg"
     bl_label = "Switch Active Vertex Group"
-    bl_description = "Переключить активную вершинную группу на объекте"
+    bl_description = "Switch the active vertex group on the object"
     group_index: IntProperty()
 
     def execute(self, context):
@@ -815,7 +815,7 @@ class RZM_OT_switch_active_vg(Operator):
 class RZM_OT_quick_attach_bone(Operator):
     bl_idname = "rzm_weights.quick_attach_bone"
     bl_label = "Quick Attach Bone"
-    bl_description = "Прикрепить вершинную группу к выбранной кости"
+    bl_description = "Attach the vertex group to the selected bone"
     bone_name: StringProperty()
     object_name: StringProperty()
     group_index: IntProperty()
@@ -840,7 +840,7 @@ class RZM_OT_quick_attach_bone(Operator):
             other_members = [other for other in plan if other.cluster_id == found_item.cluster_id and other != found_item]
             if other_members:
                 names = [f"{other.object_name} ({other.original_name})" for other in other_members]
-                cluster_info = " (Кластер: также изменены " + ", ".join(names) + ")"
+                cluster_info = " (Cluster: also changed " + ", ".join(names) + ")"
 
         is_helper = (self.is_helper or
                      self.bone_name.startswith("hlp_") or 
@@ -860,12 +860,12 @@ class RZM_OT_quick_attach_bone(Operator):
             print("Error rebuilding matrix:", e)
 
         tag_view3d_redraw()
-        self.report({"INFO"}, f"Группа прикреплена к кости '{self.bone_name}'{cluster_info}")
+        self.report({"INFO"}, f"Group attached to bone '{self.bone_name}'{cluster_info}")
         return {'FINISHED'}
 
 
 class RZM_MT_quick_attach(bpy.types.Menu):
-    bl_label = "Быстрый аттачмент (ближайшие кости)"
+    bl_label = "Quick Attach (Nearest Bones)"
     bl_idname = "RZM_MT_quick_attach"
 
     def draw(self, context):
@@ -943,7 +943,7 @@ class RZM_MT_quick_attach(bpy.types.Menu):
 
 
 class RZM_MT_cluster_merge_candidates(bpy.types.Menu):
-    bl_label = "Объединить в кластер"
+    bl_label = "Merge into Cluster"
     bl_idname = "RZM_MT_cluster_merge_candidates"
 
     def draw(self, context):
@@ -966,7 +966,7 @@ class RZM_MT_cluster_merge_candidates(bpy.types.Menu):
             layout.label(text="Active group not found in Plan")
             return
 
-        layout.label(text="Выберите группу для объединения:")
+        layout.label(text="Choose a group to merge:")
         layout.separator()
 
         source_item = scene.rzm_weight_plan[source_idx]
@@ -982,7 +982,7 @@ class RZM_MT_cluster_merge_candidates(bpy.types.Menu):
         candidates.sort(key=lambda x: x[2])
 
         if not candidates:
-            layout.label(text="Нет доступных групп на других объектах")
+            layout.label(text="No available groups on other objects")
             return
 
         for idx, item, dist in candidates:
@@ -995,7 +995,7 @@ class RZM_MT_cluster_merge_candidates(bpy.types.Menu):
 class RZM_OT_vg_name_transfer(Operator):
     bl_idname = "rzm_weights.vg_name_transfer"
     bl_label = "VG Name Transfer"
-    bl_description = "Перенести имена вершинных групп с донорского объекта на активный по индексу"
+    bl_description = "Transfer vertex group names from the donor object to the active one by index"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -1006,7 +1006,7 @@ class RZM_OT_vg_name_transfer(Operator):
         active_obj = context.active_object
         selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
         if len(selected_meshes) != 2:
-            self.report({'ERROR'}, "Выделите ровно 2 меш-объекта (активный будет Target, второй - Donor)")
+            self.report({'ERROR'}, "Select exactly 2 mesh objects (the active one is the Target, the other is the Donor)")
             return {'CANCELLED'}
 
         donor_obj = selected_meshes[0] if selected_meshes[1] == active_obj else selected_meshes[1]
@@ -1015,7 +1015,7 @@ class RZM_OT_vg_name_transfer(Operator):
         donor_vgs = donor_obj.vertex_groups
 
         if len(target_vgs) != len(donor_vgs):
-            self.report({'ERROR'}, f"Несовпадение количества групп: Target={len(target_vgs)}, Donor={len(donor_vgs)}")
+            self.report({'ERROR'}, f"Group count mismatch: Target={len(target_vgs)}, Donor={len(donor_vgs)}")
             return {'CANCELLED'}
 
         # Perform transfer
@@ -1034,7 +1034,7 @@ class RZM_OT_vg_name_transfer(Operator):
         except Exception:
             pass
 
-        self.report({'INFO'}, f"Успешно перенесено {renamed_count} имен групп с {donor_obj.name} на {active_obj.name}")
+        self.report({'INFO'}, f"Successfully transferred {renamed_count} group names from {donor_obj.name} to {active_obj.name}")
         return {'FINISHED'}
 
 

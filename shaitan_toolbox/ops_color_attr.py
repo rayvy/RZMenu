@@ -124,7 +124,7 @@ def paint_mesh_with_color(context, target_color, target_name=None):
 class RZM_ST_OT_PaintColor(bpy.types.Operator):
     bl_idname = "rzm_st.paint_color"
     bl_label = "Paint Selected Color"
-    bl_description = "Покрасить выделенные вершины или весь меш активным цветом пикера"
+    bl_description = "Paint the selected vertices or the entire mesh with the active picker color"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -134,16 +134,16 @@ class RZM_ST_OT_PaintColor(bpy.types.Operator):
         
         count = paint_mesh_with_color(context, target_color, target_name)
         if count > 0:
-            self.report({'INFO'}, f"Окрашено объектов: {count} в слой '{target_name}'")
+            self.report({'INFO'}, f"Painted {count} objects into layer '{target_name}'")
             return {'FINISHED'}
         else:
-            self.report({'WARNING'}, "Нет выделенных мешей для покраски")
+            self.report({'WARNING'}, "No selected meshes to paint")
             return {'CANCELLED'}
 
 class RZM_ST_OT_PaintPresetColor(bpy.types.Operator):
     bl_idname = "rzm_st.paint_preset_color"
     bl_label = "Paint Preset Color"
-    bl_description = "Покрасить выделение цветом этого пресета напрямую"
+    bl_description = "Paint the current selection directly with this preset color"
     bl_options = {'REGISTER', 'UNDO'}
 
     index: bpy.props.IntProperty()
@@ -159,7 +159,7 @@ class RZM_ST_OT_PaintPresetColor(bpy.types.Operator):
             target_name = context.scene.rzm_st_paint_target
             count = paint_mesh_with_color(context, target_color, target_name)
             if count > 0:
-                self.report({'INFO'}, f"Покрашено пресетом {self.index + 1} в слой '{target_name}'")
+                self.report({'INFO'}, f"Painted with preset {self.index + 1} into layer '{target_name}'")
                 return {'FINISHED'}
                 
         return {'CANCELLED'}
@@ -167,14 +167,14 @@ class RZM_ST_OT_PaintPresetColor(bpy.types.Operator):
 class RZM_ST_OT_ClearColor(bpy.types.Operator):
     bl_idname = "rzm_st.clear_color"
     bl_label = "Remove Color Layer"
-    bl_description = "Удалить выбранный атрибут цвета с выделенных объектов"
+    bl_description = "Remove the selected color attribute from the selected objects"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         target_name = context.scene.rzm_st_paint_target
         objects = [o for o in context.selected_objects if o.type == 'MESH' and o.data]
         if not objects:
-            self.report({'WARNING'}, "Нет выделенных мешей")
+            self.report({'WARNING'}, "No selected meshes")
             return {'CANCELLED'}
             
         cleared_count = 0
@@ -184,7 +184,7 @@ class RZM_ST_OT_ClearColor(bpy.types.Operator):
                 obj.data.vertex_colors.remove(layer)
                 cleared_count += 1
                 
-        self.report({'INFO'}, f"Удален слой '{target_name}' с {cleared_count} объектов")
+        self.report({'INFO'}, f"Removed layer '{target_name}' from {cleared_count} objects")
         return {'FINISHED'}
 
 classes_to_register = [

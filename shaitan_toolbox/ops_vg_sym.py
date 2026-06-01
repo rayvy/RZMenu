@@ -2,7 +2,7 @@ import bpy
 from mathutils import Vector
 
 def get_armature_linked_to_mesh(obj):
-    """Ищет арматуру, привязанную к мешу через модификатор"""
+    """Finds the armature linked to the mesh through a modifier."""
     if not obj: return None
     for mod in obj.modifiers:
         if mod.type == 'ARMATURE' and mod.object:
@@ -11,8 +11,8 @@ def get_armature_linked_to_mesh(obj):
 
 def calculate_all_vg_centers_optimized(obj):
     """
-    Вычисляет центры ВСЕХ групп вершин за ОДИН проход по вершинам меша.
-    Возвращает словарь {индекс_группы: мировой_центр}.
+    Computes the centers of ALL vertex groups in a SINGLE pass over the mesh vertices.
+    Returns a dictionary {group_index: world_center}.
     """
     if not obj or obj.type != 'MESH':
         return {}
@@ -45,7 +45,7 @@ def calculate_all_vg_centers_optimized(obj):
 class RZM_ST_OT_SymmetrizeVGNames(bpy.types.Operator):
     bl_idname = "rzm_st.symmetrize_vg_names"
     bl_label = "Symmetrize VG Names"
-    bl_description = "Найти зеркальную группу для активной и переименовать обе (и кости)"
+    bl_description = "Find the mirrored group for the active one and rename both (and the bones)"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -53,19 +53,19 @@ class RZM_ST_OT_SymmetrizeVGNames(bpy.types.Operator):
         scene = context.scene
 
         if not obj or obj.type != 'MESH':
-            self.report({'ERROR'}, "Активный объект должен быть типа 'Mesh'")
+            self.report({'ERROR'}, "The active object must be a Mesh")
             return {'CANCELLED'}
 
         active_vg = obj.vertex_groups.active
         if not active_vg:
-            self.report({'ERROR'}, "Нет активной группы вершин. Выберите группу в списке")
+            self.report({'ERROR'}, "No active vertex group. Select a group in the list")
             return {'CANCELLED'}
         
         all_centers = calculate_all_vg_centers_optimized(obj)
 
         active_vg_center = all_centers.get(active_vg.index)
         if not active_vg_center:
-            self.report({'ERROR'}, f"Не удалось вычислить центр группы '{active_vg.name}'. Возможно, она пустая.")
+            self.report({'ERROR'}, f"Could not compute the center of group '{active_vg.name}'. It may be empty.")
             return {'CANCELLED'}
 
         symmetry_direction = scene.rzm_st_symmetry_direction
@@ -78,7 +78,7 @@ class RZM_ST_OT_SymmetrizeVGNames(bpy.types.Operator):
             is_right_side = active_vg_center.x > -0.001
 
         if not is_left_side and not is_right_side:
-            self.report({'WARNING'}, "Активная группа находится по центру. Невозможно определить сторону.")
+            self.report({'WARNING'}, "The active group is centered. Side cannot be determined.")
             return {'CANCELLED'}
 
         candidates = []
@@ -103,15 +103,15 @@ class RZM_ST_OT_SymmetrizeVGNames(bpy.types.Operator):
                 candidates.append((vg.name, distance))
         
         if not candidates:
-            self.report({'INFO'}, "Не найдено подходящих зеркальных групп на противоположной стороне.")
+            self.report({'INFO'}, "No suitable mirrored groups were found on the opposite side.")
             return {'CANCELLED'}
 
         candidates.sort(key=lambda x: x[1])
 
         def draw_menu(self, context):
             layout = self.layout
-            direction_note = "(инвертировано)" if symmetry_direction == 'INVERTED' else ""
-            layout.label(text=f"Направление: {symmetry_direction} {direction_note}")
+            direction_note = "(inverted)" if symmetry_direction == 'INVERTED' else ""
+            layout.label(text=f"Direction: {symmetry_direction} {direction_note}")
             for vg_name, dist in candidates[:15]:
                 op = layout.operator(RZM_ST_OT_SymmetrizeVGNamesConfirm.bl_idname, text=f"{vg_name} (dist: {dist:.3f})")
                 op.active_vg_name = active_vg.name
@@ -119,7 +119,7 @@ class RZM_ST_OT_SymmetrizeVGNames(bpy.types.Operator):
                 op.is_active_left = is_left_side
                 op.symmetry_direction = symmetry_direction
 
-        context.window_manager.popup_menu(draw_menu, title="Выберите зеркальную группу")
+        context.window_manager.popup_menu(draw_menu, title="Choose mirrored group")
         return {'FINISHED'}
 
 class RZM_ST_OT_SymmetrizeVGNamesConfirm(bpy.types.Operator):
@@ -143,7 +143,7 @@ class RZM_ST_OT_SymmetrizeVGNamesConfirm(bpy.types.Operator):
         mirror_vg = obj.vertex_groups.get(old_mirror_name)
 
         if not active_vg or not mirror_vg:
-            self.report({'ERROR'}, "Одна из групп не найдена. Операция отменена")
+            self.report({'ERROR'}, "One of the groups was not found. Operation cancelled")
             return {'CANCELLED'}
 
         base_name = old_active_name.rsplit('.', 1)[0] if old_active_name.upper().endswith(('.L', '.R')) else old_active_name
@@ -155,10 +155,10 @@ class RZM_ST_OT_SymmetrizeVGNamesConfirm(bpy.types.Operator):
         new_name_mirror = f"{base_name}{suffix_mirror}"
         
         if new_name_mirror in obj.vertex_groups and new_name_mirror != mirror_vg.name:
-             self.report({'ERROR'}, f"Имя группы '{new_name_mirror}' уже занято")
+             self.report({'ERROR'}, f"Group name '{new_name_mirror}' is already in use")
              return {'CANCELLED'}
         if new_name_active in obj.vertex_groups and new_name_active != active_vg.name:
-             self.report({'ERROR'}, f"Имя группы '{new_name_active}' уже занято")
+             self.report({'ERROR'}, f"Group name '{new_name_active}' is already in use")
              return {'CANCELLED'}
         
         # 1. Безопасное переименование групп вершин
@@ -196,14 +196,14 @@ class RZM_ST_OT_SymmetrizeVGNamesConfirm(bpy.types.Operator):
                             b_mirror.name = new_name_mirror
                             bones_renamed += 1
 
-        direction_info = " (инвертировано)" if self.symmetry_direction == 'INVERTED' else ""
+        direction_info = " (inverted)" if self.symmetry_direction == 'INVERTED' else ""
         
         if bones_renamed > 0:
-            self.report({'INFO'}, f"Успешно{direction_info}: Группы и {bones_renamed} кост(ь/и) переименованы в '{new_name_active}' и '{new_name_mirror}'")
+            self.report({'INFO'}, f"Success{direction_info}: groups and {bones_renamed} bone(s) renamed to '{new_name_active}' and '{new_name_mirror}'")
         elif rename_bones and get_armature_linked_to_mesh(obj):
-            self.report({'INFO'}, f"Группы переименованы{direction_info}. Соответствующие кости не найдены.")
+            self.report({'INFO'}, f"Groups renamed{direction_info}. Matching bones were not found.")
         else:
-            self.report({'INFO'}, f"Группы переименованы{direction_info}: '{new_name_active}' и '{new_name_mirror}'")
+            self.report({'INFO'}, f"Groups renamed{direction_info}: '{new_name_active}' and '{new_name_mirror}'")
             
         return {'FINISHED'}
 

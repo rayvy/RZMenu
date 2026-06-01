@@ -134,7 +134,7 @@ class RZM_OT_QuickExportGameBuffers(bpy.types.Operator):
     """Export only game buffers (XXMI/EFMI/WWMI) without regenerating RZMenu UI assets or Atlas."""
     bl_idname = "rzm.quick_export_game_buffers"
     bl_label = "Quick Export Game Buffers"
-    bl_description = "Не экспортирует ресурсные буфферы rzm, только игровые от XXMI и EFMI + VFX патчер если есть VFX эффекты"
+    bl_description = "Does not export RZMenu resource buffers; exports only the game buffers for XXMI/EFMI, plus the VFX patcher when VFX effects are present"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):

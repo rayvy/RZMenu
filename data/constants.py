@@ -28,5 +28,5 @@ FX_COMMANDS = [
 ]
 
 FN_COMMANDS = [
-    ('CommandListCoreFnFixRatio', "Fix Ratio", "Сохранять пропорции")
+    ('CommandListCoreFnFixRatio', "Fix Ratio", "Preserve proportions")
 ]

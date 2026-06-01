@@ -2,7 +2,7 @@ import bpy
 import numpy as np
 
 def get_active_item(context):
-    """Получает активный элемент из списка пресетов"""
+    """Gets the active item from the preset list."""
     idx = context.scene.rzm_st_texcoord_list_index
     lst = context.scene.rzm_st_texcoord_list
     if 0 <= idx < len(lst):
@@ -11,8 +11,8 @@ def get_active_item(context):
 
 def ensure_uvmap_exists(obj):
     """
-    Гарантирует, что у меша есть слой 'UVMap' и он стоит первым (или активным).
-    Возвращает True, если успех.
+    Ensures the mesh has a 'UVMap' layer and that it is first (or active).
+    Returns True on success.
     """
     mesh = obj.data
     if not mesh.uv_layers:
@@ -32,7 +32,7 @@ def ensure_uvmap_exists(obj):
 
 def apply_uv_math(context, obj, target_name, grid_x, grid_y, pos_x, pos_y, packing_mode='SHIFT'):
     """
-    Применяет математику или проекцию для указанного UV-слоя.
+    Applies the transform or projection for the selected UV layer.
     """
     original_mode = obj.mode
     
@@ -194,7 +194,7 @@ def apply_uv_math(context, obj, target_name, grid_x, grid_y, pos_x, pos_y, packi
 class RZM_ST_OT_SetGridCell(bpy.types.Operator):
     bl_idname = "rzm_st.set_grid_cell"
     bl_label = "Set Grid Cell"
-    bl_description = "Установить позицию (0,0 - Верхний Левый угол)"
+    bl_description = "Set the position (0,0 = top-left corner)"
     bl_options = {'INTERNAL'} 
 
     x: bpy.props.IntProperty()
@@ -209,8 +209,8 @@ class RZM_ST_OT_SetGridCell(bpy.types.Operator):
 
 class RZM_ST_OT_ProcessActiveLayer(bpy.types.Operator):
     bl_idname = "rzm_st.process_active_layer"
-    bl_label = "Обработать слои"
-    bl_description = "Записывает параметр активного слоя и/или применяет все слои из списка"
+    bl_label = "Process Layers"
+    bl_description = "Writes the active layer parameter and/or applies all layers from the list"
     bl_options = {'REGISTER', 'UNDO'}
     
     mode: bpy.props.StringProperty(default="BOTH") # "PARAM", "APPLY", "BOTH"
@@ -222,13 +222,13 @@ class RZM_ST_OT_ProcessActiveLayer(bpy.types.Operator):
         
         objects = [o for o in context.selected_objects if o.type == 'MESH' and o.data]
         if not objects:
-            self.report({'WARNING'}, "Нет выделенных мешей")
+            self.report({'WARNING'}, "No selected meshes")
             return {'CANCELLED'}
             
         # 1. Записать параметр (если PARAM или BOTH)
         if self.mode in {'PARAM', 'BOTH'}:
             if not active_item:
-                self.report({'WARNING'}, "Нет активного элемента списка для записи параметра")
+                self.report({'WARNING'}, "No active list item to write the parameter")
                 return {'CANCELLED'}
             data_array = [active_item.grid_x, active_item.grid_y, active_item.pos_x, active_item.pos_y]
             for obj in objects:
@@ -237,7 +237,7 @@ class RZM_ST_OT_ProcessActiveLayer(bpy.types.Operator):
         # 2. Применить сдвиг (если APPLY или BOTH) для ВСЕХ слоев из списка
         if self.mode in {'APPLY', 'BOTH'}:
             if not presets:
-                self.report({'WARNING'}, "Список слоев пуст")
+                self.report({'WARNING'}, "The layer list is empty")
                 return {'CANCELLED'}
                 
             count_applied = 0
@@ -254,7 +254,7 @@ class RZM_ST_OT_ProcessActiveLayer(bpy.types.Operator):
                         item.packing_mode
                     )
                 count_applied += 1
-            self.report({'INFO'}, f"Применены все слои ({len(presets)} шт.) для {count_applied} объектов")
+            self.report({'INFO'}, f"Applied all layers ({len(presets)}) to {count_applied} objects")
             
         return {'FINISHED'}
 

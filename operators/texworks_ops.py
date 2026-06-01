@@ -518,7 +518,7 @@ class RZM_OT_MoveTwItem(bpy.types.Operator):
         return {'FINISHED'}
 
 def create_dummy_png(path, width=1, height=1, color=(255, 0, 0, 128)):
-    """Создает пустой PNG файл заданного размера и цвета."""
+    """Creates an empty PNG file of the requested size and color."""
     import struct
     import zlib
 
@@ -550,10 +550,10 @@ def create_dummy_png(path, width=1, height=1, color=(255, 0, 0, 128)):
         return False
 
 class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
-    """Экспортирует иерархию папок и генерирует PNG заглушки для TexWorks."""
+    """Exports the folder hierarchy and generates PNG placeholders for TexWorks."""
     bl_idname = "rzm.tw_export_hierarchy"
     bl_label = "Export TexWorks Hierarchy"
-    bl_description = "Создает структуру папок и PNG файлы на основе настроек TexWorks"
+    bl_description = "Creates a folder structure and PNG files from TexWorks settings"
 
     def execute(self, context):
         rzm = context.scene.rzm
@@ -632,7 +632,7 @@ class RZ_OT_TexWorksExportHierarchy(bpy.types.Operator):
         return {'FINISHED'}
 
 class RZM_OT_TwCreateEasyMask(bpy.types.Operator):
-    """Генерирует маску (красный цвет на черном фоне) на основе выделенных UV."""
+    """Generates a mask (red on black) from the selected UVs."""
     bl_idname = "rzm.tw_create_easy_mask"
     bl_label = "Easy Mask"
     bl_options = {'REGISTER', 'UNDO'}
@@ -687,7 +687,7 @@ class RZM_OT_TwCreateEasyMask(bpy.types.Operator):
             
             result = calculate_slot_config(obj, comp_width, comp_height, padding=0)
             if not result:
-                self.report({'ERROR'}, "Failed to calculate UV zone for slot (no selection?)")
+                self.report({'ERROR'}, "Failed to calculate the UV zone for the slot (no selection?)")
                 return {'CANCELLED'}
             
             # Обновляем rect слота (игнорируем lattice)
@@ -834,10 +834,10 @@ class RZM_OT_TwCreateEasyMask(bpy.types.Operator):
         return {'FINISHED'}
 
 class RZ_OT_TexWorksDebugSync(bpy.types.Operator):
-    """Выводит иерархию TexWorks в консоль."""
+    """Prints the TexWorks hierarchy to the console."""
     bl_idname = "rzm.tw_debug_sync"
     bl_label = "Debug TexWorks Sync"
-    bl_description = "Выводит данные TexWorks в консоль для отладки"
+    bl_description = "Prints TexWorks data to the console for debugging"
 
     def execute(self, context):
         rzm = context.scene.rzm

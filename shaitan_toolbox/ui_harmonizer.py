@@ -208,7 +208,7 @@ def draw_weight_paint_helper(layout, context, scene, settings):
 
 def draw_component_summary(layout, scene):
     box = layout.box()
-    box.label(text="Заполненность компонентов", icon="INFO")
+    box.label(text="Component occupancy", icon="INFO")
     for item in scene.rzm_component_summary:
         row = box.row(align=True)
         row.label(text=item.object_name)
@@ -224,7 +224,7 @@ def draw_component_summary(layout, scene):
 def draw_matrix_target(layout, scene):
     matrix_row = selected_approved_row(scene)
     if matrix_row is None:
-        layout.label(text="Matrix target: <не выбран>")
+        layout.label(text="Matrix target: <none selected>")
         return
 
     settings = scene.rzm_weight_settings
@@ -280,8 +280,8 @@ def draw_item_details(layout, scene, item, item_index, approve_button=False, dem
         return
     box = layout.box()
     box.label(text=f"{item.object_name}[{item.group_index:03d}] {item.original_name}", icon="BONE_DATA")
-    box.prop(item, "resolved_name", text="Итоговое имя")
-    box.label(text=f"Nearest: {item.nearest_bone or '<нет>'} | dist={item.nearest_distance:.4f}")
+    box.prop(item, "resolved_name", text="Resolved name")
+    box.label(text=f"Nearest: {item.nearest_bone or '<none>'} | dist={item.nearest_distance:.4f}")
     box.label(text=f"Confidence={item.confidence:.3f} | margin={item.margin:.3f}")
     if item.decision_reason:
         box.label(text=f"Reason: {item.decision_reason}")
@@ -289,18 +289,18 @@ def draw_item_details(layout, scene, item, item_index, approve_button=False, dem
         box.label(text=f"Rival refs: {item.conflict_cluster}", icon="ERROR")
     draw_candidate_buttons(box, item, item_index)
     row = box.row(align=True)
-    op = row.operator("rzm_weights.force_aux_name", text="Отдельная доп. кость")
+    op = row.operator("rzm_weights.force_aux_name", text="Separate helper bone")
     op.item_index = item_index
     row.operator("rzm_weights.refresh_overlay", text="Refresh Overlay")
     if approve_button:
         box.operator("rzm_weights.approve_selected_conflict", text="APPROVE CURRENT NAME", icon="CHECKMARK")
     if demote_button:
-        box.operator("rzm_weights.demote_approved_detail", text="Вернуть в Conflict")
+        box.operator("rzm_weights.demote_approved_detail", text="Return to Conflict")
 
 
 def draw_approved_tab(layout, scene, settings):
     row = layout.row(align=True)
-    row.label(text="Кость | компоненты по исходным VG-индексам")
+    row.label(text="Bone | components by source VG indices")
     row.prop(settings, "matrix_only_incomplete", toggle=True)
     header = layout.row(align=True)
     header.label(text="Bone")
@@ -424,7 +424,7 @@ def draw_base_mesh_setup_ui(self, context, layout):
         draw_weight_paint_helper(layout, context, scene, settings)
 
     if not scene.rzm_weight_plan:
-        layout.label(text="Выбери armature + reference, выдели компоненты, построй Plan")
+        layout.label(text="Select an armature + reference, choose the components, then build the plan")
         return
 
     num_clusters = len({item.cluster_id for item in scene.rzm_weight_plan if item.cluster_id})
