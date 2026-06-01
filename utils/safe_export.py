@@ -126,6 +126,243 @@ class VertexGroupReorderSubModule:
 #  SUB-MODULE 1: Mesh Backup (All visible meshes)
 # ══════════════════════════════════════════════════════════════════════════════
 
+class ModifierBakeMaskCleanupSubModule:
+    """
+    Temporarily bakes viewport modifiers into export targets and removes mask*
+    vertex groups before the external exporter normalizes weights.
+    """
+    def __init__(self):
+        self._states = {}
+        self._temp_objects = []
+
+    @staticmethod
+    def _is_mask_group(name):
+        return str(name or "").casefold().startswith("mask")
+
+    @staticmethod
+    def _should_apply_modifier(mod):
+        try:
+            from ..operators.gret_shape_key_utils import ignored_modifier_types
+            ignored_types = ignored_modifier_types
+        except Exception:
+            ignored_types = {
+                'CLOTH', 'COLLISION', 'DYNAMIC_PAINT', 'EXPLODE', 'FLUID',
+                'OCEAN', 'PARTICLE_INSTANCE', 'PARTICLE_SYSTEM', 'SOFT_BODY',
+            }
+        return mod.show_viewport and mod.type not in ignored_types and mod.type != 'ARMATURE'
+
+    def pre_export(self, context):
+        from .xxmi_data_predictor import get_export_targets
+        targets = get_export_targets(context)
+
+        print(f"[SafeExport] [BakeMasks] Preparing {len(targets)} mesh target(s)...")
+
+        for obj in targets:
+            if obj.type != 'MESH' or not obj.data:
+                continue
+
+            modifier_mask = [self._should_apply_modifier(mod) for mod in obj.modifiers]
+            has_modifiers = any(modifier_mask)
+            has_masks = any(self._is_mask_group(vg.name) for vg in obj.vertex_groups)
+            if not has_modifiers and not has_masks:
+                continue
+
+            try:
+                self._states[obj.name] = self._capture_state(obj, modifier_mask)
+                temp_obj = self._make_temp_object(context, obj)
+                self._temp_objects.append(temp_obj)
+
+                if has_modifiers:
+                    self._apply_modifiers_on_temp(context, temp_obj, modifier_mask)
+
+                baked_mesh = temp_obj.data.copy()
+                baked_mesh.name = f"_RZM_SAFE_BAKED_{obj.name}"
+
+                obj.data = baked_mesh
+                self._copy_vertex_groups_without_masks(obj, temp_obj)
+                self._disable_applied_modifiers(obj, modifier_mask)
+
+                print(
+                    f"  [BakeMasks] {obj.name}: baked={has_modifiers}, "
+                    f"removed_masks={has_masks}"
+                )
+            except Exception as e:
+                import traceback
+                print(f"  [BakeMasks] Failed for '{obj.name}': {e}")
+                traceback.print_exc()
+
+    def post_export(self, context):
+        self._restore_all(context)
+
+    def restore(self, context):
+        self._restore_all(context)
+
+    def _capture_state(self, obj, modifier_mask):
+        return {
+            'obj': obj,
+            'data': obj.data,
+            'modifier_visibility': [
+                (mod.name, mod.show_viewport)
+                for mod in obj.modifiers
+            ],
+            'applied_modifier_names': [
+                mod.name for mod, apply in zip(obj.modifiers, modifier_mask) if apply
+            ],
+            'vertex_groups': self._capture_vertex_groups(obj),
+        }
+
+    def _capture_vertex_groups(self, obj):
+        group_names = [vg.name for vg in obj.vertex_groups]
+        locks = {vg.name: vg.lock_weight for vg in obj.vertex_groups}
+        weights = {}
+
+        for vert in obj.data.vertices:
+            entries = []
+            for item in vert.groups:
+                if item.group < len(group_names):
+                    entries.append((group_names[item.group], item.weight))
+            if entries:
+                weights[vert.index] = entries
+
+        return {
+            'names': group_names,
+            'locks': locks,
+            'weights': weights,
+            'active_index': obj.vertex_groups.active_index,
+        }
+
+    def _make_temp_object(self, context, obj):
+        temp_obj = obj.copy()
+        temp_obj.name = f"_RZM_SAFE_BAKE_{obj.name}"
+        temp_obj.data = obj.data.copy()
+        temp_obj.data.name = f"_RZM_SAFE_BAKE_MESH_{obj.name}"
+        temp_obj.hide_viewport = False
+        temp_obj.hide_set(False)
+        temp_obj.hide_select = False
+
+        collection = obj.users_collection[0] if obj.users_collection else context.scene.collection
+        collection.objects.link(temp_obj)
+        return temp_obj
+
+    def _apply_modifiers_on_temp(self, context, temp_obj, modifier_mask):
+        mask = list(modifier_mask[:32]) + [False] * max(0, 32 - len(modifier_mask))
+        prev_active = context.view_layer.objects.active
+        prev_selected = list(context.selected_objects)
+
+        try:
+            if context.mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            bpy.ops.object.select_all(action='DESELECT')
+            temp_obj.select_set(True)
+            context.view_layer.objects.active = temp_obj
+            with context.temp_override(
+                object=temp_obj,
+                active_object=temp_obj,
+                selected_objects=[temp_obj],
+                selected_editable_objects=[temp_obj],
+            ):
+                bpy.ops.rz.shape_key_apply_modifiers(modifier_mask=mask)
+        finally:
+            bpy.ops.object.select_all(action='DESELECT')
+            for selected_obj in prev_selected:
+                if selected_obj and selected_obj.name in bpy.data.objects:
+                    selected_obj.select_set(True)
+            if prev_active and prev_active.name in bpy.data.objects:
+                context.view_layer.objects.active = prev_active
+
+    def _copy_vertex_groups_without_masks(self, target_obj, source_obj):
+        target_obj.vertex_groups.clear()
+        source_group_names = [vg.name for vg in source_obj.vertex_groups]
+        name_to_group = {}
+
+        for source_vg in source_obj.vertex_groups:
+            if self._is_mask_group(source_vg.name):
+                continue
+            target_vg = target_obj.vertex_groups.new(name=source_vg.name)
+            target_vg.lock_weight = source_vg.lock_weight
+            name_to_group[source_vg.name] = target_vg
+
+        for vert in source_obj.data.vertices:
+            for item in vert.groups:
+                if item.group >= len(source_group_names):
+                    continue
+                group_name = source_group_names[item.group]
+                target_vg = name_to_group.get(group_name)
+                if target_vg:
+                    target_vg.add([vert.index], item.weight, 'REPLACE')
+
+    def _disable_applied_modifiers(self, obj, modifier_mask):
+        for mod, apply in zip(obj.modifiers, modifier_mask):
+            if apply:
+                mod.show_viewport = False
+
+    def _restore_all(self, context):
+        if not self._states and not self._temp_objects:
+            return
+
+        print(f"[SafeExport] [BakeMasks] Restoring {len(self._states)} mesh target(s)...")
+
+        for state in list(self._states.values()):
+            obj = state.get('obj')
+            if not obj or obj.name not in bpy.data.objects:
+                continue
+
+            try:
+                old_data = obj.data
+                obj.data = state['data']
+                self._restore_vertex_groups(obj, state['vertex_groups'])
+
+                for mod_name, show_viewport in state['modifier_visibility']:
+                    mod = obj.modifiers.get(mod_name)
+                    if mod:
+                        mod.show_viewport = show_viewport
+
+                if old_data and old_data != state['data'] and old_data.users == 0:
+                    bpy.data.meshes.remove(old_data, do_unlink=True)
+            except Exception as e:
+                import traceback
+                print(f"  [BakeMasks] Restore failed for '{obj.name}': {e}")
+                traceback.print_exc()
+
+        for temp_obj in self._temp_objects:
+            try:
+                if temp_obj and temp_obj.name in bpy.data.objects:
+                    temp_data = temp_obj.data
+                    bpy.data.objects.remove(temp_obj, do_unlink=True)
+                    if temp_data and temp_data.users == 0:
+                        bpy.data.meshes.remove(temp_data, do_unlink=True)
+            except Exception as e:
+                print(f"  [BakeMasks] Temp cleanup failed: {e}")
+
+        self._states.clear()
+        self._temp_objects.clear()
+
+        try:
+            context.view_layer.update()
+        except Exception as e:
+            print(f"[SafeExport] [BakeMasks] WARN: restore view_layer.update() failed: {e}")
+
+    def _restore_vertex_groups(self, obj, state):
+        obj.vertex_groups.clear()
+        name_to_group = {}
+
+        for name in state['names']:
+            vg = obj.vertex_groups.new(name=name)
+            vg.lock_weight = state['locks'].get(name, False)
+            name_to_group[name] = vg
+
+        for vert_index, entries in state['weights'].items():
+            for name, weight in entries:
+                vg = name_to_group.get(name)
+                if vg:
+                    vg.add([vert_index], weight, 'REPLACE')
+
+        active_index = state.get('active_index', 0)
+        if obj.vertex_groups and 0 <= active_index < len(obj.vertex_groups):
+            obj.vertex_groups.active_index = active_index
+
+
 class MeshBackupSubModule:
     """
     Резервное копирование и восстановление всей геометрии (Mesh) для всех видимых мешей.
@@ -277,7 +514,8 @@ class SafeExport:
         if temp_cleanup:
             # Альтернативный экспериментальный режим (удаление слоев после экспорта)
             self.sub_modules = [
-                VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
+                # VertexGroupReorderSubModule(),     # Standalone candidate: manually move mask* VG to the end.
+                ModifierBakeMaskCleanupSubModule(),  # [0] Bake modifiers, export without mask* VG, then restore.
                 # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
                 XXMIMissingDataPredictorSubModule(), # [1] Добавляем COLOR/TEXCOORD
                 CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
@@ -288,7 +526,8 @@ class SafeExport:
             predictor.disable_cleanup = True
 
             self.sub_modules = [
-                VertexGroupReorderSubModule(),       # [0] Сортируем VG в конец/по алфавиту
+                # VertexGroupReorderSubModule(),     # Standalone candidate: manually move mask* VG to the end.
+                ModifierBakeMaskCleanupSubModule(),  # [0] Bake modifiers, export without mask* VG, then restore.
                 predictor,                           # [1] Добавляем COLOR/TEXCOORD перманентно
                 # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
                 CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
