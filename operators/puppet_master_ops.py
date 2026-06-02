@@ -34,6 +34,7 @@ from ..utils.shape_export_filter import (
     active_weight_shape_configs,
     object_shape_key_is_exportable,
     prepare_shape_config_export_runtime,
+    shape_config_matches_component,
     shape_key_block_is_exportable,
 )
 
@@ -105,9 +106,67 @@ def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
 
 def has_active_modifiers(obj):
     for m in obj.modifiers:
-        if m.show_viewport and m.type != 'ARMATURE':
-            return True
+        if not m.show_viewport:
+            continue
+        if m.type in {'ARMATURE', 'DATA_TRANSFER'}:
+            continue
+        return True
     return False
+
+def _component_affected_names(base_name, comp_cache, dump_name, is_xxmi):
+    names = {str(base_name or "").lower()}
+    if dump_name:
+        names.add(f"{dump_name}{base_name}".lower())
+
+    if comp_cache:
+        comp_name = comp_cache.get('name') or comp_cache.get('component_name')
+        if comp_name:
+            names.add(str(comp_name).lower())
+        for entry in comp_cache.get('objects', []):
+            obj_name = entry.get('name')
+            if obj_name:
+                names.add(str(obj_name).lower())
+
+    return list(names)
+
+def _component_shape_key_names(active_configs, affected_names, single_shape_name=None):
+    if single_shape_name:
+        return {
+            config.shape_name
+            for config in active_configs
+            if config.shape_name == single_shape_name
+        }
+
+    return {
+        config.shape_name
+        for config in active_configs
+        if shape_config_matches_component(config, affected_names)
+    }
+
+def _write_noop_shape_buffers(output_dir, base_name, shape_names, is_xxmi, dump_name, original_bytes):
+    written = 0
+    for sk_name in sorted(shape_names):
+        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+        with open(os.path.join(output_dir, out_name), "wb") as f:
+            f.write(original_bytes)
+        written += 1
+
+    if written:
+        print(f"  [NO-OP] Wrote {written} full-size base shape buffer(s) for {base_name}.")
+
+def _validate_shape_buffer_sizes(output_dir, base_name, shape_names, is_xxmi, dump_name, expected_size):
+    for sk_name in sorted(shape_names):
+        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+        out_path = os.path.join(output_dir, out_name)
+        if not os.path.exists(out_path):
+            print(f"  [ERROR] Missing shape buffer after bake: {out_name}")
+            continue
+        actual_size = os.path.getsize(out_path)
+        if actual_size != expected_size:
+            print(
+                f"  [ERROR] Shape buffer size mismatch: {out_name} "
+                f"size={actual_size}, expected={expected_size}"
+            )
 
 def _scan_sk_owners(comp_objects, all_keys):
     """Классифицирует объекты по способу их деформации."""
@@ -938,22 +997,23 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                                 print(f"    [INFO] Found {base_name} VB0 via hash: {hash_name}")
                                 break
 
+    try:
+        from .export_cache import component_cache
+        comp_cache = component_cache(base_name)
+    except Exception:
+        comp_cache = None
+
     rzm      = context.scene.rzm
     prepare_shape_config_export_runtime(rzm)
     active_configs = active_shape_configs(rzm)
-    active_key_names = {c.shape_name for c in active_configs}
-    all_keys = ({single_shape_name} & active_key_names if single_shape_name
-                else active_key_names)
-    
+    affected_names = _component_affected_names(base_name, comp_cache, dump_name, is_xxmi)
+    all_keys = _component_shape_key_names(
+        active_configs,
+        affected_names,
+        single_shape_name=single_shape_name,
+    )
+
     if not all_keys:
-        return True
-
-    sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
-    
-    # [NEW] Check for weight morphs too
-    weight_keys = [c for c in active_weight_shape_configs(rzm) if c.shape_name in all_keys]
-
-    if not sk_owner_map and not weight_keys:
         return True
 
     # Now if we REALLY need a buffer but don't have it, then error
@@ -971,24 +1031,51 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
 
     # Создаем заглушки-буферы
-    for sk_name in sk_owner_map.keys():
-        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
-        with open(os.path.join(output_dir, out_name), "wb") as f:
-            f.write(original_bytes)
+    _write_noop_shape_buffers(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes)
 
-    if not sk_owner_map:
+    sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
+
+    # [NEW] Check for weight morphs too
+    weight_keys = [c for c in active_weight_shape_configs(rzm) if c.shape_name in all_keys]
+
+    if not sk_owner_map and not weight_keys:
+        _validate_shape_buffer_sizes(
+            output_dir,
+            base_name,
+            all_keys,
+            is_xxmi,
+            dump_name,
+            len(original_bytes),
+        )
         return True
-
-    try:
-        from .export_cache import component_cache
-        comp_cache = component_cache(base_name)
-    except Exception:
-        comp_cache = None
 
     buf_v_count = len(original_data) // stride
     if comp_cache:
         stride = comp_cache.get('stride', stride)
         buf_v_count = len(original_data) // stride
+
+    if not sk_owner_map:
+        _bake_weights_layer(
+            context,
+            base_name,
+            comp_objects,
+            mod_root,
+            all_keys,
+            original_bytes,
+            stride,
+            is_xxmi,
+            dump_name=dump_name,
+            comp_cache=comp_cache,
+        )
+        _validate_shape_buffer_sizes(
+            output_dir,
+            base_name,
+            all_keys,
+            is_xxmi,
+            dump_name,
+            len(original_bytes),
+        )
+        return True
 
     # ── 1. ФАЗА ПОДГОТОВКИ (Pre-Processing) ────────────────────────────────
     ready_map = {}
@@ -1123,6 +1210,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         # ── 4. BLENDWORKS (Weights) ────────────────────────────────────────────
         # [NEW] Проверка и запуск слоя весов
         _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name=dump_name, comp_cache=comp_cache)
+        _validate_shape_buffer_sizes(output_dir, base_name, all_keys, is_xxmi, dump_name, len(original_bytes))
 
         # ── SUMMARY ──
         print(f"\n  [SUMMARY] {base_name} component finished in {time.time() - t_start:.3f}s")
