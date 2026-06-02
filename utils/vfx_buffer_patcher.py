@@ -1310,9 +1310,14 @@ def patch_buffers(context, cache):
         if color_path:
             stride_c = find_stride_from_ini(mod_root, f"Resource{mod_name}{comp_name}Color", 4)
 
-        # Auto-detect if UV coordinates are stored as float32 or half-float (float16)
-        uv_format = 'float'  # Default fallback
-        if vb1_path and os.path.exists(vb1_path) and os.path.getsize(vb1_path) >= stride_t:
+        # Auto-detect if UV coordinates are stored as float32 or half-float (float16).
+        # ZZZ texcoord buffers can keep the sampled UV in a later slot while the first
+        # bytes still look like plausible float32 values. That makes slot-0 probing
+        # mis-detect Coat-like components as float and breaks VFX UV animation.
+        uv_format = 'half' if game_sel == "ZenlessZoneZero" else 'float'
+        if game_sel == "ZenlessZoneZero":
+            print("[RZM-VFX]   * UV Format Detection -> Forced half for Zenless Zone Zero")
+        elif vb1_path and os.path.exists(vb1_path) and os.path.getsize(vb1_path) >= stride_t:
             try:
                 with open(vb1_path, 'rb') as f_detect:
                     for v_idx in range(min(20, original_v_count)):
