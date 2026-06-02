@@ -655,7 +655,7 @@ endif
 {% if _cd_flags.rabbit0 %}
 [CustomShader.rzm.CustomDraw.RabbitFxPreset0]
 $\rabbitfx\blendmode = 1
-$\RabbitFX\brightness = 20
+$\RabbitFX\brightness = ($brightness * 95 ) + 5
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexRGB
 run = CommandList\RabbitFX\Run
 {% endif %}
@@ -663,7 +663,7 @@ run = CommandList\RabbitFX\Run
 {% if _cd_flags.rabbit1 %}
 [CustomShader.rzm.CustomDraw.RabbitFxPreset1]
 $\rabbitfx\blendmode = 1
-$\RabbitFX\brightness = 20
+$\RabbitFX\brightness = ($brightness * 95 ) + 5
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexRB
 run = CommandList\RabbitFX\Run
 {% endif %}
@@ -671,7 +671,7 @@ run = CommandList\RabbitFX\Run
 {% if _cd_flags.rabbit2 %}
 [CustomShader.rzm.CustomDraw.RabbitFxPreset2]
 $\rabbitfx\blendmode = 1
-$\RabbitFX\brightness = 20
+$\RabbitFX\brightness = ($brightness * 95 ) + 5
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexBlueG
 run = CommandList\RabbitFX\Run
 {% endif %}
@@ -679,7 +679,7 @@ run = CommandList\RabbitFX\Run
 {% if _cd_flags.rabbit3 %}
 [CustomShader.rzm.CustomDraw.RabbitFxPreset3]
 $\rabbitfx\blendmode = 1
-$\RabbitFX\brightness = 20
+$\RabbitFX\brightness = ($brightness * 95 ) + 5
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexBlue
 run = CommandList\RabbitFX\Run
 {% endif %}
@@ -687,7 +687,7 @@ run = CommandList\RabbitFX\Run
 {% if _cd_flags.rabbit4 %}
 [CustomShader.rzm.CustomDraw.RabbitFxPreset4]
 $\rabbitfx\blendmode = 1
-$\RabbitFX\brightness = 20
+$\RabbitFX\brightness = ($brightness * 95 ) + 5
 Resource\RabbitFX\Glowmap = ref ResourceModuleTexW
 run = CommandList\RabbitFX\Run
 {% endif %}
