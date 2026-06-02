@@ -3,6 +3,39 @@ import bpy
 import string
 from ..core.utils import find_toggle_def
 
+
+def resize_toggle_definition_and_assignments(context, full_toggle_key, new_len):
+    """Resize project toggle definition and every object assignment for this toggle."""
+    if not full_toggle_key.startswith("rzm.Toggle."):
+        return False, 0, 0
+
+    new_len = max(1, min(32, int(new_len)))
+    toggle_name = full_toggle_key.replace("rzm.Toggle.", "", 1)
+    toggle_def = find_toggle_def(context, toggle_name)
+    if not toggle_def:
+        return False, 0, 0
+
+    old_len = int(toggle_def.toggle_length)
+    toggle_def.toggle_length = new_len
+
+    changed_objects = 0
+    for obj in context.scene.objects:
+        if full_toggle_key not in obj:
+            continue
+
+        arr = list(obj[full_toggle_key])
+        if len(arr) < new_len:
+            arr.extend([0] * (new_len - len(arr)))
+        elif len(arr) > new_len:
+            arr = arr[:new_len]
+        else:
+            continue
+
+        obj[full_toggle_key] = arr
+        changed_objects += 1
+
+    return True, old_len, changed_objects
+
 class RZM_OT_AddProjectToggle(bpy.types.Operator):
     bl_idname = "rzm.add_project_toggle"
     bl_label = "Add Project Toggle"
@@ -122,12 +155,31 @@ class RZM_OT_ToggleObjectBit(bpy.types.Operator):
 
     toggle_name: bpy.props.StringProperty() 
     bit_index: bpy.props.IntProperty()
-    trim_to_clicked: bpy.props.BoolProperty(default=False)
 
     def invoke(self, context, event):
         if event.alt:
-            self.trim_to_clicked = True
+            return self.trim_to_clicked_bit(context)
         return self.execute(context)
+
+    def trim_to_clicked_bit(self, context):
+        target_obj = context.active_object
+        if not target_obj or self.toggle_name not in target_obj:
+            return {'CANCELLED'}
+
+        target_len = max(1, min(self.bit_index + 1, 32))
+        ok, old_len, changed_objects = resize_toggle_definition_and_assignments(
+            context,
+            self.toggle_name,
+            target_len,
+        )
+        if not ok:
+            return {'CANCELLED'}
+
+        self.report(
+            {'INFO'},
+            f"Resized toggle definition: {old_len} -> {target_len}; synced {changed_objects} object(s)."
+        )
+        return {'FINISHED'}
     
     def execute(self, context):
         target_obj = context.active_object
@@ -136,12 +188,6 @@ class RZM_OT_ToggleObjectBit(bpy.types.Operator):
         
         # IDPropertyArray has to be converted to a list for modification
         arr = list(target_obj[self.toggle_name])
-        if self.trim_to_clicked:
-            target_len = max(1, min(self.bit_index + 1, len(arr)))
-            target_obj[self.toggle_name] = arr[:target_len]
-            self.report({'INFO'}, f"Trimmed toggle bitmask to {target_len} slot(s).")
-            return {'FINISHED'}
-
         if self.bit_index < 0 or self.bit_index >= len(arr):
             return {'CANCELLED'}
 
@@ -168,21 +214,30 @@ class RZM_OT_ResizeObjectToggleBitmask(bpy.types.Operator):
         if not target_obj or not self.toggle_name or self.toggle_name not in target_obj:
             return {'CANCELLED'}
 
-        arr = list(target_obj[self.toggle_name])
-        old_len = len(arr)
+        toggle_name = self.toggle_name.replace("rzm.Toggle.", "", 1)
+        toggle_def = find_toggle_def(context, toggle_name)
+        if not toggle_def:
+            return {'CANCELLED'}
+
+        old_len = int(toggle_def.toggle_length)
         new_len = max(1, min(32, old_len + self.delta))
 
         if new_len == old_len:
-            self.report({'INFO'}, f"Toggle bitmask already at {old_len} slot(s).")
+            self.report({'INFO'}, f"Toggle length already at {old_len} slot(s).")
             return {'CANCELLED'}
 
-        if new_len > old_len:
-            arr.extend([0] * (new_len - old_len))
-        else:
-            arr = arr[:new_len]
+        ok, old_len, changed_objects = resize_toggle_definition_and_assignments(
+            context,
+            self.toggle_name,
+            new_len,
+        )
+        if not ok:
+            return {'CANCELLED'}
 
-        target_obj[self.toggle_name] = arr
-        self.report({'INFO'}, f"Resized toggle bitmask: {old_len} -> {new_len}.")
+        self.report(
+            {'INFO'},
+            f"Resized toggle definition: {old_len} -> {new_len}; synced {changed_objects} object(s)."
+        )
         return {'FINISHED'}
     
 class RZM_OT_SelectOccupyingObjects(bpy.types.Operator):

@@ -816,20 +816,18 @@ $imageID = {{ inst_id }}
     {% if element.value_link %}
         {% set first_link = element.value_link[0] %}
         {% set target_var = utils.format_var(first_link.value_name,parent_element, scene) %}
-        {% set is_toggle = 0 %}
-        {% set toggle_len = 2 %}
+        {% set toggle_state = {'is_toggle': 0, 'length': 2} %}
         {% for t in scene.rzm.toggle_definitions %}
             {% if t.toggle_name == target_var %}
-                {% set is_toggle = 1 %}
-                {% set toggle_len = t.toggle_length %}
+                {% if toggle_state.update({'is_toggle': 1, 'length': t.toggle_length}) %}{% endif %}
             {% endif %}
         {% endfor %}
 
         {% if not element.is_preset %}
         $ValueX24Interpolated = $ValueX24Interpolated + (${{ target_var }} - $ValueX24Interpolated) * ($dtCustom + 0.0069)
-        {% if is_toggle == 1 %}
-        if $ValueX24Interpolated > {{ toggle_len - 1 }}
-        $ValueX24Interpolated = {{ toggle_len - 1 }}
+        {% if toggle_state.is_toggle == 1 %}
+        if $ValueX24Interpolated > {{ toggle_state.length - 1 }}
+        $ValueX24Interpolated = {{ toggle_state.length - 1 }}
         elif $ValueX24Interpolated < 0
         $ValueX24Interpolated = 0
         endif
@@ -852,16 +850,12 @@ $imageID = {{ inst_id }}
         if $id == $clickTriggerID
         
             {# 1. СТАНДАРТНАЯ ЛОГИКА (Выполняется всегда первой) #}
-            {% if first_link.value_name and target_var_is_toggle == 1 %}
-                {% for toggle in scene.rzm.toggle_definitions %}
-                    {% if toggle.toggle_name == target_var %}
-                        if ${{ target_var }} < {{ toggle.toggle_length - 1 }}
-                            ${{ target_var }} = ${{ target_var }} + 1
-                        else
-                            ${{ target_var }} = 0
-                        endif
-                    {% endif %}
-                {% endfor %}
+            {% if first_link.value_name and toggle_state.is_toggle == 1 %}
+                if ${{ target_var }} < {{ toggle_state.length - 1 }}
+                    ${{ target_var }} = ${{ target_var }} + 1
+                else
+                    ${{ target_var }} = 0
+                endif
             {% else %}
                 {% set min_val = first_link.value_min | default(0.0) | float %}
                 {% set max_val = first_link.value_max | default(1.0) | float %}
