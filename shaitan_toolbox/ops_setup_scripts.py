@@ -298,6 +298,101 @@ class RZM_ST_OT_CleanDuplicateSideMarkers(bpy.types.Operator):
 
 
 # ============================================================
+# 2.6. CLEAR SELECTED SHAPE KEY VERTICES
+# ============================================================
+
+class RZM_ST_OT_ClearSelectedShapeKeyVertices(bpy.types.Operator):
+    bl_idname = "rzm_st.clear_selected_shape_key_vertices"
+    bl_label = "Clear Selected Shape Key Vertices"
+    bl_description = "Reset selected vertices in mesh shape keys back to Basis"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    active_only: bpy.props.BoolProperty(
+        name="Active Shape Key Only",
+        description="Only clear the active shape key instead of all non-Basis shape keys",
+        default=False,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return (
+            obj is not None
+            and obj.type == 'MESH'
+            and obj.data is not None
+            and obj.data.shape_keys is not None
+            and len(obj.data.shape_keys.key_blocks) > 1
+        )
+
+    def _selected_vertex_indices(self, obj):
+        if obj.mode == 'EDIT':
+            bm = bmesh.from_edit_mesh(obj.data)
+            bm.verts.ensure_lookup_table()
+            return [vert.index for vert in bm.verts if vert.select]
+
+        return [vert.index for vert in obj.data.vertices if vert.select]
+
+    def _target_shape_keys(self, obj):
+        shape_keys = obj.data.shape_keys
+        key_blocks = shape_keys.key_blocks
+
+        if self.active_only:
+            active_index = obj.active_shape_key_index
+            if active_index <= 0 or active_index >= len(key_blocks):
+                return []
+            return [key_blocks[active_index]]
+
+        return [key for key in key_blocks if key != shape_keys.reference_key]
+
+    def execute(self, context):
+        obj = context.active_object
+        original_mode = obj.mode
+
+        try:
+            selected_indices = self._selected_vertex_indices(obj)
+            if not selected_indices:
+                self.report({'WARNING'}, "No selected vertices found.")
+                return {'CANCELLED'}
+
+            if obj.mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            shape_keys = obj.data.shape_keys
+            basis = shape_keys.reference_key
+            target_keys = self._target_shape_keys(obj)
+            if not target_keys:
+                self.report({'WARNING'}, "No target shape keys to clear.")
+                return {'CANCELLED'}
+
+            reset_count = 0
+            for key in target_keys:
+                for vertex_index in selected_indices:
+                    key.data[vertex_index].co = basis.data[vertex_index].co
+                    reset_count += 1
+
+            obj.data.update()
+
+            if obj.mode != original_mode:
+                bpy.ops.object.mode_set(mode=original_mode)
+
+            scope = "active shape key" if self.active_only else f"{len(target_keys)} shape keys"
+            self.report(
+                {'INFO'},
+                f"Cleared {len(selected_indices)} selected vertices in {scope} ({reset_count} coordinates reset)."
+            )
+            return {'FINISHED'}
+
+        except Exception as e:
+            if obj and obj.mode != original_mode:
+                try:
+                    bpy.ops.object.mode_set(mode=original_mode)
+                except Exception:
+                    pass
+            self.report({'ERROR'}, f"Failed to clear shape key vertices: {e}")
+            return {'CANCELLED'}
+
+
+# ============================================================
 # 3. DELETE ALL VERTEX GROUPS
 # ============================================================
 
@@ -696,6 +791,7 @@ classes_to_register = [
     RZM_ST_OT_MirrorCut,
     RZM_ST_OT_VGSymRename,
     RZM_ST_OT_CleanDuplicateSideMarkers,
+    RZM_ST_OT_ClearSelectedShapeKeyVertices,
     RZM_ST_OT_DeleteAllVG,
     RZM_ST_OT_SmartTransfer,
     RZM_ST_OT_GenerateBones,

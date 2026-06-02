@@ -57,6 +57,7 @@
     'tex2': false,
     'tex3': false,
     'tex4': false,
+    'transparent': false,
 } %}
 {% if mod_file and mod_file.components %}
     {% for component in mod_file.components if component.draw_vb != "" %}
@@ -80,6 +81,8 @@
             {% set cd_name = key[11:] %}
             {% if cd_name.startswith('XRAY') %}
                 {% if _cd_flags.update({'xray': true}) %}{% endif %}
+            {% elif cd_name.startswith('TRANSPARENT') %}
+                {% if _cd_flags.update({'transparent': true}) %}{% endif %}
             {% elif cd_name == 'FRAMETRACE' %}
                 {% if _cd_flags.update({'frametrace': true}) %}{% endif %}
             {% elif cd_name == 'RabbitFxPreset0' %}
@@ -534,6 +537,19 @@ if $inputMode == 0
         endif
     endif
 endif
+
+{% if _cd_flags.transparent %}
+[CustomShader.rzm.CustomDraw.TRANSPARENT]
+
+[CustomShader.rzm.CustomDraw.TRANSPARENT.OUTER]
+
+[CustomShader.rzm.CustomDraw.TRANSPARENT.INNER]
+
+[CustomShader.rzm.CustomDraw.TRANSPARENT.ENDFIELD]
+
+[CustomShader.rzm.CustomDraw.TRANSPARENT.ZZZ]
+
+{% endif %}
 
 {% if _cd_flags.xray %}
 [CustomShader.rzm.CustomDraw.XRAY.ENHANCED]

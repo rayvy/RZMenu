@@ -66,6 +66,13 @@ def draw_setup_scripts_ui(self, context, layout):
     col_tools.operator("rzm_st.clean_duplicate_side_markers", text="Clean duplicate .L/.R markers", icon='SORTALPHA')
     col_tools.operator("rzm_weights.vg_name_transfer", text="VG Name Transfer (by index)", icon='FILE_REFRESH')
     col_tools.operator("rzm_st.generate_bones", text="Generate Missing Bones", icon='BONE_DATA')
+
+    box_tools.separator()
+    box_tools.label(text="Shape Key Cleanup:", icon='SHAPEKEY_DATA')
+    row_shape = box_tools.row(align=True)
+    row_shape.scale_y = 1.2
+    row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Clear Selected Verts (All)", icon='SHAPEKEY_DATA').active_only = False
+    row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Active Only", icon='DOT').active_only = True
     
     # Comparison Mode Selector
     box_tools.separator()

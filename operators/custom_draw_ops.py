@@ -81,7 +81,8 @@ class RZM_MT_AddCustomDrawMenu(bpy.types.Menu):
             "TRANSPARENT",
             "TRANSPARENT.OUTER",
             "TRANSPARENT.INNER",
-            "TRANSPARENT.ENDFIELD"
+            "TRANSPARENT.ENDFIELD",
+            "TRANSPARENT.ZZZ"
         ]
         
         for opt in draw_options:
