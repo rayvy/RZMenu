@@ -709,6 +709,8 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box.operator("rzm.toggle_skip_draw", text="Skip Draw", icon=icon)
         
         box.prop(target_obj, "DrawCondition", text="Draw Condition")
+        if target_obj.type == 'MESH':
+            box.prop(target_obj, "rzm_export_vg_anchor", text="VG Export Anchor")
         
         # List of active Custom Draws
         custom_draw_keys = sorted([key for key in target_obj.keys() if key.startswith("CustomDraw.")])

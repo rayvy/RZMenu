@@ -553,6 +553,12 @@ def register():
         description="Condition to draw this object (e.g. $active_anim == 1)",
         default=""
     )
+    bpy.types.Object.rzm_export_vg_anchor = PointerProperty(
+        name="VG Export Anchor",
+        description="Optional mesh whose vertex-group names and order are used for temporary export cleanup",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'MESH'
+    )
     
     # --- RZM VFX Curve Properties ---
     bpy.types.Object.rzm_curve_vfx_enabled = BoolProperty(
@@ -991,6 +997,8 @@ def unregister():
         del bpy.types.Object.rzm_tier_list
     if hasattr(bpy.types.Object, "DrawCondition"):
         del bpy.types.Object.DrawCondition
+    if hasattr(bpy.types.Object, "rzm_export_vg_anchor"):
+        del bpy.types.Object.rzm_export_vg_anchor
         
     for attr in [
         "rzm_curve_vfx_enabled",

@@ -134,6 +134,7 @@ class ModifierBakeMaskCleanupSubModule:
     def __init__(self):
         self._states = {}
         self._temp_objects = []
+        self._anchor_layouts = {}
 
     @staticmethod
     def _is_mask_group(name):
@@ -154,6 +155,7 @@ class ModifierBakeMaskCleanupSubModule:
     def pre_export(self, context):
         from .xxmi_data_predictor import get_export_targets
         targets = get_export_targets(context)
+        self._anchor_layouts = self._collect_anchor_layouts(targets)
 
         print(f"[SafeExport] [BakeMasks] Preparing {len(targets)} mesh target(s)...")
 
@@ -164,9 +166,12 @@ class ModifierBakeMaskCleanupSubModule:
             modifier_mask = [self._should_apply_modifier(mod) for mod in obj.modifiers]
             has_modifiers = any(modifier_mask)
             has_masks = any(self._is_mask_group(vg.name) for vg in obj.vertex_groups)
-            if not has_modifiers and not has_masks:
+            anchor = getattr(obj, "rzm_export_vg_anchor", None)
+            has_anchor = bool(anchor and anchor.type == 'MESH')
+            if not has_modifiers and not has_masks and not has_anchor:
                 continue
 
+            temp_obj = None
             try:
                 self._states[obj.name] = self._capture_state(obj, modifier_mask)
                 temp_obj = self._make_temp_object(context, obj)
@@ -177,10 +182,14 @@ class ModifierBakeMaskCleanupSubModule:
 
                 baked_mesh = temp_obj.data.copy()
                 baked_mesh.name = f"_RZM_SAFE_BAKED_{obj.name}"
+                self._validate_mesh_for_export(baked_mesh, obj.name)
 
                 obj.data = baked_mesh
                 self._copy_vertex_groups_without_masks(obj, temp_obj)
+                self._apply_anchor_layout_if_needed(context, obj)
                 self._disable_applied_modifiers(obj, modifier_mask)
+                self._refresh_export_object(context, obj)
+                self._remove_temp_object(temp_obj)
 
                 print(
                     f"  [BakeMasks] {obj.name}: baked={has_modifiers}, "
@@ -190,6 +199,7 @@ class ModifierBakeMaskCleanupSubModule:
                 import traceback
                 print(f"  [BakeMasks] Failed for '{obj.name}': {e}")
                 traceback.print_exc()
+                self._remove_temp_object(temp_obj)
 
     def post_export(self, context):
         self._restore_all(context)
@@ -297,6 +307,38 @@ class ModifierBakeMaskCleanupSubModule:
             if apply:
                 mod.show_viewport = False
 
+    def _validate_mesh_for_export(self, mesh, obj_name):
+        try:
+            changed = mesh.validate(clean_customdata=False)
+            mesh.update()
+            if changed:
+                print(f"  [BakeMasks] {obj_name}: baked mesh validation fixed invalid data")
+        except Exception as e:
+            print(f"  [BakeMasks] WARN: baked mesh validation failed for '{obj_name}': {e}")
+
+    def _refresh_export_object(self, context, obj):
+        try:
+            obj.data.update()
+            context.view_layer.update()
+        except Exception as e:
+            print(f"  [BakeMasks] WARN: export mesh refresh failed for '{obj.name}': {e}")
+
+    def _remove_temp_object(self, temp_obj):
+        if not temp_obj:
+            return
+
+        if temp_obj in self._temp_objects:
+            self._temp_objects.remove(temp_obj)
+
+        try:
+            if temp_obj.name in bpy.data.objects:
+                temp_data = temp_obj.data
+                bpy.data.objects.remove(temp_obj, do_unlink=True)
+                if temp_data and temp_data.users == 0:
+                    bpy.data.meshes.remove(temp_data, do_unlink=True)
+        except Exception as e:
+            print(f"  [BakeMasks] Temp cleanup failed: {e}")
+
     def _restore_all(self, context):
         if not self._states and not self._temp_objects:
             return
@@ -337,6 +379,7 @@ class ModifierBakeMaskCleanupSubModule:
 
         self._states.clear()
         self._temp_objects.clear()
+        self._anchor_layouts.clear()
 
         try:
             context.view_layer.update()
@@ -361,6 +404,104 @@ class ModifierBakeMaskCleanupSubModule:
         active_index = state.get('active_index', 0)
         if obj.vertex_groups and 0 <= active_index < len(obj.vertex_groups):
             obj.vertex_groups.active_index = active_index
+
+    def _collect_anchor_layouts(self, targets):
+        layouts = {}
+        for obj in targets:
+            anchor = getattr(obj, "rzm_export_vg_anchor", None)
+            if not anchor or anchor.type != 'MESH':
+                continue
+            if anchor.name in layouts:
+                continue
+            layouts[anchor.name] = [
+                vg.name for vg in anchor.vertex_groups
+                if not self._is_mask_group(vg.name)
+            ]
+        return layouts
+
+    def _apply_anchor_layout_if_needed(self, context, obj):
+        anchor = getattr(obj, "rzm_export_vg_anchor", None)
+        if not anchor or anchor.type != 'MESH':
+            return
+
+        target_order = self._anchor_layouts.get(anchor.name)
+        if target_order is None:
+            target_order = [
+                vg.name for vg in anchor.vertex_groups
+                if not self._is_mask_group(vg.name)
+            ]
+
+        if not target_order:
+            return
+
+        self._rebuild_vertex_groups_in_order(obj, target_order)
+        self._normalize_vertex_groups(context, obj)
+        print(f"  [BakeMasks] {obj.name}: aligned VG layout to anchor '{anchor.name}' ({len(target_order)} groups)")
+
+    def _rebuild_vertex_groups_in_order(self, obj, target_order):
+        current_names = [vg.name for vg in obj.vertex_groups]
+        locks = {vg.name: vg.lock_weight for vg in obj.vertex_groups}
+        weights_by_name = {}
+
+        for vert in obj.data.vertices:
+            for item in vert.groups:
+                if item.group >= len(current_names):
+                    continue
+                group_name = current_names[item.group]
+                if group_name not in target_order:
+                    continue
+                weights_by_name.setdefault(group_name, []).append((vert.index, item.weight))
+
+        obj.vertex_groups.clear()
+        name_to_group = {}
+
+        for name in target_order:
+            vg = obj.vertex_groups.new(name=name)
+            vg.lock_weight = locks.get(name, False)
+            name_to_group[name] = vg
+
+        for name, entries in weights_by_name.items():
+            vg = name_to_group.get(name)
+            if not vg:
+                continue
+            for vert_index, weight in entries:
+                vg.add([vert_index], weight, 'REPLACE')
+
+    def _normalize_vertex_groups(self, context, obj):
+        if not obj.vertex_groups:
+            return
+
+        prev_active = context.view_layer.objects.active
+        prev_selected = list(context.selected_objects)
+        prev_locks = {vg.name: vg.lock_weight for vg in obj.vertex_groups}
+
+        try:
+            if context.mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            for vg in obj.vertex_groups:
+                vg.lock_weight = False
+
+            bpy.ops.object.select_all(action='DESELECT')
+            obj.select_set(True)
+            context.view_layer.objects.active = obj
+            with context.temp_override(
+                object=obj,
+                active_object=obj,
+                selected_objects=[obj],
+                selected_editable_objects=[obj],
+            ):
+                bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+        finally:
+            for vg in obj.vertex_groups:
+                vg.lock_weight = prev_locks.get(vg.name, False)
+
+            bpy.ops.object.select_all(action='DESELECT')
+            for selected_obj in prev_selected:
+                if selected_obj and selected_obj.name in bpy.data.objects:
+                    selected_obj.select_set(True)
+            if prev_active and prev_active.name in bpy.data.objects:
+                context.view_layer.objects.active = prev_active
 
 
 class MeshBackupSubModule:

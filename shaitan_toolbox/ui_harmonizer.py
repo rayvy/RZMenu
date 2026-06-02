@@ -201,7 +201,7 @@ def draw_weight_paint_helper(layout, context, scene, settings):
                     op.item_index = plan_item_idx
                     op.slot = slot
         else:
-            box.label(text="Active VG not in Plan", icon='WARNING')
+            box.label(text="Active VG not in Plan", icon='ERROR')
     else:
         box.label(text="Select a Vertex Group to paint", icon='INFO')
 
