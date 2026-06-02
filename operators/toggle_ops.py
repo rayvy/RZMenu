@@ -122,6 +122,12 @@ class RZM_OT_ToggleObjectBit(bpy.types.Operator):
 
     toggle_name: bpy.props.StringProperty() 
     bit_index: bpy.props.IntProperty()
+    trim_to_clicked: bpy.props.BoolProperty(default=False)
+
+    def invoke(self, context, event):
+        if event.alt:
+            self.trim_to_clicked = True
+        return self.execute(context)
     
     def execute(self, context):
         target_obj = context.active_object
@@ -130,6 +136,15 @@ class RZM_OT_ToggleObjectBit(bpy.types.Operator):
         
         # IDPropertyArray has to be converted to a list for modification
         arr = list(target_obj[self.toggle_name])
+        if self.trim_to_clicked:
+            target_len = max(1, min(self.bit_index + 1, len(arr)))
+            target_obj[self.toggle_name] = arr[:target_len]
+            self.report({'INFO'}, f"Trimmed toggle bitmask to {target_len} slot(s).")
+            return {'FINISHED'}
+
+        if self.bit_index < 0 or self.bit_index >= len(arr):
+            return {'CANCELLED'}
+
         arr[self.bit_index] = 1 - arr[self.bit_index]
         target_obj[self.toggle_name] = arr # Assign back
         
@@ -137,6 +152,37 @@ class RZM_OT_ToggleObjectBit(bpy.types.Operator):
         # to avoid flooding the undo stack. This is a design choice.
         # For now, we will record it.
         
+        return {'FINISHED'}
+
+class RZM_OT_ResizeObjectToggleBitmask(bpy.types.Operator):
+    bl_idname = "rzm.resize_object_toggle_bitmask"
+    bl_label = "Resize Toggle Bitmask"
+    bl_description = "Increase or decrease assigned toggle bitmask length on the active object"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    toggle_name: bpy.props.StringProperty()
+    delta: bpy.props.IntProperty(default=1)
+
+    def execute(self, context):
+        target_obj = context.active_object
+        if not target_obj or not self.toggle_name or self.toggle_name not in target_obj:
+            return {'CANCELLED'}
+
+        arr = list(target_obj[self.toggle_name])
+        old_len = len(arr)
+        new_len = max(1, min(32, old_len + self.delta))
+
+        if new_len == old_len:
+            self.report({'INFO'}, f"Toggle bitmask already at {old_len} slot(s).")
+            return {'CANCELLED'}
+
+        if new_len > old_len:
+            arr.extend([0] * (new_len - old_len))
+        else:
+            arr = arr[:new_len]
+
+        target_obj[self.toggle_name] = arr
+        self.report({'INFO'}, f"Resized toggle bitmask: {old_len} -> {new_len}.")
         return {'FINISHED'}
     
 class RZM_OT_SelectOccupyingObjects(bpy.types.Operator):
@@ -238,6 +284,7 @@ classes_to_register = [
     RZM_OT_AssignObjectToggle,
     RZM_OT_RemoveObjectToggle,
     RZM_OT_ToggleObjectBit,
+    RZM_OT_ResizeObjectToggleBitmask,
     RZM_OT_SelectOccupyingObjects,
     RZM_OT_SelectObjectsWithToggle,
     RZM_OT_ApplyActiveTogglesToSelected,

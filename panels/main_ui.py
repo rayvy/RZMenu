@@ -609,6 +609,12 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 header.label(text=base_name, icon='OUTLINER_OB_MESH')
                 op_sel_all = header.operator("rzm.select_objects_with_toggle", text="", icon='SELECT_SET')
                 op_sel_all.toggle_name = base_name
+                op_dec = header.operator("rzm.resize_object_toggle_bitmask", text="", icon='REMOVE', emboss=False)
+                op_dec.toggle_name = key
+                op_dec.delta = -1
+                op_inc = header.operator("rzm.resize_object_toggle_bitmask", text="", icon='ADD', emboss=False)
+                op_inc.toggle_name = key
+                op_inc.delta = 1
                 op_rem = header.operator("rzm.remove_object_toggle", text="", icon='X', emboss=False)
                 op_rem.toggle_name = key
 
