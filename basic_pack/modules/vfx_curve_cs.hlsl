@@ -241,6 +241,35 @@ void main(uint3 threadID : SV_DispatchThreadID)
             float angle = float(v_local_id - 1) * (2.0f * 3.14159265f / 6.0f);
             local_pos = float3(cos(angle), sin(angle), 0.0f);
         }
+    } else if (mesh_fx_type == 4) { // Heart (10 verts, 8 tris)
+        float3 heart_verts[10] = {
+            float3( 0.00f,  0.45f, 0.0f),
+            float3(-0.28f,  0.78f, 0.0f),
+            float3(-0.50f,  0.84f, 0.0f),
+            float3(-0.82f,  0.60f, 0.0f),
+            float3(-0.96f,  0.12f, 0.0f),
+            float3( 0.00f, -1.00f, 0.0f),
+            float3( 0.96f,  0.12f, 0.0f),
+            float3( 0.82f,  0.60f, 0.0f),
+            float3( 0.50f,  0.84f, 0.0f),
+            float3( 0.28f,  0.78f, 0.0f)
+        };
+        local_pos = heart_verts[v_local_id % 10];
+    } else if (mesh_fx_type == 5) { // Star (center + 10 outline verts)
+        float3 star_verts[11] = {
+            float3( 0.00000f,  0.00000f, 0.0f),
+            float3( 0.00000f,  1.00000f, 0.0f),
+            float3(-0.24687f,  0.33979f, 0.0f),
+            float3(-0.95106f,  0.30902f, 0.0f),
+            float3(-0.39944f, -0.12979f, 0.0f),
+            float3(-0.58779f, -0.80902f, 0.0f),
+            float3( 0.00000f, -0.42000f, 0.0f),
+            float3( 0.58779f, -0.80902f, 0.0f),
+            float3( 0.39944f, -0.12979f, 0.0f),
+            float3( 0.95106f,  0.30902f, 0.0f),
+            float3( 0.24687f,  0.33979f, 0.0f)
+        };
+        local_pos = star_verts[v_local_id % 11];
     } else { // Triangle
         float3 tri_verts[3] = {
             float3(0.0f, 1.0f, 0.0f),
@@ -253,6 +282,8 @@ void main(uint3 threadID : SV_DispatchThreadID)
     uint v_per_particle = 3;
     if (mesh_fx_type == 1) v_per_particle = 4;
     else if (mesh_fx_type == 2) v_per_particle = 7;
+    else if (mesh_fx_type == 4) v_per_particle = 10;
+    else if (mesh_fx_type == 5) v_per_particle = 11;
 
     uint active_i = i - cutoff_index;
     uint particle_id = active_i / v_per_particle;

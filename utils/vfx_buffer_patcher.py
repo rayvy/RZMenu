@@ -10,6 +10,96 @@ from mathutils import Vector, Matrix, Euler
 # Set to True to export giant triangles directly in the buffer coordinates for visual verification
 TEST_TRIANGLE_EXPORT = False
 
+VFX_MESH_HEART = "4"
+VFX_MESH_STAR = "5"
+
+VFX_SHAPE_VERTS = {
+    "0": [
+        (0.0, 1.0, 0.0),
+        (-0.866, -0.5, 0.0),
+        (0.866, -0.5, 0.0),
+    ],
+    "1": [
+        (-0.5, -0.5, 0.0),
+        (0.5, -0.5, 0.0),
+        (-0.5, 0.5, 0.0),
+        (0.5, 0.5, 0.0),
+    ],
+    "2": [(0.0, 0.0, 0.0)] + [
+        (math.cos(i * (2.0 * math.pi / 6.0)), math.sin(i * (2.0 * math.pi / 6.0)), 0.0)
+        for i in range(6)
+    ],
+    VFX_MESH_HEART: [
+        (0.0, 0.45, 0.0),
+        (-0.28, 0.78, 0.0),
+        (-0.50, 0.84, 0.0),
+        (-0.82, 0.60, 0.0),
+        (-0.96, 0.12, 0.0),
+        (0.0, -1.0, 0.0),
+        (0.96, 0.12, 0.0),
+        (0.82, 0.60, 0.0),
+        (0.50, 0.84, 0.0),
+        (0.28, 0.78, 0.0),
+    ],
+    VFX_MESH_STAR: [(0.0, 0.0, 0.0)] + [
+        (
+            math.cos((math.pi * 0.5) + i * (2.0 * math.pi / 10.0)) * (1.0 if i % 2 == 0 else 0.42),
+            math.sin((math.pi * 0.5) + i * (2.0 * math.pi / 10.0)) * (1.0 if i % 2 == 0 else 0.42),
+            0.0,
+        )
+        for i in range(10)
+    ],
+}
+
+VFX_SHAPE_INDICES = {
+    "0": [0, 1, 2],
+    "1": [0, 1, 2, 2, 1, 3],
+    "2": [idx for i in range(1, 7) for idx in (0, i, 1 if i == 6 else i + 1)],
+    VFX_MESH_HEART: [idx for i in range(1, 9) for idx in (0, i, i + 1)],
+    VFX_MESH_STAR: [idx for i in range(1, 11) for idx in (0, i, 1 if i == 10 else i + 1)],
+}
+
+
+def normalize_vfx_mesh_type(mesh_fx_type):
+    mesh_fx_type = str(mesh_fx_type)
+    return mesh_fx_type if mesh_fx_type in VFX_SHAPE_VERTS else "0"
+
+
+def get_vfx_shape_counts(mesh_fx_type):
+    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
+    return len(VFX_SHAPE_VERTS[mesh_fx_type]), len(VFX_SHAPE_INDICES[mesh_fx_type])
+
+
+def get_vfx_local_pos(mesh_fx_type, v_idx, tri_aspect=1.0):
+    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
+    verts = VFX_SHAPE_VERTS[mesh_fx_type]
+    x, y, z = verts[v_idx % len(verts)]
+    return (x * tri_aspect, y, z)
+
+
+def get_vfx_shape_uv(mesh_fx_type, v_idx, u_min, v_min, u_max, v_max):
+    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
+    u_center = (u_min + u_max) * 0.5
+    v_center = (v_min + v_max) * 0.5
+    u_radius = (u_max - u_min) * 0.5
+    v_radius = (v_max - v_min) * 0.5
+
+    if mesh_fx_type == "1":
+        return [
+            (u_min, v_max),
+            (u_max, v_max),
+            (u_min, v_min),
+            (u_max, v_min),
+        ][v_idx]
+
+    x, y, _ = get_vfx_local_pos(mesh_fx_type, v_idx, 1.0)
+    return (u_center + u_radius * x, v_center + v_radius * y)
+
+
+def get_vfx_shape_indices(mesh_fx_type, v_start):
+    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
+    return [v_start + idx for idx in VFX_SHAPE_INDICES[mesh_fx_type]]
+
 
 def swap_yz(vec):
     return Vector((vec.x, vec.z, vec.y))
@@ -207,12 +297,7 @@ def pre_collect_vfx_vertex_counts(context):
             particle_count = sum(splines_particles) if splines_particles else get_curve_prop(curve_obj, "particle_count", 1)
             
             mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
-            if mesh_fx_type == "1":    # Quad
-                v_per_particle = 4
-            elif mesh_fx_type == "2": # Circle (hexagon fan)
-                v_per_particle = 7
-            else:                     # Triangle (type 0) or Custom Mesh stub (type 3)
-                v_per_particle = 3
+            v_per_particle, _ = get_vfx_shape_counts(mesh_fx_type)
             total_new_verts += particle_count * v_per_particle
             
         comp_fullname = f"{mod_name}{comp_name}"
@@ -1173,12 +1258,7 @@ def patch_buffers(context, cache):
         for v_curve in v_curve_list:
             particle_count = v_curve['particle_count']
             mesh_fx_type = str(get_curve_prop(v_curve['obj'], "mesh_fx_type", "0"))
-            if mesh_fx_type == "1":    # Quad
-                v_per_particle, i_per_particle = 4, 6
-            elif mesh_fx_type == "2": # Circle (hexagon: 7 verts, 6 tris = 18 indices)
-                v_per_particle, i_per_particle = 7, 18
-            else:                     # Triangle (type 0) or Custom Mesh stub (type 3)
-                v_per_particle, i_per_particle = 3, 3
+            v_per_particle, i_per_particle = get_vfx_shape_counts(mesh_fx_type)
             total_new_verts += particle_count * v_per_particle
             total_new_indices += particle_count * i_per_particle
 
@@ -1404,18 +1484,13 @@ def patch_buffers(context, cache):
             particle_count = v_curve['particle_count']
             
             mesh_fx_type = str(get_curve_prop(curve_obj, "mesh_fx_type", "0"))
-            mesh_fx_size_base = get_curve_prop(curve_obj, "mesh_fx_size_base", 0.05)
+            mesh_fx_size_base = get_curve_prop(curve_obj, "particle_size_base", 0.05)
             tri_aspect = get_curve_prop(curve_obj, "tri_aspect", 1.0)
             
             weight_indices = list(get_curve_prop(curve_obj, "weight_indices", (-1, -1, -1, -1)))
             weight_values = list(get_curve_prop(curve_obj, "weight_values", (0.0, 0.0, 0.0, 0.0)))
             
-            if mesh_fx_type == "1":    # Quad
-                v_per_particle, i_per_particle = 4, 6
-            elif mesh_fx_type == "2": # Circle (hexagon: 7 verts, 6 tris = 18 indices)
-                v_per_particle, i_per_particle = 7, 18
-            else:                     # Triangle (type 0) or Custom Mesh stub (type 3)
-                v_per_particle, i_per_particle = 3, 3
+            v_per_particle, i_per_particle = get_vfx_shape_counts(mesh_fx_type)
                 
             # Pre-generate particle parameters to share phase offsets between VB0 and VB2 loops
             particles_params = []
@@ -1470,28 +1545,7 @@ def patch_buffers(context, cache):
                 phase, speed_scale, dir_x, dir_y, dir_z = particles_params[p]
                 
                 for v_idx in range(v_per_particle):
-                    # Define local offsets based on mesh_fx_type
-                    if mesh_fx_type == "1": # Quad
-                        quad_verts = [
-                            (-0.5 * tri_aspect, -0.5, 0.0),
-                            ( 0.5 * tri_aspect, -0.5, 0.0),
-                            (-0.5 * tri_aspect,  0.5, 0.0),
-                            ( 0.5 * tri_aspect,  0.5, 0.0),
-                        ]
-                        local_pos = quad_verts[v_idx]
-                    elif mesh_fx_type == "2": # Circle (hexagon fan: center + 6 outer)
-                        if v_idx == 0:
-                            local_pos = (0.0, 0.0, 0.0)
-                        else:
-                            angle = (v_idx - 1) * (2.0 * math.pi / 6.0)
-                            local_pos = (math.cos(angle) * tri_aspect, math.sin(angle), 0.0)
-                    else: # Triangle (type 0 or Custom Mesh stub type 3)
-                        tri_verts = [
-                            (0.0, 1.0, 0.0),
-                            (-0.866 * tri_aspect, -0.5, 0.0),
-                            ( 0.866 * tri_aspect, -0.5, 0.0),
-                        ]
-                        local_pos = tri_verts[v_idx]
+                    local_pos = get_vfx_local_pos(mesh_fx_type, v_idx, tri_aspect)
 
                     pos_x = local_pos[0] * mesh_fx_size_base
                     pos_y = local_pos[1] * mesh_fx_size_base
@@ -1608,28 +1662,7 @@ def patch_buffers(context, cache):
                 for p in range(particle_count):
                     for v_idx in range(v_per_particle):
                         buf = bytearray(stride_t)
-                        if mesh_fx_type == "1": # Quad
-                            uvs = [
-                                (u_min, v_max),
-                                (u_max, v_max),
-                                (u_min, v_min),
-                                (u_max, v_min)
-                            ]
-                            u, v = uvs[v_idx]
-                        elif mesh_fx_type == "2": # Circle (hexagon fan)
-                            if v_idx == 0:
-                                u, v = u_center, v_center
-                            else:
-                                angle = (v_idx - 1) * (2.0 * math.pi / 6.0)
-                                u = u_center + u_radius * math.cos(angle)
-                                v = v_center + v_radius * math.sin(angle)
-                        else: # Triangle (type 0 or Custom Mesh stub type 3)
-                            uvs = [
-                                (u_center, v_max),
-                                (u_min, v_min),
-                                (u_max, v_min)
-                            ]
-                            u, v = uvs[v_idx]
+                        u, v = get_vfx_shape_uv(mesh_fx_type, v_idx, u_min, v_min, u_max, v_max)
 
                         if uv_format == 'half':
                             h_u = float_to_half(u)
@@ -1668,19 +1701,7 @@ def patch_buffers(context, cache):
             if f_ib:
                 for p in range(particle_count):
                     v_start = current_v_count + p * v_per_particle
-                    if mesh_fx_type == "1": # Quad
-                        idx_list = [v_start, v_start + 1, v_start + 2, v_start + 2, v_start + 1, v_start + 3]
-                    elif mesh_fx_type == "2": # Circle (hexagon fan: 6 tris)
-                        idx_list = [
-                            v_start, v_start + 1, v_start + 2,
-                            v_start, v_start + 2, v_start + 3,
-                            v_start, v_start + 3, v_start + 4,
-                            v_start, v_start + 4, v_start + 5,
-                            v_start, v_start + 5, v_start + 6,
-                            v_start, v_start + 6, v_start + 1,
-                        ]
-                    else: # Triangle (type 0 or Custom Mesh stub type 3)
-                        idx_list = [v_start, v_start + 1, v_start + 2]
+                    idx_list = get_vfx_shape_indices(mesh_fx_type, v_start)
                     
                     for idx_val in idx_list:
                         f_ib.write(struct.pack(fmt, idx_val))

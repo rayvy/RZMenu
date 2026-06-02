@@ -735,6 +735,8 @@ def register():
             ("0", "Triangle",    "3 verts, 1 triangle"),
             ("1", "Quad",        "4 verts, 2 triangles"),
             ("2", "Circle",      "7 verts, 6 triangles (hexagon fan)"),
+            ("4", "Heart",       "10 verts, 8 triangles"),
+            ("5", "Star",        "11 verts, 10 triangles"),
             ("3", "Custom Mesh", "Use an arbitrary mesh object as particle shape (Stage 2)"),
         ],
         get=get_vfx_type,

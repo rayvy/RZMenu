@@ -1,6 +1,54 @@
 import bpy
 import math
 
+from ..utils.vfx_buffer_patcher import (
+    VFX_MESH_HEART,
+    VFX_MESH_STAR,
+    VFX_SHAPE_INDICES,
+    VFX_SHAPE_VERTS,
+)
+
+
+def ensure_preview_shape_object(mesh_fx_type):
+    mesh_fx_type = str(mesh_fx_type)
+    shape_names = {
+        VFX_MESH_HEART: "Heart",
+        VFX_MESH_STAR: "Star",
+    }
+    shape_name = shape_names[mesh_fx_type]
+    obj_name = f"RZM_VFX_Shape_{shape_name}"
+    mesh_name = f"{obj_name}_Mesh"
+
+    obj = bpy.data.objects.get(obj_name)
+    mesh = bpy.data.meshes.get(mesh_name)
+    if mesh is None:
+        mesh = bpy.data.meshes.new(mesh_name)
+
+    verts = VFX_SHAPE_VERTS[mesh_fx_type]
+    faces = [
+        tuple(VFX_SHAPE_INDICES[mesh_fx_type][i:i + 3])
+        for i in range(0, len(VFX_SHAPE_INDICES[mesh_fx_type]), 3)
+    ]
+
+    mesh.clear_geometry()
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+
+    if obj is None:
+        obj = bpy.data.objects.new(obj_name, mesh)
+        bpy.context.scene.collection.objects.link(obj)
+    else:
+        obj.data = mesh
+
+    obj.hide_viewport = False
+    obj.hide_render = True
+    obj.hide_select = True
+    try:
+        obj.hide_set(True)
+    except Exception:
+        pass
+    return obj
+
 def apply_vfx_preview_to_object(context, obj, operator=None):
     MOD_NAME = "RZM_VFX_Preview"
     GROUP_NAME = "RZM_VFX_Preview"
@@ -270,6 +318,16 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
     set_input(hex_mesh, 6, "Vertices")
     set_input(hex_mesh, 1.0, "Radius")
 
+    heart_obj = ensure_preview_shape_object(VFX_MESH_HEART)
+    heart_mesh = new_node("GeometryNodeObjectInfo", -80, 820)
+    set_input(heart_mesh, heart_obj, "Object")
+    set_input(heart_mesh, False, "As Instance")
+
+    star_obj = ensure_preview_shape_object(VFX_MESH_STAR)
+    star_mesh = new_node("GeometryNodeObjectInfo", -80, 1020)
+    set_input(star_mesh, star_obj, "Object")
+    set_input(star_mesh, False, "As Instance")
+
     compare_quad = new_node("FunctionNodeCompare", 180, 260)
     try:
         compare_quad.data_type = 'INT'
@@ -288,6 +346,24 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
     make_link(group_input, ("Mesh FX Type",), compare_hex, ("A",))
     set_input(compare_hex, 2, "B")
 
+    compare_heart = new_node("FunctionNodeCompare", 180, 720)
+    try:
+        compare_heart.data_type = 'INT'
+        compare_heart.operation = 'EQUAL'
+    except Exception:
+        pass
+    make_link(group_input, ("Mesh FX Type",), compare_heart, ("A",))
+    set_input(compare_heart, int(VFX_MESH_HEART), "B")
+
+    compare_star = new_node("FunctionNodeCompare", 180, 920)
+    try:
+        compare_star.data_type = 'INT'
+        compare_star.operation = 'EQUAL'
+    except Exception:
+        pass
+    make_link(group_input, ("Mesh FX Type",), compare_star, ("A",))
+    set_input(compare_star, int(VFX_MESH_STAR), "B")
+
     switch_tri_hex = new_node("GeometryNodeSwitch", 420, 520)
     try:
         switch_tri_hex.input_type = 'GEOMETRY'
@@ -305,6 +381,24 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
     make_link(compare_quad, ("Result",), switch_shape, ("Switch",))
     make_link(switch_tri_hex, ("Output",), switch_shape, ("False",))
     make_link(quad_mesh, ("Mesh",), switch_shape, ("True",))
+
+    switch_heart = new_node("GeometryNodeSwitch", 900, 520)
+    try:
+        switch_heart.input_type = 'GEOMETRY'
+    except Exception:
+        pass
+    make_link(compare_heart, ("Result",), switch_heart, ("Switch",))
+    make_link(switch_shape, ("Output",), switch_heart, ("False",))
+    make_link(heart_mesh, ("Geometry",), switch_heart, ("True",))
+
+    switch_star = new_node("GeometryNodeSwitch", 1120, 640)
+    try:
+        switch_star.input_type = 'GEOMETRY'
+    except Exception:
+        pass
+    make_link(compare_star, ("Result",), switch_star, ("Switch",))
+    make_link(switch_heart, ("Output",), switch_star, ("False",))
+    make_link(star_mesh, ("Geometry",), switch_star, ("True",))
 
     # Join geometry node to collect all branches
     join_geo = new_node("GeometryNodeJoinGeometry", 1000, 0)
@@ -500,7 +594,7 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
         # 6. Instance on Points
         instance_on_points = new_node("GeometryNodeInstanceOnPoints", 400, y_offset)
         make_link(set_position, ("Geometry",), instance_on_points, ("Points",))
-        make_link(switch_shape, ("Output",), instance_on_points, ("Instance",))
+        make_link(switch_star, ("Output",), instance_on_points, ("Instance",))
         
         # 7. Rotation (euler axis-angle approximation)
         rand_rot_speed = new_node("FunctionNodeRandomValue", 0, y_offset - 1300)
