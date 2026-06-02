@@ -30,6 +30,36 @@ def ensure_uvmap_exists(obj):
     target.active_render = True
     return True
 
+def standardize_uvmap(obj):
+    mesh = obj.data
+    if not mesh or obj.type != 'MESH':
+        return False, "not a mesh"
+
+    if not mesh.uv_layers:
+        mesh.uv_layers.new(name="UVMap")
+        mesh.update()
+        return True, "created UVMap"
+
+    uvmap = mesh.uv_layers.get("UVMap")
+    if uvmap is None:
+        uvmap = mesh.uv_layers[0]
+        uvmap.name = "UVMap"
+        action = "renamed first layer to UVMap"
+    else:
+        action = "kept UVMap"
+
+    for layer in list(mesh.uv_layers):
+        if layer.name != "UVMap":
+            mesh.uv_layers.remove(layer)
+
+    uvmap = mesh.uv_layers.get("UVMap")
+    if uvmap:
+        mesh.uv_layers.active = uvmap
+        uvmap.active_render = True
+
+    mesh.update()
+    return True, action
+
 def apply_uv_math(context, obj, target_name, grid_x, grid_y, pos_x, pos_y, packing_mode='SHIFT'):
     """
     Applies the transform or projection for the selected UV layer.
@@ -290,10 +320,54 @@ class RZM_ST_OT_TexCoordListRemove(bpy.types.Operator):
         context.scene.rzm_st_texcoord_list_index = min(max(0, idx - 1), len(context.scene.rzm_st_texcoord_list) - 1)
         return {'FINISHED'}
 
+class RZM_ST_OT_StandardizeUVMap(bpy.types.Operator):
+    bl_idname = "rzm_st.standardize_uvmap"
+    bl_label = "Standardize UVMap"
+    bl_description = "Keep or create only one UV layer named UVMap on active/selected mesh objects"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        selected_meshes = [
+            obj for obj in context.selected_objects
+            if obj and obj.type == 'MESH' and obj.data
+        ]
+        active_obj = context.active_object
+
+        if selected_meshes:
+            objects = selected_meshes
+        elif active_obj and active_obj.type == 'MESH' and active_obj.data:
+            objects = [active_obj]
+        else:
+            self.report({'WARNING'}, "No active or selected mesh objects")
+            return {'CANCELLED'}
+
+        processed = 0
+        failed = 0
+        for obj in objects:
+            try:
+                ok, action = standardize_uvmap(obj)
+                if ok:
+                    processed += 1
+                    print(f"[Shaitan UV] {obj.name}: {action}")
+                else:
+                    failed += 1
+                    print(f"[Shaitan UV] {obj.name}: skipped ({action})")
+            except Exception as e:
+                failed += 1
+                print(f"[Shaitan UV] {obj.name}: failed: {e}")
+
+        if processed:
+            self.report({'INFO'}, f"Standardized UVMap on {processed} object(s), failed {failed}.")
+            return {'FINISHED'}
+
+        self.report({'WARNING'}, f"No UVMap standardized, failed {failed}.")
+        return {'CANCELLED'}
+
 classes_to_register = [
     RZM_ST_OT_SetGridCell,
     RZM_ST_OT_ProcessActiveLayer,
     RZM_ST_UL_List,
     RZM_ST_OT_TexCoordListAdd,
     RZM_ST_OT_TexCoordListRemove,
+    RZM_ST_OT_StandardizeUVMap,
 ]

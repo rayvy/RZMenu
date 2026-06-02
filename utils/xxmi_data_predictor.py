@@ -167,11 +167,10 @@ def get_export_targets(context):
         print(f"[SafeExport] Ошибка сбора объектов из активной коллекции: {e}")
 
     # 4. Фолбек: берём ВСЕ меши сцены если список пуст
-    if not targets:
-        for obj in context.scene.objects:
-            if obj and obj.type == 'MESH' and obj.data is not None:
-                if obj not in targets:
-                    targets.append(obj)
+    for obj in context.scene.objects:
+        if obj and obj.type == 'MESH' and obj.data is not None:
+            if obj not in targets:
+                targets.append(obj)
 
     # Фильтруем список от вспомогательных объектов RZMenu
     final_targets = []
@@ -267,8 +266,7 @@ class XXMIMissingDataPredictorSubModule:
                         target_names.add(uv.name)
 
         # 3. Дефолты если совсем ничего нет
-        if not target_names:
-            target_names.update(['TEXCOORD.xy', 'TEXCOORD.zw'])
+        target_names.update(['TEXCOORD.xy', 'TEXCOORD1.xy', 'TEXCOORD2.xy'])
 
         # Конструируем параметры (по умолчанию 1x1 сдвиг)
         targets = []
@@ -331,6 +329,10 @@ class XXMIMissingDataPredictorSubModule:
         targets = get_export_targets(context)
         expected_uvs = self._get_texcoord_targets(context)
         expected_colors = self._get_target_colors(context)
+        print(
+            f"[SafeExport] [Predictor] Targets={len(targets)}, "
+            f"UVs={', '.join(name for name, *_ in expected_uvs)}"
+        )
 
         for obj in targets:
             try:

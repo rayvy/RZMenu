@@ -88,6 +88,9 @@ def draw_uv_packer_ui(self, context, layout):
     
     box = layout.box()
     box.label(text="TexCoord / UV Packer", icon='UV_DATA')
+    row_std = box.row()
+    row_std.scale_y = 1.2
+    row_std.operator("rzm_st.standardize_uvmap", text="Standardize UVMap (Active/Selected)", icon='UV_DATA')
     
     # Список UV-слоев (UIList)
     row = box.row()
