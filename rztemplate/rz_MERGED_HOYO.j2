@@ -123,21 +123,46 @@
 
 {% macro handle_textures(part,mod_file,scene,component,seen_hashes=None) %}
     {% for texture in part.textures %}
+        {% set tex_override_name = part.fullname ~ texture.name %}
+        {% set blocked_by_tw = [] %}
+        {% if scene.rzm and scene.rzm.tw_overrides %}
+            {% for over in scene.rzm.tw_overrides %}
+                {% set over_name = over.name|trim|lower %}
+                {% set tex_name = tex_override_name|trim|lower %}
+                {% if over.hash|trim|lower == texture.hash|trim|lower %}
+                    {% if blocked_by_tw.append(1) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endif %}
         {% if (not scene.rzm or scene.rzm.export_texture_slots == 0) or component.draw_vb == "" %}
             {% if seen_hashes is not none and texture.hash not in seen_hashes %}
-                [TextureOverride{{part.fullname}}{{ texture.name }}]
+                ;Сама логика запускается
+                {% if blocked_by_tw %}
+                ;[TextureOverride{{ tex_override_name }}]
+                ;hash = {{ texture.hash }}
+                ;this = Resource{{ tex_override_name }}
+                {% else %}
+                [TextureOverride{{ tex_override_name }}]
                 hash = {{ texture.hash }}
-                this = Resource{{part.fullname}}{{ texture.name }}
+                this = Resource{{ tex_override_name }}
+                {% endif %}
                 {% if seen_hashes.append(texture.hash) %}{% endif %}
             {% elif seen_hashes is none %}
-                [TextureOverride{{part.fullname}}{{ texture.name }}]
+                ;Сама логика запускается
+                {% if blocked_by_tw %}
+                ;[TextureOverride{{ tex_override_name }}]
+                ;hash = {{ texture.hash }}
+                ;this = Resource{{ tex_override_name }}
+                {% else %}
+                [TextureOverride{{ tex_override_name }}]
                 hash = {{ texture.hash }}
-                this = Resource{{part.fullname}}{{ texture.name }}
+                this = Resource{{ tex_override_name }}
+                {% endif %}
             {% endif %}
         {% endif %}
 
-        [Resource{{ part.fullname }}{{ texture.name }}]
-        filename = {{ part.fullname }}{{ texture.name }}{{ texture.extension }}
+        [Resource{{ tex_override_name }}]
+        filename = {{ tex_override_name }}{{ texture.extension }}
     {% endfor %}
 {% endmacro %}
 

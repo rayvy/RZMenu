@@ -1,7 +1,7 @@
 import bpy
 import math
 
-from ..utils.vfx_buffer_patcher import (
+from ..utils.vfx_shapes import (
     VFX_MESH_HEART,
     VFX_MESH_STAR,
     VFX_SHAPE_INDICES,
@@ -18,6 +18,7 @@ def ensure_preview_shape_object(mesh_fx_type):
     shape_name = shape_names[mesh_fx_type]
     obj_name = f"RZM_VFX_Shape_{shape_name}"
     mesh_name = f"{obj_name}_Mesh"
+    coll_name = "RZM_VFX_Preview_Shapes"
 
     obj = bpy.data.objects.get(obj_name)
     mesh = bpy.data.meshes.get(mesh_name)
@@ -36,15 +37,25 @@ def ensure_preview_shape_object(mesh_fx_type):
 
     if obj is None:
         obj = bpy.data.objects.new(obj_name, mesh)
-        bpy.context.scene.collection.objects.link(obj)
+        coll = bpy.data.collections.get(coll_name)
+        if coll is None:
+            coll = bpy.data.collections.new(coll_name)
+            bpy.context.scene.collection.children.link(coll)
+        coll.objects.link(obj)
     else:
         obj.data = mesh
+        if not obj.users_collection:
+            coll = bpy.data.collections.get(coll_name)
+            if coll is None:
+                coll = bpy.data.collections.new(coll_name)
+                bpy.context.scene.collection.children.link(coll)
+            coll.objects.link(obj)
 
     obj.hide_viewport = False
     obj.hide_render = True
     obj.hide_select = True
     try:
-        obj.hide_set(True)
+        obj.hide_set(False)
     except Exception:
         pass
     return obj
@@ -268,6 +279,22 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
 
         return False
 
+    def find_socket_type(sockets, socket_type):
+        for socket in sockets:
+            if getattr(socket, "bl_socket_idname", "") == socket_type:
+                return socket
+        return None
+
+    def make_geometry_link(from_node, to_node, to_names):
+        from_socket = find_socket(from_node.outputs, "Geometry", "Mesh", "Output")
+        if from_socket is None:
+            from_socket = find_socket_type(from_node.outputs, "NodeSocketGeometry")
+        to_socket = find_socket(to_node.inputs, *to_names)
+        if from_socket is not None and to_socket is not None:
+            links.new(from_socket, to_socket)
+            return True
+        return False
+
     group_input = new_node("NodeGroupInput", -1900, 0)
     group_output = new_node("NodeGroupOutput", 1600, 0)
     group_output.is_active_output = True
@@ -389,7 +416,7 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
         pass
     make_link(compare_heart, ("Result",), switch_heart, ("Switch",))
     make_link(switch_shape, ("Output",), switch_heart, ("False",))
-    make_link(heart_mesh, ("Geometry",), switch_heart, ("True",))
+    make_geometry_link(heart_mesh, switch_heart, ("True",))
 
     switch_star = new_node("GeometryNodeSwitch", 1120, 640)
     try:
@@ -398,7 +425,7 @@ def apply_vfx_preview_to_object(context, obj, operator=None):
         pass
     make_link(compare_star, ("Result",), switch_star, ("Switch",))
     make_link(switch_heart, ("Output",), switch_star, ("False",))
-    make_link(star_mesh, ("Geometry",), switch_star, ("True",))
+    make_geometry_link(star_mesh, switch_star, ("True",))
 
     # Join geometry node to collect all branches
     join_geo = new_node("GeometryNodeJoinGeometry", 1000, 0)

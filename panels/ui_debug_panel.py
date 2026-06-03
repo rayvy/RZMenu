@@ -503,6 +503,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
             header.label(text="Blocks:", icon='NODETREE')
             header.operator("rzm.add_tw_block", text="", icon='ADD')
             header.operator("rzm.duplicate_tw_block", text="", icon='DUPLICATE')
+            header.operator("rzm.rescale_active_tw_block", text="Rescale", icon='FULLSCREEN_ENTER')
             header.operator("rzm.remove_tw_block", text="", icon='REMOVE')
             
             # Вкладки Блоков (Если блоков много)

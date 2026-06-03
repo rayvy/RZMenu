@@ -7,98 +7,15 @@ import math
 import numpy as np
 from mathutils import Vector, Matrix, Euler
 
+from .vfx_shapes import (
+    get_vfx_local_pos,
+    get_vfx_shape_counts,
+    get_vfx_shape_indices,
+    get_vfx_shape_uv,
+)
+
 # Set to True to export giant triangles directly in the buffer coordinates for visual verification
 TEST_TRIANGLE_EXPORT = False
-
-VFX_MESH_HEART = "4"
-VFX_MESH_STAR = "5"
-
-VFX_SHAPE_VERTS = {
-    "0": [
-        (0.0, 1.0, 0.0),
-        (-0.866, -0.5, 0.0),
-        (0.866, -0.5, 0.0),
-    ],
-    "1": [
-        (-0.5, -0.5, 0.0),
-        (0.5, -0.5, 0.0),
-        (-0.5, 0.5, 0.0),
-        (0.5, 0.5, 0.0),
-    ],
-    "2": [(0.0, 0.0, 0.0)] + [
-        (math.cos(i * (2.0 * math.pi / 6.0)), math.sin(i * (2.0 * math.pi / 6.0)), 0.0)
-        for i in range(6)
-    ],
-    VFX_MESH_HEART: [
-        (0.0, 0.45, 0.0),
-        (-0.28, 0.78, 0.0),
-        (-0.50, 0.84, 0.0),
-        (-0.82, 0.60, 0.0),
-        (-0.96, 0.12, 0.0),
-        (0.0, -1.0, 0.0),
-        (0.96, 0.12, 0.0),
-        (0.82, 0.60, 0.0),
-        (0.50, 0.84, 0.0),
-        (0.28, 0.78, 0.0),
-    ],
-    VFX_MESH_STAR: [(0.0, 0.0, 0.0)] + [
-        (
-            math.cos((math.pi * 0.5) + i * (2.0 * math.pi / 10.0)) * (1.0 if i % 2 == 0 else 0.42),
-            math.sin((math.pi * 0.5) + i * (2.0 * math.pi / 10.0)) * (1.0 if i % 2 == 0 else 0.42),
-            0.0,
-        )
-        for i in range(10)
-    ],
-}
-
-VFX_SHAPE_INDICES = {
-    "0": [0, 1, 2],
-    "1": [0, 1, 2, 2, 1, 3],
-    "2": [idx for i in range(1, 7) for idx in (0, i, 1 if i == 6 else i + 1)],
-    VFX_MESH_HEART: [idx for i in range(1, 9) for idx in (0, i, i + 1)],
-    VFX_MESH_STAR: [idx for i in range(1, 11) for idx in (0, i, 1 if i == 10 else i + 1)],
-}
-
-
-def normalize_vfx_mesh_type(mesh_fx_type):
-    mesh_fx_type = str(mesh_fx_type)
-    return mesh_fx_type if mesh_fx_type in VFX_SHAPE_VERTS else "0"
-
-
-def get_vfx_shape_counts(mesh_fx_type):
-    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
-    return len(VFX_SHAPE_VERTS[mesh_fx_type]), len(VFX_SHAPE_INDICES[mesh_fx_type])
-
-
-def get_vfx_local_pos(mesh_fx_type, v_idx, tri_aspect=1.0):
-    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
-    verts = VFX_SHAPE_VERTS[mesh_fx_type]
-    x, y, z = verts[v_idx % len(verts)]
-    return (x * tri_aspect, y, z)
-
-
-def get_vfx_shape_uv(mesh_fx_type, v_idx, u_min, v_min, u_max, v_max):
-    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
-    u_center = (u_min + u_max) * 0.5
-    v_center = (v_min + v_max) * 0.5
-    u_radius = (u_max - u_min) * 0.5
-    v_radius = (v_max - v_min) * 0.5
-
-    if mesh_fx_type == "1":
-        return [
-            (u_min, v_max),
-            (u_max, v_max),
-            (u_min, v_min),
-            (u_max, v_min),
-        ][v_idx]
-
-    x, y, _ = get_vfx_local_pos(mesh_fx_type, v_idx, 1.0)
-    return (u_center + u_radius * x, v_center + v_radius * y)
-
-
-def get_vfx_shape_indices(mesh_fx_type, v_start):
-    mesh_fx_type = normalize_vfx_mesh_type(mesh_fx_type)
-    return [v_start + idx for idx in VFX_SHAPE_INDICES[mesh_fx_type]]
 
 
 def swap_yz(vec):
@@ -327,12 +244,15 @@ def find_associated_mesh_and_component(context, curve_obj):
         print(f"[RZM-VFX] ComponentCollector import failed: {e}")
         comp_map = {}
         
-    if not comp_map:
-        rzm = getattr(context.scene, "rzm", None)
-        if rzm and hasattr(rzm, "component_manager"):
-            cm = rzm.component_manager
-            for comp in cm.components:
-                comp_map[comp.name] = [obj for obj in context.scene.objects if obj.type == 'MESH' and comp.name.lower() in obj.name.lower()]
+    rzm = getattr(context.scene, "rzm", None)
+    if rzm and hasattr(rzm, "component_manager"):
+        cm = rzm.component_manager
+        for comp in cm.components:
+            if comp.name not in comp_map:
+                comp_map[comp.name] = [
+                    obj for obj in context.scene.objects
+                    if obj.type == 'MESH' and comp.name.lower() in obj.name.lower()
+                ]
 
     # Extract mod name dynamically for prefix cleanup
     mod_name = ""
@@ -347,6 +267,144 @@ def find_associated_mesh_and_component(context, curve_obj):
         rzm = getattr(context.scene, "rzm", None)
         if rzm and hasattr(rzm, "export_settings"):
             mod_name = getattr(rzm.export_settings, "mod_name", "") or ""
+
+    rzm = getattr(context.scene, "rzm", None)
+
+    def _strip_prefix(val, pref):
+        if not val or not pref:
+            return str(val or "")
+        val = str(val)
+        pref = str(pref)
+        if val.lower().startswith(pref.lower()):
+            return val[len(pref):]
+        return val
+
+    def _compact_name(value):
+        if not value:
+            return ""
+        value = _strip_prefix(value, mod_name)
+        return "".join(ch for ch in str(value).lower() if ch.isalnum())
+
+    def _component_entry(comp_name):
+        if not rzm or not hasattr(rzm, "component_manager"):
+            return None
+        target = _compact_name(comp_name)
+        for comp in rzm.component_manager.components:
+            if _compact_name(comp.name) == target:
+                return comp
+        return None
+
+    def _part_suffix_for(comp_name, comp_obj, part_name):
+        suffix = _strip_prefix(part_name, mod_name).strip()
+        suffix = _strip_prefix(suffix, comp_name).strip()
+        if comp_obj:
+            suffix = _strip_prefix(suffix, comp_obj.name).strip()
+        return suffix
+
+    def _infer_collection_part(collection_names, comp_name):
+        comp_obj = _component_entry(comp_name)
+        if not comp_obj or not comp_obj.parts:
+            return None
+
+        best_suffix = None
+        best_score = -1
+        for part in comp_obj.parts:
+            suffix = _part_suffix_for(comp_name, comp_obj, part.name)
+            patterns = {
+                _compact_name(part.name),
+                _compact_name(f"{comp_name}{suffix}"),
+                _compact_name(f"{comp_obj.name}{suffix}"),
+            }
+            if mod_name:
+                patterns.add(_compact_name(f"{mod_name}{part.name}"))
+                patterns.add(_compact_name(f"{mod_name}{comp_name}{suffix}"))
+
+            for col_name in collection_names:
+                col_clean = _compact_name(col_name)
+                for pattern in patterns:
+                    if not pattern:
+                        continue
+                    if col_clean == pattern:
+                        score = 300 + len(pattern)
+                    elif col_clean.endswith(pattern):
+                        score = 200 + len(pattern)
+                    elif pattern in col_clean:
+                        score = 100 + len(pattern)
+                    else:
+                        continue
+                    if score > best_score:
+                        best_score = score
+                        best_suffix = suffix
+
+        if best_suffix is not None:
+            return best_suffix
+        if len(comp_obj.parts) == 1:
+            return _part_suffix_for(comp_name, comp_obj, comp_obj.parts[0].name)
+        return None
+
+    def _collection_matches_component(collection_names, comp_name):
+        if _infer_collection_part(collection_names, comp_name) is not None:
+            return True
+        comp_obj = _component_entry(comp_name)
+        patterns = {_compact_name(comp_name)}
+        if comp_obj:
+            patterns.add(_compact_name(comp_obj.name))
+        for col_name in collection_names:
+            col_clean = _compact_name(col_name)
+            if any(pattern and pattern in col_clean for pattern in patterns):
+                return True
+        return False
+
+    def _mesh_quality_score(obj):
+        score = 0
+        helper_keywords = [
+            'setup', 'color_setup', 'outline', 'shadow', 'helper',
+            'ignore', 'hidden', 'dummy', 'temp', 'anchor',
+            '_extra', '_ref', '_base', 'extra_', 'ref_',
+        ]
+        obj_name_lower = obj.name.lower()
+        if any(kw in obj_name_lower for kw in helper_keywords):
+            score -= 100
+        if obj_name_lower.endswith('-keepempty'):
+            score += 2000
+        if hasattr(obj, "vertex_groups") and len(obj.vertex_groups) > 0:
+            score += 50
+        return score
+
+    collection_names = [col.name for col in collections]
+    shared_meshes = []
+    seen_meshes = set()
+    for col in collections:
+        for obj in col.all_objects:
+            if obj.type == 'MESH' and obj not in seen_meshes:
+                seen_meshes.add(obj)
+                shared_meshes.append(obj)
+
+    collection_candidates = []
+    for comp_name, meshes in comp_map.items():
+        if not _collection_matches_component(collection_names, comp_name):
+            continue
+
+        part_suffix = _infer_collection_part(collection_names, comp_name) or ""
+        mesh_pool = [obj for obj in shared_meshes if not meshes or obj in meshes]
+        if not mesh_pool:
+            mesh_pool = list(meshes)
+
+        for obj in mesh_pool:
+            score = 10000
+            if obj in shared_meshes:
+                score += 1000
+            score += _mesh_quality_score(obj)
+            collection_candidates.append((score, comp_name, obj, part_suffix))
+
+    if collection_candidates:
+        collection_candidates.sort(key=lambda x: (x[0], -len(x[2].name)), reverse=True)
+        best_score, best_comp, best_obj, best_part = collection_candidates[0]
+        print(f"[RZM-VFX] Curve '{curve_obj.name}' collection association candidates:")
+        for score, comp_name, obj, part_name in collection_candidates:
+            print(f"  - Mesh '{obj.name}' -> Score: {score} (Component: {comp_name}, Part: {part_name}, Source: collection)")
+        print(f"[RZM-VFX] Selected '{best_obj.name}' by collection match (score={best_score}).")
+        return best_comp, best_obj, best_part
 
     candidates = []
 

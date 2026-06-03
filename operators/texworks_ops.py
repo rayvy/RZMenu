@@ -335,10 +335,17 @@ class RZM_OT_RemoveTwBlock(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     index: bpy.props.IntProperty(default=-1)
     def execute(self, context):
-        coll = context.scene.rzm.tw_blocks
-        idx = self.index if self.index >= 0 else len(coll) - 1
-        if 0 <= idx < len(coll): coll.remove(idx)
-        context.scene.rzm.active_tw_block_index = max(0, min(context.scene.rzm.active_tw_block_index, len(coll) - 1))
+        rzm = context.scene.rzm
+        coll = rzm.tw_blocks
+        idx = self.index if self.index >= 0 else rzm.active_tw_block_index
+        if idx < 0 or idx >= len(coll):
+            return {'CANCELLED'}
+
+        coll.remove(idx)
+        if len(coll) == 0:
+            rzm.active_tw_block_index = 0
+        else:
+            rzm.active_tw_block_index = min(idx, len(coll) - 1)
         trigger_refresh()
         return {'FINISHED'}
 
@@ -436,7 +443,11 @@ class RZM_OT_SetActiveBlock(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     index: bpy.props.IntProperty()
     def execute(self, context):
-        context.scene.rzm.active_tw_block_index = self.index
+        rzm = context.scene.rzm
+        if self.index < 0 or self.index >= len(rzm.tw_blocks):
+            return {'CANCELLED'}
+        rzm.active_tw_block_index = self.index
+        trigger_refresh()
         return {'FINISHED'}
 
 class RZM_OT_SetActiveComponent(bpy.types.Operator):
@@ -1025,6 +1036,54 @@ class RZM_OT_CalcSplittedIslandConfig(bpy.types.Operator):
         self.report({'INFO'}, f"Calculated Seamless Split: Ratio {pass0_data['ratio']:.2f} / {pass1_data['ratio']:.2f}")
         return {'FINISHED'}
 
+class RZM_OT_RescaleActiveTwBlock(bpy.types.Operator):
+    bl_idname = "rzm.rescale_active_tw_block"
+    bl_label = "Rescale Active Block Rects"
+    bl_description = "Rescale all TexWorks pixel rects in the active block from old texture resolution to new resolution"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    old_resolution: bpy.props.IntProperty(name="Old Resolution", default=1024, min=1)
+    new_resolution: bpy.props.IntProperty(name="New Resolution", default=2048, min=1)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        b_idx = rzm.active_tw_block_index
+        if b_idx < 0 or b_idx >= len(rzm.tw_blocks):
+            self.report({'ERROR'}, "No active TexWorks block")
+            return {'CANCELLED'}
+
+        scale = self.new_resolution / self.old_resolution
+        block = rzm.tw_blocks[b_idx]
+        changed = 0
+
+        def scale_rect(owner, prop_name):
+            nonlocal changed
+            rect = list(getattr(owner, prop_name))
+            scaled = [int(round(v * scale)) for v in rect]
+            if rect != scaled:
+                setattr(owner, prop_name, scaled)
+                changed += 1
+
+        scale_rect(block, "backdrop_rect")
+        for comp in block.components:
+            scale_rect(comp, "base_rect")
+            scale_rect(comp, "rect")
+            for slot in comp.slots:
+                scale_rect(slot, "rect")
+                scale_rect(slot, "multi_pass_rect")
+                slot.calc_res_x = self.new_resolution
+                slot.calc_res_y = self.new_resolution
+
+        trigger_refresh()
+        self.report(
+            {'INFO'},
+            f"Rescaled active TexWorks block '{block.name}' {self.old_resolution}->{self.new_resolution}; rects changed: {changed}"
+        )
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_UpdateTwItem,
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
@@ -1038,6 +1097,7 @@ classes_to_register = [
     RZM_OT_CalcSlotConfig,
     RZM_OT_SetSlotCalcRes,
     RZM_OT_CalcSplittedIslandConfig,
+    RZM_OT_RescaleActiveTwBlock,
     RZM_OT_TwCreateEasyMask,
     RZM_OT_ClearTwResources, RZM_OT_ClearTwOverrides, RZM_OT_TwResOverFill,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync
