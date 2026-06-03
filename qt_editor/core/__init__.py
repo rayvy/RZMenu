@@ -59,5 +59,8 @@ from .props import (
 
 from .clipboard import (
     copy_elements,
-    paste_elements
+    paste_elements,
+    copy_style,
+    paste_style,
+    has_style_clipboard
 )

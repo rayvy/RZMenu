@@ -5,6 +5,129 @@ from . import signals
 from . import blender_bridge
 
 _INTERNAL_CLIPBOARD = []
+_STYLE_CLIPBOARD = None
+
+STYLE_FIELDS = (
+    "color",
+    "color_is_formula",
+    "color_formula_r",
+    "color_formula_g",
+    "color_formula_b",
+    "color_formula_a",
+    "style_id",
+    "disable_button_nums",
+    "disable_button_popup",
+    "disable_slider_nums",
+    "disable_slider_blur",
+    "disable_slider_prebuild_render",
+    "slider_logic_invert_x",
+    "slider_logic_invert_y",
+    "disable_default_xy",
+)
+
+
+def _find_element_by_id(elem_id):
+    if not bpy.context or not bpy.context.scene:
+        return None
+    for elem in bpy.context.scene.rzm.elements:
+        if elem.id == elem_id:
+            return elem
+    return None
+
+
+def _id_collection_values(collection, attr_name):
+    return [getattr(item, attr_name) for item in collection]
+
+
+def _replace_id_collection(collection, values, attr_name):
+    old_values = _id_collection_values(collection, attr_name)
+    new_values = [int(v) for v in values]
+    if old_values == new_values:
+        return False
+
+    while len(collection):
+        collection.remove(len(collection) - 1)
+
+    for value in new_values:
+        item = collection.add()
+        setattr(item, attr_name, value)
+
+    return True
+
+
+def copy_style(source_id):
+    global _STYLE_CLIPBOARD
+
+    elem = _find_element_by_id(source_id)
+    if not elem:
+        return False
+
+    data = {}
+    for field in STYLE_FIELDS:
+        if not hasattr(elem, field):
+            continue
+        value = getattr(elem, field)
+        data[field] = list(value) if field == "color" else value
+
+    data["preset_ids"] = [p.preset_id for p in elem.preset_ids] if hasattr(elem, "preset_ids") else []
+    data["underlayer_preset_ids"] = [p.preset_id for p in elem.underlayer_preset_ids] if hasattr(elem, "underlayer_preset_ids") else []
+    data["helper_ids"] = [h.helper_id for h in elem.helper_ids] if hasattr(elem, "helper_ids") else []
+
+    _STYLE_CLIPBOARD = data
+    return True
+
+
+def has_style_clipboard():
+    return _STYLE_CLIPBOARD is not None
+
+
+def paste_style(target_ids):
+    global _STYLE_CLIPBOARD
+
+    if not _STYLE_CLIPBOARD or not target_ids:
+        return 0
+    if not bpy.context or not bpy.context.scene:
+        return 0
+
+    changed_count = 0
+    with signals.qt_update_guard():
+        elements = bpy.context.scene.rzm.elements
+        targets = [elem for elem in elements if elem.id in target_ids]
+
+        for elem in targets:
+            changed = False
+
+            for field in STYLE_FIELDS:
+                if field not in _STYLE_CLIPBOARD or not hasattr(elem, field):
+                    continue
+
+                new_value = _STYLE_CLIPBOARD[field]
+                if field == "color":
+                    current = list(getattr(elem, field))
+                    if current != list(new_value):
+                        setattr(elem, field, list(new_value)[:len(current)])
+                        changed = True
+                elif getattr(elem, field) != new_value:
+                    setattr(elem, field, new_value)
+                    changed = True
+
+            if hasattr(elem, "preset_ids"):
+                changed |= _replace_id_collection(elem.preset_ids, _STYLE_CLIPBOARD.get("preset_ids", []), "preset_id")
+            if hasattr(elem, "underlayer_preset_ids"):
+                changed |= _replace_id_collection(elem.underlayer_preset_ids, _STYLE_CLIPBOARD.get("underlayer_preset_ids", []), "preset_id")
+            if hasattr(elem, "helper_ids"):
+                changed |= _replace_id_collection(elem.helper_ids, _STYLE_CLIPBOARD.get("helper_ids", []), "helper_id")
+
+            if changed:
+                changed_count += 1
+
+        if changed_count:
+            blender_bridge.safe_undo_push("RZM: Paste Style")
+            signals.SIGNALS.data_changed.emit()
+            signals.SIGNALS.structure_changed.emit()
+            signals.SIGNALS.transform_changed.emit()
+
+    return changed_count
 
 def copy_elements(target_ids):
     global _INTERNAL_CLIPBOARD

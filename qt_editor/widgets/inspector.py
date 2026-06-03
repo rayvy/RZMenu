@@ -1135,6 +1135,33 @@ class RZMInspectorPanel(RZEditorPanel):
         core.read.rebuild_id_cache(force=True)
         self.refresh_data()
 
+    def _copy_style(self):
+        ctx = RZContextManager.get_instance().get_snapshot()
+        source_id = ctx.active_id
+        if source_id is None or source_id < 0:
+            SIGNALS.status_message.emit("Select an element to copy style")
+            return
+
+        if core.copy_style(source_id):
+            SIGNALS.status_message.emit("Style copied")
+            if hasattr(self, "btn_paste_style"):
+                self.btn_paste_style.setEnabled(True)
+        else:
+            SIGNALS.status_message.emit("Failed to copy style")
+
+    def _paste_style(self):
+        ctx = RZContextManager.get_instance().get_snapshot()
+        if not ctx.selected_ids:
+            SIGNALS.status_message.emit("Select elements to paste style")
+            return
+
+        changed = core.paste_style(ctx.selected_ids)
+        if changed:
+            SIGNALS.status_message.emit(f"Style pasted to {changed} element(s)")
+            self.refresh_data()
+        else:
+            SIGNALS.status_message.emit("No copied style or no changes")
+
     def _scroll_to_group(self, group_name):
         """Scrolls the scroll area to the target group widget."""
         target_widget = getattr(self, group_name, None)
@@ -1610,6 +1637,19 @@ class RZMInspectorPanel(RZEditorPanel):
             self.grp_style = RZGroupBox("Appearance")
             layout = QtWidgets.QVBoxLayout(self.grp_style)
             layout.setSpacing(6)
+
+            h_style_tools = QtWidgets.QHBoxLayout()
+            self.btn_copy_style = RZPushButton("COPY STYLE")
+            self.btn_copy_style.setToolTip("Copy color, color formulas, special options, and applied presets from the active element")
+            self.btn_copy_style.clicked.connect(self._copy_style)
+            h_style_tools.addWidget(self.btn_copy_style)
+
+            self.btn_paste_style = RZPushButton("PASTE STYLE")
+            self.btn_paste_style.setToolTip("Paste copied style to all selected elements and replace their applied presets")
+            self.btn_paste_style.setEnabled(core.has_style_clipboard())
+            self.btn_paste_style.clicked.connect(self._paste_style)
+            h_style_tools.addWidget(self.btn_paste_style)
+            layout.addLayout(h_style_tools)
             
             h_col = QtWidgets.QHBoxLayout(); h_col.addWidget(RZLabel("Color:")); h_col.addStretch()
             self.chk_color_formula = self._add_row(h_col, "", RZCheckBox("Formula"), 'color_is_formula')
