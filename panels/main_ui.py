@@ -667,6 +667,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 display_name = key.replace("rzm.TexSlot.", "")
                 slot_id = display_name
                 cond_key = f"rzm.TexCond.{slot_id}"
+                init_key = f"rzm.TexInitAttach.{slot_id}"
                 
                 # Используем колонку для группировки слота и его условия
                 slot_col = box.column(align=True)
@@ -677,6 +678,9 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 
                 # Поле пути к текстуре
                 row.prop(target_obj, f'["{key}"]', text="")
+                init_icon = 'CHECKBOX_HLT' if target_obj.get(init_key, False) else 'CHECKBOX_DEHLT'
+                op_init = row.operator("rzm.toggle_object_tex_init_attach", text="", icon=init_icon, emboss=False)
+                op_init.prop_key = key
                 
                 # Кнопка добавления/удаления условия
                 if cond_key in target_obj:

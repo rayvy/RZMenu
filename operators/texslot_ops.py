@@ -48,12 +48,15 @@ class RZM_OT_RemoveObjectTexSlot(bpy.types.Operator):
         if self.prop_key in target_obj:
             slot_id = self.prop_key.replace("rzm.TexSlot.", "")
             cond_key = f"rzm.TexCond.{slot_id}"
+            init_key = f"rzm.TexInitAttach.{slot_id}"
             
             # Remove slot
             del target_obj[self.prop_key]
             # Remove linked condition if exists
             if cond_key in target_obj:
                 del target_obj[cond_key]
+            if init_key in target_obj:
+                del target_obj[init_key]
             
         # Trigger redraw
         context.area.tag_redraw()
@@ -101,6 +104,26 @@ class RZM_OT_RemoveObjectTexCond(bpy.types.Operator):
         context.area.tag_redraw()
         return {'FINISHED'}
 
+class RZM_OT_ToggleObjectTexInitAttach(bpy.types.Operator):
+    """Toggle ModInitialised attachment guard for the texture slot."""
+    bl_idname = "rzm.toggle_object_tex_init_attach"
+    bl_label = "Toggle InitialisedAttachment"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    prop_key: bpy.props.StringProperty()
+
+    def execute(self, context):
+        target_obj = context.active_object
+        if not target_obj:
+            return {'CANCELLED'}
+
+        slot_id = self.prop_key.replace("rzm.TexSlot.", "")
+        init_key = f"rzm.TexInitAttach.{slot_id}"
+        target_obj[init_key] = not bool(target_obj.get(init_key, False))
+
+        context.area.tag_redraw()
+        return {'FINISHED'}
+
 class RZM_OT_CopyTexSlotsToSelected(bpy.types.Operator):
     """Copy all texture slot settings from the active object to all selected objects."""
     bl_idname = "rzm.copy_tex_slots_to_selected"
@@ -131,7 +154,11 @@ class RZM_OT_CopyTexSlotsToSelected(bpy.types.Operator):
                 if cond_key in active_obj:
                     obj[cond_key] = active_obj[cond_key]
 
-        self.report({'INFO'}, f"Applied {len(tex_keys)} slots and conditions to {len(selected_objs)} objects")
+                init_key = f"rzm.TexInitAttach.{slot_id}"
+                if init_key in active_obj:
+                    obj[init_key] = active_obj[init_key]
+
+        self.report({'INFO'}, f"Applied {len(tex_keys)} slots, conditions, and init attachments to {len(selected_objs)} objects")
         return {'FINISHED'}
 
 classes_to_register = [
@@ -139,5 +166,6 @@ classes_to_register = [
     RZM_OT_RemoveObjectTexSlot,
     RZM_OT_AddObjectTexCond,
     RZM_OT_RemoveObjectTexCond,
+    RZM_OT_ToggleObjectTexInitAttach,
     RZM_OT_CopyTexSlotsToSelected,
 ]

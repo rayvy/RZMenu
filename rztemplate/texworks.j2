@@ -46,6 +46,7 @@ global $x43val
 global $y43val
 global $z43val
 global $w43val
+global $TWInitialised = 0
 
 [CommandListTexWorks.SaveTexWorksVALS]
 $x43val = x43
@@ -84,6 +85,7 @@ mips = 1
 [TextureOverride{{ over.name }}]
 hash = {{ over.hash }}
 {% if over.override_mode == 'IB_DIRECT' %}
+if $TWInitialised == 1
 {% if over.bindings|length > 0 %}
 {% set preset_bindings = over.bindings | rejectattr('custom_target') | list %}
 {% for binding in over.bindings %}
@@ -108,6 +110,7 @@ Resource\ZZMI\{{ TW_ZZMI_SLOT_MAP.get(tw_slot_l, tw_slot) }} = ref Resource{{ ut
 run = CommandList\ZZMI\SetTextures
 {% endif %}
 {% endif %}
+endif
 {% else %}
 {% if over.resource_name %}
 local $TW_override_is_initialised
@@ -589,6 +592,7 @@ if $ModInitialised == 1
     run = CommandListBlock_{{ block.name }}
     {% endfor %}
     run = CommandListTexWorks_Finalize
+    $TWInitialised = 1
 endif
 
 {% for block in rzm.tw_blocks %}

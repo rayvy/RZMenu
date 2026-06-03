@@ -85,6 +85,7 @@
 
     {# 4.5. КАСТОМННЫЕ ТЕКСТУРЫ (TexSlot & TexCond) #}
     {% set found_textures = [] %}
+    {% set found_init_textures = [] %}
     {% set tex_ns = 'GIMI' if scene.rzm.game.selection == 'GenshinImpact' else 'ZZMI' %}
     {% if real_obj %}
         {# 1. Сбор уникальных условий для текстур #}
@@ -105,25 +106,49 @@
             {% set clean_slot_id = slot_id.split('.')[0] %}
             
             {% set cond_key = 'rzm.TexCond.' + slot_id %}
+            {% set init_key = 'rzm.TexInitAttach.' + slot_id %}
             {% if cond_key not in real_obj %}
                 {% set safe_val = value | string %}
                 {% if safe_val.startswith('Resource\\') %}{% set safe_val = safe_val[9:] %}
                 {% elif safe_val.startswith('Resource') %}{% set safe_val = safe_val[8:] %}
                 {% endif %}
+                {% if real_obj.get(init_key, false) %}
+            if $TWInitialised == 1
+                Resource\{{ tex_ns }}\{{ clean_slot_id }} = ref Resource{{ safe_val }}
+                run = CommandList\{{ tex_ns }}\SetTextures
+            endif
+                    {% set _ = found_init_textures.append(1) %}
+                {% else %}
             Resource\{{ tex_ns }}\{{ clean_slot_id }} = ref Resource{{ safe_val }}
-                {% set _ = found_textures.append(1) %}
+                    {% set _ = found_textures.append(1) %}
+                {% endif %}
             {% endif %}
         {% endfor %}
 
         {# 3. Группируем текстуры под их условиями (if blocks) #}
         {% for cond in unique_conditions %}
+            {% set cond_plain_textures = [] %}
+            {% set cond_init_textures = [] %}
+            {% for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
+                {% set slot_id = key[12:] %}
+                {% set init_key = 'rzm.TexInitAttach.' + slot_id %}
+                {% if real_obj.get('rzm.TexCond.' + slot_id) == cond %}
+                    {% if real_obj.get(init_key, false) %}
+                        {% set _ = cond_init_textures.append(1) %}
+                    {% else %}
+                        {% set _ = cond_plain_textures.append(1) %}
+                    {% endif %}
+                {% endif %}
+            {% endfor %}
+            {% if cond_plain_textures %}
             if {{ utils.normalize_all_vars(cond, none, scene) }}
             {% for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
                 {% set slot_id = key[12:] %}
                 {# --- МЕХАНИЗМ КОРРЕКЦИИ: отсекаем .1, .2 и т.д. --- #}
                 {% set clean_slot_id = slot_id.split('.')[0] %}
+                {% set init_key = 'rzm.TexInitAttach.' + slot_id %}
 
-                {% if real_obj.get('rzm.TexCond.' + slot_id) == cond %}
+                {% if real_obj.get('rzm.TexCond.' + slot_id) == cond and not real_obj.get(init_key, false) %}
                     {% set safe_val = value | string %}
                     {% if safe_val.startswith('Resource\\') %}{% set safe_val = safe_val[9:] %}
                     {% elif safe_val.startswith('Resource') %}{% set safe_val = safe_val[8:] %}
@@ -133,6 +158,28 @@
                 {% endif %}
             {% endfor %}
             endif
+            {% endif %}
+            {% if cond_init_textures %}
+            if {{ utils.normalize_all_vars(cond, none, scene) }}
+                if $TWInitialised == 1
+            {% for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
+                {% set slot_id = key[12:] %}
+                {% set clean_slot_id = slot_id.split('.')[0] %}
+                {% set init_key = 'rzm.TexInitAttach.' + slot_id %}
+
+                {% if real_obj.get('rzm.TexCond.' + slot_id) == cond and real_obj.get(init_key, false) %}
+                    {% set safe_val = value | string %}
+                    {% if safe_val.startswith('Resource\\') %}{% set safe_val = safe_val[9:] %}
+                    {% elif safe_val.startswith('Resource') %}{% set safe_val = safe_val[8:] %}
+                    {% endif %}
+                    Resource\{{ tex_ns }}\{{ clean_slot_id }} = ref Resource{{ safe_val }}
+                    {% set _ = found_init_textures.append(1) %}
+                {% endif %}
+            {% endfor %}
+                    run = CommandList\{{ tex_ns }}\SetTextures
+                endif
+            endif
+            {% endif %}
         {% endfor %}
     {% endif %}
     {# Если в массиве есть хотя бы один элемент, значит текстуры были #}
