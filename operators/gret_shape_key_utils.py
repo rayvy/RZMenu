@@ -409,7 +409,13 @@ class RZM_OT_shape_key_apply_modifiers(bpy.types.Operator):
             sk = obj.shape_key_add(name=info.name)
             sk.interpolation, sk.mute, sk.slider_max, sk.slider_min, sk.value, sk.vertex_group = \
                 info.interpolation, info.mute, info.slider_max, info.slider_min, info.value, info.vertex_group
-            if len(sk.data) * 3 != len(info.coords): continue
+            if len(sk.data) * 3 != len(info.coords):
+                # RAYVICH EDIT: make modifier bake shape-key data loss visible in Blender console.
+                print(
+                    f"[RZM][ShapeKeyBake][WARN] {obj.name}: shape key '{info.name}' coords skipped "
+                    f"after modifier bake; vertex count changed from {len(info.coords) // 3} to {len(sk.data)}."
+                )
+                continue
             sk.data.foreach_set('co', info.coords)
 
         for h in post_handlers: h.apply(obj)

@@ -349,9 +349,6 @@
 
     {# CustomShader and CommandList for VFX Curves #}
     {% if curve_list | length > 0 %}
-    [Present]
-    run = CommandListRZM_VFX_Present
-
     [CommandListRZM_VFX_Present]
     {% for component in mod_file.components if component.draw_vb != "" %}
         {% for part in component.parts if part.vertex_count > 0 %}

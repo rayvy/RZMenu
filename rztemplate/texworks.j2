@@ -302,13 +302,13 @@ cs-t0 = Resource{{ utils.clean_resource(block.backdrop_resource_name) }}
 {% else %}
 cs-t0 = null
 {% endif %}
-cs-t1 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
+cs-t2 = {% if comp.mask_enabled %}Resource{{ comp.name }}Mask{% else %}null{% endif %}
 
 
 {% if comp.tex_morph_enabled and comp.tex_morph_resource_name %}
-cs-t2 = Resource{{ utils.clean_resource(comp.tex_morph_resource_name) }}
+cs-t1 = Resource{{ utils.clean_resource(comp.tex_morph_resource_name) }}
 {% else %}
-cs-t2 = null
+cs-t1 = null
 {% endif %}
 {% if comp.hsv_enabled is true%}
 {% set v_name = utils.format_var(comp.hsv_link) %}

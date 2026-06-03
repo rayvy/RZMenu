@@ -8,7 +8,7 @@
 
 
 {# 1. Общие глобальные переменные и логика Present #}
-{% macro _macro_shared_constants_and_present(rzm) %}
+{% macro _macro_shared_constants_and_present(rzm, scene=none) %}
 [Constants]
 global persist $SKC_LastTime = 0
 {% for config in rzm.shape_configs if not config.export_runtime_disabled %}
@@ -22,6 +22,15 @@ global persist $SKC_LastTime = 0
 
 [Present]
 run = CommandListSKPresent
+{% set has_vfx_curves = [false] %}
+{% if scene and scene.objects %}
+    {% for obj in scene.objects if obj.type == 'CURVE' and obj.get('RZM.CURVE_VFX') %}
+        {% if has_vfx_curves.append(true) %}{% endif %}
+    {% endfor %}
+{% endif %}
+{% if has_vfx_curves[-1] %}
+run = CommandListRZM_VFX_Present
+{% endif %}
 [CommandListSKPresent]
 local $shape_changed = 0
 $dt = time - $SKC_LastTime
@@ -184,6 +193,8 @@ post $SKC_LastTime = time
 [CustomShaderComputeShapes.{{ comp_name }}]
 cs = {{ shader_path }}
 cs-u5 = copy Resource{{ comp_name }}_Base
+x115 = {{ vertex_count }}
+; //RAYVICH EDIT: native shape shader only processes original vertices; appended VFX tail is guarded in HLSL.
 
 {% if rzm.addons.debugger_info %}
 ; === DEBUG SHAPE MATCHING ===
@@ -313,7 +324,7 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
 {% set props = GAME_PROPS.get(game_name, {'stride': 40, 'shader': './modules/position_shape_linear.hlsl', 'path_prefix': '/0/', 'path_suffix': 'Position.buf'}) %}
 
 {# 1. Вызов Глобальных переменных (Общие для всех) #}
-{{ _macro_shared_constants_and_present(rzm) }}
+{{ _macro_shared_constants_and_present(rzm, scene) }}
 
 [CustomShaderComputeShapes]
 {# 2. Диспетчер Вызовов (формирование списка run =) #}

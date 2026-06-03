@@ -333,6 +333,13 @@ def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, origina
             if ready_obj and ready_obj.data and ready_obj.data.shape_keys and sk_name in ready_obj.data.shape_keys.key_blocks:
                 objs_to_process.append((obj, ready_obj))
             else:
+                # RAYVICH EDIT: expose silent bake/export misses for objects with modifiers.
+                ready_name = ready_obj.name if ready_obj else "<none>"
+                has_keys = bool(ready_obj and ready_obj.data and ready_obj.data.shape_keys)
+                print(
+                    f"    [WARN] {obj.name}: shape '{sk_name}' unavailable "
+                    f"after bake; ready_obj={ready_name}, has_shape_keys={has_keys}. Forwarding to Slow Path."
+                )
                 if obj in owners['via_target']: failed_objects[sk_name]['via_target'].append(obj)
                 else: failed_objects[sk_name]['direct'].append(obj)
 
@@ -378,6 +385,13 @@ def _process_exact_matches(context, sk_owner_map, ready_map, comp_cache, origina
 
             if invert_x_enabled:
                 deltas_all[:, 0] *= -1
+
+            if not np.any(np.abs(deltas_all) > 1e-7):
+                # RAYVICH EDIT: expose baked shape keys that survived by name but lost all deformation.
+                print(
+                    f"    [WARN] {orig_obj.name}: shape '{sk_name}' has zero deltas after bake/export prep; "
+                    "buffer slice will remain unchanged."
+                )
 
             if vb_off + vb_cnt > buf_v_count:
                 print(f"    [ERROR] {orig_obj.name}: Buffer bounds exceeded. Forwarding to Slow Path.")

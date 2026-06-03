@@ -15,6 +15,7 @@ StructuredBuffer<VertexAttributes> shapekey : register(t51);
 
 Texture1D<float4> IniParams : register(t120);
 #define key IniParams[88].x
+#define ORIG_V_COUNT ((uint)round(IniParams[115].x))
 
 [numthreads(1024, 1, 1)]
 void main(uint3 threadID : SV_DispatchThreadID)
@@ -23,6 +24,8 @@ void main(uint3 threadID : SV_DispatchThreadID)
     uint vertex_count, stride;
     rw_buffer.GetDimensions(vertex_count, stride);
     if (i >= vertex_count) return;
+    //RAYVICH EDIT: keep VFX vertices appended after original mesh untouched by native shapes.
+    if (i >= ORIG_V_COUNT) return;
     VertexAttributes diff;
     diff.position = shapekey[i].position - base[i].position;
     diff.normal = shapekey[i].normal - base[i].normal;
