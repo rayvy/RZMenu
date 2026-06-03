@@ -1,4 +1,5 @@
 # RZMenu/qt_editor/widgets/variables_manager.py
+import colorsys
 import bpy
 from PySide6 import QtWidgets, QtCore, QtGui
 from .lib.theme import get_current_theme
@@ -336,6 +337,14 @@ class BaseListTab(QtWidgets.QWidget):
                     break
 
 class ValuesTab(BaseListTab):
+    HSV_BASELINE_VECTOR_NAMES = {
+        "$EYEBROWS",
+        "$EYELASHES",
+        "$LIPS",
+        "$EYE",
+        "$HAIR",
+    }
+
     def __init__(self):
         super().__init__(prefix="$")
         
@@ -451,7 +460,7 @@ class ValuesTab(BaseListTab):
             for i in range(4):
                 if abs(self.inp_vecs[i].value() - val.vector_value[i]) > 0.0001:
                     self.inp_vecs[i].setValue(val.vector_value[i])
-            self.inp_val_color.set_color(list(val.vector_value))
+            self.inp_val_color.set_color(self._vector_to_color_button_value(val))
             
             # Visibility (Smart hide for Form Layout)
             def set_row_visible(widget, visible):
@@ -568,14 +577,52 @@ class ValuesTab(BaseListTab):
         
         # Update color button without triggering its signals
         self.inp_val_color.blockSignals(True)
-        self.inp_val_color.set_color([self.inp_vecs[i].value() for i in range(4)])
+        self.inp_val_color.set_color(self._vector_to_color_button_value())
         self.inp_val_color.blockSignals(False)
 
     def synch_color_picker(self, color_data):
         if self.is_updating_ui: return
+        color_data = self._color_picker_to_vector_value(color_data)
         for i in range(4):
             if i < len(color_data):
                 self.inp_vecs[i].setValue(color_data[i])
+
+    def _selected_value(self):
+        item = self.list_widget.currentItem()
+        if not item:
+            return None
+        orig_idx = item.data(QtCore.Qt.UserRole)
+        if orig_idx is None:
+            return None
+        return bpy.context.scene.rzm.rzm_values[orig_idx]
+
+    def _is_hsv_baseline_vector(self, val=None):
+        val = val or self._selected_value()
+        if not val or val.value_type != 'VECTOR':
+            return False
+        return val.value_name.upper() in self.HSV_BASELINE_VECTOR_NAMES
+
+    def _vector_to_color_button_value(self, val=None):
+        if val is not None:
+            vector = list(val.vector_value)
+        else:
+            vector = [self.inp_vecs[i].value() for i in range(4)]
+        if self._is_hsv_baseline_vector(val) and len(vector) >= 3:
+            # //RAYVICH EDIT: HSV baseline vectors are stored as HSV, but the picker preview is RGB.
+            r, g, b = colorsys.hsv_to_rgb(vector[0] % 1.0, self._clamp01(vector[1]), self._clamp01(vector[2]))
+            return [r, g, b, vector[3] if len(vector) > 3 else 1.0]
+        return vector
+
+    def _color_picker_to_vector_value(self, color_data):
+        if self._is_hsv_baseline_vector() and len(color_data) >= 3:
+            # //RAYVICH EDIT: eyedropper returns RGB; TexWorks HSV baselines must store HSV.
+            h, s, v = colorsys.rgb_to_hsv(self._clamp01(color_data[0]), self._clamp01(color_data[1]), self._clamp01(color_data[2]))
+            return [h, s, v, color_data[3] if len(color_data) > 3 else 1.0]
+        return color_data
+
+    @staticmethod
+    def _clamp01(value):
+        return max(0.0, min(1.0, float(value)))
 
     def synch_mark_random(self, checked):
         if self.is_updating_ui: return

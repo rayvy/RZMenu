@@ -28,6 +28,7 @@
         {{ data.hoverDetectResources(mod_file, scene) }}
         {{ data.hoverDetectVars(mod_file,scene) }}
         {{ core.hoverDetectShaders(mod_file,scene) }}
+        {{ core.object_data_runtime(mod_file,scene) }}
         {{ modules.generate_addons(mod_file,scene, geometry_only=true) }}
     {% endblock %}
 {% endif %}

@@ -41,6 +41,8 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
         if not has_tags:
             self.report({'WARNING'}, "MOD-BLOCK tags not found. Geometry/Mesh data will NOT be preserved in this update.")
             mod_block_content = "; [MOD-BLOCK NOT FOUND - Standalone UI Mode]"
+        else:
+            mod_block_content = self.migrate_object_data_runtime(ini_path, mod_block_content)
 
         # 3. Render new .ini with menu_only=True
         exporter = RZMenuJ2Exporter(context)
@@ -129,6 +131,54 @@ class RZM_OT_QuickExportMenu(bpy.types.Operator):
         except Exception as e:
             print(f"RZMenu Error during mod block extraction: {e}")
             return "", False
+
+    def migrate_object_data_runtime(self, ini_path, mod_block_content):
+        """
+        Backfills object-data runtime hooks from pre-move exports into MOD-BLOCK.
+        New exports already write these sections in MOD-BLOCK; this keeps the
+        first Quick Update after upgrading from dropping them.
+        """
+        try:
+            with open(ini_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            additions = []
+
+            if "pre run = CommandListRZMPinDetected" not in mod_block_content:
+                if "pre run = CommandListRZMPinDetected" in content:
+                    additions.append("[Present]\npre run = CommandListRZMPinDetected")
+
+            if "[CommandListRZMObjectDataInit]" not in mod_block_content:
+                match = re.search(
+                    r"(?ms)^\[CommandListRZMain\]\s*(.*?)(?=^\[|\Z)",
+                    content
+                )
+                if match:
+                    init_lines = []
+                    has_compute_shapes = False
+                    for raw_line in match.group(1).splitlines():
+                        stripped = raw_line.strip()
+                        if (
+                            re.match(r"^Resource\S+(?:Position|PositionCS|Texcoord)\s*=\s*copy", stripped)
+                            and "_Base" in stripped
+                        ):
+                            init_lines.append(stripped)
+                        elif stripped == "run = CustomShaderComputeShapes":
+                            has_compute_shapes = True
+
+                    if init_lines or has_compute_shapes:
+                        block_lines = ["[CommandListRZMObjectDataInit]"]
+                        block_lines.extend(init_lines)
+                        block_lines.append("run = CustomShaderComputeShapes")
+                        additions.append("\n".join(block_lines))
+
+            if additions:
+                return mod_block_content.rstrip("\n\r") + "\n\n" + "\n\n".join(additions) + "\n"
+
+            return mod_block_content
+        except Exception as e:
+            print(f"RZMenu Quick Update object-data migration failed: {e}")
+            return mod_block_content
 
 class RZM_OT_QuickExportGameBuffers(bpy.types.Operator):
     """Export only game buffers (XXMI/EFMI/WWMI) without regenerating RZMenu UI assets or Atlas."""

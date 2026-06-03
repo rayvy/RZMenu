@@ -26,6 +26,82 @@
 {% endif %}
 {%endmacro%}
 
+{%macro object_data_runtime(mod_file,scene)%}
+{# Runtime hooks that depend on exported object/component data.
+   Keep these in MOD-BLOCK so Quick Update preserves them. #}
+{% set _hover_comps = [] %}
+{% if mod_file and mod_file.components %}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% set _comp_has = {'found': false} %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% for entry in part.objects if entry.vertex_count > 0 %}
+                {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
+                    {% if _comp_has.update({'found': true}) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+        {% if _comp_has.found %}
+            {% if _hover_comps.append(component) %}{% endif %}
+        {% endif %}
+    {% endfor %}
+{% endif %}
+{% if _hover_comps | length > 0 %}
+[Present]
+pre run = CommandListRZMPinDetected
+{% endif %}
+{% if scene.rzm and scene.rzm.shapes %}
+[CommandListRZMObjectDataInit]
+    {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
+        {% if component.strides %}
+Resource{{ component.fullname }}Position = copy Resource{{ component.fullname }}_Base
+            {% if mod_file.game.name == "HonkaiStarRail" %}
+Resource{{ component.fullname }}PositionCS = copyResource{{ component.fullname }}CS_Base
+            {% endif %}
+            {% set comp_has_uv_anim = [false] %}
+            {% if scene and scene.objects %}
+                {% for curve in scene.objects if curve.type == 'CURVE' and curve.get('RZM.CURVE_VFX') and curve.rzm_curve_vfx_animated_uv %}
+                    {% for col in curve.users_collection %}
+                        {% for part in component.parts %}
+                            {% for entry in part.objects %}
+                                {% for col_obj in col.objects if col_obj.name == entry.name %}
+                                    {% if comp_has_uv_anim.append(true) %}{% endif %}
+                                {% endfor %}
+                            {% endfor %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
+            {% if comp_has_uv_anim[-1] %}
+Resource{{ component.fullname }}Texcoord = copy Resource{{ component.fullname }}Texcoord_Base
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+run = CustomShaderComputeShapes
+{% endif %}
+{%endmacro%}
+
+{%macro generate_reset_vector_values(mod_file,scene)%}
+[CommandListResetVectorValues]
+{% if scene.rzm %}
+    {% if scene.rzm.rzm_values %}
+        {% for value in scene.rzm.rzm_values %}
+            {% if value.value_name and value.value_type == 'VECTOR' %}
+                {% set v_name = utils.format_var(value.value_name) %}
+                local $Local{{ v_name }}_X = {{ "%.3f"|format(value.vector_value[0]) }}
+                local $Local{{ v_name }}_Y = {{ "%.3f"|format(value.vector_value[1]) }}
+                local $Local{{ v_name }}_Z = {{ "%.3f"|format(value.vector_value[2]) }}
+                local $Local{{ v_name }}_W = {{ "%.3f"|format(value.vector_value[3]) }}
+                ${{ v_name }}_X = $Local{{ v_name }}_X
+                ${{ v_name }}_Y = $Local{{ v_name }}_Y
+                ${{ v_name }}_Z = $Local{{ v_name }}_Z
+                ${{ v_name }}_W = $Local{{ v_name }}_W
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{% endif %}
+{%endmacro%}
+
 {% macro generate_toggle(mod_file,scene) %}
     ;macro generate_toggle(mod_file,scene)
     {# --- ИЗМЕНЕНО ЗДЕСЬ: Путь к коллекции теперь 'toggle_definitions' --- #}
@@ -315,9 +391,6 @@ z110 = 0
 w110 = 0
 run = CommandListComputeDimensions
 run = CommandListRZMain
-{% if has_any_hover %}
-pre run = CommandListRZMPinDetected
-{% endif %}
 
 x24 = $rayvich_back_values_x24
 y24 = $rayvich_back_values_y24
@@ -433,32 +506,7 @@ endif
 if $active
     if $first_run
             {% if scene.rzm.shapes %}
-            {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
-                {% if component.strides %}
-                    Resource{{ component.fullname }}Position = copy Resource{{ component.fullname }}_Base
-                    {% if mod_file.game.name == "HonkaiStarRail" %}
-                    Resource{{ component.fullname }}PositionCS = copyResource{{ component.fullname }}CS_Base
-                    {% endif %}
-                    {% set comp_has_uv_anim = [false] %}
-                    {% if scene and scene.objects %}
-                        {% for curve in scene.objects if curve.type == 'CURVE' and curve.get('RZM.CURVE_VFX') and curve.rzm_curve_vfx_animated_uv %}
-                            {% for col in curve.users_collection %}
-                                {% for part in component.parts %}
-                                    {% for entry in part.objects %}
-                                        {% for col_obj in col.objects if col_obj.name == entry.name %}
-                                            {% if comp_has_uv_anim.append(true) %}{% endif %}
-                                        {% endfor %}
-                                    {% endfor %}
-                                {% endfor %}
-                            {% endfor %}
-                        {% endfor %}
-                    {% endif %}
-                    {% if comp_has_uv_anim[-1] %}
-                    Resource{{ component.fullname }}Texcoord = copy Resource{{ component.fullname }}Texcoord_Base
-                    {% endif %}
-                {% endif %}
-            {% endfor %}
-            run = CustomShaderComputeShapes
+            run = CommandListRZMObjectDataInit
         {% endif %}
         $first_run = 0
     endif
