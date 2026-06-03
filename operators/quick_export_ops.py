@@ -173,9 +173,6 @@ class RZM_OT_QuickExportGameBuffers(bpy.types.Operator):
 
         # Apply forced values
         try:
-            from ..utils.shape_export_filter import prepare_shape_config_export_runtime
-            prepare_shape_config_export_runtime(rzm)
-
             if xxmi:
                 if "write_ini" in saved_xxmi:
                     xxmi.write_ini = False
@@ -206,14 +203,6 @@ class RZM_OT_QuickExportGameBuffers(bpy.types.Operator):
                 else:
                     self.report({'ERROR'}, "EFMI Tools not found. Cannot export mod.")
                     return {'CANCELLED'}
-
-            # Run Puppet Master Baking (Automated Post-Export) if enabled
-            if getattr(rzm.addons, "export_shapekeys", False):
-                try:
-                    print("[RZM Quick Game Buffers] Triggering Puppet Master Baking (Full Mode)...")
-                    bpy.ops.rzm.puppet_master_bake(full_export_mode=True)
-                except Exception as e:
-                    self.report({'WARNING'}, f"Puppet Master bake failed: {e}")
 
             # Run custom post-export scripts
             run_custom_scripts(context, target_path)

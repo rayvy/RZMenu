@@ -64,11 +64,12 @@ class RZMenuJ2Exporter:
         # Build context
         mod_file = StubModFile()
         scene = self.context.scene
-        try:
-            from ..utils.shape_export_filter import prepare_shape_config_export_runtime
-            prepare_shape_config_export_runtime(scene.rzm)
-        except Exception as e:
-            print(f"[RZM] Shape export runtime prepare failed: {e}")
+        if not menu_only:
+            try:
+                from ..utils.shape_export_filter import prepare_shape_config_export_runtime
+                prepare_shape_config_export_runtime(scene.rzm)
+            except Exception as e:
+                print(f"[RZM] Shape export runtime prepare failed: {e}")
 
         # Pre-collect VFX vertex counts from curves before rendering template
         try:

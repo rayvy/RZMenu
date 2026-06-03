@@ -28,6 +28,13 @@
         {{ data.hoverDetectResources(mod_file, scene) }}
     {% endblock %}
 {% endif %}
+{% if scene.rzm %}
+{% if scene.rzm.game.name == "ArknightsEndfield" %}
+{{core.shape_generate_arknights(extracted_object, merged_object, buffers, scene)}}
+{% else %}
+{{core.shape_generate(mod_file,scene)}}
+{% endif %}
+{% endif %}
 {% else %}
 ;[RZM-QUICK-UPDATE-PLACEHOLDER]
 {% endif %}
@@ -78,12 +85,6 @@
 {{data.config(mod_file,scene)}}
 {{data.hoverDetectVars(mod_file,scene)}}
 {{data.generate_profiles(mod_file,scene)}}
-
-{% if scene.rzm.game.name == "ArknightsEndfield" %}
-{{core.shape_generate_arknights(extracted_object, merged_object, buffers, scene)}}
-{% else %}
-{{core.shape_generate(mod_file,scene)}}
-{% endif %}
 {% endblock %}
 
 {% endcall %}
