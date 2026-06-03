@@ -40,6 +40,9 @@ class RZM_OT_UpdateTwItem(bpy.types.Operator):
                 coll = rzm.tw_resources
             elif self.collection_name == "overrides":
                 coll = rzm.tw_overrides
+            elif self.collection_name == "override_bindings":
+                if self.block_index == -1: return {'CANCELLED'}
+                coll = rzm.tw_overrides[self.block_index].bindings
             elif self.collection_name == "materials":
                 coll = rzm.tw_materials
             elif self.collection_name == "blocks":
@@ -349,6 +352,49 @@ class RZM_OT_RemoveTwBlock(bpy.types.Operator):
         trigger_refresh()
         return {'FINISHED'}
 
+class RZM_OT_AddTwOverrideBinding(bpy.types.Operator):
+    bl_idname = "rzm.add_tw_override_binding"
+    bl_label = "Add Override Binding"
+    bl_options = {'REGISTER', 'UNDO'}
+    override_index: bpy.props.IntProperty(default=-1)
+
+    def execute(self, context):
+        coll = context.scene.rzm.tw_overrides
+        if not (0 <= self.override_index < len(coll)):
+            return {'CANCELLED'}
+
+        over = coll[self.override_index]
+        if not over.bindings and over.resource_name:
+            binding = over.bindings.add()
+            binding.tex_type = over.slot_target or "Diffuse"
+            binding.resource_name = over.resource_name
+            binding.custom_target = (binding.tex_type or "").strip().lower().startswith("ps-t")
+
+        binding = over.bindings.add()
+        binding.tex_type = "Diffuse"
+        binding.resource_name = ""
+        binding.custom_target = False
+        over.active_binding_index = len(over.bindings) - 1
+        trigger_refresh()
+        return {'FINISHED'}
+
+class RZM_OT_RemoveTwOverrideBinding(bpy.types.Operator):
+    bl_idname = "rzm.remove_tw_override_binding"
+    bl_label = "Remove Override Binding"
+    bl_options = {'REGISTER', 'UNDO'}
+    override_index: bpy.props.IntProperty(default=-1)
+    index: bpy.props.IntProperty(default=-1)
+
+    def execute(self, context):
+        coll = context.scene.rzm.tw_overrides
+        if not (0 <= self.override_index < len(coll)):
+            return {'CANCELLED'}
+        bindings = coll[self.override_index].bindings
+        if 0 <= self.index < len(bindings):
+            bindings.remove(self.index)
+        trigger_refresh()
+        return {'FINISHED'}
+
 class RZM_OT_AddTwComponent(bpy.types.Operator):
     bl_idname = "rzm.add_tw_component"
     bl_label = "Add Component"
@@ -505,6 +551,8 @@ class RZM_OT_MoveTwItem(bpy.types.Operator):
                 coll = rzm.tw_resources
             elif self.collection_name == "overrides":
                 coll = rzm.tw_overrides
+            elif self.collection_name == "override_bindings":
+                coll = rzm.tw_overrides[self.block_index].bindings
             elif self.collection_name == "materials":
                 coll = rzm.tw_materials
             elif self.collection_name == "blocks":
@@ -1088,6 +1136,7 @@ classes_to_register = [
     RZM_OT_UpdateTwItem,
     RZM_OT_AddTwResource, RZM_OT_RemoveTwResource,
     RZM_OT_AddTwOverride, RZM_OT_RemoveTwOverride,
+    RZM_OT_AddTwOverrideBinding, RZM_OT_RemoveTwOverrideBinding,
     RZM_OT_AddTwMaterial, RZM_OT_RemoveTwMaterial, RZM_OT_TwSelectMaterial,
 
     RZM_OT_AddTwBlock, RZM_OT_RemoveTwBlock, RZM_OT_DuplicateTwBlock, RZM_OT_SetActiveBlock,

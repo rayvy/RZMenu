@@ -15,6 +15,12 @@ from ..core import blender_bridge
 
 # --- UTILS & CORE WIDGETS ---
 TEXWORKS_WIP = True # Toggler for experimental mesh-dependent features
+TW_IB_SLOT_PRESETS = [
+    "Diffuse", "NormalMap", "LightMap", "MaterialMap",
+    "GlowGradient", "GlowMap", "GlowMap2", "GlowMap3",
+    "WengineFx", "WengineFx2", "WengineFx3",
+    *[f"ps-t{i}" for i in range(19)],
+]
 
 class RZTabRow(QtWidgets.QScrollArea):
     """Horizontal selection bar for items (Blocks, Comps, Slots)."""
@@ -528,49 +534,198 @@ class TexWorksResourcesTab(QtWidgets.QWidget):
 class TexWorksOverrideItem(QtWidgets.QWidget):
     def __init__(self, index, data, parent_list):
         super().__init__(); self.index = index; self.parent_list = parent_list
-        row = QtWidgets.QHBoxLayout(self); row.setContentsMargins(5, 2, 5, 2); row.setSpacing(6)
+        self._is_updating = False
+        self._binding_widgets = []
+        self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(5, 2, 5, 4); self.layout.setSpacing(3)
+        row = QtWidgets.QHBoxLayout(); row.setSpacing(6); self.layout.addLayout(row)
         self.pre = ResourcePreviewWidget(42, self); row.addWidget(self.pre); im = IconManager.get_instance();        self.btn_fav = RZPushButton("")
         self.btn_fav.setFixedSize(24, 24)
         self.btn_fav.setToolTip("Toggle Favorite")
         row.addWidget(self.btn_fav)
-        self.btn_fav.setIcon(im.get_icon("star", QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton))
+        self.btn_fav.setIcon(im.get_icon("star"))
         self.btn_fav.clicked.connect(self._toggle_fav)
         self.edit_name = RZLineEdit(); self.edit_name.setPlaceholderText("Name"); self.edit_name.setText(data.name); row.addWidget(self.edit_name, 1); self.edit_name.editingFinished.connect(self._on_changed)
         self.edit_hash = RZLineEdit(); self.edit_hash.setPlaceholderText("Hash"); self.edit_hash.setText(data.hash); self.edit_hash.setFixedWidth(85); row.addWidget(self.edit_hash); self.edit_hash.editingFinished.connect(self._on_changed)
-        self.edit_res = RZResourceLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); self.edit_res.setFixedWidth(120); row.addWidget(self.edit_res)
+        self.cb_mode = ComboBoxFix(); self.cb_mode.addItems(["TEX_DIRECT", "IB_DIRECT"]); self.cb_mode.setFixedWidth(98); row.addWidget(self.cb_mode); self.cb_mode.currentTextChanged.connect(self._on_changed)
+        self.cb_slot = ComboBoxFix(); self.cb_slot.setEditable(True); self.cb_slot.addItems(TW_IB_SLOT_PRESETS); self.cb_slot.setFixedWidth(112); row.addWidget(self.cb_slot); self.cb_slot.currentTextChanged.connect(self._on_changed)
+        self.edit_res = RZResourceLineEdit(); self.edit_res.setPlaceholderText("Resource Name"); self.edit_res.setText(data.resource_name); self.edit_res.setFixedWidth(140); row.addWidget(self.edit_res)
+        self.edit_res.textChanged.connect(self._on_res_typing)
+        self.edit_res.editingFinished.connect(self._on_changed)
+        self.btn_add_binding = RZPushButton("+ Bind")
+        self.btn_add_binding.setFixedWidth(58)
+        self.btn_add_binding.clicked.connect(self._add_binding)
+        row.addWidget(self.btn_add_binding)
         self.btn_del = RZPushButton("")
         self.btn_del.setFixedSize(24, 24)
         self.btn_del.setToolTip("Remove Override")
         row.addWidget(self.btn_del)
-        self.btn_del.setIcon(im.get_icon("circle_x", QtWidgets.QStyle.StandardPixmap.SP_DialogCancelButton))
+        self.btn_del.setIcon(im.get_icon("circle_x"))
         self.btn_del.clicked.connect(lambda: self.parent_list.remove_item(self.index))
+        self.bindings_w = QtWidgets.QWidget()
+        self.bindings_l = QtWidgets.QVBoxLayout(self.bindings_w)
+        self.bindings_l.setContentsMargins(72, 0, 0, 0)
+        self.bindings_l.setSpacing(2)
+        self.layout.addWidget(self.bindings_w)
         self.update_data(data)
 
     def update_data(self, data): 
+        self._is_updating = True
         self.btn_fav.setProperty("active", data.qt_favorite)
         self.btn_fav.setStyleSheet(f"color: {'#FFD700' if data.qt_favorite else '#888'};")
         self.pre.setVisible(self.parent_list.show_previews)
-        self.pre.update_resource_by_name(data.resource_name)
+        preview_res = data.resource_name
+        if getattr(data, "bindings", None) and len(data.bindings) > 0:
+            preview_res = data.bindings[0].resource_name
+        self.pre.update_resource_by_name(preview_res)
         # Sync text fields silently
         self.edit_name.set_text_silent(data.name)
         self.edit_hash.set_text_silent(data.hash)
         self.edit_res.set_text_silent(data.resource_name)
+        self.cb_mode.blockSignals(True)
+        self.cb_slot.blockSignals(True)
+        mode = getattr(data, "override_mode", "TEX_DIRECT") or "TEX_DIRECT"
+        slot = getattr(data, "slot_target", "Diffuse") or "Diffuse"
+        if self.cb_mode.currentText() != mode:
+            self.cb_mode.setCurrentText(mode)
+        if self.cb_slot.currentText() != slot:
+            idx = self.cb_slot.findText(slot, QtCore.Qt.MatchFixedString)
+            if idx >= 0:
+                self.cb_slot.setCurrentIndex(idx)
+            else:
+                self.cb_slot.setEditText(slot)
+        show_legacy_binding = mode == "IB_DIRECT" and len(data.bindings) == 0
+        self.cb_slot.setVisible(show_legacy_binding)
+        self.edit_res.setVisible(mode == "TEX_DIRECT" or show_legacy_binding)
+        self.btn_add_binding.setVisible(mode == "IB_DIRECT")
+        self.bindings_w.setVisible(mode == "IB_DIRECT" and len(data.bindings) > 0)
+        self._sync_binding_widgets(data)
+        self.cb_mode.blockSignals(False)
+        self.cb_slot.blockSignals(False)
+        self._is_updating = False
     def _on_res_typing(self): self.pre.update_resource_by_name(self.edit_res.text())
     def _toggle_fav(self): bpy.ops.rzm.update_tw_item(collection_name="overrides", index=self.index, prop_name="qt_favorite", value_str=str(not self.btn_fav.property("active"))); SIGNALS.structure_changed.emit()
-    def _on_changed(self):
-        props = {"name": self.edit_name.text(), "hash": self.edit_hash.text(), "resource_name": self.edit_res.text()}
+    def _on_changed(self, *args):
+        if self._is_updating:
+            return
+        is_ib = self.cb_mode.currentText() == "IB_DIRECT"
+        self.cb_slot.setVisible(is_ib)
+        self.edit_res.setVisible(True)
+        self.btn_add_binding.setVisible(is_ib)
+        props = {
+            "name": self.edit_name.text(),
+            "hash": self.edit_hash.text(),
+            "resource_name": self.edit_res.text(),
+            "override_mode": self.cb_mode.currentText(),
+            "slot_target": self.cb_slot.currentText(),
+        }
         for k, v in props.items(): bpy.ops.rzm.update_tw_item(collection_name="overrides", index=self.index, prop_name=k, value_str=v)
+        self.parent_list.update_ui()
+
+    def _add_binding(self):
+        bpy.ops.rzm.add_tw_override_binding(override_index=self.index)
+        self.parent_list.update_ui()
+        SIGNALS.structure_changed.emit()
+
+    def _remove_binding(self, binding_index):
+        bpy.ops.rzm.remove_tw_override_binding(override_index=self.index, index=binding_index)
+        self.parent_list.update_ui()
+        SIGNALS.structure_changed.emit()
+
+    def _sync_binding_widgets(self, data):
+        count = len(data.bindings)
+        while len(self._binding_widgets) > count:
+            w = self._binding_widgets.pop()
+            self.bindings_l.removeWidget(w)
+            w.hide()
+            w.setParent(None)
+            w.deleteLater()
+
+        while len(self._binding_widgets) < count:
+            idx = len(self._binding_widgets)
+            row_w = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(row_w)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            chk_custom = RZCheckBox("Free")
+            chk_custom.setFixedWidth(56)
+            row.addWidget(chk_custom)
+            cb_type = ComboBoxFix()
+            cb_type.setEditable(True)
+            cb_type.addItems(TW_IB_SLOT_PRESETS)
+            cb_type.setFixedWidth(130)
+            row.addWidget(cb_type)
+            edit_res = RZResourceLineEdit()
+            edit_res.setPlaceholderText("TexName Resource")
+            row.addWidget(edit_res, 1)
+            btn_del = RZPushButton("")
+            btn_del.setFixedSize(24, 24)
+            btn_del.setIcon(IconManager.get_instance().get_icon("circle_x"))
+            row.addWidget(btn_del)
+            row_w.chk_custom = chk_custom
+            row_w.cb_type = cb_type
+            row_w.edit_res = edit_res
+            row_w.btn_del = btn_del
+            self.bindings_l.addWidget(row_w)
+            self._binding_widgets.append(row_w)
+
+        for i, binding in enumerate(data.bindings):
+            w = self._binding_widgets[i]
+            for control in (w.chk_custom, w.cb_type, w.edit_res):
+                control.blockSignals(True)
+            w.chk_custom.setChecked(binding.custom_target)
+            if w.cb_type.currentText() != binding.tex_type:
+                idx = w.cb_type.findText(binding.tex_type, QtCore.Qt.MatchFixedString)
+                if idx >= 0:
+                    w.cb_type.setCurrentIndex(idx)
+                else:
+                    w.cb_type.setEditText(binding.tex_type)
+            w.edit_res.set_text_silent(binding.resource_name)
+            for control in (w.chk_custom, w.cb_type, w.edit_res):
+                control.blockSignals(False)
+
+            try: w.chk_custom.toggled.disconnect()
+            except: pass
+            try: w.cb_type.currentIndexChanged.disconnect()
+            except: pass
+            try: w.cb_type.lineEdit().editingFinished.disconnect()
+            except: pass
+            try: w.edit_res.editingFinished.disconnect()
+            except: pass
+            try: w.btn_del.clicked.disconnect()
+            except: pass
+
+            w.chk_custom.toggled.connect(lambda val, ix=i: self._binding_changed(ix, "custom_target", val))
+            w.cb_type.currentIndexChanged.connect(lambda _, ix=i, cb=w.cb_type: self._binding_changed(ix, "tex_type", cb.currentText()))
+            w.cb_type.lineEdit().editingFinished.connect(lambda ix=i, cb=w.cb_type: self._binding_changed(ix, "tex_type", cb.currentText()))
+            w.edit_res.editingFinished.connect(lambda ix=i, p=w.edit_res: self._binding_changed(ix, "resource_name", p.text()))
+            w.btn_del.clicked.connect(lambda _, ix=i: self._remove_binding(ix))
+
+    def _binding_changed(self, binding_index, prop_name, value):
+        if self._is_updating:
+            return
+        bpy.ops.rzm.update_tw_item(
+            collection_name="override_bindings",
+            index=binding_index,
+            prop_name=prop_name,
+            value_str=str(value),
+            block_index=self.index
+        )
+        self.parent_list.update_ui()
 
 class TexWorksOverridesTab(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent); self.show_previews = True; self.layout = QtWidgets.QVBoxLayout(self); self.layout.setContentsMargins(5, 5, 5, 5); tools = QtWidgets.QHBoxLayout(); self.layout.addLayout(tools)
-        btn_add = RZPushButton("+ Add Override"); btn_add.clicked.connect(lambda: bpy.ops.rzm.add_tw_override()); tools.addWidget(btn_add)
+        btn_add = RZPushButton("+ Add Override"); btn_add.clicked.connect(self._add_override); tools.addWidget(btn_add)
         btn_auto = RZPushButton("Auto-Import"); btn_auto.clicked.connect(self._on_auto_import_clicked); tools.addWidget(btn_auto)
         self.chk_preview = RZCheckBox("Show Preview"); self.chk_preview.setChecked(True); self.chk_preview.toggled.connect(self._toggle_previews); tools.addWidget(self.chk_preview)
         self.scroll = RZScrollArea(); self.layout.addWidget(self.scroll); self.scroll_content = QtWidgets.QWidget(); self.scroll.setWidget(self.scroll_content); self.scroll.setWidgetResizable(True)
         self.list_layout = QtWidgets.QVBoxLayout(self.scroll_content); self.list_layout.setSpacing(4); self.list_layout.setContentsMargins(0, 0, 0, 0); self.list_layout.addStretch()
 
     def _toggle_previews(self, val): self.show_previews = val; self.update_ui()
+    def _add_override(self):
+        bpy.ops.rzm.add_tw_override()
+        self.update_ui()
+        SIGNALS.structure_changed.emit()
     def _on_auto_import_clicked(self):
         root = image_utils.get_mod_base_path(); path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Dump Folder", root)
         if path: bpy.ops.rzm.tw_res_over_fill(directory=path); self.update_ui(); SIGNALS.structure_changed.emit()

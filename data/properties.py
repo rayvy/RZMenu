@@ -15,7 +15,7 @@ from .p_logic import (
     RZMObjectRef, ShapeKeyConfig
 )
 from .p_texworks import (
-    TexResource, TexOverride, TexWorksMaterial, 
+    TexResource, TexOverrideBinding, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock
 )
 from .p_ui import (
@@ -193,7 +193,7 @@ classes_to_register = [
     RZMenuStyle, RZMCaptureSettings, RZMenuAnimationFrame, RZMenuAnimationSequence, RZMenuSVGVariation, RZMenuImage, FXProperty, FNProperty, CustomProperty, RZMenuConfig,
     ValueProperty, ToggleDefinition, BitProperty, AssignedToggle, ConditionalImage,
     ValueLinkProperty, RZPresetReference, RZHelperReference, RZMLocalizedText, ConditionalText, RZFontSlotSettings, RZMenuElement,
-    TexResource, TexOverride, TexWorksMaterial,
+    TexResource, TexOverrideBinding, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
     RZMShapeKey, RZMShape,
     RZMObjectRef, ShapeKeyConfig,

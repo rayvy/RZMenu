@@ -98,6 +98,10 @@ def _import_pattern_based(context, directory):
         over.hash = tex_hash.lower()
         over.resource_name = res_name
         over.qt_tag = folder_name
+        binding = over.bindings.add()
+        binding.tex_type = "Diffuse"
+        binding.resource_name = res_name
+        binding.custom_target = False
         
         existing_hashes.add(tex_hash.lower())
         existing_names.add(final_name.lower())
@@ -124,7 +128,7 @@ def _import_json_based(context, directory):
             return 0, "Failed to parse hash.json."
 
     imported_count = 0
-    existing_hashes = {o.hash.lower() for o in rzm.tw_overrides}
+    existing_by_hash = {o.hash.lower(): o for o in rzm.tw_overrides}
     existing_names = {o.name.lower() for o in rzm.tw_overrides}
     
     folder_name = os.path.basename(directory.rstrip(os.sep))
@@ -143,10 +147,20 @@ def _import_json_based(context, directory):
                 tex_type = tex_data[0] # "Diffuse", "NormalMap", etc.
                 ext = tex_data[1]      # ".dds"
                 tex_hash = tex_data[2].lower()
-                
-                if tex_hash in existing_hashes:
-                    # print(f"        -> SKIPPED: Hash {tex_hash} already present.")
-                    continue
+
+                existing_over = existing_by_hash.get(tex_hash)
+                if existing_over:
+                    has_binding = any(
+                        (b.tex_type or "").lower() == tex_type.lower()
+                        for b in existing_over.bindings
+                    )
+                    has_legacy_binding = (
+                        not existing_over.bindings
+                        and (existing_over.slot_target or "").lower() == tex_type.lower()
+                    )
+                    if has_binding or has_legacy_binding:
+                        # print(f"        -> SKIPPED: {tex_hash} already has {tex_type}.")
+                        continue
                 
                 name_base = f"TW_{comp_name}_{tex_type}"
                 final_name = name_base
@@ -166,16 +180,24 @@ def _import_json_based(context, directory):
                 res.path = store_path
                 res.qt_tag = folder_name
                 
-                print(f"        -> Adding Override: {final_name} (Hash: {tex_hash})")
-                # 2. Create Override
-                over = rzm.tw_overrides.add()
-                over.name = final_name
-                over.hash = tex_hash
-                over.resource_name = res_name
-                over.qt_tag = folder_name
-                
-                existing_hashes.add(tex_hash)
-                existing_names.add(final_name.lower())
+                if tex_hash in existing_by_hash:
+                    over = existing_by_hash[tex_hash]
+                    print(f"        -> Adding Binding to Override: {over.name} ({tex_type}: {res_name})")
+                else:
+                    print(f"        -> Adding Override: {final_name} (Hash: {tex_hash})")
+                    over = rzm.tw_overrides.add()
+                    over.name = final_name
+                    over.hash = tex_hash
+                    over.resource_name = res_name
+                    over.slot_target = tex_type
+                    over.qt_tag = folder_name
+                    existing_by_hash[tex_hash] = over
+                    existing_names.add(final_name.lower())
+
+                binding = over.bindings.add()
+                binding.tex_type = tex_type
+                binding.resource_name = res_name
+                binding.custom_target = False
                 imported_count += 1
                 
     print(f"[RZM Importer] Import finished. Total added: {imported_count}")

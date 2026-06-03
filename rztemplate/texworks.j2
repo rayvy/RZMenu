@@ -1,4 +1,38 @@
 {% import "modules/utils.j2" as utils with context %}
+{% set TW_ZZMI_SLOT_MAP = {
+    'diffuse': 'Diffuse',
+    'd': 'Diffuse',
+    'normal': 'NormalMap',
+    'normalmap': 'NormalMap',
+    'normal map': 'NormalMap',
+    'n': 'NormalMap',
+    'light': 'LightMap',
+    'lightmap': 'LightMap',
+    'light map': 'LightMap',
+    'l': 'LightMap',
+    'material': 'MaterialMap',
+    'materialmap': 'MaterialMap',
+    'material map': 'MaterialMap',
+    'm': 'MaterialMap',
+    'glowgradient': 'GlowGradient',
+    'glow gradient': 'GlowGradient',
+    'glowmap': 'GlowMap',
+    'glow map': 'GlowMap',
+    'glowmap2': 'GlowMap2',
+    'glow map2': 'GlowMap2',
+    'glow map 2': 'GlowMap2',
+    'glowmap3': 'GlowMap3',
+    'glow map3': 'GlowMap3',
+    'glow map 3': 'GlowMap3',
+    'wenginefx': 'WengineFx',
+    'wengine fx': 'WengineFx',
+    'wenginefx2': 'WengineFx2',
+    'wengine fx2': 'WengineFx2',
+    'wengine fx 2': 'WengineFx2',
+    'wenginefx3': 'WengineFx3',
+    'wengine fx3': 'WengineFx3',
+    'wengine fx 3': 'WengineFx3',
+} %}
 
 {% macro generate_texworks(mod_file, scene) %}
 {% set rzm = scene.rzm %}
@@ -49,6 +83,33 @@ mips = 1
 {% for over in rzm.tw_overrides %}
 [TextureOverride{{ over.name }}]
 hash = {{ over.hash }}
+{% if over.override_mode == 'IB_DIRECT' %}
+{% if over.bindings|length > 0 %}
+{% set preset_bindings = over.bindings | rejectattr('custom_target') | list %}
+{% for binding in over.bindings %}
+{% set tw_slot = (binding.tex_type or 'Diffuse')|trim %}
+{% set tw_slot_l = tw_slot|lower %}
+{% if binding.custom_target %}
+{{ tw_slot }} = ref Resource{{ utils.clean_resource(binding.resource_name) }}
+{% else %}
+Resource\ZZMI\{{ TW_ZZMI_SLOT_MAP.get(tw_slot_l, tw_slot) }} = ref Resource{{ utils.clean_resource(binding.resource_name) }}
+{% endif %}
+{% endfor %}
+{% if preset_bindings|length > 0 %}
+run = CommandList\ZZMI\SetTextures
+{% endif %}
+{% else %}
+{% set tw_slot = (over.slot_target or 'Diffuse')|trim %}
+{% set tw_slot_l = tw_slot|lower %}
+{% if tw_slot_l[:4] == 'ps-t' %}
+{{ tw_slot }} = ref Resource{{ utils.clean_resource(over.resource_name) }}
+{% else %}
+Resource\ZZMI\{{ TW_ZZMI_SLOT_MAP.get(tw_slot_l, tw_slot) }} = ref Resource{{ utils.clean_resource(over.resource_name) }}
+run = CommandList\ZZMI\SetTextures
+{% endif %}
+{% endif %}
+{% else %}
+{% if over.resource_name %}
 local $TW_override_is_initialised
 if $TW_override_is_initialised != 1
 $TW_override_is_initialised = 0
@@ -58,10 +119,12 @@ this = Resource{{ utils.clean_resource(over.resource_name) }}
 run = CommandListSafeTexWorks.{{ utils.clean_resource(over.resource_name) }}.CHECK
 endif
 $TW_override_is_initialised = 1
+{% endif %}
+{% endif %}
 {% endfor %}
 
-{% set unique_over_resources = rzm.tw_overrides | map(attribute='resource_name') | unique %}
-{% for res_name in unique_over_resources %}
+{% set unique_over_resources = rzm.tw_overrides | rejectattr('override_mode', 'equalto', 'IB_DIRECT') | map(attribute='resource_name') | unique %}
+{% for res_name in unique_over_resources if res_name %}
 [CommandListSafeTexWorks.{{ utils.clean_resource(res_name) }}.CHECK]
 local $isInit = 0
 if this === null && $isInit == 0

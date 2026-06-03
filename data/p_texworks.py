@@ -34,10 +34,39 @@ class TexResource(bpy.types.PropertyGroup):
         default='DXGI_FORMAT_R8G8B8A8_TYPELESS'
     )
 
+class TexOverrideBinding(bpy.types.PropertyGroup):
+    tex_type: StringProperty(
+        name="Tex Type",
+        description="Preset slot name or custom target, e.g. Diffuse, NormalMap, ps-t0",
+        default="Diffuse"
+    )
+    resource_name: StringProperty(name="Resource Name")
+    custom_target: BoolProperty(
+        name="Custom",
+        description="Write tex_type as a raw target instead of Resource\\ZZMI\\<Preset>",
+        default=False
+    )
+
+
 class TexOverride(bpy.types.PropertyGroup):
     name: StringProperty(name="Override Name")
     hash: StringProperty(name="Hash")
     resource_name: StringProperty(name="Resource Name")
+    override_mode: EnumProperty(
+        name="Mode",
+        items=[
+            ('TEX_DIRECT', "TEX_DIRECT", "Classic TextureOverride replacement via this = Resource"),
+            ('IB_DIRECT', "IB_DIRECT", "Bind a TexWorks resource to a ZZMI slot or a raw ps-tN slot"),
+        ],
+        default='TEX_DIRECT'
+    )
+    slot_target: StringProperty(
+        name="Slot",
+        description="IB_DIRECT target: Diffuse, NormalMap, LightMap, MaterialMap, or ps-tN",
+        default="Diffuse"
+    )
+    bindings: CollectionProperty(type=TexOverrideBinding)
+    active_binding_index: IntProperty()
     qt_tag: StringProperty(name="Tag", description="Visual tag for organization")
     qt_favorite: BoolProperty(name="Favorite", default=False)
 

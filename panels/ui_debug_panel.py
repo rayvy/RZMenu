@@ -451,11 +451,20 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
 
             for i, over in enumerate(rzm.tw_overrides):
                 # Using a sub-box for better grouping and spacing even in single row
-                row = over_box.row(align=True)
+                o_box = over_box.box()
+                row = o_box.row(align=True)
                 row.prop(over, "qt_favorite", text="", icon='SOLO_ON' if over.qt_favorite else 'SOLO_OFF', emboss=False)
                 row.prop(over, "name", text=f"[{i}]")
                 row.prop(over, "hash", text="")
-                row.prop(over, "resource_name", text="")
+                row.prop(over, "override_mode", text="")
+                if over.override_mode == 'IB_DIRECT':
+                    op_add_bind = row.operator("rzm.add_tw_override_binding", text="", icon='ADD')
+                    op_add_bind.override_index = i
+                    if not over.bindings and over.resource_name:
+                        row.prop(over, "slot_target", text="Fallback")
+                        row.prop(over, "resource_name", text="")
+                else:
+                    row.prop(over, "resource_name", text="")
                 
                 if show_tags:
                     row.prop(over, "qt_tag", text="")
@@ -468,6 +477,17 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 op_down.collection_name = 'overrides'; op_down.index = i; op_down.direction = 'DOWN'
                 op_rem = ops.operator("rzm.remove_tw_override", icon='X', text="")
                 op_rem.index = i
+
+                if over.override_mode == 'IB_DIRECT':
+                    for b_idx, binding in enumerate(over.bindings):
+                        b_row = o_box.row(align=True)
+                        b_row.separator(factor=2)
+                        b_row.prop(binding, "custom_target", text="Free")
+                        b_row.prop(binding, "tex_type", text="TexType")
+                        b_row.prop(binding, "resource_name", text="TexName")
+                        op_b_rem = b_row.operator("rzm.remove_tw_override_binding", icon='X', text="")
+                        op_b_rem.override_index = i
+                        op_b_rem.index = b_idx
                 
                 over_box.separator(factor=0.3)
 
