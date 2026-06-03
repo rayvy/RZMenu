@@ -206,9 +206,17 @@
     {% endif %}
 
     {% for component in mod_file.components if component.draw_vb != "" %}
+        {%- set active_parts = [] -%}
+        {%- for part in component.parts if part.vertex_count > 0 -%}
+            {%- if active_parts.append(part) %}{% endif -%}
+        {%- endfor -%}
         [TextureOverride{{component.fullname}}IB]
         hash = {{ component.ib }}
+        {% if active_parts | length > 0 %}
         handling = skip
+        {% else %}
+        ib = null
+        {% endif %}
         
 
         {% for part in component.parts if part.vertex_count > 0 %}

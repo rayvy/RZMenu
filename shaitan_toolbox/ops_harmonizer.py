@@ -894,7 +894,7 @@ class RZM_MT_quick_attach(bpy.types.Menu):
                 break
 
         if not plan_item:
-            layout.label(text=f"Group '{active_vg.name}' not found in Plan. Build Plan first.", icon='WARNING')
+            layout.label(text=f"Group '{active_vg.name}' not found in Plan. Build Plan first.", icon='NONE')
             return
 
         # 1. Create Helper Option
