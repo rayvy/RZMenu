@@ -1064,6 +1064,10 @@ def draw_toolbox_content(self, context):
         from ..shaitan_toolbox.ui import draw_shaitan_toolbox
         draw_shaitan_toolbox(self, context, layout)
         return
+    elif scene.rzm_toolbox_mode == 'TEXWORKS':
+        from .ui_debug_panel import VIEW3D_PT_RZConstructorDebugPanel
+        VIEW3D_PT_RZConstructorDebugPanel.draw_tex_works_config(self, layout, rzm, context)
+        return
 
     # 1. ALWAYS SHOW MESH PROPERTIES AT TOP
     VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)

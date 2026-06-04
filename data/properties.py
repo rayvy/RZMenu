@@ -861,7 +861,8 @@ def register():
         name="Toolbox Mode",
         items=[
             ('RZ', "RZ Constructor", "RZ Constructor Toolbox"),
-            ('SHAITAN', "Shaitan", "Shaitan Toolbox")
+            ('SHAITAN', "Shaitan", "Shaitan Toolbox"),
+            ('TEXWORKS', "TexWorks", "TexWorks Material Pipeline")
         ],
         default='RZ'
     )
