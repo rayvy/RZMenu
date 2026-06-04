@@ -1008,8 +1008,8 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         box.separator()
         col = box.column(align=True)
         col.prop(self, "author_name")
-        col.prop(self, "pre_description", text="Pre-Description (Readme Start)")
-        col.prop(self, "post_description", text="Post-Description (Readme End)")
+        col.prop(self, "pre_description", text="Pre-Description (Readme Start)", textarea=True)
+        col.prop(self, "post_description", text="Post-Description (Readme End)", textarea=True)
         col.prop(self, "default_template_path")
         
         box.separator()

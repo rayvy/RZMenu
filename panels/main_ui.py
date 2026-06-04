@@ -1837,13 +1837,7 @@ class VIEW3D_PT_RZConstructorAdvancedPanel(bpy.types.Panel):
         
         col.separator()
         col.prop(meta, "requirements")
-        col.prop(meta, "description", text="Lore")
-        col.prop(meta, "menu_keybind")
-        col.prop(meta, "community_respect")
-
-        col.separator()
-        col.prop(meta, "requirements")
-        col.prop(meta, "description", text="Lore")
+        col.prop(meta, "description", text="Lore", textarea=True)
         col.prop(meta, "menu_keybind")
         col.prop(meta, "community_respect")
         
