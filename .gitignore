@@ -15,6 +15,6 @@ __pycache__/
 *.rar
 *.zip
 
-/user_data/
+user_data/
 /basic_pack/Textures/
 /translation/.translation_drafts/
