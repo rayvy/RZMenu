@@ -6,6 +6,7 @@ from pathlib import Path
 
 # Keep track of all registered classes to unregister them later.
 __all_classes__ = []
+__all_modules__ = []
 
 def register():
     """
@@ -13,7 +14,9 @@ def register():
     imports them, and registers the classes they contain.
     """
     global __all_classes__
+    global __all_modules__
     __all_classes__ = []
+    __all_modules__ = []
     
     package_dir = Path(__file__).parent
     
@@ -28,7 +31,8 @@ def register():
         
         try:
             module = importlib.import_module(module_name, __package__)
-            
+            __all_modules__.append(module)
+
             if module_path.stem == "dependencies_panel":
                 dep_panel_module = module
 
@@ -36,6 +40,9 @@ def register():
                 for cls in module.classes_to_register:
                     bpy.utils.register_class(cls)
                     __all_classes__.append(cls)
+
+            if hasattr(module, "register"):
+                module.register()
 
         except Exception as e:
             print(f"ERROR: Failed to register panel module '{module_path.name}': {e}")
@@ -54,10 +61,18 @@ def unregister():
     Unregisters all the classes that were registered by this package.
     """
     global __all_classes__
+    global __all_modules__
     
     # Unregister the dependency check function
     if hasattr(bpy.types.Scene, "rzm_dependencies_met"):
         del bpy.types.Scene.rzm_dependencies_met
+
+    for module in reversed(__all_modules__):
+        try:
+            if hasattr(module, "unregister"):
+                module.unregister()
+        except Exception as e:
+            print(f"ERROR: Failed to unregister panel module '{getattr(module, '__name__', module)}': {e}")
 
     # Unregister in reverse order
     for cls in reversed(__all_classes__):
@@ -67,3 +82,4 @@ def unregister():
             print(f"ERROR: Failed to unregister panel class '{cls.__name__}': {e}")
             
     __all_classes__ = []
+    __all_modules__ = []

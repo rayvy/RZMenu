@@ -361,6 +361,33 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         layout.separator()
         main_box = layout.box()
         main_box.label(text="TexWorks Core (New Format):", icon='TEXTURE')
+
+        mc = getattr(rzm, "tw_mc", None)
+        if mc:
+            mc_box = main_box.box()
+            row = mc_box.row(align=True)
+            row.prop(mc, "enabled", text="Material Combiner", icon='NODE_MATERIAL')
+            row.operator("rzm.tw_mc_calculate_cluster", text="", icon='VIEWZOOM')
+            row.operator("rzm.tw_mc_rebuild_cluster", text="", icon='FILE_REFRESH')
+            row.operator("rzm.tw_mc_export_cluster", text="", icon='EXPORT')
+            row.operator("rzm.tw_mc_apply_cluster", text="", icon='CHECKMARK')
+            row.operator("rzm.tw_mc_sync_cluster", text="", icon='LINKED')
+
+            settings_row = mc_box.row(align=True)
+            settings_row.prop(mc, "default_resolution", text="Fallback")
+            settings_row.prop(mc, "reference_slot", text="")
+
+            settings_row = mc_box.row(align=True)
+            settings_row.prop(mc, "vertex_margin_px", text="Margin")
+            settings_row.prop(mc, "pack_gap_px", text="Gap")
+            settings_row.prop(mc, "max_atlas_size", text="Max")
+            settings_row.prop(mc, "max_raster_pixels", text="CPU")
+
+            settings_row = mc_box.row(align=True)
+            settings_row.prop(mc, "output_subdir", text="")
+            settings_row.prop(mc, "power_of_two_output", text="POT")
+            settings_row.prop(mc, "sync_blocks", text="Blocks")
+            settings_row.prop(mc, "y_origin", text="")
         
         # FUTURE: 3D Preview Integration
         # Add 'Select Body' operator to pick a Blender object as a preview target.

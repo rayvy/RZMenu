@@ -1,0 +1,114 @@
+import bpy
+
+
+def addon_prefs(context):
+    addon_name = __package__.split(".")[0]
+    addon = context.preferences.addons.get(addon_name)
+    return addon.preferences if addon else None
+
+
+def draw_mc_tools(layout, context):
+    obj = context.object
+    mat = obj.active_material if obj else None
+    rzm = context.scene.rzm
+    mc = getattr(rzm, "tw_mc", None)
+
+    row = layout.row(align=True)
+    row.operator("rzm.tw_mc_create_material", text="New RZM Material", icon='ADD')
+    op = row.operator("rzm.tw_mc_ensure_material_node", text="Add/Update Node", icon='NODETREE')
+    op.rebuild_group = False
+    op.connect_surface = False
+
+    row = layout.row(align=True)
+    op = row.operator("rzm.tw_mc_ensure_material_node", text="Connect Preview", icon='MATERIAL')
+    op.rebuild_group = False
+    op.connect_surface = True
+    op = row.operator("rzm.tw_mc_ensure_material_node", text="Rebuild Schema", icon='FILE_REFRESH')
+    op.rebuild_group = True
+    op.connect_surface = False
+
+    layout.separator()
+    row = layout.row(align=True)
+    row.operator("rzm.tw_mc_calculate_cluster", text="Calculate", icon='VIEWZOOM')
+    row.operator("rzm.tw_mc_rebuild_cluster", text="Rebuild", icon='FILE_REFRESH')
+    row.operator("rzm.tw_mc_export_cluster", text="Export PNG", icon='EXPORT')
+    row.operator("rzm.tw_mc_apply_cluster", text="Apply", icon='CHECKMARK')
+    row.operator("rzm.tw_mc_sync_cluster", text="Sync TW", icon='LINKED')
+
+    if mc:
+        box = layout.box()
+        box.prop(mc, "enabled", text="Material Combiner")
+        row = box.row(align=True)
+        row.prop(mc, "default_resolution", text="Fallback")
+        row.prop(mc, "reference_slot", text="")
+        row = box.row(align=True)
+        row.prop(mc, "vertex_margin_px", text="Margin")
+        row.prop(mc, "pack_gap_px", text="Gap")
+        row.prop(mc, "max_atlas_size", text="Max")
+        box.prop(mc, "max_raster_pixels", text="CPU Pixel Limit")
+
+    if mat:
+        layout.label(text=f"Active: {mat.name}", icon='MATERIAL')
+    else:
+        layout.label(text="No active material", icon='ERROR')
+
+
+def draw_material_context_button(self, context):
+    prefs = addon_prefs(context)
+    if not (
+        prefs
+        and getattr(prefs, "dog_shit", False)
+        and context.object is not None
+        and context.object.type == "MESH"
+    ):
+        return
+
+    layout = self.layout
+    row = layout.row(align=True)
+    row.operator("rzm.tw_mc_create_material", text="", icon='ADD')
+
+
+class RZM_PT_TexWorksMCShaderPanel(bpy.types.Panel):
+    bl_label = "RZ Construct Material Panel"
+    bl_idname = "RZM_PT_texworks_mc_shader_panel"
+    bl_space_type = 'NODE_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'RZ Construct'
+
+    @classmethod
+    def poll(cls, context):
+        space = context.space_data
+        return bool(
+            context.object is not None
+            and context.object.type == "MESH"
+            and space
+            and space.type == 'NODE_EDITOR'
+            and getattr(space, "tree_type", "") == 'ShaderNodeTree'
+        )
+
+    def draw(self, context):
+        draw_mc_tools(self.layout, context)
+
+
+classes_to_register = [
+    RZM_PT_TexWorksMCShaderPanel,
+]
+
+
+def register():
+    target_panel = getattr(bpy.types, "MATERIAL_PT_context_material", None)
+    if target_panel:
+        try:
+            target_panel.prepend(draw_material_context_button)
+        except Exception:
+            target_panel.append(draw_material_context_button)
+
+
+def unregister():
+    target_panel = getattr(bpy.types, "MATERIAL_PT_context_material", None)
+    if target_panel:
+        for fn in (draw_material_context_button,):
+            try:
+                target_panel.remove(fn)
+            except Exception:
+                pass

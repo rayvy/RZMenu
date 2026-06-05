@@ -734,6 +734,11 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         description="Alternative export mode: deletes added COLOR/TEXCOORD layers after export. WARNING: experimental, can cause depsgraph crash",
         default=False
     )
+    dog_shit: BoolProperty(
+        name="dog_shit",
+        description="Internal unsafe UI switches for active RZMenu development tests",
+        default=False
+    )
 
 
     # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
@@ -1112,6 +1117,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "create_backup")
         col.prop(self, "show_vg_stats")
         col.prop(self, "safe_export_temp_cleanup")
+        col.prop(self, "dog_shit")
         col.separator()
         col.prop(self, "batch_build_path")
 

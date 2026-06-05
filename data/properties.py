@@ -16,7 +16,8 @@ from .p_logic import (
 )
 from .p_texworks import (
     TexResource, TexOverrideBinding, TexOverride, TexWorksMaterial,
-    TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock
+    TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
+    TexWorksMCFile, TexWorksMCSettings
 )
 from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuStyle, RZMLocalizedText
@@ -124,6 +125,8 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     tw_overrides: CollectionProperty(type=TexOverride)
     tw_materials: CollectionProperty(type=TexWorksMaterial)
     tw_blocks: CollectionProperty(type=TexWorksMainBlock)
+    tw_mc_files: CollectionProperty(type=TexWorksMCFile)
+    tw_mc: PointerProperty(type=TexWorksMCSettings)
     
     active_tw_block_index: IntProperty()
     active_tw_resource_index: IntProperty()
@@ -195,6 +198,8 @@ classes_to_register = [
     ValueLinkProperty, RZPresetReference, RZHelperReference, RZMLocalizedText, ConditionalText, RZFontSlotSettings, RZMenuElement,
     TexResource, TexOverrideBinding, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
+    TexWorksMCFile,
+    TexWorksMCSettings,
     RZMShapeKey, RZMShape,
     RZMObjectRef, ShapeKeyConfig,
     # ─ New API classes: RunLink and Keybind AFTER RZMShape ───────────────────────────

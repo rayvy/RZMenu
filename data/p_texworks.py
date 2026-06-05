@@ -255,3 +255,94 @@ class TexWorksMainBlock(bpy.types.PropertyGroup):
 
     components: CollectionProperty(type=TexWorksComponent)
     active_component_index: IntProperty()
+
+
+class TexWorksMCFile(bpy.types.PropertyGroup):
+    name: StringProperty(name="Entry Name")
+    material_name: StringProperty(name="Material")
+    material_key: StringProperty(name="Material Key")
+    slot_name: StringProperty(name="Slot")
+    resource_name: StringProperty(name="Resource")
+    relative_path: StringProperty(name="Relative Path")
+    block_name: StringProperty(name="Block")
+    resolution: IntVectorProperty(name="Resolution", size=2, default=(0, 0))
+
+
+class TexWorksMCSettings(bpy.types.PropertyGroup):
+    enabled: BoolProperty(
+        name="Enable MC",
+        description="Enable the material-cluster TexWorks bridge",
+        default=True,
+    )
+    output_subdir: StringProperty(
+        name="Output Folder",
+        description="Relative folder inside the mod export path for generated PNG clusters",
+        default="Textures/DynAtlas",
+    )
+    default_resolution: IntVectorProperty(
+        name="Fallback Resolution",
+        description="Used when a material slot has no image texture and must be generated from a solid color",
+        size=2,
+        default=(512, 512),
+        min=1,
+    )
+    reference_slot: EnumProperty(
+        name="Reference Slot",
+        description="Texture slot used to derive cluster pixel density when possible",
+        items=[
+            ('AUTO', "Auto", "Diffuse, then first available image slot, then fallback resolution"),
+            ('Diffuse', "Diffuse", ""),
+            ('LightMap', "LightMap", ""),
+            ('MaterialMap', "MaterialMap", ""),
+            ('NormalMap', "NormalMap", ""),
+            ('Extra', "Extra", ""),
+        ],
+        default='AUTO',
+    )
+    vertex_margin_px: IntProperty(
+        name="Island Margin",
+        description="Extra pixel gutter around UV islands, used for packing and color dilation",
+        default=4,
+        min=0,
+        max=128,
+    )
+    pack_gap_px: IntProperty(
+        name="Pack Gap",
+        description="Extra spacing between packed island groups",
+        default=8,
+        min=0,
+        max=512,
+    )
+    max_atlas_size: IntProperty(
+        name="Max Size",
+        description="Hard limit for generated cluster PNG dimensions",
+        default=8192,
+        min=64,
+        max=32768,
+    )
+    max_raster_pixels: IntProperty(
+        name="Max Raster Pixels",
+        description="Safety limit for CPU texture rasterization. Larger layouts fail fast instead of freezing Blender",
+        default=16777216,
+        min=1048576,
+        max=268435456,
+    )
+    power_of_two_output: BoolProperty(
+        name="Power Of Two",
+        description="Round generated cluster PNG dimensions up to powers of two",
+        default=False,
+    )
+    sync_blocks: BoolProperty(
+        name="Sync Blocks",
+        description="Also create/update TexWorks block/component data for packed cluster rects",
+        default=True,
+    )
+    y_origin: EnumProperty(
+        name="Y Origin",
+        description="Manifest coordinate convention for rect data",
+        items=[
+            ('IMAGE_TOP_LEFT', "Image Top Left", "Y=0 is the top of the image"),
+            ('UV_BOTTOM_LEFT', "UV Bottom Left", "Y=0 is the bottom of the UV space"),
+        ],
+        default='UV_BOTTOM_LEFT',
+    )
