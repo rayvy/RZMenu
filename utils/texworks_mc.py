@@ -63,6 +63,12 @@ def next_power_of_two(value):
     return 1 << (value - 1).bit_length()
 
 
+def round_up_to_multiple(value, multiple=16):
+    value = max(1, int(math.ceil(value)))
+    multiple = max(1, int(multiple))
+    return ((value + multiple - 1) // multiple) * multiple
+
+
 def clamp01(value):
     return max(0.0, min(1.0, float(value)))
 
@@ -785,7 +791,7 @@ def sample_bilinear(pixels, width, height, u, v, fallback):
     u = clamp01(u)
     v = clamp01(v)
     x = u * (width - 1)
-    y = (1.0 - v) * (height - 1)
+    y = v * (height - 1)
     x0 = int(math.floor(x))
     y0 = int(math.floor(y))
     x1 = min(width - 1, x0 + 1)
@@ -1113,6 +1119,8 @@ def calculate_cluster(context):
         max_size=int(settings.max_atlas_size),
         power_of_two=bool(settings.power_of_two_output),
     )
+    atlas_w = round_up_to_multiple(atlas_w, 16)
+    atlas_h = round_up_to_multiple(atlas_h, 16)
     manifest = build_manifest(
         context, mat, slot_sources, objects, faces, islands, groups, layout_groups,
         atlas_w, atlas_h, (ref_w, ref_h), ref_slot, warnings,
@@ -1344,6 +1352,20 @@ def ensure_block(rzm, name):
     return item
 
 
+def addon_preferences(context):
+    addon_name = __package__.split(".")[0]
+    addon = context.preferences.addons.get(addon_name)
+    return addon.preferences if addon else None
+
+
+def post_invert_settings(context):
+    prefs = addon_preferences(context)
+    return (
+        bool(getattr(prefs, "tw_mc_post_invert_x", False)) if prefs else False,
+        bool(getattr(prefs, "tw_mc_post_invert_y", True)) if prefs else True,
+    )
+
+
 def clear_collection(collection):
     for index in range(len(collection) - 1, -1, -1):
         collection.remove(index)
@@ -1378,50 +1400,158 @@ def sync_mc_file_entries(rzm, manifest):
             rzm.tw_mc_files.remove(index)
 
 
+def mc_entries_by_material(rzm):
+    materials = {}
+    for entry in rzm.tw_mc_files:
+        key = entry.material_key or material_key(entry.material_name)
+        if not key:
+            continue
+        mat_data = materials.setdefault(key, {
+            "material_key": key,
+            "material_name": entry.material_name,
+            "resolution": [1, 1],
+            "slots": {},
+        })
+        if entry.material_name:
+            mat_data["material_name"] = entry.material_name
+        w = max(1, int(entry.resolution[0]))
+        h = max(1, int(entry.resolution[1]))
+        mat_data["resolution"][0] = max(mat_data["resolution"][0], w)
+        mat_data["resolution"][1] = max(mat_data["resolution"][1], h)
+        mat_data["slots"][entry.slot_name] = entry
+    return materials
+
+
+def pack_material_components(materials, settings):
+    groups = []
+    for index, mat_data in enumerate(materials.values()):
+        w, h = mat_data["resolution"]
+        groups.append({
+            "index": index,
+            "material_key": mat_data["material_key"],
+            "material_name": mat_data["material_name"],
+            "w": int(w),
+            "h": int(h),
+        })
+    if not groups:
+        return {}, 16, 16
+    packed, atlas_w, atlas_h = pack_groups(
+        groups,
+        gap=0,
+        max_size=int(settings.max_atlas_size),
+        power_of_two=False,
+    )
+    atlas_w = round_up_to_multiple(atlas_w, 16)
+    atlas_h = round_up_to_multiple(atlas_h, 16)
+    return {group["material_key"]: group for group in packed}, atlas_w, atlas_h
+
+
+def objects_using_material_name(mat_name):
+    mat = bpy.data.materials.get(mat_name)
+    if not mat:
+        return []
+    objects = []
+    for obj in bpy.data.objects:
+        if obj.type != "MESH":
+            continue
+        for slot in obj.material_slots:
+            if slot.material == mat:
+                objects.append(obj)
+                break
+    return objects
+
+
+def write_texcoord_object_params(context, mat_data, rect, atlas_w, atlas_h, block_names):
+    inv_x, inv_y = post_invert_settings(context)
+    x = float(rect["x"])
+    y = float(rect["y"])
+    w = float(rect["w"])
+    h = float(rect["h"])
+    atlas_w = max(1.0, float(atlas_w))
+    atlas_h = max(1.0, float(atlas_h))
+    scale_x = w / atlas_w
+    scale_y = h / atlas_h
+    offset_x = x / atlas_w
+    offset_y = y / atlas_h
+    payload = [scale_x, scale_y, offset_x, offset_y]
+
+    changed = []
+    for obj in objects_using_material_name(mat_data["material_name"]):
+        obj["TEXCOORD_POS_SIZE"] = payload
+        obj["RZM_TW_MC_COMPONENT"] = mat_data["material_key"]
+        obj["RZM_TW_MC_ATLAS_SIZE"] = [int(atlas_w), int(atlas_h)]
+        obj["RZM_TW_MC_RECT"] = [int(x), int(y), int(w), int(h)]
+        obj["RZM_TW_MC_BLOCKS"] = list(block_names)
+        obj["RZM_TW_MC_POST_INVERT_X"] = inv_x
+        obj["RZM_TW_MC_POST_INVERT_Y"] = inv_y
+        changed.append(obj.name)
+    return changed
+
+
+def rebuild_texworks_autoatlas_blocks(context):
+    settings = get_settings(context)
+    rzm = context.scene.rzm
+    materials = mc_entries_by_material(rzm)
+    packed_by_mat, atlas_w, atlas_h = pack_material_components(materials, settings)
+    if not materials:
+        return {"materials": 0, "blocks": 0, "atlas_size": [atlas_w, atlas_h]}
+
+    slots = sorted({slot for mat_data in materials.values() for slot in mat_data["slots"].keys()}, key=lambda s: SLOTS.index(s) if s in SLOTS else 999)
+    block_names = [f"{RESOURCE_PREFIX}.{slot_file_suffix(slot)}" for slot in slots]
+
+    for slot in slots:
+        block_name = f"{RESOURCE_PREFIX}.{slot_file_suffix(slot)}"
+        block = ensure_block(rzm, block_name)
+        block.resource_name = block_name
+        block.shader_type = "NORMAL" if slot == "NormalMap" else "DIFFUSE"
+        block.backdrop_enabled = False
+        clear_collection(block.components)
+
+        for key, mat_data in sorted(materials.items()):
+            entry = mat_data["slots"].get(slot)
+            if not entry:
+                continue
+            rect = packed_by_mat.get(key)
+            if not rect:
+                continue
+            comp = block.components.add()
+            comp.name = key
+            comp.base_resource_name = entry.resource_name
+            comp.base_rect = (int(rect["x"]), int(rect["y"]), int(rect["w"]), int(rect["h"]))
+            comp.rect = (int(rect["x"]), int(rect["y"]), int(rect["w"]), int(rect["h"]))
+            comp.tw_is_expanded = False
+            tw_slot = comp.slots.add()
+            tw_slot.name = slot
+            tw_slot.active = True
+            tw_slot.rect = comp.rect
+            tw_slot.calc_res_x = int(atlas_w)
+            tw_slot.calc_res_y = int(atlas_h)
+        block.active_component_index = 0 if block.components else -1
+
+    changed_objects = []
+    for key, mat_data in materials.items():
+        rect = packed_by_mat.get(key)
+        if rect:
+            changed_objects.extend(write_texcoord_object_params(context, mat_data, rect, atlas_w, atlas_h, block_names))
+
+    return {
+        "materials": len(materials),
+        "blocks": len(slots),
+        "atlas_size": [int(atlas_w), int(atlas_h)],
+        "objects": sorted(set(changed_objects)),
+    }
+
+
 def sync_texworks_data(context, cluster, remove_missing=False):
     settings = get_settings(context)
     rzm = context.scene.rzm
     manifest = cluster["manifest"]
-    key = manifest["material_key"]
-    atlas_w, atlas_h = manifest["atlas_size"]
 
     sync_mc_file_entries(rzm, manifest)
 
     if settings.sync_blocks:
-        full_rect = manifest_rect(settings, int(atlas_h), 0, 0, int(atlas_w), int(atlas_h))
-        active_slots = list(manifest.get("active_slots") or manifest["resources"].keys() or ["Diffuse"])
-
-        for slot_name in active_slots:
-            resource_name = manifest["resources"].get(slot_name) or cluster_file_stem(key, slot_name)
-            block_name = manifest.get("blocks", {}).get(slot_name, f"{RESOURCE_PREFIX}.{slot_file_suffix(slot_name)}")
-            block = ensure_block(rzm, block_name)
-            block.resource_name = block_name
-            block.shader_type = "NORMAL" if slot_name == "NormalMap" else "DIFFUSE"
-            block.backdrop_enabled = False
-
-            for index in range(len(block.components) - 1, -1, -1):
-                if block.components[index].name == key:
-                    block.components.remove(index)
-
-            comp = block.components.add()
-            comp.name = key
-            comp.base_resource_name = resource_name
-            comp.base_rect = tuple(full_rect)
-            comp.rect = tuple(full_rect)
-            comp.tw_is_expanded = False
-            comp.active_slot_index = 0
-
-            tw_slot = comp.slots.add()
-            tw_slot.name = slot_name
-            tw_slot.active = True
-            tw_slot.rect = tuple(full_rect)
-            tw_slot.calc_res_x = int(atlas_w)
-            tw_slot.calc_res_y = int(atlas_h)
-
-            if comp.slots:
-                comp.active_slot_index = 0
-
-            block.active_component_index = max(0, len(block.components) - 1)
+        layout_summary = rebuild_texworks_autoatlas_blocks(context)
+        manifest["texworks_layout"] = layout_summary
 
     context.scene["rzm_tw_mc_last_manifest_json"] = json.dumps(manifest, indent=2, sort_keys=True)
     return manifest

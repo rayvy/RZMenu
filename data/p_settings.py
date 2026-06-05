@@ -739,6 +739,16 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         description="Internal unsafe UI switches for active RZMenu development tests",
         default=False
     )
+    tw_mc_post_invert_x: BoolProperty(
+        name="TW MC Post Invert X",
+        description="Invert X only during post-export TEXCOORD buffer patching. Does not affect Blender/source texture sampling",
+        default=False
+    )
+    tw_mc_post_invert_y: BoolProperty(
+        name="TW MC Post Invert Y",
+        description="Invert Y only during post-export TEXCOORD buffer patching. Does not affect Blender/source texture sampling",
+        default=True
+    )
 
 
     # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
@@ -1118,6 +1128,8 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "show_vg_stats")
         col.prop(self, "safe_export_temp_cleanup")
         col.prop(self, "dog_shit")
+        col.prop(self, "tw_mc_post_invert_x")
+        col.prop(self, "tw_mc_post_invert_y")
         col.separator()
         col.prop(self, "batch_build_path")
 

@@ -157,8 +157,8 @@ class RZM_OT_TwMcApplyCluster(bpy.types.Operator):
 
 class RZM_OT_TwMcSyncCluster(bpy.types.Operator):
     bl_idname = "rzm.tw_mc_sync_cluster"
-    bl_label = "Sync MC TexWorks Data"
-    bl_description = "Update TexWorks resources and cluster rect block from the active material cluster"
+    bl_label = "Build MC TexWorks Layout"
+    bl_description = "Register current cluster file data, rebuild RZAutoAtlas blocks, and write post-export TEXCOORD offset/scale object params"
     bl_options = {'REGISTER', 'UNDO'}
 
     remove_missing: bpy.props.BoolProperty(
@@ -176,7 +176,11 @@ class RZM_OT_TwMcSyncCluster(bpy.types.Operator):
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"Synced TexWorks MC: {cluster['manifest']['material_key']}")
+        layout_summary = cluster["manifest"].get("texworks_layout", {})
+        self.report(
+            {'INFO'},
+            f"Built TW layout: {layout_summary.get('materials', 1)} material(s), atlas={layout_summary.get('atlas_size', cluster['manifest']['atlas_size'])}"
+        )
         return {'FINISHED'}
 
 

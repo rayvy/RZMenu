@@ -55,6 +55,13 @@ def main():
     for block in rzm.tw_blocks:
         if block.name.startswith("RZAutoAtlas."):
             print(f"[TW_MC_TEST] block={block.name} components={[comp.name for comp in block.components]}")
+    for obj in bpy.data.objects:
+        if obj.type == "MESH" and "TEXCOORD_POS_SIZE" in obj:
+            print(
+                f"[TW_MC_TEST] obj={obj.name} TEXCOORD_POS_SIZE={list(obj['TEXCOORD_POS_SIZE'])} "
+                f"rect={list(obj.get('RZM_TW_MC_RECT', []))} atlas={list(obj.get('RZM_TW_MC_ATLAS_SIZE', []))} "
+                f"invert=({obj.get('RZM_TW_MC_POST_INVERT_X')},{obj.get('RZM_TW_MC_POST_INVERT_Y')})"
+            )
     return 0
 
 
