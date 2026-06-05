@@ -137,7 +137,8 @@ class RZMenuProperties(bpy.types.PropertyGroup):
             ('RESOURCES', "Resources", ""),
             ('OVERRIDES', "Overrides", ""),
             ('MATERIALS', "Materials", ""),
-            ('BLOCKS', "Blocks", "")
+            ('BLOCKS', "Blocks", ""),
+            ('TWAA', "TWAA", "")
         ],
         default='RESOURCES'
     )

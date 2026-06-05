@@ -209,6 +209,18 @@ class TexWorksComponent(bpy.types.PropertyGroup):
 class TexWorksMainBlock(bpy.types.PropertyGroup):
     name: StringProperty(name="Block Name", default="MainBlock")
     resource_name: StringProperty(name="Output Resource", description="Virtual texture for this block")
+    create_block_resource: BoolProperty(
+        name="Create Block Resource",
+        description="Emit a RWTexture2D resource for this block even when it is not listed in global TexWorks resources",
+        default=False,
+    )
+    block_resource_size: IntVectorProperty(
+        name="Block Size",
+        description="RWTexture2D size for generated block resources",
+        size=2,
+        default=(4096, 4096),
+        min=1,
+    )
     
     # Подложка (Backdrop) - инициализируется один раз
     backdrop_enabled: BoolProperty(name="Use Backdrop", default=False)

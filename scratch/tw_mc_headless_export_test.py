@@ -47,14 +47,12 @@ def main():
 
     cluster = texworks_mc.rebuild_active_material_cluster(bpy.context)
     print(f"[TW_MC_TEST] rebuilt images={list(cluster.get('images', {}).keys())}")
-    written = texworks_mc.export_cluster_pngs(bpy.context, cluster, target_path=TARGET_PATH)
-    print(f"[TW_MC_TEST] written={written}")
-    texworks_mc.sync_texworks_data(bpy.context, cluster)
-    print("[TW_MC_TEST] sync done")
+    texworks_mc.rebuild_texworks_autoatlas_blocks(bpy.context)
+    print("[TW_MC_TEST] TWAA layout done")
     rzm = bpy.context.scene.rzm
     for block in rzm.tw_blocks:
-        if block.name.startswith("RZAutoAtlas."):
-            print(f"[TW_MC_TEST] block={block.name} components={[comp.name for comp in block.components]}")
+        if block.name.startswith("RZAutoAtlas"):
+            print(f"[TW_MC_TEST] block={block.name} res={block.resource_name} size={list(block.block_resource_size)} components={[comp.name for comp in block.components]}")
     for obj in bpy.data.objects:
         if obj.type == "MESH" and "TEXCOORD_POS_SIZE" in obj:
             print(

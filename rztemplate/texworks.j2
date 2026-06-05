@@ -80,6 +80,12 @@ mips = 1
 {% endif %}
 {% endfor %}
 
+; --- 1.5. TEXWORKS AUTOATLAS CLUSTER PNG RESOURCES ---
+{% for entry in rzm.tw_mc_files if entry.resource_name %}
+[Resource{{ utils.clean_resource(entry.resource_name) }}]
+filename = {{ entry.relative_path if entry.relative_path else "Textures/DynAtlas/" ~ entry.resource_name ~ ".png" }}
+{% endfor %}
+
 ; --- 2. GLOBAL OVERRIDES (Atlas Protection) ---
 {% for over in rzm.tw_overrides %}
 [TextureOverride{{ over.name }}]
@@ -143,12 +149,19 @@ endif
 ; --- 3. MAIN BLOCKS ---
 {% for block in rzm.tw_blocks %}
 ; Block: {{ block.name }} ({{ block.shader_type }})
-{% set block_res = utils.clean_resource(block.resource_name) %}
+{% set block_res = utils.clean_resource(block.resource_name if block.resource_name else block.name ~ "_Atlas") %}
 {% set tex_block_name = block.shared_textures_block if block.use_shared_textures and block.shared_textures_block else block.name %}
 
-{# Auto-generate resource if output resource name is missing #}
-{% if not block.resource_name %}
-{% set block_res = block.name ~ "_Atlas" %}
+{% if block.create_block_resource %}
+[Resource{{ block_res }}]
+type = RWTexture2D
+width = {{ block.block_resource_size[0] }}
+height = {{ block.block_resource_size[1] }}
+format = DXGI_FORMAT_R8G8B8A8_TYPELESS
+array = 1
+msaa = 1
+mips = 1
+{% elif not block.resource_name %}
 [Resource{{ block_res }}]
 type = RWTexture2D
 width = 4096

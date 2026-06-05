@@ -1,5 +1,7 @@
 import bpy
 
+from ..utils import texworks_mc
+
 
 def addon_prefs(context):
     addon_name = __package__.split(".")[0]
@@ -29,11 +31,10 @@ def draw_mc_tools(layout, context):
 
     layout.separator()
     row = layout.row(align=True)
-    row.operator("rzm.tw_mc_calculate_cluster", text="Calculate", icon='VIEWZOOM')
     row.operator("rzm.tw_mc_rebuild_cluster", text="Rebuild", icon='FILE_REFRESH')
-    row.operator("rzm.tw_mc_export_cluster", text="Export PNG", icon='EXPORT')
+    if texworks_mc.active_material_has_preview_uv(context):
+        row.operator("rzm.tw_mc_export_cluster", text="Export", icon='EXPORT')
     row.operator("rzm.tw_mc_apply_cluster", text="Apply", icon='CHECKMARK')
-    row.operator("rzm.tw_mc_sync_cluster", text="Build TW Layout", icon='LINKED')
 
     if mc:
         box = layout.box()

@@ -15,6 +15,7 @@ RESOURCE_PREFIX = "RZAutoAtlas"
 OUTPUT_SUBDIR = "Textures/DynAtlas"
 UV_NAME = "RZAutoAtlas.UV"
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
+TEXCOORD_UV_NAME = "TEXCOORD.xy"
 SCHEMA = 2
 KIND = "RZ_TEXWORKS_MC_MATERIAL"
 ROLE = "SEMANTIC_TEXTURE_HUB"
@@ -45,13 +46,17 @@ SLOT_COLORSPACES = {
 
 
 def material_key(name):
-    key = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip())
-    key = key.strip("._")
+    key = re.sub(r"[^A-Za-z0-9_]+", "_", name.strip())
+    key = key.strip("_")
     return key or "Material"
 
 
 def slot_file_suffix(slot):
     return SLOT_FILE_SUFFIX.get(slot, slot)
+
+
+def autoatlas_block_name(slot):
+    return f"{RESOURCE_PREFIX}{slot_file_suffix(slot)}"
 
 
 def cluster_file_stem(mat_name, slot):
@@ -501,13 +506,17 @@ def material_slot_indices(obj, mat):
 
 
 def source_uv_layer_for_mesh(mesh):
-    uv = mesh.uv_layers.get("TEXCOORD.xy")
+    uv = mesh.uv_layers.get(TEXCOORD_UV_NAME)
     if uv and uv.name != PREVIEW_UV_NAME:
         return uv
     for layer in mesh.uv_layers:
         if layer.name != PREVIEW_UV_NAME:
+            layer.name = TEXCOORD_UV_NAME
             return layer
-    return None
+    try:
+        return mesh.uv_layers.new(name=TEXCOORD_UV_NAME)
+    except Exception:
+        return None
 
 
 def preview_uv_layer_for_mesh(mesh):
@@ -532,6 +541,23 @@ def preview_uv_layer_for_mesh(mesh):
     except Exception:
         pass
     return preview
+
+
+def mesh_has_preview_uv(mesh):
+    return bool(mesh and mesh.uv_layers.get(PREVIEW_UV_NAME))
+
+
+def active_material_has_preview_uv(context):
+    try:
+        mat = get_active_material(context)
+    except Exception:
+        return False
+    for obj in context.scene.objects:
+        if obj.type != "MESH":
+            continue
+        if material_slot_indices(obj, mat) and mesh_has_preview_uv(obj.data):
+            return True
+    return False
 
 
 def collect_cluster_faces(context, mat):
@@ -567,7 +593,59 @@ def collect_cluster_faces(context, mat):
                 "material_index": int(poly.material_index),
                 "loop_indices": [int(i) for i in poly.loop_indices],
                 "uvs": uvs,
+                "source_uvs": list(uvs),
                 "uv_layer_name": uv_layer.name,
+            })
+            obj_face_count += 1
+        if obj_face_count:
+            objects.append(obj.name)
+
+    return faces, sorted(set(objects)), warnings
+
+
+def collect_preview_cluster_faces(context, mat):
+    objects = []
+    faces = []
+    warnings = []
+
+    for obj in context.scene.objects:
+        if obj.type != "MESH":
+            continue
+        mat_indices = material_slot_indices(obj, mat)
+        if not mat_indices:
+            continue
+        mesh = obj.data
+        source_layer = source_uv_layer_for_mesh(mesh)
+        preview_layer = mesh.uv_layers.get(PREVIEW_UV_NAME)
+        if not source_layer:
+            warnings.append(f"{obj.name}: no source UV layer, skipped")
+            continue
+        if not preview_layer:
+            warnings.append(f"{obj.name}: no preview UV layer, skipped")
+            continue
+        obj_face_count = 0
+        for poly in mesh.polygons:
+            if poly.material_index not in mat_indices:
+                continue
+            source_uvs = []
+            preview_uvs = []
+            for loop_index in poly.loop_indices:
+                suv = source_layer.data[loop_index].uv
+                duv = preview_layer.data[loop_index].uv
+                source_uvs.append((float(suv.x), float(suv.y)))
+                preview_uvs.append((float(duv.x), float(duv.y)))
+            if len(preview_uvs) < 3:
+                continue
+            faces.append({
+                "object": obj.name,
+                "mesh": mesh.name,
+                "poly_index": int(poly.index),
+                "material_index": int(poly.material_index),
+                "loop_indices": [int(i) for i in poly.loop_indices],
+                "uvs": preview_uvs,
+                "source_uvs": source_uvs,
+                "uv_layer_name": source_layer.name,
+                "preview_uv_layer_name": preview_layer.name,
             })
             obj_face_count += 1
         if obj_face_count:
@@ -701,6 +779,44 @@ def build_groups(faces, ref_w, ref_h, margin_px):
         for face_index in group["face_indices"]:
             face_to_group[face_index] = group
     return islands, groups, face_to_group
+
+
+def build_single_preview_group(faces, ref_w, ref_h, margin_px):
+    all_uv = [uv for face in faces for uv in face["uvs"]]
+    if not all_uv:
+        return [], [], {}
+    u_values = [uv[0] for uv in all_uv]
+    v_values = [uv[1] for uv in all_uv]
+    u_min = min(u_values)
+    v_min = min(v_values)
+    u_max = max(u_values)
+    v_max = max(v_values)
+    content_w = max(1, int(math.ceil((u_max - u_min) * ref_w)))
+    content_h = max(1, int(math.ceil((v_max - v_min) * ref_h)))
+    island = {
+        "index": 0,
+        "face_indices": list(range(len(faces))),
+        "u_min": u_min,
+        "v_min": v_min,
+        "u_max": u_max,
+        "v_max": v_max,
+    }
+    group = {
+        "index": 0,
+        "island_indices": [0],
+        "face_indices": list(range(len(faces))),
+        "u_min": u_min,
+        "v_min": v_min,
+        "u_max": u_max,
+        "v_max": v_max,
+        "content_w": content_w,
+        "content_h": content_h,
+        "w": content_w + margin_px * 2,
+        "h": content_h + margin_px * 2,
+        "x": 0,
+        "y": 0,
+    }
+    return [island], [group], {face_index: group for face_index in range(len(faces))}
 
 
 def shelf_pack(groups, width, gap):
@@ -927,7 +1043,9 @@ def bake_slot_image(slot, source, faces, face_to_group, layout_groups, atlas_w, 
         group = group_by_index.get(base_group["index"])
         if not group:
             continue
-        for uv_a, uv_b, uv_c in face_triangles(face["uvs"]):
+        src_triangles = list(face_triangles(face.get("source_uvs") or face["uvs"]))
+        for tri_index, (uv_a, uv_b, uv_c) in enumerate(face_triangles(face["uvs"])):
+            src_a, src_b, src_c = src_triangles[tri_index] if tri_index < len(src_triangles) else (uv_a, uv_b, uv_c)
             pa = dest_uv_to_pixel(uv_a, group, ref_w, ref_h, margin)
             pb = dest_uv_to_pixel(uv_b, group, ref_w, ref_h, margin)
             pc = dest_uv_to_pixel(uv_c, group, ref_w, ref_h, margin)
@@ -941,8 +1059,8 @@ def bake_slot_image(slot, source, faces, face_to_group, layout_groups, atlas_w, 
                     if bc is None:
                         continue
                     w0, w1, w2 = bc
-                    src_u = uv_a[0] * w0 + uv_b[0] * w1 + uv_c[0] * w2
-                    src_v = uv_a[1] * w0 + uv_b[1] * w1 + uv_c[1] * w2
+                    src_u = src_a[0] * w0 + src_b[0] * w1 + src_c[0] * w2
+                    src_v = src_a[1] * w0 + src_b[1] * w1 + src_c[1] * w2
                     color = sample_bilinear(src_pixels, src_w, src_h, src_u, src_v, fallback)
                     write_pixel(buffer, atlas_w, atlas_h, x, y, color)
 
@@ -1075,7 +1193,7 @@ def build_manifest(context, mat, slot_sources, objects, faces, islands, groups, 
         "y_origin": settings.y_origin,
         "output_dir": rel_dir,
         "resources": resources,
-        "blocks": {slot: f"{RESOURCE_PREFIX}.{slot_file_suffix(slot)}" for slot in active_slots},
+        "blocks": {slot: autoatlas_block_name(slot) for slot in active_slots},
         "groups": manifest_groups,
         "stats": {
             "objects": len(objects),
@@ -1090,14 +1208,17 @@ def build_manifest(context, mat, slot_sources, objects, faces, islands, groups, 
     }
 
 
-def calculate_cluster(context):
+def calculate_cluster(context, use_preview_uv=False):
     settings = get_settings(context)
     if not settings.enabled:
         raise RuntimeError("TexWorks MC is disabled")
     mat = get_active_material(context)
     slot_sources = collect_slot_sources(mat)
     ref_w, ref_h, ref_slot = choose_reference_size(settings, slot_sources)
-    faces, objects, warnings = collect_cluster_faces(context, mat)
+    if use_preview_uv:
+        faces, objects, warnings = collect_preview_cluster_faces(context, mat)
+    else:
+        faces, objects, warnings = collect_cluster_faces(context, mat)
     if not faces:
         raise RuntimeError(f"Material '{mat.name}' has no mesh faces in the current scene")
 
@@ -1112,19 +1233,25 @@ def calculate_cluster(context):
 
     margin = int(settings.vertex_margin_px)
     gap = int(settings.pack_gap_px)
-    islands, groups, face_to_group = build_groups(faces, ref_w, ref_h, margin)
-    layout_groups, atlas_w, atlas_h = pack_groups(
-        groups,
-        gap=gap,
-        max_size=int(settings.max_atlas_size),
-        power_of_two=bool(settings.power_of_two_output),
-    )
-    atlas_w = round_up_to_multiple(atlas_w, 16)
-    atlas_h = round_up_to_multiple(atlas_h, 16)
+    if use_preview_uv:
+        islands, layout_groups, face_to_group = build_single_preview_group(faces, ref_w, ref_h, margin)
+        groups = layout_groups
+        atlas_w = max(group["x"] + group["w"] for group in layout_groups)
+        atlas_h = max(group["y"] + group["h"] for group in layout_groups)
+    else:
+        islands, groups, face_to_group = build_groups(faces, ref_w, ref_h, margin)
+        layout_groups, atlas_w, atlas_h = pack_groups(
+            groups,
+            gap=gap,
+            max_size=int(settings.max_atlas_size),
+            power_of_two=False,
+        )
     manifest = build_manifest(
         context, mat, slot_sources, objects, faces, islands, groups, layout_groups,
         atlas_w, atlas_h, (ref_w, ref_h), ref_slot, warnings,
     )
+    if use_preview_uv:
+        manifest["uv_source"] = PREVIEW_UV_NAME
     return {
         "material": mat,
         "slot_sources": slot_sources,
@@ -1209,6 +1336,7 @@ def export_cluster_pngs(context, cluster, target_path=None):
             pixels = array("f", [0.0]) * (image.size[0] * image.size[1] * 4)
             image.pixels.foreach_get(pixels)
         write_png_rgba8(file_path, image.size[0], image.size[1], pixels)
+        image.name = file_name
         image.filepath = file_path
         image.filepath_raw = file_path
         written[slot] = file_path
@@ -1284,6 +1412,40 @@ def apply_cluster_uv_layout(context, cluster):
     return sorted(changed_objects)
 
 
+def destructively_apply_preview_to_texcoord(context, mat):
+    changed_objects = []
+    for obj in context.scene.objects:
+        if obj.type != "MESH":
+            continue
+        if not material_slot_indices(obj, mat):
+            continue
+        mesh = obj.data
+        source_layer = source_uv_layer_for_mesh(mesh)
+        preview_layer = mesh.uv_layers.get(PREVIEW_UV_NAME)
+        if not source_layer or not preview_layer:
+            continue
+        count = min(len(source_layer.data), len(preview_layer.data))
+        for i in range(count):
+            source_layer.data[i].uv = preview_layer.data[i].uv
+        source_layer.name = TEXCOORD_UV_NAME
+        try:
+            mesh.uv_layers.active = source_layer
+        except Exception:
+            pass
+        try:
+            source_layer.active = True
+            source_layer.active_render = True
+        except Exception:
+            pass
+        try:
+            mesh.uv_layers.remove(preview_layer)
+        except Exception:
+            pass
+        mesh.update()
+        changed_objects.append(obj.name)
+    return sorted(set(changed_objects))
+
+
 def upstream_image_nodes(socket, visited=None):
     if visited is None:
         visited = set()
@@ -1302,7 +1464,7 @@ def upstream_image_nodes(socket, visited=None):
     return result
 
 
-def replace_material_slot_images(mat, cluster):
+def replace_material_slot_images(mat, cluster, written=None):
     node = find_material_group_node(mat)
     if not node:
         return []
@@ -1311,6 +1473,15 @@ def replace_material_slot_images(mat, cluster):
     for slot, image in cluster.get("images", {}).items():
         if slot not in node.inputs:
             continue
+        if written and slot in written:
+            try:
+                image = bpy.data.images.load(written[slot], check_existing=True)
+            except Exception:
+                image = cluster.get("images", {}).get(slot, image)
+            if image:
+                image.name = os.path.basename(written[slot])
+                image.filepath = written[slot]
+                image.filepath_raw = written[slot]
         nodes = upstream_image_nodes(node.inputs[slot])
         if not nodes:
             tex_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
@@ -1327,8 +1498,8 @@ def replace_material_slot_images(mat, cluster):
 
 def apply_cluster_to_material(context, cluster, target_path=None):
     written = export_cluster_pngs(context, cluster, target_path=target_path)
-    changed_objects = apply_cluster_uv_layout(context, cluster)
-    changed_nodes = replace_material_slot_images(cluster["material"], cluster)
+    changed_objects = destructively_apply_preview_to_texcoord(context, cluster["material"])
+    changed_nodes = replace_material_slot_images(cluster["material"], cluster, written=written)
     return {
         "written": written,
         "changed_objects": changed_objects,
@@ -1350,6 +1521,45 @@ def ensure_block(rzm, name):
     item = rzm.tw_blocks.add()
     item.name = name
     return item
+
+
+def remove_legacy_dotted_autoatlas_blocks(rzm):
+    removed = []
+    legacy_prefix = f"{RESOURCE_PREFIX}."
+    for index in range(len(rzm.tw_blocks) - 1, -1, -1):
+        block = rzm.tw_blocks[index]
+        if block.name.startswith(legacy_prefix):
+            removed.append(block.name)
+            rzm.tw_blocks.remove(index)
+    return removed
+
+
+def migrate_legacy_autoatlas_resource_name(name):
+    if not name:
+        return name
+    prefix = f"{RESOURCE_PREFIX}."
+    if not name.startswith(prefix):
+        return name
+    slot = name[len(prefix):]
+    for known_slot in SLOTS:
+        if slot == slot_file_suffix(known_slot):
+            return autoatlas_block_name(known_slot)
+    return f"{RESOURCE_PREFIX}{re.sub(r'[^A-Za-z0-9_]+', '_', slot).strip('_')}"
+
+
+def migrate_legacy_autoatlas_references(rzm):
+    changed = []
+    for override in getattr(rzm, "tw_overrides", []):
+        new_name = migrate_legacy_autoatlas_resource_name(override.resource_name)
+        if new_name != override.resource_name:
+            changed.append((override.resource_name, new_name))
+            override.resource_name = new_name
+        for binding in getattr(override, "bindings", []):
+            new_name = migrate_legacy_autoatlas_resource_name(binding.resource_name)
+            if new_name != binding.resource_name:
+                changed.append((binding.resource_name, new_name))
+                binding.resource_name = new_name
+    return changed
 
 
 def addon_preferences(context):
@@ -1391,7 +1601,7 @@ def sync_mc_file_entries(rzm, manifest):
         entry.slot_name = slot
         entry.resource_name = resource_name
         entry.relative_path = os.path.join(manifest["output_dir"], f"{resource_name}.png").replace("\\", "/")
-        entry.block_name = manifest.get("blocks", {}).get(slot, f"{RESOURCE_PREFIX}.{slot_file_suffix(slot)}")
+        entry.block_name = manifest.get("blocks", {}).get(slot, autoatlas_block_name(slot))
         entry.resolution = tuple(manifest["atlas_size"])
 
     for index in range(len(rzm.tw_mc_files) - 1, -1, -1):
@@ -1491,18 +1701,24 @@ def write_texcoord_object_params(context, mat_data, rect, atlas_w, atlas_h, bloc
 def rebuild_texworks_autoatlas_blocks(context):
     settings = get_settings(context)
     rzm = context.scene.rzm
+    removed_legacy_blocks = remove_legacy_dotted_autoatlas_blocks(rzm)
+    migrated_refs = migrate_legacy_autoatlas_references(rzm)
     materials = mc_entries_by_material(rzm)
     packed_by_mat, atlas_w, atlas_h = pack_material_components(materials, settings)
     if not materials:
         return {"materials": 0, "blocks": 0, "atlas_size": [atlas_w, atlas_h]}
 
     slots = sorted({slot for mat_data in materials.values() for slot in mat_data["slots"].keys()}, key=lambda s: SLOTS.index(s) if s in SLOTS else 999)
-    block_names = [f"{RESOURCE_PREFIX}.{slot_file_suffix(slot)}" for slot in slots]
+    block_names = [autoatlas_block_name(slot) for slot in slots]
 
     for slot in slots:
-        block_name = f"{RESOURCE_PREFIX}.{slot_file_suffix(slot)}"
+        block_name = autoatlas_block_name(slot)
         block = ensure_block(rzm, block_name)
         block.resource_name = block_name
+        if hasattr(block, "create_block_resource"):
+            block.create_block_resource = True
+        if hasattr(block, "block_resource_size"):
+            block.block_resource_size = (int(atlas_w), int(atlas_h))
         block.shader_type = "NORMAL" if slot == "NormalMap" else "DIFFUSE"
         block.backdrop_enabled = False
         clear_collection(block.components)
@@ -1539,7 +1755,15 @@ def rebuild_texworks_autoatlas_blocks(context):
         "blocks": len(slots),
         "atlas_size": [int(atlas_w), int(atlas_h)],
         "objects": sorted(set(changed_objects)),
+        "removed_legacy_blocks": removed_legacy_blocks,
+        "migrated_legacy_references": migrated_refs,
     }
+
+
+def register_cluster_files(context, cluster):
+    rzm = context.scene.rzm
+    sync_mc_file_entries(rzm, cluster["manifest"])
+    return cluster["manifest"]
 
 
 def sync_texworks_data(context, cluster, remove_missing=False):
@@ -1560,4 +1784,25 @@ def sync_texworks_data(context, cluster, remove_missing=False):
 def rebuild_active_material_cluster(context):
     cluster = calculate_cluster(context)
     bake_cluster_images(context, cluster)
+    apply_cluster_uv_layout(context, cluster)
+    export_cluster_pngs(context, cluster)
+    register_cluster_files(context, cluster)
     return cluster
+
+
+def export_active_preview_cluster(context):
+    cluster = calculate_cluster(context, use_preview_uv=True)
+    bake_cluster_images(context, cluster)
+    export_cluster_pngs(context, cluster)
+    register_cluster_files(context, cluster)
+    return cluster
+
+
+def apply_active_preview_cluster(context):
+    if not active_material_has_preview_uv(context):
+        cluster = rebuild_active_material_cluster(context)
+    else:
+        cluster = export_active_preview_cluster(context)
+    result = apply_cluster_to_material(context, cluster)
+    register_cluster_files(context, cluster)
+    return cluster, result

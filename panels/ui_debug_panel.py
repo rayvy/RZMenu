@@ -362,33 +362,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         main_box = layout.box()
         main_box.label(text="TexWorks Core (New Format):", icon='TEXTURE')
 
-        mc = getattr(rzm, "tw_mc", None)
-        if mc:
-            mc_box = main_box.box()
-            row = mc_box.row(align=True)
-            row.prop(mc, "enabled", text="Material Combiner", icon='NODE_MATERIAL')
-            row.operator("rzm.tw_mc_calculate_cluster", text="", icon='VIEWZOOM')
-            row.operator("rzm.tw_mc_rebuild_cluster", text="", icon='FILE_REFRESH')
-            row.operator("rzm.tw_mc_export_cluster", text="", icon='EXPORT')
-            row.operator("rzm.tw_mc_apply_cluster", text="", icon='CHECKMARK')
-            row.operator("rzm.tw_mc_sync_cluster", text="", icon='LINKED')
-
-            settings_row = mc_box.row(align=True)
-            settings_row.prop(mc, "default_resolution", text="Fallback")
-            settings_row.prop(mc, "reference_slot", text="")
-
-            settings_row = mc_box.row(align=True)
-            settings_row.prop(mc, "vertex_margin_px", text="Margin")
-            settings_row.prop(mc, "pack_gap_px", text="Gap")
-            settings_row.prop(mc, "max_atlas_size", text="Max")
-            settings_row.prop(mc, "max_raster_pixels", text="CPU")
-
-            settings_row = mc_box.row(align=True)
-            settings_row.prop(mc, "output_subdir", text="")
-            settings_row.prop(mc, "power_of_two_output", text="POT")
-            settings_row.prop(mc, "sync_blocks", text="Blocks")
-            settings_row.prop(mc, "y_origin", text="")
-        
         # FUTURE: 3D Preview Integration
         # Add 'Select Body' operator to pick a Blender object as a preview target.
         # This will allow live-checking decals on 3D geometry from the UI.
@@ -407,8 +380,38 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         header_row.prop(rzm, "tw_show_res_details", text="Show Details", icon='INFO', toggle=True)
         header_row.prop(rzm, "tw_show_tags", text="Show Tags", icon='HIDE_OFF' if show_tags else 'HIDE_ON', toggle=True)
         
+        if active_tab == 'TWAA':
+            mc = getattr(rzm, "tw_mc", None)
+            twaa_box = main_box.box()
+            twaa_box.label(text="TexWorks AutoAtlas:", icon='NODE_MATERIAL')
+            if mc:
+                row = twaa_box.row(align=True)
+                row.prop(mc, "enabled", text="Enabled")
+                row.operator("rzm.tw_mc_build_autoatlas_layout", text="Build TWAA Layout", icon='LINKED')
+
+                settings_row = twaa_box.row(align=True)
+                settings_row.prop(mc, "default_resolution", text="Fallback")
+                settings_row.prop(mc, "reference_slot", text="")
+
+                settings_row = twaa_box.row(align=True)
+                settings_row.prop(mc, "vertex_margin_px", text="Margin")
+                settings_row.prop(mc, "pack_gap_px", text="Gap")
+                settings_row.prop(mc, "max_atlas_size", text="Max")
+                settings_row.prop(mc, "max_raster_pixels", text="CPU")
+
+                twaa_box.prop(mc, "output_subdir", text="Output")
+                twaa_box.label(text=f"Registered cluster files: {len(rzm.tw_mc_files)}")
+                for entry in rzm.tw_mc_files:
+                    row = twaa_box.row(align=True)
+                    row.label(text=entry.material_key or entry.material_name, icon='MATERIAL')
+                    row.label(text=entry.slot_name)
+                    row.label(text=f"{entry.resolution[0]}x{entry.resolution[1]}")
+                    row.label(text=entry.relative_path)
+            else:
+                twaa_box.label(text="TWAA settings are not registered", icon='ERROR')
+
         # --- 1. GLOBAL RESOURCES ---
-        if active_tab == 'RESOURCES':
+        elif active_tab == 'RESOURCES':
             res_box = main_box.box()
             header = res_box.row(align=True); header.label(text="Resources:", icon='IMAGE_DATA')
             header.operator("rzm.add_tw_resource", text="", icon='ADD')
@@ -577,6 +580,10 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 # Block Output Atlas
                 row = b_box.row(align=True)
                 row.prop(block, "resource_name", text="Output Atlas")
+                row = b_box.row(align=True)
+                row.prop(block, "create_block_resource", text="Create Block Resource")
+                if block.create_block_resource:
+                    row.prop(block, "block_resource_size", text="Block Size")
 
                 # Shader Config (x46/x47)
                 conf_box = b_box.box()

@@ -1,5 +1,3 @@
-import json
-
 import bpy
 
 from ..utils import texworks_mc
@@ -11,32 +9,6 @@ def trigger_refresh():
         refresh()
     except Exception:
         pass
-
-
-class RZM_OT_TwMcCalculateCluster(bpy.types.Operator):
-    bl_idname = "rzm.tw_mc_calculate_cluster"
-    bl_label = "Calculate MC Cluster"
-    bl_description = "Analyze the active material cluster and write a manifest without exporting PNG files"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        try:
-            cluster = texworks_mc.calculate_cluster(context)
-            context.scene["rzm_tw_mc_last_manifest_json"] = json.dumps(
-                cluster["manifest"],
-                indent=2,
-                sort_keys=True,
-            )
-        except Exception as exc:
-            self.report({'ERROR'}, str(exc))
-            return {'CANCELLED'}
-
-        stats = cluster["manifest"]["stats"]
-        self.report(
-            {'INFO'},
-            f"MC cluster: {stats['faces']} faces, {stats['stack_groups']} groups, {cluster['atlas_size'][0]}x{cluster['atlas_size'][1]}"
-        )
-        return {'FINISHED'}
 
 
 class RZM_OT_TwMcCreateMaterial(bpy.types.Operator):
@@ -90,7 +62,7 @@ class RZM_OT_TwMcEnsureMaterialNode(bpy.types.Operator):
 class RZM_OT_TwMcRebuildCluster(bpy.types.Operator):
     bl_idname = "rzm.tw_mc_rebuild_cluster"
     bl_label = "Rebuild MC Cluster"
-    bl_description = "Rebuild active material cluster images inside the .blend file"
+    bl_description = "Rebuild active material cluster, create preview UV, export PNG files, and register cluster files"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -102,35 +74,25 @@ class RZM_OT_TwMcRebuildCluster(bpy.types.Operator):
 
         self.report(
             {'INFO'},
-            f"Rebuilt {len(cluster.get('images', {}))} cluster image(s): {cluster['atlas_size'][0]}x{cluster['atlas_size'][1]}"
+            f"Rebuilt/exported {len(cluster.get('images', {}))} cluster PNG(s): {cluster['atlas_size'][0]}x{cluster['atlas_size'][1]}"
         )
         return {'FINISHED'}
 
 
 class RZM_OT_TwMcExportCluster(bpy.types.Operator):
     bl_idname = "rzm.tw_mc_export_cluster"
-    bl_label = "Export MC Cluster PNG"
-    bl_description = "Rebuild and export active material cluster PNG files into Textures/DynAtlas"
+    bl_label = "Export MC Preview PNG"
+    bl_description = "Export active material cluster from the current RZAutoAtlas.UV.preview layer"
     bl_options = {'REGISTER', 'UNDO'}
-
-    sync_texworks: bpy.props.BoolProperty(
-        name="Sync TexWorks",
-        default=False,
-        description="Update TexWorks resources and cluster block after export",
-    )
 
     def execute(self, context):
         try:
-            cluster = texworks_mc.rebuild_active_material_cluster(context)
-            written = texworks_mc.export_cluster_pngs(context, cluster)
-            if self.sync_texworks:
-                texworks_mc.sync_texworks_data(context, cluster)
-                trigger_refresh()
+            cluster = texworks_mc.export_active_preview_cluster(context)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"Exported MC cluster: {len(written) - 1} PNG(s)")
+        self.report({'INFO'}, f"Exported MC preview: {len(cluster.get('images', {}))} PNG(s)")
         return {'FINISHED'}
 
 
@@ -142,8 +104,7 @@ class RZM_OT_TwMcApplyCluster(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            cluster = texworks_mc.rebuild_active_material_cluster(context)
-            result = texworks_mc.apply_cluster_to_material(context, cluster)
+            _cluster, result = texworks_mc.apply_active_preview_cluster(context)
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
@@ -155,41 +116,32 @@ class RZM_OT_TwMcApplyCluster(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class RZM_OT_TwMcSyncCluster(bpy.types.Operator):
-    bl_idname = "rzm.tw_mc_sync_cluster"
+class RZM_OT_TwMcBuildAutoAtlasLayout(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_build_autoatlas_layout"
     bl_label = "Build MC TexWorks Layout"
-    bl_description = "Register current cluster file data, rebuild RZAutoAtlas blocks, and write post-export TEXCOORD offset/scale object params"
+    bl_description = "Rebuild all TWAA RZAutoAtlas blocks from registered material cluster PNGs and write post-export TEXCOORD params"
     bl_options = {'REGISTER', 'UNDO'}
-
-    remove_missing: bpy.props.BoolProperty(
-        name="Remove Missing",
-        default=False,
-        description="Remove old auto resources for the same material if the current cluster no longer produces them",
-    )
 
     def execute(self, context):
         try:
-            cluster = texworks_mc.calculate_cluster(context)
-            texworks_mc.sync_texworks_data(context, cluster, remove_missing=self.remove_missing)
+            layout_summary = texworks_mc.rebuild_texworks_autoatlas_blocks(context)
             trigger_refresh()
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
-        layout_summary = cluster["manifest"].get("texworks_layout", {})
         self.report(
             {'INFO'},
-            f"Built TW layout: {layout_summary.get('materials', 1)} material(s), atlas={layout_summary.get('atlas_size', cluster['manifest']['atlas_size'])}"
+            f"Built TWAA layout: {layout_summary.get('materials', 0)} material(s), atlas={layout_summary.get('atlas_size', [0, 0])}"
         )
         return {'FINISHED'}
 
 
 classes_to_register = [
-    RZM_OT_TwMcCalculateCluster,
     RZM_OT_TwMcCreateMaterial,
     RZM_OT_TwMcEnsureMaterialNode,
     RZM_OT_TwMcRebuildCluster,
     RZM_OT_TwMcExportCluster,
     RZM_OT_TwMcApplyCluster,
-    RZM_OT_TwMcSyncCluster,
+    RZM_OT_TwMcBuildAutoAtlasLayout,
 ]

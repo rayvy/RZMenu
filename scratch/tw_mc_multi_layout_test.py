@@ -43,16 +43,15 @@ def main():
     for mat_name in MATERIALS:
         select_material_object(mat_name)
         cluster = texworks_mc.rebuild_active_material_cluster(bpy.context)
-        texworks_mc.export_cluster_pngs(bpy.context, cluster, target_path=TARGET_PATH)
-        texworks_mc.sync_texworks_data(bpy.context, cluster)
         last_cluster = cluster
 
     rzm = bpy.context.scene.rzm
+    texworks_mc.rebuild_texworks_autoatlas_blocks(bpy.context)
     print(f"[TW_MC_MULTI] tw_mc_files={[(e.material_key, e.slot_name, list(e.resolution)) for e in rzm.tw_mc_files]}")
     for block in rzm.tw_blocks:
-        if block.name.startswith("RZAutoAtlas."):
+        if block.name.startswith("RZAutoAtlas"):
             comps = [(comp.name, list(comp.rect)) for comp in block.components]
-            print(f"[TW_MC_MULTI] block={block.name} comps={comps}")
+            print(f"[TW_MC_MULTI] block={block.name} res={block.resource_name} size={list(block.block_resource_size)} comps={comps}")
     for obj in bpy.data.objects:
         if obj.type == "MESH" and "RZM_TW_MC_COMPONENT" in obj:
             print(
