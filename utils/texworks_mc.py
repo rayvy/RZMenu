@@ -2,7 +2,9 @@ import json
 import math
 import os
 import re
+import struct
 import time
+import zlib
 from array import array
 
 import bpy
@@ -951,6 +953,42 @@ def create_or_replace_image(name, width, height, pixels):
     return image
 
 
+def write_png_rgba8(path, width, height, pixels):
+    width = int(width)
+    height = int(height)
+    rows = []
+    idx = 0
+    for _y in range(height):
+        row = bytearray()
+        row.append(0)
+        for _x in range(width):
+            row.append(max(0, min(255, int(round(float(pixels[idx]) * 255.0)))))
+            row.append(max(0, min(255, int(round(float(pixels[idx + 1]) * 255.0)))))
+            row.append(max(0, min(255, int(round(float(pixels[idx + 2]) * 255.0)))))
+            row.append(max(0, min(255, int(round(float(pixels[idx + 3]) * 255.0)))))
+            idx += 4
+        rows.append(bytes(row))
+
+    def chunk(kind, payload):
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    raw = b"".join(rows)
+    data = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(raw, level=6))
+        + chunk(b"IEND", b"")
+    )
+    with open(path, "wb") as handle:
+        handle.write(data)
+
+
 def pixel_average_rgba(pixels, sample_step=64):
     if not pixels:
         return (0.0, 0.0, 0.0, 0.0)
@@ -1101,6 +1139,7 @@ def bake_cluster_images(context, cluster):
     ref_w, ref_h = cluster["reference_size"]
     key = material_key(cluster["material"].name)
     images = {}
+    pixel_buffers = {}
     debug_average = {}
     for slot, source in cluster["slot_sources"].items():
         if not source["enabled"]:
@@ -1120,10 +1159,12 @@ def bake_cluster_images(context, cluster):
             int(getattr(settings, "max_raster_pixels", DEFAULT_MAX_RASTER_PIXELS)),
         )
         debug_average[slot] = tuple(round(v, 6) for v in pixel_average_rgba(pixels))
+        pixel_buffers[slot] = pixels
         image = create_or_replace_image(name, atlas_w, atlas_h, pixels)
         set_image_colorspace(image, slot)
         images[slot] = image
     cluster["images"] = images
+    cluster["pixel_buffers"] = pixel_buffers
     cluster["manifest"]["debug_average_rgba"] = debug_average
     print(f"[RZM TexWorks MC] Rebuilt '{cluster['material'].name}' {atlas_w}x{atlas_h} avg={debug_average}")
     context.scene["rzm_tw_mc_last_manifest_json"] = json.dumps(cluster["manifest"], indent=2, sort_keys=True)
@@ -1146,6 +1187,7 @@ def export_cluster_pngs(context, cluster, target_path=None):
     key = material_key(cluster["material"].name)
     out_dir = os.path.join(bpy.path.abspath(target_path), settings.output_subdir)
     os.makedirs(out_dir, exist_ok=True)
+    print(f"[RZM TexWorks MC] Export dir: {out_dir}")
 
     if "images" not in cluster:
         bake_cluster_images(context, cluster)
@@ -1154,10 +1196,13 @@ def export_cluster_pngs(context, cluster, target_path=None):
     for slot, image in cluster["images"].items():
         file_name = f"{cluster['manifest']['resources'][slot]}.png"
         file_path = os.path.join(out_dir, file_name)
-        image.file_format = "PNG"
+        pixels = cluster.get("pixel_buffers", {}).get(slot)
+        if pixels is None:
+            pixels = array("f", [0.0]) * (image.size[0] * image.size[1] * 4)
+            image.pixels.foreach_get(pixels)
+        write_png_rgba8(file_path, image.size[0], image.size[1], pixels)
         image.filepath = file_path
         image.filepath_raw = file_path
-        image.save()
         written[slot] = file_path
 
     manifest_path = os.path.join(out_dir, f"{RESOURCE_PREFIX}.{key}.manifest.json")

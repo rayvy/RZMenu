@@ -36,12 +36,13 @@ def register():
             if module_path.stem == "dependencies_panel":
                 dep_panel_module = module
 
-            if hasattr(module, "classes_to_register"):
+            has_class_list = hasattr(module, "classes_to_register")
+            if has_class_list:
                 for cls in module.classes_to_register:
                     bpy.utils.register_class(cls)
                     __all_classes__.append(cls)
 
-            if hasattr(module, "register"):
+            if not has_class_list and hasattr(module, "register"):
                 module.register()
 
         except Exception as e:
@@ -67,9 +68,10 @@ def unregister():
     if hasattr(bpy.types.Scene, "rzm_dependencies_met"):
         del bpy.types.Scene.rzm_dependencies_met
 
+    class_modules = {cls.__module__ for cls in __all_classes__}
     for module in reversed(__all_modules__):
         try:
-            if hasattr(module, "unregister"):
+            if module.__name__ not in class_modules and hasattr(module, "unregister"):
                 module.unregister()
         except Exception as e:
             print(f"ERROR: Failed to unregister panel module '{getattr(module, '__name__', module)}': {e}")
