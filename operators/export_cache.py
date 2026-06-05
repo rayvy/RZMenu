@@ -15,6 +15,7 @@ def get_cache() -> dict | None:
 
 def set_cache(data: dict) -> None:
     bpy.app.driver_namespace[CACHE_KEY] = data
+    stamp_export_ranges_to_objects(data)
 
 def clear_cache() -> None:
     bpy.app.driver_namespace.pop(CACHE_KEY, None)
@@ -26,6 +27,67 @@ def component_cache(comp_name: str) -> dict | None:
     c = get_cache()
     if c is None: return None
     return c.get('components', {}).get(comp_name)
+
+
+def stamp_export_ranges_to_objects(cache: dict | None) -> None:
+    """Store best-effort export range metadata on Blender objects for QA/debug tools.
+
+    This is intentionally non-authoritative. The exporter cache remains the source
+    for exact post-export patching; object props are for inspection and external
+    prototype scripts.
+    """
+    if not cache:
+        return
+
+    try:
+        import json
+
+        source = cache.get('source', '')
+        game = cache.get('game', '')
+        mod_name = cache.get('mod_name', '')
+        timestamp = cache.get('timestamp', time.time())
+
+        for comp_name, comp_data in cache.get('components', {}).items():
+            for obj_data in comp_data.get('objects', []):
+                obj_name = obj_data.get('name')
+                obj = bpy.data.objects.get(obj_name) if obj_name else None
+                if not obj or obj.type != 'MESH':
+                    continue
+
+                vb_offset = int(obj_data.get('vb_offset', 0) or 0)
+                vb_count = int(obj_data.get('vb_count', 0) or 0)
+                payload = {
+                    'source': source,
+                    'game': str(game),
+                    'mod_name': str(mod_name),
+                    'component': comp_name,
+                    'part_suffix': obj_data.get('part_suffix', ''),
+                    'part_fullname': obj_data.get('part_fullname', ''),
+                    'vb_offset': vb_offset,
+                    'vb_count': vb_count,
+                    'vb_end': vb_offset + vb_count,
+                    'ib_count': int(obj_data.get('ib_count', 0) or 0),
+                    'orig_v_count': int(obj_data.get('orig_v_count', 0) or 0),
+                    'eval_v_count': int(obj_data.get('eval_v_count', 0) or 0),
+                    'applied_v_count': int(obj_data.get('applied_v_count', 0) or 0),
+                    'mat_idx': int(obj_data.get('mat_idx', -1) or -1),
+                    'is_absolute': bool(obj_data.get('is_absolute', False)),
+                    'is_robust': bool(obj_data.get('is_robust', False)),
+                    'has_vertex_map': bool(obj_data.get('vertex_map')),
+                    'timestamp': timestamp,
+                }
+
+                obj['RZM_EXPORT_COMPONENT'] = comp_name
+                obj['RZM_EXPORT_PART_FULLNAME'] = payload['part_fullname']
+                obj['RZM_EXPORT_VB_OFFSET'] = vb_offset
+                obj['RZM_EXPORT_VB_COUNT'] = vb_count
+                obj['RZM_EXPORT_VB_END'] = vb_offset + vb_count
+                obj['RZM_EXPORT_CACHE_SOURCE'] = source
+                obj['RZM_EXPORT_RANGE_JSON'] = json.dumps(payload, sort_keys=True)
+
+        print("[RZM] [CACHE] Stamped export range metadata to Blender objects.")
+    except Exception as e:
+        print(f"[RZM] [CACHE] Failed to stamp object export ranges: {e}")
 
 
 def save_export_logs(cache: dict):

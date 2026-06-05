@@ -119,6 +119,33 @@ def apply_uv_math(obj, target_name, grid_x, grid_y, pos_x, pos_y):
     except Exception as e:
         print(f"  [Predictor] Ошибка UV математики для {obj.name} ({target_name}): {e}")
         return False
+    
+
+def standardize_texcoord_xy(obj):
+    """
+    Ensure TEXCOORD.xy exists without creating extra authoring UV clutter.
+    If TEXCOORD.xy is missing, rename the first available UV layer to TEXCOORD.xy.
+    If no UV exists, create TEXCOORD.xy and assign dummy coordinates.
+    """
+    if not obj or obj.type != 'MESH' or obj.data is None:
+        return False, "not_mesh"
+
+    mesh = obj.data
+    if "TEXCOORD.xy" in mesh.uv_layers:
+        return False, "exists"
+
+    if mesh.uv_layers:
+        old_name = mesh.uv_layers[0].name
+        mesh.uv_layers[0].name = "TEXCOORD.xy"
+        mesh.uv_layers.active = mesh.uv_layers[0]
+        return True, f"renamed:{old_name}"
+
+    uv_layer = mesh.uv_layers.new(name="TEXCOORD.xy")
+    if uv_layer:
+        assign_dummy_uv_coordinates(obj, uv_layer)
+        return True, "created_dummy"
+
+    return False, "failed"
 
 
 def get_export_targets(context):
@@ -349,12 +376,19 @@ class XXMIMissingDataPredictorSubModule:
                         continue
 
                 # 2. Проверяем COLOR слои
+                if "TEXCOORD.xy" not in obj.data.uv_layers:
+                    changed, reason = standardize_texcoord_xy(obj)
+                    if changed:
+                        print(f"  [Predictor] {obj.name}: TEXCOORD.xy standardized ({reason})")
+
                 for col_name in expected_colors:
                     if col_name not in obj.data.vertex_colors:
                         self._add_color_attribute(obj, col_name)
 
                 # 3. Проверяем TEXCOORD слои
                 for (name, gx, gy, px, py) in expected_uvs:
+                    if name == "TEXCOORD.xy":
+                        continue
                     if name not in obj.data.uv_layers:
                         success = apply_uv_math(obj, name, gx, gy, px, py)
                         if success:

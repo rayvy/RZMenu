@@ -472,6 +472,18 @@ def clean_name(value):
     return value or "Item"
 
 
+def autoatlas_material_key(collection):
+    return clean_name(collection.get("active_material") or "Material")
+
+
+def autoatlas_resource_name(collection, slot_name):
+    return f"{AUTO_ATLAS_RESOURCE_PREFIX}.{autoatlas_material_key(collection)}.{slot_name}"
+
+
+def autoatlas_filename(collection, slot_name):
+    return f"{autoatlas_resource_name(collection, slot_name)}.png"
+
+
 def clamp01(value):
     try:
         return max(0.0, min(1.0, float(value)))
@@ -1221,7 +1233,7 @@ def make_manifest(context, collection, atlas_w, atlas_h, layout):
         "vertex_margin_px": collection.get("vertex_margin_px", AUTO_ATLAS_VERTEX_MARGIN_DEFAULT),
         "pack_gap_px": collection.get("pack_gap_px", AUTO_ATLAS_DEFAULT_PADDING),
         "resources": {
-            slot: f"{AUTO_ATLAS_RESOURCE_PREFIX}.{slot}" for slot in active_slots
+            slot: autoatlas_resource_name(collection, slot) for slot in active_slots
         },
         "entries": entries_json,
         "groups": groups_json,
@@ -1535,7 +1547,7 @@ def build_atlas_images(context, collection, atlas_w, atlas_h, layout):
         return created
 
     for slot_name in active_slots:
-        image_name = f"{AUTO_ATLAS_RESOURCE_PREFIX}.{slot_name}"
+        image_name = autoatlas_resource_name(collection, slot_name)
         old = bpy.data.images.get(image_name)
         if old:
             bpy.data.images.remove(old)
@@ -1590,7 +1602,7 @@ def build_atlas_images(context, collection, atlas_w, atlas_h, layout):
         created[slot_name] = atlas
 
     context.scene["rzm_autoatlas_images"] = ",".join(
-        f"{AUTO_ATLAS_RESOURCE_PREFIX}.{slot}" for slot in active_slots
+        autoatlas_resource_name(collection, slot) for slot in active_slots
     )
     return created
 
@@ -1704,7 +1716,7 @@ def builtin_export_atlas(context, operator=None):
     missing = []
     active_slots = collection.get("active_slots") or ["Diffuse"]
     for slot in active_slots:
-        name = f"{AUTO_ATLAS_RESOURCE_PREFIX}.{slot}"
+        name = autoatlas_resource_name(collection, slot)
         img = bpy.data.images.get(name)
         if img:
             images[slot] = img
@@ -1723,7 +1735,7 @@ def builtin_export_atlas(context, operator=None):
 
     saved = []
     for slot, image in images.items():
-        path = os.path.join(out_dir, f"{AUTO_ATLAS_RESOURCE_PREFIX}.{slot}.png")
+        path = os.path.join(out_dir, autoatlas_filename(collection, slot))
         image.file_format = "PNG"
         image.filepath_raw = path
         image.save()
@@ -1731,6 +1743,153 @@ def builtin_export_atlas(context, operator=None):
 
     msg = f"[RZM QA] Exported {len(saved)} PNG atlas map(s) to {out_dir}"
     report_to_operator(operator, "INFO", msg)
+    return {"FINISHED"}
+
+
+def texworks_resource_format(slot_name):
+    if slot_name == "Diffuse":
+        return "DXGI_FORMAT_R8G8B8A8_UNORM_SRGB"
+    if slot_name == "NormalMap":
+        return "DXGI_FORMAT_R8G8_TYPELESS"
+    return "DXGI_FORMAT_R8G8B8A8_UNORM"
+
+
+def find_tw_resource(rzm, name):
+    for res in rzm.tw_resources:
+        if res.name == name:
+            return res
+    return None
+
+
+def remove_tw_resource_by_index(collection, index):
+    try:
+        collection.remove(index)
+        return True
+    except Exception:
+        return False
+
+
+def sync_autoatlas_texworks_data(context, operator=None):
+    manifest, layout, size, collection = calculate_autoatlas_pipeline(context, operator, write_files=True)
+    if not manifest:
+        return {"CANCELLED"}
+
+    rzm = getattr(context.scene, "rzm", None)
+    if not rzm or not hasattr(rzm, "tw_resources"):
+        report_to_operator(operator, "ERROR", "[RZM QA] scene.rzm.tw_resources is not available.")
+        return {"CANCELLED"}
+
+    material_key = autoatlas_material_key(collection)
+    prefix = f"{AUTO_ATLAS_RESOURCE_PREFIX}.{material_key}."
+    desired = set(manifest["resources"].values())
+
+    removed = 0
+    for index in reversed(range(len(rzm.tw_resources))):
+        res = rzm.tw_resources[index]
+        if res.name.startswith(prefix) and res.name not in desired:
+            if remove_tw_resource_by_index(rzm.tw_resources, index):
+                removed += 1
+
+    updated = 0
+    created = 0
+    out_rel_dir = "DynAtlas"
+
+    for slot_name, resource_name in manifest["resources"].items():
+        res = find_tw_resource(rzm, resource_name)
+        if not res:
+            res = rzm.tw_resources.add()
+            created += 1
+        else:
+            updated += 1
+
+        filename = autoatlas_filename(collection, slot_name)
+        res.name = resource_name
+        res.type = "ON_DISK"
+        res.path = os.path.join(out_rel_dir, filename)
+        res.resolution = manifest["atlas_size"]
+        res.format = texworks_resource_format(slot_name)
+        if hasattr(res, "qt_tag"):
+            res.qt_tag = "RZAutoAtlas"
+
+    context.scene["rzm_autoatlas_cluster_manifest_json"] = json.dumps(manifest, indent=2, sort_keys=True)
+
+    text_name = f"{AUTO_ATLAS_RESOURCE_PREFIX}.{material_key}.manifest"
+    text = bpy.data.texts.get(text_name) or bpy.data.texts.new(text_name)
+    text.clear()
+    text.write(json.dumps(manifest, indent=2, sort_keys=True))
+
+    msg = (
+        f"[RZM QA] TexWorks sync: material={material_key}, "
+        f"created={created}, updated={updated}, removed={removed}, "
+        f"clusters={len(manifest.get('groups', []))}"
+    )
+    report_to_operator(operator, "INFO", msg)
+    return {"FINISHED"}
+
+
+def build_post_export_uv_patch_plan(context):
+    raw_manifest = context.scene.get("rzm_autoatlas_cluster_manifest_json")
+    manifest = None
+    if raw_manifest:
+        try:
+            manifest = json.loads(raw_manifest)
+        except Exception:
+            manifest = None
+
+    ranges = []
+    for obj in bpy.data.objects:
+        if obj.type != "MESH":
+            continue
+        raw_range = obj.get("RZM_EXPORT_RANGE_JSON")
+        if raw_range:
+            try:
+                data = json.loads(raw_range)
+            except Exception:
+                data = {}
+        else:
+            data = {}
+
+        if not raw_range and "RZM_EXPORT_VB_OFFSET" not in obj:
+            continue
+
+        ranges.append({
+            "object": obj.name,
+            "component": data.get("component", obj.get("RZM_EXPORT_COMPONENT", "")),
+            "part_fullname": data.get("part_fullname", obj.get("RZM_EXPORT_PART_FULLNAME", "")),
+            "vb_offset": int(data.get("vb_offset", obj.get("RZM_EXPORT_VB_OFFSET", 0)) or 0),
+            "vb_count": int(data.get("vb_count", obj.get("RZM_EXPORT_VB_COUNT", 0)) or 0),
+            "vb_end": int(data.get("vb_end", obj.get("RZM_EXPORT_VB_END", 0)) or 0),
+            "is_robust": bool(data.get("is_robust", False)),
+            "has_vertex_map": bool(data.get("has_vertex_map", False)),
+        })
+
+    return {
+        "schema": 1,
+        "kind": "RZ_POST_EXPORT_UV_PATCH_PLAN_QA",
+        "cluster_material": manifest.get("active_material") if manifest else None,
+        "cluster_uv_layer": manifest.get("uv_layer") if manifest else None,
+        "cluster_atlas_size": manifest.get("atlas_size") if manifest else None,
+        "cluster_groups": manifest.get("groups", []) if manifest else [],
+        "ranges": ranges,
+        "notes": [
+            "Dry-run only. Does not patch buffers.",
+            "Future patcher should use export cache/ranges as authority and cluster manifest as UV transform source.",
+        ],
+    }
+
+
+def write_post_export_uv_patch_plan(context, operator=None):
+    plan = build_post_export_uv_patch_plan(context)
+    out_dir = os.path.join(resolve_mod_output_dir(context), "debug")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "rz_autoatlas_post_export_uv_patch_plan.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(plan, f, indent=2, sort_keys=True)
+    report_to_operator(
+        operator,
+        "INFO",
+        f"[RZM QA] Wrote UV patch plan: ranges={len(plan['ranges'])}, groups={len(plan['cluster_groups'])}",
+    )
     return {"FINISHED"}
 
 
@@ -1969,6 +2128,40 @@ class RZM_QA_OT_ExportAtlas(bpy.types.Operator):
         return result if isinstance(result, set) else {"FINISHED"}
 
 
+class RZM_QA_OT_SyncTexWorksData(bpy.types.Operator):
+    bl_idname = "rzm_qa_texworks_atlas.sync_texworks_data"
+    bl_label = "Sync TexWorks Data"
+    bl_description = "Add, update, or remove TexWorks resource registration for the active material cluster"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        try:
+            result = sync_autoatlas_texworks_data(context, operator=self)
+        except Exception as exc:
+            self.report({"ERROR"}, f"TexWorks sync failed: {exc}")
+            print(f"[RZM QA] TexWorks sync failed: {exc}")
+            traceback.print_exc()
+            return {"CANCELLED"}
+
+        return result if isinstance(result, set) else {"FINISHED"}
+
+
+class RZM_QA_OT_WritePostExportUVPatchPlan(bpy.types.Operator):
+    bl_idname = "rzm_qa_texworks_atlas.write_post_export_uv_patch_plan"
+    bl_label = "Write UV Patch Plan"
+    bl_description = "Write dry-run metadata for future post-export TEXCOORD buffer patching"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        try:
+            return write_post_export_uv_patch_plan(context, operator=self)
+        except Exception as exc:
+            self.report({"ERROR"}, f"UV patch plan failed: {exc}")
+            print(f"[RZM QA] UV patch plan failed: {exc}")
+            traceback.print_exc()
+            return {"CANCELLED"}
+
+
 class RZM_QA_PT_TexWorksAtlasMaterial(bpy.types.Panel):
     bl_label = "TexWorks Atlas Material"
     bl_idname = "RZM_QA_PT_texworks_atlas_material"
@@ -2045,6 +2238,16 @@ class RZM_QA_PT_TexWorksAtlasMaterial(bpy.types.Panel):
             text="Export",
             icon="EXPORT",
         )
+        layout.operator(
+            "rzm_qa_texworks_atlas.sync_texworks_data",
+            text="Sync TexWorks Data",
+            icon="LINKED",
+        )
+        layout.operator(
+            "rzm_qa_texworks_atlas.write_post_export_uv_patch_plan",
+            text="Write UV Patch Plan",
+            icon="TEXT",
+        )
 
 
 CLASSES = (
@@ -2057,6 +2260,8 @@ CLASSES = (
     RZM_QA_OT_RebuildTextures,
     RZM_QA_OT_CalculateAtlasSize,
     RZM_QA_OT_ExportAtlas,
+    RZM_QA_OT_SyncTexWorksData,
+    RZM_QA_OT_WritePostExportUVPatchPlan,
     RZM_QA_PT_TexWorksAtlasMaterial,
 )
 
