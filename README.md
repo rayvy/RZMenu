@@ -59,17 +59,34 @@ I have implemented several safety mechanisms so that **RZ Construct** can automa
 
 ## Special Thanks
 
-- **HaoWooooo [AGMG]** ([ChouDan6](https://github.com/ChouDan6/)) - for Simplified Chinese translation fixes and live proofreading.
-- **Zlevir** - RZMenu grew out of experiments on his mod menu. The `Z` in `RZMenu` is in his honor.
-- **[leotorrez/XXMITools](https://github.com/leotorrez/XXMITools)** and all XXMI contributors - RZMenu leans on the XXMI ecosystem and is not a fully standalone exporter.
-- **[SpectrumQT/EFMI-Tools](https://github.com/SpectrumQT/EFMI-Tools)** - for the EFMI tooling foundation RZMenu integrates with.
-- **[SinsOfSeven](https://github.com/SinsOfSeven)** - for MathLib / TexFX.
-- **[SilentNightSound](https://github.com/SilentNightSound)** - Сахароза.
-- **[Xsolaris](https://github.com/Xsolaris)** - the very first alpha tester.
-- **[QVANT-D](https://github.com/QVANT-D)** - another alpha tester.
-- **[DiXiaoO](https://github.com/DiXiaoO)** - suggested the buffer idea.
-- **АнонимныйКот** - another alpha tester, listed anonymously by request.
+### Злевир:
+- **[Zlevir](https://www.patreon.com/cw/zlevir)** - RZMenu grew out of experiments on his mod menu. The `Z` in `RZMenu` is in his honor <3
 
-Also try [MenuCreator](https://github.com/NurarihyonMaou/MenuCreator).
+### 🛠️ Modding Tool Developers
+- **[leotorrez](https://ko-fi.com/leotorrez)** ([Profile](https://github.com/leotorrez) / [XXMITools](https://github.com/leotorrez/XXMITools)) and all XXMI contributors - RZMenu leans on the XXMI ecosystem and is not a fully standalone exporter.
+- **[SpectrumQT](https://www.patreon.com/SpectrumQT)** ([Profile](https://github.com/SpectrumQT) / [EFMI-Tools](https://github.com/SpectrumQT/EFMI-Tools)) - for the EFMI tooling foundation RZMenu integrates with.
+- **[SinsOfSeven](https://ko-fi.com/sinsofseven)** ([Profile](https://github.com/SinsOfSeven)) - for MathLib (copy pasted) / TexFX (used on drawcall object modification, not the lib itself).
+- **[SilentNightSound](https://ko-fi.com/silentnightsound)** ([Profile](https://github.com/SilentNightSound)) - Сахароза.
+- **[caverabbit](https://www.patreon.com/Caverabbit)** - RabbitFX (used on drawcall object modification, not the lib itself).
+- **[Greisane](https://github.com/greisane)** ([Gret](https://github.com/greisane/gret)) - Shape Key Apply functionality copy pasted and slightly adapted from Gret (see [operators/gret_shape_key_utils.py](operators/gret_shape_key_utils.py)).
+- **[Grim-es](https://github.com/Grim-es)** ([Material Combiner](https://github.com/Grim-es/material-combiner-addon)) - As of 05.06.2026, I haven't yonked anything from this project yet. However, there is a statistically significant chance that I will either get inspired by it or shamelessly yoink something in the future. I haven't decided which one it will be yet. Thanks in advance. :*
+- **[Gustav0](https://ko-fi.com/gustav0_)** ([Profile](https://github.com/Seris0)) - currently I didn't yonk anything, but same as Grim-es Material Combiner, I'm planning to inspire/yonk part of code of XXMIsetup addon + XXMI dev.
+
+### 🌐 Translations
+- **HaoWooooo [AGMG]** ([ChouDan6](https://github.com/ChouDan6/)) - for Simplified Chinese translation fixes and live proofreading.
+
+### 🧪 Alpha Testers
+- **[Xsolaris](https://gamebanana.com/members/3591485)** - the very first alpha tester.
+- **[QVANT-D](https://www.patreon.com/cw/QVANT_D/home)** - another alpha tester.
+- **АнонимныйКот** - another alpha tester, listed anonymously by request.
+- **HaoWooooo [AGMG]** ([ChouDan6](https://github.com/ChouDan6/)) - Also tester.
+
+### 💡 Other Contributions
+- **[DiXiaoO](https://github.com/DiXiaoO)** - suggested the buffer idea.
+
+---
+
+### Nurarihyuon:
+Also try [MenuCreator](https://github.com/NurarihyonMaou/MenuCreator) (+ i got referenced buffer ini work stuff on his InGameMenu mod manager)
 
 Stay tuned and happy modding!
