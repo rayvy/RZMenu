@@ -83,6 +83,8 @@ I have implemented several safety mechanisms so that **RZ Construct** can automa
 
 ### 💡 Other Contributions
 - **[DiXiaoO](https://github.com/DiXiaoO)** - suggested the buffer idea.
+- **[Satan1c](https://github.com/Satan1c)** - for advising on various optimization strategies for the project.
+- **[RAZUMNO](https://gamebanana.com/members/2868653)** - proposed the idea of element helpers, which was successfully integrated ~~и ебёт меня постоянно с тем чтобы я добавил нормальные якорные системы в GUI)~~
 
 ---
 
