@@ -59,7 +59,7 @@ I have implemented several safety mechanisms so that **RZ Construct** can automa
 
 ## Special Thanks
 
-### Злевир:
+### оп оп гоп стоп:
 - **[Zlevir](https://www.patreon.com/cw/zlevir)** - RZMenu grew out of experiments on his mod menu. The `Z` in `RZMenu` is in his honor <3
 
 ### 🛠️ Modding Tool Developers
