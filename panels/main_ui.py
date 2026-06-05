@@ -1837,7 +1837,11 @@ class VIEW3D_PT_RZConstructorAdvancedPanel(bpy.types.Panel):
         
         col.separator()
         col.prop(meta, "requirements")
-        col.prop(meta, "description", text="Lore", textarea=True)
+        if hasattr(col, "textbox"):
+            col.label(text="Lore:")
+            col.textbox(meta, "description")
+        else:
+            col.prop(meta, "description", text="Lore")
         col.prop(meta, "menu_keybind")
         col.prop(meta, "community_respect")
         

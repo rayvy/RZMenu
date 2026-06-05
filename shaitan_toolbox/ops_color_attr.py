@@ -57,6 +57,12 @@ def _as_rgba(value):
         return (float(value[0]), float(value[1]), float(value[2]), 1.0)
     return None
 
+def srgb_to_linear(c):
+    if c <= 0.04045:
+        return c / 12.92
+    else:
+        return ((c + 0.055) / 1.055) ** 2.4
+
 def _get_bmesh_layer(layer_access, target_name):
     for layer_group_name in ("float_color", "color"):
         layer_group = getattr(layer_access.layers, layer_group_name, None)
@@ -64,25 +70,25 @@ def _get_bmesh_layer(layer_access, target_name):
             continue
         layer = layer_group.get(target_name)
         if layer is not None:
-            return layer
-    return None
+            return layer, layer_group_name
+    return None, None
 
 def _get_bmesh_color_layer(bm, target_name):
-    loop_layer = _get_bmesh_layer(bm.loops, target_name)
+    loop_layer, ltype = _get_bmesh_layer(bm.loops, target_name)
     if loop_layer is not None:
-        return loop_layer, "LOOP"
+        return loop_layer, "LOOP", ltype
 
-    vert_layer = _get_bmesh_layer(bm.verts, target_name)
+    vert_layer, ltype = _get_bmesh_layer(bm.verts, target_name)
     if vert_layer is not None:
-        return vert_layer, "VERT"
+        return vert_layer, "VERT", ltype
 
-    return None, None
+    return None, None, None
 
 def _get_selected_edit_mode_colors(mesh, target_name):
     bm = bmesh.from_edit_mesh(mesh)
     bm.verts.ensure_lookup_table()
 
-    layer, domain = _get_bmesh_color_layer(bm, target_name)
+    layer, domain, ltype = _get_bmesh_color_layer(bm, target_name)
     if layer is None:
         return []
 
@@ -93,12 +99,26 @@ def _get_selected_edit_mode_colors(mesh, target_name):
                 if loop.vert.select or loop.edge.select or face.select:
                     color = _as_rgba(loop[layer])
                     if color is not None:
+                        if ltype == "color":
+                            color = (
+                                srgb_to_linear(color[0]),
+                                srgb_to_linear(color[1]),
+                                srgb_to_linear(color[2]),
+                                color[3]
+                            )
                         colors.append(color)
     else:
         for vert in bm.verts:
             if vert.select or any(edge.select for edge in vert.link_edges) or any(face.select for face in vert.link_faces):
                 color = _as_rgba(vert[layer])
                 if color is not None:
+                    if ltype == "color":
+                        color = (
+                            srgb_to_linear(color[0]),
+                            srgb_to_linear(color[1]),
+                            srgb_to_linear(color[2]),
+                            color[3]
+                        )
                     colors.append(color)
 
     return colors
@@ -120,7 +140,7 @@ def _remove_color_layer(mesh, layer):
     if hasattr(mesh, "vertex_colors") and mesh.vertex_colors.get(layer.name) == layer:
         mesh.vertex_colors.remove(layer)
 
-def get_selected_average_color(context, require_active_panel=True):
+def get_selected_average_color(context, require_active_panel=True, force_edit_mode=False):
     """
     Returns the average RGBA color for selected vertices in Edit Mode,
     or the average RGBA color for the whole active mesh in Object Mode.
@@ -139,6 +159,8 @@ def get_selected_average_color(context, require_active_panel=True):
         return None
 
     if obj.mode == 'EDIT':
+        if not force_edit_mode:
+            return None
         selected_colors = _get_selected_edit_mode_colors(mesh, layer.name)
         if not selected_colors:
             return None
@@ -261,7 +283,7 @@ class RZM_ST_OT_SampleColor(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        color = get_selected_average_color(context)
+        color = get_selected_average_color(context, force_edit_mode=True)
         if color is None:
             self.report({'WARNING'}, "No color data found on the active target layer")
             return {'CANCELLED'}

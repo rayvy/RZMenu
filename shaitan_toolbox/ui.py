@@ -68,11 +68,11 @@ def draw_setup_scripts_ui(self, context, layout):
     col_tools.operator("rzm_st.generate_bones", text="Generate Missing Bones", icon='BONE_DATA')
 
     box_tools.separator()
-    box_tools.label(text="Shape Key Cleanup:", icon='SHAPEKEY_DATA')
+    box_tools.label(text="Clear Vertex SK delta (ACTIVE SK/ALL SK):", icon='SHAPEKEY_DATA')
     row_shape = box_tools.row(align=True)
     row_shape.scale_y = 1.2
-    row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Clear Selected Verts (All)", icon='SHAPEKEY_DATA').active_only = False
-    row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Active Only", icon='DOT').active_only = True
+    row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Clear Selected Verts (ACTIVE SK)", icon='DOT').active_only = True
+    row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Clear Selected Verts (ALL SK)", icon='SHAPEKEY_DATA').active_only = False
     
     # Comparison Mode Selector
     box_tools.separator()
@@ -188,11 +188,15 @@ def draw_color_attr_ui(self, context, layout):
     row_target.prop(scene, "rzm_st_paint_target", text="Target Layer")
     
     # Display selected average color
-    selected_color = get_selected_average_color(context) if is_color_attr_panel_active(context) else None
     row_median = box_picker.row(align=True)
     row_median.label(text="Selected Average:")
     row_median.operator("rzm_st.sample_color", text="Copy", icon='EYEDROPPER')
-    box_picker.label(text=f"Selected: {format_color_info(selected_color)}")
+
+    if context.active_object and context.active_object.mode == 'EDIT':
+        box_picker.label(text="Selected: [Edit Mode - Click Copy to read]")
+    else:
+        selected_color = get_selected_average_color(context) if is_color_attr_panel_active(context) else None
+        box_picker.label(text=f"Selected: {format_color_info(selected_color)}")
     
     # Paint buttons
     layout.separator()
