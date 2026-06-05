@@ -63,9 +63,9 @@ I have implemented several safety mechanisms so that **RZ Construct** can automa
 - **[Zlevir](https://www.patreon.com/cw/zlevir)** - RZMenu grew out of experiments on his mod menu. The `Z` in `RZMenu` is in his honor <3
 
 ### 🛠️ Modding Tool Developers
-- **[leotorrez](https://ko-fi.com/leotorrez)** ([Profile](https://github.com/leotorrez) / [XXMITools](https://github.com/leotorrez/XXMITools)) and all XXMI contributors - RZMenu leans on the XXMI ecosystem and is not a fully standalone exporter.
+- **[leotorrez](https://ko-fi.com/leotorrez)** ([Profile](https://github.com/leotorrez) / [XXMITools](https://github.com/leotorrez/XXMITools)) and all XXMI contributors - RZMenu leans on the XXMI ecosystem and is not a fully standalone exporter **+ advised with code idea stuff.**
+- - **[SinsOfSeven](https://ko-fi.com/sinsofseven)** ([Profile](https://github.com/SinsOfSeven)) - for MathLib (copy pasted) / TexFX (used on drawcall object modification, not the lib itself)  **+ advised with code idea stuff.**
 - **[SpectrumQT](https://www.patreon.com/SpectrumQT)** ([Profile](https://github.com/SpectrumQT) / [EFMI-Tools](https://github.com/SpectrumQT/EFMI-Tools)) - for the EFMI tooling foundation RZMenu integrates with.
-- **[SinsOfSeven](https://ko-fi.com/sinsofseven)** ([Profile](https://github.com/SinsOfSeven)) - for MathLib (copy pasted) / TexFX (used on drawcall object modification, not the lib itself).
 - **[SilentNightSound](https://ko-fi.com/silentnightsound)** ([Profile](https://github.com/SilentNightSound)) - Сахароза.
 - **[caverabbit](https://www.patreon.com/Caverabbit)** - RabbitFX (used on drawcall object modification, not the lib itself).
 - **[Greisane](https://github.com/greisane)** ([Gret](https://github.com/greisane/gret)) - Shape Key Apply functionality copy pasted and slightly adapted from Gret (see [operators/gret_shape_key_utils.py](operators/gret_shape_key_utils.py)).
@@ -80,11 +80,12 @@ I have implemented several safety mechanisms so that **RZ Construct** can automa
 - **[QVANT-D](https://www.patreon.com/cw/QVANT_D/home)** - another alpha tester.
 - **АнонимныйКот** - another alpha tester, listed anonymously by request.
 - **HaoWooooo [AGMG]** ([ChouDan6](https://github.com/ChouDan6/)) - Also tester.
+- **[RAZUMNO](https://gamebanana.com/members/2868653)** - tester + proposed the idea of element helpers, which was successfully integrated ~~и ебёт меня постоянно с тем чтобы я добавил нормальные якорные системы в GUI)~~
 
 ### 💡 Other Contributions
 - **[DiXiaoO](https://github.com/DiXiaoO)** - suggested the buffer idea.
 - **[Satan1c](https://github.com/Satan1c)** - for advising on various optimization strategies for the project.
-- **[RAZUMNO](https://gamebanana.com/members/2868653)** - proposed the idea of element helpers, which was successfully integrated ~~и ебёт меня постоянно с тем чтобы я добавил нормальные якорные системы в GUI)~~
+
 
 ---
 
