@@ -646,6 +646,8 @@ class SafeExport:
 
         # Импортируем здесь чтобы избежать circular imports при загрузке модуля
         from .xxmi_data_predictor import XXMIMissingDataPredictorSubModule
+        from .twaa_texcoord_patcher import patch_exported_twaa_texcoords
+        self._twaa_texcoord_patcher = patch_exported_twaa_texcoords
 
         # Читаем настройку очистки временных слоев из настроек аддона
         addon_name = __package__.split(".")[0] if "." in __package__ else __package__
@@ -719,6 +721,21 @@ class SafeExport:
                         traceback.print_exc()
 
         print("[SafeExport] ═══ Старт post-export cleanup ═══")
+        if not had_error:
+            try:
+                summary = self._twaa_texcoord_patcher(self.context)
+                if summary.get("patched_vertices", 0):
+                    print(
+                        "[SafeExport] [TWAA] Patched "
+                        f"{summary['patched_vertices']} TEXCOORD vertices across "
+                        f"{summary['objects']} object(s), {summary['files']} file(s)."
+                    )
+                elif summary.get("warnings"):
+                    print(f"[SafeExport] [TWAA] No TEXCOORD patch applied: {summary['warnings'][:3]}")
+            except Exception as e:
+                import traceback
+                print(f"[SafeExport] ERROR in TWAA post-export TEXCOORD patcher: {e}")
+                traceback.print_exc()
         for sub in reversed(self.sub_modules):
             try:
                 sub.post_export(self.context)
