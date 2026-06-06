@@ -1714,32 +1714,32 @@ def objects_using_material_name(mat_name):
     return objects
 
 
-def write_texcoord_object_params(context, mat_data, rect, atlas_w, atlas_h, block_names):
-    inv_x, inv_y = post_invert_settings(context)
-    x = float(rect["x"])
-    y = float(rect["y"])
-    w = float(rect["w"])
-    h = float(rect["h"])
-    atlas_w = max(1.0, float(atlas_w))
-    atlas_h = max(1.0, float(atlas_h))
-    scale_x = w / atlas_w
-    scale_y = h / atlas_h
-    offset_x = x / atlas_w
-    offset_y = y / atlas_h
-    payload = [scale_x, scale_y, offset_x, offset_y]
+LEGACY_OBJECT_PROPS = (
+    "TEXCOORD_POS_SIZE",
+    "RZM_TW_MC_COMPONENT",
+    "RZM_TW_MC_ATLAS_SIZE",
+    "RZM_TW_MC_RECT",
+    "RZM_TW_MC_VIRTUAL_ATLAS_SIZE",
+    "RZM_TW_MC_VIRTUAL_RECT",
+    "RZM_TW_MC_BLOCKS",
+    "RZM_TW_MC_POST_INVERT_X",
+    "RZM_TW_MC_POST_INVERT_Y",
+)
 
+
+def clear_legacy_tw_mc_object_props():
     changed = []
-    for obj in objects_using_material_name(mat_data["material_name"]):
-        obj["TEXCOORD_POS_SIZE"] = payload
-        obj["RZM_TW_MC_COMPONENT"] = mat_data["material_key"]
-        obj["RZM_TW_MC_ATLAS_SIZE"] = [int(atlas_w), int(atlas_h)]
-        obj["RZM_TW_MC_RECT"] = [int(x), int(y), int(w), int(h)]
-        obj["RZM_TW_MC_VIRTUAL_ATLAS_SIZE"] = [int(atlas_w), int(atlas_h)]
-        obj["RZM_TW_MC_VIRTUAL_RECT"] = [int(x), int(y), int(w), int(h)]
-        obj["RZM_TW_MC_BLOCKS"] = list(block_names)
-        obj["RZM_TW_MC_POST_INVERT_X"] = inv_x
-        obj["RZM_TW_MC_POST_INVERT_Y"] = inv_y
-        changed.append(obj.name)
+    for obj in bpy.data.objects:
+        removed = False
+        for key in LEGACY_OBJECT_PROPS:
+            if key in obj:
+                try:
+                    del obj[key]
+                    removed = True
+                except Exception:
+                    pass
+        if removed:
+            changed.append(obj.name)
     return changed
 
 
@@ -1789,17 +1789,14 @@ def rebuild_texworks_autoatlas_blocks(context):
             tw_slot.calc_res_y = int(atlas_h)
         block.active_component_index = 0 if block.components else -1
 
-    changed_objects = []
-    for key, mat_data in materials.items():
-        rect = packed_by_mat.get(key)
-        if rect:
-            changed_objects.extend(write_texcoord_object_params(context, mat_data, rect, atlas_w, atlas_h, block_names))
+    cleaned_objects = clear_legacy_tw_mc_object_props()
 
     return {
         "materials": len(materials),
         "blocks": len(slots),
         "atlas_size": [int(atlas_w), int(atlas_h)],
-        "objects": sorted(set(changed_objects)),
+        "objects": [],
+        "cleaned_legacy_object_props": sorted(set(cleaned_objects)),
         "removed_legacy_blocks": removed_legacy_blocks,
         "migrated_legacy_references": migrated_refs,
     }

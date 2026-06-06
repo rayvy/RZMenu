@@ -8,7 +8,7 @@ import bpy
 
 MANIFEST_TEXT_PREFIX = "RZAutoAtlas."
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
-PATCHER_BUILD = "tw-blocks-material-slot-v9-20260606"
+PATCHER_BUILD = "tw-blocks-no-object-props-v11-20260606"
 _SAMPLE_LIMIT = 192
 
 
@@ -260,6 +260,21 @@ def _addon_preferences(context):
 def _post_patch_enabled(context):
     prefs = _addon_preferences(context)
     return bool(getattr(prefs, "tw_mc_post_patch_enabled", True)) if prefs else True
+
+
+def _patch_all_texcoord_payloads(context):
+    prefs = _addon_preferences(context)
+    return bool(getattr(prefs, "tw_mc_patch_all_texcoord_payloads", False)) if prefs else False
+
+
+def _post_invert_settings(context):
+    prefs = _addon_preferences(context)
+    if not prefs:
+        return False, True
+    return (
+        bool(getattr(prefs, "tw_mc_post_invert_x", False)),
+        bool(getattr(prefs, "tw_mc_post_invert_y", True)),
+    )
 
 
 def _score_primary_candidate(data, stride, start, end, storage, offset, manifest):
@@ -585,8 +600,7 @@ def _slot_material_key(slot, valid_keys):
 def _resolve_export_material_key(context, obj, obj_data):
     valid_keys = _twaa_component_keys(context)
     if not valid_keys:
-        prop_key = str(obj.get("RZM_TW_MC_COMPONENT", "") or "")
-        return prop_key, "object-prop/no-tw-blocks"
+        return "", "no-tw-blocks"
 
     mat_idx = obj_data.get("mat_idx", None)
     try:
@@ -606,13 +620,9 @@ def _resolve_export_material_key(context, obj, obj_data):
     if len(slot_matches) == 1:
         return slot_matches[0], "single-material-slot"
 
-    prop_key = str(obj.get("RZM_TW_MC_COMPONENT", "") or "")
-    if prop_key in valid_keys:
-        return prop_key, "object-prop/fallback"
-
     if slot_matches:
         return slot_matches[0], "ambiguous-material-slot"
-    return prop_key, "object-prop/unmatched"
+    return "", "no-matching-material-slot"
 
 
 def _component_matches_material(component, material_key):
@@ -784,6 +794,12 @@ def patch_exported_twaa_texcoords(context):
                 item for item in _packed_texcoord_layouts(entries)
                 if item["offset"] + (4 if item["storage"] == "f16" else 8) <= stride
             ]
+            all_payloads = _patch_all_texcoord_payloads(context)
+            if exact_layouts and not all_payloads:
+                skipped_layouts = [item for item in exact_layouts if int(item.get("semantic_index", 0) or 0) != 0]
+                exact_layouts = [item for item in exact_layouts if int(item.get("semantic_index", 0) or 0) == 0]
+            else:
+                skipped_layouts = []
             if exact_layouts:
                 layouts = exact_layouts
                 ranked = layouts
@@ -796,6 +812,12 @@ def patch_exported_twaa_texcoords(context):
                 warnings.append(warning)
                 print(f"[RZM TWAA] SKIP: {warning}")
                 continue
+            if skipped_layouts:
+                print(
+                    f"[RZM TWAA] TEXCOORD payloads skipped by default "
+                    f"({', '.join(_format_candidate(item) for item in skipped_layouts)}). "
+                    "Enable 'TW MC Patch All TEXCOORD Payloads' only for debug."
+                )
 
             print(
                 f"[RZM TWAA] TEXCOORD payloads selected "
@@ -808,8 +830,8 @@ def patch_exported_twaa_texcoords(context):
                 if alternatives:
                     print(f"[RZM TWAA] TEXCOORD alternatives: {alternatives}")
 
-            invert_x = bool(obj.get("RZM_TW_MC_POST_INVERT_X", False))
-            invert_y = bool(obj.get("RZM_TW_MC_POST_INVERT_Y", True))
+            invert_x, invert_y = _post_invert_settings(context)
+            print(f"[RZM TWAA] Addon post invert: x={invert_x} y={invert_y}")
             total_vertices = len(data) // stride
             end = min(start + count, total_vertices)
             obj_patched_values = 0
