@@ -2175,6 +2175,7 @@ def export_active_material_textures_raw(context, target_path=None):
     settings = get_settings(context)
     mat = get_active_material(context)
     slot_sources = collect_slot_sources(mat)
+    fallback_w, fallback_h, _fallback_slot = choose_reference_size(settings, slot_sources, mat)
     if target_path is None:
         target_path = get_target_path(context)
     if not target_path:
@@ -2187,15 +2188,20 @@ def export_active_material_textures_raw(context, target_path=None):
     written = {}
 
     for slot, source in slot_sources.items():
+        if not source.get("enabled", False):
+            continue
         image = source.get("image")
-        if not image:
-            continue
-        width = int(image.size[0])
-        height = int(image.size[1])
-        if width <= 0 or height <= 0:
-            continue
-        pixels = array("f", [0.0]) * (width * height * 4)
-        image.pixels.foreach_get(pixels)
+        if image:
+            width = int(image.size[0])
+            height = int(image.size[1])
+            if width <= 0 or height <= 0:
+                continue
+            pixels = array("f", [0.0]) * (width * height * 4)
+            image.pixels.foreach_get(pixels)
+        else:
+            width = max(1, int(fallback_w))
+            height = max(1, int(fallback_h))
+            pixels = solid_pixel_buffer(width, height, source.get("solid_color", SLOT_DEFAULTS.get(slot, (0.0, 0.0, 0.0, 1.0))))
         resource_name = cluster_file_stem(mat.name, slot)
         file_name = f"{resource_name}.png"
         file_path = os.path.join(out_dir, file_name)
@@ -2213,7 +2219,7 @@ def export_active_material_textures_raw(context, target_path=None):
         written[slot] = file_path
 
     if not written:
-        raise RuntimeError(f"Material '{mat.name}' has no image textures connected to RZM slots")
+        raise RuntimeError(f"Material '{mat.name}' has no enabled RZM texture slots")
     return written
 
 
