@@ -570,7 +570,7 @@ def sync_diffuse_default_from_material(mat, group_node):
         return
     color = material_principled_base_color(mat)
     mat_color = tuple(float(c) for c in getattr(mat, "diffuse_color", (1.0, 1.0, 1.0, 1.0)))
-    if color is None or is_black_color(color):
+    if color is None:
         color = mat_color
     try:
         socket.default_value = color
@@ -712,12 +712,12 @@ def material_slot_source(mat, slot):
     image = find_upstream_image(input_socket)
     procedural = bool(input_socket and input_socket.is_linked and not image)
     color = socket_default_color(input_socket, SLOT_DEFAULTS.get(slot, (0.0, 0.0, 0.0, 1.0)))
-    if slot == "Diffuse" and not image:
+    if slot == "Diffuse" and not image and input_socket is None:
         principled_color = material_principled_base_color(mat)
         mat_color = tuple(float(c) for c in getattr(mat, "diffuse_color", color))
-        if is_black_color(color) and principled_color is not None and not is_black_color(principled_color):
+        if principled_color is not None:
             color = principled_color
-        if is_black_color(color) and not is_black_color(mat_color):
+        else:
             color = mat_color
 
     enabled = True if slot == "Diffuse" else bool(image) or procedural or socket_default_bool(flag_socket, False)
@@ -2186,6 +2186,7 @@ def export_active_material_textures_raw(context, target_path=None):
     rzm = context.scene.rzm
     key = material_key(mat.name)
     written = {}
+    generated_slots = set()
 
     for slot, source in slot_sources.items():
         if not source.get("enabled", False):
@@ -2202,6 +2203,7 @@ def export_active_material_textures_raw(context, target_path=None):
             width = max(1, int(fallback_w))
             height = max(1, int(fallback_h))
             pixels = solid_pixel_buffer(width, height, source.get("solid_color", SLOT_DEFAULTS.get(slot, (0.0, 0.0, 0.0, 1.0))))
+            generated_slots.add(slot)
         resource_name = cluster_file_stem(mat.name, slot)
         file_name = f"{resource_name}.png"
         file_path = os.path.join(out_dir, file_name)
@@ -2220,7 +2222,46 @@ def export_active_material_textures_raw(context, target_path=None):
 
     if not written:
         raise RuntimeError(f"Material '{mat.name}' has no enabled RZM texture slots")
+    connect_exported_material_textures(mat, written, generated_slots)
     return written
+
+
+def connect_exported_material_textures(mat, written, generated_slots=None):
+    node = find_material_group_node(mat)
+    if not node or not mat or not mat.use_nodes or not mat.node_tree:
+        return []
+    generated_slots = set(generated_slots or ())
+    changed = []
+    slot_y = {slot: index * -260 for index, slot in enumerate(SLOTS)}
+    for slot, file_path in written.items():
+        if slot not in node.inputs:
+            continue
+        input_socket = node.inputs[slot]
+        nodes = upstream_image_nodes(input_socket)
+        if nodes and slot not in generated_slots:
+            continue
+        try:
+            image = bpy.data.images.load(file_path, check_existing=True)
+        except Exception:
+            continue
+        image.name = os.path.basename(file_path)
+        image.filepath = file_path
+        image.filepath_raw = file_path
+        set_image_colorspace(image, slot)
+
+        if not nodes:
+            if input_socket.is_linked:
+                continue
+            tex_node = mat.node_tree.nodes.new("ShaderNodeTexImage")
+            tex_node.location = (node.location.x - 430, node.location.y + slot_y.get(slot, 0))
+            mat.node_tree.links.new(tex_node.outputs["Color"], input_socket)
+            nodes = [tex_node]
+
+        for idx, tex_node in enumerate(nodes):
+            tex_node.location = (node.location.x - 430, node.location.y + slot_y.get(slot, 0) - idx * 220)
+            tex_node.image = image
+            changed.append(f"{slot}:{tex_node.name}")
+    return changed
 
 
 def atlas_uv_for_source_uv(uv, group, ref_w, ref_h, atlas_w, atlas_h, margin):
