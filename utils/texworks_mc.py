@@ -16,7 +16,7 @@ OUTPUT_SUBDIR = "Textures/DynAtlas"
 UV_NAME = "RZAutoAtlas.UV"
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
 TEXCOORD_UV_NAME = "TEXCOORD.xy"
-SCHEMA = 2
+SCHEMA = 3
 KIND = "RZ_TEXWORKS_MC_MATERIAL"
 ROLE = "SEMANTIC_TEXTURE_HUB"
 DEFAULT_MAX_RASTER_PIXELS = 16 * 1024 * 1024
@@ -217,7 +217,7 @@ def make_or_update_material_group(force=False):
     if needs_rebuild:
         clear_group(group)
         for name in SLOTS:
-            add_socket(group, name, "INPUT", "NodeSocketColor", (0.0, 0.0, 0.0, 1.0))
+            add_socket(group, name, "INPUT", "NodeSocketColor", SLOT_DEFAULTS.get(name, (0.0, 0.0, 0.0, 1.0)))
 
         add_socket(group, "Has LightMap", "INPUT", "NodeSocketBool", False)
         add_socket(group, "Has MaterialMap", "INPUT", "NodeSocketBool", False)
@@ -230,6 +230,8 @@ def make_or_update_material_group(force=False):
         add_socket(group, "Preview AO Source", "INPUT", "NodeSocketInt", 4)
         add_socket(group, "Preview Alpha Source", "INPUT", "NodeSocketInt", 3)
         add_socket(group, "NormalMap Preset", "INPUT", "NodeSocketInt", 0)
+        add_socket(group, "Default Resolution X", "INPUT", "NodeSocketInt", 512)
+        add_socket(group, "Default Resolution Y", "INPUT", "NodeSocketInt", 512)
 
         add_socket(group, "Diffuse Color Space", "INPUT", "NodeSocketInt", 0)
         add_socket(group, "LightMap Color Space", "INPUT", "NodeSocketInt", 1)
@@ -253,6 +255,46 @@ def make_or_update_material_group(force=False):
     group["rzm_texworks_kind"] = KIND
     group["rzm_texworks_role"] = ROLE
     return group
+
+
+def set_material_node_default_resolution(group_node, resolution, force=False):
+    if not group_node:
+        return
+    try:
+        width = max(1, int(resolution[0]))
+        height = max(1, int(resolution[1]))
+    except Exception:
+        width, height = 512, 512
+    for socket_name, value in (("Default Resolution X", width), ("Default Resolution Y", height)):
+        socket = group_node.inputs.get(socket_name)
+        if not socket:
+            continue
+        try:
+            if force or int(socket.default_value) <= 0:
+                socket.default_value = value
+        except Exception:
+            try:
+                socket.default_value = value
+            except Exception:
+                pass
+
+
+def material_node_default_resolution(mat, settings=None):
+    group_node = find_material_group_node(mat)
+    if group_node:
+        try:
+            width = int(group_node.inputs["Default Resolution X"].default_value)
+            height = int(group_node.inputs["Default Resolution Y"].default_value)
+            if width > 0 and height > 0:
+                return width, height
+        except Exception:
+            pass
+    if settings:
+        try:
+            return max(1, int(settings.default_resolution[0])), max(1, int(settings.default_resolution[1]))
+        except Exception:
+            pass
+    return 512, 512
 
 
 def add_group_instance(mat, group):
@@ -351,11 +393,24 @@ def sync_diffuse_default_from_material(mat, group_node):
 def ensure_material_node(mat, rebuild_group=False, connect_surface=False):
     if not mat:
         raise RuntimeError("No active material")
+    existing_node = find_material_group_node(mat)
+    had_resolution_inputs = bool(
+        existing_node
+        and "Default Resolution X" in existing_node.inputs
+        and "Default Resolution Y" in existing_node.inputs
+    )
     group = make_or_update_material_group(force=rebuild_group)
     mat.use_nodes = True
     node = find_material_group_node(mat)
+    created_node = False
     if not node:
         node = add_group_instance(mat, group)
+        created_node = True
+    set_material_node_default_resolution(
+        node,
+        get_settings(bpy.context).default_resolution,
+        force=created_node or not had_resolution_inputs,
+    )
     link_auto_texture_nodes(mat, node)
     sync_diffuse_default_from_material(mat, node)
     if connect_surface and "RenderOutput" in node.outputs:
@@ -367,11 +422,13 @@ def ensure_material_node(mat, rebuild_group=False, connect_surface=False):
 
 
 def create_empty_material(context, assign=True):
+    settings = get_settings(context)
     group = make_or_update_material_group()
     mat = bpy.data.materials.new("RZM AutoAtlas Material")
     mat.use_nodes = True
     mat.node_tree.nodes.clear()
     hub = add_group_instance(mat, group)
+    set_material_node_default_resolution(hub, settings.default_resolution, force=True)
     hub.location = (-320, 80)
     out = mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
     out.location = (260, 80)
@@ -481,7 +538,7 @@ def collect_slot_sources(mat):
     return {slot: material_slot_source(mat, slot) for slot in SLOTS}
 
 
-def choose_reference_size(settings, slot_sources):
+def choose_reference_size(settings, slot_sources, mat=None):
     order = []
     if settings.reference_slot != "AUTO":
         order.append(settings.reference_slot)
@@ -494,7 +551,8 @@ def choose_reference_size(settings, slot_sources):
         if image and image.size[0] > 0 and image.size[1] > 0:
             return int(image.size[0]), int(image.size[1]), slot
 
-    return int(settings.default_resolution[0]), int(settings.default_resolution[1]), "fallback"
+    width, height = material_node_default_resolution(mat, settings)
+    return int(width), int(height), "fallback"
 
 
 def material_slot_indices(obj, mat):
@@ -1214,7 +1272,7 @@ def calculate_cluster(context, use_preview_uv=False):
         raise RuntimeError("TexWorks MC is disabled")
     mat = get_active_material(context)
     slot_sources = collect_slot_sources(mat)
-    ref_w, ref_h, ref_slot = choose_reference_size(settings, slot_sources)
+    ref_w, ref_h, ref_slot = choose_reference_size(settings, slot_sources, mat)
     if use_preview_uv:
         faces, objects, warnings = collect_preview_cluster_faces(context, mat)
     else:

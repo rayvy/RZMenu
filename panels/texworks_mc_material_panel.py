@@ -39,8 +39,9 @@ def draw_mc_tools(layout, context):
     if mc:
         box = layout.box()
         box.prop(mc, "enabled", text="Material Combiner")
+        box.prop(mc, "auto_assign_registered_clusters", text="Auto Assign Registered Clusters")
         row = box.row(align=True)
-        row.prop(mc, "default_resolution", text="Fallback")
+        row.prop(mc, "default_resolution", text="Default Fallback")
         row.prop(mc, "reference_slot", text="")
         row = box.row(align=True)
         row.prop(mc, "vertex_margin_px", text="Margin")
@@ -49,24 +50,16 @@ def draw_mc_tools(layout, context):
         box.prop(mc, "max_raster_pixels", text="CPU Pixel Limit")
 
     if mat:
+        node = texworks_mc.find_material_group_node(mat)
+        if node and "Default Resolution X" in node.inputs and "Default Resolution Y" in node.inputs:
+            box = layout.box()
+            box.label(text="Material Fallback Resolution", icon='NODETREE')
+            row = box.row(align=True)
+            row.prop(node.inputs["Default Resolution X"], "default_value", text="X")
+            row.prop(node.inputs["Default Resolution Y"], "default_value", text="Y")
         layout.label(text=f"Active: {mat.name}", icon='MATERIAL')
     else:
         layout.label(text="No active material", icon='ERROR')
-
-
-def draw_material_context_button(self, context):
-    prefs = addon_prefs(context)
-    if not (
-        prefs
-        and getattr(prefs, "dog_shit", False)
-        and context.object is not None
-        and context.object.type == "MESH"
-    ):
-        return
-
-    layout = self.layout
-    row = layout.row(align=True)
-    row.operator("rzm.tw_mc_create_material", text="", icon='ADD')
 
 
 class RZM_PT_TexWorksMCShaderPanel(bpy.types.Panel):
@@ -94,22 +87,3 @@ class RZM_PT_TexWorksMCShaderPanel(bpy.types.Panel):
 classes_to_register = [
     RZM_PT_TexWorksMCShaderPanel,
 ]
-
-
-def register():
-    target_panel = getattr(bpy.types, "MATERIAL_PT_context_material", None)
-    if target_panel:
-        try:
-            target_panel.prepend(draw_material_context_button)
-        except Exception:
-            target_panel.append(draw_material_context_button)
-
-
-def unregister():
-    target_panel = getattr(bpy.types, "MATERIAL_PT_context_material", None)
-    if target_panel:
-        for fn in (draw_material_context_button,):
-            try:
-                target_panel.remove(fn)
-            except Exception:
-                pass

@@ -298,6 +298,11 @@ class TexWorksMCSettings(bpy.types.PropertyGroup):
         default=(512, 512),
         min=1,
     )
+    auto_assign_registered_clusters: BoolProperty(
+        name="Auto Assign Registered Clusters",
+        description="When an object uses a material with registered TWAA cluster files, emit missing texture assignments automatically in the template helper",
+        default=True,
+    )
     reference_slot: EnumProperty(
         name="Reference Slot",
         description="Texture slot used to derive cluster pixel density when possible",

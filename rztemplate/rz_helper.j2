@@ -86,6 +86,7 @@
     {# 4.5. КАСТОМННЫЕ ТЕКСТУРЫ (TexSlot & TexCond) #}
     {% set found_textures = [] %}
     {% set found_init_textures = [] %}
+    {% set assigned_tex_slots = [] %}
     {% set tex_ns = 'GIMI' if scene.rzm.game.selection == 'GenshinImpact' else 'ZZMI' %}
     {% if real_obj %}
         {# 1. Сбор уникальных условий для текстур #}
@@ -104,6 +105,9 @@
             {% set slot_id = key[12:] %}
             {# --- МЕХАНИЗМ КОРРЕКЦИИ: отсекаем .1, .2 и т.д. --- #}
             {% set clean_slot_id = slot_id.split('.')[0] %}
+            {% if clean_slot_id not in assigned_tex_slots %}
+                {% set _ = assigned_tex_slots.append(clean_slot_id) %}
+            {% endif %}
             
             {% set cond_key = 'rzm.TexCond.' + slot_id %}
             {% set init_key = 'rzm.TexInitAttach.' + slot_id %}
@@ -146,6 +150,9 @@
                 {% set slot_id = key[12:] %}
                 {# --- МЕХАНИЗМ КОРРЕКЦИИ: отсекаем .1, .2 и т.д. --- #}
                 {% set clean_slot_id = slot_id.split('.')[0] %}
+                {% if clean_slot_id not in assigned_tex_slots %}
+                    {% set _ = assigned_tex_slots.append(clean_slot_id) %}
+                {% endif %}
                 {% set init_key = 'rzm.TexInitAttach.' + slot_id %}
 
                 {% if real_obj.get('rzm.TexCond.' + slot_id) == cond and not real_obj.get(init_key, false) %}
@@ -165,6 +172,9 @@
             {% for key, value in real_obj.items() if key.startswith('rzm.TexSlot.') %}
                 {% set slot_id = key[12:] %}
                 {% set clean_slot_id = slot_id.split('.')[0] %}
+                {% if clean_slot_id not in assigned_tex_slots %}
+                    {% set _ = assigned_tex_slots.append(clean_slot_id) %}
+                {% endif %}
                 {% set init_key = 'rzm.TexInitAttach.' + slot_id %}
 
                 {% if real_obj.get('rzm.TexCond.' + slot_id) == cond and real_obj.get(init_key, false) %}
@@ -181,6 +191,35 @@
             endif
             {% endif %}
         {% endfor %}
+
+        {# 4. TWAA registered material clusters: fill missing slots without object custom props. #}
+        {% if scene.rzm.tw_mc and scene.rzm.tw_mc.auto_assign_registered_clusters %}
+            {% set material_names = [] %}
+            {% for mat_slot in real_obj.material_slots %}
+                {% if mat_slot.material and mat_slot.material.name not in material_names %}
+                    {% set _ = material_names.append(mat_slot.material.name) %}
+                {% endif %}
+            {% endfor %}
+            {% set auto_material_names = [] %}
+            {% for entry in scene.rzm.tw_mc_files if entry.resource_name and entry.material_name in material_names %}
+                {% if entry.material_name not in auto_material_names %}
+                    {% set _ = auto_material_names.append(entry.material_name) %}
+                {% endif %}
+            {% endfor %}
+            {% if auto_material_names|length == 1 %}
+                {% set auto_material_name = auto_material_names[0] %}
+                {% for entry in scene.rzm.tw_mc_files if entry.resource_name and entry.material_name == auto_material_name %}
+                    {% set auto_slot = entry.slot_name %}
+                    {% if auto_slot and auto_slot not in assigned_tex_slots %}
+                    Resource\{{ tex_ns }}\{{ auto_slot }} = ref Resource{{ utils.clean_resource(entry.resource_name) }}
+                        {% set _ = assigned_tex_slots.append(auto_slot) %}
+                        {% set _ = found_textures.append(1) %}
+                    {% endif %}
+                {% endfor %}
+            {% elif auto_material_names|length > 1 %}
+                    ; TWAA auto texture assignment skipped: multiple registered materials on one object
+            {% endif %}
+        {% endif %}
     {% endif %}
     {# Если в массиве есть хотя бы один элемент, значит текстуры были #}
     {% if found_textures %}

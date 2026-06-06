@@ -7,6 +7,7 @@ from pathlib import Path
 
 # A list to hold all classes from all modules for registration.
 __all_classes__ = []
+__menu_modules__ = []
 
 def register():
     """
@@ -14,7 +15,9 @@ def register():
     imports them, and registers the classes they contain.
     """
     global __all_classes__
+    global __menu_modules__
     __all_classes__ = []
+    __menu_modules__ = []
 
     package_dir = Path(__file__).parent
 
@@ -31,6 +34,9 @@ def register():
                 for cls in module.classes_to_register:
                     bpy.utils.register_class(cls)
                     __all_classes__.append(cls)
+            if hasattr(module, "register_menus"):
+                module.register_menus()
+                __menu_modules__.append(module)
 
         except Exception as e:
             print(f"ERROR: Failed to register module '{module_path.name}': {e}")
@@ -51,6 +57,7 @@ def unregister():
     Unregisters all the classes that were registered by this package.
     """
     global __all_classes__
+    global __menu_modules__
 
     # Remove export monkey-patches and timer before unregistering classes
     try:
@@ -59,6 +66,13 @@ def unregister():
     except Exception as e:
         print(f"[RZM] [CACHE] Interceptor uninstall skipped: {e}")
 
+    for module in reversed(__menu_modules__):
+        try:
+            if hasattr(module, "unregister_menus"):
+                module.unregister_menus()
+        except Exception as e:
+            print(f"ERROR: Failed to unregister menus for '{getattr(module, '__name__', module)}': {e}")
+
     for cls in reversed(__all_classes__):
         try:
             bpy.utils.unregister_class(cls)
@@ -66,3 +80,4 @@ def unregister():
             print(f"ERROR: Failed to unregister class '{cls.__name__}': {e}")
 
     __all_classes__ = []
+    __menu_modules__ = []
