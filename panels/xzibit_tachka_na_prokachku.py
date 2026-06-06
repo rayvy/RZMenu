@@ -111,6 +111,56 @@ def material_context_panel_types():
 panel_patchers = []
 
 
+def draw_xxmi_preparation_header(self, context):
+    obj = context.object
+    if not obj or obj.type != 'MESH':
+        return
+
+    layout = self.layout
+    box = layout.box()
+    row = box.row(align=True)
+    row.operator("rzm.xzibit_xxmi_preparation", text="XXMI Preparation", icon='TOOL_SETTINGS')
+
+    selected_meshes = [
+        item for item in context.selected_objects
+        if item and item.type == 'MESH' and item.data
+    ]
+    if len(selected_meshes) == 2 and context.active_object in selected_meshes:
+        row.operator(
+            "rzm.xzibit_xxmi_preparation_with_weights",
+            text="",
+            icon='MOD_DATA_TRANSFER',
+        )
+
+
+def draw_uv_texcoord_quick_button(self, context):
+    obj = context.object
+    if not obj or obj.type != 'MESH':
+        return
+
+    layout = self.layout
+    row = layout.row(align=True)
+    row.operator(
+        "rzm.xzibit_rename_active_uv_texcoord",
+        text="Active to TEXCOORD.xy",
+        icon='UV_DATA',
+    )
+
+
+def draw_color_attribute_quick_button(self, context):
+    obj = context.object
+    if not obj or obj.type != 'MESH':
+        return
+
+    layout = self.layout
+    row = layout.row(align=True)
+    row.operator(
+        "rzm.xzibit_create_color_attribute",
+        text="Create / Activate COLOR",
+        icon='GROUP_VCOL',
+    )
+
+
 def register():
     panel_patchers.clear()
     for panel_type in material_context_panel_types():
@@ -118,9 +168,30 @@ def register():
         patcher.panel_type = panel_type
         patcher.patch(debug=False)
         panel_patchers.append(patcher)
+    if hasattr(bpy.types, "DATA_PT_context_mesh"):
+        bpy.types.DATA_PT_context_mesh.prepend(draw_xxmi_preparation_header)
+    if hasattr(bpy.types, "DATA_PT_uv_texture"):
+        bpy.types.DATA_PT_uv_texture.append(draw_uv_texcoord_quick_button)
+    if hasattr(bpy.types, "DATA_PT_vertex_colors"):
+        bpy.types.DATA_PT_vertex_colors.append(draw_color_attribute_quick_button)
     print(f"[RZM TWAA] Material context hook patched {len(panel_patchers)} panel(s).")
 
 def unregister():
+    if hasattr(bpy.types, "DATA_PT_vertex_colors"):
+        try:
+            bpy.types.DATA_PT_vertex_colors.remove(draw_color_attribute_quick_button)
+        except Exception:
+            pass
+    if hasattr(bpy.types, "DATA_PT_uv_texture"):
+        try:
+            bpy.types.DATA_PT_uv_texture.remove(draw_uv_texcoord_quick_button)
+        except Exception:
+            pass
+    if hasattr(bpy.types, "DATA_PT_context_mesh"):
+        try:
+            bpy.types.DATA_PT_context_mesh.remove(draw_xxmi_preparation_header)
+        except Exception:
+            pass
     for patcher in reversed(panel_patchers):
         patcher.unpatch()
     panel_patchers.clear()
