@@ -1590,6 +1590,48 @@ def ensure_mc_file_entry(rzm, resource_name):
     return item
 
 
+def read_png_size(path):
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(24)
+    except Exception:
+        return None
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        return None
+    return struct.unpack(">II", header[16:24])
+
+
+def resolve_mc_file_path(entry):
+    rel_path = str(getattr(entry, "relative_path", "") or "").replace("\\", "/")
+    if not rel_path:
+        return None
+    try:
+        from ..operators.export_manager import get_target_path
+
+        target_path = get_target_path(bpy.context)
+    except Exception:
+        target_path = None
+    if not target_path:
+        return None
+    return os.path.join(bpy.path.abspath(target_path), rel_path)
+
+
+def refresh_mc_file_resolution_from_disk(entry):
+    path = resolve_mc_file_path(entry)
+    if not path:
+        return False
+    size = read_png_size(path)
+    if not size:
+        return False
+    w, h = int(size[0]), int(size[1])
+    if w <= 0 or h <= 0:
+        return False
+    if int(entry.resolution[0]) != w or int(entry.resolution[1]) != h:
+        entry.resolution = (w, h)
+        return True
+    return False
+
+
 def sync_mc_file_entries(rzm, manifest):
     desired = set(manifest["resources"].values())
     key = manifest["material_key"]
@@ -1613,6 +1655,7 @@ def sync_mc_file_entries(rzm, manifest):
 def mc_entries_by_material(rzm):
     materials = {}
     for entry in rzm.tw_mc_files:
+        refresh_mc_file_resolution_from_disk(entry)
         key = entry.material_key or material_key(entry.material_name)
         if not key:
             continue
@@ -1691,6 +1734,8 @@ def write_texcoord_object_params(context, mat_data, rect, atlas_w, atlas_h, bloc
         obj["RZM_TW_MC_COMPONENT"] = mat_data["material_key"]
         obj["RZM_TW_MC_ATLAS_SIZE"] = [int(atlas_w), int(atlas_h)]
         obj["RZM_TW_MC_RECT"] = [int(x), int(y), int(w), int(h)]
+        obj["RZM_TW_MC_VIRTUAL_ATLAS_SIZE"] = [int(atlas_w), int(atlas_h)]
+        obj["RZM_TW_MC_VIRTUAL_RECT"] = [int(x), int(y), int(w), int(h)]
         obj["RZM_TW_MC_BLOCKS"] = list(block_names)
         obj["RZM_TW_MC_POST_INVERT_X"] = inv_x
         obj["RZM_TW_MC_POST_INVERT_Y"] = inv_y

@@ -749,6 +749,11 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         description="Invert Y only during post-export TEXCOORD buffer patching. Does not affect Blender/source texture sampling",
         default=True
     )
+    tw_mc_post_patch_enabled: BoolProperty(
+        name="TW MC Post Buffer Patch",
+        description="Apply TWAA TEXCOORD buffer patching after export. Disable to compare raw exported buffers against patched runtime atlas UVs",
+        default=True
+    )
 
 
     # ─── ARTIST PROFILE ─────────────────────────────────────────────────────
@@ -1128,6 +1133,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "show_vg_stats")
         col.prop(self, "safe_export_temp_cleanup")
         col.prop(self, "dog_shit")
+        col.prop(self, "tw_mc_post_patch_enabled")
         col.prop(self, "tw_mc_post_invert_x")
         col.prop(self, "tw_mc_post_invert_y")
         col.separator()
