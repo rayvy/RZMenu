@@ -1,36 +1,47 @@
-"""Pure-Python UV cluster grouping and rectangle packing for TexWorks AutoAtlas.
+"""Pure-Python UV crop/repack core for RZMenu TexWorks AutoAtlas.
 
-The module intentionally knows nothing about Blender.  It accepts material-local
-face dictionaries and returns plain Python dictionaries.  Blender operators,
-images, file paths and bpy objects belong in the integration layer.
+The core has deliberately no Blender dependency.  The integration layer passes
+plain face dictionaries that MUST already be filtered to one Blender material.
+This module turns those faces into material-local UV islands, crop rectangles,
+packed layout groups and diagnostics.
 
-Public compatibility helpers kept for the surrounding addon:
-    build_uv_islands
-    group_stacked_islands
-    build_groups
-    build_texture_bsp_groups
-    build_no_texture_dense_groups
-    build_single_preview_group
-    shelf_pack
-    pack_groups
-    pack_groups_bounded
+There are two different workflows:
 
-New convenience helpers:
-    build_texture_groups
-    substance_canvas_size
-    detect_layout_overlaps
-    collect_diagnostics
-    build_and_pack_cluster
+* texture mode: crop useful source regions and repack them without resizing.
+  Pixel density and pixel integrity are preserved.  Optional rotation is only
+  90 degrees.  Mirroring fields are exposed for the integration layer, but are
+  not chosen automatically because mirroring does not improve rectangle fit.
+
+* no-texture mode: create a dense editable cluster layout.  UV islands receive
+  rectangle area proportional to useful geometry surface contribution.  The
+  core scales the generated rectangles to occupy a Substance-compatible canvas.
+
+IMPORTANT INTEGRATION CONTRACT
+------------------------------
+The Blender/image side must use the returned packed group metadata.  In
+particular, when ``rotation == 90`` it must rotate both exported crop pixels and
+remapped UVs by exactly one quarter turn.  The core cannot crop PNG files by
+itself because image IO intentionally lives outside this module.
+
+The core can diagnose mixed ``material_index`` input, but cannot magically know
+which material was intended.  Callers should pass one material only.
 """
 
 from __future__ import annotations
 
 import math
 from collections import defaultdict
+from copy import deepcopy
 
 SUBSTANCE_SIZES = (128, 256, 512, 1024, 2048, 4096)
 EPSILON = 1.0e-12
 UV_ROUND_DIGITS = 6
+DEFAULT_MAX_SIZE = 4096
+
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
 
 
 def next_power_of_two(value):
@@ -38,47 +49,58 @@ def next_power_of_two(value):
     return 1 << (value - 1).bit_length()
 
 
-def substance_side(value):
-    """Return the smallest Substance-compatible side length that can contain value."""
+def substance_side(value, max_size=DEFAULT_MAX_SIZE):
+    """Return the smallest allowed Substance side containing ``value`` pixels."""
     value = max(1, int(math.ceil(value)))
     for side in SUBSTANCE_SIZES:
-        if value <= side:
+        if side <= int(max_size) and value <= side:
             return side
-    raise RuntimeError(f"Required canvas side {value}px exceeds the 4096px TexWorks limit.")
+    raise RuntimeError(
+        f"Required canvas side {value}px is above the {int(max_size)}px limit."
+    )
 
 
-def substance_canvas_size(raw_w, raw_h):
-    return substance_side(raw_w), substance_side(raw_h)
+def substance_canvas_size(raw_w, raw_h, max_size=DEFAULT_MAX_SIZE):
+    """Pad raw used dimensions to independently selected Substance sides."""
+    return substance_side(raw_w, max_size), substance_side(raw_h, max_size)
 
 
 def rounded_uv(uv):
     return round(float(uv[0]), UV_ROUND_DIGITS), round(float(uv[1]), UV_ROUND_DIGITS)
 
 
-def _canonical_polygon(uvs):
-    """Rotation- and winding-independent polygon signature."""
-    points = tuple(rounded_uv(uv) for uv in uvs)
-    if not points:
-        return ()
-    variants = []
-    for seq in (points, tuple(reversed(points))):
-        for offset in range(len(seq)):
-            variants.append(seq[offset:] + seq[:offset])
-    return min(variants)
+def _safe_surface_area(face):
+    try:
+        area = float(face.get("surface_area", 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+    return area if math.isfinite(area) and area > 0.0 else 0.0
 
 
 def _bbox_from_uvs(uvs):
     if not uvs:
         return 0.0, 0.0, 0.0, 0.0
-    u_values = [float(uv[0]) for uv in uvs]
-    v_values = [float(uv[1]) for uv in uvs]
-    return min(u_values), min(v_values), max(u_values), max(v_values)
+    us = [float(uv[0]) for uv in uvs]
+    vs = [float(uv[1]) for uv in uvs]
+    return min(us), min(vs), max(us), max(vs)
 
 
 def _bbox_area(item):
     return max(0.0, float(item["u_max"]) - float(item["u_min"])) * max(
         0.0, float(item["v_max"]) - float(item["v_min"])
     )
+
+
+def _canonical_polygon(uvs):
+    """Rotation- and winding-independent UV polygon signature."""
+    points = tuple(rounded_uv(uv) for uv in uvs)
+    if not points:
+        return ()
+    variants = []
+    for sequence in (points, tuple(reversed(points))):
+        for offset in range(len(sequence)):
+            variants.append(sequence[offset:] + sequence[:offset])
+    return min(variants)
 
 
 def _union_find(size):
@@ -106,8 +128,42 @@ def _validate_faces(faces):
         if len(face["uvs"]) < 3:
             raise ValueError(f"Face {face_index} has fewer than three UV corners.")
         for uv in face["uvs"]:
-            if len(uv) < 2 or not math.isfinite(float(uv[0])) or not math.isfinite(float(uv[1])):
-                raise ValueError(f"Face {face_index} contains an invalid UV coordinate: {uv!r}")
+            if len(uv) < 2:
+                raise ValueError(f"Face {face_index} contains malformed UV coordinate {uv!r}.")
+            if not math.isfinite(float(uv[0])) or not math.isfinite(float(uv[1])):
+                raise ValueError(f"Face {face_index} contains invalid UV coordinate {uv!r}.")
+
+
+def inspect_material_locality(faces):
+    """Return material/object/mesh input summary without filtering anything."""
+    material_indices = sorted({face.get("material_index") for face in faces})
+    objects = sorted({str(face.get("object", "")) for face in faces})
+    meshes = sorted({str(face.get("mesh", "")) for face in faces})
+    warnings = []
+    if len(material_indices) > 1:
+        warnings.append(
+            "Core received faces with multiple material_index values: "
+            f"{material_indices!r}. The Blender integration must pre-filter one material."
+        )
+    return {
+        "material_indices": material_indices,
+        "object_names": objects,
+        "mesh_names": meshes,
+        "mixed_material_input": len(material_indices) > 1,
+        "input_warnings": warnings,
+    }
+
+
+def assert_material_local_faces(faces):
+    locality = inspect_material_locality(faces)
+    if locality["mixed_material_input"]:
+        raise ValueError(locality["input_warnings"][0])
+    return locality
+
+
+# ---------------------------------------------------------------------------
+# UV islands and stacked UV detection
+# ---------------------------------------------------------------------------
 
 
 def face_uv_bbox(face):
@@ -126,25 +182,24 @@ def face_group_bbox(faces, face_indices):
     )
 
 
-def _normalized_shape_signature(faces, face_indices, resolution=128):
-    """Cheap shape fingerprint used to avoid treating bbox twins as stacked islands."""
+def _normalized_shape_signature(faces, face_indices, resolution=256):
+    """Cheap normalized shape fingerprint used by stacked-island detection."""
     u_min, v_min, u_max, v_max = face_group_bbox(faces, face_indices)
     width = max(EPSILON, u_max - u_min)
     height = max(EPSILON, v_max - v_min)
     points = set()
     edges = set()
     for face_index in face_indices:
-        uvs = faces[face_index]["uvs"]
         normalized = []
-        for u, v in uvs:
+        for u, v in faces[face_index]["uvs"]:
             point = (
                 int(round(((float(u) - u_min) / width) * resolution)),
                 int(round(((float(v) - v_min) / height) * resolution)),
             )
             normalized.append(point)
             points.add(point)
-        for index, point_a in enumerate(normalized):
-            point_b = normalized[(index + 1) % len(normalized)]
+        for corner, point_a in enumerate(normalized):
+            point_b = normalized[(corner + 1) % len(normalized)]
             edges.add(tuple(sorted((point_a, point_b))))
     return frozenset(points), frozenset(edges)
 
@@ -156,58 +211,60 @@ def _set_similarity(a, b):
 
 
 def build_uv_islands(faces):
-    """Build material-local UV islands.
+    """Build material-local UV islands from shared UV edges.
 
-    Exact duplicate UV polygons are collapsed before adjacency traversal.  This
-    matters for stacked meshes: two identical triangles occupying the same
-    source pixels should not accidentally fuse every stacked layer into one
-    giant graph merely because their UV edges are identical.
+    Duplicate UV polygons are collapsed while adjacency is traversed and then
+    expanded back into the output.  This prevents perfectly stacked layers from
+    exploding the graph while retaining all original face indices.
     """
     _validate_faces(faces)
     if not faces:
         return []
 
     signature_to_rep = {}
-    representatives = []
+    representative_faces = []
     duplicate_members = defaultdict(list)
+
     for face_index, face in enumerate(faces):
         signature = _canonical_polygon(face["uvs"])
-        rep = signature_to_rep.get(signature)
-        if rep is None:
-            rep = len(representatives)
-            signature_to_rep[signature] = rep
-            representatives.append(face_index)
-        duplicate_members[rep].append(face_index)
+        rep_index = signature_to_rep.get(signature)
+        if rep_index is None:
+            rep_index = len(representative_faces)
+            signature_to_rep[signature] = rep_index
+            representative_faces.append(face_index)
+        duplicate_members[rep_index].append(face_index)
 
-    _, find, union = _union_find(len(representatives))
+    _, find, union = _union_find(len(representative_faces))
     edge_owners = defaultdict(list)
-    for rep_index, face_index in enumerate(representatives):
+    for rep_index, face_index in enumerate(representative_faces):
         uvs = faces[face_index]["uvs"]
-        for corner_index, uv_a in enumerate(uvs):
-            uv_b = uvs[(corner_index + 1) % len(uvs)]
-            edge = tuple(sorted((rounded_uv(uv_a), rounded_uv(uv_b))))
-            edge_owners[edge].append(rep_index)
+        for corner, uv_a in enumerate(uvs):
+            uv_b = uvs[(corner + 1) % len(uvs)]
+            edge_owners[tuple(sorted((rounded_uv(uv_a), rounded_uv(uv_b))))].append(rep_index)
 
     for owners in edge_owners.values():
-        if len(owners) >= 2:
+        if len(owners) > 1:
             first = owners[0]
-            for other in owners[1:]:
-                union(first, other)
+            for owner in owners[1:]:
+                union(first, owner)
 
     grouped_reps = defaultdict(list)
-    for rep_index in range(len(representatives)):
+    for rep_index in range(len(representative_faces)):
         grouped_reps[find(rep_index)].append(rep_index)
 
     islands = []
-    ordered_groups = sorted(grouped_reps.values(), key=lambda reps: min(representatives[r] for r in reps))
-    for island_index, rep_indices in enumerate(ordered_groups):
+    ordered = sorted(grouped_reps.values(), key=lambda reps: min(representative_faces[r] for r in reps))
+    for island_index, rep_indices in enumerate(ordered):
         face_indices = sorted(
-            face_index for rep_index in rep_indices for face_index in duplicate_members[rep_index]
+            face_index
+            for rep_index in rep_indices
+            for face_index in duplicate_members[rep_index]
         )
         u_min, v_min, u_max, v_max = face_group_bbox(faces, face_indices)
         points, edges = _normalized_shape_signature(faces, face_indices)
-        duplicate_counts = [len(duplicate_members[rep_index]) for rep_index in rep_indices]
-        collapsed_stack_count = min(duplicate_counts) if duplicate_counts else 1
+        duplicate_counts = [len(duplicate_members[rep]) for rep in rep_indices]
+        stack_count = max(1, min(duplicate_counts) if duplicate_counts else 1)
+        surface_total = sum(_safe_surface_area(faces[index]) for index in face_indices)
         islands.append({
             "index": island_index,
             "face_indices": face_indices,
@@ -215,11 +272,12 @@ def build_uv_islands(faces):
             "v_min": v_min,
             "u_max": u_max,
             "v_max": v_max,
-            "surface_area": sum(max(0.0, float(faces[i].get("surface_area", 0.0))) for i in face_indices),
             "shape_points": points,
             "shape_edges": edges,
-            "stack_count": max(1, collapsed_stack_count),
+            "stack_count": stack_count,
             "duplicate_polygon_count": sum(max(0, count - 1) for count in duplicate_counts),
+            "surface_area_total": surface_total,
+            "surface_area": surface_total / max(1, stack_count),
         })
     return islands
 
@@ -242,42 +300,23 @@ def bbox_stack_similarity(a, b, threshold=0.95):
     bh = max(0.0, float(b["v_max"]) - float(b["v_min"]))
     if min(aw, ah, bw, bh) <= 1.0e-8:
         return False
-    if min(aw, bw) / max(aw, bw) < threshold or min(ah, bh) / max(ah, bh) < threshold:
+    if min(aw, bw) / max(aw, bw) < threshold:
+        return False
+    if min(ah, bh) / max(ah, bh) < threshold:
         return False
     if bbox_overlap_ratio(a, b) < threshold:
         return False
-
-    points_a = a.get("shape_points")
-    points_b = b.get("shape_points")
-    edges_a = a.get("shape_edges")
-    edges_b = b.get("shape_edges")
-    if points_a is not None and points_b is not None:
-        if _set_similarity(points_a, points_b) < threshold:
+    if "shape_points" in a and "shape_points" in b:
+        if _set_similarity(a["shape_points"], b["shape_points"]) < threshold:
             return False
-    if edges_a is not None and edges_b is not None:
-        if _set_similarity(edges_a, edges_b) < threshold:
+    if "shape_edges" in a and "shape_edges" in b:
+        if _set_similarity(a["shape_edges"], b["shape_edges"]) < threshold:
             return False
     return True
 
 
-def _group_from_islands(group_index, group_islands):
-    face_indices = sorted(face for island in group_islands for face in island["face_indices"])
-    island_indices = sorted(island["index"] for island in group_islands)
-    return {
-        "index": group_index,
-        "island_indices": island_indices,
-        "face_indices": face_indices,
-        "u_min": min(island["u_min"] for island in group_islands),
-        "v_min": min(island["v_min"] for island in group_islands),
-        "u_max": max(island["u_max"] for island in group_islands),
-        "v_max": max(island["v_max"] for island in group_islands),
-        "surface_area": sum(float(island.get("surface_area", 0.0)) for island in group_islands),
-        "stack_count": sum(max(1, int(island.get("stack_count", 1))) for island in group_islands),
-        "duplicate_polygon_count": sum(int(island.get("duplicate_polygon_count", 0)) for island in group_islands),
-    }
-
-
 def group_stacked_islands(islands, threshold=0.95):
+    """Merge islands that sample effectively the same source texture region."""
     if not islands:
         return []
     _, find, union = _union_find(len(islands))
@@ -289,25 +328,147 @@ def group_stacked_islands(islands, threshold=0.95):
     grouped = defaultdict(list)
     for island_index, island in enumerate(islands):
         grouped[find(island_index)].append(island)
-    ordered = sorted(grouped.values(), key=lambda values: min(item["index"] for item in values))
-    return [_group_from_islands(index, values) for index, values in enumerate(ordered)]
 
-
-def _apply_pixel_dimensions(groups, ref_w, ref_h, margin_px):
-    ref_w = max(1, int(ref_w))
-    ref_h = max(1, int(ref_h))
-    margin_px = max(0, int(margin_px))
-    for group in groups:
-        content_w = max(1, int(math.ceil((group["u_max"] - group["u_min"]) * ref_w)))
-        content_h = max(1, int(math.ceil((group["v_max"] - group["v_min"]) * ref_h)))
-        group["content_w"] = content_w
-        group["content_h"] = content_h
-        group["w"] = content_w + margin_px * 2
-        group["h"] = content_h + margin_px * 2
+    groups = []
+    ordered = sorted(grouped.values(), key=lambda chunk: min(i["index"] for i in chunk))
+    for group_index, chunk in enumerate(ordered):
+        face_indices = sorted(index for island in chunk for index in island["face_indices"])
+        stack_count = sum(max(1, int(island.get("stack_count", 1))) for island in chunk)
+        surface_total = sum(float(island.get("surface_area_total", island.get("surface_area", 0.0))) for island in chunk)
+        groups.append({
+            "index": group_index,
+            "island_indices": sorted(island["index"] for island in chunk),
+            "face_indices": face_indices,
+            "u_min": min(island["u_min"] for island in chunk),
+            "v_min": min(island["v_min"] for island in chunk),
+            "u_max": max(island["u_max"] for island in chunk),
+            "v_max": max(island["v_max"] for island in chunk),
+            "stack_count": max(1, stack_count),
+            "duplicate_polygon_count": sum(int(island.get("duplicate_polygon_count", 0)) for island in chunk),
+            "surface_area_total": surface_total,
+            "surface_area": surface_total / max(1, stack_count),
+        })
     return groups
 
 
-def _face_mapping(groups):
+# ---------------------------------------------------------------------------
+# Crop groups
+# ---------------------------------------------------------------------------
+
+
+def _decorate_crop_group(group, ref_w, ref_h, margin_px):
+    result = dict(group)
+    source_w = max(1, int(math.ceil((float(group["u_max"]) - float(group["u_min"])) * int(ref_w))))
+    source_h = max(1, int(math.ceil((float(group["v_max"]) - float(group["v_min"])) * int(ref_h))))
+    result.update({
+        "mode": "texture",
+        "content_w": source_w,
+        "content_h": source_h,
+        "source_content_w": source_w,
+        "source_content_h": source_h,
+        "packed_content_w": source_w,
+        "packed_content_h": source_h,
+        "margin_px": int(margin_px),
+        "w": source_w + int(margin_px) * 2,
+        "h": source_h + int(margin_px) * 2,
+        "rotation": 0,
+        "flip_x": False,
+        "flip_y": False,
+    })
+    return result
+
+
+def _face_bbox_gap_split(faces, face_indices, ref_w, ref_h, margin_px, min_gap_px=16):
+    """Find a real empty UV corridor and split only across that corridor.
+
+    This never uses median cuts, so it cannot manufacture hundreds of strips by
+    slicing continuously occupied regions.  It is intentionally conservative.
+    """
+    if len(face_indices) < 8:
+        return None
+    boxes = [(index, face_uv_bbox(faces[index])) for index in face_indices]
+    best = None
+    for axis, ref_size in ((0, ref_w), (1, ref_h)):
+        intervals = []
+        for face_index, box in boxes:
+            low = box[axis]
+            high = box[axis + 2]
+            intervals.append((low, high, face_index))
+        intervals.sort(key=lambda item: (item[0], item[1], item[2]))
+        running_high = intervals[0][1]
+        for position in range(1, len(intervals)):
+            gap_uv = intervals[position][0] - running_high
+            gap_px = gap_uv * float(ref_size)
+            if gap_px >= max(float(min_gap_px), float(margin_px) * 4.0):
+                left = [entry[2] for entry in intervals[:position]]
+                right = [entry[2] for entry in intervals[position:]]
+                if left and right:
+                    score = gap_px
+                    if best is None or score > best[0]:
+                        best = (score, left, right)
+            running_high = max(running_high, intervals[position][1])
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
+def _pixel_bbox_area(faces, face_indices, ref_w, ref_h, margin_px):
+    u_min, v_min, u_max, v_max = face_group_bbox(faces, face_indices)
+    width = max(1, int(math.ceil((u_max - u_min) * int(ref_w)))) + int(margin_px) * 2
+    height = max(1, int(math.ceil((v_max - v_min) * int(ref_h)))) + int(margin_px) * 2
+    return width * height
+
+
+def _split_sparse_crop_groups(
+    faces,
+    base_groups,
+    ref_w,
+    ref_h,
+    margin_px,
+    min_saving=0.55,
+    max_groups=256,
+):
+    """Split only very sparse groups with a genuine empty corridor."""
+    queue = [dict(group) for group in base_groups]
+    output = []
+    while queue:
+        group = queue.pop(0)
+        if len(output) + len(queue) >= max_groups:
+            output.append(group)
+            continue
+        split = _face_bbox_gap_split(faces, group["face_indices"], ref_w, ref_h, margin_px)
+        if split is None:
+            output.append(group)
+            continue
+        left, right = split
+        parent_area = _pixel_bbox_area(faces, group["face_indices"], ref_w, ref_h, margin_px)
+        child_area = _pixel_bbox_area(faces, left, ref_w, ref_h, margin_px) + _pixel_bbox_area(
+            faces, right, ref_w, ref_h, margin_px
+        )
+        saving = 1.0 - child_area / max(1, parent_area)
+        if saving < float(min_saving):
+            output.append(group)
+            continue
+        children = []
+        for face_indices in (left, right):
+            u_min, v_min, u_max, v_max = face_group_bbox(faces, face_indices)
+            child = dict(group)
+            child.update({
+                "face_indices": sorted(face_indices),
+                "u_min": u_min,
+                "v_min": v_min,
+                "u_max": u_max,
+                "v_max": v_max,
+                "split_from_sparse_parent": True,
+            })
+            children.append(child)
+        queue.extend(children)
+    for index, group in enumerate(output):
+        group["index"] = index
+    return output
+
+
+def _mapping_from_groups(groups):
     mapping = {}
     for group in groups:
         for face_index in group["face_indices"]:
@@ -315,378 +476,618 @@ def _face_mapping(groups):
     return mapping
 
 
-def build_groups(faces, ref_w, ref_h, margin_px):
-    """Compatibility name for standard texture crop/repack grouping."""
-    return build_texture_groups(faces, ref_w, ref_h, margin_px)
-
-
-def build_texture_groups(faces, ref_w, ref_h, margin_px):
+def build_texture_groups(
+    faces,
+    ref_w,
+    ref_h,
+    margin_px,
+    *,
+    split_sparse=True,
+    strict_material=False,
+):
+    """Build fixed-pixel crop rectangles from useful material-local UV regions."""
+    _validate_faces(faces)
+    if strict_material:
+        assert_material_local_faces(faces)
     islands = build_uv_islands(faces)
     groups = group_stacked_islands(islands)
-    _apply_pixel_dimensions(groups, ref_w, ref_h, margin_px)
-    return islands, groups, _face_mapping(groups)
+    if split_sparse:
+        groups = _split_sparse_crop_groups(faces, groups, ref_w, ref_h, margin_px)
+    groups = [_decorate_crop_group(group, ref_w, ref_h, margin_px) for group in groups]
+    return islands, groups, _mapping_from_groups(groups)
 
 
-def group_pixel_area_from_bbox(bbox, ref_w, ref_h, margin_px):
-    u_min, v_min, u_max, v_max = bbox
-    content_w = max(1, int(math.ceil((u_max - u_min) * ref_w)))
-    content_h = max(1, int(math.ceil((v_max - v_min) * ref_h)))
-    return (content_w + margin_px * 2) * (content_h + margin_px * 2)
-
-
-def _split_by_largest_gap(faces, face_indices):
-    """Return a conservative UV split only when there is an obvious empty corridor."""
-    best = None
-    for axis in (0, 1):
-        items = []
-        for face_index in face_indices:
-            bbox = face_uv_bbox(faces[face_index])
-            center = (bbox[0] + bbox[2]) * 0.5 if axis == 0 else (bbox[1] + bbox[3]) * 0.5
-            items.append((center, face_index))
-        items.sort()
-        span = max(EPSILON, items[-1][0] - items[0][0])
-        for split_index in range(8, len(items) - 7):
-            gap = items[split_index][0] - items[split_index - 1][0]
-            ratio = gap / span
-            if best is None or ratio > best[0]:
-                best = (ratio, [item[1] for item in items[:split_index]], [item[1] for item in items[split_index:]])
-    if best is None or best[0] < 0.20:
-        return None
-    return best[1], best[2]
+def build_groups(faces, ref_w, ref_h, margin_px):
+    """Compatibility alias for crop group construction."""
+    return build_texture_groups(faces, ref_w, ref_h, margin_px, split_sparse=False)
 
 
 def build_texture_bsp_groups(faces, ref_w, ref_h, margin_px):
-    """Compatibility entry point with deliberately conservative sparse splitting.
+    """Compatibility name.  Uses safe empty-corridor splitting, never median BSP."""
+    return build_texture_groups(faces, ref_w, ref_h, margin_px, split_sparse=True)
 
-    The previous implementation recursively median-split faces and could shred a
-    connected island into horizontal strips.  This version starts from true UV
-    islands, preserves stacked groups, and splits only large non-stacked groups
-    with an obvious empty UV corridor and a meaningful rectangle-area saving.
-    """
-    islands, base_groups, _ = build_texture_groups(faces, ref_w, ref_h, margin_px)
-    final_groups = []
-    pending = list(base_groups)
-    while pending:
-        group = pending.pop(0)
-        if group.get("stack_count", 1) > 1 or len(group["face_indices"]) < 32:
-            final_groups.append(group)
-            continue
-        split = _split_by_largest_gap(faces, group["face_indices"])
-        if split is None:
-            final_groups.append(group)
-            continue
-        left, right = split
-        parent_area = group_pixel_area_from_bbox(face_group_bbox(faces, group["face_indices"]), ref_w, ref_h, margin_px)
-        child_area = group_pixel_area_from_bbox(face_group_bbox(faces, left), ref_w, ref_h, margin_px)
-        child_area += group_pixel_area_from_bbox(face_group_bbox(faces, right), ref_w, ref_h, margin_px)
-        if child_area > parent_area * 0.65:
-            final_groups.append(group)
-            continue
-        for child_faces in (left, right):
-            u_min, v_min, u_max, v_max = face_group_bbox(faces, child_faces)
-            child = {
-                "index": 0,
-                "island_indices": list(group["island_indices"]),
-                "face_indices": sorted(child_faces),
-                "u_min": u_min,
-                "v_min": v_min,
-                "u_max": u_max,
-                "v_max": v_max,
-                "surface_area": sum(max(0.0, float(faces[i].get("surface_area", 0.0))) for i in child_faces),
-                "stack_count": 1,
-                "sparse_split": True,
-            }
-            _apply_pixel_dimensions([child], ref_w, ref_h, margin_px)
-            final_groups.append(child)
 
-    for index, group in enumerate(final_groups):
-        group["index"] = index
-    return islands, final_groups, _face_mapping(final_groups)
+# ---------------------------------------------------------------------------
+# No-texture dense groups
+# ---------------------------------------------------------------------------
 
 
 def _island_aspect(island):
     width = max(EPSILON, float(island["u_max"]) - float(island["u_min"]))
     height = max(EPSILON, float(island["v_max"]) - float(island["v_min"]))
-    return max(0.20, min(5.0, width / height))
+    return max(0.125, min(8.0, width / height))
 
 
-def build_no_texture_dense_groups(faces, ref_w, ref_h, margin_px):
-    """Build editable dense rectangles per UV island, weighted by geometry area."""
+def _decorate_dense_group(group, content_w, content_h, margin_px):
+    result = dict(group)
+    content_w = max(1, int(content_w))
+    content_h = max(1, int(content_h))
+    result.update({
+        "mode": "no_texture",
+        "content_w": content_w,
+        "content_h": content_h,
+        "source_content_w": content_w,
+        "source_content_h": content_h,
+        "packed_content_w": content_w,
+        "packed_content_h": content_h,
+        "margin_px": int(margin_px),
+        "w": content_w + int(margin_px) * 2,
+        "h": content_h + int(margin_px) * 2,
+        "rotation": 0,
+        "flip_x": False,
+        "flip_y": False,
+    })
+    return result
+
+
+def build_no_texture_dense_groups(
+    faces,
+    ref_w,
+    ref_h,
+    margin_px,
+    *,
+    min_editable_side=12,
+    strict_material=False,
+):
+    """Build island-based editable groups weighted by useful surface area.
+
+    ``ref_w * ref_h`` is treated as the desired working pixel budget.  Final
+    fitting and near-full canvas utilization are performed by
+    ``pack_no_texture_dense_groups`` or ``build_and_pack_cluster``.
+    """
+    _validate_faces(faces)
+    if strict_material:
+        assert_material_local_faces(faces)
     islands = build_uv_islands(faces)
     if not islands:
         return [], [], {}
 
-    ref_w = max(1, int(ref_w))
-    ref_h = max(1, int(ref_h))
-    margin_px = max(0, int(margin_px))
-    total_surface = sum(max(0.0, float(island.get("surface_area", 0.0))) for island in islands)
-    fallback_weight = 1.0 / len(islands)
-    target_content_pixels = max(1, int(ref_w * ref_h * 0.68))
-    min_side = 16
-
+    base_groups = group_stacked_islands(islands)
+    total_area = sum(max(EPSILON, float(group.get("surface_area", 0.0))) for group in base_groups)
+    desired_pixels = max(1, int(ref_w) * int(ref_h))
     groups = []
-    for island in islands:
-        surface = max(0.0, float(island.get("surface_area", 0.0)))
-        weight = surface / total_surface if total_surface > EPSILON else fallback_weight
-        pixel_budget = max(min_side * min_side, target_content_pixels * weight)
-        aspect = _island_aspect(island)
-        content_w = max(min_side, int(math.ceil(math.sqrt(pixel_budget * aspect))))
-        content_h = max(min_side, int(math.ceil(math.sqrt(pixel_budget / aspect))))
-        group = {
-            "index": len(groups),
-            "island_indices": [island["index"]],
-            "face_indices": list(island["face_indices"]),
-            "u_min": island["u_min"],
-            "v_min": island["v_min"],
-            "u_max": island["u_max"],
-            "v_max": island["v_max"],
-            "content_w": content_w,
-            "content_h": content_h,
-            "w": content_w + margin_px * 2,
-            "h": content_h + margin_px * 2,
-            "surface_area": surface,
-            "stack_count": 1,
-        }
-        groups.append(group)
-    return islands, groups, _face_mapping(groups)
+    for index, group in enumerate(base_groups):
+        area = max(EPSILON, float(group.get("surface_area", 0.0)))
+        aspect = _island_aspect(group)
+        budget = max(float(min_editable_side) ** 2, desired_pixels * area / total_area)
+        content_w = max(int(min_editable_side), int(round(math.sqrt(budget * aspect))))
+        content_h = max(int(min_editable_side), int(round(math.sqrt(budget / aspect))))
+        dense = dict(group)
+        dense["index"] = index
+        dense["allocation_weight"] = area / total_area
+        groups.append(_decorate_dense_group(dense, content_w, content_h, margin_px))
+    return islands, groups, _mapping_from_groups(groups)
 
 
-def build_single_preview_group(faces, ref_w, ref_h, margin_px):
-    if not faces:
-        return [], [], {}
-    _validate_faces(faces)
-    u_min, v_min, u_max, v_max = face_group_bbox(faces, range(len(faces)))
-    group = {
-        "index": 0,
-        "island_indices": [0],
-        "face_indices": list(range(len(faces))),
-        "u_min": u_min,
-        "v_min": v_min,
-        "u_max": u_max,
-        "v_max": v_max,
-        "stack_count": 1,
-        "x": 0,
-        "y": 0,
-    }
-    _apply_pixel_dimensions([group], ref_w, ref_h, margin_px)
-    island = {key: group[key] for key in ("index", "face_indices", "u_min", "v_min", "u_max", "v_max")}
-    return [island], [group], _face_mapping([group])
+# ---------------------------------------------------------------------------
+# Rectangle packing
+# ---------------------------------------------------------------------------
 
 
 def _rect_intersects(a, b):
     return not (
-        a["x"] + a["w"] <= b["x"]
-        or b["x"] + b["w"] <= a["x"]
-        or a["y"] + a["h"] <= b["y"]
-        or b["y"] + b["h"] <= a["y"]
+        a[0] + a[2] <= b[0]
+        or b[0] + b[2] <= a[0]
+        or a[1] + a[3] <= b[1]
+        or b[1] + b[3] <= a[1]
     )
+
+
+def _rect_contains(a, b):
+    return (
+        a[0] <= b[0]
+        and a[1] <= b[1]
+        and a[0] + a[2] >= b[0] + b[2]
+        and a[1] + a[3] >= b[1] + b[3]
+    )
+
+
+def _prune_free_rectangles(rectangles):
+    cleaned = []
+    for rect in rectangles:
+        if rect[2] <= 0 or rect[3] <= 0:
+            continue
+        if any(_rect_contains(other, rect) for other in rectangles if other is not rect):
+            continue
+        if rect not in cleaned:
+            cleaned.append(rect)
+    return cleaned
+
+
+def _split_free_rectangles(free_rectangles, used):
+    output = []
+    ux, uy, uw, uh = used
+    for free in free_rectangles:
+        if not _rect_intersects(free, used):
+            output.append(free)
+            continue
+        fx, fy, fw, fh = free
+        if ux > fx:
+            output.append((fx, fy, ux - fx, fh))
+        if ux + uw < fx + fw:
+            output.append((ux + uw, fy, fx + fw - (ux + uw), fh))
+        if uy > fy:
+            output.append((fx, fy, fw, uy - fy))
+        if uy + uh < fy + fh:
+            output.append((fx, uy + uh, fw, fy + fh - (uy + uh)))
+    return _prune_free_rectangles(output)
+
+
+def _group_orientations(group, allow_rotate):
+    width = int(group["w"])
+    height = int(group["h"])
+    yield 0, width, height
+    if allow_rotate and width != height:
+        yield 90, height, width
+
+
+def _apply_orientation(group, rotation, x, y, width, height):
+    packed = dict(group)
+    packed["x"] = int(x)
+    packed["y"] = int(y)
+    packed["rotation"] = int(rotation)
+    packed["w"] = int(width)
+    packed["h"] = int(height)
+    if rotation == 90:
+        packed["packed_content_w"] = int(group["source_content_h"])
+        packed["packed_content_h"] = int(group["source_content_w"])
+    else:
+        packed["packed_content_w"] = int(group["source_content_w"])
+        packed["packed_content_h"] = int(group["source_content_h"])
+    return packed
+
+
+def maxrects_pack(groups, canvas_w, canvas_h, *, gap=0, allow_rotate=False):
+    """Pack rectangles into an exact canvas using a Best Short Side Fit variant."""
+    canvas_w = max(1, int(canvas_w))
+    canvas_h = max(1, int(canvas_h))
+    gap = max(0, int(gap))
+    free_rectangles = [(0, 0, canvas_w, canvas_h)]
+    packed = []
+
+    ordered = sorted(
+        groups,
+        key=lambda group: (
+            max(int(group["w"]), int(group["h"])),
+            int(group["w"]) * int(group["h"]),
+            min(int(group["w"]), int(group["h"])),
+            -int(group.get("index", 0)),
+        ),
+        reverse=True,
+    )
+
+    for group in ordered:
+        best = None
+        for rotation, width, height in _group_orientations(group, allow_rotate):
+            fit_w = width + gap
+            fit_h = height + gap
+            for free in free_rectangles:
+                fx, fy, fw, fh = free
+                if fit_w > fw or fit_h > fh:
+                    continue
+                short_side = min(fw - fit_w, fh - fit_h)
+                long_side = max(fw - fit_w, fh - fit_h)
+                score = (short_side, long_side, fy, fx, rotation)
+                if best is None or score < best[0]:
+                    best = (score, rotation, fx, fy, width, height, fit_w, fit_h)
+        if best is None:
+            return None
+        _, rotation, x, y, width, height, fit_w, fit_h = best
+        packed.append(_apply_orientation(group, rotation, x, y, width, height))
+        free_rectangles = _split_free_rectangles(free_rectangles, (x, y, fit_w, fit_h))
+
+    packed.sort(key=lambda group: int(group.get("index", 0)))
+    used_w = max((int(group["x"]) + int(group["w"]) for group in packed), default=1)
+    used_h = max((int(group["y"]) + int(group["h"]) for group in packed), default=1)
+    return packed, used_w, used_h
+
+
+def shelf_pack(groups, width, gap):
+    """Compatibility helper retained for external callers.
+
+    New code should use maxrects packing.  This wrapper packs into a tall canvas
+    and returns raw used bounds.
+    """
+    total_height = sum(int(group["h"]) + max(0, int(gap)) for group in groups) or 1
+    result = maxrects_pack(groups, int(width), total_height, gap=gap, allow_rotate=False)
+    if result is None:
+        return [], 0, 0
+    return result
+
+
+def _candidate_raw_sides(groups, max_size):
+    largest_w = max(int(group["w"]) for group in groups)
+    total_area = sum(int(group["w"]) * int(group["h"]) for group in groups)
+    ideal = int(math.ceil(math.sqrt(max(1, total_area))))
+    values = {largest_w, ideal, int(max_size)}
+    current = largest_w
+    while current < int(max_size):
+        values.add(current)
+        current = max(current + 1, int(math.ceil(current * 1.25)))
+    return sorted(value for value in values if largest_w <= value <= int(max_size))
+
+
+def pack_groups(groups, gap=0, max_size=DEFAULT_MAX_SIZE, power_of_two=False, allow_rotate=False):
+    """Pack into raw dimensions no larger than max_size.
+
+    Compatibility API: returns ``packed_groups, raw_used_w, raw_used_h``.  The
+    Blender side may pad raw bounds afterwards.  For Substance-aware shrinking,
+    prefer ``pack_texture_groups_substance``.
+    """
+    if not groups:
+        return [], 1, 1
+    max_size = int(max_size)
+    largest_w = max(int(group["w"]) for group in groups)
+    largest_h = max(int(group["h"]) for group in groups)
+    if min(largest_w, largest_h) > max_size or (largest_w > max_size and largest_h > max_size):
+        raise RuntimeError(
+            f"One UV group is larger than the {max_size}px limit: {largest_w}x{largest_h}."
+        )
+
+    best = None
+    for width in _candidate_raw_sides(groups, max_size):
+        result = maxrects_pack(groups, width, max_size, gap=gap, allow_rotate=allow_rotate)
+        if result is None:
+            continue
+        packed, used_w, used_h = result
+        if used_w > max_size or used_h > max_size:
+            continue
+        out_w = next_power_of_two(used_w) if power_of_two else used_w
+        out_h = next_power_of_two(used_h) if power_of_two else used_h
+        if out_w > max_size or out_h > max_size:
+            continue
+        score = (out_w * out_h, max(out_w, out_h), out_h, out_w)
+        if best is None or score < best[0]:
+            best = (score, packed, out_w, out_h)
+    if best is None:
+        raise RuntimeError(
+            f"Cannot pack UV groups into {max_size}x{max_size}. "
+            "Reduce margins, inspect UV ranges, or split the component."
+        )
+    return best[1], best[2], best[3]
+
+
+def pack_groups_bounded(groups, gap, max_w, max_h, power_of_two=False, allow_rotate=False):
+    """Compatibility bounded pack.  Returns None when rectangles do not fit."""
+    if not groups:
+        return [], 1, 1
+    result = maxrects_pack(groups, int(max_w), int(max_h), gap=gap, allow_rotate=allow_rotate)
+    if result is None:
+        return None
+    packed, used_w, used_h = result
+    out_w = next_power_of_two(used_w) if power_of_two else used_w
+    out_h = next_power_of_two(used_h) if power_of_two else used_h
+    if out_w > int(max_w) or out_h > int(max_h):
+        return None
+    return packed, out_w, out_h
+
+
+def _substance_candidates(max_size=DEFAULT_MAX_SIZE):
+    sides = [side for side in SUBSTANCE_SIZES if side <= int(max_size)]
+    return sorted(((w, h) for w in sides for h in sides), key=lambda pair: (pair[0] * pair[1], max(pair), pair[1], pair[0]))
+
+
+def _annotate_canvas(groups, canvas_w, canvas_h):
+    output = []
+    for group in groups:
+        copy = dict(group)
+        copy["canvas_w"] = int(canvas_w)
+        copy["canvas_h"] = int(canvas_h)
+        output.append(copy)
+    return output
+
+
+def pack_texture_groups_substance(groups, *, gap=0, max_size=DEFAULT_MAX_SIZE, allow_rotate=False):
+    """Pack fixed-size texture crops into the smallest valid Substance canvas."""
+    if not groups:
+        return [], 128, 128, 1, 1
+    best = None
+    total_area = sum(int(group["w"]) * int(group["h"]) for group in groups)
+    for canvas_w, canvas_h in _substance_candidates(max_size):
+        result = maxrects_pack(groups, canvas_w, canvas_h, gap=gap, allow_rotate=allow_rotate)
+        if result is None:
+            continue
+        packed, used_w, used_h = result
+        fill = total_area / max(1, canvas_w * canvas_h)
+        score = (canvas_w * canvas_h, -fill, max(canvas_w, canvas_h), canvas_h, canvas_w)
+        if best is None or score < best[0]:
+            best = (score, packed, canvas_w, canvas_h, used_w, used_h)
+    if best is None:
+        raise RuntimeError(
+            f"Cannot fit texture crop rectangles inside the Substance limit {int(max_size)}x{int(max_size)}. "
+            "The used source pixels exceed one cluster; inspect UV ranges or split the material component."
+        )
+    _, packed, canvas_w, canvas_h, used_w, used_h = best
+    return _annotate_canvas(packed, canvas_w, canvas_h), canvas_w, canvas_h, used_w, used_h
+
+
+def _rescale_dense_groups(groups, scale, min_editable_side):
+    output = []
+    for group in groups:
+        aspect = max(0.125, min(8.0, float(group["content_w"]) / max(1.0, float(group["content_h"]))))
+        base_area = max(1.0, float(group["content_w"]) * float(group["content_h"]))
+        target_area = max(float(min_editable_side) ** 2, base_area * scale * scale)
+        width = max(int(min_editable_side), int(round(math.sqrt(target_area * aspect))))
+        height = max(int(min_editable_side), int(round(math.sqrt(target_area / aspect))))
+        output.append(_decorate_dense_group(group, width, height, int(group.get("margin_px", 0))))
+    return output
+
+
+def _fit_dense_groups_to_canvas(
+    groups,
+    canvas_w,
+    canvas_h,
+    *,
+    gap,
+    allow_rotate,
+    min_editable_side,
+):
+    """Return the largest shared scale that fits an exact canvas, or None."""
+    low = 0.0
+    high = 4.0
+    best = None
+    for _ in range(28):
+        scale = (low + high) * 0.5
+        scaled = _rescale_dense_groups(groups, scale, min_editable_side)
+        result = maxrects_pack(scaled, canvas_w, canvas_h, gap=gap, allow_rotate=allow_rotate)
+        if result is None:
+            high = scale
+        else:
+            packed, used_w, used_h = result
+            best = (packed, used_w, used_h, scale)
+            low = scale
+    return best
+
+
+def pack_no_texture_dense_groups(
+    groups,
+    *,
+    target_w,
+    target_h,
+    gap=0,
+    allow_rotate=True,
+    min_editable_side=12,
+    max_size=DEFAULT_MAX_SIZE,
+):
+    """Scale generated island rectangles into an efficient Substance canvas.
+
+    ``target_w * target_h`` is a quality budget, not a mandatory empty slab.
+    Every compatible rectangular canvas up to that area is considered.  The
+    winner maximizes useful editable pixels first, then prefers less blank
+    padding.  This allows results such as 128x4096 when that shape is genuinely
+    useful, while avoiding a 1024x512 canvas that contains only a 512x512 square.
+    """
+    target_canvas_w, target_canvas_h = substance_canvas_size(target_w, target_h, max_size)
+    budget_area = target_canvas_w * target_canvas_h
+    candidates = [
+        (canvas_w, canvas_h)
+        for canvas_w, canvas_h in _substance_candidates(max_size)
+        if canvas_w * canvas_h <= budget_area
+    ]
+    if not groups:
+        return [], 128, 128, 1, 1
+
+    best = None
+    for canvas_w, canvas_h in candidates:
+        fitted = _fit_dense_groups_to_canvas(
+            groups,
+            canvas_w,
+            canvas_h,
+            gap=gap,
+            allow_rotate=allow_rotate,
+            min_editable_side=min_editable_side,
+        )
+        if fitted is None:
+            continue
+        packed, used_w, used_h, scale = fitted
+        content_area = sum(int(group["packed_content_w"]) * int(group["packed_content_h"]) for group in packed)
+        rectangle_area = sum(int(group["w"]) * int(group["h"]) for group in packed)
+        canvas_area = canvas_w * canvas_h
+        fill = rectangle_area / max(1, canvas_area)
+        useful_density_score = content_area * fill
+        score = (
+            -useful_density_score,  # reward usable resolution only when the canvas is actually occupied
+            -fill,                  # aggressively avoid giant mostly-empty canvases
+            -content_area,          # then preserve as many editable pixels as possible
+            canvas_area,
+            max(canvas_w, canvas_h),
+            canvas_h,
+            canvas_w,
+        )
+        if best is None or score < best[0]:
+            best = (score, packed, canvas_w, canvas_h, used_w, used_h, scale)
+
+    if best is None:
+        raise RuntimeError(
+            f"Cannot fit minimum editable no-texture islands inside the {budget_area}px budget. "
+            "Use a larger fallback canvas, smaller margins, or provide coherent geometry islands."
+        )
+    _, packed, canvas_w, canvas_h, used_w, used_h, _ = best
+    return _annotate_canvas(packed, canvas_w, canvas_h), canvas_w, canvas_h, used_w, used_h
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics and high-level workflow
+# ---------------------------------------------------------------------------
 
 
 def detect_layout_overlaps(groups):
     warnings = []
     for left in range(len(groups)):
+        a = groups[left]
+        rect_a = (int(a.get("x", 0)), int(a.get("y", 0)), int(a["w"]), int(a["h"]))
         for right in range(left + 1, len(groups)):
-            if _rect_intersects(groups[left], groups[right]):
-                warnings.append((groups[left]["index"], groups[right]["index"]))
+            b = groups[right]
+            rect_b = (int(b.get("x", 0)), int(b.get("y", 0)), int(b["w"]), int(b["h"]))
+            if _rect_intersects(rect_a, rect_b):
+                warnings.append({"group_a": int(a.get("index", left)), "group_b": int(b.get("index", right))})
     return warnings
 
 
-def shelf_pack(groups, width, gap):
-    """Stable shelf fallback retained for compatibility and debugging."""
-    ordered = sorted(groups, key=lambda item: (int(item["h"]), int(item["w"]), -int(item["index"])), reverse=True)
-    x = y = row_h = max_x = 0
-    packed = []
-    for group in ordered:
-        w, h = int(group["w"]), int(group["h"])
-        if x > 0 and x + w > width:
-            x = 0
-            y += row_h + gap
-            row_h = 0
-        placed = dict(group)
-        placed["x"] = x
-        placed["y"] = y
-        packed.append(placed)
-        x += w + gap
-        row_h = max(row_h, h)
-        max_x = max(max_x, x - gap)
-    return packed, max_x, y + row_h
+def _stack_detections(groups):
+    detections = []
+    for group in groups:
+        if int(group.get("stack_count", 1)) > 1 or int(group.get("duplicate_polygon_count", 0)) > 0:
+            detections.append({
+                "group_index": int(group.get("index", 0)),
+                "island_indices": list(group.get("island_indices", [])),
+                "stack_count": int(group.get("stack_count", 1)),
+                "duplicate_polygon_count": int(group.get("duplicate_polygon_count", 0)),
+                "median_surface_area": float(group.get("surface_area", 0.0)),
+            })
+    return detections
 
 
-def _split_free_rectangles(free_rects, placed):
-    output = []
-    px, py, pw, ph = placed
-    for fx, fy, fw, fh in free_rects:
-        if px >= fx + fw or px + pw <= fx or py >= fy + fh or py + ph <= fy:
-            output.append((fx, fy, fw, fh))
-            continue
-        if px > fx:
-            output.append((fx, fy, px - fx, fh))
-        if px + pw < fx + fw:
-            output.append((px + pw, fy, fx + fw - (px + pw), fh))
-        if py > fy:
-            output.append((fx, fy, fw, py - fy))
-        if py + ph < fy + fh:
-            output.append((fx, py + ph, fw, fy + fh - (py + ph)))
-
-    pruned = []
-    for index, rect in enumerate(output):
-        x, y, w, h = rect
-        if w <= 0 or h <= 0:
-            continue
-        contained = False
-        for other_index, other in enumerate(output):
-            if index == other_index:
-                continue
-            ox, oy, ow, oh = other
-            if x >= ox and y >= oy and x + w <= ox + ow and y + h <= oy + oh:
-                contained = True
-                break
-        if not contained and rect not in pruned:
-            pruned.append(rect)
-    return pruned
-
-
-def _maxrects_pack(groups, bin_w, bin_h, gap):
-    ordered = sorted(
-        groups,
-        key=lambda item: (max(int(item["w"]), int(item["h"])), int(item["w"]) * int(item["h"]), -int(item["index"])),
-        reverse=True,
-    )
-    free_rects = [(0, 0, int(bin_w), int(bin_h))]
-    packed = []
-    used_w = used_h = 0
-    for group in ordered:
-        w = int(group["w"])
-        h = int(group["h"])
-        best = None
-        for rect_index, (x, y, free_w, free_h) in enumerate(free_rects):
-            if w <= free_w and h <= free_h:
-                leftover_short = min(free_w - w, free_h - h)
-                leftover_long = max(free_w - w, free_h - h)
-                score = (y, x, leftover_short, leftover_long)
-                if best is None or score < best[0]:
-                    best = (score, rect_index, x, y)
-        if best is None:
-            return None
-        _, _, x, y = best
-        placed = dict(group)
-        placed["x"] = x
-        placed["y"] = y
-        packed.append(placed)
-        used_w = max(used_w, x + w)
-        used_h = max(used_h, y + h)
-        free_rects = _split_free_rectangles(free_rects, (x, y, w + gap, h + gap))
-    return packed, used_w, used_h
-
-
-def _candidate_widths(groups, max_w):
-    max_group_w = max(int(group["w"]) for group in groups)
-    total_area = sum(int(group["w"]) * int(group["h"]) for group in groups)
-    ideal = max(max_group_w, int(math.ceil(math.sqrt(max(1, total_area)))))
-    values = {max_group_w, min(max_w, ideal), max_w}
-    for scale in (0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0):
-        values.add(min(max_w, max(max_group_w, int(math.ceil(ideal * scale)))))
-    width = max_group_w
-    while width < max_w:
-        values.add(width)
-        width = max(width + 1, int(math.ceil(width * 1.35)))
-    return sorted(value for value in values if max_group_w <= value <= max_w)
-
-
-def pack_groups_bounded(groups, gap, max_w, max_h, power_of_two=False):
-    if not groups:
-        return [], 1, 1
-    gap = max(0, int(gap))
-    max_w = max(1, int(max_w))
-    max_h = max(1, int(max_h))
-    if max(int(group["w"]) for group in groups) > max_w or max(int(group["h"]) for group in groups) > max_h:
-        return None
-
-    total_area = sum(int(group["w"]) * int(group["h"]) for group in groups)
-    best = None
-    for candidate_w in _candidate_widths(groups, max_w):
-        result = _maxrects_pack(groups, candidate_w, max_h, gap)
-        if result is None:
-            continue
-        packed, used_w, used_h = result
-        out_w = next_power_of_two(used_w) if power_of_two else max(1, used_w)
-        out_h = next_power_of_two(used_h) if power_of_two else max(1, used_h)
-        if out_w > max_w or out_h > max_h:
-            continue
-        score = (out_w * out_h, max(out_w, out_h), abs(out_w - out_h), used_w + used_h)
-        if best is None or score < best[0]:
-            best = (score, packed, out_w, out_h)
-
-    if best is None:
-        return None
-    overlaps = detect_layout_overlaps(best[1])
-    if overlaps:
-        raise RuntimeError(f"Internal packing error: generated overlapping rectangles: {overlaps[:8]}")
-    return best[1], best[2], best[3]
-
-
-def pack_groups(groups, gap, max_size=4096, power_of_two=False):
-    if not groups:
-        return [], 1, 1
-    max_size = min(4096, max(1, int(max_size)))
-    largest_w = max(int(group["w"]) for group in groups)
-    largest_h = max(int(group["h"]) for group in groups)
-    if largest_w > max_size or largest_h > max_size:
-        raise RuntimeError(
-            f"One UV island group is {largest_w}x{largest_h}px, above the {max_size}px limit. "
-            "Check UV range, source resolution or margin size."
-        )
-    packed = pack_groups_bounded(groups, gap, max_size, max_size, power_of_two=power_of_two)
-    if packed is None:
-        raise RuntimeError(
-            f"Cannot pack {len(groups)} UV groups inside {max_size}x{max_size}px. "
-            "Lower reference resolution or margins, or inspect unusually large UV ranges."
-        )
-    return packed
-
-
-def collect_diagnostics(faces, islands, groups, packed_groups=None, raw_w=None, raw_h=None):
-    packed_groups = packed_groups if packed_groups is not None else groups
-    if raw_w is None:
-        raw_w = max((int(group.get("x", 0)) + int(group.get("w", 0)) for group in packed_groups), default=1)
-    if raw_h is None:
-        raw_h = max((int(group.get("y", 0)) + int(group.get("h", 0)) for group in packed_groups), default=1)
-    occupied = sum(int(group.get("w", 0)) * int(group.get("h", 0)) for group in groups)
-    stack_groups = [group for group in groups if int(group.get("stack_count", 1)) > 1]
-    try:
-        padded_w, padded_h = substance_canvas_size(raw_w, raw_h)
-    except RuntimeError:
-        padded_w = padded_h = None
+def collect_diagnostics(
+    faces,
+    islands,
+    groups,
+    *,
+    raw_used_w,
+    raw_used_h,
+    canvas_w,
+    canvas_h,
+    mode,
+):
+    locality = inspect_material_locality(faces)
+    rectangle_area = sum(int(group["w"]) * int(group["h"]) for group in groups)
+    canvas_area = max(1, int(canvas_w) * int(canvas_h))
     return {
+        "mode": mode,
         "input_face_count": len(faces),
         "island_count": len(islands),
         "group_count": len(groups),
-        "raw_used_width": int(raw_w),
-        "raw_used_height": int(raw_h),
-        "packed_width": padded_w,
-        "packed_height": padded_h,
-        "fill_percent": round((occupied / max(1, int(raw_w) * int(raw_h))) * 100.0, 2),
-        "overlap_warnings": detect_layout_overlaps(packed_groups) if packed_groups else [],
-        "stack_detections": [
-            {"group_index": group["index"], "island_indices": list(group["island_indices"]), "stack_count": group["stack_count"]}
-            for group in stack_groups
-        ],
+        "raw_used_w": int(raw_used_w),
+        "raw_used_h": int(raw_used_h),
+        "canvas_w": int(canvas_w),
+        "canvas_h": int(canvas_h),
+        "substance_canvas": (int(canvas_w), int(canvas_h)),
+        "rectangle_fill_percent": rectangle_area * 100.0 / canvas_area,
+        "raw_bounds_fill_percent": int(raw_used_w) * int(raw_used_h) * 100.0 / canvas_area,
+        "overlap_warnings": detect_layout_overlaps(groups),
+        "stack_detections": _stack_detections(groups),
+        **locality,
     }
 
 
-def build_and_pack_cluster(faces, ref_w, ref_h, margin_px, *, has_texture=True, gap=0, max_size=4096):
-    """High-level pure-Python helper useful for tests and future integration."""
+def build_and_pack_cluster(
+    faces,
+    ref_w,
+    ref_h,
+    margin_px,
+    *,
+    has_texture,
+    gap=0,
+    max_size=DEFAULT_MAX_SIZE,
+    allow_rotate=False,
+    strict_material=False,
+    split_sparse=True,
+    min_editable_side=12,
+):
+    """Main API: build groups, pack them and return diagnostics.
+
+    Returns ``islands, packed_groups, face_to_group, diagnostics``.
+    """
+    _validate_faces(faces)
+    if strict_material:
+        assert_material_local_faces(faces)
+
     if has_texture:
-        islands, groups, _ = build_texture_bsp_groups(faces, ref_w, ref_h, margin_px)
+        islands, groups, _ = build_texture_groups(
+            faces,
+            ref_w,
+            ref_h,
+            margin_px,
+            split_sparse=split_sparse,
+            strict_material=False,
+        )
+        packed, canvas_w, canvas_h, raw_w, raw_h = pack_texture_groups_substance(
+            groups,
+            gap=gap,
+            max_size=max_size,
+            allow_rotate=allow_rotate,
+        )
+        mode = "texture"
     else:
-        islands, groups, _ = build_no_texture_dense_groups(faces, ref_w, ref_h, margin_px)
-    packed_groups, raw_w, raw_h = pack_groups(groups, gap=gap, max_size=max_size, power_of_two=False)
-    packed_by_index = {group["index"]: group for group in packed_groups}
-    face_to_group = {}
-    for face_index in range(len(faces)):
-        for group in groups:
-            if face_index in group["face_indices"]:
-                face_to_group[face_index] = packed_by_index[group["index"]]
-                break
-    diagnostics = collect_diagnostics(faces, islands, groups, packed_groups, raw_w, raw_h)
-    return islands, packed_groups, face_to_group, diagnostics
+        islands, groups, _ = build_no_texture_dense_groups(
+            faces,
+            ref_w,
+            ref_h,
+            margin_px,
+            min_editable_side=min_editable_side,
+            strict_material=False,
+        )
+        packed, canvas_w, canvas_h, raw_w, raw_h = pack_no_texture_dense_groups(
+            groups,
+            target_w=ref_w,
+            target_h=ref_h,
+            gap=gap,
+            allow_rotate=allow_rotate,
+            min_editable_side=min_editable_side,
+            max_size=max_size,
+        )
+        mode = "no_texture"
+
+    mapping = _mapping_from_groups(packed)
+    diagnostics = collect_diagnostics(
+        faces,
+        islands,
+        packed,
+        raw_used_w=raw_w,
+        raw_used_h=raw_h,
+        canvas_w=canvas_w,
+        canvas_h=canvas_h,
+        mode=mode,
+    )
+    return islands, packed, mapping, diagnostics
+
+
+# ---------------------------------------------------------------------------
+# Legacy preview helper
+# ---------------------------------------------------------------------------
+
+
+def build_single_preview_group(faces, ref_w, ref_h, margin_px):
+    """Legacy compatibility helper for preview paths that intentionally use one bbox."""
+    _validate_faces(faces)
+    if not faces:
+        return [], [], {}
+    u_min, v_min, u_max, v_max = face_group_bbox(faces, list(range(len(faces))))
+    island = {
+        "index": 0,
+        "face_indices": list(range(len(faces))),
+        "u_min": u_min,
+        "v_min": v_min,
+        "u_max": u_max,
+        "v_max": v_max,
+    }
+    group = _decorate_crop_group({
+        **island,
+        "island_indices": [0],
+        "stack_count": 1,
+        "duplicate_polygon_count": 0,
+        "surface_area": sum(_safe_surface_area(face) for face in faces),
+    }, ref_w, ref_h, margin_px)
+    group["x"] = 0
+    group["y"] = 0
+    return [island], [group], _mapping_from_groups([group])
