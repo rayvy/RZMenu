@@ -441,6 +441,17 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 op.active_export_only = True
 
                 twaa_box.label(text=f"Registered cluster files: {len(rzm.tw_mc_files)}")
+                skipped = getattr(rzm, "tw_mc_skipped", None)
+                if skipped and len(skipped):
+                    skip_box = twaa_box.box()
+                    skip_box.label(text=f"Skipped materials: {len(skipped)}", icon='ERROR')
+                    for item in skipped:
+                        row = skip_box.row(align=True)
+                        label = item.material_name or item.material_key or item.name
+                        row.label(text=label, icon='MATERIAL')
+                        row.label(text=item.slot_name or "-")
+                        row.label(text=f"{int(item.resolution[0])}x{int(item.resolution[1])}")
+                        row.label(text=item.reason)
 
                 active_export_objects = twaa_active_export_objects(context)
                 material_rows = {}

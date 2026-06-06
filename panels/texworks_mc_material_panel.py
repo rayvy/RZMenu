@@ -58,6 +58,7 @@ def draw_mc_tools(layout, context):
             row = box.row(align=True)
             row.prop(node.inputs["Default Resolution X"], "default_value", text="X")
             row.prop(node.inputs["Default Resolution Y"], "default_value", text="Y")
+            box.label(text="Allowed: 128, 256, 512, 1024, 2048, 4096", icon='INFO')
         layout.label(text=f"Active: {mat.name}", icon='MATERIAL')
     else:
         layout.label(text="No active material", icon='ERROR')

@@ -143,13 +143,15 @@ class RZM_OT_TwMcBuildAutoAtlasLayout(bpy.types.Operator):
             return {'CANCELLED'}
 
         if not layout_summary.get("materials", 0):
-            self.report({'WARNING'}, "No TWAA material entries found. Populate rzm.tw_mc_files first.")
+            skipped = int(layout_summary.get("skipped", 0))
+            self.report({'WARNING'}, f"No TWAA material entries found. Skipped: {skipped}. Populate/fix rzm.tw_mc_files first.")
             print("[RZM TexWorks MC] Build finished with no materials. Nothing was rebuilt.")
             return {'FINISHED'}
 
         self.report(
             {'INFO'},
-            f"Built TWAA layout: {layout_summary.get('materials', 0)} material(s), atlas={layout_summary.get('atlas_size', [0, 0])}"
+            f"Built TWAA layout: {layout_summary.get('materials', 0)} material(s), "
+            f"atlas={layout_summary.get('atlas_size', [0, 0])}, skipped={layout_summary.get('skipped', 0)}"
         )
         print(f"[RZM TexWorks MC] Build summary: {layout_summary}")
         return {'FINISHED'}

@@ -17,7 +17,7 @@ from .p_logic import (
 from .p_texworks import (
     TexResource, TexOverrideBinding, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
-    TexWorksMCFile, TexWorksMCSettings
+    TexWorksMCFile, TexWorksMCSkipped, TexWorksMCSettings
 )
 from .p_ui import (
     FXProperty, FNProperty, CustomProperty, RZMenuElement, RZPresetReference, RZHelperReference, ConditionalText, RZFontSlotSettings, RZMenuStyle, RZMLocalizedText
@@ -126,6 +126,7 @@ class RZMenuProperties(bpy.types.PropertyGroup):
     tw_materials: CollectionProperty(type=TexWorksMaterial)
     tw_blocks: CollectionProperty(type=TexWorksMainBlock)
     tw_mc_files: CollectionProperty(type=TexWorksMCFile)
+    tw_mc_skipped: CollectionProperty(type=TexWorksMCSkipped)
     tw_mc: PointerProperty(type=TexWorksMCSettings)
     
     active_tw_block_index: IntProperty()
@@ -200,6 +201,7 @@ classes_to_register = [
     TexResource, TexOverrideBinding, TexOverride, TexWorksMaterial,
     TexWorksDecalLayer, TexWorksSlot, TexWorksComponent, TexWorksMainBlock,
     TexWorksMCFile,
+    TexWorksMCSkipped,
     TexWorksMCSettings,
     RZMShapeKey, RZMShape,
     RZMObjectRef, ShapeKeyConfig,

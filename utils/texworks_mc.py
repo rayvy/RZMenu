@@ -29,6 +29,7 @@ KIND = "RZ_TEXWORKS_MC_MATERIAL"
 ROLE = "SEMANTIC_TEXTURE_HUB"
 DEFAULT_MAX_RASTER_PIXELS = 16 * 1024 * 1024
 SUBSTANCE_CLUSTER_SIZES = (128, 256, 512, 1024, 2048, 4096)
+VALID_TWAA_TEXTURE_SIZES = SUBSTANCE_CLUSTER_SIZES
 
 SLOTS = ("Diffuse", "LightMap", "MaterialMap", "NormalMap", "Extra")
 SLOT_FILE_SUFFIX = {
@@ -96,6 +97,25 @@ def quantize_cluster_dimension(value):
 
 def quantize_cluster_size(width, height):
     return quantize_cluster_dimension(width), quantize_cluster_dimension(height)
+
+
+def is_valid_twaa_texture_size(width, height):
+    try:
+        width = int(width)
+        height = int(height)
+    except Exception:
+        return False
+    return width in VALID_TWAA_TEXTURE_SIZES and height in VALID_TWAA_TEXTURE_SIZES
+
+
+def snap_twaa_texture_size(width, height):
+    def snap(value):
+        try:
+            value = int(value)
+        except Exception:
+            value = 512
+        return min(VALID_TWAA_TEXTURE_SIZES, key=lambda item: (abs(item - value), item))
+    return snap(width), snap(height)
 
 
 def clamp01(value):
@@ -425,8 +445,7 @@ def set_material_node_default_resolution(group_node, resolution, force=False):
     if not group_node:
         return
     try:
-        width = max(1, int(resolution[0]))
-        height = max(1, int(resolution[1]))
+        width, height = snap_twaa_texture_size(resolution[0], resolution[1])
     except Exception:
         width, height = 512, 512
     for socket_name, value in (("Default Resolution X", width), ("Default Resolution Y", height)):
@@ -450,12 +469,15 @@ def material_node_default_resolution(mat, settings=None):
             width = int(group_node.inputs["Default Resolution X"].default_value)
             height = int(group_node.inputs["Default Resolution Y"].default_value)
             if width > 0 and height > 0:
-                return width, height
+                snapped = snap_twaa_texture_size(width, height)
+                if snapped != (width, height):
+                    set_material_node_default_resolution(group_node, snapped, force=True)
+                return snapped
         except Exception:
             pass
     if settings:
         try:
-            return max(1, int(settings.default_resolution[0])), max(1, int(settings.default_resolution[1]))
+            return snap_twaa_texture_size(settings.default_resolution[0], settings.default_resolution[1])
         except Exception:
             pass
     return 512, 512
@@ -2441,6 +2463,64 @@ def refresh_mc_file_resolution_from_disk(entry):
     return False
 
 
+def clear_mc_skipped(rzm):
+    skipped = getattr(rzm, "tw_mc_skipped", None)
+    if skipped is None:
+        return
+    for index in range(len(skipped) - 1, -1, -1):
+        skipped.remove(index)
+
+
+def add_mc_skipped(rzm, entry, reason, width=None, height=None):
+    skipped = getattr(rzm, "tw_mc_skipped", None)
+    if skipped is None:
+        return
+    item = skipped.add()
+    item.name = getattr(entry, "resource_name", "") or getattr(entry, "name", "") or "Skipped"
+    item.material_name = getattr(entry, "material_name", "")
+    item.material_key = getattr(entry, "material_key", "") or material_key(item.material_name)
+    item.slot_name = getattr(entry, "slot_name", "")
+    item.reason = str(reason)
+    try:
+        item.resolution = (
+            int(width if width is not None else entry.resolution[0]),
+            int(height if height is not None else entry.resolution[1]),
+        )
+    except Exception:
+        item.resolution = (0, 0)
+
+
+def add_unregistered_twaa_material_skips(rzm, valid_material_keys):
+    existing = {
+        (item.material_key or material_key(item.material_name), item.reason)
+        for item in getattr(rzm, "tw_mc_skipped", ())
+    }
+    registered_keys = {
+        entry.material_key or material_key(entry.material_name)
+        for entry in getattr(rzm, "tw_mc_files", ())
+        if (entry.material_key or entry.material_name)
+    }
+    for mat in bpy.data.materials:
+        if not find_material_group_node(mat):
+            continue
+        key = material_key(mat.name)
+        if key in valid_material_keys or key in registered_keys:
+            continue
+        marker = (key, "not registered in rzm.tw_mc_files")
+        if marker in existing:
+            continue
+        dummy = type("TWAAUnregisteredMaterial", (), {
+            "name": mat.name,
+            "resource_name": mat.name,
+            "material_name": mat.name,
+            "material_key": key,
+            "slot_name": "-",
+            "resolution": (0, 0),
+        })()
+        add_mc_skipped(rzm, dummy, marker[1], 0, 0)
+        existing.add(marker)
+
+
 def sync_mc_file_entries(rzm, manifest):
     desired = set(manifest["resources"].values())
     key = manifest["material_key"]
@@ -2461,12 +2541,30 @@ def sync_mc_file_entries(rzm, manifest):
             rzm.tw_mc_files.remove(index)
 
 
-def mc_entries_by_material(rzm):
+def mc_entries_by_material(rzm, collect_skipped=True):
     materials = {}
     for entry in rzm.tw_mc_files:
         refresh_mc_file_resolution_from_disk(entry)
         key = entry.material_key or material_key(entry.material_name)
         if not key:
+            if collect_skipped:
+                add_mc_skipped(rzm, entry, "missing material key")
+            continue
+        w = max(0, int(entry.resolution[0]))
+        h = max(0, int(entry.resolution[1]))
+        if w <= 0 or h <= 0:
+            if collect_skipped:
+                add_mc_skipped(rzm, entry, "missing texture resolution", w, h)
+            continue
+        if not is_valid_twaa_texture_size(w, h):
+            if collect_skipped:
+                add_mc_skipped(
+                    rzm,
+                    entry,
+                    f"invalid texture size {w}x{h}; allowed sides: {', '.join(str(v) for v in VALID_TWAA_TEXTURE_SIZES)}",
+                    w,
+                    h,
+                )
             continue
         mat_data = materials.setdefault(key, {
             "material_key": key,
@@ -2476,8 +2574,6 @@ def mc_entries_by_material(rzm):
         })
         if entry.material_name:
             mat_data["material_name"] = entry.material_name
-        w = max(1, int(entry.resolution[0]))
-        h = max(1, int(entry.resolution[1]))
         mat_data["resolution"][0] = max(mat_data["resolution"][0], w)
         mat_data["resolution"][1] = max(mat_data["resolution"][1], h)
         mat_data["slots"][entry.slot_name] = entry
@@ -2490,10 +2586,18 @@ def pack_material_components(materials, settings):
         w, h = mat_data["resolution"]
         groups.append({
             "index": index,
+            "mode": "twaa_block_component",
             "material_key": mat_data["material_key"],
             "material_name": mat_data["material_name"],
             "w": int(w),
             "h": int(h),
+            "content_w": int(w),
+            "content_h": int(h),
+            "source_content_w": int(w),
+            "source_content_h": int(h),
+            "packed_content_w": int(w),
+            "packed_content_h": int(h),
+            "margin_px": 0,
         })
     if not groups:
         return {}, 16, 16
@@ -2555,9 +2659,11 @@ def clear_legacy_tw_mc_object_props():
 def rebuild_texworks_autoatlas_blocks(context):
     settings = get_settings(context)
     rzm = context.scene.rzm
+    clear_mc_skipped(rzm)
     removed_legacy_blocks = remove_legacy_dotted_autoatlas_blocks(rzm)
     migrated_refs = migrate_legacy_autoatlas_references(rzm)
-    materials = mc_entries_by_material(rzm)
+    materials = mc_entries_by_material(rzm, collect_skipped=True)
+    add_unregistered_twaa_material_skips(rzm, set(materials.keys()))
     print(
         f"[RZM TexWorks MC] Rebuild AutoAtlas layout: "
         f"tw_mc_files={len(rzm.tw_mc_files)} materials={len(materials)} "
@@ -2566,7 +2672,12 @@ def rebuild_texworks_autoatlas_blocks(context):
     packed_by_mat, atlas_w, atlas_h = pack_material_components(materials, settings)
     if not materials:
         print("[RZM TexWorks MC] Rebuild AutoAtlas layout skipped: no material entries found in rzm.tw_mc_files")
-        return {"materials": 0, "blocks": 0, "atlas_size": [atlas_w, atlas_h]}
+        return {
+            "materials": 0,
+            "blocks": 0,
+            "atlas_size": [atlas_w, atlas_h],
+            "skipped": len(getattr(rzm, "tw_mc_skipped", ())),
+        }
 
     slots = sorted({slot for mat_data in materials.values() for slot in mat_data["slots"].keys()}, key=lambda s: SLOTS.index(s) if s in SLOTS else 999)
     block_names = [autoatlas_block_name(slot) for slot in slots]
@@ -2614,6 +2725,7 @@ def rebuild_texworks_autoatlas_blocks(context):
         "cleaned_legacy_object_props": sorted(set(cleaned_objects)),
         "removed_legacy_blocks": removed_legacy_blocks,
         "migrated_legacy_references": migrated_refs,
+        "skipped": len(getattr(rzm, "tw_mc_skipped", ())),
     }
     print(
         f"[RZM TexWorks MC] Rebuild AutoAtlas layout done: "

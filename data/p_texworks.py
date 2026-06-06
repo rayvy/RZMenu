@@ -280,6 +280,15 @@ class TexWorksMCFile(bpy.types.PropertyGroup):
     resolution: IntVectorProperty(name="Resolution", size=2, default=(0, 0))
 
 
+class TexWorksMCSkipped(bpy.types.PropertyGroup):
+    name: StringProperty(name="Entry Name")
+    material_name: StringProperty(name="Material")
+    material_key: StringProperty(name="Material Key")
+    slot_name: StringProperty(name="Slot")
+    reason: StringProperty(name="Reason")
+    resolution: IntVectorProperty(name="Resolution", size=2, default=(0, 0))
+
+
 class TexWorksMCSettings(bpy.types.PropertyGroup):
     enabled: BoolProperty(
         name="Enable MC",
