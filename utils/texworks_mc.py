@@ -1005,6 +1005,43 @@ def cluster_face_input_stats(context, mat, faces):
     return serializable
 
 
+def annotate_cluster_groups(groups, faces, mat):
+    if not groups:
+        return groups
+
+    face_lookup = {index: face for index, face in enumerate(faces)}
+    mat_key = material_key(mat.name) if mat else ""
+
+    for group in groups:
+        face_indices = list(group.get("face_indices") or [])
+        source_objects = sorted({
+            str(face_lookup[index].get("object"))
+            for index in face_indices
+            if face_lookup.get(index) and face_lookup[index].get("object")
+        })
+        source_meshes = sorted({
+            str(face_lookup[index].get("mesh"))
+            for index in face_indices
+            if face_lookup.get(index) and face_lookup[index].get("mesh")
+        })
+        source_material_indices = sorted({
+            int(face_lookup[index].get("material_index", -1))
+            for index in face_indices
+            if face_lookup.get(index) is not None
+        })
+        if mat:
+            group.setdefault("material_name", mat.name)
+        if mat_key:
+            group.setdefault("material_key", mat_key)
+        if source_objects:
+            group["source_objects"] = source_objects
+        if source_meshes:
+            group["source_meshes"] = source_meshes
+        if source_material_indices:
+            group["source_material_indices"] = source_material_indices
+    return groups
+
+
 def build_single_texture_crop_cluster(faces, ref_w, ref_h, margin_px):
     if not faces:
         return [], [], {}
@@ -1979,6 +2016,9 @@ def calculate_cluster(context, use_preview_uv=False):
         raw_atlas_h = int(core_diagnostics.get("raw_used_h", core_diagnostics.get("canvas_h", 1)))
         atlas_w = int(core_diagnostics["canvas_w"])
         atlas_h = int(core_diagnostics["canvas_h"])
+    annotate_cluster_groups(groups, faces, mat)
+    if layout_groups is not groups:
+        annotate_cluster_groups(layout_groups, faces, mat)
     print(f"[RZM TexWorks MC] Core diagnostics material={mat.name!r}: {core_diagnostics}")
     if (atlas_w, atlas_h) != (raw_atlas_w, raw_atlas_h):
         warnings.append(
@@ -2518,8 +2558,14 @@ def rebuild_texworks_autoatlas_blocks(context):
     removed_legacy_blocks = remove_legacy_dotted_autoatlas_blocks(rzm)
     migrated_refs = migrate_legacy_autoatlas_references(rzm)
     materials = mc_entries_by_material(rzm)
+    print(
+        f"[RZM TexWorks MC] Rebuild AutoAtlas layout: "
+        f"tw_mc_files={len(rzm.tw_mc_files)} materials={len(materials)} "
+        f"removed_legacy_blocks={len(removed_legacy_blocks)} migrated_refs={len(migrated_refs)}"
+    )
     packed_by_mat, atlas_w, atlas_h = pack_material_components(materials, settings)
     if not materials:
+        print("[RZM TexWorks MC] Rebuild AutoAtlas layout skipped: no material entries found in rzm.tw_mc_files")
         return {"materials": 0, "blocks": 0, "atlas_size": [atlas_w, atlas_h]}
 
     slots = sorted({slot for mat_data in materials.values() for slot in mat_data["slots"].keys()}, key=lambda s: SLOTS.index(s) if s in SLOTS else 999)
@@ -2560,7 +2606,7 @@ def rebuild_texworks_autoatlas_blocks(context):
 
     cleaned_objects = clear_legacy_tw_mc_object_props()
 
-    return {
+    summary = {
         "materials": len(materials),
         "blocks": len(slots),
         "atlas_size": [int(atlas_w), int(atlas_h)],
@@ -2569,6 +2615,11 @@ def rebuild_texworks_autoatlas_blocks(context):
         "removed_legacy_blocks": removed_legacy_blocks,
         "migrated_legacy_references": migrated_refs,
     }
+    print(
+        f"[RZM TexWorks MC] Rebuild AutoAtlas layout done: "
+        f"materials={summary['materials']} blocks={summary['blocks']} atlas={summary['atlas_size']}"
+    )
+    return summary
 
 
 def register_cluster_files(context, cluster):

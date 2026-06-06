@@ -135,16 +135,23 @@ class RZM_OT_TwMcBuildAutoAtlasLayout(bpy.types.Operator):
 
     def execute(self, context):
         try:
+            print("[RZM TexWorks MC] bpy.ops.rzm.tw_mc_build_autoatlas_layout() invoked")
             layout_summary = texworks_mc.rebuild_texworks_autoatlas_blocks(context)
             trigger_refresh()
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
 
+        if not layout_summary.get("materials", 0):
+            self.report({'WARNING'}, "No TWAA material entries found. Populate rzm.tw_mc_files first.")
+            print("[RZM TexWorks MC] Build finished with no materials. Nothing was rebuilt.")
+            return {'FINISHED'}
+
         self.report(
             {'INFO'},
             f"Built TWAA layout: {layout_summary.get('materials', 0)} material(s), atlas={layout_summary.get('atlas_size', [0, 0])}"
         )
+        print(f"[RZM TexWorks MC] Build summary: {layout_summary}")
         return {'FINISHED'}
 
 

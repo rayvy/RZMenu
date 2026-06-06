@@ -77,6 +77,44 @@ def _safe_surface_area(face):
     return area if math.isfinite(area) and area > 0.0 else 0.0
 
 
+def _group_debug_label(group):
+    parts = [
+        f"index={group.get('index', '?')}",
+        f"mode={group.get('mode', '?')}",
+    ]
+    for key in ("material_key", "material_name", "object_name", "mesh_name", "slot_name"):
+        value = group.get(key)
+        if value not in (None, ""):
+            parts.append(f"{key}={value!r}")
+    for key in ("source_objects", "source_meshes", "source_material_indices"):
+        value = group.get(key)
+        if value not in (None, ""):
+            parts.append(f"{key}={value!r}")
+    if "face_indices" in group:
+        parts.append(f"faces={len(group.get('face_indices') or [])}")
+    return "{" + ", ".join(parts) + "}"
+
+
+def _require_group_int(group, key, *, context):
+    if key not in group:
+        raise KeyError(
+            f"{context}: missing required key {key!r} in group {_group_debug_label(group)}; "
+            f"available_keys={sorted(group.keys())}"
+        )
+    value = group[key]
+    if value is None:
+        raise TypeError(
+            f"{context}: key {key!r} is None in group {_group_debug_label(group)}"
+        )
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(
+            f"{context}: key {key!r} must be int-like in group {_group_debug_label(group)}; "
+            f"got {type(value).__name__} value={value!r}"
+        ) from exc
+
+
 def _bbox_from_uvs(uvs):
     if not uvs:
         return 0.0, 0.0, 0.0, 0.0
@@ -649,11 +687,11 @@ def _apply_orientation(group, rotation, x, y, width, height):
     packed["w"] = int(width)
     packed["h"] = int(height)
     if rotation == 90:
-        packed["packed_content_w"] = int(group["source_content_h"])
-        packed["packed_content_h"] = int(group["source_content_w"])
+        packed["packed_content_w"] = _require_group_int(group, "source_content_h", context="_apply_orientation")
+        packed["packed_content_h"] = _require_group_int(group, "source_content_w", context="_apply_orientation")
     else:
-        packed["packed_content_w"] = int(group["source_content_w"])
-        packed["packed_content_h"] = int(group["source_content_h"])
+        packed["packed_content_w"] = _require_group_int(group, "source_content_w", context="_apply_orientation")
+        packed["packed_content_h"] = _require_group_int(group, "source_content_h", context="_apply_orientation")
     return packed
 
 
