@@ -102,6 +102,23 @@ def clamp01(value):
     return max(0.0, min(1.0, float(value)))
 
 
+def registered_cluster_size(context, mat, preferred_slot="Diffuse"):
+    rzm = context.scene.rzm
+    key = material_key(mat.name)
+    fallback = None
+    for entry in getattr(rzm, "tw_mc_files", ()):
+        entry_key = entry.material_key or material_key(entry.material_name)
+        if entry_key != key:
+            continue
+        width = max(1, int(entry.resolution[0]))
+        height = max(1, int(entry.resolution[1]))
+        if entry.slot_name == preferred_slot:
+            return width, height
+        if fallback is None:
+            fallback = (width, height)
+    return fallback
+
+
 def get_settings(context):
     rzm = context.scene.rzm
     settings = getattr(rzm, "tw_mc", None)
@@ -721,6 +738,40 @@ def material_slot_indices(obj, mat):
     return set(indices)
 
 
+def mesh_geometry_island_ids(mesh):
+    parent = list(range(len(mesh.polygons)))
+
+    def find(index):
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(a, b):
+        root_a = find(a)
+        root_b = find(b)
+        if root_a != root_b:
+            parent[root_b] = root_a
+
+    vertex_owner = {}
+    for poly in mesh.polygons:
+        poly_index = int(poly.index)
+        for vertex_index in poly.vertices:
+            other = vertex_owner.get(int(vertex_index))
+            if other is None:
+                vertex_owner[int(vertex_index)] = poly_index
+            else:
+                union(poly_index, other)
+
+    root_to_id = {}
+    result = {}
+    for poly in mesh.polygons:
+        root = find(int(poly.index))
+        island_id = root_to_id.setdefault(root, len(root_to_id))
+        result[int(poly.index)] = island_id
+    return result
+
+
 def source_uv_layer_for_mesh(mesh):
     uv = mesh.uv_layers.get(TEXCOORD_UV_NAME)
     if uv and not is_twaa_preview_uv_name(uv.name):
@@ -785,18 +836,30 @@ def active_material_has_preview_uv(context):
     return False
 
 
+def cluster_candidate_objects(context, mat):
+    selected = [
+        obj for obj in context.selected_objects
+        if obj.type == "MESH" and material_slot_indices(obj, mat)
+    ]
+    if selected:
+        return selected, "selected"
+    return [obj for obj in context.scene.objects if obj.type == "MESH"], "scene"
+
+
 def collect_cluster_faces(context, mat):
     objects = []
     faces = []
     warnings = []
+    candidates, scope = cluster_candidate_objects(context, mat)
 
-    for obj in context.scene.objects:
+    for obj in candidates:
         if obj.type != "MESH":
             continue
         mat_indices = material_slot_indices(obj, mat)
         if not mat_indices:
             continue
         mesh = obj.data
+        geometry_islands = mesh_geometry_island_ids(mesh)
         uv_layer = source_uv_layer_for_mesh(mesh)
         if not uv_layer:
             warnings.append(f"{obj.name}: no UV layer, skipped")
@@ -816,6 +879,8 @@ def collect_cluster_faces(context, mat):
                 "mesh": mesh.name,
                 "poly_index": int(poly.index),
                 "material_index": int(poly.material_index),
+                "vertex_indices": [int(i) for i in poly.vertices],
+                "geometry_island_id": f"{mesh.name}:{geometry_islands.get(int(poly.index), 0)}",
                 "loop_indices": [int(i) for i in poly.loop_indices],
                 "uvs": uvs,
                 "source_uvs": list(uvs),
@@ -826,21 +891,23 @@ def collect_cluster_faces(context, mat):
         if obj_face_count:
             objects.append(obj.name)
 
-    return faces, sorted(set(objects)), warnings
+    return faces, sorted(set(objects)), warnings, scope
 
 
 def collect_preview_cluster_faces(context, mat):
     objects = []
     faces = []
     warnings = []
+    candidates, scope = cluster_candidate_objects(context, mat)
 
-    for obj in context.scene.objects:
+    for obj in candidates:
         if obj.type != "MESH":
             continue
         mat_indices = material_slot_indices(obj, mat)
         if not mat_indices:
             continue
         mesh = obj.data
+        geometry_islands = mesh_geometry_island_ids(mesh)
         source_layer = source_uv_layer_for_mesh(mesh)
         preview_name = preview_uv_name_for_material(mat)
         preview_layer = mesh.uv_layers.get(preview_name)
@@ -868,6 +935,8 @@ def collect_preview_cluster_faces(context, mat):
                 "mesh": mesh.name,
                 "poly_index": int(poly.index),
                 "material_index": int(poly.material_index),
+                "vertex_indices": [int(i) for i in poly.vertices],
+                "geometry_island_id": f"{mesh.name}:{geometry_islands.get(int(poly.index), 0)}",
                 "loop_indices": [int(i) for i in poly.loop_indices],
                 "uvs": preview_uvs,
                 "source_uvs": source_uvs,
@@ -879,7 +948,7 @@ def collect_preview_cluster_faces(context, mat):
         if obj_face_count:
             objects.append(obj.name)
 
-    return faces, sorted(set(objects)), warnings
+    return faces, sorted(set(objects)), warnings, scope
 
 
 def cluster_face_input_stats(context, mat, faces):
@@ -890,12 +959,25 @@ def cluster_face_input_stats(context, mat, faces):
             "faces": 0,
             "loops": 0,
             "material_indices": set(),
+            "geometry_island_ids": set(),
+            "u_min": None,
+            "v_min": None,
+            "u_max": None,
+            "v_max": None,
             "mesh_material_slots": 0,
             "target_slots": set(),
         })
         stats["faces"] += 1
         stats["loops"] += len(face.get("loop_indices") or ())
         stats["material_indices"].add(int(face.get("material_index", -1)))
+        stats["geometry_island_ids"].add(str(face.get("geometry_island_id", "")))
+        for uv in face.get("uvs", ()):
+            u = float(uv[0])
+            v = float(uv[1])
+            stats["u_min"] = u if stats["u_min"] is None else min(stats["u_min"], u)
+            stats["v_min"] = v if stats["v_min"] is None else min(stats["v_min"], v)
+            stats["u_max"] = u if stats["u_max"] is None else max(stats["u_max"], u)
+            stats["v_max"] = v if stats["v_max"] is None else max(stats["v_max"], v)
 
     for name, stats in object_stats.items():
         obj = bpy.data.objects.get(name)
@@ -911,9 +993,294 @@ def cluster_face_input_stats(context, mat, faces):
             "mesh_material_slots": int(stats["mesh_material_slots"]),
             "target_slots": sorted(int(i) for i in stats["target_slots"]),
             "collected_material_indices": sorted(int(i) for i in stats["material_indices"]),
+            "geometry_island_count": len([i for i in stats["geometry_island_ids"] if i]),
+            "uv_bounds": [
+                stats["u_min"],
+                stats["v_min"],
+                stats["u_max"],
+                stats["v_max"],
+            ],
             "multi_material_mesh": bool(stats["mesh_material_slots"] > 1),
         }
     return serializable
+
+
+def build_single_texture_crop_cluster(faces, ref_w, ref_h, margin_px):
+    if not faces:
+        return [], [], {}
+    all_uv = [uv for face in faces for uv in face.get("uvs", ())]
+    if not all_uv:
+        return [], [], {}
+    u_min = min(float(uv[0]) for uv in all_uv)
+    v_min = min(float(uv[1]) for uv in all_uv)
+    u_max = max(float(uv[0]) for uv in all_uv)
+    v_max = max(float(uv[1]) for uv in all_uv)
+    content_w = max(1, int(math.ceil((u_max - u_min) * int(ref_w))))
+    content_h = max(1, int(math.ceil((v_max - v_min) * int(ref_h))))
+    face_indices = list(range(len(faces)))
+    island = {
+        "index": 0,
+        "face_indices": face_indices,
+        "u_min": u_min,
+        "v_min": v_min,
+        "u_max": u_max,
+        "v_max": v_max,
+    }
+    group = {
+        "index": 0,
+        "mode": "texture",
+        "island_indices": [0],
+        "face_indices": face_indices,
+        "u_min": u_min,
+        "v_min": v_min,
+        "u_max": u_max,
+        "v_max": v_max,
+        "content_w": content_w,
+        "content_h": content_h,
+        "source_content_w": content_w,
+        "source_content_h": content_h,
+        "packed_content_w": content_w,
+        "packed_content_h": content_h,
+        "margin_px": int(margin_px),
+        "w": content_w + int(margin_px) * 2,
+        "h": content_h + int(margin_px) * 2,
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "flip_x": False,
+        "flip_y": False,
+        "fallback_single_bbox": True,
+    }
+    return [island], [group], {face_index: group for face_index in face_indices}
+
+
+def single_texture_crop_diagnostics(faces, islands, groups, raw_w, raw_h, canvas_w, canvas_h):
+    return {
+        "mode": "texture_single_bbox_fallback",
+        "input_face_count": len(faces),
+        "island_count": len(islands),
+        "group_count": len(groups),
+        "raw_used_w": int(raw_w),
+        "raw_used_h": int(raw_h),
+        "canvas_w": int(canvas_w),
+        "canvas_h": int(canvas_h),
+        "substance_canvas": (int(canvas_w), int(canvas_h)),
+        "rectangle_fill_percent": (int(raw_w) * int(raw_h) * 100.0 / max(1, int(canvas_w) * int(canvas_h))),
+        "raw_bounds_fill_percent": (int(raw_w) * int(raw_h) * 100.0 / max(1, int(canvas_w) * int(canvas_h))),
+        "overlap_warnings": [],
+        "stack_detections": [],
+        "mixed_material_input": len({face.get("material_index") for face in faces}) > 1,
+        "material_indices": sorted({face.get("material_index") for face in faces}),
+        "input_warnings": ["Texture pack fallback used: core packed canvas was larger than single material bbox crop."],
+    }
+
+
+def faces_uv_bounds(faces):
+    all_uv = [uv for face in faces for uv in face.get("uvs", ())]
+    if not all_uv:
+        return [0.0, 0.0, 0.0, 0.0]
+    return [
+        min(float(uv[0]) for uv in all_uv),
+        min(float(uv[1]) for uv in all_uv),
+        max(float(uv[0]) for uv in all_uv),
+        max(float(uv[1]) for uv in all_uv),
+    ]
+
+
+def shrink_texture_groups_to_alpha(groups, src_pixels, src_w, src_h, alpha_threshold=0.001):
+    if not src_pixels:
+        return groups
+    output = []
+    for group in groups:
+        src_x0 = max(0, int(math.floor(float(group["u_min"]) * int(src_w))))
+        src_x1 = min(int(src_w), int(math.ceil(float(group["u_max"]) * int(src_w))))
+        src_y0 = max(0, int(math.floor((1.0 - float(group["v_max"])) * int(src_h))))
+        src_y1 = min(int(src_h), int(math.ceil((1.0 - float(group["v_min"])) * int(src_h))))
+        min_x = min_y = None
+        max_x = max_y = None
+        if src_x1 > src_x0 and src_y1 > src_y0:
+            if np is not None:
+                try:
+                    arr = np.frombuffer(src_pixels, dtype=np.float32).reshape(int(src_h), int(src_w), 4)
+                    alpha = arr[src_y0:src_y1, src_x0:src_x1, 3]
+                    ys, xs = np.nonzero(alpha > float(alpha_threshold))
+                    if len(xs):
+                        min_x = src_x0 + int(xs.min())
+                        max_x = src_x0 + int(xs.max()) + 1
+                        min_y = src_y0 + int(ys.min())
+                        max_y = src_y0 + int(ys.max()) + 1
+                except Exception as exc:
+                    print(f"[RZM TexWorks MC] Alpha shrink NumPy fallback: {exc}")
+            if min_x is None:
+                for y in range(src_y0, src_y1):
+                    row = y * int(src_w)
+                    for x in range(src_x0, src_x1):
+                        if float(src_pixels[(row + x) * 4 + 3]) <= float(alpha_threshold):
+                            continue
+                        min_x = x if min_x is None else min(min_x, x)
+                        max_x = x + 1 if max_x is None else max(max_x, x + 1)
+                        min_y = y if min_y is None else min(min_y, y)
+                        max_y = y + 1 if max_y is None else max(max_y, y + 1)
+        if min_x is None:
+            output.append(group)
+            continue
+        shrunk = dict(group)
+        shrunk["u_min"] = min_x / max(1, int(src_w))
+        shrunk["u_max"] = max_x / max(1, int(src_w))
+        shrunk["v_max"] = 1.0 - (min_y / max(1, int(src_h)))
+        shrunk["v_min"] = 1.0 - (max_y / max(1, int(src_h)))
+        content_w = max(1, int(max_x - min_x))
+        content_h = max(1, int(max_y - min_y))
+        shrunk["content_w"] = content_w
+        shrunk["content_h"] = content_h
+        shrunk["source_content_w"] = content_w
+        shrunk["source_content_h"] = content_h
+        shrunk["packed_content_w"] = content_w
+        shrunk["packed_content_h"] = content_h
+        shrunk["w"] = content_w + int(shrunk.get("margin_px", 0)) * 2
+        shrunk["h"] = content_h + int(shrunk.get("margin_px", 0)) * 2
+        shrunk["alpha_shrunk"] = True
+        output.append(shrunk)
+    return output
+
+
+def build_texture_cut_cluster(faces, ref_w, ref_h, margin_px, gap_px, max_size, source_image=None):
+    islands, groups, face_to_group = twaa_core.build_texture_groups(
+        faces,
+        ref_w,
+        ref_h,
+        margin_px,
+        split_sparse=True,
+        strict_material=True,
+    )
+    src_pixels, src_w, src_h = image_pixels(source_image)
+    if src_pixels and int(src_w) == int(ref_w) and int(src_h) == int(ref_h):
+        groups = shrink_texture_groups_to_alpha(groups, src_pixels, src_w, src_h)
+
+    base_groups = [dict(group) for group in groups]
+    base_layout, base_canvas_w, base_canvas_h, base_raw_w, base_raw_h = twaa_core.pack_texture_groups_substance(
+        base_groups,
+        gap=gap_px,
+        max_size=max_size,
+        allow_rotate=False,
+    )
+    groups = base_groups
+    layout_groups, canvas_w, canvas_h, raw_w, raw_h = (
+        base_layout, base_canvas_w, base_canvas_h, base_raw_w, base_raw_h
+    )
+    pack_choice = "core_sparse"
+
+    face_to_group = {face_index: group for group in groups for face_index in group["face_indices"]}
+    layout_groups = [
+        {**group, "pack_choice": pack_choice}
+        for group in layout_groups
+    ]
+    canvas_w = int(canvas_w)
+    canvas_h = int(canvas_h)
+    raw_w = int(raw_w)
+    raw_h = int(raw_h)
+
+    # Never let an experimental split path silently bloat a texture rebuild.
+    if int(canvas_w) * int(canvas_h) > int(ref_w) * int(ref_h):
+        layout_groups, canvas_w, canvas_h, raw_w, raw_h = twaa_core.pack_texture_groups_substance(
+            base_groups,
+            gap=gap_px,
+            max_size=max_size,
+            allow_rotate=False,
+        )
+        groups = base_groups
+        face_to_group = {face_index: group for group in groups for face_index in group["face_indices"]}
+        pack_choice = "core_sparse_source_area_guard"
+        layout_groups = [
+            {**group, "pack_choice": pack_choice}
+            for group in layout_groups
+        ]
+
+    layout_groups, canvas_w, canvas_h, raw_w, raw_h = (
+        layout_groups,
+        int(canvas_w),
+        int(canvas_h),
+        int(raw_w),
+        int(raw_h),
+    )
+    diagnostics = {
+        "mode": "texture_cut",
+        "input_face_count": len(faces),
+        "island_count": len(islands),
+        "group_count": len(layout_groups),
+        "raw_used_w": int(raw_w),
+        "raw_used_h": int(raw_h),
+        "canvas_w": int(canvas_w),
+        "canvas_h": int(canvas_h),
+        "substance_canvas": (int(canvas_w), int(canvas_h)),
+        "rectangle_fill_percent": (
+            sum(int(group["w"]) * int(group["h"]) for group in layout_groups)
+            * 100.0
+            / max(1, int(canvas_w) * int(canvas_h))
+        ),
+        "raw_bounds_fill_percent": int(raw_w) * int(raw_h) * 100.0 / max(1, int(canvas_w) * int(canvas_h)),
+        "overlap_warnings": twaa_core.detect_layout_overlaps(layout_groups),
+        "stack_detections": [],
+        "mixed_material_input": len({face.get("material_index") for face in faces}) > 1,
+        "material_indices": sorted({face.get("material_index") for face in faces}),
+        "pack_choice": pack_choice,
+        "base_canvas": (int(base_canvas_w), int(base_canvas_h)),
+        "base_raw": (int(base_raw_w), int(base_raw_h)),
+        "input_warnings": [],
+    }
+    return islands, layout_groups, face_to_group, diagnostics
+
+
+def build_preview_passthrough_cluster(faces, canvas_w, canvas_h):
+    face_indices = list(range(len(faces)))
+    island = {
+        "index": 0,
+        "face_indices": face_indices,
+        "u_min": 0.0,
+        "v_min": 0.0,
+        "u_max": 1.0,
+        "v_max": 1.0,
+    }
+    group = {
+        "index": 0,
+        "mode": "preview_passthrough",
+        "island_indices": [0],
+        "face_indices": face_indices,
+        "u_min": 0.0,
+        "v_min": 0.0,
+        "u_max": 1.0,
+        "v_max": 1.0,
+        "content_w": int(canvas_w),
+        "content_h": int(canvas_h),
+        "source_content_w": int(canvas_w),
+        "source_content_h": int(canvas_h),
+        "packed_content_w": int(canvas_w),
+        "packed_content_h": int(canvas_h),
+        "margin_px": 0,
+        "w": int(canvas_w),
+        "h": int(canvas_h),
+        "x": 0,
+        "y": 0,
+        "rotation": 0,
+        "flip_x": False,
+        "flip_y": False,
+    }
+    diagnostics = {
+        "mode": "preview_passthrough",
+        "input_face_count": len(faces),
+        "island_count": 1,
+        "group_count": 1,
+        "raw_used_w": int(canvas_w),
+        "raw_used_h": int(canvas_h),
+        "canvas_w": int(canvas_w),
+        "canvas_h": int(canvas_h),
+        "mixed_material_input": len({face.get("material_index") for face in faces}) > 1,
+        "material_indices": sorted({face.get("material_index") for face in faces}),
+        "input_warnings": [],
+        "overlap_warnings": [],
+        "stack_detections": [],
+    }
+    return [island], [group], {face_index: group for face_index in face_indices}, diagnostics
 
 
 # UV island grouping and rectangle packing live in TWAA_CORE.py. This module keeps Blender IO only.
@@ -1007,8 +1374,26 @@ def face_triangles(uvs):
 
 
 def dest_uv_to_pixel(uv, group, ref_w, ref_h, margin):
-    x = group["x"] + margin + (uv[0] - group["u_min"]) * ref_w
-    y = group["y"] + margin + (group["v_max"] - uv[1]) * ref_h
+    margin = int(group.get("margin_px", margin))
+    u_min = float(group["u_min"])
+    v_min = float(group["v_min"])
+    u_max = float(group["u_max"])
+    v_max = float(group["v_max"])
+    u_span = max(1.0e-12, u_max - u_min)
+    v_span = max(1.0e-12, v_max - v_min)
+    local_u = (float(uv[0]) - u_min) / u_span
+    local_v = (v_max - float(uv[1])) / v_span
+    content_w = float(group.get("packed_content_w", group.get("content_w", max(1, int(ref_w)))))
+    content_h = float(group.get("packed_content_h", group.get("content_h", max(1, int(ref_h)))))
+    rotation = int(group.get("rotation", 0) or 0)
+    if rotation == 90:
+        local_u, local_v = local_v, 1.0 - local_u
+    if group.get("flip_x", False):
+        local_u = 1.0 - local_u
+    if group.get("flip_y", False):
+        local_v = 1.0 - local_v
+    x = group["x"] + margin + local_u * content_w
+    y = group["y"] + margin + local_v * content_h
     return x, y
 
 
@@ -1031,6 +1416,80 @@ def solid_pixel_buffer(width, height, color):
     data[2::4] = array("f", [b]) * px_count
     data[3::4] = array("f", [a]) * px_count
     return data
+
+
+def can_copy_texture_groups_exact(layout_groups, src_w, src_h, ref_w, ref_h):
+    if int(src_w) != int(ref_w) or int(src_h) != int(ref_h):
+        return False
+    for group in layout_groups:
+        if group.get("mode") != "texture":
+            return False
+        if int(group.get("rotation", 0) or 0) != 0:
+            return False
+        if group.get("flip_x", False) or group.get("flip_y", False):
+            return False
+        if int(group.get("packed_content_w", group.get("content_w", 0))) != int(group.get("source_content_w", group.get("content_w", 0))):
+            return False
+        if int(group.get("packed_content_h", group.get("content_h", 0))) != int(group.get("source_content_h", group.get("content_h", 0))):
+            return False
+    return True
+
+
+def copy_texture_groups_exact(src_pixels, src_w, src_h, layout_groups, atlas_w, atlas_h, margin):
+    pixel_count = int(atlas_w) * int(atlas_h)
+    buffer = array("f", [0.0]) * (pixel_count * 4)
+    if np is not None:
+        try:
+            src = np.frombuffer(src_pixels, dtype=np.float32).reshape(int(src_h), int(src_w), 4)
+            dst = np.frombuffer(buffer, dtype=np.float32).reshape(int(atlas_h), int(atlas_w), 4)
+            for group in layout_groups:
+                copy_w = max(1, int(group.get("source_content_w", group.get("content_w", 1))))
+                copy_h = max(1, int(group.get("source_content_h", group.get("content_h", 1))))
+                src_x = int(math.floor(float(group["u_min"]) * int(src_w)))
+                src_y_top = int(math.ceil(float(group["v_max"]) * int(src_h))) - 1
+                dst_x = int(group["x"]) + int(margin)
+                dst_y = int(group["y"]) + int(margin)
+                for row in range(copy_h):
+                    sy = src_y_top - row
+                    dy = dst_y + row
+                    if dy < 0 or dy >= int(atlas_h) or sy < 0 or sy >= int(src_h):
+                        continue
+                    sx0 = max(0, src_x)
+                    dx0 = dst_x + (sx0 - src_x)
+                    width = min(copy_w - (sx0 - src_x), int(src_w) - sx0, int(atlas_w) - dx0)
+                    if width <= 0 or dx0 < 0:
+                        if dx0 < 0:
+                            sx0 -= dx0
+                            width += dx0
+                            dx0 = 0
+                        if width <= 0:
+                            continue
+                    dst[dy, dx0:dx0 + width] = src[sy, sx0:sx0 + width]
+            return dilate_alpha(buffer, atlas_w, atlas_h, margin)
+        except Exception as exc:
+            print(f"[RZM TexWorks MC] Exact texture copy NumPy fallback: {exc}")
+
+    for group in layout_groups:
+        copy_w = max(1, int(group.get("source_content_w", group.get("content_w", 1))))
+        copy_h = max(1, int(group.get("source_content_h", group.get("content_h", 1))))
+        src_x = int(math.floor(float(group["u_min"]) * int(src_w)))
+        src_y_top = int(math.ceil(float(group["v_max"]) * int(src_h))) - 1
+        dst_x = int(group["x"]) + int(margin)
+        dst_y = int(group["y"]) + int(margin)
+        for row in range(copy_h):
+            sy = src_y_top - row
+            dy = dst_y + row
+            if dy < 0 or dy >= int(atlas_h) or sy < 0 or sy >= int(src_h):
+                continue
+            for col in range(copy_w):
+                sx = src_x + col
+                dx = dst_x + col
+                if dx < 0 or dx >= int(atlas_w) or sx < 0 or sx >= int(src_w):
+                    continue
+                src_idx = (sy * int(src_w) + sx) * 4
+                dst_idx = (dy * int(atlas_w) + dx) * 4
+                buffer[dst_idx:dst_idx + 4] = src_pixels[src_idx:src_idx + 4]
+    return dilate_alpha(buffer, atlas_w, atlas_h, margin)
 
 
 def dilate_alpha(buffer, width, height, radius):
@@ -1122,6 +1581,9 @@ def bake_slot_image(slot, source, faces, face_to_group, layout_groups, atlas_w, 
     src_avg = pixel_average_rgba(src_pixels, sample_step=256)
     if slot == "Diffuse" and max(src_avg) <= 0.001 and not is_black_color(fallback):
         return solid_pixel_buffer(atlas_w, atlas_h, fallback)
+
+    if can_copy_texture_groups_exact(layout_groups, src_w, src_h, ref_w, ref_h):
+        return copy_texture_groups_exact(src_pixels, src_w, src_h, layout_groups, atlas_w, atlas_h, margin)
 
     if np is not None:
         try:
@@ -1354,14 +1816,15 @@ def build_manifest(context, mat, slot_sources, objects, faces, islands, groups, 
 
     manifest_groups = []
     for group in sorted(layout_groups, key=lambda item: item["index"]):
+        group_margin = int(group.get("margin_px", settings.vertex_margin_px))
         rect = manifest_rect(settings, atlas_h, group["x"], group["y"], group["w"], group["h"])
         content_rect = manifest_rect(
             settings,
             atlas_h,
-            group["x"] + settings.vertex_margin_px,
-            group["y"] + settings.vertex_margin_px,
-            group["content_w"],
-            group["content_h"],
+            group["x"] + group_margin,
+            group["y"] + group_margin,
+            group.get("packed_content_w", group.get("content_w", group["w"])),
+            group.get("packed_content_h", group.get("content_h", group["h"])),
         )
         manifest_groups.append({
             "index": int(group["index"]),
@@ -1370,6 +1833,9 @@ def build_manifest(context, mat, slot_sources, objects, faces, islands, groups, 
             "source_uv_bounds": [group["u_min"], group["v_min"], group["u_max"], group["v_max"]],
             "islands": list(group["island_indices"]),
             "face_count": len(group["face_indices"]),
+            "rotation": int(group.get("rotation", 0) or 0),
+            "flip_x": bool(group.get("flip_x", False)),
+            "flip_y": bool(group.get("flip_y", False)),
         })
 
     packed_area = sum(int(g["w"]) * int(g["h"]) for g in layout_groups)
@@ -1411,15 +1877,15 @@ def calculate_cluster(context, use_preview_uv=False):
     slot_sources = collect_slot_sources(mat)
     ref_w, ref_h, ref_slot = choose_reference_size(settings, slot_sources, mat)
     if use_preview_uv:
-        faces, objects, warnings = collect_preview_cluster_faces(context, mat)
+        faces, objects, warnings, collection_scope = collect_preview_cluster_faces(context, mat)
     else:
-        faces, objects, warnings = collect_cluster_faces(context, mat)
+        faces, objects, warnings, collection_scope = collect_cluster_faces(context, mat)
     if not faces:
         raise RuntimeError(f"Material '{mat.name}' has no mesh faces in the current scene")
     input_stats = cluster_face_input_stats(context, mat, faces)
     print(
         f"[RZM TexWorks MC] Calculate input material={mat.name!r} "
-        f"objects={len(objects)} faces={len(faces)} use_preview={use_preview_uv} stats={input_stats}"
+        f"scope={collection_scope} objects={len(objects)} faces={len(faces)} use_preview={use_preview_uv} stats={input_stats}"
     )
 
     for slot, source in slot_sources.items():
@@ -1435,42 +1901,100 @@ def calculate_cluster(context, use_preview_uv=False):
     gap = int(settings.pack_gap_px)
     has_diffuse_texture = bool(slot_sources.get("Diffuse", {}).get("image"))
     rebuild_mode = "PREVIEW_REEXPORT" if use_preview_uv else ("TEXTURE_FACE_REPACK" if has_diffuse_texture else "NO_DIFFUSE_DENSE_PACK")
+    core_diagnostics = None
     if use_preview_uv:
-        islands, layout_groups, face_to_group = twaa_core.build_single_preview_group(faces, ref_w, ref_h, margin)
-        groups = layout_groups
-        atlas_w = max(group["x"] + group["w"] for group in layout_groups)
-        atlas_h = max(group["y"] + group["h"] for group in layout_groups)
-    elif has_diffuse_texture:
-        islands, groups, face_to_group = twaa_core.build_texture_bsp_groups(faces, ref_w, ref_h, margin)
-        bounded = twaa_core.pack_groups_bounded(groups, gap=gap, max_w=ref_w, max_h=ref_h, power_of_two=False)
-        if bounded is not None:
-            layout_groups, atlas_w, atlas_h = bounded
-        else:
-            layout_groups, atlas_w, atlas_h = twaa_core.pack_groups(
-                groups,
-                gap=gap,
-                max_size=int(settings.max_atlas_size),
-                power_of_two=False,
+        registered_size = registered_cluster_size(context, mat, ref_slot if ref_slot in SLOTS else "Diffuse")
+        if registered_size is None:
+            raise RuntimeError(
+                f"Cannot export preview for '{mat.name}' before a normal Rebuild has registered a cluster size. "
+                "Run Rebuild first."
             )
-            warnings.append(
-                f"Texture rebuild packed to {atlas_w}x{atlas_h}, larger than Diffuse/reference {ref_w}x{ref_h}. "
-                "Packing kept larger source-space groups to avoid excessive face fragmentation."
-            )
-    else:
-        islands, groups, face_to_group = twaa_core.build_no_texture_dense_groups(faces, ref_w, ref_h, margin)
-        layout_groups, atlas_w, atlas_h = twaa_core.pack_groups(
-            groups,
-            gap=gap,
-            max_size=int(settings.max_atlas_size),
-            power_of_two=False,
+        atlas_w, atlas_h = registered_size
+        raw_atlas_w, raw_atlas_h = atlas_w, atlas_h
+        islands, layout_groups, face_to_group, core_diagnostics = build_preview_passthrough_cluster(
+            faces,
+            atlas_w,
+            atlas_h,
         )
-    raw_atlas_w, raw_atlas_h = int(atlas_w), int(atlas_h)
-    atlas_w, atlas_h = quantize_cluster_size(atlas_w, atlas_h)
+        groups = layout_groups
+    elif has_diffuse_texture:
+        islands, layout_groups, face_to_group, core_diagnostics = build_texture_cut_cluster(
+            faces,
+            ref_w,
+            ref_h,
+            margin,
+            gap,
+            min(int(settings.max_atlas_size), max(SUBSTANCE_CLUSTER_SIZES)),
+            source_image=slot_sources.get("Diffuse", {}).get("image"),
+        )
+        groups = layout_groups
+        raw_atlas_w = int(core_diagnostics["raw_used_w"])
+        raw_atlas_h = int(core_diagnostics["raw_used_h"])
+        atlas_w = int(core_diagnostics["canvas_w"])
+        atlas_h = int(core_diagnostics["canvas_h"])
+        fallback_islands, fallback_groups, fallback_map = build_single_texture_crop_cluster(faces, ref_w, ref_h, margin)
+        if fallback_groups:
+            fallback_raw_w = max(group["x"] + group["w"] for group in fallback_groups)
+            fallback_raw_h = max(group["y"] + group["h"] for group in fallback_groups)
+            fallback_w, fallback_h = quantize_cluster_size(fallback_raw_w, fallback_raw_h)
+            cut_area = int(atlas_w) * int(atlas_h)
+            fallback_area = int(fallback_w) * int(fallback_h)
+            source_area = int(ref_w) * int(ref_h)
+            if cut_area > fallback_area or cut_area > source_area:
+                warnings.append(
+                    f"Texture cut fallback: cut canvas {atlas_w}x{atlas_h} is larger than "
+                    f"single material crop {fallback_w}x{fallback_h}; using bbox crop to avoid texture bloat."
+                )
+                islands = fallback_islands
+                layout_groups = fallback_groups
+                groups = fallback_groups
+                face_to_group = fallback_map
+                raw_atlas_w = int(fallback_raw_w)
+                raw_atlas_h = int(fallback_raw_h)
+                atlas_w = int(fallback_w)
+                atlas_h = int(fallback_h)
+                core_diagnostics = single_texture_crop_diagnostics(
+                    faces,
+                    islands,
+                    groups,
+                    raw_atlas_w,
+                    raw_atlas_h,
+                    atlas_w,
+                    atlas_h,
+                )
+    else:
+        islands, layout_groups, face_to_group, core_diagnostics = twaa_core.build_and_pack_cluster(
+            faces,
+            ref_w,
+            ref_h,
+            margin,
+            has_texture=has_diffuse_texture,
+            gap=gap,
+            max_size=min(int(settings.max_atlas_size), max(SUBSTANCE_CLUSTER_SIZES)),
+            allow_rotate=False,
+            strict_material=True,
+        )
+        groups = layout_groups
+        raw_atlas_w = int(core_diagnostics.get("raw_used_w", core_diagnostics.get("canvas_w", 1)))
+        raw_atlas_h = int(core_diagnostics.get("raw_used_h", core_diagnostics.get("canvas_h", 1)))
+        atlas_w = int(core_diagnostics["canvas_w"])
+        atlas_h = int(core_diagnostics["canvas_h"])
+    print(f"[RZM TexWorks MC] Core diagnostics material={mat.name!r}: {core_diagnostics}")
     if (atlas_w, atlas_h) != (raw_atlas_w, raw_atlas_h):
         warnings.append(
             f"Cluster canvas padded from {raw_atlas_w}x{raw_atlas_h} to Substance-compatible {atlas_w}x{atlas_h}. "
             "Content was not rescaled."
         )
+    if has_diffuse_texture and not use_preview_uv:
+        output_area = int(atlas_w) * int(atlas_h)
+        source_area = int(ref_w) * int(ref_h)
+        if output_area > source_area:
+            raise RuntimeError(
+                "Texture rebuild refused to export a larger texture than the source. "
+                f"source={ref_w}x{ref_h} ({source_area} px), output={atlas_w}x{atlas_h} ({output_area} px), "
+                f"raw={raw_atlas_w}x{raw_atlas_h}, uv_bounds={faces_uv_bounds(faces)}, "
+                f"input_stats={input_stats}, diagnostics={core_diagnostics}"
+            )
     manifest = build_manifest(
         context, mat, slot_sources, objects, faces, islands, groups, layout_groups,
         atlas_w, atlas_h, (ref_w, ref_h), ref_slot, warnings,
@@ -1479,9 +2003,11 @@ def calculate_cluster(context, use_preview_uv=False):
     manifest["core_input"] = {
         "material": mat.name,
         "use_preview_uv": bool(use_preview_uv),
+        "collection_scope": collection_scope,
         "object_face_stats": input_stats,
         "substance_cluster_sizes": list(SUBSTANCE_CLUSTER_SIZES),
         "raw_packed_size": [int(raw_atlas_w), int(raw_atlas_h)],
+        "core_diagnostics": core_diagnostics,
     }
     if use_preview_uv:
         manifest["uv_source"] = preview_uv_name_for_material(mat)
