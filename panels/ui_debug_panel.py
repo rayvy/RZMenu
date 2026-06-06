@@ -427,6 +427,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 row.prop(mc, "enabled", text="Enabled")
                 row.operator("rzm.tw_mc_build_autoatlas_layout", text="Build TWAA Layout", icon='LINKED')
                 row.operator("rzm.tw_mc_fix_texture_steps", text="", icon='MOD_UVPROJECT')
+                row.operator("rzm.tw_mc_export_material_textures", text="", icon='IMAGE_DATA')
 
                 settings_row = twaa_box.row(align=True)
                 settings_row.prop(mc, "default_resolution", text="Fallback")

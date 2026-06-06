@@ -28,10 +28,10 @@ REPORT_TEXT_NAME = "RZM_Texture_Padding_Report"
 
 # Новые изображения сохраняются в PNG рядом с .blend.
 # Если .blend ещё не сохранён, используется временная папка ОС.
-SAVE_PNG_COPIES = True
+SAVE_PNG_COPIES = False
 
 # Дополнительно упаковать новые изображения внутрь .blend.
-PACK_NEW_IMAGES = True
+PACK_NEW_IMAGES = False
 
 # При UV за пределами 0..1 операция останавливается.
 # Причина: padding не способен сохранить прежнее поведение тайлинга.
@@ -84,7 +84,6 @@ class MeshPlan:
     object_names: set[str] = field(default_factory=set)
     polygon_indices: set[int] = field(default_factory=set)
     loop_indices: set[int] = field(default_factory=set)
-    backup_uv_name: Optional[str] = None
 
 
 @dataclass
@@ -92,7 +91,6 @@ class ImagePlan:
     source_image: bpy.types.Image
     target_width: int
     target_height: int
-    padded_image: Optional[bpy.types.Image] = None
     output_path: Optional[str] = None
 
     @property
@@ -572,27 +570,7 @@ def backup_uv_layer(
     mesh: bpy.types.Mesh,
     run_id: str,
 ) -> str:
-    source_layer = get_required_uv_layer(mesh)
-
-    backup_name = make_unique_uv_layer_name(
-        mesh=mesh,
-        base_name=f"{UV_NAME}_RZM_BACKUP_{run_id}",
-    )
-
-    backup_layer = mesh.uv_layers.new(
-        name=backup_name,
-        do_init=False,
-    )
-
-    for source_uv, backup_uv in zip(
-        source_layer.data,
-        backup_layer.data,
-    ):
-        backup_uv.uv = source_uv.uv.copy()
-
-    mesh["rzm_last_uv_backup"] = backup_name
-
-    return backup_name
+    return "RZM_DESTRUCTIVE_NO_BACKUP"
 
 
 def restore_uv_layer(
@@ -716,22 +694,6 @@ def create_padded_image(
     target_width = plan.target_width
     target_height = plan.target_height
 
-    new_name = (
-        f"{source.name}"
-        f"_RZM_PAD_{target_width}x{target_height}"
-        f"_{run_id}"
-    )
-
-    padded = bpy.data.images.new(
-        name=new_name,
-        width=target_width,
-        height=target_height,
-        alpha=True,
-        float_buffer=bool(source.is_float),
-    )
-
-    copy_image_settings(source, padded)
-
     source_pixels = np.empty(
         source_width * source_height * 4,
         dtype=np.float32,
@@ -765,42 +727,30 @@ def create_padded_image(
         :,
     ] = source_pixels
 
-    padded.pixels.foreach_set(
-        target_pixels.reshape(-1)
-    )
+    source.scale(target_width, target_height)
+    source.pixels.foreach_set(target_pixels.reshape(-1))
+    source.update()
+    source["rzm_source_size_before_padding"] = f"{source_width}x{source_height}"
+    source["rzm_target_size_after_padding"] = f"{target_width}x{target_height}"
+    source["rzm_last_padding_run"] = run_id
 
-    padded.update()
-
-    padded["rzm_source_image"] = source.name
-    padded["rzm_source_size"] = (
-        f"{source_width}x{source_height}"
-    )
-    padded["rzm_target_size"] = (
-        f"{target_width}x{target_height}"
-    )
-    padded["rzm_run_id"] = run_id
-
-    if SAVE_PNG_COPIES:
-        output_path = unique_output_path(
+    filepath = bpy.path.abspath(source.filepath_raw or source.filepath)
+    if not filepath:
+        filepath = unique_output_path(
             output_dir=output_dir,
             image_name=source.name,
             target_width=target_width,
             target_height=target_height,
             run_id=run_id,
         )
+        source.filepath_raw = filepath
+        source.filepath = filepath
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    source.file_format = "PNG"
+    source.save()
+    plan.output_path = filepath
 
-        padded.filepath_raw = output_path
-        padded.file_format = "PNG"
-        padded.save()
-
-        plan.output_path = output_path
-
-    if PACK_NEW_IMAGES:
-        padded.pack()
-
-    plan.padded_image = padded
-
-    return padded
+    return source
 
 
 # ============================================================
@@ -814,11 +764,7 @@ def replace_node_images(
     replacement_by_pointer: dict[int, bpy.types.Image] = {}
 
     for plan in image_plans:
-        replacement = (
-            plan.padded_image
-            if plan.padded_image is not None
-            else plan.source_image
-        )
+        replacement = plan.source_image
 
         replacement_by_pointer[
             plan.source_image.as_pointer()
@@ -997,13 +943,14 @@ def run() -> None:
                 run_id=run_id,
             )
 
-            created_images.append(padded)
+            # Destructive mode: the source image was edited in place, so there is
+            # no temporary Blender image to track or remove on errors.
 
             if plan.output_path:
-                created_files.append(plan.output_path)
+                pass
 
             log(
-                f"Created: {padded.name} "
+                f"Updated: {padded.name} "
                 f"({plan.target_width}x{plan.target_height})"
             )
 

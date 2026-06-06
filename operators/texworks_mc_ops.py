@@ -170,21 +170,44 @@ class RZM_OT_TwMcFixTextureSteps(bpy.types.Operator):
         qa_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "QA"))
         script_path = os.path.join(qa_dir, "авто_доводчик.py")
         if not os.path.isfile(script_path):
-            candidates = [
-                path for path in glob.glob(os.path.join(qa_dir, "*.py"))
-                if os.path.basename(path).endswith("доводчик.py")
-            ]
+            candidates = []
+            for path in glob.glob(os.path.join(qa_dir, "*.py")):
+                try:
+                    with open(path, "rb") as handle:
+                        data = handle.read(4096)
+                except Exception:
+                    continue
+                if b"RZM_Texture_Padding_Report" in data:
+                    candidates.append(path)
             script_path = candidates[0] if candidates else script_path
         if not os.path.isfile(script_path):
             self.report({'ERROR'}, f"Script not found: {script_path}")
             return {'CANCELLED'}
         try:
             runpy.run_path(script_path, run_name="__main__")
+            written = texworks_mc.export_active_material_textures_raw(context)
             trigger_refresh()
         except Exception as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}
-        self.report({'INFO'}, "TWAA texture steps fixed for active material.")
+        self.report({'INFO'}, f"TWAA texture steps fixed and exported: {len(written)} texture(s).")
+        return {'FINISHED'}
+
+
+class RZM_OT_TwMcExportMaterialTextures(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_export_material_textures"
+    bl_label = "Export TWAA Material Textures"
+    bl_description = "Export connected RZM material image slots to Textures/DynAtlas as PNG and register them for TWAA blocks"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            written = texworks_mc.export_active_material_textures_raw(context)
+            trigger_refresh()
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+        self.report({'INFO'}, f"Exported {len(written)} TWAA texture(s).")
         return {'FINISHED'}
 
 
@@ -375,6 +398,7 @@ classes_to_register = [
     RZM_OT_TwMcApplyCluster,
     RZM_OT_TwMcBuildAutoAtlasLayout,
     RZM_OT_TwMcFixTextureSteps,
+    RZM_OT_TwMcExportMaterialTextures,
     RZM_OT_TwMcSelectMaterialObjects,
     RZM_OT_TwMcSelectAllMaterialObjects,
     RZM_OT_TwMcSelectPreviewMaterialObjects,

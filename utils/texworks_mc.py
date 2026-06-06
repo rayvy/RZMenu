@@ -2169,6 +2169,54 @@ def export_cluster_pngs(context, cluster, target_path=None):
     return written
 
 
+def export_active_material_textures_raw(context, target_path=None):
+    from ..operators.export_manager import get_target_path
+
+    settings = get_settings(context)
+    mat = get_active_material(context)
+    slot_sources = collect_slot_sources(mat)
+    if target_path is None:
+        target_path = get_target_path(context)
+    if not target_path:
+        raise RuntimeError("No export target path configured")
+
+    out_dir = os.path.join(bpy.path.abspath(target_path), settings.output_subdir)
+    os.makedirs(out_dir, exist_ok=True)
+    rzm = context.scene.rzm
+    key = material_key(mat.name)
+    written = {}
+
+    for slot, source in slot_sources.items():
+        image = source.get("image")
+        if not image:
+            continue
+        width = int(image.size[0])
+        height = int(image.size[1])
+        if width <= 0 or height <= 0:
+            continue
+        pixels = array("f", [0.0]) * (width * height * 4)
+        image.pixels.foreach_get(pixels)
+        resource_name = cluster_file_stem(mat.name, slot)
+        file_name = f"{resource_name}.png"
+        file_path = os.path.join(out_dir, file_name)
+        write_png_rgba8(file_path, width, height, pixels)
+
+        entry = ensure_mc_file_entry(rzm, resource_name)
+        entry.name = resource_name
+        entry.material_name = mat.name
+        entry.material_key = key
+        entry.slot_name = slot
+        entry.resource_name = resource_name
+        entry.relative_path = os.path.join(settings.output_subdir, file_name).replace("\\", "/")
+        entry.block_name = autoatlas_block_name(slot)
+        entry.resolution = (width, height)
+        written[slot] = file_path
+
+    if not written:
+        raise RuntimeError(f"Material '{mat.name}' has no image textures connected to RZM slots")
+    return written
+
+
 def atlas_uv_for_source_uv(uv, group, ref_w, ref_h, atlas_w, atlas_h, margin):
     x, y = dest_uv_to_pixel(uv, group, ref_w, ref_h, margin)
     return (x / max(1, atlas_w), 1.0 - (y / max(1, atlas_h)))
