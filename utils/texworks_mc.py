@@ -28,6 +28,7 @@ SCHEMA = 3
 KIND = "RZ_TEXWORKS_MC_MATERIAL"
 ROLE = "SEMANTIC_TEXTURE_HUB"
 DEFAULT_MAX_RASTER_PIXELS = 16 * 1024 * 1024
+SUBSTANCE_CLUSTER_SIZES = (128, 256, 512, 1024, 2048, 4096)
 
 SLOTS = ("Diffuse", "LightMap", "MaterialMap", "NormalMap", "Extra")
 SLOT_FILE_SUFFIX = {
@@ -80,6 +81,21 @@ def round_up_to_multiple(value, multiple=16):
     value = max(1, int(math.ceil(value)))
     multiple = max(1, int(multiple))
     return ((value + multiple - 1) // multiple) * multiple
+
+
+def quantize_cluster_dimension(value):
+    value = max(1, int(math.ceil(value)))
+    for size in SUBSTANCE_CLUSTER_SIZES:
+        if value <= size:
+            return size
+    raise RuntimeError(
+        f"TWAA cluster dimension {value}px exceeds Substance-compatible maximum {SUBSTANCE_CLUSTER_SIZES[-1]}px. "
+        "Reduce UV spread, rebuild with smaller margins, or split the material cluster."
+    )
+
+
+def quantize_cluster_size(width, height):
+    return quantize_cluster_dimension(width), quantize_cluster_dimension(height)
 
 
 def clamp01(value):
@@ -866,6 +882,40 @@ def collect_preview_cluster_faces(context, mat):
     return faces, sorted(set(objects)), warnings
 
 
+def cluster_face_input_stats(context, mat, faces):
+    object_stats = {}
+    for face in faces:
+        name = face.get("object") or "<unknown>"
+        stats = object_stats.setdefault(name, {
+            "faces": 0,
+            "loops": 0,
+            "material_indices": set(),
+            "mesh_material_slots": 0,
+            "target_slots": set(),
+        })
+        stats["faces"] += 1
+        stats["loops"] += len(face.get("loop_indices") or ())
+        stats["material_indices"].add(int(face.get("material_index", -1)))
+
+    for name, stats in object_stats.items():
+        obj = bpy.data.objects.get(name)
+        if obj and obj.type == "MESH":
+            stats["mesh_material_slots"] = len(obj.material_slots)
+            stats["target_slots"] = material_slot_indices(obj, mat)
+
+    serializable = {}
+    for name, stats in sorted(object_stats.items()):
+        serializable[name] = {
+            "faces": int(stats["faces"]),
+            "loops": int(stats["loops"]),
+            "mesh_material_slots": int(stats["mesh_material_slots"]),
+            "target_slots": sorted(int(i) for i in stats["target_slots"]),
+            "collected_material_indices": sorted(int(i) for i in stats["material_indices"]),
+            "multi_material_mesh": bool(stats["mesh_material_slots"] > 1),
+        }
+    return serializable
+
+
 # UV island grouping and rectangle packing live in TWAA_CORE.py. This module keeps Blender IO only.
 
 def image_pixels(image):
@@ -1366,6 +1416,11 @@ def calculate_cluster(context, use_preview_uv=False):
         faces, objects, warnings = collect_cluster_faces(context, mat)
     if not faces:
         raise RuntimeError(f"Material '{mat.name}' has no mesh faces in the current scene")
+    input_stats = cluster_face_input_stats(context, mat, faces)
+    print(
+        f"[RZM TexWorks MC] Calculate input material={mat.name!r} "
+        f"objects={len(objects)} faces={len(faces)} use_preview={use_preview_uv} stats={input_stats}"
+    )
 
     for slot, source in slot_sources.items():
         image = source.get("image")
@@ -1409,11 +1464,25 @@ def calculate_cluster(context, use_preview_uv=False):
             max_size=int(settings.max_atlas_size),
             power_of_two=False,
         )
+    raw_atlas_w, raw_atlas_h = int(atlas_w), int(atlas_h)
+    atlas_w, atlas_h = quantize_cluster_size(atlas_w, atlas_h)
+    if (atlas_w, atlas_h) != (raw_atlas_w, raw_atlas_h):
+        warnings.append(
+            f"Cluster canvas padded from {raw_atlas_w}x{raw_atlas_h} to Substance-compatible {atlas_w}x{atlas_h}. "
+            "Content was not rescaled."
+        )
     manifest = build_manifest(
         context, mat, slot_sources, objects, faces, islands, groups, layout_groups,
         atlas_w, atlas_h, (ref_w, ref_h), ref_slot, warnings,
     )
     manifest["rebuild_mode"] = rebuild_mode
+    manifest["core_input"] = {
+        "material": mat.name,
+        "use_preview_uv": bool(use_preview_uv),
+        "object_face_stats": input_stats,
+        "substance_cluster_sizes": list(SUBSTANCE_CLUSTER_SIZES),
+        "raw_packed_size": [int(raw_atlas_w), int(raw_atlas_h)],
+    }
     if use_preview_uv:
         manifest["uv_source"] = preview_uv_name_for_material(mat)
     return {
@@ -1581,16 +1650,25 @@ def destructively_apply_preview_to_texcoord(context, mat):
     for obj in context.scene.objects:
         if obj.type != "MESH":
             continue
-        if not material_slot_indices(obj, mat):
+        mat_indices = material_slot_indices(obj, mat)
+        if not mat_indices:
             continue
         mesh = obj.data
         source_layer = source_uv_layer_for_mesh(mesh)
         preview_layer = mesh.uv_layers.get(preview_uv_name_for_material(mat))
         if not source_layer or not preview_layer:
             continue
-        count = min(len(source_layer.data), len(preview_layer.data))
-        for i in range(count):
-            source_layer.data[i].uv = preview_layer.data[i].uv
+        data_count = min(len(source_layer.data), len(preview_layer.data))
+        changed_loops = 0
+        for poly in mesh.polygons:
+            if poly.material_index not in mat_indices:
+                continue
+            for loop_index in poly.loop_indices:
+                if 0 <= loop_index < data_count:
+                    source_layer.data[loop_index].uv = preview_layer.data[loop_index].uv
+                    changed_loops += 1
+        if not changed_loops:
+            continue
         source_layer.name = TEXCOORD_UV_NAME
         try:
             mesh.uv_layers.active = source_layer

@@ -414,10 +414,27 @@ Expected:
   - raster/export PNGs;
   - write Blender/TexWorks data.
 - Future packer changes must happen in TWAA_CORE first, then be wired through Blender-side tests.
+- Core implementation prompt lives in `TWAA_CORE_CHATBOT_PROMPT.md`.
+
+### Current Infrastructure Fixes
+
+- Cluster collection must pass only polygons belonging to the active target material.
+- Apply must copy preview UVs back to `TEXCOORD.xy` only for polygons belonging to that material.
+- Multi-material meshes must be visible in logs through per-object face/material-slot stats.
+- Cluster PNG canvas dimensions are padded, not rescaled, to Substance-compatible sizes:
+  - 128
+  - 256
+  - 512
+  - 1024
+  - 2048
+  - 4096
+- If raw packed content exceeds 4096 on any side, fail loudly instead of silently clamping.
 
 ### Rebuild Quality
 
 - Replace the current shelf/BSP MVP with a real bounded packer, probably MaxRects/Guillotine.
+- If `core_input.object_face_stats` shows only target material faces, then texture/no-texture UV chaos is a TWAA_CORE algorithm bug, not Blender collection.
+- If `core_input.object_face_stats` contains non-target material indices, fix Blender-side collection before touching TWAA_CORE.
 - Texture rebuild mode still needs real-scene validation on:
   - `TEST_CLUSTERS0`
   - `TEST_CLUSTERS1`
