@@ -105,6 +105,125 @@ def find_material_group_node(mat):
     return None
 
 
+def iter_material_group_nodes(group=None):
+    for mat in bpy.data.materials:
+        if not mat or not mat.use_nodes or not mat.node_tree:
+            continue
+        for node in mat.node_tree.nodes:
+            if node.bl_idname != "ShaderNodeGroup":
+                continue
+            if group is not None and node.node_tree != group:
+                continue
+            if group is None and (not node.node_tree or node.node_tree.name != GROUP_NAME):
+                continue
+            yield mat, node
+
+
+def _socket_value_copy(socket):
+    value = getattr(socket, "default_value", None)
+    if value is None:
+        return None
+    try:
+        return tuple(value)
+    except TypeError:
+        try:
+            return value.copy()
+        except Exception:
+            return value
+
+
+def _set_socket_value(socket, value):
+    if value is None or socket is None:
+        return
+    try:
+        socket.default_value = value
+    except Exception:
+        try:
+            for index, item in enumerate(value):
+                socket.default_value[index] = item
+        except Exception:
+            pass
+
+
+def snapshot_material_group_bindings(group):
+    snapshots = []
+    for mat, node in iter_material_group_nodes(group):
+        tree = mat.node_tree
+        inputs = {}
+        outputs = {}
+        for socket in node.inputs:
+            data = {"default": _socket_value_copy(socket), "links": []}
+            for link in socket.links:
+                data["links"].append({
+                    "from_node": link.from_node.name,
+                    "from_socket": link.from_socket.name,
+                    "to_socket": socket.name,
+                })
+            inputs[socket.name] = data
+        for socket in node.outputs:
+            data = {"links": []}
+            for link in socket.links:
+                data["links"].append({
+                    "from_socket": socket.name,
+                    "to_node": link.to_node.name,
+                    "to_socket": link.to_socket.name,
+                })
+            outputs[socket.name] = data
+        snapshots.append({
+            "material": mat.name,
+            "node": node.name,
+            "inputs": inputs,
+            "outputs": outputs,
+        })
+    return snapshots
+
+
+def restore_material_group_bindings(snapshots):
+    restored_links = 0
+    for snapshot in snapshots or []:
+        mat = bpy.data.materials.get(snapshot.get("material", ""))
+        if not mat or not mat.use_nodes or not mat.node_tree:
+            continue
+        tree = mat.node_tree
+        node = tree.nodes.get(snapshot.get("node", ""))
+        if not node or node.bl_idname != "ShaderNodeGroup":
+            continue
+
+        for socket_name, data in snapshot.get("inputs", {}).items():
+            socket = node.inputs.get(socket_name)
+            if not socket:
+                continue
+            _set_socket_value(socket, data.get("default"))
+            for link_data in data.get("links", []):
+                from_node = tree.nodes.get(link_data.get("from_node", ""))
+                from_socket = from_node.outputs.get(link_data.get("from_socket", "")) if from_node else None
+                if not from_socket or socket.is_linked:
+                    continue
+                try:
+                    tree.links.new(from_socket, socket)
+                    restored_links += 1
+                except Exception:
+                    pass
+
+        for socket_name, data in snapshot.get("outputs", {}).items():
+            socket = node.outputs.get(socket_name)
+            if not socket:
+                continue
+            for link_data in data.get("links", []):
+                to_node = tree.nodes.get(link_data.get("to_node", ""))
+                to_socket = to_node.inputs.get(link_data.get("to_socket", "")) if to_node else None
+                if not to_socket:
+                    continue
+                if any(link.from_socket == socket and link.to_socket == to_socket for link in tree.links):
+                    continue
+                try:
+                    tree.links.new(socket, to_socket)
+                    restored_links += 1
+                except Exception:
+                    pass
+    return restored_links
+
+
 def clear_group(group):
     group.nodes.clear()
     try:
@@ -215,6 +334,7 @@ def make_or_update_material_group(force=False):
     )
 
     if needs_rebuild:
+        snapshots = snapshot_material_group_bindings(group)
         clear_group(group)
         for name in SLOTS:
             add_socket(group, name, "INPUT", "NodeSocketColor", SLOT_DEFAULTS.get(name, (0.0, 0.0, 0.0, 1.0)))
@@ -250,6 +370,9 @@ def make_or_update_material_group(force=False):
         add_socket(group, "Preview Normal", "OUTPUT", "NodeSocketColor")
         add_socket(group, "RenderOutput", "OUTPUT", "NodeSocketShader")
         build_material_group_nodes(group)
+        restored = restore_material_group_bindings(snapshots)
+        if restored:
+            print(f"[RZM TexWorks MC] Restored {restored} material node link(s) after schema rebuild.")
 
     group["rzm_texworks_schema"] = SCHEMA
     group["rzm_texworks_kind"] = KIND
@@ -359,6 +482,8 @@ def link_auto_texture_nodes(mat, group_node):
         if not nodes or slot not in group_node.inputs:
             continue
         input_socket = group_node.inputs[slot]
+        if input_socket.is_linked:
+            continue
         for link in list(input_socket.links):
             mat.node_tree.links.remove(link)
         mat.node_tree.links.new(nodes[0].outputs["Color"], input_socket)
@@ -434,8 +559,17 @@ def create_empty_material(context, assign=True):
     out.location = (260, 80)
     mat.node_tree.links.new(hub.outputs["RenderOutput"], out.inputs["Surface"])
     if assign and context.object and hasattr(context.object.data, "materials"):
-        context.object.data.materials.append(mat)
-        context.object.active_material_index = len(context.object.data.materials) - 1
+        obj = context.object
+        materials = obj.data.materials
+        active_index = int(getattr(obj, "active_material_index", 0) or 0)
+        if len(materials) == 0:
+            materials.append(mat)
+            obj.active_material_index = 0
+        elif 0 <= active_index < len(materials) and materials[active_index] is None:
+            materials[active_index] = mat
+        else:
+            materials.append(mat)
+            obj.active_material_index = len(materials) - 1
     return mat
 
 

@@ -27,6 +27,17 @@ class RZM_OT_TwMcCreateMaterial(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_TwMcQuestionDummy(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_question_dummy"
+    bl_label = "RZM Material Hook Probe"
+    bl_description = "Diagnostic no-op button for the native material panel hook"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        self.report({'INFO'}, "RZM material panel hook is active")
+        return {'FINISHED'}
+
+
 class RZM_OT_TwMcEnsureMaterialNode(bpy.types.Operator):
     bl_idname = "rzm.tw_mc_ensure_material_node"
     bl_label = "Add RZM MC Node"
@@ -139,6 +150,7 @@ class RZM_OT_TwMcBuildAutoAtlasLayout(bpy.types.Operator):
 
 classes_to_register = [
     RZM_OT_TwMcCreateMaterial,
+    RZM_OT_TwMcQuestionDummy,
     RZM_OT_TwMcEnsureMaterialNode,
     RZM_OT_TwMcRebuildCluster,
     RZM_OT_TwMcExportCluster,
