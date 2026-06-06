@@ -2471,6 +2471,45 @@ def clear_mc_skipped(rzm):
         skipped.remove(index)
 
 
+def included_view_layer_objects(context):
+    objects = set()
+    view_layer = getattr(context, "view_layer", None)
+    root = getattr(view_layer, "layer_collection", None)
+    if root is None:
+        return set(bpy.data.objects)
+
+    def visit(layer_collection):
+        if getattr(layer_collection, "exclude", False):
+            return
+        collection = getattr(layer_collection, "collection", None)
+        if collection:
+            objects.update(collection.objects)
+        for child in getattr(layer_collection, "children", ()):
+            visit(child)
+
+    visit(root)
+    return objects
+
+
+def object_has_material_faces(obj, mat):
+    if not obj or obj.type != "MESH" or not mat:
+        return False
+    mat_indices = material_slot_indices(obj, mat)
+    if not mat_indices:
+        return False
+    return any(poly.material_index in mat_indices for poly in obj.data.polygons)
+
+
+def material_is_relevant_for_twaa(context, mat):
+    if not mat or not find_material_group_node(mat):
+        return False
+    included_objects = included_view_layer_objects(context)
+    for obj in included_objects:
+        if object_has_material_faces(obj, mat):
+            return True
+    return False
+
+
 def add_mc_skipped(rzm, entry, reason, width=None, height=None):
     skipped = getattr(rzm, "tw_mc_skipped", None)
     if skipped is None:
@@ -2490,7 +2529,7 @@ def add_mc_skipped(rzm, entry, reason, width=None, height=None):
         item.resolution = (0, 0)
 
 
-def add_unregistered_twaa_material_skips(rzm, valid_material_keys):
+def add_unregistered_twaa_material_skips(context, rzm, valid_material_keys):
     existing = {
         (item.material_key or material_key(item.material_name), item.reason)
         for item in getattr(rzm, "tw_mc_skipped", ())
@@ -2501,7 +2540,7 @@ def add_unregistered_twaa_material_skips(rzm, valid_material_keys):
         if (entry.material_key or entry.material_name)
     }
     for mat in bpy.data.materials:
-        if not find_material_group_node(mat):
+        if not material_is_relevant_for_twaa(context, mat):
             continue
         key = material_key(mat.name)
         if key in valid_material_keys or key in registered_keys:
@@ -2541,11 +2580,14 @@ def sync_mc_file_entries(rzm, manifest):
             rzm.tw_mc_files.remove(index)
 
 
-def mc_entries_by_material(rzm, collect_skipped=True):
+def mc_entries_by_material(context, rzm, collect_skipped=True):
     materials = {}
     for entry in rzm.tw_mc_files:
         refresh_mc_file_resolution_from_disk(entry)
         key = entry.material_key or material_key(entry.material_name)
+        mat = bpy.data.materials.get(entry.material_name) if entry.material_name else None
+        if not material_is_relevant_for_twaa(context, mat):
+            continue
         if not key:
             if collect_skipped:
                 add_mc_skipped(rzm, entry, "missing material key")
@@ -2662,8 +2704,8 @@ def rebuild_texworks_autoatlas_blocks(context):
     clear_mc_skipped(rzm)
     removed_legacy_blocks = remove_legacy_dotted_autoatlas_blocks(rzm)
     migrated_refs = migrate_legacy_autoatlas_references(rzm)
-    materials = mc_entries_by_material(rzm, collect_skipped=True)
-    add_unregistered_twaa_material_skips(rzm, set(materials.keys()))
+    materials = mc_entries_by_material(context, rzm, collect_skipped=True)
+    add_unregistered_twaa_material_skips(context, rzm, set(materials.keys()))
     print(
         f"[RZM TexWorks MC] Rebuild AutoAtlas layout: "
         f"tw_mc_files={len(rzm.tw_mc_files)} materials={len(materials)} "

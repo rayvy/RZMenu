@@ -6,29 +6,34 @@ from ..utils import texworks_mc
 
 def twaa_active_export_objects(context):
     layer_collection = getattr(context.view_layer, "active_layer_collection", None)
-    collection = layer_collection.collection if layer_collection else None
-    if collection is None:
+    if layer_collection is None:
         return set()
 
     objects = set()
 
-    def visit(coll):
+    def visit(lc):
+        if getattr(lc, "exclude", False):
+            return
+        coll = lc.collection
         for obj in coll.objects:
             objects.add(obj)
-        for child in coll.children:
+        for child in lc.children:
             visit(child)
 
-    visit(collection)
+    visit(layer_collection)
     return objects
 
 
-def twaa_objects_for_material_key(material_key):
+def twaa_objects_for_material_key(context, material_key):
     objects = []
     seen = set()
+    included = texworks_mc.included_view_layer_objects(context)
     for mat in bpy.data.materials:
         if texworks_mc.material_key(mat.name) != material_key:
             continue
         for obj in texworks_mc.objects_using_material_name(mat.name):
+            if obj not in included or not texworks_mc.object_has_material_faces(obj, mat):
+                continue
             if obj.name not in seen:
                 objects.append(obj)
                 seen.add(obj.name)
@@ -421,6 +426,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 row = twaa_box.row(align=True)
                 row.prop(mc, "enabled", text="Enabled")
                 row.operator("rzm.tw_mc_build_autoatlas_layout", text="Build TWAA Layout", icon='LINKED')
+                row.operator("rzm.tw_mc_fix_texture_steps", text="", icon='MOD_UVPROJECT')
 
                 settings_row = twaa_box.row(align=True)
                 settings_row.prop(mc, "default_resolution", text="Fallback")
@@ -470,7 +476,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                         row_data["paths"].append(entry.relative_path)
 
                 for key, row_data in material_rows.items():
-                    objects = twaa_objects_for_material_key(key)
+                    objects = twaa_objects_for_material_key(context, key)
                     active_count = sum(
                         1 for obj in objects
                         if obj in active_export_objects and obj.visible_get(view_layer=context.view_layer)

@@ -1,4 +1,7 @@
 import bpy
+import glob
+import os
+import runpy
 
 from ..utils import texworks_mc
 
@@ -157,21 +160,51 @@ class RZM_OT_TwMcBuildAutoAtlasLayout(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_TwMcFixTextureSteps(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_fix_texture_steps"
+    bl_label = "Fix TWAA Texture Steps"
+    bl_description = "Run QA/авто_доводчик.py on the active material: pad textures to 128/256/512/1024/2048/4096 and rescale TEXCOORD.xy"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        qa_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "QA"))
+        script_path = os.path.join(qa_dir, "авто_доводчик.py")
+        if not os.path.isfile(script_path):
+            candidates = [
+                path for path in glob.glob(os.path.join(qa_dir, "*.py"))
+                if os.path.basename(path).endswith("доводчик.py")
+            ]
+            script_path = candidates[0] if candidates else script_path
+        if not os.path.isfile(script_path):
+            self.report({'ERROR'}, f"Script not found: {script_path}")
+            return {'CANCELLED'}
+        try:
+            runpy.run_path(script_path, run_name="__main__")
+            trigger_refresh()
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+        self.report({'INFO'}, "TWAA texture steps fixed for active material.")
+        return {'FINISHED'}
+
+
 def active_export_collection_objects(context):
     layer_collection = getattr(context.view_layer, "active_layer_collection", None)
-    collection = layer_collection.collection if layer_collection else None
-    if collection is None:
+    if layer_collection is None:
         return set()
 
     result = set()
 
-    def visit(coll):
+    def visit(lc):
+        if getattr(lc, "exclude", False):
+            return
+        coll = lc.collection
         for obj in coll.objects:
             result.add(obj)
-        for child in coll.children:
+        for child in lc.children:
             visit(child)
 
-    visit(collection)
+    visit(layer_collection)
     return result
 
 
@@ -184,7 +217,7 @@ def tw_mc_material_keys(context):
     }
 
 
-def objects_for_tw_mc_material_key(material_key):
+def objects_for_tw_mc_material_key(context, material_key):
     material_key = str(material_key or "")
     mats = [
         mat for mat in bpy.data.materials
@@ -192,8 +225,11 @@ def objects_for_tw_mc_material_key(material_key):
     ]
     objects = []
     seen = set()
+    included = texworks_mc.included_view_layer_objects(context)
     for mat in mats:
         for obj in texworks_mc.objects_using_material_name(mat.name):
+            if obj not in included or not texworks_mc.object_has_material_faces(obj, mat):
+                continue
             if obj.name not in seen:
                 objects.append(obj)
                 seen.add(obj.name)
@@ -214,7 +250,7 @@ class RZM_OT_TwMcSelectMaterialObjects(bpy.types.Operator):
     extend: bpy.props.BoolProperty(name="Extend Selection", default=False)
 
     def execute(self, context):
-        objects = objects_for_tw_mc_material_key(self.material_key)
+        objects = objects_for_tw_mc_material_key(context, self.material_key)
         if self.active_export_only:
             active_objects = active_export_collection_objects(context)
             objects = [
@@ -251,7 +287,7 @@ class RZM_OT_TwMcSelectAllMaterialObjects(bpy.types.Operator):
         objects = []
         seen = set()
         for key in keys:
-            for obj in objects_for_tw_mc_material_key(key):
+            for obj in objects_for_tw_mc_material_key(context, key):
                 if obj.name not in seen:
                     objects.append(obj)
                     seen.add(obj.name)
@@ -292,7 +328,7 @@ class RZM_OT_TwMcSelectPreviewMaterialObjects(bpy.types.Operator):
                 return {'CANCELLED'}
             key = texworks_mc.material_key(mat.name)
 
-        objects = objects_for_tw_mc_material_key(key)
+        objects = objects_for_tw_mc_material_key(context, key)
         if not self.extend:
             bpy.ops.object.select_all(action='DESELECT')
 
@@ -338,6 +374,7 @@ classes_to_register = [
     RZM_OT_TwMcExportCluster,
     RZM_OT_TwMcApplyCluster,
     RZM_OT_TwMcBuildAutoAtlasLayout,
+    RZM_OT_TwMcFixTextureSteps,
     RZM_OT_TwMcSelectMaterialObjects,
     RZM_OT_TwMcSelectAllMaterialObjects,
     RZM_OT_TwMcSelectPreviewMaterialObjects,
