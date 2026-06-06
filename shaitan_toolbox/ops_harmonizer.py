@@ -1002,6 +1002,49 @@ class RZM_OT_vg_name_transfer(Operator):
     def poll(cls, context):
         return context.active_object and context.active_object.type == 'MESH'
 
+    def _rebuild_vertex_groups_in_order(self, obj, target_order):
+        current_names = [vg.name for vg in obj.vertex_groups]
+        if current_names == target_order:
+            return
+
+        active_name = obj.vertex_groups.active.name if obj.vertex_groups.active else None
+        vg_locks = {vg.name: vg.lock_weight for vg in obj.vertex_groups}
+        vert_weights = {}
+
+        for vert in obj.data.vertices:
+            v_weights = []
+            for item in vert.groups:
+                if item.group < len(current_names):
+                    group_name = current_names[item.group]
+                    v_weights.append((group_name, item.weight))
+            if v_weights:
+                vert_weights[vert.index] = v_weights
+
+        obj.vertex_groups.clear()
+
+        for name in target_order:
+            vg = obj.vertex_groups.new(name=name)
+            vg.lock_weight = vg_locks.get(name, False)
+
+        name_to_vg = {vg.name: vg for vg in obj.vertex_groups}
+        for vert_index, weights in vert_weights.items():
+            for name, weight in weights:
+                vg = name_to_vg.get(name)
+                if vg is not None:
+                    vg.add([vert_index], weight, 'REPLACE')
+
+        if active_name and active_name in name_to_vg:
+            obj.vertex_groups.active = name_to_vg[active_name]
+
+    def _prepare_vertex_groups(self, obj):
+        names = [vg.name for vg in obj.vertex_groups]
+        non_masks = [name for name in names if not is_mask_group(name)]
+        masks = [name for name in names if is_mask_group(name)]
+        target_order = non_masks + masks
+        if names != target_order:
+            self._rebuild_vertex_groups_in_order(obj, target_order)
+        return non_masks, masks
+
     def execute(self, context):
         active_obj = context.active_object
         selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
@@ -1011,16 +1054,22 @@ class RZM_OT_vg_name_transfer(Operator):
 
         donor_obj = selected_meshes[0] if selected_meshes[1] == active_obj else selected_meshes[1]
 
+        target_non_masks, _ = self._prepare_vertex_groups(active_obj)
+        donor_non_masks, _ = self._prepare_vertex_groups(donor_obj)
+
         target_vgs = active_obj.vertex_groups
         donor_vgs = donor_obj.vertex_groups
 
-        if len(target_vgs) != len(donor_vgs):
-            self.report({'ERROR'}, f"Group count mismatch: Target={len(target_vgs)}, Donor={len(donor_vgs)}")
+        if len(target_non_masks) != len(donor_non_masks):
+            self.report(
+                {'ERROR'},
+                f"Group count mismatch (ignoring masks): Target={len(target_non_masks)}, Donor={len(donor_non_masks)}"
+            )
             return {'CANCELLED'}
 
         # Perform transfer
         renamed_count = 0
-        for i in range(len(target_vgs)):
+        for i in range(len(target_non_masks)):
             old_name = target_vgs[i].name
             new_name = donor_vgs[i].name
             if old_name != new_name:

@@ -507,7 +507,7 @@ class RZM_ST_OT_SmartTransfer(bpy.types.Operator):
         bpy.ops.object.select_all(action="DESELECT")
         donor.select_set(True)
         target.select_set(True)
-        bpy.context.view_layer.objects.active = target
+        bpy.context.view_layer.objects.active = donor
 
         bpy.ops.object.data_transfer(
             data_type="VGROUP_WEIGHTS",
@@ -518,6 +518,10 @@ class RZM_ST_OT_SmartTransfer(bpy.types.Operator):
             mix_mode="REPLACE",
             mix_factor=1.0
         )
+
+        # Restore the target as active so the rest of the operator continues
+        # to work with the receiver, not the source.
+        bpy.context.view_layer.objects.active = target
 
     def execute(self, context):
         selected_meshes = [obj for obj in context.selected_objects if obj.type == "MESH"]
