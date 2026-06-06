@@ -35,6 +35,7 @@ def draw_mc_tools(layout, context):
     if texworks_mc.active_material_has_preview_uv(context):
         row.operator("rzm.tw_mc_export_cluster", text="Export", icon='EXPORT')
     row.operator("rzm.tw_mc_apply_cluster", text="Apply", icon='CHECKMARK')
+    row.operator("rzm.tw_mc_select_preview_material_objects", text="", icon='UV_SYNC_SELECT')
 
     if mc:
         box = layout.box()

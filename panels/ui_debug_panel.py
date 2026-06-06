@@ -3,6 +3,38 @@
 import bpy
 from ..utils import texworks_mc
 
+
+def twaa_active_export_objects(context):
+    layer_collection = getattr(context.view_layer, "active_layer_collection", None)
+    collection = layer_collection.collection if layer_collection else None
+    if collection is None:
+        return set()
+
+    objects = set()
+
+    def visit(coll):
+        for obj in coll.objects:
+            objects.add(obj)
+        for child in coll.children:
+            visit(child)
+
+    visit(collection)
+    return objects
+
+
+def twaa_objects_for_material_key(material_key):
+    objects = []
+    seen = set()
+    for mat in bpy.data.materials:
+        if texworks_mc.material_key(mat.name) != material_key:
+            continue
+        for obj in texworks_mc.objects_using_material_name(mat.name):
+            if obj.name not in seen:
+                objects.append(obj)
+                seen.add(obj.name)
+    return objects
+
+
 # --- UI LISTS ---
 class RZM_UL_Elements(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -111,35 +143,6 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
     @classmethod
     def poll(cls, context):
         return context.scene.rzm_editor_mode == 'PRO' and context.scene.rzm_show_debug_panel
-
-    def _twaa_active_export_objects(self, context):
-        layer_collection = getattr(context.view_layer, "active_layer_collection", None)
-        collection = layer_collection.collection if layer_collection else None
-        if collection is None:
-            return set()
-
-        objects = set()
-
-        def visit(coll):
-            for obj in coll.objects:
-                objects.add(obj)
-            for child in coll.children:
-                visit(child)
-
-        visit(collection)
-        return objects
-
-    def _twaa_objects_for_material_key(self, material_key):
-        objects = []
-        seen = set()
-        for mat in bpy.data.materials:
-            if texworks_mc.material_key(mat.name) != material_key:
-                continue
-            for obj in texworks_mc.objects_using_material_name(mat.name):
-                if obj.name not in seen:
-                    objects.append(obj)
-                    seen.add(obj.name)
-        return objects
 
     def draw(self, context):
         layout = self.layout
@@ -439,7 +442,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
 
                 twaa_box.label(text=f"Registered cluster files: {len(rzm.tw_mc_files)}")
 
-                active_export_objects = self._twaa_active_export_objects(context)
+                active_export_objects = twaa_active_export_objects(context)
                 material_rows = {}
                 for entry in rzm.tw_mc_files:
                     key = entry.material_key or texworks_mc.material_key(entry.material_name)
@@ -456,7 +459,7 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                         row_data["paths"].append(entry.relative_path)
 
                 for key, row_data in material_rows.items():
-                    objects = self._twaa_objects_for_material_key(key)
+                    objects = twaa_objects_for_material_key(key)
                     active_count = sum(
                         1 for obj in objects
                         if obj in active_export_objects and obj.visible_get(view_layer=context.view_layer)
@@ -473,6 +476,9 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                     op = row.operator("rzm.tw_mc_select_material_objects", text="", icon='OUTLINER_COLLECTION')
                     op.material_key = key
                     op.active_export_only = True
+                    op.extend = False
+                    op = row.operator("rzm.tw_mc_select_preview_material_objects", text="", icon='UV_SYNC_SELECT')
+                    op.material_key = key
                     op.extend = False
             else:
                 twaa_box.label(text="TWAA settings are not registered", icon='ERROR')

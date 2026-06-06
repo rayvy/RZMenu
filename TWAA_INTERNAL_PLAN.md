@@ -139,12 +139,77 @@ Test expectation:
 - If exporter/material split already duplicates vertices, post-patcher can patch each material's buffer indices independently.
 - If it does not, TWAA must report a conflict and refuse affine patch for that object/material combination.
 
+### Export Strategy Decision
+
+There are two viable implementation paths.
+
+#### A. Temporary Separate By Material
+
+Before export, create temporary export meshes split by material.
+
+Pros:
+- reliable material-to-buffer ownership;
+- each exported mesh/range can be patched as a single material cluster;
+- avoids shared-vertex UV conflicts;
+- easiest path for MVP and hard testing.
+
+Cons:
+- slower export;
+- requires careful temporary object lifecycle;
+- must be written without depsgraph side effects or persistent scene damage.
+
+Decision:
+- Use this as the first robust implementation for multi-material meshes.
+- Never destructively split the user's authoring mesh.
+- Temporary split output must be cleaned/restored like SafeExport helper objects.
+
+#### B. Post-Export Per-Material Buffer Split
+
+After export, patch only vertices belonging to material-specific triangles.
+
+Pros:
+- faster in the long term;
+- avoids Blender depsgraph mutation during export.
+
+Cons:
+- requires exact material -> triangle -> exported vertex mapping;
+- must account for stride/layout from dump files;
+- fails if exporter does not duplicate material-boundary vertices;
+- high risk of partial-face/interpolation artifacts without strict validation.
+
+Decision:
+- Do not use this as the MVP path.
+- Implement later only after export cache stores exact `vertex_indices_by_material` or equivalent validated ranges.
+- If shared vertices are detected, fail loudly instead of trying to patch ambiguous data.
+
 ### Rebuild Stage Behavior
 
 Cluster rebuild can still work per-face:
 - faces are collected by material;
 - islands can split naturally without manual seams;
 - triangulation must not change orientation because rebuild writes preview/local cluster UV, not runtime atlas UV.
+
+### No-Texture / No-Color Packing Heuristic
+
+When a material has no usable texture and no meaningful configured color:
+
+- do not allocate equal pixel space blindly;
+- estimate useful space from geometry contribution;
+- larger visible surface area receives more cluster space;
+- small accessories receive proportionally less space.
+
+Example intent:
+- shirt-like large surface: about 70% of the material cluster budget;
+- crown-like medium detail: about 28%;
+- ring-like tiny accessory: about 2%.
+
+Implementation direction:
+- compute per-island or per-face 3D surface area in object/world space;
+- use that as packing weight when no source texture density exists;
+- keep hard minimum dimensions so tiny islands remain editable;
+- still preserve stacked islands when their UV/source-space overlap is intentional.
+
+This heuristic is only for texture-less fallback rebuild. Real texture inputs keep texture-density based sizing.
 
 ## Major Feature 2: Final Atlas Bake
 
@@ -276,11 +341,14 @@ Expected:
 - one triangulated object, two materials.
 - one object with 3-8 material slots.
 - one material reused on multiple objects and also inside a multi-material object.
+- temporary separate-by-material export path.
+- post-export path with deliberately shared boundary vertices.
 
 Expected:
 - one cluster per Blender material;
 - exact per-material buffer vertex indices or clear conflict warning;
 - no whole-object patch when material count > 1.
+- MVP separate-by-material path exports correct visuals even when authoring mesh has many materials.
 
 ### Vertex Sharing Stress
 
@@ -334,3 +402,98 @@ Expected:
 - Do not patch TEXCOORD1/TEXCOORD2 by default.
 - Do not make final atlas bake destructive for material/component identity.
 - Do not reset HSV masks or user HSV variables during TWAA layout refresh.
+
+## Not Implemented Yet / Backlog
+
+### Core Refactor Boundary
+
+- `utils/TWAA_CORE.py` is the data-in/data-out home for UV grouping and rectangle packing.
+- `utils/texworks_mc.py` must stay responsible for Blender IO only:
+  - collect material/faces/images;
+  - call TWAA_CORE;
+  - raster/export PNGs;
+  - write Blender/TexWorks data.
+- Future packer changes must happen in TWAA_CORE first, then be wired through Blender-side tests.
+
+### Rebuild Quality
+
+- Replace the current shelf/BSP MVP with a real bounded packer, probably MaxRects/Guillotine.
+- Texture rebuild mode still needs real-scene validation on:
+  - `TEST_CLUSTERS0`
+  - `TEST_CLUSTERS1`
+  - `TEST_CLUSTERS2`
+  - `TEST_CLUSTERS3`
+- No-texture dense mode still needs real-scene validation on:
+  - `TEST_CLUSTERS_NOTEX0`
+  - `TEST_CLUSTERS_NOTEX1`
+  - `TEST_CLUSTERS_NOTEX2`
+  - `TEST_CLUSTERS_NOTEX3`
+- 90-degree UV island rotation is not implemented.
+- Overlap detection is not exposed as a Blender UI/debug report.
+- Preview UV visual output can still differ from exported PNG evaluation and needs a reliable compare tool.
+
+### Multi-Material Meshes
+
+- Multi-material object handling is not production-ready.
+- MVP decision still needs implementation:
+  - use separate-by-material temp export path first for reliability;
+  - keep post-export per-material mesh slicing as a later optimization.
+- Required rule:
+  - one Blender material = one TexWorks component;
+  - multi-material meshes must not be patched as one whole object range.
+- Need explicit conflict detection for shared exported vertices across material boundaries.
+- Need per-material exported vertex range/cache data before post-export patching can be trusted on mixed-material meshes.
+
+### Final Atlas Bake
+
+- `Bake Current Atlas` is not implemented.
+- Required final bake steps:
+  - stitch DynAtlas cluster PNGs into block atlas PNGs using TW block component rects;
+  - convert via `texconv.exe`;
+  - Diffuse -> BC7 SRGB;
+  - LightMap/MaterialMap/NormalMap/ExtraMap -> BC7 Linear;
+  - move final DDS to `./Textures/`;
+  - register physical TexWorks resources;
+  - keep Blender materials and TexWorks components separated.
+
+### HSV Path
+
+- Material/component `has HSV` flag is not implemented.
+- TW component HSV variables are not generated yet.
+- HSV masks must not be reset during layout rebuild.
+- Final bake must preserve dynamic HSV components instead of destructively flattening everything.
+
+### Performance
+
+- Large image export is still too slow for production use.
+- Need profiling around:
+  - Blender image pixel reads;
+  - NumPy raster path;
+  - PNG save/reload;
+  - texture node relinking during Apply.
+- Solid-color outputs should use direct fast-fill and avoid slow per-pixel paths.
+
+### UI / Workflow
+
+- TWAA material active/inactive selection helpers exist only as rough debug UI.
+- Need a single clear operator flow:
+  - Rebuild = rebuild cluster and export PNGs;
+  - Export = only appears/used for preview re-export;
+  - Apply = destructive preview UV + texture path apply.
+- Need a UI report showing:
+  - material/component;
+  - cluster PNG size;
+  - TW block;
+  - component rect;
+  - final affine post-export transform.
+
+### Runtime Patch
+
+- Post-export patch currently depends on dump layout parsing and needs broader validation.
+- Need repeatable visual tests for:
+  - `TEXCOORD.xy` f16;
+  - `TEXCOORD.xy` f32;
+  - non-square atlases;
+  - invert_y on/off;
+  - patch disabled/enabled.
+- `TEXCOORD1`/`TEXCOORD2` patching must remain debug-only until proven necessary.

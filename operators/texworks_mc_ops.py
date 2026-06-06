@@ -265,6 +265,62 @@ class RZM_OT_TwMcSelectAllMaterialObjects(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_TwMcSelectPreviewMaterialObjects(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_select_preview_material_objects"
+    bl_label = "Select TWAA Preview UV Objects"
+    bl_description = "Select objects using this material and make TWAA.<Material> the active UV layer when present"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    material_key: bpy.props.StringProperty(name="Material Key")
+    extend: bpy.props.BoolProperty(name="Extend Selection", default=False)
+
+    def execute(self, context):
+        key = self.material_key
+        if not key:
+            mat = context.object.active_material if context.object else None
+            if not mat:
+                self.report({'WARNING'}, "No material key or active material")
+                return {'CANCELLED'}
+            key = texworks_mc.material_key(mat.name)
+
+        objects = objects_for_tw_mc_material_key(key)
+        if not self.extend:
+            bpy.ops.object.select_all(action='DESELECT')
+
+        mats = [
+            mat for mat in bpy.data.materials
+            if texworks_mc.material_key(mat.name) == key
+        ]
+        preview_names = {texworks_mc.preview_uv_name_for_material(mat) for mat in mats}
+        active_preview = 0
+        missing_preview = 0
+        for obj in objects:
+            obj.select_set(True)
+            layer = None
+            for preview_name in preview_names:
+                layer = obj.data.uv_layers.get(preview_name)
+                if layer:
+                    break
+            if layer:
+                try:
+                    obj.data.uv_layers.active = layer
+                    layer.active_render = True
+                    active_preview += 1
+                except Exception:
+                    missing_preview += 1
+            else:
+                missing_preview += 1
+
+        if objects:
+            context.view_layer.objects.active = objects[0]
+
+        self.report(
+            {'INFO'},
+            f"Selected {len(objects)} object(s), preview active on {active_preview}, missing {missing_preview}."
+        )
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_TwMcCreateMaterial,
     RZM_OT_TwMcQuestionDummy,
@@ -275,4 +331,5 @@ classes_to_register = [
     RZM_OT_TwMcBuildAutoAtlasLayout,
     RZM_OT_TwMcSelectMaterialObjects,
     RZM_OT_TwMcSelectAllMaterialObjects,
+    RZM_OT_TwMcSelectPreviewMaterialObjects,
 ]

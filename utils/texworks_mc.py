@@ -9,12 +9,20 @@ from array import array
 
 import bpy
 
+from . import TWAA_CORE as twaa_core
+
+try:
+    import numpy as np
+except Exception:
+    np = None
+
 
 GROUP_NAME = "RZM TexWorks Material"
 RESOURCE_PREFIX = "RZAutoAtlas"
 OUTPUT_SUBDIR = "Textures/DynAtlas"
 UV_NAME = "RZAutoAtlas.UV"
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
+PREVIEW_UV_PREFIX = "TWAA."
 TEXCOORD_UV_NAME = "TEXCOORD.xy"
 SCHEMA = 3
 KIND = "RZ_TEXWORKS_MC_MATERIAL"
@@ -51,6 +59,11 @@ def material_key(name):
     return key or "Material"
 
 
+def preview_uv_name_for_material(mat_or_name):
+    name = getattr(mat_or_name, "name", mat_or_name)
+    return f"{PREVIEW_UV_PREFIX}{material_key(str(name or 'Material'))}"
+
+
 def slot_file_suffix(slot):
     return SLOT_FILE_SUFFIX.get(slot, slot)
 
@@ -61,11 +74,6 @@ def autoatlas_block_name(slot):
 
 def cluster_file_stem(mat_name, slot):
     return f"{material_key(mat_name)}{slot_file_suffix(slot)}"
-
-
-def next_power_of_two(value):
-    value = max(1, int(value))
-    return 1 << (value - 1).bit_length()
 
 
 def round_up_to_multiple(value, multiple=16):
@@ -699,10 +707,10 @@ def material_slot_indices(obj, mat):
 
 def source_uv_layer_for_mesh(mesh):
     uv = mesh.uv_layers.get(TEXCOORD_UV_NAME)
-    if uv and uv.name != PREVIEW_UV_NAME:
+    if uv and not is_twaa_preview_uv_name(uv.name):
         return uv
     for layer in mesh.uv_layers:
-        if layer.name != PREVIEW_UV_NAME:
+        if not is_twaa_preview_uv_name(layer.name):
             layer.name = TEXCOORD_UV_NAME
             return layer
     try:
@@ -711,11 +719,16 @@ def source_uv_layer_for_mesh(mesh):
         return None
 
 
-def preview_uv_layer_for_mesh(mesh):
+def is_twaa_preview_uv_name(name):
+    return bool(name == PREVIEW_UV_NAME or str(name).startswith(PREVIEW_UV_PREFIX))
+
+
+def preview_uv_layer_for_mesh(mesh, mat=None):
     source = source_uv_layer_for_mesh(mesh)
-    preview = mesh.uv_layers.get(PREVIEW_UV_NAME)
+    preview_name = preview_uv_name_for_material(mat) if mat else PREVIEW_UV_NAME
+    preview = mesh.uv_layers.get(preview_name)
     if preview is None:
-        preview = mesh.uv_layers.new(name=PREVIEW_UV_NAME)
+        preview = mesh.uv_layers.new(name=preview_name)
     if source is None:
         return preview
 
@@ -736,7 +749,11 @@ def preview_uv_layer_for_mesh(mesh):
 
 
 def mesh_has_preview_uv(mesh):
-    return bool(mesh and mesh.uv_layers.get(PREVIEW_UV_NAME))
+    return bool(mesh and any(is_twaa_preview_uv_name(layer.name) for layer in mesh.uv_layers))
+
+
+def mesh_has_material_preview_uv(mesh, mat):
+    return bool(mesh and mesh.uv_layers.get(preview_uv_name_for_material(mat)))
 
 
 def active_material_has_preview_uv(context):
@@ -747,7 +764,7 @@ def active_material_has_preview_uv(context):
     for obj in context.scene.objects:
         if obj.type != "MESH":
             continue
-        if material_slot_indices(obj, mat) and mesh_has_preview_uv(obj.data):
+        if material_slot_indices(obj, mat) and mesh_has_material_preview_uv(obj.data, mat):
             return True
     return False
 
@@ -787,6 +804,7 @@ def collect_cluster_faces(context, mat):
                 "uvs": uvs,
                 "source_uvs": list(uvs),
                 "uv_layer_name": uv_layer.name,
+                "surface_area": float(poly.area) * abs(float(obj.scale.x * obj.scale.y * obj.scale.z)) ** (2.0 / 3.0),
             })
             obj_face_count += 1
         if obj_face_count:
@@ -808,12 +826,13 @@ def collect_preview_cluster_faces(context, mat):
             continue
         mesh = obj.data
         source_layer = source_uv_layer_for_mesh(mesh)
-        preview_layer = mesh.uv_layers.get(PREVIEW_UV_NAME)
+        preview_name = preview_uv_name_for_material(mat)
+        preview_layer = mesh.uv_layers.get(preview_name)
         if not source_layer:
             warnings.append(f"{obj.name}: no source UV layer, skipped")
             continue
         if not preview_layer:
-            warnings.append(f"{obj.name}: no preview UV layer, skipped")
+            warnings.append(f"{obj.name}: no preview UV layer {preview_name}, skipped")
             continue
         obj_face_count = 0
         for poly in mesh.polygons:
@@ -838,6 +857,7 @@ def collect_preview_cluster_faces(context, mat):
                 "source_uvs": source_uvs,
                 "uv_layer_name": source_layer.name,
                 "preview_uv_layer_name": preview_layer.name,
+                "surface_area": float(poly.area) * abs(float(obj.scale.x * obj.scale.y * obj.scale.z)) ** (2.0 / 3.0),
             })
             obj_face_count += 1
         if obj_face_count:
@@ -846,232 +866,7 @@ def collect_preview_cluster_faces(context, mat):
     return faces, sorted(set(objects)), warnings
 
 
-def rounded_uv(uv):
-    return (round(float(uv[0]), 6), round(float(uv[1]), 6))
-
-
-def build_uv_islands(faces):
-    parent = list(range(len(faces)))
-
-    def find(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    def union(a, b):
-        ra = find(a)
-        rb = find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    edge_owner = {}
-    for face_index, face in enumerate(faces):
-        uvs = face["uvs"]
-        for i, uv_a in enumerate(uvs):
-            uv_b = uvs[(i + 1) % len(uvs)]
-            edge = tuple(sorted((rounded_uv(uv_a), rounded_uv(uv_b))))
-            other = edge_owner.get(edge)
-            if other is not None:
-                union(face_index, other)
-            else:
-                edge_owner[edge] = face_index
-
-    grouped = {}
-    for i in range(len(faces)):
-        grouped.setdefault(find(i), []).append(i)
-
-    islands = []
-    for island_index, face_indices in enumerate(grouped.values()):
-        all_uv = [uv for face_index in face_indices for uv in faces[face_index]["uvs"]]
-        u_values = [uv[0] for uv in all_uv]
-        v_values = [uv[1] for uv in all_uv]
-        islands.append({
-            "index": island_index,
-            "face_indices": face_indices,
-            "u_min": min(u_values),
-            "v_min": min(v_values),
-            "u_max": max(u_values),
-            "v_max": max(v_values),
-        })
-    return islands
-
-
-def bbox_overlap_ratio(a, b):
-    x0 = max(a["u_min"], b["u_min"])
-    y0 = max(a["v_min"], b["v_min"])
-    x1 = min(a["u_max"], b["u_max"])
-    y1 = min(a["v_max"], b["v_max"])
-    if x1 <= x0 or y1 <= y0:
-        return 0.0
-    overlap = (x1 - x0) * (y1 - y0)
-    area_a = max(0.0, (a["u_max"] - a["u_min"]) * (a["v_max"] - a["v_min"]))
-    area_b = max(0.0, (b["u_max"] - b["u_min"]) * (b["v_max"] - b["v_min"]))
-    return overlap / max(1.0e-12, min(area_a, area_b))
-
-
-def group_stacked_islands(islands, overlap_threshold=0.90):
-    parent = list(range(len(islands)))
-
-    def find(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    def union(a, b):
-        ra = find(a)
-        rb = find(b)
-        if ra != rb:
-            parent[rb] = ra
-
-    for i in range(len(islands)):
-        for j in range(i + 1, len(islands)):
-            if bbox_overlap_ratio(islands[i], islands[j]) >= overlap_threshold:
-                union(i, j)
-
-    grouped = {}
-    for i, island in enumerate(islands):
-        grouped.setdefault(find(i), []).append(island)
-
-    groups = []
-    for group_index, group_islands in enumerate(grouped.values()):
-        face_indices = []
-        island_indices = []
-        for island in group_islands:
-            face_indices.extend(island["face_indices"])
-            island_indices.append(island["index"])
-        u_min = min(i["u_min"] for i in group_islands)
-        v_min = min(i["v_min"] for i in group_islands)
-        u_max = max(i["u_max"] for i in group_islands)
-        v_max = max(i["v_max"] for i in group_islands)
-        groups.append({
-            "index": group_index,
-            "island_indices": sorted(island_indices),
-            "face_indices": sorted(face_indices),
-            "u_min": u_min,
-            "v_min": v_min,
-            "u_max": u_max,
-            "v_max": v_max,
-        })
-    return groups
-
-
-def build_groups(faces, ref_w, ref_h, margin_px):
-    islands = build_uv_islands(faces)
-    groups = group_stacked_islands(islands)
-    face_to_group = {}
-    for group in groups:
-        content_w = max(1, int(math.ceil((group["u_max"] - group["u_min"]) * ref_w)))
-        content_h = max(1, int(math.ceil((group["v_max"] - group["v_min"]) * ref_h)))
-        group["content_w"] = content_w
-        group["content_h"] = content_h
-        group["w"] = content_w + margin_px * 2
-        group["h"] = content_h + margin_px * 2
-        for face_index in group["face_indices"]:
-            face_to_group[face_index] = group
-    return islands, groups, face_to_group
-
-
-def build_single_preview_group(faces, ref_w, ref_h, margin_px):
-    all_uv = [uv for face in faces for uv in face["uvs"]]
-    if not all_uv:
-        return [], [], {}
-    u_values = [uv[0] for uv in all_uv]
-    v_values = [uv[1] for uv in all_uv]
-    u_min = min(u_values)
-    v_min = min(v_values)
-    u_max = max(u_values)
-    v_max = max(v_values)
-    content_w = max(1, int(math.ceil((u_max - u_min) * ref_w)))
-    content_h = max(1, int(math.ceil((v_max - v_min) * ref_h)))
-    island = {
-        "index": 0,
-        "face_indices": list(range(len(faces))),
-        "u_min": u_min,
-        "v_min": v_min,
-        "u_max": u_max,
-        "v_max": v_max,
-    }
-    group = {
-        "index": 0,
-        "island_indices": [0],
-        "face_indices": list(range(len(faces))),
-        "u_min": u_min,
-        "v_min": v_min,
-        "u_max": u_max,
-        "v_max": v_max,
-        "content_w": content_w,
-        "content_h": content_h,
-        "w": content_w + margin_px * 2,
-        "h": content_h + margin_px * 2,
-        "x": 0,
-        "y": 0,
-    }
-    return [island], [group], {face_index: group for face_index in range(len(faces))}
-
-
-def shelf_pack(groups, width, gap):
-    ordered = sorted(groups, key=lambda item: (item["h"], item["w"]), reverse=True)
-    x = 0
-    y = 0
-    row_h = 0
-    max_x = 0
-    packed = []
-    for group in ordered:
-        w = int(group["w"])
-        h = int(group["h"])
-        if x > 0 and x + w > width:
-            x = 0
-            y += row_h + gap
-            row_h = 0
-        new_group = dict(group)
-        new_group["x"] = x
-        new_group["y"] = y
-        packed.append(new_group)
-        x += w + gap
-        row_h = max(row_h, h)
-        max_x = max(max_x, x - gap)
-    return packed, max_x, y + row_h
-
-
-def pack_groups(groups, gap, max_size, power_of_two=False):
-    if not groups:
-        return [], 1, 1
-    max_group_w = max(int(g["w"]) for g in groups)
-    max_group_h = max(int(g["h"]) for g in groups)
-    if max_group_w > max_size or max_group_h > max_size:
-        raise RuntimeError(
-            f"One UV island group is larger than Max Size: {max_group_w}x{max_group_h}, limit {max_size}. "
-            "Check UV range, lower fallback resolution, or increase TexWorks MC Max Size."
-        )
-    total_area = sum(int(g["w"]) * int(g["h"]) for g in groups)
-    ideal = int(math.ceil(math.sqrt(max(1, total_area))))
-    candidates = {max_group_w, ideal}
-    width = max_group_w
-    while width < max_size:
-        candidates.add(width)
-        width *= 2
-    candidates.add(max_size)
-
-    best = None
-    for candidate in sorted(c for c in candidates if c <= max_size):
-        packed, used_w, used_h = shelf_pack(groups, max(candidate, max_group_w), gap)
-        if used_w > max_size or used_h > max_size:
-            continue
-        out_w = next_power_of_two(used_w) if power_of_two else max(1, used_w)
-        out_h = next_power_of_two(used_h) if power_of_two else max(1, used_h)
-        score = out_w * out_h
-        if best is None or score < best[0]:
-            best = (score, packed, out_w, out_h)
-
-    if best is None:
-        raise RuntimeError(
-            f"Cannot pack UV groups into Max Size {max_size}. "
-            "Try lower fallback/reference resolution, lower margins, or check UV range."
-        )
-    return best[1], best[2], best[3]
-
+# UV island grouping and rectangle packing live in TWAA_CORE.py. This module keeps Blender IO only.
 
 def image_pixels(image):
     if not image:
@@ -1123,6 +918,27 @@ def sample_bilinear(pixels, width, height, u, v, fallback):
     return tuple(out)
 
 
+def sample_bilinear_np(src, width, height, u, v):
+    u = np.clip(u, 0.0, 1.0)
+    v = np.clip(v, 0.0, 1.0)
+    x = u * (width - 1)
+    y = v * (height - 1)
+    x0 = np.floor(x).astype(np.int32)
+    y0 = np.floor(y).astype(np.int32)
+    x1 = np.minimum(width - 1, x0 + 1)
+    y1 = np.minimum(height - 1, y0 + 1)
+    tx = (x - x0).astype(np.float32)[:, None]
+    ty = (y - y0).astype(np.float32)[:, None]
+
+    c00 = src[y0, x0]
+    c10 = src[y0, x1]
+    c01 = src[y1, x0]
+    c11 = src[y1, x1]
+    a = c00 * (1.0 - tx) + c10 * tx
+    b = c01 * (1.0 - tx) + c11 * tx
+    return a * (1.0 - ty) + b * ty
+
+
 def barycentric(px, py, a, b, c):
     denom = ((b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]))
     if abs(denom) < 1.0e-8:
@@ -1171,6 +987,37 @@ def dilate_alpha(buffer, width, height, radius):
     if radius <= 0:
         return buffer
     radius = min(int(radius), 16)
+    if np is not None:
+        try:
+            arr = np.frombuffer(buffer, dtype=np.float32).reshape(int(height), int(width), 4)
+            for _ in range(radius):
+                src = arr.copy()
+                empty = src[:, :, 3] <= 0.0
+                if not empty.any():
+                    break
+
+                fill = np.zeros(empty.shape, dtype=bool)
+                fill[:, 1:] = empty[:, 1:] & (src[:, :-1, 3] > 0.0)
+                arr[:, 1:][fill[:, 1:]] = src[:, :-1][fill[:, 1:]]
+
+                empty = arr[:, :, 3] <= 0.0
+                fill[:, :] = False
+                fill[:, :-1] = empty[:, :-1] & (src[:, 1:, 3] > 0.0)
+                arr[:, :-1][fill[:, :-1]] = src[:, 1:][fill[:, :-1]]
+
+                empty = arr[:, :, 3] <= 0.0
+                fill[:, :] = False
+                fill[1:, :] = empty[1:, :] & (src[:-1, :, 3] > 0.0)
+                arr[1:, :][fill[1:, :]] = src[:-1, :][fill[1:, :]]
+
+                empty = arr[:, :, 3] <= 0.0
+                fill[:, :] = False
+                fill[:-1, :] = empty[:-1, :] & (src[1:, :, 3] > 0.0)
+                arr[:-1, :][fill[:-1, :]] = src[1:, :][fill[:-1, :]]
+            return buffer
+        except Exception as exc:
+            print(f"[RZM TexWorks MC] NumPy dilation fallback: {exc}")
+
     for _ in range(radius):
         src = list(buffer)
         changed = False
@@ -1226,6 +1073,27 @@ def bake_slot_image(slot, source, faces, face_to_group, layout_groups, atlas_w, 
     if slot == "Diffuse" and max(src_avg) <= 0.001 and not is_black_color(fallback):
         return solid_pixel_buffer(atlas_w, atlas_h, fallback)
 
+    if np is not None:
+        try:
+            return bake_slot_image_numpy(
+                slot,
+                source,
+                faces,
+                face_to_group,
+                layout_groups,
+                atlas_w,
+                atlas_h,
+                ref_w,
+                ref_h,
+                margin,
+                src_pixels,
+                src_w,
+                src_h,
+                fallback,
+            )
+        except Exception as exc:
+            print(f"[RZM TexWorks MC] NumPy raster fallback: {exc}")
+
     buffer = array("f", [0.0]) * (pixel_count * 4)
 
     for face_index, face in enumerate(faces):
@@ -1259,6 +1127,62 @@ def bake_slot_image(slot, source, faces, face_to_group, layout_groups, atlas_w, 
     return dilate_alpha(buffer, atlas_w, atlas_h, margin)
 
 
+def bake_slot_image_numpy(slot, source, faces, face_to_group, layout_groups, atlas_w, atlas_h, ref_w, ref_h, margin, src_pixels, src_w, src_h, fallback):
+    group_by_index = {group["index"]: group for group in layout_groups}
+    pixel_count = int(atlas_w) * int(atlas_h)
+    buffer = array("f", [0.0]) * (pixel_count * 4)
+    dest = np.frombuffer(buffer, dtype=np.float32).reshape(int(atlas_h), int(atlas_w), 4)
+    src = np.frombuffer(src_pixels, dtype=np.float32).reshape(int(src_h), int(src_w), 4)
+
+    for face_index, face in enumerate(faces):
+        base_group = face_to_group.get(face_index)
+        if not base_group:
+            continue
+        group = group_by_index.get(base_group["index"])
+        if not group:
+            continue
+        src_triangles = list(face_triangles(face.get("source_uvs") or face["uvs"]))
+        for tri_index, (uv_a, uv_b, uv_c) in enumerate(face_triangles(face["uvs"])):
+            src_a, src_b, src_c = src_triangles[tri_index] if tri_index < len(src_triangles) else (uv_a, uv_b, uv_c)
+            pa = dest_uv_to_pixel(uv_a, group, ref_w, ref_h, margin)
+            pb = dest_uv_to_pixel(uv_b, group, ref_w, ref_h, margin)
+            pc = dest_uv_to_pixel(uv_c, group, ref_w, ref_h, margin)
+            min_x = max(0, int(math.floor(min(pa[0], pb[0], pc[0]))) - margin)
+            max_x = min(int(atlas_w) - 1, int(math.ceil(max(pa[0], pb[0], pc[0]))) + margin)
+            min_y = max(0, int(math.floor(min(pa[1], pb[1], pc[1]))) - margin)
+            max_y = min(int(atlas_h) - 1, int(math.ceil(max(pa[1], pb[1], pc[1]))) + margin)
+            if max_x < min_x or max_y < min_y:
+                continue
+
+            denom = ((pb[1] - pc[1]) * (pa[0] - pc[0]) + (pc[0] - pb[0]) * (pa[1] - pc[1]))
+            if abs(denom) < 1.0e-8:
+                continue
+
+            xs = np.arange(min_x, max_x + 1, dtype=np.float32) + 0.5
+            bbox_w = max_x - min_x + 1
+            max_cells = 1024 * 1024
+            rows_per_chunk = max(1, min(max_y - min_y + 1, max_cells // max(1, bbox_w)))
+
+            for y_start in range(min_y, max_y + 1, rows_per_chunk):
+                y_end = min(max_y, y_start + rows_per_chunk - 1)
+                ys = np.arange(y_start, y_end + 1, dtype=np.float32) + 0.5
+                grid_x, grid_y = np.meshgrid(xs, ys)
+                w0 = ((pb[1] - pc[1]) * (grid_x - pc[0]) + (pc[0] - pb[0]) * (grid_y - pc[1])) / denom
+                w1 = ((pc[1] - pa[1]) * (grid_x - pc[0]) + (pa[0] - pc[0]) * (grid_y - pc[1])) / denom
+                w2 = 1.0 - w0 - w1
+                mask = (w0 >= -1.0e-5) & (w1 >= -1.0e-5) & (w2 >= -1.0e-5)
+                if not mask.any():
+                    continue
+
+                src_u = src_a[0] * w0[mask] + src_b[0] * w1[mask] + src_c[0] * w2[mask]
+                src_v = src_a[1] * w0[mask] + src_b[1] * w1[mask] + src_c[1] * w2[mask]
+                colors = sample_bilinear_np(src, int(src_w), int(src_h), src_u.astype(np.float32), src_v.astype(np.float32))
+                dest_slice = dest[y_start:y_end + 1, min_x:max_x + 1]
+                dest_slice[mask] = colors
+
+    return dilate_alpha(buffer, atlas_w, atlas_h, margin)
+
+
 def create_or_replace_image(name, width, height, pixels):
     old = bpy.data.images.get(name)
     if old:
@@ -1272,6 +1196,35 @@ def create_or_replace_image(name, width, height, pixels):
 def write_png_rgba8(path, width, height, pixels):
     width = int(width)
     height = int(height)
+    if np is not None:
+        try:
+            floats = np.frombuffer(pixels, dtype=np.float32, count=width * height * 4)
+            rgba = np.clip(floats * 255.0 + 0.5, 0.0, 255.0).astype(np.uint8, copy=False)
+            rows = np.empty((height, width * 4 + 1), dtype=np.uint8)
+            rows[:, 0] = 0
+            rows[:, 1:] = rgba.reshape(height, width * 4)
+
+            def chunk(kind, payload):
+                return (
+                    struct.pack(">I", len(payload))
+                    + kind
+                    + payload
+                    + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+                )
+
+            ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+            data = (
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", ihdr)
+                + chunk(b"IDAT", zlib.compress(rows.tobytes(), level=1))
+                + chunk(b"IEND", b"")
+            )
+            with open(path, "wb") as handle:
+                handle.write(data)
+            return
+        except Exception as exc:
+            print(f"[RZM TexWorks MC] NumPy PNG writer fallback: {exc}")
+
     rows = []
     idx = 0
     for _y in range(height):
@@ -1298,7 +1251,7 @@ def write_png_rgba8(path, width, height, pixels):
     data = (
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", ihdr)
-        + chunk(b"IDAT", zlib.compress(raw, level=6))
+        + chunk(b"IDAT", zlib.compress(raw, level=1))
         + chunk(b"IEND", b"")
     )
     with open(path, "wb") as handle:
@@ -1425,14 +1378,32 @@ def calculate_cluster(context, use_preview_uv=False):
 
     margin = int(settings.vertex_margin_px)
     gap = int(settings.pack_gap_px)
+    has_diffuse_texture = bool(slot_sources.get("Diffuse", {}).get("image"))
+    rebuild_mode = "PREVIEW_REEXPORT" if use_preview_uv else ("TEXTURE_FACE_REPACK" if has_diffuse_texture else "NO_DIFFUSE_DENSE_PACK")
     if use_preview_uv:
-        islands, layout_groups, face_to_group = build_single_preview_group(faces, ref_w, ref_h, margin)
+        islands, layout_groups, face_to_group = twaa_core.build_single_preview_group(faces, ref_w, ref_h, margin)
         groups = layout_groups
         atlas_w = max(group["x"] + group["w"] for group in layout_groups)
         atlas_h = max(group["y"] + group["h"] for group in layout_groups)
+    elif has_diffuse_texture:
+        islands, groups, face_to_group = twaa_core.build_texture_bsp_groups(faces, ref_w, ref_h, margin)
+        bounded = twaa_core.pack_groups_bounded(groups, gap=gap, max_w=ref_w, max_h=ref_h, power_of_two=False)
+        if bounded is not None:
+            layout_groups, atlas_w, atlas_h = bounded
+        else:
+            layout_groups, atlas_w, atlas_h = twaa_core.pack_groups(
+                groups,
+                gap=gap,
+                max_size=int(settings.max_atlas_size),
+                power_of_two=False,
+            )
+            warnings.append(
+                f"Texture rebuild packed to {atlas_w}x{atlas_h}, larger than Diffuse/reference {ref_w}x{ref_h}. "
+                "Packing kept larger source-space groups to avoid excessive face fragmentation."
+            )
     else:
-        islands, groups, face_to_group = build_groups(faces, ref_w, ref_h, margin)
-        layout_groups, atlas_w, atlas_h = pack_groups(
+        islands, groups, face_to_group = twaa_core.build_no_texture_dense_groups(faces, ref_w, ref_h, margin)
+        layout_groups, atlas_w, atlas_h = twaa_core.pack_groups(
             groups,
             gap=gap,
             max_size=int(settings.max_atlas_size),
@@ -1442,8 +1413,9 @@ def calculate_cluster(context, use_preview_uv=False):
         context, mat, slot_sources, objects, faces, islands, groups, layout_groups,
         atlas_w, atlas_h, (ref_w, ref_h), ref_slot, warnings,
     )
+    manifest["rebuild_mode"] = rebuild_mode
     if use_preview_uv:
-        manifest["uv_source"] = PREVIEW_UV_NAME
+        manifest["uv_source"] = preview_uv_name_for_material(mat)
     return {
         "material": mat,
         "slot_sources": slot_sources,
@@ -1573,7 +1545,7 @@ def apply_cluster_uv_layout(context, cluster):
             continue
         preview_layer = source_layers.get(mesh.name)
         if preview_layer is None:
-            preview_layer = preview_uv_layer_for_mesh(mesh)
+            preview_layer = preview_uv_layer_for_mesh(mesh, cluster["material"])
             source_layers[mesh.name] = preview_layer
         for loop_index, old_uv in zip(face["loop_indices"], face["uvs"]):
             new_u, new_v = atlas_uv_for_source_uv(
@@ -1613,7 +1585,7 @@ def destructively_apply_preview_to_texcoord(context, mat):
             continue
         mesh = obj.data
         source_layer = source_uv_layer_for_mesh(mesh)
-        preview_layer = mesh.uv_layers.get(PREVIEW_UV_NAME)
+        preview_layer = mesh.uv_layers.get(preview_uv_name_for_material(mat))
         if not source_layer or not preview_layer:
             continue
         count = min(len(source_layer.data), len(preview_layer.data))
@@ -1688,8 +1660,9 @@ def replace_material_slot_images(mat, cluster, written=None):
     return changed
 
 
-def apply_cluster_to_material(context, cluster, target_path=None):
-    written = export_cluster_pngs(context, cluster, target_path=target_path)
+def apply_cluster_to_material(context, cluster, target_path=None, written=None):
+    if written is None:
+        written = export_cluster_pngs(context, cluster, target_path=target_path)
     changed_objects = destructively_apply_preview_to_texcoord(context, cluster["material"])
     changed_nodes = replace_material_slot_images(cluster["material"], cluster, written=written)
     return {
@@ -1880,7 +1853,7 @@ def pack_material_components(materials, settings):
         })
     if not groups:
         return {}, 16, 16
-    packed, atlas_w, atlas_h = pack_groups(
+    packed, atlas_w, atlas_h = twaa_core.pack_groups(
         groups,
         gap=0,
         max_size=int(settings.max_atlas_size),
@@ -2034,9 +2007,13 @@ def export_active_preview_cluster(context):
 
 def apply_active_preview_cluster(context):
     if not active_material_has_preview_uv(context):
-        cluster = rebuild_active_material_cluster(context)
+        cluster = calculate_cluster(context)
+        bake_cluster_images(context, cluster)
+        apply_cluster_uv_layout(context, cluster)
     else:
-        cluster = export_active_preview_cluster(context)
-    result = apply_cluster_to_material(context, cluster)
+        cluster = calculate_cluster(context, use_preview_uv=True)
+        bake_cluster_images(context, cluster)
+    written = export_cluster_pngs(context, cluster)
+    result = apply_cluster_to_material(context, cluster, written=written)
     register_cluster_files(context, cluster)
     return cluster, result
