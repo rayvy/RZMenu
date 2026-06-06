@@ -8,7 +8,7 @@ import bpy
 
 MANIFEST_TEXT_PREFIX = "RZAutoAtlas."
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
-PATCHER_BUILD = "tw-blocks-clamped-remap-v12-20260606"
+PATCHER_BUILD = "tw-blocks-affine-only-v14-20260606"
 _SAMPLE_LIMIT = 192
 
 
@@ -482,12 +482,10 @@ def _load_manifest(material_key):
 
 def _source_to_cluster_uv(manifest, u_bl, v_bl, stats=None):
     atlas_w, atlas_h = [max(1, int(v)) for v in manifest.get("atlas_size", [1, 1])]
+    ref_w, ref_h = [max(1, int(v)) for v in manifest.get("reference_size", [atlas_w, atlas_h])]
+    bounds_eps = max(1.0e-5, 0.5 / float(max(ref_w, ref_h)))
     y_origin = manifest.get("y_origin", "UV_BOTTOM_LEFT")
-    best_group = None
-    best_distance = None
-    best_uv = (float(u_bl), float(v_bl))
-    best_mode = "raw"
-    best_inside = False
+    candidates = []
     uv_candidates = [
         ("raw", float(u_bl), float(v_bl)),
         ("fract", _fract(u_bl), _fract(v_bl)),
@@ -500,22 +498,58 @@ def _source_to_cluster_uv(manifest, u_bl, v_bl, stats=None):
         u_min, v_min, u_max, v_max = [float(v) for v in bounds]
         u_span = max(1.0e-8, abs(u_max - u_min))
         v_span = max(1.0e-8, abs(v_max - v_min))
+        area = u_span * v_span
         for mode, cand_u, cand_v in uv_candidates:
-            inside = u_min <= cand_u <= u_max and v_min <= cand_v <= v_max
+            inside = (
+                u_min - bounds_eps <= cand_u <= u_max + bounds_eps
+                and v_min - bounds_eps <= cand_v <= v_max + bounds_eps
+            )
             du = 0.0 if u_min <= cand_u <= u_max else min(abs(cand_u - u_min), abs(cand_u - u_max)) / u_span
             dv = 0.0 if v_min <= cand_v <= v_max else min(abs(cand_v - v_min), abs(cand_v - v_max)) / v_span
             distance = du + dv
-            if best_distance is None or distance < best_distance:
-                best_group = group
-                best_distance = distance
-                best_uv = (cand_u, cand_v)
-                best_mode = mode
-                best_inside = inside
+            candidates.append({
+                "group": group,
+                "uv": (cand_u, cand_v),
+                "mode": mode,
+                "inside": inside,
+                "distance": distance,
+                "area": area,
+            })
 
-    if not best_group:
+    if not candidates:
         if stats is not None:
             stats["missing_group"] = stats.get("missing_group", 0) + 1
         return _fract(u_bl), _fract(v_bl)
+
+    inside_candidates = [item for item in candidates if item["inside"]]
+    if inside_candidates:
+        # A point can sit in multiple bounds when islands are tightly stacked or
+        # half-float export nudges a border vertex. Pick the tightest matching
+        # group so one face does not jump to a broad neighbour.
+        best = min(
+            inside_candidates,
+            key=lambda item: (
+                0 if item["mode"] == "raw" else 1,
+                item["area"],
+                item["distance"],
+                int(item["group"].get("index", 999999) or 999999),
+            ),
+        )
+    else:
+        best = min(
+            candidates,
+            key=lambda item: (
+                item["distance"],
+                0 if item["mode"] == "raw" else 1,
+                item["area"],
+                int(item["group"].get("index", 999999) or 999999),
+            ),
+        )
+
+    best_group = best["group"]
+    best_uv = best["uv"]
+    best_mode = best["mode"]
+    best_inside = bool(best["inside"])
 
     bounds = best_group.get("source_uv_bounds") or [0.0, 0.0, 1.0, 1.0]
     u_min, v_min, u_max, v_max = [float(v) for v in bounds]
@@ -560,6 +594,16 @@ def _atlas_blender_to_buffer_uv(cluster_u_bl, cluster_v_bl, pos_size, invert_x, 
         1.0 - atlas_u if invert_x else atlas_u,
         atlas_v_top_space if invert_y else 1.0 - atlas_v_top_space,
     )
+
+
+def _affine_cluster_to_buffer_uv(u, v, pos_size, invert_x, invert_y):
+    # Export-time TWAA patching is only virtual-atlas placement. The incoming
+    # UV must already be cluster-local, so every vertex gets the same affine
+    # transform: scale + offset. Per-island remap belongs to the rebuild/apply
+    # stage, not post-export buffer patching.
+    cluster_u_bl = float(u)
+    cluster_v_bl = float(v)
+    return _atlas_blender_to_buffer_uv(cluster_u_bl, cluster_v_bl, pos_size, invert_x, invert_y)
 
 
 def _block_name_is_twaa(name):
@@ -800,10 +844,7 @@ def patch_exported_twaa_texcoords(context):
             manifest = manifest_cache.get(material_key)
             if manifest is None:
                 manifest = _load_manifest(material_key)
-                manifest_cache[material_key] = manifest
-            if not manifest:
-                warnings.append(f"{obj.name}: missing TWAA manifest for {material_key}")
-                continue
+                manifest_cache[material_key] = manifest or {}
 
             start = int(obj_data.get("vb_offset", 0) or 0)
             count = int(obj_data.get("vb_count", 0) or 0)
@@ -832,6 +873,11 @@ def patch_exported_twaa_texcoords(context):
                 layouts = exact_layouts
                 ranked = layouts
             else:
+                if not manifest:
+                    warning = f"{obj.name}: missing TWAA manifest for fallback TEXCOORD detection"
+                    warnings.append(warning)
+                    print(f"[RZM TWAA] SKIP: {warning}")
+                    continue
                 layout, ranked = _detect_primary_texcoord_layout(data, stride, start, count, manifest)
                 layouts = [layout] if layout else []
             if not layouts:
@@ -865,7 +911,6 @@ def patch_exported_twaa_texcoords(context):
             obj_patched_values = 0
             obj_patched_vertices = 0
             patched_layouts = []
-            uv_stats = {}
 
             for layout in layouts:
                 layout_patched = 0
@@ -877,14 +922,9 @@ def patch_exported_twaa_texcoords(context):
                         continue
                     if not (_finite(u) and _finite(v)):
                         continue
-                    # Source UVs are Blender/export authoring coordinates.
-                    # Post-export invert flags are applied only when writing
-                    # the final runtime buffer coordinates.
-                    u_bl, v_bl = float(u), float(v)
-                    cluster_u_bl, cluster_v_bl = _source_to_cluster_uv(manifest, u_bl, v_bl, uv_stats)
-                    out_u, out_v = _atlas_blender_to_buffer_uv(
-                        cluster_u_bl,
-                        cluster_v_bl,
+                    out_u, out_v = _affine_cluster_to_buffer_uv(
+                        float(u),
+                        float(v),
                         pos_size,
                         invert_x,
                         invert_y,
@@ -902,21 +942,11 @@ def patch_exported_twaa_texcoords(context):
                 patched_vertices += obj_patched_vertices
                 patched_objects += 1
                 file_changed = True
-                total = int(uv_stats.get("total", 0) or 0)
-                inside = int(uv_stats.get("inside", 0) or 0)
-                outside = int(uv_stats.get("outside", 0) or 0)
-                clamped = int(uv_stats.get("clamped", 0) or 0)
-                fract = int(uv_stats.get("fract", 0) or 0)
-                missing = int(uv_stats.get("missing_group", 0) or 0)
-                groups = uv_stats.get("groups", {}) or {}
-                group_summary = ", ".join(
-                    f"{key}:{groups[key]}" for key in sorted(groups, key=lambda item: int(item) if str(item).isdigit() else 999999)
-                )
                 print(
-                    f"[RZM TWAA] UV remap stats for {obj.name}: "
-                    f"total={total} inside={inside} outside={outside} "
-                    f"fract={fract} clamped={clamped} missing_group={missing} "
-                    f"groups=[{group_summary}]"
+                    f"[RZM TWAA] Affine placement for {obj.name}: "
+                    f"scale=({pos_size[0]:.6f}, {pos_size[1]:.6f}) "
+                    f"offset=({pos_size[2]:.6f}, {pos_size[3]:.6f}) "
+                    f"invert=({invert_x}, {invert_y})"
                 )
                 print(
                     f"[RZM TWAA] Patched {obj_patched_values} TEXCOORD values "
