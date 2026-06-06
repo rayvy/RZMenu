@@ -8,7 +8,7 @@ import bpy
 
 MANIFEST_TEXT_PREFIX = "RZAutoAtlas."
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
-PATCHER_BUILD = "tw-blocks-no-object-props-v11-20260606"
+PATCHER_BUILD = "tw-blocks-clamped-remap-v12-20260606"
 _SAMPLE_LIMIT = 192
 
 
@@ -248,6 +248,10 @@ def _fract(value):
     return float(value) - math.floor(float(value))
 
 
+def _clamp01(value):
+    return max(0.0, min(1.0, float(value)))
+
+
 def _addon_preferences(context):
     try:
         addon_name = __package__.split(".")[0]
@@ -476,23 +480,28 @@ def _load_manifest(material_key):
         return None
 
 
-def _source_to_cluster_uv(manifest, u_bl, v_bl):
+def _source_to_cluster_uv(manifest, u_bl, v_bl, stats=None):
     atlas_w, atlas_h = [max(1, int(v)) for v in manifest.get("atlas_size", [1, 1])]
     y_origin = manifest.get("y_origin", "UV_BOTTOM_LEFT")
     best_group = None
     best_distance = None
     best_uv = (float(u_bl), float(v_bl))
+    best_mode = "raw"
+    best_inside = False
     uv_candidates = [
-        (float(u_bl), float(v_bl)),
-        (_fract(u_bl), _fract(v_bl)),
+        ("raw", float(u_bl), float(v_bl)),
+        ("fract", _fract(u_bl), _fract(v_bl)),
     ]
+    if stats is not None:
+        stats["total"] = stats.get("total", 0) + 1
 
     for group in manifest.get("groups", []):
         bounds = group.get("source_uv_bounds") or [0.0, 0.0, 1.0, 1.0]
         u_min, v_min, u_max, v_max = [float(v) for v in bounds]
         u_span = max(1.0e-8, abs(u_max - u_min))
         v_span = max(1.0e-8, abs(v_max - v_min))
-        for cand_u, cand_v in uv_candidates:
+        for mode, cand_u, cand_v in uv_candidates:
+            inside = u_min <= cand_u <= u_max and v_min <= cand_v <= v_max
             du = 0.0 if u_min <= cand_u <= u_max else min(abs(cand_u - u_min), abs(cand_u - u_max)) / u_span
             dv = 0.0 if v_min <= cand_v <= v_max else min(abs(cand_v - v_min), abs(cand_v - v_max)) / v_span
             distance = du + dv
@@ -500,8 +509,12 @@ def _source_to_cluster_uv(manifest, u_bl, v_bl):
                 best_group = group
                 best_distance = distance
                 best_uv = (cand_u, cand_v)
+                best_mode = mode
+                best_inside = inside
 
     if not best_group:
+        if stats is not None:
+            stats["missing_group"] = stats.get("missing_group", 0) + 1
         return _fract(u_bl), _fract(v_bl)
 
     bounds = best_group.get("source_uv_bounds") or [0.0, 0.0, 1.0, 1.0]
@@ -513,8 +526,23 @@ def _source_to_cluster_uv(manifest, u_bl, v_bl):
 
     u_span = max(1.0e-8, u_max - u_min)
     v_span = max(1.0e-8, v_max - v_min)
-    tu = (best_uv[0] - u_min) / u_span
-    tv = (best_uv[1] - v_min) / v_span
+    tu_raw = (best_uv[0] - u_min) / u_span
+    tv_raw = (best_uv[1] - v_min) / v_span
+    tu = _clamp01(tu_raw)
+    tv = _clamp01(tv_raw)
+    clamped = abs(tu - tu_raw) > 1.0e-7 or abs(tv - tv_raw) > 1.0e-7
+    if stats is not None:
+        if best_inside:
+            stats["inside"] = stats.get("inside", 0) + 1
+        else:
+            stats["outside"] = stats.get("outside", 0) + 1
+        if best_mode == "fract":
+            stats["fract"] = stats.get("fract", 0) + 1
+        if clamped:
+            stats["clamped"] = stats.get("clamped", 0) + 1
+        group_index = str(best_group.get("index", "?"))
+        by_group = stats.setdefault("groups", {})
+        by_group[group_index] = by_group.get(group_index, 0) + 1
     cluster_u_bl = (x + tu * w) / float(atlas_w)
     cluster_v_bl = (y + tv * h) / float(atlas_h)
     return cluster_u_bl, cluster_v_bl
@@ -837,6 +865,7 @@ def patch_exported_twaa_texcoords(context):
             obj_patched_values = 0
             obj_patched_vertices = 0
             patched_layouts = []
+            uv_stats = {}
 
             for layout in layouts:
                 layout_patched = 0
@@ -852,7 +881,7 @@ def patch_exported_twaa_texcoords(context):
                     # Post-export invert flags are applied only when writing
                     # the final runtime buffer coordinates.
                     u_bl, v_bl = float(u), float(v)
-                    cluster_u_bl, cluster_v_bl = _source_to_cluster_uv(manifest, u_bl, v_bl)
+                    cluster_u_bl, cluster_v_bl = _source_to_cluster_uv(manifest, u_bl, v_bl, uv_stats)
                     out_u, out_v = _atlas_blender_to_buffer_uv(
                         cluster_u_bl,
                         cluster_v_bl,
@@ -873,6 +902,22 @@ def patch_exported_twaa_texcoords(context):
                 patched_vertices += obj_patched_vertices
                 patched_objects += 1
                 file_changed = True
+                total = int(uv_stats.get("total", 0) or 0)
+                inside = int(uv_stats.get("inside", 0) or 0)
+                outside = int(uv_stats.get("outside", 0) or 0)
+                clamped = int(uv_stats.get("clamped", 0) or 0)
+                fract = int(uv_stats.get("fract", 0) or 0)
+                missing = int(uv_stats.get("missing_group", 0) or 0)
+                groups = uv_stats.get("groups", {}) or {}
+                group_summary = ", ".join(
+                    f"{key}:{groups[key]}" for key in sorted(groups, key=lambda item: int(item) if str(item).isdigit() else 999999)
+                )
+                print(
+                    f"[RZM TWAA] UV remap stats for {obj.name}: "
+                    f"total={total} inside={inside} outside={outside} "
+                    f"fract={fract} clamped={clamped} missing_group={missing} "
+                    f"groups=[{group_summary}]"
+                )
                 print(
                     f"[RZM TWAA] Patched {obj_patched_values} TEXCOORD values "
                     f"({obj_patched_vertices} vertices) for {obj.name} "
