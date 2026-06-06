@@ -1,6 +1,7 @@
 #RZMenu/panels/ui_debug_panel.py
 #AI Agent ignore this file, it's needed temporary solution that will be deleted later.
 import bpy
+from ..utils import texworks_mc
 
 # --- UI LISTS ---
 class RZM_UL_Elements(bpy.types.UIList):
@@ -110,6 +111,35 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
     @classmethod
     def poll(cls, context):
         return context.scene.rzm_editor_mode == 'PRO' and context.scene.rzm_show_debug_panel
+
+    def _twaa_active_export_objects(self, context):
+        layer_collection = getattr(context.view_layer, "active_layer_collection", None)
+        collection = layer_collection.collection if layer_collection else None
+        if collection is None:
+            return set()
+
+        objects = set()
+
+        def visit(coll):
+            for obj in coll.objects:
+                objects.add(obj)
+            for child in coll.children:
+                visit(child)
+
+        visit(collection)
+        return objects
+
+    def _twaa_objects_for_material_key(self, material_key):
+        objects = []
+        seen = set()
+        for mat in bpy.data.materials:
+            if texworks_mc.material_key(mat.name) != material_key:
+                continue
+            for obj in texworks_mc.objects_using_material_name(mat.name):
+                if obj.name not in seen:
+                    objects.append(obj)
+                    seen.add(obj.name)
+        return objects
 
     def draw(self, context):
         layout = self.layout
@@ -400,13 +430,50 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                 settings_row.prop(mc, "max_raster_pixels", text="CPU")
 
                 twaa_box.prop(mc, "output_subdir", text="Output")
+
+                row = twaa_box.row(align=True)
+                op = row.operator("rzm.tw_mc_select_all_material_objects", text="Select All TWAA Objects", icon='RESTRICT_SELECT_OFF')
+                op.active_export_only = False
+                op = row.operator("rzm.tw_mc_select_all_material_objects", text="Active Export Only", icon='OUTLINER_COLLECTION')
+                op.active_export_only = True
+
                 twaa_box.label(text=f"Registered cluster files: {len(rzm.tw_mc_files)}")
+
+                active_export_objects = self._twaa_active_export_objects(context)
+                material_rows = {}
                 for entry in rzm.tw_mc_files:
+                    key = entry.material_key or texworks_mc.material_key(entry.material_name)
+                    row_data = material_rows.setdefault(key, {
+                        "material_name": entry.material_name,
+                        "slots": [],
+                        "paths": [],
+                    })
+                    if entry.material_name:
+                        row_data["material_name"] = entry.material_name
+                    if entry.slot_name not in row_data["slots"]:
+                        row_data["slots"].append(entry.slot_name)
+                    if entry.relative_path:
+                        row_data["paths"].append(entry.relative_path)
+
+                for key, row_data in material_rows.items():
+                    objects = self._twaa_objects_for_material_key(key)
+                    active_count = sum(
+                        1 for obj in objects
+                        if obj in active_export_objects and obj.visible_get(view_layer=context.view_layer)
+                    )
+                    inactive_count = max(0, len(objects) - active_count)
                     row = twaa_box.row(align=True)
-                    row.label(text=entry.material_key or entry.material_name, icon='MATERIAL')
-                    row.label(text=entry.slot_name)
-                    row.label(text=f"{entry.resolution[0]}x{entry.resolution[1]}")
-                    row.label(text=entry.relative_path)
+                    row.label(text=row_data["material_name"] or key, icon='MATERIAL')
+                    row.label(text=f"A:{active_count} I:{inactive_count}")
+                    row.label(text=", ".join(row_data["slots"]))
+                    op = row.operator("rzm.tw_mc_select_material_objects", text="", icon='RESTRICT_SELECT_OFF')
+                    op.material_key = key
+                    op.active_export_only = False
+                    op.extend = False
+                    op = row.operator("rzm.tw_mc_select_material_objects", text="", icon='OUTLINER_COLLECTION')
+                    op.material_key = key
+                    op.active_export_only = True
+                    op.extend = False
             else:
                 twaa_box.label(text="TWAA settings are not registered", icon='ERROR')
 

@@ -148,7 +148,35 @@ Cluster rebuild can still work per-face:
 
 ## Major Feature 2: Final Atlas Bake
 
-Purpose: collapse DynAtlas cluster PNGs into final DDS atlases and convert participating materials to one final atlas resource set.
+Purpose: collapse DynAtlas cluster PNGs into final DDS atlas underlays while keeping Blender materials and TexWorks components separated.
+
+This is an optimization bake, not a destructive material merge.
+
+### Revised Concept
+
+- Blender materials are never merged by this stage.
+- TexWorks components remain one-to-one with Blender materials.
+- Each `RZAutoAtlas*` block becomes a static atlas texture underlay.
+- Existing cluster PNGs are baked into the block atlas at TW component rects.
+- Participating materials keep their component identity so a future mod update can add, remove, or repack clusters by rebuilding the layout.
+- Dynamic per-component features, especially HSV, can stay live on top of the static baked underlay.
+
+### HSV Extension
+
+Materials can be marked as `has HSV`.
+
+When `bpy.ops.rzm.tw_mc_build_autoatlas_layout()` creates or refreshes TWAA blocks:
+
+1. For every material/component marked `has HSV`, add/keep HSV fields on the corresponding TexWorks component.
+2. Enable HSV for that component.
+3. Optionally attach an HSV mask slot/resource.
+4. Do not reset existing HSV mask data during layout refresh.
+5. Do not wipe user-edited HSV variables during layout refresh unless the material explicitly disables HSV.
+
+Rule:
+- Texture data can be baked into the static atlas for optimization.
+- HSV stays dynamic per component/material.
+- The bake must not collapse materials into one final material because HSV needs component identity.
 
 ### Pipeline
 
@@ -162,9 +190,18 @@ Purpose: collapse DynAtlas cluster PNGs into final DDS atlases and convert parti
    - Diffuse -> BC7 SRGB
    - all other slots -> BC7 Linear
 5. Move final DDS files to `./Textures/`.
-6. Register physical TexWorks resources.
-7. Convert all baked participating materials/components to the final atlas resource set.
-8. Leave non-participating TexWorks data untouched.
+6. Register or update physical TexWorks resources for the baked block atlas textures.
+7. Repoint participating TWAA blocks/resources to the baked physical atlas underlay.
+8. Keep all participating Blender materials/TexWorks components separated.
+9. Leave non-participating TexWorks data untouched.
+
+### Non-Destructive Authoring Rule
+
+The DynAtlas cluster PNGs remain the authoring/intermediate layer:
+
+- Substance Painter workflow can keep using separated `{MaterialName}{TextureSet}.png`.
+- Final DDS bake is a build artifact.
+- Rebuilding layout or cluster PNGs invalidates the final baked atlas until `Bake Current Atlas` is run again.
 
 ### Resource Naming
 
@@ -205,6 +242,18 @@ Default normal map solid color must be:
 ```text
 0.5, 0.5, 1.0, 1.0
 ```
+
+### TWAA Material Selection Helpers
+
+Add TWAA panel controls for debugging material coverage:
+
+- Select objects using one registered material/component.
+- Select all objects using any registered TWAA material.
+- Show active/inactive counts:
+  - active = mesh object using the material and present in the current export collection/view-layer context;
+  - inactive = mesh object using the material but not currently part of that export context.
+
+This is only a UI/debug helper. It must not become source of truth for export placement.
 
 ## Tests To Run
 
@@ -261,12 +310,16 @@ Expected:
 - bake Diffuse + LightMap + NormalMap.
 - bake materials with missing slots.
 - bake non-square virtual atlas.
+- bake materials with HSV enabled and verify HSV remains dynamic.
+- rebuild layout after adding one new material cluster and verify previous components keep identity.
 - verify DDS format and path registration.
 
 Expected:
 - Diffuse BC7 SRGB;
 - non-Diffuse BC7 Linear;
 - final physical resources registered;
+- materials/components are not merged;
+- HSV component state is preserved;
 - DynAtlas cluster files can remain as intermediate authoring data.
 
 ## Known Pitfalls
@@ -279,3 +332,5 @@ Expected:
 - Do not assume square atlas dimensions.
 - Do not assume `TEXCOORD.xy` is always f32; use dump layout.
 - Do not patch TEXCOORD1/TEXCOORD2 by default.
+- Do not make final atlas bake destructive for material/component identity.
+- Do not reset HSV masks or user HSV variables during TWAA layout refresh.

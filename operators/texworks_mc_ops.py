@@ -148,6 +148,123 @@ class RZM_OT_TwMcBuildAutoAtlasLayout(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def active_export_collection_objects(context):
+    layer_collection = getattr(context.view_layer, "active_layer_collection", None)
+    collection = layer_collection.collection if layer_collection else None
+    if collection is None:
+        return set()
+
+    result = set()
+
+    def visit(coll):
+        for obj in coll.objects:
+            result.add(obj)
+        for child in coll.children:
+            visit(child)
+
+    visit(collection)
+    return result
+
+
+def tw_mc_material_keys(context):
+    rzm = context.scene.rzm
+    return {
+        entry.material_key or texworks_mc.material_key(entry.material_name)
+        for entry in rzm.tw_mc_files
+        if entry.material_key or entry.material_name
+    }
+
+
+def objects_for_tw_mc_material_key(material_key):
+    material_key = str(material_key or "")
+    mats = [
+        mat for mat in bpy.data.materials
+        if texworks_mc.material_key(mat.name) == material_key
+    ]
+    objects = []
+    seen = set()
+    for mat in mats:
+        for obj in texworks_mc.objects_using_material_name(mat.name):
+            if obj.name not in seen:
+                objects.append(obj)
+                seen.add(obj.name)
+    return objects
+
+
+class RZM_OT_TwMcSelectMaterialObjects(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_select_material_objects"
+    bl_label = "Select TWAA Material Objects"
+    bl_description = "Select mesh objects using this registered TWAA Blender material"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    material_key: bpy.props.StringProperty(name="Material Key")
+    active_export_only: bpy.props.BoolProperty(
+        name="Active Export Collection Only",
+        default=False,
+    )
+    extend: bpy.props.BoolProperty(name="Extend Selection", default=False)
+
+    def execute(self, context):
+        objects = objects_for_tw_mc_material_key(self.material_key)
+        if self.active_export_only:
+            active_objects = active_export_collection_objects(context)
+            objects = [
+                obj for obj in objects
+                if obj in active_objects and obj.visible_get(view_layer=context.view_layer)
+            ]
+
+        if not self.extend:
+            bpy.ops.object.select_all(action='DESELECT')
+
+        for obj in objects:
+            obj.select_set(True)
+
+        if objects:
+            context.view_layer.objects.active = objects[0]
+
+        self.report({'INFO'}, f"Selected {len(objects)} object(s) for {self.material_key}.")
+        return {'FINISHED'}
+
+
+class RZM_OT_TwMcSelectAllMaterialObjects(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_select_all_material_objects"
+    bl_label = "Select All TWAA Material Objects"
+    bl_description = "Select mesh objects using any registered TWAA Blender material"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    active_export_only: bpy.props.BoolProperty(
+        name="Active Export Collection Only",
+        default=False,
+    )
+
+    def execute(self, context):
+        keys = tw_mc_material_keys(context)
+        objects = []
+        seen = set()
+        for key in keys:
+            for obj in objects_for_tw_mc_material_key(key):
+                if obj.name not in seen:
+                    objects.append(obj)
+                    seen.add(obj.name)
+
+        if self.active_export_only:
+            active_objects = active_export_collection_objects(context)
+            objects = [
+                obj for obj in objects
+                if obj in active_objects and obj.visible_get(view_layer=context.view_layer)
+            ]
+
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in objects:
+            obj.select_set(True)
+
+        if objects:
+            context.view_layer.objects.active = objects[0]
+
+        self.report({'INFO'}, f"Selected {len(objects)} TWAA object(s).")
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_TwMcCreateMaterial,
     RZM_OT_TwMcQuestionDummy,
@@ -156,4 +273,6 @@ classes_to_register = [
     RZM_OT_TwMcExportCluster,
     RZM_OT_TwMcApplyCluster,
     RZM_OT_TwMcBuildAutoAtlasLayout,
+    RZM_OT_TwMcSelectMaterialObjects,
+    RZM_OT_TwMcSelectAllMaterialObjects,
 ]
