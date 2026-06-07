@@ -53,6 +53,13 @@
         {% if mod_file.game.name == "HonkaiStarRail" %}
             vb2 = Resource{{ component.fullname }}Blend
             if DRAW_TYPE == 1
+                {% if scene.rzm.addons.blend_resize and scene.rzm.addons.blend_resize.is_enabled %}
+                    {% set br = scene.rzm.addons.blend_resize %}
+                    {% for mapping in br.component_mappings if mapping.name == component.fullname and (mapping.layers | length) > 0 %}
+                vs-t69 = ResourceBlendResize.{{ component.fullname }}Blend.Data
+                run = CustomShaderBlendResize
+                    {% endfor %}
+                {% endif %}
                 vb0 = Resource{{ component.fullname }}Position
                 draw = {{ total_v_count }}, 0
             elif DRAW_TYPE == 8
@@ -63,6 +70,13 @@
         {% elif mod_file.game.name == "ZenlessZoneZero" %}
             vb2 = Resource{{ component.fullname }}Blend
             if DRAW_TYPE == 1
+                {% if scene.rzm.addons.blend_resize and scene.rzm.addons.blend_resize.is_enabled %}
+                    {% set br = scene.rzm.addons.blend_resize %}
+                    {% for mapping in br.component_mappings if mapping.name == component.fullname and (mapping.layers | length) > 0 %}
+                vs-t69 = ResourceBlendResize.{{ component.fullname }}Blend.Data
+                run = CustomShaderBlendResize
+                    {% endfor %}
+                {% endif %}
                 vb0 = Resource{{ component.fullname }}Position
                 draw = {{ total_v_count }}, 0
                 ;{{component.fullname}}

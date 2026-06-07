@@ -233,7 +233,11 @@ array = {{ final_vcount * length }}
 {% endfor %}
 
 [CustomShaderBlendResize]
+{% if mod_file.game.name == "ZenlessZoneZero" %}
+vs = ./modules/BlendResize_ZZZ.hlsl
+{% else %}
 vs = ./modules/BlendResize.hlsl
+{% endif %}
 {# Pass the 12 slots as scalars in registers 88, 87, 86 #}
 {% set groups_by_slot = {} %}
 {% for group in scene.rzm.addons.blend_resize.groups %}

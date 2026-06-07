@@ -39,6 +39,13 @@ def draw_vg_stats_prepend(self, context):
     box_msk = row.box()
     box_msk.label(text=f"Mask: {mask}", icon='MOD_MASK')
     
+    box_idx = row.box()
+    active_idx = vgs.active_index
+    if 0 <= active_idx < total:
+        box_idx.label(text=f"Index: {active_idx}", icon='GEOMETRY_SET')
+    else:
+        box_idx.label(text="Index: -", icon='GEOMETRY_SET')
+    
     layout.separator(factor=0.3)
 
 def get_cached_vg_centroids(obj):
