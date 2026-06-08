@@ -444,7 +444,7 @@ float4 main(VSOut input) : SV_Target {
     coord_chars[coord_len++] = 48 + dY0;
 
     DRAW_DYNAMIC_TEXT(coord_chars, coord_len, coord_x, coord_y, scale_M, float4(0.7, 0.7, 0.7, 1.0))
-
+    
     float DevMode = IniParams.Load(int2(98,0)).y;
     if (DevMode > 0.5) {
         float dbg_x = 24.0;
@@ -463,17 +463,6 @@ float4 main(VSOut input) : SV_Target {
             DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, dbg_y - dbg_gap * 3.0, scale_S, float4(0.45, 0.95, 1.0, 1.0))
 
         float det_y = dbg_y - dbg_gap * 4.5;
-
-        // Semi-transparent black backdrop for DevMode debug text
-        // Covers 4 LD lines + 4 DT lines with a little padding.
-        float2 dbg_panel_min = float2(dbg_x - 10.0, det_y - dbg_gap * 3.0 - 8.0);
-        float2 dbg_panel_max = float2(dbg_x + 300.0, dbg_y + 24.0);
-
-        if (px.x >= dbg_panel_min.x && px.x <= dbg_panel_max.x &&
-            px.y >= dbg_panel_min.y && px.y <= dbg_panel_max.y) {
-            return float4(0.0, 0.0, 0.0, 0.55);
-        }
-
         if (BuildDebugLine64(1u, 0u, 68u, 84u, dbg_chars, dbg_len))
             DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, det_y - dbg_gap * 0.0, scale_S, float4(1.0, 0.78, 0.28, 1.0))
         if (BuildDebugLine64(1u, 1u, 68u, 84u, dbg_chars, dbg_len))
@@ -483,7 +472,18 @@ float4 main(VSOut input) : SV_Target {
         if (BuildDebugLine64(1u, 3u, 68u, 84u, dbg_chars, dbg_len))
             DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, det_y - dbg_gap * 3.0, scale_S, float4(1.0, 0.78, 0.28, 1.0))
     }
+    if (DevMode > 0.5) {
+        float dbg_bg_x0 = 14.0;
+        float dbg_bg_x1 = 185.0;
+        float dbg_bg_y0 = ScreenRes.y - 180.0;
+        float dbg_bg_y1 = ScreenRes.y - 8.0;
 
+        if (px.x >= dbg_bg_x0 && px.x <= dbg_bg_x1 &&
+            px.y >= dbg_bg_y0 && px.y <= dbg_bg_y1)
+        {
+            return float4(0.0, 0.0, 0.0, 0.65);
+        }
+    }
     // ----------------------------------------------------------------
     // 4. GRAPHICS / INTERACTION ELEMENTS RENDERING PASS
     // ----------------------------------------------------------------
