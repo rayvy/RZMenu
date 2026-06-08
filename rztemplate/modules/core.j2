@@ -879,13 +879,14 @@ dispatch = 1, 1, 1
 ; ============================================================
 ; RZM Hover Detect - pin shader
 ; Reads best hit from frame accumulator, writes to pinned
-; R32_FLOAT buffer, resets accumulator for next frame.
+; R32_FLOAT ID buffer and extended info buffer, resets accumulator for next frame.
 ; ============================================================
 
 [CustomShaderRZMPinDetected]
 cs = /modules/rzm_pin_detected.hlsl
 cs-u0 = ResourceRZMDetectID
 cs-u1 = ResourceRZMPinnedDetectID
+cs-u2 = ResourceRZMPinnedDetectInfo
 dispatch = 1, 1, 1
 
 ; ============================================================

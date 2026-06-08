@@ -526,7 +526,7 @@ global $RZMMenuProfileMode = {{ menu_p.mode }}
 
    ObjectMap layout (R32G32B32A32_FLOAT buffer):
      [0]     = objectCount, 0, 0, 0
-     [1 + i] = firstIndex, indexCount, baseVertex, objectID
+     [1 + i] = firstIndex, indexCount, mode, objectID
 
    If objectID == 0, shader uses firstIndex as the ID.
    ============================================================ #}
@@ -558,6 +558,16 @@ data = {{ obj_count }} 0 0 0  {% for item in _hover_entries %}{% set entry = ite
     {% endfor %}
 
 ; RZM Hover Detect accumulator buffers (shared across all components)
+;
+; ResourceRZMDetectID and ResourceRZMPinnedDetectInfo use the same 8-slot layout:
+; [0] legacy ABI: x=id, y=depth, z=firstIndex, w=hitCount
+; [1] xyz=hit point on object in world space, w=object mode
+; [2] x=firstIndex, y=absolute indexBase, z=local triangle, w=face ID
+; [3] x/y/z=absolute vertex indices, w=nearest vertex slot
+; [4] xyz=barycentric hit weights, w=inside-triangle flag
+; [5] xyz=geometric face normal in world space, w=screen winding sign
+; [6] xyz=nearest vertex position in world space, w=screen distance squared
+; [7] x=layout version, y=object index, z=object count, w=nearest vertex index
 {% set _any_hover = {'found': false} %}
 {% for component in mod_file.components if component.draw_vb != "" %}
     {% for part in component.parts if part.vertex_count > 0 %}
@@ -573,12 +583,17 @@ data = {{ obj_count }} 0 0 0  {% for item in _hover_entries %}{% set entry = ite
 [ResourceRZMDetectID]
 type = RWBuffer
 format = R32G32B32A32_FLOAT
-array = 1
+array = 8
 
 [ResourceRZMPinnedDetectID]
 type = RWBuffer
 format = R32_FLOAT
 array = 1
+
+[ResourceRZMPinnedDetectInfo]
+type = RWBuffer
+format = R32G32B32A32_FLOAT
+array = 8
 {% endif %}
 {% endif %}
 {% endmacro %}
