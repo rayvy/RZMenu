@@ -1493,7 +1493,12 @@ endif
 w97 = $nav_arrows
 
 x98 = time
+y98 = $devMode
 w98 = time % 1
+x27 = $RZMSysDebugFloat0
+y27 = $RZMSysDebugFloat1
+z27 = $RZMSysDebugFloat2
+w27 = $RZMSysDebugFloat3
 x99 = $cursorX / $ScreenW
 y99 = $cursorY / $ScreenH
 z99 = $ScreenW / $screen_modifier_scale
@@ -1530,7 +1535,7 @@ ps-t85 = ResourceFont3
 {% endif -%}
 run = CustomShaderDI2D.PASS0.BLUR
 run = CustomShaderDI2D.PASS.MAIN
-if $inputMode == 1
+if $inputMode == 1 || $devMode == 1
 run = CustomShaderDI2D.PASS.SYSTEM
 endif
 clear = ResourceDataBuffer
@@ -1645,6 +1650,27 @@ ps = /modules/system_draw.hlsl
 ps-t82 = ResourceFont0
 ps-t63 = ResourceRZMSys_SlotHint
 ps-t64 = ResourceRZMSys_SlotHint2
+ps-t65 = ResourceRZMSys_DebugDataSlots
+ps-t66 = ResourceRZMSys_DebugTextConfig
+ps-t67 = ResourceRZMSys_DetectTextConfig
+{% set _sys_has_hover = {'found': false} %}
+{% if mod_file and mod_file.components %}
+    {% for component in mod_file.components if component.draw_vb != "" %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% for entry in part.objects if entry.vertex_count > 0 %}
+                {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                {% if real_obj and real_obj.get('rzm.Hover', 0) | int > 0 %}
+                    {% if _sys_has_hover.update({'found': true}) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    {% endfor %}
+{% endif %}
+{% if _sys_has_hover.found %}
+ps-t68 = ResourceRZMPinnedDetectInfo
+{% else %}
+ps-t68 = ResourceRZMSys_DetectDebugData
+{% endif %}
 
 if $inputMode == 1
     ps-t58 = ResourceRZMSys_SlotButtonMode
@@ -1697,6 +1723,71 @@ data = 78 111 32 65 80 73
 type = Buffer
 format = R32_UINT
 data = 84 101 115 116 32 78 111 116 105 99 101
+
+[ResourceRZMSys_DebugDataSlots]
+type = Buffer
+format = R32G32B32A32_FLOAT
+array = 4
+data = 0 0 0 0  0 0 0 0  0 0 0 0  0 0 0 0
+
+; x=source slot or IniParams row, y=component 0..3, z=source 0 buffer / 1 IniParams, w=enabled
+[ResourceRZMSys_DebugTextConfig]
+type = Buffer
+format = R32G32B32A32_FLOAT
+array = 4
+data = 27 0 1 1  27 1 1 1  27 2 1 1  27 3 1 1
+
+{% set RZM_SYS_DETECT_DEBUG_FIELDS = [
+    ('hit_id', 0, 0),
+    ('face_id', 2, 3),
+    ('nearest_vertex_index', 7, 3),
+    ('hit_point_x', 1, 0),
+    ('depth', 0, 1),
+    ('first_index', 0, 2),
+    ('hit_count', 0, 3),
+    ('hit_point_y', 1, 1),
+    ('hit_point_z', 1, 2),
+    ('object_mode', 1, 3),
+    ('face_first_index', 2, 0),
+    ('face_index_base', 2, 1),
+    ('face_local_triangle', 2, 2),
+    ('vertex0_index', 3, 0),
+    ('vertex1_index', 3, 1),
+    ('vertex2_index', 3, 2),
+    ('nearest_vertex_slot', 3, 3),
+    ('bary_x', 4, 0),
+    ('bary_y', 4, 1),
+    ('bary_z', 4, 2),
+    ('inside_triangle', 4, 3),
+    ('normal_x', 5, 0),
+    ('normal_y', 5, 1),
+    ('normal_z', 5, 2),
+    ('screen_winding', 5, 3),
+    ('nearest_vertex_x', 6, 0),
+    ('nearest_vertex_y', 6, 1),
+    ('nearest_vertex_z', 6, 2),
+    ('nearest_screen_dist_sq', 6, 3),
+    ('layout_version', 7, 0),
+    ('object_map_index', 7, 1),
+    ('object_count', 7, 2)
+] %}
+
+; Auto detector text config. First 4 fields are active; overflow is commented below.
+; x=ResourceRZMPinnedDetectInfo slot, y=component 0..3, z=format/reserved, w=enabled
+[ResourceRZMSys_DetectTextConfig]
+type = Buffer
+format = R32G32B32A32_FLOAT
+array = 4
+data = {% for field in RZM_SYS_DETECT_DEBUG_FIELDS[:4] %}{{ field[1] }} {{ field[2] }} 0 1  {% endfor %}
+
+{% for field in RZM_SYS_DETECT_DEBUG_FIELDS[4:] %}
+; overflow detector field {{ loop.index0 + 4 }}: {{ field[0] }} -> {{ field[1] }} {{ field[2] }} 0 1
+{% endfor %}
+
+[ResourceRZMSys_DetectDebugData]
+type = Buffer
+format = R32G32B32A32_FLOAT
+array = 8
 
 
 [ResourceIndexBuffer]

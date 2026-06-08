@@ -5,6 +5,10 @@ Texture1D<float4> IniParams : register(t120);
 Texture2D<float4> FontAtlas : register(t82);
 Buffer<uint>      SlotHint  : register(t63); // Hint (S size)
 Buffer<uint>      SlotHint2 : register(t64); // Hint 2 (RCtrl)
+Buffer<float4>    DebugDataSlots    : register(t65); // 4 free logic/custom debug values
+Buffer<float4>    DebugTextConfig   : register(t66); // 4 text selectors for DebugDataSlots
+Buffer<float4>    DetectTextConfig  : register(t67); // 4 text selectors for DetectDataSlots
+Buffer<float4>    DetectDataSlots   : register(t68); // ResourceRZMPinnedDetectInfo or dummy data
 Buffer<uint>      Slot2     : register(t58); // Mode (ButtonMode / MouseMode) (L size)
 SamplerState      Smp       : register(s0);
 
@@ -88,6 +92,112 @@ float GetDynamicTextWidth(uint chars[24], uint len, out float firstOff) {
     CharMetrics last = FetchCharMetrics(chars[len - 1]);
     totalW += last.offX + last.glyphW - firstOff;
     return totalW;
+}
+
+float GetDynamicTextWidth64(uint chars[64], uint len, out float firstOff) {
+    firstOff = 0.0;
+    if (len == 0) return 0.0;
+
+    firstOff = FetchCharMetrics(chars[0]).offX;
+    float totalW = 0.0;
+    for (uint k = 0; k < len - 1; ++k) {
+        totalW += FetchCharMetrics(chars[k]).advance;
+    }
+    CharMetrics last = FetchCharMetrics(chars[len - 1]);
+    totalW += last.offX + last.glyphW - firstOff;
+    return totalW;
+}
+
+void PushChar64(inout uint chars[64], inout uint len, uint c) {
+    if (len < 64) chars[len++] = c;
+}
+
+void PushSlotName64(inout uint chars[64], inout uint len, uint slot, uint component) {
+    PushChar64(chars, len, 115); // s
+    if (slot >= 10) PushChar64(chars, len, 48 + ((slot / 10) % 10));
+    PushChar64(chars, len, 48 + (slot % 10));
+    PushChar64(chars, len, 46); // .
+    PushChar64(chars, len, 120u + min(component, 3u)); // x/y/z/w
+}
+
+void PushUInt64(inout uint chars[64], inout uint len, uint v) {
+    if (v >= 100000) PushChar64(chars, len, 48 + ((v / 100000) % 10));
+    if (v >= 10000)  PushChar64(chars, len, 48 + ((v / 10000) % 10));
+    if (v >= 1000)   PushChar64(chars, len, 48 + ((v / 1000) % 10));
+    if (v >= 100)    PushChar64(chars, len, 48 + ((v / 100) % 10));
+    if (v >= 10)     PushChar64(chars, len, 48 + ((v / 10) % 10));
+    PushChar64(chars, len, 48 + (v % 10));
+}
+
+void PushFloat64(inout uint chars[64], inout uint len, float value) {
+    if (value < 0.0) {
+        PushChar64(chars, len, 45); // -
+        value = -value;
+    }
+
+    value = min(value, 999999.999);
+    uint scaled = (uint)(value * 1000.0 + 0.5);
+    uint whole = scaled / 1000;
+    uint frac = scaled - whole * 1000;
+
+    PushUInt64(chars, len, whole);
+    PushChar64(chars, len, 46); // .
+    PushChar64(chars, len, 48 + ((frac / 100) % 10));
+    PushChar64(chars, len, 48 + ((frac / 10) % 10));
+    PushChar64(chars, len, 48 + (frac % 10));
+}
+
+float SelectComponent(float4 v, uint component) {
+    if (component == 0) return v.x;
+    if (component == 1) return v.y;
+    if (component == 2) return v.z;
+    return v.w;
+}
+
+bool BuildDebugLine64(
+    uint sourceKind,
+    uint lineIndex,
+    uint prefixA,
+    uint prefixB,
+    inout uint chars[64],
+    out uint len)
+{
+    len = 0;
+    uint cfgCount = 0;
+    if (sourceKind == 0) DebugTextConfig.GetDimensions(cfgCount);
+    else DetectTextConfig.GetDimensions(cfgCount);
+    if (lineIndex >= cfgCount) return false;
+
+    float4 cfg = float4(0.0, 0.0, 0.0, 0.0);
+    if (sourceKind == 0) cfg = DebugTextConfig.Load(lineIndex);
+    else cfg = DetectTextConfig.Load(lineIndex);
+    if (cfg.w <= 0.0) return false;
+
+    bool useIniParams = (sourceKind == 0 && cfg.z >= 0.5);
+    uint dataCount = 0;
+    if (useIniParams) dataCount = 120u;
+    else if (sourceKind == 0) DebugDataSlots.GetDimensions(dataCount);
+    else DetectDataSlots.GetDimensions(dataCount);
+    if (dataCount == 0) return false;
+
+    uint slot = min((uint)max(cfg.x, 0.0), dataCount - 1u);
+    uint component = min((uint)max(cfg.y, 0.0), 3u);
+    float4 row = float4(0.0, 0.0, 0.0, 0.0);
+    if (useIniParams) row = IniParams.Load(int2((int)slot, 0));
+    else if (sourceKind == 0) row = DebugDataSlots.Load(slot);
+    else row = DetectDataSlots.Load(slot);
+    float value = SelectComponent(row, component);
+
+    PushChar64(chars, len, prefixA);
+    PushChar64(chars, len, prefixB);
+    PushChar64(chars, len, 48u + min(lineIndex, 9u));
+    PushChar64(chars, len, 32);
+    PushSlotName64(chars, len, slot, component);
+    PushChar64(chars, len, 32);
+    PushChar64(chars, len, 61);
+    PushChar64(chars, len, 32);
+    PushFloat64(chars, len, value);
+    return true;
 }
 
 // -----------------------------------------------------------------------
@@ -248,6 +358,40 @@ float4 main(VSOut input) : SV_Target {
         } \
     }
 
+    #define DRAW_DYNAMIC_TEXT64(chars, len, x_start, y_start, scale_val, txtCol) \
+    { \
+        float firstOff = 0.0; \
+        float width_val = GetDynamicTextWidth64(chars, len, firstOff) * scale_val; \
+        float2 rel = px - float2(x_start, y_start); \
+        CharMetrics refChar = FetchCharMetrics(65); \
+        float H_ref = refChar.offY + refChar.glyphH + 17.06667; \
+        float localY = H_ref - (rel.y / scale_val); \
+        if (localY >= 0.0 && localY < cs) { \
+            float text_x = rel.x / scale_val + firstOff; \
+            float accum_x = 0.0; \
+            for (uint ci = 0; ci < len; ++ci) { \
+                uint c = chars[ci]; \
+                CharMetrics m = FetchCharMetrics(c); \
+                float glyph_left = accum_x + m.offX; \
+                float glyph_right = glyph_left + m.glyphW; \
+                if (text_x >= glyph_left && text_x < glyph_right) { \
+                    if (localY >= m.offY && localY < (m.offY + m.glyphH)) { \
+                        float2 cellUV = float2((c - 32) % FONT_COLS, (c - 32) / FONT_COLS); \
+                        float2 uvBase = cellUV * uvCell; \
+                        float2 localUV = float2( \
+                            m.offX + (text_x - glyph_left), \
+                            localY \
+                        ) / cs; \
+                        float2 uv = uvBase + localUV * uvCell; \
+                        float alpha = FontAtlas.SampleLevel(Smp, uv, 0).r; \
+                        if (alpha >= 0.05) return float4(txtCol.rgb, alpha * txtCol.a); \
+                    } \
+                } \
+                accum_x += m.advance; \
+            } \
+        } \
+    }
+
     // A. Mode Text (ButtonMode / MouseMode) - Solid Bright White
     DRAW_TEXT_LINE(Slot2, len_mode, mode_x, mode_y, scale_L, float4(1.0, 1.0, 1.0, 1.0))
 
@@ -300,6 +444,45 @@ float4 main(VSOut input) : SV_Target {
     coord_chars[coord_len++] = 48 + dY0;
 
     DRAW_DYNAMIC_TEXT(coord_chars, coord_len, coord_x, coord_y, scale_M, float4(0.7, 0.7, 0.7, 1.0))
+
+    float DevMode = IniParams.Load(int2(98,0)).y;
+    if (DevMode > 0.5) {
+        float dbg_x = 24.0;
+        float dbg_y = ScreenRes.y - 34.0;
+        float dbg_gap = 18.0;
+        uint dbg_chars[64];
+        uint dbg_len = 0;
+
+        if (BuildDebugLine64(0u, 0u, 76u, 68u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, dbg_y - dbg_gap * 0.0, scale_S, float4(0.45, 0.95, 1.0, 1.0))
+        if (BuildDebugLine64(0u, 1u, 76u, 68u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, dbg_y - dbg_gap * 1.0, scale_S, float4(0.45, 0.95, 1.0, 1.0))
+        if (BuildDebugLine64(0u, 2u, 76u, 68u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, dbg_y - dbg_gap * 2.0, scale_S, float4(0.45, 0.95, 1.0, 1.0))
+        if (BuildDebugLine64(0u, 3u, 76u, 68u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, dbg_y - dbg_gap * 3.0, scale_S, float4(0.45, 0.95, 1.0, 1.0))
+
+        float det_y = dbg_y - dbg_gap * 4.5;
+
+        // Semi-transparent black backdrop for DevMode debug text
+        // Covers 4 LD lines + 4 DT lines with a little padding.
+        float2 dbg_panel_min = float2(dbg_x - 10.0, det_y - dbg_gap * 3.0 - 8.0);
+        float2 dbg_panel_max = float2(dbg_x + 300.0, dbg_y + 24.0);
+
+        if (px.x >= dbg_panel_min.x && px.x <= dbg_panel_max.x &&
+            px.y >= dbg_panel_min.y && px.y <= dbg_panel_max.y) {
+            return float4(0.0, 0.0, 0.0, 0.55);
+        }
+
+        if (BuildDebugLine64(1u, 0u, 68u, 84u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, det_y - dbg_gap * 0.0, scale_S, float4(1.0, 0.78, 0.28, 1.0))
+        if (BuildDebugLine64(1u, 1u, 68u, 84u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, det_y - dbg_gap * 1.0, scale_S, float4(1.0, 0.78, 0.28, 1.0))
+        if (BuildDebugLine64(1u, 2u, 68u, 84u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, det_y - dbg_gap * 2.0, scale_S, float4(1.0, 0.78, 0.28, 1.0))
+        if (BuildDebugLine64(1u, 3u, 68u, 84u, dbg_chars, dbg_len))
+            DRAW_DYNAMIC_TEXT64(dbg_chars, dbg_len, dbg_x, det_y - dbg_gap * 3.0, scale_S, float4(1.0, 0.78, 0.28, 1.0))
+    }
 
     // ----------------------------------------------------------------
     // 4. GRAPHICS / INTERACTION ELEMENTS RENDERING PASS
