@@ -1046,15 +1046,34 @@ $ts = time
 {% endif %}
 {% set has_anim = has_anim_tracker[0] %}
 
-[CustomShaderRCI2D_POPUP]
+[CustomShaderRCI2D.CORE]
 cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
 cs-t108 = ResourceElementBlackList
 
-cs = ./modules/draw_controller.hlsl
+cs = /modules/draw_controller.hlsl
 
+z99 = $ScreenW
+w99 = $ScreenH
+z111 = $data_offset
+
+if $flipX == 1 && $flipY == 1
+    x105 = 3 
+elif $flipX == 1
+    x105 = 1
+elif $flipY == 1
+    x105 = 2
+else
+    x105 = 0
+endif
+
+dispatch = 1, 1, 1
+$data_offset = $data_offset + $slot_count
+$di_count = $di_count + 1
+
+[CustomShaderRCI2D_POPUP]
 z99 = $ScreenW
 w99 = $ScreenH
 x100 = $PositionX / $ScreenW
@@ -1082,28 +1101,10 @@ $slot_count = 7
 z111 = $data_offset
 x111 = 0
 
-if $flipX == 1 && $flipY == 1
-    x105 = 3 
-elif $flipX == 1
-    x105 = 1
-elif $flipY == 1
-    x105 = 2
-else
-    x105 = 0
-endif
-dispatch = 1, 1, 1
+run = CustomShaderRCI2D.CORE
 x105 = 0
-$data_offset = $data_offset + $slot_count
-$di_count = $di_count + 1
+
 [CustomShaderRCI2D_SLIDER]
-cs-u0 = ResourceDataBuffer
-cs-u1 = ResourceIndexBuffer
-cs-t105 = ResourceStyleBuffer
-cs-t106 = ResourceElementStaticMap
-cs-t108 = ResourceElementBlackList
-
-cs = /modules/draw_controller.hlsl
-
 z99 = $ScreenW
 w99 = $ScreenH
 x100 = $PositionX / $ScreenW
@@ -1135,33 +1136,13 @@ $slot_count = 7
 z111 = $data_offset
 x111 = 0
 
-
-if $flipX == 1 && $flipY == 1
-    x105 = 3 
-elif $flipX == 1
-    x105 = 1
-elif $flipY == 1
-    x105 = 2
-else
-    x105 = 0
-endif
-dispatch = 1, 1, 1
+run = CustomShaderRCI2D.CORE
 x105 = 0
-$data_offset = $data_offset + $slot_count
-$di_count = $di_count + 1
 if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
 endif
 
 [CustomShaderRCI2D_SLIDER.TEXT]
-cs-u0 = ResourceDataBuffer
-cs-u1 = ResourceIndexBuffer
-cs-t105 = ResourceStyleBuffer
-cs-t106 = ResourceElementStaticMap
-cs-t108 = ResourceElementBlackList
-
-cs = /modules/draw_controller.hlsl
-
 z99 = $ScreenW
 w99 = $ScreenH
 x100 = $PositionX / $ScreenW
@@ -1193,24 +1174,13 @@ $slot_count = 7
 z111 = $data_offset
 x111 = 0
 
-
-if $flipX == 1 && $flipY == 1
-    x105 = 3 
-elif $flipX == 1
-    x105 = 1
-elif $flipY == 1
-    x105 = 2
-else
-    x105 = 0
-endif
-dispatch = 1, 1, 1
+run = CustomShaderRCI2D.CORE
 x105 = 0
-$data_offset = $data_offset + $slot_count
-$di_count = $di_count + 1
 run = CommandListCoreFXRenderSliderText
 if $slider_node_disable_nums == 0
 run = CommandListCoreFXRenderSliderNumbers
 endif
+
 ;;[CustomShaderRCI2D_TEXT_LEFT]
 ;$texSizeX = 0
 ;run = CustomShaderRCI2D_TEXT
@@ -1233,14 +1203,6 @@ $drawType = 3
 if $TextIsData == 1
 $drawType = 4
 endif
-cs-u0 = ResourceDataBuffer
-cs-u1 = ResourceIndexBuffer
-cs-t105 = ResourceStyleBuffer
-cs-t106 = ResourceElementStaticMap
-cs-t108 = ResourceElementBlackList
-
-cs = ./modules/draw_controller.hlsl
-
 z99 = $ScreenW
 w99 = $ScreenH
 x100 = $PositionX / $ScreenW
@@ -1251,15 +1213,6 @@ x101 = $colorR
 y101 = $colorG
 z101 = $colorB
 w101 = $colorA
-if $flipX == 1 && $flipY == 1
-x105 = 3 
-elif $flipX == 1
-x105 = 1
-elif $flipY == 1
-x105 = 2
-else
-x105 = 0
-endif
 y105 = $fontSlot
 w105 = $rotation
 x102 = $TextID
@@ -1279,21 +1232,11 @@ $slot_count = 7
 z111 = $data_offset
 x111 = $elemFlags
 
-
-dispatch = 1, 1, 1
-$data_offset = $data_offset + $slot_count
-$di_count = $di_count + 1
+run = CustomShaderRCI2D.CORE
 $TextIsData = 0
 $drawType = 0
+
 [CustomShaderRCI2D_HOVERTEXT]
-cs-u0 = ResourceDataBuffer
-cs-u1 = ResourceIndexBuffer
-cs-t105 = ResourceStyleBuffer
-cs-t106 = ResourceElementStaticMap
-cs-t108 = ResourceElementBlackList
-
-cs = /modules/draw_controller.hlsl
-
 z99 = $ScreenW
 w99 = $ScreenH
 x100 = ($cursorX + $hoverPositionOffsetX - 5) / $ScreenW
@@ -1321,20 +1264,8 @@ $slot_count = 7
 z111 = $data_offset
 x111 = 0
 
-if $flipX == 1 && $flipY == 1
-    x105 = 3 
-elif $flipX == 1
-    x105 = 1
-elif $flipY == 1
-    x105 = 2
-else
-    x105 = 0
-endif
+run = CustomShaderRCI2D.CORE
 x105 = 0
-dispatch = 1, 1, 1
-x105 = 0
-$data_offset = $data_offset + $slot_count
-$di_count = $di_count + 1
 
 z99 = $ScreenW
 w99 = $ScreenH
@@ -1362,35 +1293,13 @@ y111 = 511
 $slot_count = 7
 z111 = $data_offset
 x111 = 0
-
-if $flipX == 1 && $flipY == 1
-    x105 = 3 
-elif $flipX == 1
-    x105 = 1
-elif $flipY == 1
-    x105 = 2
-else
-    x105 = 0
-endif
 y105 = $fontSlot
 w105 = $rotation
 
-dispatch = 1, 1, 1
-$data_offset = $data_offset + $slot_count
-$di_count = $di_count + 1
+run = CustomShaderRCI2D.CORE
 $drawType = 0
+
 [CustomShaderRCI2D]
-cs-u0 = ResourceDataBuffer
-cs-u1 = ResourceIndexBuffer
-cs-t105 = ResourceStyleBuffer
-cs-t106 = ResourceElementStaticMap
-cs-t108 = ResourceElementBlackList
-
-
-cs = /modules/draw_controller.hlsl
-
-z99 = $ScreenW
-w99 = $ScreenH
 x100 = $PositionX / $ScreenW
 y100 = $PositionY / $ScreenH
 z100 = $sizeX / $ScreenW
@@ -1415,23 +1324,9 @@ y111 = $di_count
 $slot_count = 7
 z111 = $data_offset
 x111 = $elemFlags
-
-
-if $flipX == 1 && $flipY == 1
-    x105 = 3 
-elif $flipX == 1
-    x105 = 1
-elif $flipY == 1
-    x105 = 2
-else
-    x105 = 0
-endif
-x105 = 0
 w105 = $rotation
 
-dispatch = 1, 1, 1
-$data_offset = $data_offset + $slot_count
-$di_count = $di_count + 1
+run = CustomShaderRCI2D.CORE
 
 x110 = 0
 y110 = 0
