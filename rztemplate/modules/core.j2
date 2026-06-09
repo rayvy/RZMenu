@@ -1060,18 +1060,147 @@ w99 = $ScreenH
 z111 = $data_offset
 
 if $flipX == 1 && $flipY == 1
-    x105 = 3 
+	x105 = 3 
 elif $flipX == 1
-    x105 = 1
+	x105 = 1
 elif $flipY == 1
-    x105 = 2
+	x105 = 2
 else
-    x105 = 0
+	x105 = 0
 endif
 
-dispatch = 1, 1, 1
-$data_offset = $data_offset + $slot_count
+run = CommandListDC
+
+
+[CommandListDC]
+local $x100_0
+local $y100_0
+local $z100_0
+local $w100_0
+local $x101_0
+local $y101_0
+local $z101_0
+local $w101_0
+local $x102_0
+local $y102_0
+local $z102_0
+local $w102_0
+local $x105_0
+local $y105_0
+local $z105_0
+local $w105_0
+local $x109_0
+local $y109_0
+local $z109_0
+local $w109_0
+local $x110_0
+local $y110_0
+local $z110_0
+local $w110_0
+local $x111_0
+local $y111_0
+local $z111_0
+local $w111_0
+
+if $di_count % 2 == 0
+$x100_0 = x100
+$y100_0 = y100
+$z100_0 = z100
+$w100_0 = w100
+$x101_0 = x101
+$y101_0 = y101
+$z101_0 = z101
+$w101_0 = w101
+$x102_0 = x102
+$y102_0 = y102
+$z102_0 = z102
+$w102_0 = w102
+$x105_0 = x105
+$y105_0 = y105
+$z105_0 = z105
+$w105_0 = w105
+$x109_0 = x109
+$y109_0 = y109
+$z109_0 = z109
+$w109_0 = w109
+$x110_0 = x110
+$y110_0 = y110
+$z110_0 = z110
+$w110_0 = w110
+$x111_0 = x111
+$y111_0 = y111
+$z111_0 = z111
+$w111_0 = w111
+endif
+
+if $di_count % 2 == 1
+x10 = x100
+y10 = y100
+z10 = z100
+w10 = w100
+x11 = x101
+y11 = y101
+z11 = z101
+w11 = w101
+x12 = x102
+y12 = y102
+z12 = z102
+w12 = w102
+x15 = x105
+y15 = y105
+z15 = z105
+w15 = w105
+x19 = x109
+y19 = y109
+z19 = z109
+w19 = w109
+x20 = x110
+y20 = y110
+z20 = z110
+w20 = w110
+x21 = x111 + 16
+y21 = y111
+z21 = z111
+w21 = w111
+
+x100 = $x100_0
+y100 = $y100_0
+z100 = $z100_0
+w100 = $w100_0
+x101 = $x101_0
+y101 = $y101_0
+z101 = $z101_0
+w101 = $w101_0
+x102 = $x102_0
+y102 = $y102_0
+z102 = $z102_0
+w102 = $w102_0
+x105 = $x105_0
+y105 = $y105_0
+z105 = $z105_0
+w105 = $w105_0
+x109 = $x109_0
+y109 = $y109_0
+z109 = $z109_0
+w109 = $w109_0
+x110 = $x110_0
+y110 = $y110_0
+z110 = $z110_0
+w110 = $w110_0
+x111 = $x111_0
+y111 = $y111_0
+z111 = $z111_0
+w111 = $w111_0
+
+run = CustomShaderDC
+endif
+
 $di_count = $di_count + 1
+
+
+[CustomShaderDC]
+dispatch = 1, 1, 1
+$data_offset = $data_offset + $slot_count * 2
 
 [CustomShaderRCI2D_POPUP]
 z99 = $ScreenW

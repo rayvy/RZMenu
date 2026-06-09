@@ -1,20 +1,13 @@
 // ==================================================================
 // == cs.hlsl - Версия "Бригадир" + Phase 0.5 ElementStaticMap
 //           + Phase 0.5.5: Color Bake, BlackList Buffer, loop i+=2
+//           + Phase 0.6: Dual Collector (slots 10-21 + 100-111)
 // ==================================================================
 RWBuffer<float4> DataBuffer           : register(u0);
 RWBuffer<uint>   IndexBuffer          : register(u1);
 Buffer<float4>   ResourceStyleBuffer  : register(t105);
 
-// Phase 0.5/0.5.5: compact sorted array {float(id), float(imageID), float(textID), float(has_color)}
-//                                      + {float(R), float(G), float(B), float(A)}
-// 2x float4 per entry. Loop step = 2. Sentinel: first float4 with id==0.
 Buffer<float4>   ElementStaticMap     : register(t106);
-
-// Phase 0.5.5: BlackList buffer — compact sorted array {uint(id), uint(mask), 0, 0}
-// mask bits force static values from ElementStaticMap regardless of INI input.
-// BL_COLOR=0x001, BL_IMAGE_ID=0x002, BL_TEXT_ID=0x004
-// Slots 0x008+ reserved for Phase 0.6 (style_id, fn_type, etc.)
 Buffer<uint4>    ElementBlackList     : register(t108);
 
 Texture1D<float4> IniParams : register(t120);
@@ -22,6 +15,7 @@ Buffer<uint>      InputTextBuffer : register(t24);
 
 #define SCREEN_RES       IniParams[99].zw
 
+// ── Slot A (100-111) ─────────────────────────────────────────────
 #define IN_POS           IniParams[100].xy
 #define IN_SIZE          IniParams[100].zw
 #define IN_COLOR         IniParams[101]
@@ -38,79 +32,102 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define BUFFER_INDEX     (int)IniParams[111].y
 #define IN_BUFFER_OFFSET (uint)IniParams[111].z
 #define IN_FLAGS         (uint)IniParams[111].x
-// Phase 0.5: w111 = $id of the current element (set by j2 template)
-// Phase 0.5.5: for presets/helpers w111 = $preset_id/$helper_id (true Blender id)
 #define IN_ELEMENT_ID    (uint)IniParams[111].w
 
-// Phase 0.5: flag bits
-#define FLAG_USE_STATIC_IMG   0x01u  // read imageID from ElementStaticMap
-#define FLAG_USE_STATIC_TEXT  0x02u  // read textID  from ElementStaticMap
-#define FLAG_IS_ELEMENT       0x04u  // this is a main rzm.element (or preset/helper using their true id)
-// Phase 0.5.5: flag bits
-#define FLAG_USE_STATIC_COLOR 0x08u  // read RGBA color from ElementStaticMap
+// ── Slot B (10-21) ───────────────────────────────────────────────
+#define IN_B_POS           IniParams[10].xy
+#define IN_B_SIZE          IniParams[10].zw
+#define IN_B_COLOR         IniParams[11]
+#define IN_B_TILE_DATA     IniParams[12]
+#define IN_B_FX_PARAMS     IniParams[14]
+#define IN_B_MIRROR_MODE   IniParams[15].x
+#define IN_B_FONT_SLOT     IniParams[15].y
+#define IN_B_ROT           IniParams[15].w
+#define IN_B_CLIP_RECT     IniParams[19].xyzw
+#define IN_B_FN_TYPE       IniParams[20].x
+#define IN_B_STYLE_ID      IniParams[20].y
+#define IN_B_TEX_ID        IniParams[20].z
+#define IN_B_DRAW_MODE     IniParams[20].w
+#define IN_B_BUFFER_INDEX  (int)IniParams[21].y
+#define IN_B_BUFFER_OFFSET (uint)IniParams[21].z
+#define IN_B_FLAGS         (uint)IniParams[21].x
+#define IN_B_ELEMENT_ID    (uint)IniParams[21].w
 
-// Phase 0.5.5: BlackList mask bits (mirror element_blacklist.py)
+// ── Flag bits ────────────────────────────────────────────────────
+#define FLAG_USE_STATIC_IMG   0x01u
+#define FLAG_USE_STATIC_TEXT  0x02u
+#define FLAG_IS_ELEMENT       0x04u
+#define FLAG_USE_STATIC_COLOR 0x08u
+#define FLAG_SLOT_B_VALID     0x10u  // set в x21 если второй слот активен
+
+// ── BlackList mask bits ──────────────────────────────────────────
 #define BL_COLOR     0x001u
 #define BL_IMAGE_ID  0x002u
 #define BL_TEXT_ID   0x004u
-// Reserved Phase 0.6: BL_STYLE_ID=0x008, BL_FN_TYPE=0x010, ...
 
-[numthreads(1, 1, 1)]
-void main(uint3 ThreadId : SV_DispatchThreadID)
+
+// ================================================================
+// Общая функция записи одного элемента в буфер
+// ================================================================
+void WriteElement(
+    uint   base_idx,
+    uint   flags,
+    int    buf_index,
+    float2 pos,
+    float2 size,
+    float4 color,
+    float4 tile_data,
+    float  mirror_mode,
+    float  font_slot,
+    float  rot,
+    float4 clip_rect,
+    float  fn_type,
+    float  style_id,
+    float  tex_id,
+    float  draw_mode,
+    uint   element_id
+)
 {
-    uint base_idx = IN_BUFFER_OFFSET;
-    uint flags    = IN_FLAGS;
+    IndexBuffer[buf_index] = base_idx;
 
-    IndexBuffer[BUFFER_INDEX] = base_idx;
-
-    // ── EXISTING WRITES (unchanged) ──────────────────────────────────────────
     DataBuffer[base_idx + 0] = float4(asfloat(flags), 0, 0, 0);
-    DataBuffer[base_idx + 1] = float4(IN_POS, IN_SIZE);
-    DataBuffer[base_idx + 2] = IN_COLOR;
-    DataBuffer[base_idx + 3] = IN_TILE_DATA;
-    DataBuffer[base_idx + 4] = float4(IN_MIRROR_MODE, IN_FONT_SLOT, 0, IN_ROT);
+    DataBuffer[base_idx + 1] = float4(pos, size);
+    DataBuffer[base_idx + 2] = color;
+    DataBuffer[base_idx + 3] = tile_data;
+    DataBuffer[base_idx + 4] = float4(mirror_mode, font_slot, 0, rot);
 
-    if (any(IN_CLIP_RECT))
-    {
-        DataBuffer[base_idx + 5] = IN_CLIP_RECT;
-    }
+    if (any(clip_rect))
+        DataBuffer[base_idx + 5] = clip_rect;
     else
-    {
         DataBuffer[base_idx + 5] = float4(0, 0, 0, 0);
-    }
 
-    DataBuffer[base_idx + 6] = float4(IN_FN_TYPE, IN_STYLE_ID, IN_TEX_ID, IN_DRAW_MODE);
-    // ── END EXISTING WRITES ──────────────────────────────────────────────────
+    DataBuffer[base_idx + 6] = float4(fn_type, style_id, tex_id, draw_mode);
 
-    // ── Phase 0.5/0.5.5: ElementStaticMap lookup ─────────────────────────────
-    // Runs when FLAG_IS_ELEMENT is set — main elements, and presets/helpers
-    // that pass their true Blender id via w111 (Phase 0.5.5).
+    // ── ElementStaticMap lookup ──────────────────────────────────
     [branch]
     if (flags & FLAG_IS_ELEMENT)
     {
-        uint target_id   = IN_ELEMENT_ID;
-        uint found_image = 0u;
-        uint found_text  = 0u;
-        float found_r    = 0.0f;
-        float found_g    = 0.0f;
-        float found_b    = 0.0f;
-        float found_a    = 0.5f;
-        float has_color  = 0.0f;
+        uint  target_id   = element_id;
+        uint  found_image = 0u;
+        uint  found_text  = 0u;
+        float found_r     = 0.0f;
+        float found_g     = 0.0f;
+        float found_b     = 0.0f;
+        float found_a     = 0.5f;
+        float has_color   = 0.0f;
 
-        // Phase 0.5.5: loop step = 2 (each entry is now 2x float4)
         [loop]
         for (int i = 0; i < 4096; i += 2)
         {
             float4 A        = ElementStaticMap[i];
             uint   entry_id = (uint)A.x;
-            if (entry_id == 0u) break;           // sentinel reached, stop
+            if (entry_id == 0u) break;
             if (entry_id == target_id)
             {
                 found_image = (uint)A.y;
                 found_text  = (uint)A.z;
-                has_color   = A.w;               // Phase 0.5.5: 1.0 if static color
-
-                float4 B = ElementStaticMap[i + 1];
+                has_color   = A.w;
+                float4 B    = ElementStaticMap[i + 1];
                 found_r = B.x;
                 found_g = B.y;
                 found_b = B.z;
@@ -119,17 +136,10 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
             }
         }
 
-        // ── Apply static imageID ──
-        // Condition: buffer has a valid imageID AND INI did not supply an override.
-        // The FLAG_USE_STATIC_IMG bit is an INI-generation hint (suppresses $imageID write
-        // in the template). The CS applies from buffer whenever found_image > 0 and INI
-        // didn't set a value (ini_image < 0.5). This matches Phase 0.5 behaviour and
-        // correctly handles hover_image_id elements (their $imageID is written by INI
-        // conditionally; when it is, ini_image >= 1, so buffer won't override).
         [branch]
-        if (found_image > 0u && IN_FN_TYPE != 2.0f)
+        if (found_image > 0u && fn_type != 2.0f)
         {
-            float ini_image = IN_TILE_DATA.x;
+            float ini_image = DataBuffer[base_idx + 3].x;
             if (ini_image < 0.5f)
             {
                 float4 temp = DataBuffer[base_idx + 3];
@@ -138,12 +148,10 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
             }
         }
 
-        // ── Apply static textID ──
-        // Same: buffer wins when found_text > 0 and INI didn't write $TextID.
         [branch]
-        if (found_text > 0u && IN_FN_TYPE == 2.0f)
+        if (found_text > 0u && fn_type == 2.0f)
         {
-            float ini_text = IN_TILE_DATA.x;
+            float ini_text = DataBuffer[base_idx + 3].x;
             if (ini_text < 0.5f)
             {
                 float4 temp = DataBuffer[base_idx + 3];
@@ -152,20 +160,13 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
             }
         }
 
-        // ── Phase 0.5.5: Apply static color ──
-        // Condition: FLAG_USE_STATIC_COLOR set AND has_color == 1.0 in buffer.
-        // INI wrote $colorR/G/B/A = 0 (RestoreElement reset), so we always apply.
-        // BlackList will also enforce this, but this early write is the primary path.
         [branch]
         if ((flags & FLAG_USE_STATIC_COLOR) && has_color > 0.5f)
         {
             DataBuffer[base_idx + 2] = float4(found_r, found_g, found_b, found_a);
         }
 
-        // ── Phase 0.5.5: BlackList enforcement ──────────────────────────────
-        // Secondary protection: forces static data REGARDLESS of what INI wrote.
-        // Handles edge cases where RestoreElement reset didn't fully protect against
-        // residual values from parent/sibling CommandLists.
+        // ── BlackList ────────────────────────────────────────────
         uint bl_mask = 0u;
         [loop]
         for (int k = 0; k < 2048; k++)
@@ -182,40 +183,74 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
         [branch]
         if (bl_mask != 0u)
         {
-            // BL_COLOR: force RGBA from StaticMap — static color is iron-clad
             [branch]
             if ((bl_mask & BL_COLOR) && has_color > 0.5f)
-            {
                 DataBuffer[base_idx + 2] = float4(found_r, found_g, found_b, found_a);
-            }
 
-            // BL_IMAGE_ID: force imageID from StaticMap
             [branch]
-            if ((bl_mask & BL_IMAGE_ID) && found_image > 0u && IN_FN_TYPE != 2.0f)
+            if ((bl_mask & BL_IMAGE_ID) && found_image > 0u && fn_type != 2.0f)
             {
                 float4 temp = DataBuffer[base_idx + 3];
                 temp.x = (float)found_image;
                 DataBuffer[base_idx + 3] = temp;
             }
 
-            // BL_TEXT_ID: force textID from StaticMap
             [branch]
-            if ((bl_mask & BL_TEXT_ID) && found_text > 0u && IN_FN_TYPE == 2.0f)
+            if ((bl_mask & BL_TEXT_ID) && found_text > 0u && fn_type == 2.0f)
             {
                 float4 temp = DataBuffer[base_idx + 3];
                 temp.x = (float)found_text;
                 DataBuffer[base_idx + 3] = temp;
             }
-
-            // Phase 0.6 slots will be enforced here:
-            // BL_STYLE_ID  -> DataBuffer[base_idx + 6].y
-            // BL_FN_TYPE   -> DataBuffer[base_idx + 6].x
-            // BL_TEX_ID    -> DataBuffer[base_idx + 6].z
-            // BL_DRAW_MODE -> DataBuffer[base_idx + 6].w
-            // BL_MIRROR    -> DataBuffer[base_idx + 4].x
-            // BL_ROT       -> DataBuffer[base_idx + 4].w
         }
-        // ── END Phase 0.5.5 ──────────────────────────────────────────────────
     }
-    // ── END Phase 0.5/0.5.5 ─────────────────────────────────────────────────
+}
+
+
+[numthreads(1, 1, 1)]
+void main(uint3 ThreadId : SV_DispatchThreadID)
+{
+    // ── Slot A всегда пишем ──────────────────────────────────────
+    WriteElement(
+        IN_BUFFER_OFFSET,
+        IN_FLAGS,
+        BUFFER_INDEX,
+        IN_POS,
+        IN_SIZE,
+        IN_COLOR,
+        IN_TILE_DATA,
+        IN_MIRROR_MODE,
+        IN_FONT_SLOT,
+        IN_ROT,
+        IN_CLIP_RECT,
+        IN_FN_TYPE,
+        IN_STYLE_ID,
+        IN_TEX_ID,
+        IN_DRAW_MODE,
+        IN_ELEMENT_ID
+    );
+
+    // ── Slot B пишем только если активен ────────────────────────
+    [branch]
+    if (IN_B_FLAGS & FLAG_SLOT_B_VALID)
+    {
+        WriteElement(
+            IN_BUFFER_OFFSET + 7u,  // <-- сдвиг на один элемент вперёд
+            IN_B_FLAGS,
+            IN_B_BUFFER_INDEX,
+            IN_B_POS,
+            IN_B_SIZE,
+            IN_B_COLOR,
+            IN_B_TILE_DATA,
+            IN_B_MIRROR_MODE,
+            IN_B_FONT_SLOT,
+            IN_B_ROT,
+            IN_B_CLIP_RECT,
+            IN_B_FN_TYPE,
+            IN_B_STYLE_ID,
+            IN_B_TEX_ID,
+            IN_B_DRAW_MODE,
+            IN_B_ELEMENT_ID
+        );
+    }
 }
