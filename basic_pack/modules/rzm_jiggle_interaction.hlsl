@@ -77,7 +77,7 @@ StructuredBuffer<float4> CapturedDetect        : register(t67);
 Buffer<float4> ObjParams                       : register(t68);
 RWStructuredBuffer<VertexAttributes> rw_buffer  : register(u5);
 RWBuffer<float4> JiggleState                    : register(u6);
-StructuredBuffer<float> MaskBuffer             : register(t70);
+Buffer<float> MaskBuffer                       : register(t70);
 
 cbuffer cb1 : register(b1)
 {

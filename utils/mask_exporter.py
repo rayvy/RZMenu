@@ -40,13 +40,93 @@ def get_mesh_attribute_values(mesh, attr_name):
                 values.append(0.0)
     return values
 
+def find_mask_values_for_object(obj, eval_mesh=None, cache_has_real_id=False):
+    """
+    Looks for the anticollider mask weights on the object.
+    Checks F32 attributes, F16 attributes, custom attributes, and falls back
+    to direct Vertex Group weight reading for maximum smoothness and precision.
+    Returns: (list_of_floats, source_description, has_real_id) or None if not found.
+    """
+    # 1. Check evaluated mesh attributes (post-modifiers, e.g. mirror)
+    if eval_mesh:
+        # Option A: Float32 vault attribute
+        if "rzm_anticollider_mask_f32" in eval_mesh.attributes:
+            vals = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask_f32")
+            if vals:
+                return vals, "evaluated mesh (Float32)", cache_has_real_id
+                
+        # Option B: Float16 vault attributes (low/high bytes)
+        if "rzm_anticollider_mask_f16_lo" in eval_mesh.attributes and "rzm_anticollider_mask_f16_hi" in eval_mesh.attributes:
+            low = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask_f16_lo")
+            high = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask_f16_hi")
+            if low and high and len(low) == len(high):
+                try:
+                    raw = bytearray(len(low) * 2)
+                    for idx in range(len(low)):
+                        raw[idx * 2] = int(low[idx]) & 0xFF
+                        raw[idx * 2 + 1] = int(high[idx]) & 0xFF
+                    vals = [float(struct.unpack_from('<e', raw, idx * 2)[0]) for idx in range(len(low))]
+                    return vals, "evaluated mesh (Float16)", cache_has_real_id
+                except Exception:
+                    pass
+                    
+        # Option C: Direct custom attribute
+        if "rzm_anticollider_mask" in eval_mesh.attributes:
+            vals = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask")
+            if vals:
+                return vals, "evaluated mesh", cache_has_real_id
+
+    # 2. Check original mesh attributes (pre-modifier)
+    if obj.data:
+        # Option A: Float32 vault attribute
+        if "rzm_anticollider_mask_f32" in obj.data.attributes:
+            vals = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask_f32")
+            if vals:
+                return vals, "original mesh (Float32)", True
+                
+        # Option B: Float16 vault attributes
+        if "rzm_anticollider_mask_f16_lo" in obj.data.attributes and "rzm_anticollider_mask_f16_hi" in obj.data.attributes:
+            low = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask_f16_lo")
+            high = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask_f16_hi")
+            if low and high and len(low) == len(high):
+                try:
+                    raw = bytearray(len(low) * 2)
+                    for idx in range(len(low)):
+                        raw[idx * 2] = int(low[idx]) & 0xFF
+                        raw[idx * 2 + 1] = int(high[idx]) & 0xFF
+                    vals = [float(struct.unpack_from('<e', raw, idx * 2)[0]) for idx in range(len(low))]
+                    return vals, "original mesh (Float16)", True
+                except Exception:
+                    pass
+                    
+        # Option C: Direct custom attribute
+        if "rzm_anticollider_mask" in obj.data.attributes:
+            vals = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask")
+            if vals:
+                return vals, "original mesh", True
+
+    # 3. Option D: Direct Vertex Group weight reading (100% reliable for painted weights)
+    vg = obj.vertex_groups.get("rzm_anticollider_mask")
+    if vg is not None:
+        vg_index = vg.index
+        num_verts = len(obj.data.vertices)
+        vals = [0.0] * num_verts
+        for vertex in obj.data.vertices:
+            for membership in vertex.groups:
+                if membership.group == vg_index:
+                    vals[vertex.index] = float(membership.weight)
+                    break
+        return vals, "vertex group", True
+
+    return None
+
 def export_masks(context, cache):
     """
     Main entry point for exporting rzm_anticollider_mask attributes.
-    Reads masks using vertex mapping to align indices correctly.
+    Generates component-wide mask buffers (aligned with Position/Blend buffers).
     """
     print("\n[RZM-MASK] ==================================================")
-    print("[RZM-MASK] RUNNING MASK EXPORTER")
+    print("[RZM-MASK] RUNNING COMPONENT MASK EXPORTER")
     print("[RZM-MASK] ==================================================")
     
     if not cache:
@@ -73,6 +153,17 @@ def export_masks(context, cache):
         if not os.path.exists(buf_dir):
             buf_dir = mod_root
 
+        # 1. Total vertex count of the component buffer
+        n_verts = comp_data.get('n_verts', 0)
+        if n_verts <= 0:
+            continue
+            
+        # We will build a single component-wide mask array
+        component_mask = [0.0] * n_verts
+        has_any_mask = False
+        debug_parts = {}
+
+        # 2. Iterate through all objects of this component to collect masks
         for obj_data in comp_data.get('objects', []):
             obj_name = obj_data.get('name')
             if not obj_name:
@@ -82,41 +173,33 @@ def export_masks(context, cache):
             if not obj or obj.type != 'MESH':
                 continue
                 
-            # 1. Try to get mask attribute from evaluated mesh (post-modifiers)
+            # Get evaluated mesh for attribute lookup
             eval_mesh = None
-            eval_values = None
+            mask_data = None
             try:
                 eval_obj = obj.evaluated_get(depsgraph)
                 eval_mesh = eval_obj.to_mesh()
-                eval_values = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask")
+                mask_res = find_mask_values_for_object(obj, eval_mesh, obj_data.get('has_real_id', False))
             except Exception as e:
-                print(f"[RZM-MASK] Failed to read evaluated mesh for {obj_name}: {e}")
+                print(f"[RZM-MASK] Failed to evaluate mesh for {obj_name}: {e}")
+                mask_res = None
             finally:
                 if eval_mesh:
                     obj.to_mesh_clear()
                     
-            # 2. Get mask attribute from original mesh data
-            orig_values = None
-            if obj.data:
-                orig_values = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask")
-
-            # Choose best source
-            if not eval_values and not orig_values:
-                # No mask attribute found on this object, skip it
-                continue
+            if not mask_res:
+                # If evaluated failed or had no attribute, try original mesh/vertex group
+                mask_res = find_mask_values_for_object(obj, None, obj_data.get('has_real_id', False))
                 
-            has_real_id = obj_data.get('has_real_id', False)
-            if orig_values and (has_real_id or not eval_values):
-                attr_values = orig_values
-                source_desc = "original mesh"
-            else:
-                attr_values = eval_values
-                source_desc = "evaluated mesh"
-
-            # 3. Map values via vertex_map to align with the exported buffer order
+            if not mask_res:
+                continue # No mask for this object, stays 0.0 in the component mask
+                
+            attr_values, source_desc, has_real_id = mask_res
+            vb_offset = obj_data.get('vb_offset', 0)
             vb_count = obj_data.get('vb_count', 0)
             v_map = obj_data.get('vertex_map')
-            
+
+            # Map values to buffer topology
             mapped_values = []
             if v_map:
                 for idx in v_map:
@@ -125,51 +208,64 @@ def export_masks(context, cache):
                     else:
                         mapped_values.append(0.0)
             else:
-                # Fallback: 1:1 mapping if counts match
                 if len(attr_values) == vb_count:
                     mapped_values = [float(x) for x in attr_values]
                 else:
                     mapped_values = [0.0] * vb_count
-                    print(f"[RZM-MASK] [WARNING] {obj_name}: No vertex_map found and vertex count mismatch (Blender {source_desc}: {len(attr_values)}, Buffer: {vb_count}). Output filled with 0.0.")
 
-            # 4. Write output files
-            part_suffix = obj_data.get('part_suffix', '')
-            base_filename = f"{mod_name}{comp_name}{part_suffix}Mask"
-            
+            # Write mapped values into the component mask at vb_offset
+            for i in range(min(vb_count, len(mapped_values))):
+                target_idx = vb_offset + i
+                if 0 <= target_idx < n_verts:
+                    component_mask[target_idx] = mapped_values[i]
+                    
+            has_any_mask = True
+            debug_parts[obj_name] = {
+                'vb_offset': vb_offset,
+                'vb_count': vb_count,
+                'source': source_desc,
+                'has_real_id': has_real_id,
+                'non_zero_count': sum(1 for x in mapped_values if x > 0.0),
+                'max_weight': max(mapped_values) if mapped_values else 0.0,
+                'min_weight': min(mapped_values) if mapped_values else 0.0
+            }
+
+        # 3. If any object had a mask, export the component-wide files
+        if has_any_mask:
+            # Pattern: CharNameComponentMask.buf / .json
+            base_filename = f"{mod_name}{comp_name}Mask"
             buf_file_path = os.path.join(buf_dir, f"{base_filename}.buf")
             json_file_path = os.path.join(buf_dir, f"{base_filename}.json")
-            
-            # Write binary .buf file (32-bit floats)
+
+            # Write binary .buf (32-bit floats)
             try:
                 with open(buf_file_path, 'wb') as f:
-                    for val in mapped_values:
+                    for val in component_mask:
                         f.write(struct.pack('<f', val))
             except Exception as e:
                 print(f"[RZM-MASK] [ERROR] Failed to write binary buffer '{buf_file_path}': {e}")
                 continue
                 
-            # Write debug .json file (for testing)
+            # Write debug .json
             try:
                 debug_data = {
-                    'name': obj_name,
                     'mod_name': mod_name,
                     'component': comp_name,
-                    'part_suffix': part_suffix,
-                    'vertex_count': vb_count,
-                    'source': source_desc,
-                    'has_real_id': has_real_id,
-                    'values': mapped_values,
-                    'raw_blender_values': [float(x) for x in attr_values]
+                    'total_vertex_count': n_verts,
+                    'parts_included': debug_parts,
+                    'values': component_mask
                 }
                 with open(json_file_path, 'w', encoding='utf-8') as f:
                     json.dump(debug_data, f, indent=4)
             except Exception as e:
                 print(f"[RZM-MASK] [WARNING] Failed to write debug JSON '{json_file_path}': {e}")
                 
-            print(f"[RZM-MASK] Exported mask for '{obj_name}' ({vb_count} vertices, sourced from {source_desc}) to:")
+            print(f"[RZM-MASK] Exported COMPONENT mask for '{comp_name}' ({n_verts} vertices) to:")
             print(f"  - {buf_file_path}")
             print(f"  - {json_file_path}")
+            for p_name, p_info in debug_parts.items():
+                print(f"    * Part '{p_name}': offset={p_info['vb_offset']}, count={p_info['vb_count']}, non-zero={p_info['non_zero_count']}, source={p_info['source']}")
             exported_count += 1
 
-    print(f"[RZM-MASK] Mask export completed. Total exported masks: {exported_count}")
+    print(f"[RZM-MASK] Component mask export completed. Total exported masks: {exported_count}")
     print("[RZM-MASK] ==================================================\n")
