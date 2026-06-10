@@ -263,6 +263,20 @@
                 run = CustomShaderRZMDetect{{ component.fullname }}
             endif
             {% endif %}
+            {# --- Jiggle Interaction --- #}
+            {% set comp_has_jiggle = {'val': false} %}
+            {% for p in component.parts if p.vertex_count > 0 %}
+                {% for entry in p.objects if entry.vertex_count > 0 %}
+                    {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                    {% if real_obj and real_obj.get('rzm.Hover', 0) | int == 7 %}
+                        {% if comp_has_jiggle.update({'val': true}) %}{% endif %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+            {% if comp_has_jiggle.val %}
+            run = CustomShaderRZMJiggle{{ component.fullname }}
+            vb0 = ResourceRZMJiggleTempVB0_{{ component.fullname }}
+            {% endif %}
             {% if mod_file.game.name == "ZenlessZoneZero" %}run = CommandListSkinTexture{%endif%}
         {% if scene.rzm %}
             {% if scene.rzm.export_texture_slots %}

@@ -600,6 +600,35 @@ type = RWBuffer
 format = R32G32B32A32_FLOAT
 array = 8
 {% endif %}
+
+{# --- Jiggle per-component resources --- #}
+{% for component in mod_file.components if component.draw_vb != "" %}
+    {% set _has_jiggle = {'found': false} %}
+    {% for part in component.parts if part.vertex_count > 0 %}
+        {% for entry in part.objects if entry.vertex_count > 0 %}
+            {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+            {% if real_obj and real_obj.get('rzm.Hover', 0) | int == 7 %}
+                {% if _has_jiggle.update({'found': true}) %}{% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    {% if _has_jiggle.found %}
+[ResourceRZMDetectCapturedID_{{ component.fullname }}]
+type = Buffer
+format = R32G32B32A32_FLOAT
+array = 8
+
+[ResourceRZMJiggleState_{{ component.fullname }}]
+type = RWBuffer
+format = R32G32B32A32_FLOAT
+array = 8
+
+[ResourceRZMJiggleTempVB0_{{ component.fullname }}]
+type = RWBuffer
+; stride = {{ component.strides.position if component.strides else 40 }}
+
+    {% endif %}
+{% endfor %}
 {% endif %}
 {% endmacro %}
 

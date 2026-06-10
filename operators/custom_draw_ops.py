@@ -100,6 +100,7 @@ class RZM_OT_SetHoverMode(bpy.types.Operator):
       4 = ClickCollider     – registers in ObjectMap on click, no draw changes
       5 = HideWhenClicked   – hidden when clicked
       6 = AppearWhenClicked – visible only when clicked
+      7 = JiggleInteraction – jiggle physics collider for the component
     """
     bl_idname = "rzm.set_hover_mode"
     bl_label = "Set Hover Mode"
@@ -108,7 +109,7 @@ class RZM_OT_SetHoverMode(bpy.types.Operator):
     mode: bpy.props.IntProperty(
         name="Mode",
         default=0,
-        min=0, max=6
+        min=0, max=7
     )
 
     def execute(self, context):

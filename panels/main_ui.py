@@ -752,6 +752,10 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             (6, "Appear When Click", "Visible only when object is clicked",                   'HIDE_OFF'),
         ]
 
+        JIGGLE_MODES = [
+            (7, "Jiggle Collider", "Physics jiggle collider — activates jiggle shader for the component", 'PHYSICS'),
+        ]
+
         row0 = hover_box.row(align=True)
         is_none_active = (current_mode == 0 or "rzm.Hover" not in target_obj)
         op = row0.operator("rzm.set_hover_mode", text="None", icon='X', depress=is_none_active)
@@ -774,6 +778,18 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         for mode_val, label, tooltip, icon in CLICK_MODES:
             is_active = (current_mode == mode_val)
             op = row2.operator(
+                "rzm.set_hover_mode",
+                text=label,
+                icon=icon,
+                depress=is_active,
+            )
+            op.mode = mode_val
+
+        hover_box.label(text="Physics Modes:")
+        row3 = hover_box.row(align=True)
+        for mode_val, label, tooltip, icon in JIGGLE_MODES:
+            is_active = (current_mode == mode_val)
+            op = row3.operator(
                 "rzm.set_hover_mode",
                 text=label,
                 icon=icon,
@@ -805,6 +821,49 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             hover_box.label(text="draw suppressed when clicked ($Detected == firstIndex)", icon='INFO')
         elif current_mode == 6:
             hover_box.label(text="drawn only when clicked ($Detected == firstIndex)", icon='INFO')
+        elif current_mode == 7:
+            hint_box = hover_box.box()
+            hint_box.alert = False
+            hint_col = hint_box.column(align=True)
+            hint_col.label(text="Jiggle Collider: activates jiggle physics for component.", icon='PHYSICS')
+            hint_col.label(text="Triggers CustomShaderRZMJiggle when $Detected == firstIndex.")
+            hint_col.label(text="Phase 2: per-object physics params below.")
+
+        # --- JIGGLE CONFIG (Phase 2 — shown when mode == 7) ---
+        if current_mode == 7:
+            jbox = hover_box.box()
+            jbox.label(text="Jiggle Physics Config", icon='PHYSICS')
+            jcol = jbox.column(align=True)
+
+            jcol.label(text="[ Phase 2 — not active in export yet ]", icon='INFO')
+            jcol.separator()
+
+            # Grab physics
+            gbox = jbox.box()
+            gbox.label(text="Grab", icon='RESTRICT_SELECT_OFF')
+            gcol = gbox.column(align=True)
+            gcol.prop(target_obj, '["rzm.Jiggle.radius"]',      text="Radius")
+            gcol.prop(target_obj, '["rzm.Jiggle.strength"]',    text="Strength")
+            gcol.prop(target_obj, '["rzm.Jiggle.falloff"]',     text="Falloff Power")
+            gcol.prop(target_obj, '["rzm.Jiggle.drag_scale"]',  text="Drag Scale")
+            gcol.prop(target_obj, '["rzm.Jiggle.grab_damp"]',   text="Grab Damping")
+            gcol.prop(target_obj, '["rzm.Jiggle.grab_spring"]', text="Grab Spring")
+
+            # Release physics
+            rbox = jbox.box()
+            rbox.label(text="Release", icon='LOOP_BACK')
+            rcol = rbox.column(align=True)
+            rcol.prop(target_obj, '["rzm.Jiggle.rel_damp"]',   text="Release Damping")
+            rcol.prop(target_obj, '["rzm.Jiggle.rel_spring"]', text="Release Spring")
+            rcol.prop(target_obj, '["rzm.Jiggle.rel_kick"]',   text="Release Kick")
+
+            # Polish
+            pbox = jbox.box()
+            pbox.label(text="Polish", icon='SMOOTHCURVE')
+            pcol = pbox.column(align=True)
+            pcol.prop(target_obj, '["rzm.Jiggle.max_offset"]',     text="Max Offset")
+            pcol.prop(target_obj, '["rzm.Jiggle.target_follow"]',  text="Target Follow")
+            pcol.prop(target_obj, '["rzm.Jiggle.mouse_y"]',        text="Mouse Y Dir (+1/-1)")
 
 
 # ... (Остальные панели без изменений) ...

@@ -925,6 +925,99 @@ endif
 {% endif %}
 {%endmacro%}
 
+{# ========================================================
+   RZM JIGGLE INTERACTION: per-component CustomShader
+   Generated when component has objects with rzm.Hover == 7.
+   Identical pattern to prototype jiggle_physx_by_rayvich.
+   ======================================================== #}
+{%macro jiggleShaders(mod_file,scene)%}
+{% if mod_file and mod_file.components %}
+{% for component in mod_file.components if component.draw_vb != "" %}
+    {# Collect jiggle object IDs (firstIndex = object ID) for this component #}
+    {% set _jiggle_ids = [] %}
+    {% for part in component.parts if part.vertex_count > 0 %}
+        {% for entry in part.objects if entry.vertex_count > 0 %}
+            {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+            {% if real_obj and real_obj.get('rzm.Hover', 0) | int == 7 %}
+                {% set obj_id = entry.index_offset if entry.index_offset is defined else 0 %}
+                {% if _jiggle_ids.append(obj_id) %}{% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+
+    {% if _jiggle_ids | length > 0 %}
+; ============================================================
+; RZM Jiggle Interaction — {{ component.fullname }}
+; ============================================================
+
+[CustomShaderRZMJiggle{{ component.fullname }}]
+local $CursorXPast
+local $CursorYPast
+local $WasMouseButtonDown
+
+{% for obj_id in _jiggle_ids %}
+if $Detected == {{ obj_id }}
+    if $isMouseButtonDown == 1
+        if $WasMouseButtonDown == 0
+            $CursorXPast = $cursorX
+            $CursorYPast = $cursorY
+            ResourceRZMDetectCapturedID_{{ component.fullname }} = copy ResourceRZMDetectID
+        endif
+        $WasMouseButtonDown = 1
+        w67 = 1
+    else
+        $WasMouseButtonDown = 0
+        $CursorXPast = 0
+        $CursorYPast = 0
+        w67 = 0
+    endif
+endif
+{% endfor %}
+
+cs = ./modules/rzm_jiggle_interaction.hlsl
+
+x67 = $CursorXPast
+y67 = $CursorYPast
+
+x68 = 0.5
+y68 = 1.00
+z68 = 6.0
+w68 = 1.00
+
+x69 = $cursorX
+y69 = $cursorY
+z69 = $screenW
+w69 = $screenH
+
+x70 = 0.86
+y70 = 0.176
+z70 = 0.93
+w70 = 0.08
+
+x71 = 0.50
+y71 = 1.10
+z71 = 1.00
+w71 = 0.00
+
+cs-t67 = ResourceRZMDetectCapturedID_{{ component.fullname }}
+cs-t69 = ResourceRZMDetectID
+
+cs-u6 = ResourceRZMJiggleState_{{ component.fullname }}
+
+ResourceRZMJiggleTempVB0_{{ component.fullname }} = vb0
+cs-t24 = vb0
+cs-u5 = copy ResourceRZMJiggleTempVB0_{{ component.fullname }}
+
+Dispatch = ({{ component.vertex_count }} + 255) // 256, 1, 1
+
+vb0 = null
+ResourceRZMJiggleTempVB0_{{ component.fullname }} = copy cs-u5
+
+    {% endif %}
+{% endfor %}
+{% endif %}
+{%endmacro%}
+
 {%macro baseCompute(mod_file,scene)%}
 [CommandListComputeDimensions]
 local $pastCursorX
