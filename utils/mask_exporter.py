@@ -43,34 +43,11 @@ def get_mesh_attribute_values(mesh, attr_name):
 def find_mask_values_for_object(obj, eval_mesh=None, cache_has_real_id=False):
     """
     Looks for the anticollider mask weights on the object.
-    Checks F32 attributes, F16 attributes, custom attributes, and falls back
-    to direct Vertex Group weight reading for maximum smoothness and precision.
+    Checks only the specific mesh attribute 'rzm_anticollider_mask'.
     Returns: (list_of_floats, source_description, has_real_id) or None if not found.
     """
     # 1. Check evaluated mesh attributes (post-modifiers, e.g. mirror)
     if eval_mesh:
-        # Option A: Float32 vault attribute
-        if "rzm_anticollider_mask_f32" in eval_mesh.attributes:
-            vals = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask_f32")
-            if vals:
-                return vals, "evaluated mesh (Float32)", cache_has_real_id
-                
-        # Option B: Float16 vault attributes (low/high bytes)
-        if "rzm_anticollider_mask_f16_lo" in eval_mesh.attributes and "rzm_anticollider_mask_f16_hi" in eval_mesh.attributes:
-            low = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask_f16_lo")
-            high = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask_f16_hi")
-            if low and high and len(low) == len(high):
-                try:
-                    raw = bytearray(len(low) * 2)
-                    for idx in range(len(low)):
-                        raw[idx * 2] = int(low[idx]) & 0xFF
-                        raw[idx * 2 + 1] = int(high[idx]) & 0xFF
-                    vals = [float(struct.unpack_from('<e', raw, idx * 2)[0]) for idx in range(len(low))]
-                    return vals, "evaluated mesh (Float16)", cache_has_real_id
-                except Exception:
-                    pass
-                    
-        # Option C: Direct custom attribute
         if "rzm_anticollider_mask" in eval_mesh.attributes:
             vals = get_mesh_attribute_values(eval_mesh, "rzm_anticollider_mask")
             if vals:
@@ -78,47 +55,13 @@ def find_mask_values_for_object(obj, eval_mesh=None, cache_has_real_id=False):
 
     # 2. Check original mesh attributes (pre-modifier)
     if obj.data:
-        # Option A: Float32 vault attribute
-        if "rzm_anticollider_mask_f32" in obj.data.attributes:
-            vals = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask_f32")
-            if vals:
-                return vals, "original mesh (Float32)", True
-                
-        # Option B: Float16 vault attributes
-        if "rzm_anticollider_mask_f16_lo" in obj.data.attributes and "rzm_anticollider_mask_f16_hi" in obj.data.attributes:
-            low = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask_f16_lo")
-            high = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask_f16_hi")
-            if low and high and len(low) == len(high):
-                try:
-                    raw = bytearray(len(low) * 2)
-                    for idx in range(len(low)):
-                        raw[idx * 2] = int(low[idx]) & 0xFF
-                        raw[idx * 2 + 1] = int(high[idx]) & 0xFF
-                    vals = [float(struct.unpack_from('<e', raw, idx * 2)[0]) for idx in range(len(low))]
-                    return vals, "original mesh (Float16)", True
-                except Exception:
-                    pass
-                    
-        # Option C: Direct custom attribute
         if "rzm_anticollider_mask" in obj.data.attributes:
             vals = get_mesh_attribute_values(obj.data, "rzm_anticollider_mask")
             if vals:
                 return vals, "original mesh", True
 
-    # 3. Option D: Direct Vertex Group weight reading (100% reliable for painted weights)
-    vg = obj.vertex_groups.get("rzm_anticollider_mask")
-    if vg is not None:
-        vg_index = vg.index
-        num_verts = len(obj.data.vertices)
-        vals = [0.0] * num_verts
-        for vertex in obj.data.vertices:
-            for membership in vertex.groups:
-                if membership.group == vg_index:
-                    vals[vertex.index] = float(membership.weight)
-                    break
-        return vals, "vertex group", True
-
     return None
+
 
 def export_masks(context, cache):
     """
