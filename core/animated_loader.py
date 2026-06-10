@@ -370,6 +370,8 @@ def load_animated_advanced(filepath: str,
     Returns:
         (unique_frames, sequence)
     """
+    import bpy
+    filepath = bpy.path.abspath(filepath)
     ext = filepath.lower().rsplit('.', 1)[-1] if '.' in filepath else ''
     
     # 1. Читаем сырые кадры
@@ -472,6 +474,8 @@ def get_frame_info(filepath: str) -> dict:
     """
     Возвращает метаданные файла для превью-плеера.
     """
+    import bpy
+    filepath = bpy.path.abspath(filepath)
     cache = VideoReaderCache.get_instance()
     reader = cache.get_reader(filepath)
     if not reader:
@@ -499,6 +503,8 @@ def get_frame_at(filepath: str, index: int) -> np.ndarray:
     """
     Извлекает ОДИН кадр из файла по индексу с использованием кэша ридера.
     """
+    import bpy
+    filepath = bpy.path.abspath(filepath)
     cache = VideoReaderCache.get_instance()
     reader = cache.get_reader(filepath)
     if not reader:

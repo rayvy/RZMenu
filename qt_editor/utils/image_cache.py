@@ -65,6 +65,29 @@ class ImageCache:
 
         bl_image = target_rz_img.image_pointer
         if not bl_image:
+            if target_rz_img.source_type == 'VECTOR' and target_rz_img.anim_source_path:
+                import os
+                filepath = bpy.path.abspath(target_rz_img.anim_source_path)
+                if os.path.exists(filepath):
+                    try:
+                        from ...core.svg_loader import render_svg_to_pixels
+                        from ...core.animated_loader import frames_to_blender_images
+                        res = 512
+                        pixels = render_svg_to_pixels(filepath, res, res)
+                        if pixels is not None:
+                            bl_preview_list = frames_to_blender_images(
+                                [{'pixels': pixels, 'size': (res, res)}],
+                                target_rz_img.display_name + "_svg_preview",
+                                colorspace='Non-Color'
+                            )
+                            bl_image = bl_preview_list[0]
+                            bl_image.pack()
+                            target_rz_img.image_pointer = bl_image
+                            print(f"[ImageCache] Restored purged SVG preview for ID {image_id} from {filepath}")
+                    except Exception as e:
+                        print(f"[ImageCache] Failed to restore SVG preview for ID {image_id}: {e}")
+
+        if not bl_image:
             # print(f"ImageCache: ID {image_id} has no image_pointer.")
             self._cache[image_id] = None
             return

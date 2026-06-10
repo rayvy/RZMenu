@@ -425,7 +425,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                             'scale': scale, 
                             'offset': (off_x_px, off_y_px),
                             'tint': tint_color,
-                            'path': img.anim_source_path or ""
+                            'path': bpy.path.abspath(img.anim_source_path) if img.anim_source_path else ""
                         }
                 else:
                     used_image_ids.add(img_id)

@@ -249,14 +249,39 @@ def pack_project_images(scene, export_dir):
                     r, g, b       = [int(elem.color[i] * 255) for i in range(3)]
                     color_key_svg = f"{r:02x}{g:02x}{b:02x}"
                 target_key = f"SVG_{img.id}_{render_w}x{render_h}_{scale}_{off_x_px}_{off_y_px}_{color_key_svg}"
-                var = next((v for v in img.svg_variations if v.config_key == target_key), None)
-                if var:
+                
+                target_var = None
+                for var in img.svg_variations:
+                    if var.config_key == target_key:
+                        target_var = var
+                        break
+                
+                if not target_var:
+                    for var in img.svg_variations:
+                        ids_list = [e.strip() for e in var.element_ids_str.split(',') if e.strip()]
+                        if str(elem.id) in ids_list and var.color_key == color_key_svg and abs(var.scale - scale) < 0.01:
+                            target_var = var
+                            break
+                            
+                if not target_var:
+                    for var in img.svg_variations:
+                        if var.color_key == color_key_svg and abs(var.scale - scale) < 0.01:
+                            target_var = var
+                            break
+                            
+                if target_var:
                     v_id = create_static_instance(
-                        var.uv_coords[0], var.uv_coords[1],
-                        var.uv_size[0],   var.uv_size[1],
+                        target_var.uv_coords[0], target_var.uv_coords[1],
+                        target_var.uv_size[0],   target_var.uv_size[1],
                         mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
                     )
-                    mapping['elements'][composite_key] = v_id
+                else:
+                    v_id = create_static_instance(
+                        img.uv_coords[0], img.uv_coords[1],
+                        img.uv_size[0],   img.uv_size[1],
+                        mode, flip_x=flip_x, flip_y=flip_y, fit_mode=fit_mode_val
+                    )
+                mapping['elements'][composite_key] = v_id
 
             else:
                 # STATIC
