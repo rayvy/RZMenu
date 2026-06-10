@@ -937,12 +937,18 @@ endif
 {% for component in mod_file.components if component.draw_vb != "" %}
     {# Collect jiggle objects for this component #}
     {% set _jiggle_objs = [] %}
+    {% set _has_mask = {'found': false} %}
     {% for part in component.parts if part.vertex_count > 0 %}
         {% for entry in part.objects if entry.vertex_count > 0 %}
             {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
             {% if real_obj and real_obj.get('rzm.Hover', 0) | int == 7 %}
                 {% set obj_id = entry.index_offset if entry.index_offset is defined else 0 %}
                 {% if _jiggle_objs.append({'id': obj_id, 'obj': real_obj}) %}{% endif %}
+            {% endif %}
+            {% if real_obj and real_obj.type == 'MESH' %}
+                {% if 'rzm_anticollider_mask' in real_obj.data.attributes or 'rzm_anticollider_mask_f32' in real_obj.data.attributes or 'MASK ANTICOLLIDER' in real_obj.vertex_groups %}
+                    {% if _has_mask.update({'found': true}) %}{% endif %}
+                {% endif %}
             {% endif %}
         {% endfor %}
     {% endfor %}
@@ -1011,6 +1017,11 @@ x73 = $rzm_jiggle_mult_damping
 cs-t67 = ResourceRZMDetectCapturedID_{{ component.fullname }}
 cs-t68 = ResourceRZMJiggleParams_{{ component.fullname }}
 cs-t69 = ResourceRZMDetectID
+{% if _has_mask.found %}
+cs-t70 = ResourceRZMJiggleMask_{{ component.fullname }}
+{% else %}
+cs-t70 = null
+{% endif %}
 
 cs-u6 = ResourceRZMJiggleState_{{ component.fullname }}
 
