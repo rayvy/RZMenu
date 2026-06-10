@@ -34,21 +34,70 @@ class ComponentCollector:
             self.settings['ignore_hidden_coll'] = getattr(efmi, 'ignore_hidden_collections', False)
             self.settings['ignore_nested'] = getattr(efmi, 'ignore_nested_collections', False)
 
+    def _collect_from_component_manager(self):
+        if not self.rzm or not hasattr(self.rzm, 'component_manager'):
+            return None
+            
+        cm = self.rzm.component_manager
+        # Check if we have any components registered
+        if not cm.components:
+            return None
+            
+        # Check if the registered components have any objects stored.
+        has_any_objects = any(len(comp.objects) > 0 for comp in cm.components)
+        if not has_any_objects:
+            return None
+            
+        results = {}
+        for comp in cm.components:
+            comp_objs = []
+            for obj_item in comp.objects:
+                bl_obj = bpy.data.objects.get(obj_item.name)
+                if bl_obj and bl_obj.type == 'MESH':
+                    comp_objs.append(bl_obj)
+            if comp_objs:
+                results[comp.name] = comp_objs
+                
+        return results if results else None
+
+    def _save_to_component_manager(self, results):
+        if not self.rzm or not hasattr(self.rzm, 'component_manager'):
+            return
+            
+        cm = self.rzm.component_manager
+        
+        # Map existing components by name for easy lookup.
+        comp_map = {comp.name: comp for comp in cm.components}
+        
+        for comp_name, objs in results.items():
+            if comp_name in comp_map:
+                comp_item = comp_map[comp_name]
+            else:
+                comp_item = cm.components.add()
+                comp_item.name = comp_name
+                
+            comp_item.objects.clear()
+            for obj in objs:
+                obj_item = comp_item.objects.add()
+                obj_item.name = obj.name
+
     def get_components(self, per_component=False, force_fallback=False):
         """
         Returns a dictionary: {'Component0': [obj1, obj2], ...}
         """
-        results = None
+        results = self._collect_from_component_manager()
         
-        if not force_fallback:
+        if not results and not force_fallback:
             results = self._collect_from_cache()
 
         if not results:
             # Fallback to principle 2 (scene recreation)
             print("\n[ComponentCollector] Attempting fallback logic (scene info)...")
             results = self._collect_from_scene()
+            if results:
+                self._save_to_component_manager(results)
             
-        for key in results:
+        for key in list(results.keys()):
             results[key] = list(set(results[key]))
 
         if per_component and self.context.active_object:

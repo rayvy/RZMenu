@@ -10,10 +10,14 @@ class RZMCM_Part(bpy.types.PropertyGroup):
     enabled: BoolProperty(name="Enabled", default=False)
     donors: CollectionProperty(type=RZMCM_PartDonor)
 
+class RZMCM_ComponentObject(bpy.types.PropertyGroup):
+    name: StringProperty(name="Object Name")
+
 class RZMCM_Component(bpy.types.PropertyGroup):
     name: StringProperty(name="Name")
     blend_copy_enabled: BoolProperty(name="Blend Copy", default=False)
     parts: CollectionProperty(type=RZMCM_Part)
+    objects: CollectionProperty(type=RZMCM_ComponentObject)
 
 class RZMComponentManagerSettings(bpy.types.PropertyGroup):
     dump_path: StringProperty(

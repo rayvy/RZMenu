@@ -29,7 +29,7 @@ from .p_settings import (
     RZM_ST_ColorPreset
 )
 from .p_blend_resize import RZMBResizeBakedBone, RZMBResizeBakedLayer, RZMComponentMapping, RZMBoneResizeGroup, RZMBResizeSettings
-from .p_component_manager import RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings
+from .p_component_manager import RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings, RZMCM_ComponentObject
 
 class RZM_ST_TexCoordItem(bpy.types.PropertyGroup):
     target_name: StringProperty(
@@ -220,7 +220,7 @@ classes_to_register = [
     RZM_ST_ColorPreset,
     RZM_AddonPreferences,
     RZMAutoMenuSettings,
-    RZMCM_PartDonor, RZMCM_Part, RZMCM_Component, RZMComponentManagerSettings,
+    RZMCM_PartDonor, RZMCM_Part, RZMCM_ComponentObject, RZMCM_Component, RZMComponentManagerSettings,
     RZMVFXVertexCount,
     RZM_ST_TexCoordItem,
     RZMenuProperties,

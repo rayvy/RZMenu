@@ -109,6 +109,17 @@ class RZMenu_OT_CM_UpdateFromDump(bpy.types.Operator):
                 part_item.name = c_name
 
         self.report({'INFO'}, f"Loaded {len(cm.components)} components from dump.")
+        
+        # Pre-populate objects mapping in Component Manager
+        try:
+            from ..utils.component_collector import ComponentCollector
+            collector = ComponentCollector(context)
+            results = collector._collect_from_scene()
+            if results:
+                collector._save_to_component_manager(results)
+        except Exception as e:
+            print(f"[CM-Update] Failed to pre-populate components objects: {e}")
+            
         return {'FINISHED'}
 
 classes_to_register = [RZMenu_OT_CM_UpdateFromDump]
