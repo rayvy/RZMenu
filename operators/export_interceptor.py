@@ -71,6 +71,13 @@ def _xxmi_hook(self, *args, **kwargs):
                 vfx_buffer_patcher.patch_buffers(bpy.context, cache)
             except Exception as patch_err:
                 print(f"[RZM] [CACHE] VFX buffer patcher failed (non-fatal): {patch_err}")
+
+            # Run anticollider mask exporter
+            try:
+                from ..utils import mask_exporter
+                mask_exporter.export_masks(bpy.context, cache)
+            except Exception as mask_err:
+                print(f"[RZM] [CACHE] Mask exporter failed (non-fatal): {mask_err}")
         else:
             print('[RZM] [CACHE] XXMI export ran but cache build returned None.')
     except Exception as e:
@@ -161,6 +168,13 @@ def _efmi_hook(self, *args, **kwargs):
                 vfx_buffer_patcher.patch_buffers(bpy.context, cache)
             except Exception as patch_err:
                 print(f"[RZM] [CACHE] VFX buffer patcher failed (non-fatal): {patch_err}")
+
+            # Run anticollider mask exporter
+            try:
+                from ..utils import mask_exporter
+                mask_exporter.export_masks(bpy.context, cache)
+            except Exception as mask_err:
+                print(f"[RZM] [CACHE] Mask exporter failed (non-fatal): {mask_err}")
         else:
             print('[RZM] [CACHE] EFMI export ran but cache build returned None.')
     except Exception as e:

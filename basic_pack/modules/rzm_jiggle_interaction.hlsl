@@ -77,6 +77,7 @@ StructuredBuffer<float4> CapturedDetect        : register(t67);
 Buffer<float4> ObjParams                       : register(t68);
 RWStructuredBuffer<VertexAttributes> rw_buffer  : register(u5);
 RWBuffer<float4> JiggleState                    : register(u6);
+StructuredBuffer<float> MaskBuffer             : register(t70);
 
 cbuffer cb1 : register(b1)
 {
@@ -579,6 +580,10 @@ void main(uint3 threadID : SV_DispatchThreadID)
     float dist = distance(worldPos, nextCenter.xyz);
     
     float influence = ComputeRubberInfluence(dist, radius, falloffPower);
+
+    // Apply per-vertex jiggle suppression mask (1 = fully suppressed, 0 = can move)
+    float mask = MaskBuffer[i];
+    influence *= saturate(1.0 - mask);
 
     if (influence > 0.0)
     {
