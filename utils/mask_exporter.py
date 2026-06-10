@@ -232,10 +232,9 @@ def export_masks(context, cache):
 
         # 3. If any object had a mask, export the component-wide files
         if has_any_mask:
-            # Pattern: CharNameComponentMask.buf / .json
+            # Pattern: CharNameComponentMask.buf
             base_filename = f"{mod_name}{comp_name}Mask"
             buf_file_path = os.path.join(buf_dir, f"{base_filename}.buf")
-            json_file_path = os.path.join(buf_dir, f"{base_filename}.json")
 
             # Write binary .buf (32-bit floats)
             try:
@@ -246,23 +245,8 @@ def export_masks(context, cache):
                 print(f"[RZM-MASK] [ERROR] Failed to write binary buffer '{buf_file_path}': {e}")
                 continue
                 
-            # Write debug .json
-            try:
-                debug_data = {
-                    'mod_name': mod_name,
-                    'component': comp_name,
-                    'total_vertex_count': n_verts,
-                    'parts_included': debug_parts,
-                    'values': component_mask
-                }
-                with open(json_file_path, 'w', encoding='utf-8') as f:
-                    json.dump(debug_data, f, indent=4)
-            except Exception as e:
-                print(f"[RZM-MASK] [WARNING] Failed to write debug JSON '{json_file_path}': {e}")
-                
             print(f"[RZM-MASK] Exported COMPONENT mask for '{comp_name}' ({n_verts} vertices) to:")
             print(f"  - {buf_file_path}")
-            print(f"  - {json_file_path}")
             for p_name, p_info in debug_parts.items():
                 print(f"    * Part '{p_name}': offset={p_info['vb_offset']}, count={p_info['vb_count']}, non-zero={p_info['non_zero_count']}, source={p_info['source']}")
             exported_count += 1

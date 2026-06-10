@@ -865,6 +865,42 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
             pcol.prop(target_obj, '["rzm.Jiggle.target_follow"]',  text="Target Follow")
             pcol.prop(target_obj, '["rzm.Jiggle.mouse_y"]',        text="Mouse Y Dir (+1/-1)")
 
+        # --- ANTICOLLIDER MASK (shown for MESH objects always) ---
+        if target_obj.type == 'MESH':
+            mbox = layout.box()
+            mbox.label(text="Jiggle Anticollider Mask", icon='MOD_VERTEX_WEIGHT')
+            
+            # Info block
+            mesh = target_obj.data
+            vg_exists = target_obj.vertex_groups.get("MASK ANTICOLLIDER") is not None
+            attr_exists = mesh.attributes.get("rzm_anticollider_mask") is not None
+            
+            info_col = mbox.column(align=True)
+            vg_status = "Exists" if vg_exists else "Missing"
+            attr_status = "Exists" if attr_exists else "Missing"
+            
+            row_vg = info_col.row()
+            row_vg.label(text=f"Group 'MASK ANTICOLLIDER': {vg_status}")
+            if not vg_exists:
+                row_vg.alert = True
+                
+            row_attr = info_col.row()
+            row_attr.label(text=f"Attribute 'rzm_anticollider_mask': {attr_status}")
+            if not attr_exists:
+                row_attr.alert = True
+                
+            mbox.separator()
+            
+            # Action Buttons
+            grid = mbox.column(align=True)
+            grid.operator("rzm.save_mask_attribute", text="Bake to Mesh Attribute", icon='FILE_TICK')
+            grid.operator("rzm.restore_mask_vertex_group", text="Restore to Vertex Group", icon='LOOP_BACK')
+            grid.operator("rzm.fill_mask_weights", text="Fill Mask (1.0)", icon='BRUSH_DATA')
+            
+            row = mbox.row(align=True)
+            row.operator("rzm.delete_mask_vertex_group", text="Delete VG", icon='TRASH')
+            row.operator("rzm.delete_mask_mesh_attribute", text="Delete Attribute", icon='X')
+
 
 # ... (Остальные панели без изменений) ...
 
