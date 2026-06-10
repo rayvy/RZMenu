@@ -1039,6 +1039,30 @@ class RZHelperList(RZListEditor):
             core.props.remove_helper_id(ctx.selected_ids, index)
 
 
+class RZInspectorScrollContent(QtWidgets.QWidget):
+    def minimumSizeHint(self):
+        sz = super().minimumSizeHint()
+        return QtCore.QSize(10, sz.height())
+
+    def sizeHint(self):
+        sz = super().sizeHint()
+        return QtCore.QSize(50, sz.height())
+
+
+class RZInspectorScrollArea(RZScrollArea):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+    def minimumSizeHint(self):
+        sz = super().minimumSizeHint()
+        return QtCore.QSize(10, sz.height())
+
+    def sizeHint(self):
+        sz = super().sizeHint()
+        return QtCore.QSize(50, sz.height())
+
+
 class RZMInspectorPanel(RZEditorPanel):
     """
     Property inspector panel for editing selected element attributes.
@@ -1093,13 +1117,13 @@ class RZMInspectorPanel(RZEditorPanel):
         layout.addWidget(self.anchor_scroll)
 
         # --- MONOLITHIC SCROLL AREA ---
-        self.scroll_area = RZScrollArea()
+        self.scroll_area = RZInspectorScrollArea()
         self.scroll_area.setObjectName("InspectorScrollArea")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll_sync)
         
-        self.scroll_content = QtWidgets.QWidget()
+        self.scroll_content = RZInspectorScrollContent()
         self.scroll_content.setObjectName("InspectorScrollContent")
         self.scroll_content.setStyleSheet("background-color: transparent;") # Cards will have the color
         self.layout_props = QtWidgets.QVBoxLayout(self.scroll_content)
