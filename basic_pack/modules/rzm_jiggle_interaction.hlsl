@@ -91,6 +91,8 @@ Texture1D<float4> IniParams : register(t120);
 #define CURRENT_CURSOR       IniParams[69]
 #define PHYS_PARAMS          IniParams[70]
 #define POLISH_PARAMS        IniParams[71]
+#define JIGGLE_MULTIPLIERS   IniParams[72]
+#define JIGGLE_MULT_EXTRA    IniParams[73]
 
 #define DETECT_SLOT_ID       0u
 #define DETECT_SLOT_HIT      1u
@@ -478,6 +480,30 @@ void main(uint3 threadID : SV_DispatchThreadID)
             break;
         }
     }
+
+    // Read global multipliers
+    float mult_radius    = JIGGLE_MULTIPLIERS.y;
+    float mult_strength  = JIGGLE_MULTIPLIERS.z;
+    float mult_spring    = JIGGLE_MULTIPLIERS.w;
+    float mult_damping   = JIGGLE_MULT_EXTRA.x;
+
+    // Fallback to 1.0 if completely undefined/unpopulated (all zero)
+    if (mult_radius == 0.0 && mult_strength == 0.0 && mult_spring == 0.0 && mult_damping == 0.0)
+    {
+        mult_radius = 1.0;
+        mult_strength = 1.0;
+        mult_spring = 1.0;
+        mult_damping = 1.0;
+    }
+
+    // Apply multipliers
+    radius         *= mult_radius;
+    strength       *= mult_strength;
+    grabSpring     *= mult_spring;
+    releaseSpring  *= mult_spring;
+    grabDamping    = saturate(grabDamping * mult_damping);
+    releaseDamping = saturate(releaseDamping * mult_damping);
+    maxOffset      *= mult_radius;
 
     float3 capturedCenterWorld = ReadCaptured(
         DETECT_SLOT_HIT,

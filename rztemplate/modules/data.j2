@@ -78,6 +78,10 @@ global $popupInitiatorID = -1
 global $popupSelectionID = -1
 
 global persist $sizeMultiplier = 1
+global persist $rzm_jiggle_mult_radius = 0.5
+global persist $rzm_jiggle_mult_strength = 0.5
+global persist $rzm_jiggle_mult_spring = 0.5
+global persist $rzm_jiggle_mult_damping = 0.5
 {% if scene.rzm %}
     {% if scene.rzm.config %}
     global $canvas_size_x = {{ scene.rzm.config.canvas_size[0] }}
