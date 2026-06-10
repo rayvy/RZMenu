@@ -613,6 +613,16 @@ array = 8
         {% endfor %}
     {% endfor %}
     {% if _has_jiggle.found %}
+        {% set _j_objs = [] %}
+        {% for part in component.parts if part.vertex_count > 0 %}
+            {% for entry in part.objects if entry.vertex_count > 0 %}
+                {% set real_obj = scene.objects.get(entry.name) if scene and scene.objects else none %}
+                {% if real_obj and real_obj.get('rzm.Hover', 0) | int == 7 %}
+                    {% set obj_id = entry.index_offset if entry.index_offset is defined else 0 %}
+                    {% if _j_objs.append({'id': obj_id, 'obj': real_obj}) %}{% endif %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
 [ResourceRZMDetectCapturedID_{{ component.fullname }}]
 type = Buffer
 format = R32G32B32A32_FLOAT
@@ -626,6 +636,14 @@ array = 8
 [ResourceRZMJiggleTempVB0_{{ component.fullname }}]
 type = RWBuffer
 ; stride = {{ component.strides.position if component.strides else 40 }}
+
+[ResourceRZMJiggleParams_{{ component.fullname }}]
+type = Buffer
+format = R32G32B32A32_FLOAT
+array = {{ _j_objs | length * 4 }}
+data = {% for item in _j_objs -%}
+{{ "%.6f"|format(item.id | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.radius', 0.25) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.strength', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.falloff', 1.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.drag_scale', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_damp', 0.86) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_spring', 0.176) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_damp', 0.96) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_spring', 0.055) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_kick', 1.18) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.max_offset', 0.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.target_follow', 0.12) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.mouse_y', 1.0) | float) }} 0.000000 0.000000 0.000000{% if not loop.last %} {% endif %}
+{%- endfor %}
 
     {% endif %}
 {% endfor %}

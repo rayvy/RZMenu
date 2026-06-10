@@ -74,6 +74,7 @@ struct VertexAttributes
 
 StructuredBuffer<VertexAttributes> base_buffer : register(t24);
 StructuredBuffer<float4> CapturedDetect        : register(t67);
+Buffer<float4> ObjParams                       : register(t68);
 RWStructuredBuffer<VertexAttributes> rw_buffer  : register(u5);
 RWBuffer<float4> JiggleState                    : register(u6);
 
@@ -235,15 +236,11 @@ void BuildBasisFromNormal(float3 normalWorld, out float3 rightWorld, out float3 
     upWorld    = SafeNormalize(cross(n, rightWorld), float3(0.0, 1.0, 0.0));
 }
 
-float2 GetScreenDragNormalized()
+float2 GetScreenDragNormalized(float mouseYDirection)
 {
     float2 screenSize = max(CURRENT_CURSOR.zw, float2(1.0, 1.0));
     float screenReference = max(min(screenSize.x, screenSize.y), 1.0);
     float2 deltaPx = CURRENT_CURSOR.xy - CAPTURED_CURSOR.xy;
-
-    // v03 used -deltaPx.y. The user-observed direction was inverted,
-    // therefore +1.0 is the new default. POLISH_PARAMS.z can flip it back.
-    float mouseYDirection = SafeNonZero(POLISH_PARAMS.z, 1.0);
 
     float mouseXDirection = -1.0;
 
@@ -253,13 +250,13 @@ float2 GetScreenDragNormalized()
     );
 }
 
-float3 BuildFrozenAnchorScreenDrag(float3 capturedNormalWorld, float dragScale)
+float3 BuildFrozenAnchorScreenDrag(float3 capturedNormalWorld, float dragScale, float mouseYDirection)
 {
     float3 rightWorld;
     float3 upWorld;
     BuildBasisFromNormal(capturedNormalWorld, rightWorld, upWorld);
 
-    float2 delta = GetScreenDragNormalized() * dragScale;
+    float2 delta = GetScreenDragNormalized(mouseYDirection) * dragScale;
     return rightWorld * delta.x + upWorld * delta.y;
 }
 
@@ -297,6 +294,14 @@ void ComputeNextPhysics(
     float radius,
     float strength,
     float dragScale,
+    float grabDamping,
+    float grabSpring,
+    float releaseDamping,
+    float releaseSpring,
+    float releaseKick,
+    float maxOffset,
+    float targetFollow,
+    float mouseYDirection,
     out float4 outCurrent,
     out float4 outPrevious,
     out float4 outCenter,
@@ -340,15 +345,6 @@ void ComputeNextPhysics(
         previousTarget = float3(0.0, 0.0, 0.0);
     }
 
-    float grabDamping    = saturate(SafePositive(PHYS_PARAMS.x, 0.86));
-    float grabSpring     = SafePositive(PHYS_PARAMS.y, 0.176);
-    float releaseDamping = saturate(SafePositive(PHYS_PARAMS.z, 0.96));
-    float releaseSpring  = SafePositive(PHYS_PARAMS.w, 0.055);
-
-    float maxOffset  = SafePositive(POLISH_PARAMS.x, radius * 2.0);
-    float releaseKick = SafePositive(POLISH_PARAMS.y, 1.18);
-    float targetFollow = saturate(SafePositive(POLISH_PARAMS.w, 0.12));
-
     float3 rawTargetOffset = float3(0.0, 0.0, 0.0);
     float spring = releaseSpring;
     float damping = releaseDamping;
@@ -356,18 +352,13 @@ void ComputeNextPhysics(
 
     if (captureActive && hasCapturedID)
     {
-        // The detector snapshot creates the anchor. After that we deliberately
-        // ignore live raycast results and move in a frozen tangent plane.
-        // This remains stable outside the body silhouette and cannot tunnel
-        // through the mesh by jumping to another raycast surface.
-        rawTargetOffset = BuildFrozenAnchorScreenDrag(normalWorld, dragScale) * strength;
+        // Tangent plane drag.
+        rawTargetOffset = BuildFrozenAnchorScreenDrag(normalWorld, dragScale, mouseYDirection) * strength;
         spring = grabSpring;
         damping = grabDamping;
     }
     else
     {
-        // On release the target also returns asymptotically instead of snapping.
-        // This is the extra "frames" feeling without storing whole vb0 history.
         currentTargetFollow = targetFollow * 0.55;
     }
 
@@ -380,8 +371,6 @@ void ComputeNextPhysics(
 
     float3 velocity = currentOffset - previousOffset;
 
-    // One modest impulse exactly on mouse release. This makes the tail of the
-    // motion more visible without continuously multiplying energy every frame.
     if (!captureActive && wasCaptureActive)
         velocity *= releaseKick;
 
@@ -437,10 +426,58 @@ void main(uint3 threadID : SV_DispatchThreadID)
     uint mode = (uint)max(TRANSFORM_PARAMS.z, 0.0);
     uint localMode = mode / 10u;
 
+    float4 stateCurrent  = ReadState(0u, float4(0.0, 0.0, 0.0, 0.0));
+    float4 stateCenter   = ReadState(2u, float4(0.0, 0.0, 0.0, -1.0));
+    bool stateAlive = stateCurrent.w > 0.5;
+    float objectID = stateAlive ? stateCenter.w : capturedID;
+
+    // Default parameters from IniParams/fallbacks
     float radius       = SafePositive(JIGGLE_PARAMS.x, 0.25);
     float strength     = SafeNonZero(JIGGLE_PARAMS.y, 1.0);
     float falloffPower = SafePositive(JIGGLE_PARAMS.z, 1.5);
     float dragScale    = SafePositive(JIGGLE_PARAMS.w, 1.0);
+
+    float grabDamping    = saturate(SafePositive(PHYS_PARAMS.x, 0.86));
+    float grabSpring     = SafePositive(PHYS_PARAMS.y, 0.176);
+    float releaseDamping = saturate(SafePositive(PHYS_PARAMS.z, 0.96));
+    float releaseSpring  = SafePositive(PHYS_PARAMS.w, 0.055);
+
+    float maxOffset  = SafePositive(POLISH_PARAMS.x, radius * 2.0);
+    float releaseKick = SafePositive(POLISH_PARAMS.y, 1.18);
+    float targetFollow = saturate(SafePositive(POLISH_PARAMS.w, 0.12));
+    float mouseYDirection = SafeNonZero(POLISH_PARAMS.z, 1.0);
+
+    // Override from ObjParams if found
+    uint paramCount = 0;
+    ObjParams.GetDimensions(paramCount);
+    uint objCount = paramCount / 4u;
+
+    for (uint o = 0; o < objCount; ++o)
+    {
+        float4 r0 = ObjParams[o * 4u + 0u];
+        if (abs(r0.x - objectID) < 0.5)
+        {
+            radius       = r0.y;
+            strength     = r0.z;
+            falloffPower = r0.w;
+
+            float4 r1 = ObjParams[o * 4u + 1u];
+            dragScale    = r1.x;
+            grabDamping  = r1.y;
+            grabSpring   = r1.z;
+            releaseDamping = r1.w;
+
+            float4 r2 = ObjParams[o * 4u + 2u];
+            releaseSpring = r2.x;
+            releaseKick  = r2.y;
+            maxOffset    = r2.z;
+            targetFollow = r2.w;
+
+            float4 r3 = ObjParams[o * 4u + 3u];
+            mouseYDirection = r3.x;
+            break;
+        }
+    }
 
     float3 capturedCenterWorld = ReadCaptured(
         DETECT_SLOT_HIT,
@@ -471,6 +508,14 @@ void main(uint3 threadID : SV_DispatchThreadID)
         radius,
         strength,
         dragScale,
+        grabDamping,
+        grabSpring,
+        releaseDamping,
+        releaseSpring,
+        releaseKick,
+        maxOffset,
+        targetFollow,
+        mouseYDirection,
         nextCurrent,
         nextPrevious,
         nextCenter,

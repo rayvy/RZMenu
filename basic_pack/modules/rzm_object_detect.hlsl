@@ -446,7 +446,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID,
             float objectMode = entry.z;
             float objectID   = entry.w > 0.0f ? entry.w : (float)firstIndex;
 
-            bool isHoverType   = (objectMode <= 3.0f);
+            bool isHoverType   = (objectMode <= 3.0f) || (objectMode == 7.0f) || (objectMode == 8.0f);
             bool isClickType   = (objectMode >= 4.0f && objectMode <= 6.0f);
             bool shouldProcess = isHoverType || (isClickType && isClicked);
 

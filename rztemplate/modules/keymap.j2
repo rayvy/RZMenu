@@ -358,13 +358,6 @@ if $NavIsSearching == 1
 		$NavSearchState = 2
 	endif
 endif
-
-[KeyInputManager]
-key = VK_LBUTTON
-key = VK_RBUTTON
-type = hold
-$isMouseButtonDown = 1
-post $isMouseButtonDown = 0
 {%endmacro%}
 
 {% macro generate_keybinds(mod_file, scene) %}

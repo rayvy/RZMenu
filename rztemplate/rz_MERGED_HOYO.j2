@@ -274,8 +274,10 @@
                 {% endfor %}
             {% endfor %}
             {% if comp_has_jiggle.val %}
-            run = CustomShaderRZMJiggle{{ component.fullname }}
-            vb0 = ResourceRZMJiggleTempVB0_{{ component.fullname }}
+            ;if $Detected >= 0
+                run = CustomShaderRZMJiggle{{ component.fullname }}
+                vb0 = ResourceRZMJiggleTempVB0_{{ component.fullname }}
+            ;endif
             {% endif %}
             {% if mod_file.game.name == "ZenlessZoneZero" %}run = CommandListSkinTexture{%endif%}
         {% if scene.rzm %}

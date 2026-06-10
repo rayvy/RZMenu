@@ -49,8 +49,6 @@ class RZM_OT_ToggleSkipDraw(bpy.types.Operator):
             return {'CANCELLED'}
         
         current_val = obj.get("SkipDraw", False)
-        # If it doesn't exist or is False, set to True (1)
-        # If it's True, set to False (0)
         obj["SkipDraw"] = 1 if not current_val else 0
         
         return {'FINISHED'}
@@ -123,9 +121,27 @@ class RZM_OT_SetHoverMode(bpy.types.Operator):
                 del obj["rzm.Hover"]
         else:
             obj["rzm.Hover"] = self.mode
+            if self.mode == 7:
+                # Initialize default physics parameters if not present
+                defaults = {
+                    "rzm.Jiggle.radius": 0.25,
+                    "rzm.Jiggle.strength": 1.0,
+                    "rzm.Jiggle.falloff": 1.5,
+                    "rzm.Jiggle.drag_scale": 1.0,
+                    "rzm.Jiggle.grab_damp": 0.86,
+                    "rzm.Jiggle.grab_spring": 0.176,
+                    "rzm.Jiggle.rel_damp": 0.96,
+                    "rzm.Jiggle.rel_spring": 0.055,
+                    "rzm.Jiggle.rel_kick": 1.18,
+                    "rzm.Jiggle.max_offset": 0.5,
+                    "rzm.Jiggle.target_follow": 0.12,
+                    "rzm.Jiggle.mouse_y": 1.0
+                }
+                for prop, val in defaults.items():
+                    if prop not in obj:
+                        obj[prop] = val
 
         return {'FINISHED'}
-
 
 classes_to_register = (
     RZM_OT_AddCustomDraw,

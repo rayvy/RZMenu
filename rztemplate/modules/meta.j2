@@ -80,6 +80,14 @@ key = no_modifiers {{scene.rzm.meta_data.menu_keybind | default('/')}}
 type = cycle
 $menu = 0,1
 
+[KeyInputManager]
+key = VK_LBUTTON
+key = VK_RBUTTON
+key = X
+type = hold
+$isMouseButtonDown = 1
+post $isMouseButtonDown = 0
+
 {{ parse_and_replace_tags(scene.rzm.config.mod_info, scene) }}
 {% endif %}
 {% endmacro %}
