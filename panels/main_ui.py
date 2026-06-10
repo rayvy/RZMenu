@@ -1393,6 +1393,7 @@ def draw_toolbox_content(self, context):
                     
                 c_box.prop(active_conf, "value_link")
                 c_box.prop(active_conf, "condition")
+                c_box.prop(active_conf, "fallback_value")
                 c_box.prop(active_conf, "mark_random")
                 
                 obj_box = c_box.box()

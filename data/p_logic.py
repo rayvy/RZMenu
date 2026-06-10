@@ -281,6 +281,11 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         name="Condition",
         description="Condition for this shape key. Empty = always active."
     )
+    fallback_value: FloatProperty(
+        name="Fallback Value",
+        description="Fallback value if the condition is not active",
+        default=0.0
+    )
     override_switch_condition: StringProperty(
         name="Override Condition",
         description="If active, Anim shape behaves as Linear, using Override Value Link."

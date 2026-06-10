@@ -171,6 +171,12 @@ $dt = time - $SKC_LastTime
     {% endif %}
 
     {% if config.condition %}
+    else
+        {% if config.shape_type == "Anim" %}
+        ${{ var_name }}Final = {{ "%.6f"|format(config.fallback_value) }}
+        {% else %}
+        ${{ var_name }} = {{ "%.6f"|format(config.fallback_value) }}
+        {% endif %}
     endif
     {% endif %}
 

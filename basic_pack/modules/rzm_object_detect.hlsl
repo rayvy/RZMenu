@@ -182,7 +182,7 @@ bool ClipToScreenUV(float4 clipPos, out float2 uv, out float depth)
 
     float2 ndc = clipPos.xy / clipPos.w;
     uv    = float2(ndc.x * 0.5f + 0.5f, 0.5f - ndc.y * 0.5f);
-    depth = clipPos.z / clipPos.w;
+    depth = 1.0f - clipPos.z / clipPos.w;
 
     return all(abs(ndc) < float2(1000.0f, 1000.0f)) && abs(depth) < 1000.0f;
 }
