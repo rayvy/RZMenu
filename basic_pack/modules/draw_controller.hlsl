@@ -116,23 +116,37 @@ void WriteElement(
         float found_a     = 0.5f;
         float has_color   = 0.0f;
 
+        uint num_structs = 0;
+        ElementStaticMap.GetDimensions(num_structs);
+        int low = 0;
+        int high = (int)(num_structs / 2) - 2; // Exclude sentinel at the end
+
         [loop]
-        for (int i = 0; i < 4096; i += 2)
+        while (low <= high)
         {
-            float4 A        = ElementStaticMap[i];
-            uint   entry_id = (uint)A.x;
-            if (entry_id == 0u) break;
+            int mid = (low + high) / 2;
+            float4 A = ElementStaticMap[mid * 2];
+            uint entry_id = (uint)A.x;
+
             if (entry_id == target_id)
             {
                 found_image = (uint)A.y;
                 found_text  = (uint)A.z;
                 has_color   = A.w;
-                float4 B    = ElementStaticMap[i + 1];
+                float4 B    = ElementStaticMap[mid * 2 + 1];
                 found_r = B.x;
                 found_g = B.y;
                 found_b = B.z;
                 found_a = B.w;
                 break;
+            }
+            if (entry_id < target_id)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
             }
         }
 
@@ -168,15 +182,30 @@ void WriteElement(
 
         // ── BlackList ────────────────────────────────────────────
         uint bl_mask = 0u;
+        uint total_bl_structs = 0;
+        ElementBlackList.GetDimensions(total_bl_structs);
+        int low_bl = 0;
+        int high_bl = (int)total_bl_structs - 2; // Exclude sentinel at the end
+
         [loop]
-        for (int k = 0; k < 2048; k++)
+        while (low_bl <= high_bl)
         {
-            uint4 bl_entry = ElementBlackList[k];
-            if (bl_entry.x == 0u) break;
-            if (bl_entry.x == target_id)
+            int mid = (low_bl + high_bl) / 2;
+            uint4 bl_entry = ElementBlackList[mid];
+            uint entry_id = bl_entry.x;
+
+            if (entry_id == target_id)
             {
                 bl_mask = bl_entry.y;
                 break;
+            }
+            if (entry_id < target_id)
+            {
+                low_bl = mid + 1;
+            }
+            else
+            {
+                high_bl = mid - 1;
             }
         }
 
