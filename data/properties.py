@@ -545,12 +545,26 @@ def set_vfx_color(self, value):
 
 
 
+def draw_material_twaa_option(self, context):
+    mat = context.material
+    if mat:
+        box = self.layout.box()
+        box.label(text="RZ Construct Material Settings", icon='MATERIAL')
+        box.prop(mat, "disable_twaa_export", text="Disable TWAA Sync Export")
+
 def register():
     for cls in classes_to_register:
         bpy.utils.register_class(cls)
         
     bpy.types.Scene.rzm = PointerProperty(type=RZMenuProperties)
+    if hasattr(bpy.types, "MATERIAL_PT_context_material"):
+        bpy.types.MATERIAL_PT_context_material.append(draw_material_twaa_option)
     bpy.types.Scene.rzm_mod_producer = PointerProperty(type=RZModProducerSettings)
+    bpy.types.Material.disable_twaa_export = BoolProperty(
+        name="Disable TWAA Sync Export",
+        description="Disable TWAA texture coordinate patching/export for this material",
+        default=False
+    )
     bpy.types.Object.rzm_tier_list = CollectionProperty(
         type=RZMTierRef,
         name="Export Tiers",
@@ -1004,6 +1018,13 @@ def unregister():
     del bpy.types.Scene.rzm_active_keybind_index
     del bpy.types.Scene.rzm_cm_active_comp_index
     del bpy.types.Scene.rzm_cm_active_part_index
+    if hasattr(bpy.types.Material, "disable_twaa_export"):
+        del bpy.types.Material.disable_twaa_export
+    if hasattr(bpy.types, "MATERIAL_PT_context_material"):
+        try:
+            bpy.types.MATERIAL_PT_context_material.remove(draw_material_twaa_option)
+        except Exception:
+            pass
     if hasattr(bpy.types.Object, "rzm_tier_list"):
         del bpy.types.Object.rzm_tier_list
     if hasattr(bpy.types.Object, "DrawCondition"):

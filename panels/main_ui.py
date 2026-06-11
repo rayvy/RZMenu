@@ -270,6 +270,10 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 box.prop(xxmi, "destination_path", text="Mod Folder")
                 box.prop(xxmi, "template_path", text="Template")
                 box.prop(xxmi, "use_custom_template")
+                box.separator()
+                import_row = box.row(align=True)
+                import_row.operator("rzm.quick_import", text="Quick Import", icon='IMPORT')
+                import_row.operator("rzm.quick_asset_import", text="Quick Asset Import", icon='ASSET_MANAGER')
             else:
                 box.label(text="XXMI Tools Not Active", icon='ERROR')
                 

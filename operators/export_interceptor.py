@@ -244,37 +244,127 @@ def uninstall_efmi_interceptor() -> None:
         _efmi_patched  = False
 
 
+_xxmi_import_fa_orig = None
+_xxmi_import_raw_orig = None
+_xxmi_imports_patched = False
+_xxmi_import_attempts = 0
+
+def _patched_import_execute(orig_func, self, context):
+    pre_mats = set(bpy.data.materials.keys())
+    result = orig_func(self, context)
+    if 'FINISHED' in result:
+        post_mats = set(bpy.data.materials.keys())
+        new_mats = post_mats - pre_mats
+        for mat_name in new_mats:
+            mat = bpy.data.materials.get(mat_name)
+            if mat:
+                mat.disable_twaa_export = True
+                print(f"[RZM] Tagged imported material {mat_name} with disable_twaa_export = True")
+    return result
+
+def _patched_import_fa_execute(self, context):
+    return _patched_import_execute(_xxmi_import_fa_orig, self, context)
+
+def _patched_import_raw_execute(self, context):
+    return _patched_import_execute(_xxmi_import_raw_orig, self, context)
+
+def install_xxmi_import_interceptor() -> bool:
+    global _xxmi_import_fa_orig, _xxmi_import_raw_orig, _xxmi_imports_patched, _xxmi_import_attempts
+    if _xxmi_imports_patched:
+        return True
+    if _xxmi_import_attempts >= MAX_ATTEMPTS:
+        return False
+    _xxmi_import_attempts += 1
+    try:
+        import sys
+        mod = None
+        for key in sys.modules:
+            if 'xxmitools' in key.lower() and 'import_ops' in key.lower():
+                mod = sys.modules[key]
+                break
+        if mod is None:
+            return False
+
+        cls_fa = getattr(mod, 'Import3DMigotoFrameAnalysis', None)
+        cls_raw = getattr(mod, 'Import3DMigotoRaw', None)
+        
+        if cls_fa is None or cls_raw is None:
+            print(f"[RZM] [CACHE] XXMI import classes not found in {mod}")
+            return False
+
+        _xxmi_import_fa_orig = getattr(cls_fa, 'execute')
+        _xxmi_import_raw_orig = getattr(cls_raw, 'execute')
+        
+        setattr(cls_fa, 'execute', _patched_import_fa_execute)
+        setattr(cls_raw, 'execute', _patched_import_raw_execute)
+        
+        _xxmi_imports_patched = True
+        print("[RZM] [CACHE] XXMI import interceptor installed successfully")
+        return True
+    except Exception as e:
+        print(f"[RZM] [CACHE] Failed to install XXMI import interceptor: {e}")
+        return False
+
+def uninstall_xxmi_import_interceptor() -> None:
+    global _xxmi_import_fa_orig, _xxmi_import_raw_orig, _xxmi_imports_patched
+    if not _xxmi_imports_patched:
+        return
+    try:
+        import sys
+        for key in sys.modules:
+            if 'xxmitools' in key.lower() and 'import_ops' in key.lower():
+                mod = sys.modules[key]
+                cls_fa = getattr(mod, 'Import3DMigotoFrameAnalysis', None)
+                cls_raw = getattr(mod, 'Import3DMigotoRaw', None)
+                if cls_fa is not None and _xxmi_import_fa_orig is not None:
+                    setattr(cls_fa, 'execute', _xxmi_import_fa_orig)
+                if cls_raw is not None and _xxmi_import_raw_orig is not None:
+                    setattr(cls_raw, 'execute', _xxmi_import_raw_orig)
+                break
+    except Exception as e:
+        print(f"[RZM] [CACHE] Failed to uninstall XXMI import interceptor: {e}")
+    finally:
+        _xxmi_import_fa_orig = None
+        _xxmi_import_raw_orig = None
+        _xxmi_imports_patched = False
+
+
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 def install_all() -> None:
     """Try to install all interceptors. Safe to call multiple times."""
     install_xxmi_interceptor()
     install_efmi_interceptor()
+    install_xxmi_import_interceptor()
 
 
 def uninstall_all() -> None:
     """Remove all patches. Called on RZMenu unregister."""
     uninstall_xxmi_interceptor()
     uninstall_efmi_interceptor()
+    uninstall_xxmi_import_interceptor()
 
 _timer_registered = False
 
 def _interceptor_timer():
-    """Timer that repeatedly tries to install interceptors until both are placed or max attempts reached."""
+    """Timer that repeatedly tries to install interceptors until all are placed or max attempts reached."""
     install_all()
-    # Once both are patched or hit max attempts, we can stop the timer (return None).
-    if (_xxmi_patched or _xxmi_attempts >= MAX_ATTEMPTS) and (_efmi_patched or _efmi_attempts >= MAX_ATTEMPTS):
+    if (_xxmi_patched or _xxmi_attempts >= MAX_ATTEMPTS) and \
+       (_efmi_patched or _efmi_attempts >= MAX_ATTEMPTS) and \
+       (_xxmi_imports_patched or _xxmi_import_attempts >= MAX_ATTEMPTS):
         return None
     return 5.0
 
 def register():
-    global _timer_registered, _xxmi_attempts, _efmi_attempts
+    global _timer_registered, _xxmi_attempts, _efmi_attempts, _xxmi_import_attempts
     _xxmi_attempts = 0
     _efmi_attempts = 0
+    _xxmi_import_attempts = 0
     install_all()  # Try once immediately
     if not _timer_registered:
-        # Only start the timer if at least one interceptor is not yet installed and hasn't exhausted its attempts
-        if not ((_xxmi_patched or _xxmi_attempts >= MAX_ATTEMPTS) and (_efmi_patched or _efmi_attempts >= MAX_ATTEMPTS)):
+        if not ((_xxmi_patched or _xxmi_attempts >= MAX_ATTEMPTS) and \
+                (_efmi_patched or _efmi_attempts >= MAX_ATTEMPTS) and \
+                (_xxmi_imports_patched or _xxmi_import_attempts >= MAX_ATTEMPTS)):
             bpy.app.timers.register(_interceptor_timer, first_interval=2.0)
             _timer_registered = True
 

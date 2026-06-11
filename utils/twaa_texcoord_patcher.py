@@ -662,6 +662,8 @@ def _slot_material_key(slot, valid_keys):
     mat = getattr(slot, "material", None)
     if not mat:
         return None
+    if getattr(mat, "disable_twaa_export", False):
+        return None
     names = [str(getattr(mat, "name", "") or ""), _material_name_to_key(getattr(mat, "name", ""))]
     for name in names:
         if name in valid_keys:

@@ -62,6 +62,8 @@ def draw_mc_tools(layout, context):
             row.prop(node.inputs["Default Resolution Y"], "default_value", text="Y")
             box.label(text="Allowed: 128, 256, 512, 1024, 2048, 4096", icon='INFO')
         layout.label(text=f"Active: {mat.name}", icon='MATERIAL')
+        box = layout.box()
+        box.prop(mat, "disable_twaa_export", text="Disable TWAA Sync Export")
     else:
         layout.label(text="No active material", icon='ERROR')
 
