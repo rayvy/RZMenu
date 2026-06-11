@@ -12,16 +12,19 @@ def parse_ini_file(ini_path, active_tiers):
     if not os.path.exists(ini_path):
         return
         
+    print(f"[Mod Producer] Filtering tiers in INI: {os.path.basename(ini_path)}")
     with open(ini_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
         
     out_lines = []
     skip_mode = False # Can be False, True (delete all), or "MESH_KEEP" / "MESH_DELETE"
+    deleted_sections = set()
     
     # Pre-compile regex for [EDIT] lines and Mesh protected lines
     edit_regex = re.compile(r"^(.*?filename\s*=\s*)/[^/]+/(.*)$")
     mesh_protected = re.compile(r"^\s*(draw|drawindexed|drawinstanced|\$CD_|run\s*=\s*CustomShader|Resource/|ps-t\d)", re.IGNORECASE)
     mesh_volatile = re.compile(r"^\s*(if|elif|else|endif)", re.IGNORECASE)
+    global_var_re = re.compile(r"^\s*(global\s+(?:persist\s+)?\$[a-zA-Z0-9_.]+)\s*=\s*(.*)$", re.IGNORECASE)
     
     i = 0
     while i < len(lines):
@@ -58,6 +61,17 @@ def parse_ini_file(ini_path, active_tiers):
         if skip_mode is True:
             if stripped.startswith(";[META-INFO]") and "[END]" in stripped and "[DELETE]" in stripped:
                 skip_mode = False
+            else:
+                # Track deleted sections
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    sec_name = stripped[1:-1].strip()
+                    deleted_sections.add(sec_name)
+                    
+                m_var = global_var_re.match(line)
+                if m_var:
+                    out_lines.append(f"{m_var.group(1)} = 0\n")
+                    i += 1
+                    continue
             i += 1
             continue
             
@@ -127,29 +141,188 @@ def parse_ini_file(ini_path, active_tiers):
         out_lines.append(line)
         i += 1
         
+    # --- POST-PARSE: COMMENT OUT DELETED SECTION REFERENCES ---
+    if deleted_sections:
+        print(f"[Mod Producer] Commenting out references to deleted sections: {deleted_sections}")
+        deleted_regex = re.compile(r'\b(' + '|'.join(re.escape(s) for s in deleted_sections) + r')\b')
+        final_lines = []
+        for line in out_lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith(";") or stripped.startswith("["):
+                final_lines.append(line)
+            elif deleted_regex.search(line):
+                final_lines.append(f";{line}")
+            else:
+                final_lines.append(line)
+        out_lines = final_lines
+        
     with open(ini_path, 'w', encoding='utf-8') as f:
         f.writelines(out_lines)
 
-def process_directories(new_folder_path):
-    """
-    CLEANUP LOGIC: Blacklist-based approach to prevent data loss.
-    Deletes only 'garbage' files like .bak, .py, .exe and the legacy ReadMe.txt.
-    """
-    blacklist_ext = {'.bak', '.py', '.exe'}
-    blacklist_filenames = {'readme.txt'} # Case-insensitive check
+def delete_disabled_inis(target_path):
+    print(f"[Mod Producer] Cleaning up disabled .ini files in copy...")
+    deleted_count = 0
+    for root, _, files in os.walk(target_path):
+        for file in files:
+            if file.lower().endswith(".ini") and file.lower().startswith("disabled"):
+                ini_full = os.path.join(root, file)
+                try:
+                    os.remove(ini_full)
+                    print(f"[Mod Producer] Deleted disabled INI: {os.path.relpath(ini_full, target_path)}")
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"[Mod Producer] Failed to delete disabled INI {ini_full}: {e}")
+    print(f"[Mod Producer] Deleted {deleted_count} disabled INI files.")
+
+import fnmatch
+
+def extract_path_from_line(line, ini_path, target_path):
+    stripped = line.strip()
+    if not stripped or stripped.startswith(';'):
+        return None
+        
+    parts = stripped.split('=', 1)
+    if len(parts) != 2:
+        return None
+        
+    key = parts[0].strip().lower()
+    value = parts[1].strip().strip('"\'')
     
-    for root, dirs, files in os.walk(new_folder_path, topdown=False):
-        for name in files:
-            file_path = os.path.join(root, name)
-            ext = os.path.splitext(name)[1].lower()
-            if ext in blacklist_ext or name.lower() in blacklist_filenames:
+    # Strip "ref " prefix if present
+    if value.lower().startswith('ref '):
+        value = value[4:].strip().strip('"\'')
+        
+    # Check if the value looks like a file path
+    is_path = False
+    if '/' in value or '\\' in value:
+        is_path = True
+    else:
+        ext = os.path.splitext(value)[1].lower()
+        if ext in {'.hlsl', '.dds', '.buf', '.txt', '.png', '.jpg', '.jpeg', '.tga', '.bmp', '.ini', '.ib', '.vb'}:
+            is_path = True
+            
+    if not is_path:
+        return None
+        
+    # Resolve the path
+    if value.startswith('/') or value.startswith('\\'):
+        # Relative to target_path (mod root)
+        clean_path = value.lstrip('/\\')
+        full_path = os.path.abspath(os.path.join(target_path, clean_path))
+    else:
+        # Relative to the directory of the ini file
+        clean_path = value
+        ini_dir = os.path.dirname(ini_path)
+        full_path = os.path.abspath(os.path.join(ini_dir, clean_path))
+        
+    # Return path relative to target_path, with forward slashes and lowercased for case-insensitive matching
+    rel_path = os.path.relpath(full_path, target_path)
+    return rel_path.replace('\\', '/').lower()
+
+def destructive_cleanup(target_path):
+    print(f"[Mod Producer] Starting destructive cleanup in: {target_path}")
+    
+    # 1. Build ignore patterns
+    ignore_patterns = {
+        '*.ini',
+        '.deleteignore',
+        'deleteignore.txt',
+        'deleteignore',
+        'readme.txt',
+        'readme.md'
+    }
+    
+    # Check for deleteignore files
+    ignore_filenames = ['.deleteignore', 'deleteignore.txt', 'deleteignore']
+    for fname in ignore_filenames:
+        p = os.path.join(target_path, fname)
+        if os.path.exists(p):
+            try:
+                with open(p, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            ignore_patterns.add(line)
+                print(f"[Mod Producer] Loaded patterns from {fname}: {ignore_patterns}")
+            except Exception as e:
+                print(f"[Mod Producer] Failed to read ignore file {fname}: {e}")
+                
+    # 2. Extract referenced files from all active INI files
+    used_files = set()
+    for root, _, files in os.walk(target_path):
+        for file in files:
+            if file.lower().endswith(".ini"):
+                ini_path = os.path.join(root, file)
+                if file.lower().startswith("disabled"):
+                    continue
+                try:
+                    with open(ini_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        for line in f:
+                            rel_path_norm = extract_path_from_line(line, ini_path, target_path)
+                            if rel_path_norm:
+                                used_files.add(rel_path_norm)
+                except Exception as e:
+                    print(f"[Mod Producer] Failed to parse references in {file}: {e}")
+                    
+    print(f"[Mod Producer] Found {len(used_files)} active file references in INI files.")
+    
+    # Helper for matching ignore patterns
+    def matches_pattern(rel_path, pattern):
+        rel_path_norm = rel_path.replace('\\', '/').lower()
+        pattern_norm = pattern.replace('\\', '/').strip().lower()
+        
+        if pattern_norm.endswith('/'):
+            dir_pattern = pattern_norm.rstrip('/')
+            return rel_path_norm == dir_pattern or rel_path_norm.startswith(dir_pattern + '/')
+            
+        if '*' in pattern_norm or '?' in pattern_norm:
+            return fnmatch.fnmatch(rel_path_norm, pattern_norm) or fnmatch.fnmatch(os.path.basename(rel_path_norm), pattern_norm)
+        else:
+            return rel_path_norm == pattern_norm or os.path.basename(rel_path_norm) == pattern_norm
+
+    # 3. Scan and delete unreferenced/unignored files
+    deleted_files_count = 0
+    for root, _, files in os.walk(target_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            rel_path = os.path.relpath(file_path, target_path)
+            rel_path_norm = rel_path.replace('\\', '/').lower()
+            
+            # Check if used
+            if rel_path_norm in used_files:
+                continue
+                
+            # Check if matches any deleteignore pattern
+            keep = False
+            for pat in ignore_patterns:
+                if matches_pattern(rel_path_norm, pat):
+                    keep = True
+                    break
+                    
+            if not keep:
                 try:
                     os.remove(file_path)
+                    print(f"[Mod Producer] Deleted unused file: {rel_path_norm}")
+                    deleted_files_count += 1
                 except Exception as e:
-                    print(f"[ModProducer] Failed to delete {file_path}: {e}")
-        
-        # Optional: Remove empty directories created by deleting files (if any)
-        # However, we only delete specific files, so we don't prune folders unless requested.
+                    print(f"[Mod Producer] Failed to delete unused file {file_path}: {e}")
+                    
+    print(f"[Mod Producer] Cleanup completed: deleted {deleted_files_count} unused files.")
+    
+    # 4. Remove empty subdirectories
+    for root, dirs, _ in os.walk(target_path, topdown=False):
+        for d in dirs:
+            dir_path = os.path.join(root, d)
+            if not os.listdir(dir_path):
+                try:
+                    os.rmdir(dir_path)
+                    print(f"[Mod Producer] Removed empty directory: {os.path.relpath(dir_path, target_path)}")
+                except Exception as e:
+                    print(f"[Mod Producer] Failed to remove empty directory {dir_path}: {e}")
+
+def process_directories(new_folder_path):
+    """Legacy wrapper, delegates to destructive_cleanup"""
+    destructive_cleanup(new_folder_path)
 
 class RZM_OT_ModProducerBuild(bpy.types.Operator):
     """Perform the cleanup/edit on a copy of the mod folder"""
@@ -193,19 +366,25 @@ class RZM_OT_ModProducerBuild(bpy.types.Operator):
             self.report({'ERROR'}, "Build path would overwrite original! Add a suffix.")
             return {'CANCELLED'}
 
+        print(f"\n[Mod Producer] ================= START BUILD: {folder_name} =================")
         try:
             if os.path.exists(target_path):
+                print(f"[Mod Producer] Removing existing build folder: {target_path}")
                 shutil.rmtree(target_path)
             
             # Clean copy: Ignore .py, .bak, and cache
+            print(f"[Mod Producer] Copying from '{base_target}' to '{target_path}'...")
             ignore_func = shutil.ignore_patterns('*.py', '*.bak', '__pycache__')
             shutil.copytree(base_target, target_path, ignore=ignore_func)
         except Exception as e:
             self.report({'ERROR'}, f"Copying failed: {e}")
             return {'CANCELLED'}
 
+        # 1. Delete disabled INI files in the copy
+        delete_disabled_inis(target_path)
+
+        # 2. Filter tiers in active INI files
         active_tiers = [t.strip() for t in mp.active_tiers.split(",") if t.strip()]
-        
         processed_count = 0
         for root, _, files in os.walk(target_path):
             for file in files:
@@ -213,9 +392,21 @@ class RZM_OT_ModProducerBuild(bpy.types.Operator):
                     ini_full = os.path.join(root, file)
                     parse_ini_file(ini_full, active_tiers)
                     processed_count += 1
-        
-        process_directories(target_path)
 
+        # 3. Perform destructive cleanup
+        destructive_cleanup(target_path)
+
+        # 4. Perform Inquisitor Cleanup & Real Compression on remaining INI files
+        from .cleanup_ops import inquisitor_cleanup_logic, real_compression_logic
+        for root, _, files in os.walk(target_path):
+            for file in files:
+                if file.lower().endswith(".ini"):
+                    ini_full = os.path.join(root, file)
+                    print(f"[Mod Producer] Running post-build optimizations on: {file}")
+                    inquisitor_cleanup_logic(ini_full, operator=None, create_backup=False)
+                    real_compression_logic(ini_full, operator=None, create_backup=False)
+
+        print(f"[Mod Producer] ================= BUILD FINISHED: {folder_name} =================\n")
         self.report({'INFO'}, f"Build complete: '{folder_name}' ({processed_count} files processed)")
         return {'FINISHED'}
 
@@ -234,13 +425,13 @@ class RZM_OT_ModProducerBatchBuild(bpy.types.Operator):
             return {'CANCELLED'}
         
         target_path = get_target_path(context)
-        print(f"Mod Producer: Build starting in: {target_path}")
+        print(f"\n[Mod Producer] ================= START BATCH BUILD: {target_path} =================")
         if not os.path.exists(target_path):
             self.report({'ERROR'}, f"Path not found: {target_path}")
             return {'CANCELLED'}
         
         inis = [f for f in os.listdir(target_path) if f.lower().endswith(".ini")]
-        print(f"Mod Producer: Found {len(inis)} .ini files: {inis}")
+        print(f"[Mod Producer] Found {len(inis)} .ini files: {inis}")
         if not inis:
             self.report({'WARNING'}, f"No .ini files found in {target_path}")
             return {'CANCELLED'}
@@ -282,20 +473,25 @@ class RZM_OT_ModProducerBatchBuild(bpy.types.Operator):
                 continue
             
             # --- NESTING PROTECTION (Hang Prevention) ---
-            # If version_path is inside target_path, skip to avoid infinite recursion
             if os.path.abspath(version_path).startswith(os.path.abspath(target_path) + os.sep):
                 self.report({'WARNING'}, f"Skipping nested build path: {version_path}")
                 continue
 
+            print(f"\n[Mod Producer] --- Processing profile: {profile.name} -> {folder_name} ---")
             try:
                 if os.path.exists(version_path):
+                    print(f"[Mod Producer] Removing existing build folder: {version_path}")
                     shutil.rmtree(version_path)
                 
                 # Clean copy: Ignore .py, .bak, and cache
+                print(f"[Mod Producer] Copying from '{target_path}' to '{version_path}'...")
                 ignore_func = shutil.ignore_patterns('*.py', '*.bak', '__pycache__')
                 shutil.copytree(target_path, version_path, ignore=ignore_func)
                 
-                # --- APPLY TIER FILTERING ---
+                # 1. Delete disabled INI files in the copy
+                delete_disabled_inis(version_path)
+
+                # 2. Filter tiers in active INI files
                 active_tiers = {t.strip() for t in profile.active_tiers.split(",") if t.strip()}
                 for root, _, files in os.walk(version_path):
                     for file in files:
@@ -303,12 +499,23 @@ class RZM_OT_ModProducerBatchBuild(bpy.types.Operator):
                             ini_full = os.path.join(root, file)
                             parse_ini_file(ini_full, active_tiers)
                 
-                # --- PROCESS FOLDERS ---
-                process_directories(version_path)
+                # 3. Perform destructive cleanup
+                destructive_cleanup(version_path)
+                
+                # 4. Perform Inquisitor Cleanup & Real Compression on remaining INI files
+                from .cleanup_ops import inquisitor_cleanup_logic, real_compression_logic
+                for root, _, files in os.walk(version_path):
+                    for file in files:
+                        if file.lower().endswith(".ini"):
+                            ini_full = os.path.join(root, file)
+                            print(f"[Mod Producer] Running post-build optimizations on: {file}")
+                            inquisitor_cleanup_logic(ini_full, operator=None, create_backup=False)
+                            real_compression_logic(ini_full, operator=None, create_backup=False)
                 
                 # --- PACKAGING ---
                 if profile.zip_output:
                     zip_name = f"{version_path}.zip"
+                    print(f"[Mod Producer] Zipping folder to: {zip_name}")
                     with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as z:
                         for root, _, files in os.walk(version_path):
                             for file in files:
@@ -322,11 +529,12 @@ class RZM_OT_ModProducerBatchBuild(bpy.types.Operator):
                     
             except Exception as e:
                 msg = f"Failed profile '{profile.name}': {e}"
-                print(f"Mod Producer: {msg}")
+                print(f"[Mod Producer] {msg}")
                 self.report({'ERROR'}, msg)
                 batch_log.append(f"Failed {profile.name}")
                 continue
 
+        print(f"[Mod Producer] ================= BATCH BUILD FINISHED: {target_path} =================\n")
         if not batch_log:
             self.report({'WARNING'}, "Batch finished but no outputs were generated.")
         else:
