@@ -24,7 +24,7 @@ UV_NAME = "RZAutoAtlas.UV"
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
 PREVIEW_UV_PREFIX = "TWAA."
 TEXCOORD_UV_NAME = "TEXCOORD.xy"
-SCHEMA = 3
+SCHEMA = 4
 KIND = "RZ_TEXWORKS_MC_MATERIAL"
 ROLE = "SEMANTIC_TEXTURE_HUB"
 DEFAULT_MAX_RASTER_PIXELS = 16 * 1024 * 1024
@@ -312,73 +312,108 @@ def add_socket(group, name, in_out, socket_type, default=None):
 
 
 def build_material_group_nodes(group):
+    """Build internal nodes of the RZM TexWorks Material group.
+
+    Preset: ZZZ #1
+      Diffuse RGB  -> Base Color (via Principled BSDF)
+      LightMap  G  -> Metallic
+      LightMap  B  -> Roughness  (inverted: 1 - B, i.e. Glossiness -> Roughness)
+      NormalMap    -> Y channel inverted + Z channel += 0.5 (ZZZ blue-channel fix)
+
+    To change the wiring per-game, edit apply_game_preset() below.
+    """
     nodes = group.nodes
     links = group.links
 
     gi = nodes.new("NodeGroupInput")
-    gi.location = (-1100, 0)
+    gi.location = (-1200, 0)
 
     go = nodes.new("NodeGroupOutput")
-    go.location = (900, 0)
+    go.location = (1100, 0)
 
+    # ------------------------------------------------------------------ #
+    # LightMap channel splitter                                            #
+    # ------------------------------------------------------------------ #
     sep_light = nodes.new("ShaderNodeSeparateColor")
+    sep_light.label = "RZM_Sep_LightMap"
     sep_light.mode = "RGB"
-    sep_light.location = (-760, 40)
-
-    sep_mat = nodes.new("ShaderNodeSeparateColor")
-    sep_mat.mode = "RGB"
-    sep_mat.location = (-760, -220)
-
-    normal_node = nodes.new("ShaderNodeNormalMap")
-    normal_node.location = (120, -300)
-
-    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
-    bsdf.location = (400, 100)
-
-    mix_ao = nodes.new("ShaderNodeMix")
-    mix_ao.data_type = "RGBA"
-    mix_ao.blend_type = "MULTIPLY"
-    mix_ao.location = (-160, 220)
-
-    value_emit = nodes.new("ShaderNodeValue")
-    value_emit.label = "Default Emit"
-    value_emit.outputs[0].default_value = 0.0
-    value_emit.location = (-300, -560)
-
-    value_alpha = nodes.new("ShaderNodeValue")
-    value_alpha.label = "Default Alpha"
-    value_alpha.outputs[0].default_value = 1.0
-    value_alpha.location = (-300, -640)
-
+    sep_light.location = (-900, 100)
     links.new(gi.outputs["LightMap"], sep_light.inputs["Color"])
-    links.new(gi.outputs["MaterialMap"], sep_mat.inputs["Color"])
 
-    links.new(gi.outputs["Diffuse"], go.inputs["Base Color"])
-    links.new(gi.outputs["Diffuse"], go.inputs["Diffuse"])
-    links.new(gi.outputs["LightMap"], go.inputs["LightMap"])
-    links.new(gi.outputs["MaterialMap"], go.inputs["MaterialMap"])
-    links.new(gi.outputs["NormalMap"], go.inputs["NormalMap"])
-    links.new(gi.outputs["Extra"], go.inputs["Extra"])
+    # ------------------------------------------------------------------ #
+    # Roughness: ZZZ stores Glossiness in LightMap B -> invert to Roughness
+    # Roughness = 1 - LightMap.B
+    # ------------------------------------------------------------------ #
+    invert_gloss = nodes.new("ShaderNodeMath")
+    invert_gloss.label = "RZM_GlossToRoughness"
+    invert_gloss.operation = "SUBTRACT"
+    invert_gloss.inputs[0].default_value = 1.0
+    invert_gloss.location = (-620, 60)
+    links.new(sep_light.outputs["Blue"], invert_gloss.inputs[1])
 
-    links.new(sep_mat.outputs["Red"], go.inputs["Metallic"])
-    links.new(sep_mat.outputs["Green"], go.inputs["Roughness"])
-    links.new(sep_light.outputs["Red"], go.inputs["Ambient Occlusion"])
+    # ------------------------------------------------------------------ #
+    # NormalMap processing: ZZZ normal map fix                             #
+    #   - Invert Y channel (Green)                                        #
+    #   - Add 0.5 to Z channel (Blue) — ZZZ stores Z as 0.5 instead of 1 #
+    # ------------------------------------------------------------------ #
+    sep_norm = nodes.new("ShaderNodeSeparateColor")
+    sep_norm.label = "RZM_Sep_NormalMap"
+    sep_norm.mode = "RGB"
+    sep_norm.location = (-900, -260)
+    links.new(gi.outputs["NormalMap"], sep_norm.inputs["Color"])
 
-    links.new(value_emit.outputs[0], go.inputs["Emission Strength"])
-    links.new(value_alpha.outputs[0], go.inputs["Alpha"])
+    # Invert Y: 1 - G
+    invert_y = nodes.new("ShaderNodeMath")
+    invert_y.label = "RZM_NormInvertY"
+    invert_y.operation = "SUBTRACT"
+    invert_y.inputs[0].default_value = 1.0
+    invert_y.location = (-620, -260)
+    links.new(sep_norm.outputs["Green"], invert_y.inputs[1])
 
-    links.new(gi.outputs["NormalMap"], normal_node.inputs["Color"])
-    links.new(gi.outputs["NormalMap"], go.inputs["Preview Normal"])
+    # Z + 0.5: clamp so it stays in [0,1]
+    add_z = nodes.new("ShaderNodeMath")
+    add_z.label = "RZM_NormFixZ"
+    add_z.operation = "ADD"
+    add_z.use_clamp = True
+    add_z.inputs[1].default_value = 0.5
+    add_z.location = (-620, -380)
+    links.new(sep_norm.outputs["Blue"], add_z.inputs[0])
 
-    links.new(gi.outputs["Diffuse"], mix_ao.inputs[6])
-    links.new(gi.outputs["LightMap"], mix_ao.inputs[7])
+    comb_norm = nodes.new("ShaderNodeCombineColor")
+    comb_norm.label = "RZM_NormCombine"
+    comb_norm.mode = "RGB"
+    comb_norm.location = (-380, -310)
+    links.new(sep_norm.outputs["Red"],  comb_norm.inputs["Red"])
+    links.new(invert_y.outputs[0],      comb_norm.inputs["Green"])
+    links.new(add_z.outputs[0],         comb_norm.inputs["Blue"])
 
-    links.new(mix_ao.outputs[2], bsdf.inputs["Base Color"])
-    links.new(sep_mat.outputs["Red"], bsdf.inputs["Metallic"])
-    links.new(sep_mat.outputs["Green"], bsdf.inputs["Roughness"])
-    links.new(value_alpha.outputs[0], bsdf.inputs["Alpha"])
-    links.new(normal_node.outputs["Normal"], bsdf.inputs["Normal"])
-    links.new(bsdf.outputs["BSDF"], go.inputs["RenderOutput"])
+    normal_map_node = nodes.new("ShaderNodeNormalMap")
+    normal_map_node.location = (-140, -310)
+    links.new(comb_norm.outputs["Color"], normal_map_node.inputs["Color"])
+
+    # ------------------------------------------------------------------ #
+    # Principled BSDF                                                      #
+    # ------------------------------------------------------------------ #
+    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.location = (300, 100)
+
+    links.new(gi.outputs["Diffuse"],        bsdf.inputs["Base Color"])
+    links.new(sep_light.outputs["Green"],   bsdf.inputs["Metallic"])       # LightMap G -> Metallic
+    links.new(invert_gloss.outputs[0],      bsdf.inputs["Roughness"])      # 1 - LightMap B -> Roughness
+    links.new(normal_map_node.outputs["Normal"], bsdf.inputs["Normal"])
+    # Alpha stays at default 1.0 (no alpha by default)
+
+    # ------------------------------------------------------------------ #
+    # Group outputs                                                        #
+    # ------------------------------------------------------------------ #
+    links.new(gi.outputs["Diffuse"],      go.inputs["Base Color"])
+    links.new(gi.outputs["Diffuse"],      go.inputs["Diffuse"])
+    links.new(gi.outputs["LightMap"],     go.inputs["LightMap"])
+    links.new(gi.outputs["MaterialMap"],  go.inputs["MaterialMap"])
+    links.new(gi.outputs["NormalMap"],    go.inputs["NormalMap"])
+    links.new(gi.outputs["Extra"],        go.inputs["Extra"])
+    links.new(comb_norm.outputs["Color"], go.inputs["Preview Normal"])
+    links.new(bsdf.outputs["BSDF"],       go.inputs["RenderOutput"])
 
 
 def make_or_update_material_group(force=False):
@@ -397,39 +432,28 @@ def make_or_update_material_group(force=False):
     if needs_rebuild:
         snapshots = snapshot_material_group_bindings(group)
         clear_group(group)
+
+        # ── Texture inputs ─────────────────────────────────────────────
         for name in SLOTS:
             add_socket(group, name, "INPUT", "NodeSocketColor", SLOT_DEFAULTS.get(name, (0.0, 0.0, 0.0, 1.0)))
 
-        add_socket(group, "Has LightMap", "INPUT", "NodeSocketBool", False)
+        # ── Presence flags (used by TWAA / export pipeline) ────────────
+        add_socket(group, "Has LightMap",   "INPUT", "NodeSocketBool", False)
         add_socket(group, "Has MaterialMap", "INPUT", "NodeSocketBool", False)
-        add_socket(group, "Has NormalMap", "INPUT", "NodeSocketBool", False)
-        add_socket(group, "Has Extra", "INPUT", "NodeSocketBool", False)
+        add_socket(group, "Has NormalMap",   "INPUT", "NodeSocketBool", False)
+        add_socket(group, "Has Extra",       "INPUT", "NodeSocketBool", False)
 
-        add_socket(group, "Preview Emit Source", "INPUT", "NodeSocketInt", 3)
-        add_socket(group, "Preview Metallic Source", "INPUT", "NodeSocketInt", 8)
-        add_socket(group, "Preview Roughness Source", "INPUT", "NodeSocketInt", 9)
-        add_socket(group, "Preview AO Source", "INPUT", "NodeSocketInt", 4)
-        add_socket(group, "Preview Alpha Source", "INPUT", "NodeSocketInt", 3)
-        add_socket(group, "NormalMap Preset", "INPUT", "NodeSocketInt", 0)
+        # ── Resolution (visible on the node, used for TWAA atlas) ──────
         add_socket(group, "Default Resolution X", "INPUT", "NodeSocketInt", 512)
         add_socket(group, "Default Resolution Y", "INPUT", "NodeSocketInt", 512)
 
-        add_socket(group, "Diffuse Color Space", "INPUT", "NodeSocketInt", 0)
-        add_socket(group, "LightMap Color Space", "INPUT", "NodeSocketInt", 1)
-        add_socket(group, "MaterialMap Color Space", "INPUT", "NodeSocketInt", 1)
-        add_socket(group, "NormalMap Color Space", "INPUT", "NodeSocketInt", 1)
-        add_socket(group, "Extra Color Space", "INPUT", "NodeSocketInt", 1)
-
-        add_socket(group, "Base Color", "OUTPUT", "NodeSocketColor")
+        # ── Outputs ────────────────────────────────────────────────────
+        add_socket(group, "Base Color",       "OUTPUT", "NodeSocketColor")
         for name in SLOTS:
             add_socket(group, name, "OUTPUT", "NodeSocketColor")
-        add_socket(group, "Emission Strength", "OUTPUT", "NodeSocketFloat")
-        add_socket(group, "Metallic", "OUTPUT", "NodeSocketFloat")
-        add_socket(group, "Roughness", "OUTPUT", "NodeSocketFloat")
-        add_socket(group, "Ambient Occlusion", "OUTPUT", "NodeSocketFloat")
-        add_socket(group, "Alpha", "OUTPUT", "NodeSocketFloat")
-        add_socket(group, "Preview Normal", "OUTPUT", "NodeSocketColor")
-        add_socket(group, "RenderOutput", "OUTPUT", "NodeSocketShader")
+        add_socket(group, "Preview Normal",   "OUTPUT", "NodeSocketColor")
+        add_socket(group, "RenderOutput",     "OUTPUT", "NodeSocketShader")
+
         build_material_group_nodes(group)
         restored = restore_material_group_bindings(snapshots)
         if restored:
@@ -606,7 +630,139 @@ def ensure_material_node(mat, rebuild_group=False, connect_surface=False):
         out = outputs[0] if outputs else mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
         out.location = (node.location.x + 520, node.location.y)
         mat.node_tree.links.new(node.outputs["RenderOutput"], out.inputs["Surface"])
+
+    # Auto-apply the game preset when the node is freshly created
+    if created_node:
+        try:
+            rzm = getattr(bpy.context.scene, "rzm", None)
+            game = rzm.game.selection if rzm and hasattr(rzm, "game") else ""
+            apply_game_preset(mat, game)
+        except Exception:
+            pass
+
     return node
+
+
+# ======================================================================== #
+# GAME PRESETS                                                              #
+# Edit this function to add / change presets.                               #
+# Called automatically on new node creation, and from the UI "Apply Preset" #
+# operator (rzm.tw_mc_apply_game_preset).                                   #
+# ======================================================================== #
+
+# Preset index stored on the material so the UI can show what is active
+_PRESET_NAMES = {
+    "DEFAULT":  "Default (Diffuse only)",
+    "ZZZ_1":    "ZZZ #1  (LM-G metal / LM-B gloss / NM fix)",
+    "GI_1":     "GenshinImpact #1  (LM-R AO / LM-G shadow / LM-B roughness)",
+}
+
+
+def apply_game_preset(mat, game_or_preset_id):
+    """Wire the group node internals to match the given game/preset.
+
+    game_or_preset_id can be:
+      - A game enum string: 'ZenlessZoneZero', 'GenshinImpact', …
+      - A preset key:       'ZZZ_1', 'GI_1', 'DEFAULT'
+
+    This does NOT rebuild the group; it just re-links nodes inside the
+    existing group node_tree so the material auto-updates in the viewport.
+    """
+    # Resolve alias
+    _game_to_preset = {
+        "ZenlessZoneZero": "ZZZ_1",
+        "GenshinImpact":   "GI_1",
+    }
+    preset = _game_to_preset.get(game_or_preset_id, game_or_preset_id)
+    if preset not in _PRESET_NAMES:
+        preset = "DEFAULT"
+
+    # Store on material for UI display
+    try:
+        mat["rzm_preset"] = preset
+    except Exception:
+        pass
+
+    # ------------------------------------------------------------------ #
+    # Find the shared group node-tree (not the instance)
+    # ------------------------------------------------------------------ #
+    import bpy as _bpy
+    group = _bpy.data.node_groups.get(GROUP_NAME)
+    if not group:
+        return
+
+    nodes = group.nodes
+    links = group.links
+
+    # Helper: find node by label
+    def _n(label):
+        return next((n for n in nodes if n.label == label), None)
+
+    # Helper: get output socket of a node by label/index
+    def _out(label, idx=0):
+        node = _n(label)
+        return node.outputs[idx] if node else None
+
+    # Helper: re-link (removes existing links on the destination socket first)
+    def _relink(from_socket, to_socket_name, to_node_label):
+        to_node = _n(to_node_label)
+        if not to_node or not from_socket:
+            return
+        # find socket by name
+        dest = to_node.inputs.get(to_socket_name)
+        if dest is None:
+            return
+        for l in list(dest.links):
+            links.remove(l)
+        links.new(from_socket, dest)
+
+    gi = next((n for n in nodes if n.bl_idname == "NodeGroupInput"),  None)
+    bsdf = next((n for n in nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"), None)
+
+    if not gi or not bsdf:
+        return
+
+    # Clear old Metallic / Roughness links on BSDF
+    for sock_name in ("Metallic", "Roughness", "Normal"):
+        s = bsdf.inputs.get(sock_name)
+        if s:
+            for l in list(s.links):
+                links.remove(l)
+
+    # ------------------------------------------------------------------ #
+    if preset == "ZZZ_1":
+        # ZZZ #1 ─ current default layout
+        # LightMap G -> Metallic
+        # 1 - LightMap B (Glossiness) -> Roughness
+        # NormalMap with Y-invert + Z+0.5
+        sep_light = _n("RZM_Sep_LightMap")
+        inv_gloss = _n("RZM_GlossToRoughness")
+        norm_node = next((n for n in nodes if n.bl_idname == "ShaderNodeNormalMap"), None)
+
+        if sep_light:
+            links.new(sep_light.outputs["Green"], bsdf.inputs["Metallic"])
+        if inv_gloss:
+            links.new(inv_gloss.outputs[0], bsdf.inputs["Roughness"])
+        if norm_node:
+            links.new(norm_node.outputs["Normal"], bsdf.inputs["Normal"])
+
+    elif preset == "GI_1":
+        # GenshinImpact #1
+        # (placeholder — wire as needed)
+        # LightMap R -> AO (not wired to BSDF directly, future)
+        # LightMap G -> Shadow (skip for now)
+        # LightMap B -> Roughness (direct, no inversion)
+        sep_light = _n("RZM_Sep_LightMap")
+        if sep_light:
+            links.new(sep_light.outputs["Blue"], bsdf.inputs["Roughness"])
+            # Metallic default 0
+            bsdf.inputs["Metallic"].default_value = 0.0
+
+    else:  # DEFAULT
+        # Bare minimum: just Base Color = Diffuse, no PBR channels
+        links.new(gi.outputs["Diffuse"], bsdf.inputs["Base Color"])
+        bsdf.inputs["Metallic"].default_value = 0.0
+        bsdf.inputs["Roughness"].default_value = 0.5
 
 
 def create_empty_material(context, assign=True):
