@@ -554,15 +554,10 @@ global $RZMMenuProfileMode = {{ menu_p.mode }}
         {% endfor %}
 
         {% if _hover_entries | length > 0 %}
-            {% set obj_count = _hover_entries | length %}
 [ResourceRZMDetect{{ component.fullname }}ObjectMap]
 type = Buffer
 format = R32G32B32A32_FLOAT
-array = {{ obj_count + 1 }}
-; [0] = objectCount={{ obj_count }}, 0, 0, 0
-; [1+i] = firstIndex, indexCount, mode, objectID
-data = {{ obj_count }} 0 0 0  {% for item in _hover_entries %}{% set entry = item[0] %}{% set mode = item[1] %}{{ entry.index_offset if entry.index_offset is defined else entry.first_index if entry.first_index is defined else 0 }} {{ entry.index_count }} {{ mode }} 0  {% endfor %}
-
+filename = {{ component.fullname }}ObjectMap.buf
         {% endif %}
     {% endfor %}
 
@@ -655,12 +650,10 @@ data = {% for item in _j_objs -%}
 {{ "%.6f"|format(item.id | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.radius', 0.25) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.strength', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.falloff', 1.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.drag_scale', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_damp', 0.86) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_spring', 0.176) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_damp', 0.96) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_spring', 0.055) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_kick', 1.18) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.max_offset', 0.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.target_follow', 0.12) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.mouse_y', 1.0) | float) }} 0.000000 0.000000 0.000000{% if not loop.last %} {% endif %}
 {%- endfor %}
 
-{% if _has_mask.found %}
 [ResourceRZMJiggleMask_{{ component.fullname }}]
 type = Buffer
 format = R32_FLOAT
 filename = {{ component.fullname }}Mask.buf
-{% endif %}
 
     {% endif %}
 {% endfor %}

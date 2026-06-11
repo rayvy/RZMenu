@@ -581,9 +581,9 @@ void main(uint3 threadID : SV_DispatchThreadID)
     
     float influence = ComputeRubberInfluence(dist, radius, falloffPower);
 
-    // Apply per-vertex jiggle suppression mask (1 = fully suppressed, 0 = can move)
+    // Apply per-vertex jiggle suppression mask (1 = can move, 0 = fully suppressed)
     float mask = MaskBuffer[i];
-    influence *= saturate(1.0 - mask);
+    influence *= saturate(mask);
 
     if (influence > 0.0)
     {
