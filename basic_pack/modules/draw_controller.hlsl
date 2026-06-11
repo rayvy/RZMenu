@@ -105,7 +105,7 @@ void WriteElement(
 
     // ── ElementStaticMap lookup ──────────────────────────────────
     [branch]
-    if (flags & FLAG_IS_ELEMENT)
+    if ((flags & FLAG_IS_ELEMENT) && (flags & (FLAG_USE_STATIC_IMG | FLAG_USE_STATIC_TEXT | FLAG_USE_STATIC_COLOR)))
     {
         uint  target_id   = element_id;
         uint  found_image = 0u;
