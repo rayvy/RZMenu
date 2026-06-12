@@ -86,7 +86,7 @@ def get_components_to_process(context, per_component=False):
     """
     from ..utils.component_collector import ComponentCollector
     collector = ComponentCollector(context)
-    return collector.get_components(per_component=per_component)
+    return collector.get_components(per_component=per_component, force_fallback=True)
 
 
 def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
@@ -113,7 +113,7 @@ def has_active_modifiers(obj):
         return True
     return False
 
-def _component_affected_names(base_name, comp_cache, dump_name, is_xxmi):
+def _component_affected_names(base_name, comp_cache, dump_name, is_xxmi, comp_objects=None):
     names = {str(base_name or "").lower()}
     if dump_name:
         names.add(f"{dump_name}{base_name}".lower())
@@ -126,6 +126,11 @@ def _component_affected_names(base_name, comp_cache, dump_name, is_xxmi):
             obj_name = entry.get('name')
             if obj_name:
                 names.add(str(obj_name).lower())
+
+    if comp_objects:
+        for obj in comp_objects:
+            if obj:
+                names.add(obj.name.lower())
 
     return list(names)
 
@@ -1020,7 +1025,7 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     rzm      = context.scene.rzm
     prepare_shape_config_export_runtime(rzm)
     active_configs = active_shape_configs(rzm)
-    affected_names = _component_affected_names(base_name, comp_cache, dump_name, is_xxmi)
+    affected_names = _component_affected_names(base_name, comp_cache, dump_name, is_xxmi, comp_objects=comp_objects)
     all_keys = _component_shape_key_names(
         active_configs,
         affected_names,

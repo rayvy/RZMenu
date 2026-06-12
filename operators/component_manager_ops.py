@@ -119,6 +119,12 @@ class RZMenu_OT_CM_UpdateFromDump(bpy.types.Operator):
                 collector._save_to_component_manager(results)
         except Exception as e:
             print(f"[CM-Update] Failed to pre-populate components objects: {e}")
+
+        try:
+            from ..utils.component_resolver import rebuild_component_snapshot
+            rebuild_component_snapshot(context)
+        except Exception as e:
+            print(f"[CM-Update] Component resolver snapshot failed: {e}")
             
         return {'FINISHED'}
 

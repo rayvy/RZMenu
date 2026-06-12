@@ -85,7 +85,9 @@ class ComponentCollector:
         """
         Returns a dictionary: {'Component0': [obj1, obj2], ...}
         """
-        results = self._collect_from_component_manager()
+        results = None
+        if not force_fallback:
+            results = self._collect_from_component_manager()
         
         if not results and not force_fallback:
             results = self._collect_from_cache()

@@ -26,6 +26,18 @@ class RZMComponentManagerSettings(bpy.types.PropertyGroup):
         subtype='DIR_PATH'
     )
     components: CollectionProperty(type=RZMCM_Component)
+    resolver_snapshot_json: StringProperty(
+        name="Resolver Snapshot JSON",
+        description="Compact component resolver snapshot generated from dump metadata and scene collections",
+        default="{}",
+        options={'HIDDEN'}
+    )
+    resolver_snapshot_summary: StringProperty(
+        name="Resolver Snapshot Summary",
+        description="Short human-readable component resolver snapshot summary",
+        default="Not built",
+        options={'HIDDEN'}
+    )
     active_tab: EnumProperty(
         name="Tab",
         items=[

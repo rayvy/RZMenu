@@ -132,6 +132,54 @@ def draw_xxmi_preparation_header(self, context):
             icon='MOD_DATA_TRANSFER',
         )
 
+    try:
+        from ..utils.component_resolver import resolve_object_from_snapshot
+        match, snapshot = resolve_object_from_snapshot(context, obj)
+    except Exception:
+        match, snapshot = None, {}
+
+    info = box.column(align=True)
+    info.scale_y = 0.82
+    if not snapshot:
+        info.label(text="Component resolver: no snapshot", icon='INFO')
+        info.operator("rzm.cm_update_from_dump", text="Build snapshot", icon='FILE_REFRESH')
+        return
+
+    if not snapshot.get("supported", False):
+        reason = snapshot.get("reason", "Unsupported or invalid snapshot")
+        info.label(text=f"Component resolver: {reason}", icon='INFO')
+        return
+
+    stats = snapshot.get("stats", {})
+    summary = (
+        f"Resolver: {stats.get('components', 0)} comps / "
+        f"{stats.get('parts', 0)} parts / {stats.get('mapped_objects', 0)} objects"
+    )
+    info.label(text=summary, icon='OUTLINER_OB_GROUP_INSTANCE')
+
+    if match:
+        part = match.get("part") or "<component root>"
+        info.label(text=f"{obj.name}: {match.get('component', '<unknown>')} / {part}", icon='MESH_DATA')
+        if match.get("collection"):
+            info.label(text=f"Collection: {match['collection']}", icon='OUTLINER_COLLECTION')
+    else:
+        info.label(text=f"{obj.name}: not mapped by XXMI collection snapshot", icon='ERROR')
+
+    component_name = match.get("component") if match else ""
+    component = next(
+        (item for item in snapshot.get("components", []) if item.get("name") == component_name),
+        None,
+    )
+    if component:
+        textures = component.get("textures", {})
+        tex_bits = []
+        for tex_name in ("Diffuse", "LightMap", "NormalMap", "MaterialMap", "GlowMap", "ExtraMap"):
+            if tex_name in textures:
+                formats = ",".join(textures[tex_name].get("formats", [])) or "?"
+                tex_bits.append(f"{tex_name}:{formats}")
+        if tex_bits:
+            info.label(text="Textures: " + " | ".join(tex_bits[:4]), icon='TEXTURE')
+
 
 def draw_uv_texcoord_quick_button(self, context):
     obj = context.object
