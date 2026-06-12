@@ -304,6 +304,11 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         description="Enable weight morphing (BlendWorks Phase 1) for this shape key",
         default=False
     )
+    sparse_vertex_count: IntProperty(
+        name="Sparse Vertex Count",
+        description="Number of vertices affected by this shape key in the baked sparse buffer",
+        default=0
+    )
     parent_shape: StringProperty(
         name="Parent Shape",
         description="Optional parent shape key. If set, this shape key's deltas (positions/weights) will be calculated relative to the parent.",

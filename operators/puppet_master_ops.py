@@ -207,12 +207,24 @@ def _convert_shape_buffers_to_sparse(output_dir, base_name, shape_names, is_xxmi
             for idx, v_idx in enumerate(changed_indices):
                 offset = idx * stride
                 struct.pack_into('<Ifff', packed_bytes, offset, v_idx, deltas[v_idx, 0], deltas[v_idx, 1], deltas[v_idx, 2])
+            sparse_count = len(changed_indices)
         else:
             packed_bytes = bytearray(stride)  # 1-element dummy buffer of size stride filled with zeros
+            sparse_count = 1
             
         with open(out_path, 'wb') as f:
             f.write(packed_bytes)
         converted += 1
+
+        # Save sparse vertex count to Blender property
+        try:
+            rzm = bpy.context.scene.rzm
+            for cfg in rzm.shape_configs:
+                if cfg.shape_name == sk_name:
+                    cfg.sparse_vertex_count = sparse_count
+                    break
+        except Exception as e:
+            print(f"[RZM] [SPARSE] Failed to save sparse vertex count for {sk_name}: {e}")
         
     if converted:
         print(f"  [SPARSE] Converted {converted} shape buffer(s) to sparse format for {base_name} (stride={stride}).")
@@ -1299,6 +1311,51 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
 
     return True
 
+def _patch_ini_dispatches(mod_root, rzm):
+    import re
+    ini_path = os.path.join(mod_root, "mod.ini")
+    if not os.path.exists(ini_path):
+        # Check in parent directory
+        ini_path = os.path.join(os.path.dirname(mod_root), "mod.ini")
+        if not os.path.exists(ini_path):
+            return
+            
+    try:
+        with open(ini_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            
+        modified = False
+        lines = content.splitlines()
+        
+        current_shape = None
+        for i, line in enumerate(lines):
+            # Matches: cs-t51 = copy ResourceGirl_Sport
+            match = re.search(r'cs-t51\s*=\s*copy\s*Resource(?:[A-Za-z0-9_]+)_([A-Za-z0-9_]+)', line)
+            if match:
+                shape_var_name = match.group(1)
+                current_shape = None
+                for cfg in rzm.shape_configs:
+                    cleaned_name = cfg.shape_name.strip("$@#~")
+                    for char in " !@#$%^&*()+-={}|[]\\:\";'<>?,./":
+                        cleaned_name = cleaned_name.replace(char, '_')
+                    cleaned_name = "_".join(cleaned_name.split())
+                    if shape_var_name == cleaned_name:
+                        current_shape = cfg
+                        break
+            elif line.strip().startswith("Dispatch") and current_shape is not None:
+                if current_shape.sparse_vertex_count > 0:
+                    indent = line[:line.find("Dispatch")]
+                    lines[i] = f"{indent}Dispatch = ({current_shape.sparse_vertex_count} + 255) // 256, 1, 1"
+                    modified = True
+                current_shape = None
+                
+        if modified:
+            with open(ini_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(lines))
+            print(f"  [SPARSE] Successfully patched Dispatch sizes in {os.path.basename(ini_path)}")
+    except Exception as e:
+        print(f"  [ERROR] Failed to patch ini dispatches: {e}")
+
 # ---------------------------------------------------------------------------
 # OPERATORS
 # ---------------------------------------------------------------------------
@@ -1349,6 +1406,7 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
             bake_component_shapes(context, base_name, objs, mod_root, limit,
                                    full_export_mode=self.full_export_mode,
                                    orient_mat=orient_mat, mirror_enabled=mirror_enabled)
+        _patch_ini_dispatches(mod_root, context.scene.rzm)
         return {'FINISHED'}
 
 
@@ -1399,6 +1457,7 @@ class RZM_OT_PuppetMasterBakeSingle(bpy.types.Operator):
             bake_component_shapes(context, base_name, objs, mod_root, limit,
                                    single_shape_name=target_shape,
                                    orient_mat=orient_mat, mirror_enabled=mirror_enabled)
+        _patch_ini_dispatches(mod_root, context.scene.rzm)
         return {'FINISHED'}
 
 classes_to_register = [RZM_OT_PuppetMasterBake, RZM_OT_PuppetMasterBakeSingle]
