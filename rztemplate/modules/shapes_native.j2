@@ -21,16 +21,21 @@ global persist $SKC_LastTime = 0
 {% endfor %}
 
 [Present]
-run = CommandListSKPresent
-{% set has_vfx_curves = [false] %}
-{% if scene and scene.objects %}
-    {% for obj in scene.objects if obj.type == 'CURVE' and obj.get('RZM.CURVE_VFX') %}
-        {% if has_vfx_curves.append(true) %}{% endif %}
-    {% endfor %}
-{% endif %}
-{% if has_vfx_curves[-1] %}
-run = CommandListRZM_VFX_Present
-{% endif %}
+;EGS калл вонючий
+if $active == 1
+if $ModInitialised == 1
+    run = CommandListSKPresent
+    {% set has_vfx_curves = [false] %}
+    {% if scene and scene.objects %}
+        {% for obj in scene.objects if obj.type == 'CURVE' and obj.get('RZM.CURVE_VFX') %}
+            {% if has_vfx_curves.append(true) %}{% endif %}
+        {% endfor %}
+    {% endif %}
+    {% if has_vfx_curves[-1] %}
+    run = CommandListRZM_VFX_Present
+    {% endif %}
+endif
+endif
 [CommandListSKPresent]
 local $shape_changed = 0
 $dt = time - $SKC_LastTime

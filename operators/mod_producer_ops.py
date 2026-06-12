@@ -79,6 +79,11 @@ def parse_ini_file(ini_path, active_tiers):
         if stripped.startswith(";[META-INFO]"):
             parts = re.findall(r"\[([\w\s-]+)\]", stripped)
             
+            if "RZM_IGNORE" in parts or "RZM-IGNORE" in parts or "RZM_IGNORE" in stripped or "RZM-IGNORE" in stripped:
+                out_lines.append(line)
+                i += 1
+                continue
+            
             is_start = "START" in parts
             is_mark = "MARK" in parts
             is_end = "END" in parts

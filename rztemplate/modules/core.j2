@@ -48,7 +48,12 @@
 {% endif %}
 {% if _hover_comps | length > 0 %}
 [Present]
+;EGS калл вонючий
+if $active == 1
+if $ModInitialised == 1
 pre run = CommandListRZMPinDetected
+endif
+endif
 {% endif %}
 {% if scene.rzm and scene.rzm.shapes %}
 [CommandListRZMObjectDataInit]

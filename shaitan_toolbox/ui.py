@@ -64,6 +64,7 @@ def draw_setup_scripts_ui(self, context, layout):
     col_tools.operator("rzm_st.mirror_cut", text="Mirror Cut X (Clear Left)", icon='MOD_MIRROR')
     col_tools.operator("rzm_st.vg_sym_rename_all", text="Symmetrize VG Names (Median)", icon='MOD_MIRROR')
     col_tools.operator("rzm_st.clean_duplicate_side_markers", text="Clean duplicate .L/.R markers", icon='SORTALPHA')
+    col_tools.operator("rzm_st.vg_weight_align", text="Align VG Index & Naming (Source)", icon='SORT_ASC')
     col_tools.operator("rzm_weights.vg_name_transfer", text="VG Name Transfer (by index)", icon='FILE_REFRESH')
     col_tools.operator("rzm_st.generate_bones", text="Generate Missing Bones", icon='BONE_DATA')
 
@@ -73,6 +74,12 @@ def draw_setup_scripts_ui(self, context, layout):
     row_shape.scale_y = 1.2
     row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Clear Selected Verts (ACTIVE SK)", icon='DOT').active_only = True
     row_shape.operator("rzm_st.clear_selected_shape_key_vertices", text="Clear Selected Verts (ALL SK)", icon='SHAPEKEY_DATA').active_only = False
+    
+    box_tools.separator()
+    box_tools.label(text="Shape Key Base / Coordinate Fixers:", icon='SHAPEKEY_DATA')
+    col_sk_fix = box_tools.column(align=True)
+    col_sk_fix.scale_y = 1.2
+    col_sk_fix.operator("rzm_st.sync_base_mesh_to_basis", text="Apply Basis to Raw Mesh", icon='CHECKMARK')
     
     # Comparison Mode Selector
     box_tools.separator()

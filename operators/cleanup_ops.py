@@ -58,7 +58,7 @@ def inquisitor_cleanup_logic(target_path, operator=None, create_backup=True):
             continue
 
         if raw_line.startswith(';'):
-            if '[META-INFO]' in raw_line and '[MOD-BLOCK]' in raw_line:
+            if ('[META-INFO]' in raw_line and '[MOD-BLOCK]' in raw_line) or 'RZM-IGNORE' in raw_line or 'RZM_IGNORE' in raw_line:
                 new_lines.append(line)
                 i += 1
                 continue

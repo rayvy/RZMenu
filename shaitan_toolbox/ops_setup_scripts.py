@@ -393,6 +393,61 @@ class RZM_ST_OT_ClearSelectedShapeKeyVertices(bpy.types.Operator):
 
 
 # ============================================================
+# 2.7. APPLY BASIS TO BASE MESH (SYNC COORDINATES)
+# ============================================================
+
+class RZM_ST_OT_SyncBaseMeshToBasis(bpy.types.Operator):
+    bl_idname = "rzm_st.sync_base_mesh_to_basis"
+    bl_label = "Apply Basis to Base Mesh"
+    bl_description = "Copy vertex coordinates from Basis shape key to the raw base mesh vertices to prevent shifting"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return (
+            obj is not None
+            and obj.type == 'MESH'
+            and obj.data is not None
+            and obj.data.shape_keys is not None
+        )
+
+    def execute(self, context):
+        obj = context.active_object
+        mesh = obj.data
+        shape_keys = mesh.shape_keys
+        basis = shape_keys.reference_key
+        
+        if not basis:
+            self.report({'ERROR'}, "No reference Basis shape key found.")
+            return {'CANCELLED'}
+            
+        original_mode = obj.mode
+        if obj.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+        try:
+            # 1. Copy coords
+            for v in mesh.vertices:
+                v.co = basis.data[v.index].co
+                
+            mesh.update()
+            
+            self.report({'INFO'}, "Basis coordinates successfully synchronized with raw base mesh.")
+                
+            if obj.mode != original_mode:
+                bpy.ops.object.mode_set(mode=original_mode)
+                
+            return {'FINISHED'}
+            
+        except Exception as e:
+            if obj.mode != original_mode:
+                bpy.ops.object.mode_set(mode=original_mode)
+            self.report({'ERROR'}, f"Failed to sync Basis coordinates: {str(e)}")
+            return {'CANCELLED'}
+
+
+# ============================================================
 # 3. DELETE ALL VERTEX GROUPS
 # ============================================================
 
@@ -790,6 +845,119 @@ class RZM_ST_OT_GenerateBones(bpy.types.Operator):
         return {'FINISHED'}
 
 
+# ============================================================
+# 5. ALIGN VERTEX GROUPS BY INDEX & NAMING
+# ============================================================
+
+class RZM_ST_OT_VGWeightAlign(bpy.types.Operator):
+    bl_idname = "rzm_st.vg_weight_align"
+    bl_label = "Align VG Index & Naming (Source)"
+    bl_description = "Reorder and add missing vertex groups to match selected source mesh index-by-index, preserving vertex weights"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.type == 'MESH'
+
+    def execute(self, context):
+        target = context.active_object
+        
+        # Heuristic to find source/donor mesh
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        donor = None
+        
+        if len(selected_meshes) == 2:
+            donors = [obj for obj in selected_meshes if obj != target]
+            if donors:
+                donor = donors[0]
+                
+        if not donor and context.scene.rzm_st_reference_mesh:
+            donor = context.scene.rzm_st_reference_mesh
+            
+        if not donor:
+            self.report({'ERROR'}, "Source mesh not found. Select 2 meshes (donor and active target), or set Reference Mesh.")
+            return {'CANCELLED'}
+            
+        if donor == target:
+            self.report({'ERROR'}, "Source mesh cannot be the same as active target mesh.")
+            return {'CANCELLED'}
+            
+        original_mode = target.mode
+        if target.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+        try:
+            if target.data.users > 1:
+                target.data = target.data.copy()
+                
+            # 1. Save active weights
+            names_by_index = {vg.index: vg.name for vg in target.vertex_groups}
+            weights_by_vertex = []
+            for vertex in target.data.vertices:
+                v_weights = {}
+                for element in vertex.groups:
+                    name = names_by_index.get(element.group)
+                    if name is not None:
+                        v_weights[name] = element.weight
+                weights_by_vertex.append(v_weights)
+                
+            # 2. Get donor groups
+            donor_order = [vg.name for vg in donor.vertex_groups]
+            donor_set = set(donor_order)
+            
+            # 3. Get target groups
+            target_names = [vg.name for vg in target.vertex_groups]
+            target_set = set(target_names)
+            
+            missing = [name for name in donor_order if name not in target_set]
+            extra = [name for name in target_names if name not in donor_set]
+            
+            # 4. Construct final order
+            final_order = donor_order + extra
+            
+            # 5. Clear and recreate groups
+            target.vertex_groups.clear()
+            for name in final_order:
+                target.vertex_groups.new(name=name)
+                
+            # 6. Apply weights back to vertex groups using new indices
+            index_by_name = {vg.name: vg.index for vg in target.vertex_groups}
+            
+            bm = bmesh.new()
+            bm.from_mesh(target.data)
+            deform_layer = bm.verts.layers.deform.verify()
+            bm.verts.ensure_lookup_table()
+            
+            if len(bm.verts) != len(weights_by_vertex):
+                raise RuntimeError("Vertex count mismatch during alignment.")
+                
+            for bm_vertex, vertex_weights in zip(bm.verts, weights_by_vertex):
+                deform = bm_vertex[deform_layer]
+                for group_index in list(deform.keys()):
+                    del deform[group_index]
+                for name, weight in vertex_weights.items():
+                    new_index = index_by_name.get(name)
+                    if new_index is not None and weight > 0.0:
+                        deform[new_index] = weight
+                        
+            bm.to_mesh(target.data)
+            bm.free()
+            target.data.update()
+            
+            # Restore mode
+            if target.mode != original_mode:
+                bpy.ops.object.mode_set(mode=original_mode)
+                
+            self.report({'INFO'}, f"Aligned vertex groups index-by-index. Added {len(missing)} missing, kept {len(extra)} extra.")
+            return {'FINISHED'}
+            
+        except Exception as e:
+            if target.mode != original_mode:
+                bpy.ops.object.mode_set(mode=original_mode)
+            self.report({'ERROR'}, f"Failed to align vertex groups: {str(e)}")
+            return {'CANCELLED'}
+
+
 # Регистрация классов
 classes_to_register = [
     RZM_ST_OT_MirrorCut,
@@ -799,4 +967,6 @@ classes_to_register = [
     RZM_ST_OT_DeleteAllVG,
     RZM_ST_OT_SmartTransfer,
     RZM_ST_OT_GenerateBones,
+    RZM_ST_OT_VGWeightAlign,
+    RZM_ST_OT_SyncBaseMeshToBasis,
 ]

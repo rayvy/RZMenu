@@ -518,6 +518,7 @@ $isGameMenu = 1
 {% endif %}
 
 {% if _has_hover.found %}
+;[META-INFO] [START] [RZM_IGNORE] [CB-MATRIX-CONFIG] [{{ game_name }}]
 [Constants]
 ; RZM Hover Detect — transform profiles
 global $RZMWorldProfileCB0 = {{ world_p.cb0 }}
@@ -526,6 +527,7 @@ global $RZMWorldProfileMode = {{ world_p.mode }}
 global $RZMMenuProfileCB0 = {{ menu_p.cb0 }}
 global $RZMMenuProfileCB1 = {{ menu_p.cb1 }}
 global $RZMMenuProfileMode = {{ menu_p.mode }}
+;[META-INFO] [END] [RZM_IGNORE] [CB-MATRIX-CONGIF] [{{ game_name }}]
 {% endif %}
 {% endmacro %}
 
