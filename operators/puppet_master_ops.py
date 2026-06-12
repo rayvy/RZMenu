@@ -159,7 +159,7 @@ def _write_noop_shape_buffers(output_dir, base_name, shape_names, is_xxmi, dump_
     if written:
         print(f"  [NO-OP] Wrote {written} full-size base shape buffer(s) for {base_name}.")
 
-def _validate_shape_buffer_sizes(output_dir, base_name, shape_names, is_xxmi, dump_name, expected_size):
+def _validate_shape_buffer_sizes(output_dir, base_name, shape_names, is_xxmi, dump_name, stride):
     for sk_name in sorted(shape_names):
         out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
         out_path = os.path.join(output_dir, out_name)
@@ -167,11 +167,55 @@ def _validate_shape_buffer_sizes(output_dir, base_name, shape_names, is_xxmi, du
             print(f"  [ERROR] Missing shape buffer after bake: {out_name}")
             continue
         actual_size = os.path.getsize(out_path)
-        if actual_size != expected_size:
+        if actual_size % stride != 0:
             print(
-                f"  [ERROR] Shape buffer size mismatch: {out_name} "
-                f"size={actual_size}, expected={expected_size}"
+                f"  [ERROR] Shape buffer size is invalid (not multiple of stride={stride}): {out_name} "
+                f"size={actual_size}"
             )
+
+def _convert_shape_buffers_to_sparse(output_dir, base_name, shape_names, is_xxmi, dump_name, original_bytes, stride):
+    import struct
+    stride_f32 = stride // 4
+    buf_v_count = len(original_bytes) // stride
+    orig_f32 = np.frombuffer(original_bytes, dtype=np.float32).reshape(buf_v_count, stride_f32)
+    
+    converted = 0
+    for sk_name in shape_names:
+        out_name = _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name)
+        out_path = os.path.join(output_dir, out_name)
+        
+        if not os.path.exists(out_path):
+            continue
+            
+        actual_size = os.path.getsize(out_path)
+        # Only convert if the file size matches the full buffer size (not yet converted)
+        if actual_size != len(original_bytes):
+            continue
+            
+        with open(out_path, 'rb') as f:
+            file_data = f.read()
+            
+        buf_f32 = np.frombuffer(file_data, dtype=np.float32).reshape(buf_v_count, stride_f32)
+        
+        # Calculate deltas for position (first 3 floats)
+        deltas = buf_f32[:, :3] - orig_f32[:, :3]
+        delta_lengths = np.linalg.norm(deltas, axis=1)
+        changed_indices = np.where(delta_lengths > 1e-7)[0]
+        
+        if len(changed_indices) > 0:
+            packed_bytes = bytearray(len(changed_indices) * stride)
+            for idx, v_idx in enumerate(changed_indices):
+                offset = idx * stride
+                struct.pack_into('<Ifff', packed_bytes, offset, v_idx, deltas[v_idx, 0], deltas[v_idx, 1], deltas[v_idx, 2])
+        else:
+            packed_bytes = bytearray(stride)  # 1-element dummy buffer of size stride filled with zeros
+            
+        with open(out_path, 'wb') as f:
+            f.write(packed_bytes)
+        converted += 1
+        
+    if converted:
+        print(f"  [SPARSE] Converted {converted} shape buffer(s) to sparse format for {base_name} (stride={stride}).")
 
 def _scan_sk_owners(comp_objects, all_keys):
     """Классифицирует объекты по способу их деформации."""
@@ -1058,13 +1102,14 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     weight_keys = [c for c in active_weight_shape_configs(rzm) if c.shape_name in all_keys]
 
     if not sk_owner_map and not weight_keys:
+        _convert_shape_buffers_to_sparse(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes, stride)
         _validate_shape_buffer_sizes(
             output_dir,
             base_name,
             all_keys,
             is_xxmi,
             dump_name,
-            len(original_bytes),
+            stride,
         )
         return True
 
@@ -1086,13 +1131,14 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
             dump_name=dump_name,
             comp_cache=comp_cache,
         )
+        _convert_shape_buffers_to_sparse(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes, stride)
         _validate_shape_buffer_sizes(
             output_dir,
             base_name,
             all_keys,
             is_xxmi,
             dump_name,
-            len(original_bytes),
+            stride,
         )
         return True
 
@@ -1229,7 +1275,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
         # ── 4. BLENDWORKS (Weights) ────────────────────────────────────────────
         # [NEW] Проверка и запуск слоя весов
         _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name=dump_name, comp_cache=comp_cache)
-        _validate_shape_buffer_sizes(output_dir, base_name, all_keys, is_xxmi, dump_name, len(original_bytes))
+        _convert_shape_buffers_to_sparse(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes, stride)
+        _validate_shape_buffer_sizes(output_dir, base_name, all_keys, is_xxmi, dump_name, stride)
 
         # ── SUMMARY ──
         print(f"\n  [SUMMARY] {base_name} component finished in {time.time() - t_start:.3f}s")

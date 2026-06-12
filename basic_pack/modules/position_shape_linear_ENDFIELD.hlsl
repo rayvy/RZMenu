@@ -3,9 +3,13 @@ struct VertexAttributes {
     uint normal;
 };
 
+struct SparseDelta {
+    uint vertex_id;
+    float3 delta;
+};
+
 RWStructuredBuffer<VertexAttributes> rw_buffer : register(u5);
-StructuredBuffer<VertexAttributes> base : register(t50);
-StructuredBuffer<VertexAttributes> shapekey : register(t51);
+StructuredBuffer<SparseDelta> shapekey : register(t51);
 
 Texture1D<float4> IniParams : register(t120);
 #define key IniParams[88].x
@@ -15,13 +19,18 @@ Texture1D<float4> IniParams : register(t120);
 void main(uint3 threadID : SV_DispatchThreadID)
 {
     uint i = threadID.x;
-    uint vertex_count, stride;
-    rw_buffer.GetDimensions(vertex_count, stride);
-    if (i >= vertex_count) return;
-    //RAYVICH EDIT: keep VFX vertices appended after original mesh untouched by native shapes.
-    if (i >= ORIG_V_COUNT) return;
+    uint sparse_count, stride;
+    shapekey.GetDimensions(sparse_count, stride);
+    if (i >= sparse_count) return;
 
-    float3 diffPos = shapekey[i].position - base[i].position;
-    
-    rw_buffer[i].position += diffPos * key;
+    SparseDelta entry = shapekey[i];
+    uint vertex_id = entry.vertex_id;
+
+    uint vertex_count, rw_stride;
+    rw_buffer.GetDimensions(vertex_count, rw_stride);
+    if (vertex_id >= vertex_count) return;
+    //RAYVICH EDIT: keep VFX vertices appended after original mesh untouched by native shapes.
+    if (vertex_id >= ORIG_V_COUNT) return;
+
+    rw_buffer[vertex_id].position += entry.delta * key;
 }

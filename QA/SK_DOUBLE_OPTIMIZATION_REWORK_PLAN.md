@@ -2,7 +2,7 @@
 
 ## Goal
 
-Move native ShapeKey runtime from full target-buffer dispatches to a grouped sparse system:
+Move native ShapeKey runtime from full target-buffer dispatches to a staged sparse system:
 
 - one command path for up to 16 ShapeKey slots per component group;
 - only `IniParams[24..27].xyzw` are used as slot inputs;
@@ -10,7 +10,9 @@ Move native ShapeKey runtime from full target-buffer dispatches to a grouped spa
 - position, weight morph, parent-chain, condition/fallback, override swap, ranges and anim modes remain supported;
 - VFX path remains unchanged.
 
-The new runtime should stop dispatching over the full component when only a small subset of vertices is affected.
+The first migration stage intentionally does **not** optimize CPU overhead. It still runs per-slot/per-range command work because that is easier to debug and safer to ship incrementally.
+
+The immediate win is GPU-side work reduction: stop dispatching over the full component when only a small subset of vertices is affected. The later WWMI-style "all ShapeKeys stitched into one mega-buffer / one tighter dispatch chain" is a future optimization, not the first target.
 
 ## Current Problems
 
@@ -106,10 +108,9 @@ shape_kind: position / weight / both
 anim_mode
 input_mode
 parent_slot
-entry_start
-entry_count
-record_start
-record_count
+delta_start
+delta_count
+total_delta_count
 input_min
 input_max
 multiplier
@@ -124,41 +125,52 @@ Float values can be stored as `asuint(float)` in `R32G32B32A32_UINT`.
 
 Export no longer writes full target buffers for ShapeKeys.
 
-Instead, per 16-slot group:
+Phase 1 sparse position uses a compact slot-major stream. This is the quick-win format:
 
 ```ini
-[ResourceDataSKPosRecords_<Char>_<Comp>_G0]
+[ResourceDataSKPosDeltas_<Char>_<Comp>_G0]
 type = Buffer
 format = R32G32B32A32_UINT
-filename = ./SK/<Char>_<Comp>_G0_PosRecords.buf
-
-[ResourceDataSKPosEntries_<Char>_<Comp>_G0]
-type = Buffer
-format = R32G32B32A32_UINT
-filename = ./SK/<Char>_<Comp>_G0_PosEntries.buf
-```
-
-Record:
-
-```text
-uint4(vertex_id, entry_offset, entry_count, flags)
+filename = ./SK/<Char>_<Comp>_G0_PosDeltas.buf
 ```
 
 Entry:
 
 ```text
-uint4(slot_id_and_flags, packed_half_dxdy, packed_half_dz_extra, reserved)
+uint4(vertex_id, asuint(dx), asuint(dy), asuint(dz))
 ```
 
-One shader thread processes one touched vertex record:
+This is intentionally simple:
 
-1. load base position;
-2. loop through entries for that vertex;
-3. compute final slot value from `IniParams[24..27]` + config;
-4. accumulate all active deltas locally;
-5. write final position once.
+- no normals;
+- no tangents;
+- no full target vertex struct;
+- no vertex-major record indirection;
+- no atomics;
+- no second apply pass.
 
-This avoids write races and avoids atomics for position.
+Slot ranges are stored in `ResourceDataConfigSK`:
+
+```text
+slot_id -> delta_start, delta_count, flags, behavior
+```
+
+The commandlist dispatches each active slot/range in deterministic slot order:
+
+1. slot 0 range applies to RW VB0;
+2. slot 1 range applies to the already-updated RW VB0;
+3. parent/child slots are ordered by topological sort;
+4. independent slots can run in original stable order.
+
+Overlapping vertices are safe because slots are dispatched sequentially. If slot 0 and slot 7 both touch vertex 1234, slot 0 writes first and slot 7 adds on top later. This keeps debugging straightforward and avoids the fixed-point atomic complexity used by WWMI.
+
+Optional future format:
+
+```text
+vertex-major records + entries
+```
+
+That format can reduce dispatch count and remove per-slot CPU overhead later, but it is not the phase 1 target.
 
 ### Sparse Weight Data
 
@@ -167,21 +179,16 @@ Do not create a separate shader file for weight SK. The single SK shader/module 
 Weight data uses separate resources but the same grouped command path:
 
 ```ini
-[ResourceDataSKWeightRecords_<Char>_<Comp>_G0]
+[ResourceDataSKWeightDeltas_<Char>_<Comp>_G0]
 type = Buffer
 format = R32G32B32A32_UINT
-filename = ./SK/<Char>_<Comp>_G0_WeightRecords.buf
-
-[ResourceDataSKWeightEntries_<Char>_<Comp>_G0]
-type = Buffer
-format = R32G32B32A32_UINT
-filename = ./SK/<Char>_<Comp>_G0_WeightEntries.buf
+filename = ./SK/<Char>_<Comp>_G0_WeightDeltas.buf
 ```
 
-Weight entry must contain enough data to apply parent-relative morphing:
+Weight entries are also slot-major. Exact packing is deferred, but every entry must contain:
 
 ```text
-slot_id
+vertex_id
 target packed weights/indices or target weight ref
 parent packed weights/indices or parent weight ref
 flags
@@ -318,7 +325,7 @@ For every component and every active shape:
    - no parent: `shape - basis`;
    - parent: `shape - parent`;
 4. filter vertices where `length(delta) <= epsilon`;
-5. store sparse entries.
+5. store sparse entries in slot-major order.
 
 Recommended epsilon:
 
@@ -366,16 +373,33 @@ It should replace/adapt:
 
 The old files can remain as compatibility fallback until the new template path is stable.
 
-Shader entry behavior:
+Phase 1 shader entry behavior:
 
 1. load group header;
 2. load 16 slot inputs from `IniParams[24..27]`;
-3. resolve final slot values from config;
-4. process position records;
-5. optionally process weight records;
-6. write VB0/VB2 output buffers.
+3. resolve selected slot value from config;
+4. process the dispatched slot range;
+5. add position deltas to RW VB0;
+6. optionally process weight entries for the same slot path.
 
 The shader should support no-op missing resources through config flags. If 3DMigoto binding requires real resources, exporter writes tiny empty buffers.
+
+Hard guards are required in shader:
+
+```hlsl
+if (thread_id >= slot_count) return;
+if (slot_start + thread_id >= total_entry_count) return;
+if (entry.vertex_id >= vertex_count) return;
+if (slot_weight == 0.0) return;
+```
+
+Exporter should also validate and warn before writing:
+
+- `vertex_id < component_vertex_count`;
+- `slot_start + slot_count <= total_entry_count`;
+- `slot_id < 16`;
+- no null/empty entries in real ranges;
+- zero-count slots dispatch nothing.
 
 ## Template Migration
 
@@ -398,20 +422,22 @@ New pattern:
 [CustomShaderComputeShapes.<Component>.G0]
 cs = ./modules/rzm_shape_sparse.hlsl
 cs-u5 = copy Resource<Component>_Base
-cs-u6 = copy Resource<Component>_VB2_Base ; only if weight records exist
+cs-u6 = copy Resource<Component>_VB2_Base ; only if weight data exists
 cs-t50 = ResourceDataConfigSK_<Component>_G0
-cs-t51 = ResourceDataSKPosRecords_<Component>_G0
-cs-t52 = ResourceDataSKPosEntries_<Component>_G0
-cs-t53 = ResourceDataSKWeightRecords_<Component>_G0
-cs-t54 = ResourceDataSKWeightEntries_<Component>_G0
+cs-t51 = ResourceDataSKPosDeltas_<Component>_G0
+cs-t52 = ResourceDataSKWeightDeltas_<Component>_G0
 x24/y24/z24/w24 = slot 0..3 raw inputs
 x25/y25/z25/w25 = slot 4..7 raw inputs
 x26/y26/z26/w26 = slot 8..11 raw inputs
 x27/y27/z27/w27 = slot 12..15 raw inputs
-Dispatch = (record_count + 255) // 256, 1, 1
+; Dispatch per active slot range, in sorted slot order.
+; Slot id can come from a small command param, config field, or a dedicated IniParam component.
+Dispatch = (slot_delta_count + 255) // 256, 1, 1
 ```
 
-If position and weight record counts differ, the shader can use two dispatch regions or one max-record dispatch with branch guards. Prefer one dispatch per group if practical.
+This keeps CPU overhead similar to the current per-shape path, but the GPU now processes `changed_vertices` instead of `component_vertices`.
+
+Future template optimization can merge slot dispatches into fewer calls once the sparse infrastructure is stable.
 
 ## Phased Implementation Plan
 
@@ -464,7 +490,13 @@ Exit criteria:
 
 ### Phase 3 - Sparse Position Pack
 
-- Replace full target position SK buffers with sparse records/entries.
+- Replace full target position SK buffers with slot-major sparse delta streams.
+- Phase 1 entry format:
+
+```text
+uint4(vertex_id, asuint(dx), asuint(dy), asuint(dz))
+```
+
 - Reuse current Puppet Master matching:
   - exact v_map;
   - KD exact;
@@ -483,14 +515,15 @@ Exit criteria:
 - Implement `rzm_shape_sparse.hlsl` position path.
 - Read inputs from `IniParams[24..27]`.
 - Read behavior from config resource.
-- Dispatch by sparse record count.
-- Write final VB0 once per touched vertex.
+- Dispatch by active slot range count.
+- Add deltas to RW VB0 sequentially by slot order.
+- Keep hard OOB/null guards in shader.
 
 Exit criteria:
 
 - linear position SK matches old output;
 - multiple active slots accumulate correctly;
-- overlapping slots do not race;
+- overlapping slots do not race because dispatches are ordered;
 - VFX appended vertices remain untouched.
 
 ### Phase 5 - Shader-Side Animation
@@ -523,9 +556,9 @@ Exit criteria:
 
 ### Phase 7 - Weight SK in Unified Shader
 
-- Add sparse weight records/entries.
+- Add slot-major sparse weight delta streams.
 - Keep same HLSL file/module.
-- Add config flags for weight records per slot.
+- Add config flags for weight data per slot.
 - Reproduce current semantic merge:
   - unpack current/base/parent/target;
   - apply `(target - parent_or_base) * value`;
@@ -578,19 +611,24 @@ Expected theoretical result:
 
 ```text
 old threads for 16 shapes on 230K component: 3.68M/frame
-new threads if 2K unique touched vertices: about 2K/frame
-thread count reduction: about 1840x
+new phase 1 threads if every slot has 2K touched vertices: about 32K/frame
+thread count reduction: about 115x
+
+new future vertex-major/WWMI-style threads if 2K unique touched vertices total: about 2K/frame
+future thread count reduction: about 1840x
 ```
 
-Bandwidth reduction depends on final entry format, but should be roughly two orders of magnitude for sparse anim shapes.
+Phase 1 still has per-slot dispatch CPU overhead. The main improvement is that each dispatch processes sparse deltas instead of full component buffers.
+
+Bandwidth reduction should already be roughly two orders of magnitude for sparse anim shapes because `230K full vertices -> 2K sparse deltas` per active slot.
 
 ## Open Decisions
 
 1. Exact legacy anim phase or stateless shader time.
-2. Whether one dispatch handles both position and weight records or the same shader module is dispatched twice with mode flags.
+2. Exact command parameter used to select current slot id for each slot-range dispatch.
 3. Final compact bit layout for slot descriptors.
-4. Whether half-float position deltas are enough for every game path or a high-precision flag is needed per slot/group.
-5. Whether sparse records should be per-group unique vertex records or per-slot records merged by shader. Prefer per-group unique vertex records to avoid races.
+4. Whether phase 1 keeps `float3` deltas for safest debugging or moves quickly to packed half deltas.
+5. When to add future WWMI-style mega-buffer / vertex-major / atomic accumulation path after the slot-major infrastructure is stable.
 
 ## Non-Goals
 
@@ -598,3 +636,5 @@ Bandwidth reduction depends on final entry format, but should be roughly two ord
 - No unrelated component resolver rewrite.
 - No UI redesign beyond exposing diagnostics/fallback toggles if needed.
 - No removal of legacy shader files until the sparse path has passed QA.
+- No phase 1 CPU overhead reduction target.
+- No phase 1 WWMI-style all-shapes mega-buffer target.
