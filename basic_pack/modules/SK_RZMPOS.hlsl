@@ -46,16 +46,14 @@ void main(uint3 threadID : SV_DispatchThreadID)
     // --- 1. Get all parameters ---
     float input_val = IniParams[88].x;
     int anim_type = (int)round(IniParams[88].y);
-    int config_index = (int)round(IniParams[88].z);
 
-    // Read static parameters from flat float buffer (6 floats per config)
-    uint base_offset = config_index * 6;
-    float start_time = shape_configs[base_offset + 0];
-    float end_time = shape_configs[base_offset + 1];
-    float multiplier = shape_configs[base_offset + 2];
-    float is_inverse = shape_configs[base_offset + 3];
-    float t2 = shape_configs[base_offset + 4];
-    float t3 = shape_configs[base_offset + 5];
+    // Read static parameters from the bound shape configuration buffer
+    float start_time = shape_configs[0];
+    float end_time = shape_configs[1];
+    float multiplier = shape_configs[2];
+    float is_inverse = shape_configs[3];
+    float t2 = shape_configs[4];
+    float t3 = shape_configs[5];
 
     float weight = 0.0;
 

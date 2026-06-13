@@ -105,9 +105,6 @@ post $SKC_LastTime = time
 [CustomShaderComputeShapes.{{ comp_name }}]
 cs = {{ shader_path }}
 cs-u5 = copy Resource{{ comp_name }}_Base
-{% if active_configs | length > 0 and 'SK_RZMPOS.hlsl' in shader_path %}
-cs-t54 = copy Resource{{ comp_name }}_ShapeConfigs
-{% endif %}
 x115 = {{ vertex_count }}
 ; //RAYVICH EDIT: native shape shader only processes original vertices; appended VFX tail is guarded in HLSL.
 
@@ -137,16 +134,17 @@ x115 = {{ vertex_count }}
         x88 = ${{ utils.format_var(config.value_link) | trim if config.value_link else 0 }}
         y88 = -1
         {% endif %}
-        z88 = {{ loop.index0 }}
     {% if config.condition %}
     else
         x88 = {{ "%.6f"|format(config.fallback_value) }}
         y88 = -2
-        z88 = {{ loop.index0 }}
     endif
     {% endif %}
     cs-t50 = copy Resource{{ comp_name }}_Base
     cs-t51 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}
+    {% if 'SK_RZMPOS.hlsl' in shader_path %}
+    cs-t54 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}_ShapeConfigs
+    {% endif %}
     Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_VB0{% else %}Position{% endif %} = ref cs-u5
     Dispatch = ({{ config.sparse_vertex_count if (config.sparse_vertex_count is defined and config.sparse_vertex_count > 0) else vertex_count }} + 255) // 256, 1, 1
 {% endfor %}
@@ -197,21 +195,16 @@ filename = {{ base_filename }}
 type = Buffer
 stride = {{ stride }}
 filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
-{% endfor %}
 
-{% if active_configs | length > 0 and stride == 40 %}
-; Shape Config Index Mapping for {{ comp_name }}:
-; --------------------------------------
-{% for config in active_configs -%}
-; Index {{ loop.index0 }}: {{ config.shape_name }} (Type: {{ config.shape_type }}{% if config.shape_type == "Linear" %}, Link: {{ config.value_link }}{% else %}, Start/End: {{ config.anim_start_frame }}/{{ config.anim_end_frame }}{% endif %})
-{% endfor -%}
-; --------------------------------------
-[Resource{{ comp_name }}_ShapeConfigs]
+{% if stride == 40 %}
+; Shape Config for {{ config.shape_name }} (Type: {{ config.shape_type }}{% if config.shape_type == "Linear" %}, Link: {{ config.value_link }}{% else %}, Start/End: {{ config.anim_start_frame }}/{{ config.anim_end_frame }}{% endif %})
+; Format: Min/Start Max/End Multiplier Inverse T2 T3 + 8 Reserve Slots
+[Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}_ShapeConfigs]
 type = Buffer
 format = R32_FLOAT
-data = {% for config in active_configs -%}
-    {{ "%.6f"|format(config.input_range_min if config.shape_type == "Linear" else config.anim_start_frame) }} {{ "%.6f"|format(config.input_range_max if config.shape_type == "Linear" else config.anim_end_frame) }} {{ "%.6f"|format(config.multiplier) }} {{ 1.0 if config.inverse else 0.0 }} {{ "%.6f"|format(0.5 if config.shape_type == "Linear" else config.anim_t2) }} {{ "%.6f"|format(0.5 if config.shape_type == "Linear" else config.anim_t3) }} {% endfor %}0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+data = {{ "%.6f"|format(config.input_range_min if config.shape_type == "Linear" else config.anim_start_frame) }} {{ "%.6f"|format(config.input_range_max if config.shape_type == "Linear" else config.anim_end_frame) }} {{ "%.6f"|format(config.multiplier) }} {{ 1.0 if config.inverse else 0.0 }} {{ "%.6f"|format(0.5 if config.shape_type == "Linear" else config.anim_t2) }} {{ "%.6f"|format(0.5 if config.shape_type == "Linear" else config.anim_t3) }} 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 {% endif %}
+{% endfor %}
 {% endmacro %}
 
 
