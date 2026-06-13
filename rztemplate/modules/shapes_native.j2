@@ -11,7 +11,6 @@
 {% macro _macro_shared_constants_and_present(rzm, scene=none) %}
 [Constants]
 global persist $SKC_LastTime = 0
-global persist $FREQ = 0
 {% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set past_var = utils.format_var(config.shape_name) ~ "_SKCPast" %}
     global persist ${{ past_var }} = 0
@@ -78,9 +77,37 @@ post $SKC_LastTime = time
 
 {# 2. Генерация секции CustomShaderComputeShapes.NAME #}
 {% macro _macro_compute_section(rzm, comp_name, vertex_count, shader_path, affected_names) %}
+{% set active_configs = [] %}
+{% for config in rzm.shape_configs if not config.export_runtime_disabled %}
+    {% set affected_list = [] %}
+    {% for ref in config.export_runtime_affected_objects %}
+        {% set names_to_check = [] %}
+        {% if ref.obj_name %}
+            {% set _ = names_to_check.append(ref.obj_name | lower) %}
+        {% elif ref.obj %}
+            {% if ref.obj.type == 'MESH' and ref.obj.data %}
+                {% set _ = names_to_check.append(ref.obj.data.name | lower) %}
+            {% endif %}
+            {% set _ = names_to_check.append(ref.obj.name | lower) %}
+        {% endif %}
+        {% for a_name in affected_names %}
+            {% for r_name in names_to_check %}
+                {% if (r_name == a_name) or (r_name|length >= 3 and a_name|length >= 3 and (a_name in r_name or r_name in a_name)) %}
+                    {% set _ = affected_list.append(1) %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    {% endfor %}
+    {% if affected_list | length > 0 %}
+        {% set _ = active_configs.append(config) %}
+    {% endif %}
+{% endfor %}
 [CustomShaderComputeShapes.{{ comp_name }}]
 cs = {{ shader_path }}
 cs-u5 = copy Resource{{ comp_name }}_Base
+{% if active_configs | length > 0 and 'SK_RZMPOS.hlsl' in shader_path %}
+cs-t54 = copy Resource{{ comp_name }}_ShapeConfigs
+{% endif %}
 x115 = {{ vertex_count }}
 ; //RAYVICH EDIT: native shape shader only processes original vertices; appended VFX tail is guarded in HLSL.
 
@@ -89,86 +116,43 @@ x115 = {{ vertex_count }}
 ; comp_name: {{ comp_name }}
 ; affected_names for this component: {{ affected_names }}
 {% endif %}
-{% for config in rzm.shape_configs if not config.export_runtime_disabled %}
-    {% set affected_list = [] %}
-{% if rzm.addons.debugger_info %}
-; --- Config: {{ config.shape_name }} ---
-{% endif %}
-    {% for ref in config.export_runtime_affected_objects %}
-        {% set names_to_check = [] %}
-        {% if ref.obj_name %}
-            {% set _ = names_to_check.append(ref.obj_name | lower) %}
-        {% elif ref.obj %}
-            {% if ref.obj.type == 'MESH' and ref.obj.data %}
-                {% set _ = names_to_check.append(ref.obj.data.name | lower) %}
-            {% endif %}
-            {% set _ = names_to_check.append(ref.obj.name | lower) %}
-        {% endif %}
-        
-{% if rzm.addons.debugger_info %}
-; Names to check: {{ names_to_check }}
-{% endif %}
-        {% for a_name in affected_names %}
-{% if rzm.addons.debugger_info %}
-;   Comparing with a_name: "{{ a_name }}"
-{% endif %}
-            {% for r_name in names_to_check %}
-                {% if (r_name == a_name) or (r_name|length >= 3 and a_name|length >= 3 and (a_name in r_name or r_name in a_name)) %}
-{% if rzm.addons.debugger_info %}
-;   >> MATCH FOUND! <<
-{% endif %}
-                    {% set _ = affected_list.append(1) %}
-                {% endif %}
-            {% endfor %}
-        {% endfor %}
-    {% endfor %}
-
-    
-    {% if affected_list | length > 0 %}
-        {% if config.condition %}
-        if {{ config.condition }}
-        {% endif %}
-            {% if config.shape_type == "Anim" %}
-            x88 = $FREQ * 1.0
-            y88 = {{ config.anim_type_index }}
-            z88 = {{ "%.6f"|format(config.anim_start_frame) }}
-            w88 = {{ "%.6f"|format(config.anim_end_frame) }}
-            {% else %}
-            x88 = ${{ utils.format_var(config.value_link) | trim if config.value_link else 0 }}
-            y88 = -1
-            z88 = {{ "%.6f"|format(config.input_range_min) }}
-            w88 = {{ "%.6f"|format(config.input_range_max) }}
-            {% endif %}
-            x89 = {{ "%.6f"|format(config.multiplier) }}
-            y89 = {{ 1.0 if config.inverse else 0.0 }}
-        {% if config.condition %}
-        else
-            x88 = {{ "%.6f"|format(config.fallback_value) }}
-            y88 = -2
-        endif
-        {% endif %}
-        cs-t50 = copy Resource{{ comp_name }}_Base
-        cs-t51 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}
-        Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_VB0{% else %}Position{% endif %} = ref cs-u5
-        Dispatch = ({{ config.sparse_vertex_count if (config.sparse_vertex_count is defined and config.sparse_vertex_count > 0) else vertex_count }} + 255) // 256, 1, 1
+{% for config in active_configs %}
+    {% if config.condition %}
+    if {{ config.condition }}
     {% endif %}
+        {% if config.shape_type == "Anim" %}
+        x88 = $FREQ * 1.0
+        y88 = {{ config.anim_type_index }}
+        {% else %}
+        x88 = ${{ utils.format_var(config.value_link) | trim if config.value_link else 0 }}
+        y88 = -1
+        {% endif %}
+        z88 = {{ loop.index0 }}
+    {% if config.condition %}
+    else
+        x88 = {{ "%.6f"|format(config.fallback_value) }}
+        y88 = -2
+        z88 = {{ loop.index0 }}
+    endif
+    {% endif %}
+    cs-t50 = copy Resource{{ comp_name }}_Base
+    cs-t51 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}
+    Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_VB0{% else %}Position{% endif %} = ref cs-u5
+    Dispatch = ({{ config.sparse_vertex_count if (config.sparse_vertex_count is defined and config.sparse_vertex_count > 0) else vertex_count }} + 255) // 256, 1, 1
 {% endfor %}
 
-
-  
 cs-u5 = null
 cs-t50 = null
 cs-t51 = null
+{% if active_configs | length > 0 and 'SK_RZMPOS.hlsl' in shader_path %}
+cs-t54 = null
+{% endif %}
 {% endmacro %}
 
 
 {# 3. Генерация ресурсов (Base и Shape буферы) #}
 {% macro _macro_resources(rzm, comp_name, stride, base_filename, affected_names) %}
-[Resource{{ comp_name }}_Base]
-type = Buffer
-stride = {{ stride }}
-filename = {{ base_filename }}
-
+{% set active_configs = [] %}
 {% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set affected_list = [] %}
     {% for ref in config.export_runtime_affected_objects %}
@@ -181,7 +165,6 @@ filename = {{ base_filename }}
             {% endif %}
             {% set _ = names_to_check.append(ref.obj.name | lower) %}
         {% endif %}
-        
         {% for a_name in affected_names %}
             {% for r_name in names_to_check %}
                 {% if (r_name == a_name) or (r_name|length >= 3 and a_name|length >= 3 and (a_name in r_name or r_name in a_name)) %}
@@ -190,14 +173,29 @@ filename = {{ base_filename }}
             {% endfor %}
         {% endfor %}
     {% endfor %}
-    
     {% if affected_list | length > 0 %}
+        {% set _ = active_configs.append(config) %}
+    {% endif %}
+{% endfor %}
+[Resource{{ comp_name }}_Base]
+type = Buffer
+stride = {{ stride }}
+filename = {{ base_filename }}
+
+{% for config in active_configs %}
 [Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}]
 type = Buffer
 stride = {{ stride }}
 filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
-    {% endif %}
 {% endfor %}
+
+{% if active_configs | length > 0 and stride == 40 %}
+[Resource{{ comp_name }}_ShapeConfigs]
+type = Buffer
+format = R32_FLOAT
+data = {% for config in active_configs -%}
+    {{ "%.6f"|format(config.input_range_min if config.shape_type == "Linear" else config.anim_start_frame) }} {{ "%.6f"|format(config.input_range_max if config.shape_type == "Linear" else config.anim_end_frame) }} {{ "%.6f"|format(config.multiplier) }} {{ 1.0 if config.inverse else 0.0 }} {% endfor %}0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+{% endif %}
 {% endmacro %}
 
 

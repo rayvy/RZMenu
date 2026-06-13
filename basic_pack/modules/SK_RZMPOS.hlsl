@@ -17,6 +17,8 @@ struct SparseDelta {
 RWStructuredBuffer<VertexAttributes> rw_buffer : register(u5);
 StructuredBuffer<SparseDelta> shapekey : register(t51);
 
+Buffer<float> shape_configs : register(t54);
+
 Texture1D<float4> IniParams : register(t120);
 
 #define PI 3.141592653589793
@@ -44,10 +46,14 @@ void main(uint3 threadID : SV_DispatchThreadID)
     // --- 1. Get all parameters ---
     float input_val = IniParams[88].x;
     int anim_type = (int)round(IniParams[88].y);
-    float start_time = IniParams[88].z;
-    float end_time = IniParams[88].w;
-    float multiplier = IniParams[89].x;
-    float is_inverse = IniParams[89].y;
+    int config_index = (int)round(IniParams[88].z);
+
+    // Read static parameters from flat float buffer (4 floats per config)
+    uint base_offset = config_index * 4;
+    float start_time = shape_configs[base_offset + 0];
+    float end_time = shape_configs[base_offset + 1];
+    float multiplier = shape_configs[base_offset + 2];
+    float is_inverse = shape_configs[base_offset + 3];
 
     float weight = 0.0;
 
