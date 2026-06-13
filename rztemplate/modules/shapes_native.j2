@@ -37,7 +37,7 @@ endif
 local $shape_changed = 0
 $dt = time - $SKC_LastTime
 
-$FREQ = ($FREQ + $dt) % 1.0
+$FREQ = ($FREQ + $dt) % 10000.0
 
 {% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set past_var = utils.format_var(config.shape_name) ~ "_SKCPast" %}
@@ -121,8 +121,18 @@ x115 = {{ vertex_count }}
     if {{ config.condition }}
     {% endif %}
         {% if config.shape_type == "Anim" %}
-        x88 = $FREQ * 1.0
-        y88 = {{ config.anim_type_index }}
+            {% if config.override_switch_condition and config.override_switch_value_link %}
+            if {{ config.override_switch_condition }}
+                x88 = ${{ utils.format_var(config.override_switch_value_link) | trim }}
+                y88 = -1
+            else
+                x88 = $FREQ * ${{ utils.format_var(config.value_link) | trim if config.value_link else '0.49' }}
+                y88 = {{ config.anim_type_index }}
+            endif
+            {% else %}
+            x88 = $FREQ * ${{ utils.format_var(config.value_link) | trim if config.value_link else '0.49' }}
+            y88 = {{ config.anim_type_index }}
+            {% endif %}
         {% else %}
         x88 = ${{ utils.format_var(config.value_link) | trim if config.value_link else 0 }}
         y88 = -1
@@ -194,7 +204,7 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
 type = Buffer
 format = R32_FLOAT
 data = {% for config in active_configs -%}
-    {{ "%.6f"|format(config.input_range_min if config.shape_type == "Linear" else config.anim_start_frame) }} {{ "%.6f"|format(config.input_range_max if config.shape_type == "Linear" else config.anim_end_frame) }} {{ "%.6f"|format(config.multiplier) }} {{ 1.0 if config.inverse else 0.0 }} {% endfor %}0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+    {{ "%.6f"|format(config.input_range_min if config.shape_type == "Linear" else config.anim_start_frame) }} {{ "%.6f"|format(config.input_range_max if config.shape_type == "Linear" else config.anim_end_frame) }} {{ "%.6f"|format(config.multiplier) }} {{ 1.0 if config.inverse else 0.0 }} {{ "%.6f"|format(0.5 if config.shape_type == "Linear" else config.anim_t2) }} {{ "%.6f"|format(0.5 if config.shape_type == "Linear" else config.anim_t3) }} {% endfor %}0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 {% endif %}
 {% endmacro %}
 

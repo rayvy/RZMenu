@@ -256,6 +256,38 @@ class RZMObjectRef(bpy.types.PropertyGroup):
     obj_name: StringProperty(name="Object Name")
     obj: PointerProperty(type=bpy.types.Object, name="Object")
 
+def update_anim_start(self, context):
+    if self.anim_start_frame > self.anim_t2:
+        self.anim_t2 = self.anim_start_frame
+    if self.anim_t2 > self.anim_t3:
+        self.anim_t3 = self.anim_t2
+    if self.anim_t3 > self.anim_end_frame:
+        self.anim_end_frame = self.anim_t3
+
+def update_anim_t2(self, context):
+    if self.anim_t2 < self.anim_start_frame:
+        self.anim_start_frame = self.anim_t2
+    if self.anim_t2 > self.anim_t3:
+        self.anim_t3 = self.anim_t2
+    if self.anim_t3 > self.anim_end_frame:
+        self.anim_end_frame = self.anim_t3
+
+def update_anim_t3(self, context):
+    if self.anim_t3 < self.anim_t2:
+        self.anim_t2 = self.anim_t3
+    if self.anim_t2 < self.anim_start_frame:
+        self.anim_start_frame = self.anim_t2
+    if self.anim_t3 > self.anim_end_frame:
+        self.anim_end_frame = self.anim_t3
+
+def update_anim_end(self, context):
+    if self.anim_end_frame < self.anim_t3:
+        self.anim_t3 = self.anim_end_frame
+    if self.anim_t3 < self.anim_t2:
+        self.anim_t2 = self.anim_t3
+    if self.anim_t2 < self.anim_start_frame:
+        self.anim_start_frame = self.anim_t2
+
 class ShapeKeyConfig(bpy.types.PropertyGroup):
     """Configuration for a discovered Blender ShapeKey name.
     Generated automatically based on shape keys found in selected collections.
@@ -342,8 +374,10 @@ class ShapeKeyConfig(bpy.types.PropertyGroup):
         min=0.0, max=1.0, default=1.0, step=1, precision=3
     )
     anim_type_index: IntProperty(name="Type Index", default=0)
-    anim_start_frame: FloatProperty(name="Start Frame", default=0.0, min=0.0, max=1.0)
-    anim_end_frame:   FloatProperty(name="End Frame",   default=1.0, min=0.0, max=1.0)
+    anim_start_frame: FloatProperty(name="Start Frame", default=0.0, min=0.0, max=1.0, update=update_anim_start)
+    anim_end_frame:   FloatProperty(name="End Frame",   default=1.0, min=0.0, max=1.0, update=update_anim_end)
+    anim_t2:          FloatProperty(name="Rise End",    default=0.5, min=0.0, max=1.0, update=update_anim_t2)
+    anim_t3:          FloatProperty(name="Fall Start",  default=0.5, min=0.0, max=1.0, update=update_anim_t3)
 
     # ── Range & Randomization ────────────────────────────────────────────────
     slider_min: FloatProperty(

@@ -80,6 +80,8 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 'anim_type': c.anim_type_index,
                 'start': c.anim_start_frame,
                 'end': c.anim_end_frame,
+                'anim_t2': c.anim_t2,
+                'anim_t3': c.anim_t3,
                 'over_cond': c.override_switch_condition,
                 'over_link': c.override_switch_value_link,
                 'range_min': c.input_range_min,
@@ -116,6 +118,8 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 config.anim_type_index = s['anim_type']
                 config.anim_start_frame = s['start']
                 config.anim_end_frame = s['end']
+                config.anim_t2 = s.get('anim_t2', 0.5)
+                config.anim_t3 = s.get('anim_t3', 0.5)
                 config.override_switch_condition = s['over_cond']
                 config.override_switch_value_link = s['over_link']
                 config.input_range_min = s['range_min']
@@ -330,6 +334,69 @@ class RZM_OT_CleanupTrashShapes(bpy.types.Operator):
         self.report({'INFO'}, f"Deleted {deleted_count} empty shape keys across {objects_processed} objects.")
         return {'FINISHED'}
 
+class RZM_OT_AdjustAnimTimeline(bpy.types.Operator):
+    """Adjust active shape config animation timeline range/hold properties visually."""
+    bl_idname = "rzm.adjust_anim_timeline"
+    bl_label = "Adjust Timeline"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    action: bpy.props.StringProperty()
+    config_index: bpy.props.IntProperty()
+    
+    def execute(self, context):
+        rzm = context.scene.rzm
+        if not (0 <= self.config_index < len(rzm.shape_configs)):
+            return {'CANCELLED'}
+        config = rzm.shape_configs[self.config_index]
+        
+        step = 0.05
+        
+        t1 = config.anim_start_frame
+        t2 = config.anim_t2
+        t3 = config.anim_t3
+        t4 = config.anim_end_frame
+        
+        if self.action == 'SHIFT_LEFT':
+            delta = min(step, t1)
+            config.anim_start_frame = max(0.0, t1 - delta)
+            config.anim_t2 = max(0.0, t2 - delta)
+            config.anim_t3 = max(0.0, t3 - delta)
+            config.anim_end_frame = max(0.0, t4 - delta)
+        elif self.action == 'SHIFT_RIGHT':
+            delta = min(step, 1.0 - t4)
+            config.anim_end_frame = min(1.0, t4 + delta)
+            config.anim_t3 = min(1.0, t3 + delta)
+            config.anim_t2 = min(1.0, t2 + delta)
+            config.anim_start_frame = min(1.0, t1 + delta)
+        elif self.action == 'EXPAND':
+            config.anim_start_frame = max(0.0, t1 - step)
+            config.anim_end_frame = min(1.0, t4 + step)
+        elif self.action == 'SHRINK':
+            if (t4 - t1) > 2 * step:
+                config.anim_start_frame = min(t2, t1 + step)
+                config.anim_end_frame = max(t3, t4 - step)
+        elif self.action == 'MORE_HOLD':
+            config.anim_t2 = max(t1, t2 - step)
+            config.anim_t3 = min(t4, t3 + step)
+        elif self.action == 'LESS_HOLD':
+            if (t3 - t2) > step:
+                config.anim_t2 = min(t3, t2 + step)
+                config.anim_t3 = max(t2, t3 - step)
+        elif self.action == 'SHIFT_HOLD_LEFT':
+            if (t2 - step) >= t1:
+                config.anim_t2 -= step
+                config.anim_t3 -= step
+        elif self.action == 'SHIFT_HOLD_RIGHT':
+            if (t3 + step) <= t4:
+                config.anim_t2 += step
+                config.anim_t3 += step
+                
+        # Force UI update
+        for area in context.screen.areas:
+            if area.type == 'PROPERTIES':
+                area.tag_redraw()
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_ShapeKeyExport,
     RZM_OT_SelectAffectedObjects,
@@ -339,6 +406,7 @@ classes_to_register = [
     RZM_OT_SetAnimFrame,
     RZM_OT_GlobalShapeMaster,
     RZM_OT_CleanupTrashShapes,
+    RZM_OT_AdjustAnimTimeline,
 ]
 
 def register():

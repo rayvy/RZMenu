@@ -1380,15 +1380,86 @@ def draw_toolbox_content(self, context):
                     anim_box.label(text="Animation Settings:")
                     anim_box.prop(active_conf, "anim_type_index")
                     
-                    row_s = anim_box.row(align=True)
-                    row_s.prop(active_conf, "anim_start_frame")
-                    op_s = row_s.operator("rzm.set_anim_frame", text="", icon='CURSOR')
-                    op_s.target = 'start'
+                    # Visual Timeline Display
+                    t1 = active_conf.anim_start_frame
+                    t2 = active_conf.anim_t2
+                    t3 = active_conf.anim_t3
+                    t4 = active_conf.anim_end_frame
+
+                    visual_timeline = anim_box.box()
+                    visual_timeline.label(text="Visual Timeline (Envelope):", icon='TIME')
                     
-                    row_e = anim_box.row(align=True)
-                    row_e.prop(active_conf, "anim_end_frame")
-                    op_e = row_e.operator("rzm.set_anim_frame", text="", icon='CURSOR')
-                    op_e.target = 'end'
+                    # Construct unicode visual bar (20 segments)
+                    bar_chars = []
+                    for i in range(20):
+                        mid = i * 0.05 + 0.025
+                        if mid < t1 or mid > t4:
+                            bar_chars.append("░")
+                        elif mid < t2:
+                            bar_chars.append("╱")
+                        elif mid > t3:
+                            bar_chars.append("╲")
+                        else:
+                            bar_chars.append("█")
+                    
+                    bar_str = "".join(bar_chars)
+                    
+                    # Render the visual bar as a large, centered text block
+                    row_bar = visual_timeline.row(align=True)
+                    row_bar.scale_y = 1.2
+                    row_bar.alignment = 'CENTER'
+                    row_bar.label(text=bar_str)
+                    
+                    # Render key values in a row
+                    row_lbl = visual_timeline.row(align=True)
+                    row_lbl.label(text=f"Start: {t1:.2f}")
+                    row_lbl.label(text=f"Rise End: {t2:.2f}")
+                    row_lbl.label(text=f"Fall Start: {t3:.2f}")
+                    row_lbl.label(text=f"End: {t4:.2f}")
+
+                    # Sliders
+                    slider_box = visual_timeline.box()
+                    slider_box.prop(active_conf, "anim_start_frame", slider=True, text="1. Start")
+                    slider_box.prop(active_conf, "anim_t2", slider=True, text="2. Rise End")
+                    slider_box.prop(active_conf, "anim_t3", slider=True, text="3. Fall Start")
+                    slider_box.prop(active_conf, "anim_end_frame", slider=True, text="4. End")
+
+                    # Controls / Operators
+                    ctrl_row1 = visual_timeline.row(align=True)
+                    op_l = ctrl_row1.operator("rzm.adjust_anim_timeline", text="Shift Left", icon='TRIA_LEFT')
+                    op_l.action = 'SHIFT_LEFT'
+                    op_l.config_index = scene.rzm_active_shape_config_index
+                    
+                    op_r = ctrl_row1.operator("rzm.adjust_anim_timeline", text="Shift Right", icon='TRIA_RIGHT')
+                    op_r.action = 'SHIFT_RIGHT'
+                    op_r.config_index = scene.rzm_active_shape_config_index
+
+                    ctrl_row2 = visual_timeline.row(align=True)
+                    op_exp = ctrl_row2.operator("rzm.adjust_anim_timeline", text="Expand Window", icon='ADD')
+                    op_exp.action = 'EXPAND'
+                    op_exp.config_index = scene.rzm_active_shape_config_index
+
+                    op_shr = ctrl_row2.operator("rzm.adjust_anim_timeline", text="Shrink Window", icon='REMOVE')
+                    op_shr.action = 'SHRINK'
+                    op_shr.config_index = scene.rzm_active_shape_config_index
+
+                    ctrl_row3 = visual_timeline.row(align=True)
+                    op_mhl = ctrl_row3.operator("rzm.adjust_anim_timeline", text="Shift Hold L", icon='BACK')
+                    op_mhl.action = 'SHIFT_HOLD_LEFT'
+                    op_mhl.config_index = scene.rzm_active_shape_config_index
+                    
+                    op_mhr = ctrl_row3.operator("rzm.adjust_anim_timeline", text="Shift Hold R", icon='FORWARD')
+                    op_mhr.action = 'SHIFT_HOLD_RIGHT'
+                    op_mhr.config_index = scene.rzm_active_shape_config_index
+
+                    ctrl_row4 = visual_timeline.row(align=True)
+                    op_mh = ctrl_row4.operator("rzm.adjust_anim_timeline", text="More Hold", icon='ASSET_MANAGER')
+                    op_mh.action = 'MORE_HOLD'
+                    op_mh.config_index = scene.rzm_active_shape_config_index
+
+                    op_lh = ctrl_row4.operator("rzm.adjust_anim_timeline", text="Less Hold", icon='COLLAPSEMENU')
+                    op_lh.action = 'LESS_HOLD'
+                    op_lh.config_index = scene.rzm_active_shape_config_index
                     
                     over_box = anim_box.box()
                     over_box.label(text="Manual Override (Anim -> Linear):")

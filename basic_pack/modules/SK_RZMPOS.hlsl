@@ -22,7 +22,7 @@ Buffer<float> shape_configs : register(t54);
 Texture1D<float4> IniParams : register(t120);
 
 #define PI 3.141592653589793
-#define GLOBAL_SPEED_MULTIPLIER 10.0
+#define GLOBAL_SPEED_MULTIPLIER 1.0
 #define ORIG_V_COUNT ((uint)round(IniParams[115].x))
 
 [numthreads(256, 1, 1)]
@@ -48,12 +48,14 @@ void main(uint3 threadID : SV_DispatchThreadID)
     int anim_type = (int)round(IniParams[88].y);
     int config_index = (int)round(IniParams[88].z);
 
-    // Read static parameters from flat float buffer (4 floats per config)
-    uint base_offset = config_index * 4;
+    // Read static parameters from flat float buffer (6 floats per config)
+    uint base_offset = config_index * 6;
     float start_time = shape_configs[base_offset + 0];
     float end_time = shape_configs[base_offset + 1];
     float multiplier = shape_configs[base_offset + 2];
     float is_inverse = shape_configs[base_offset + 3];
+    float t2 = shape_configs[base_offset + 4];
+    float t3 = shape_configs[base_offset + 5];
 
     float weight = 0.0;
 
@@ -103,53 +105,25 @@ void main(uint3 threadID : SV_DispatchThreadID)
     {
         // Animation mode
         float global_time = frac(input_val * GLOBAL_SPEED_MULTIPLIER);
-        float duration = end_time - start_time;
 
-        if (duration > 0.0 && global_time >= start_time && global_time <= end_time)
+        if (global_time >= start_time && global_time <= end_time)
         {
-            float local_progress = (global_time - start_time) / duration;
+            float rise_dur = t2 - start_time;
+            float fall_dur = end_time - t3;
 
-            switch (anim_type)
+            if (rise_dur > 0.0 && global_time < t2)
             {
-                case 200: // Double Linear
-                {
-                    float linear_weight;
-                    if (local_progress < 0.5)
-                    {
-                        linear_weight = local_progress * 2.0;
-                    }
-                    else
-                    {
-                        linear_weight = 1.0 - (local_progress - 0.5) * 2.0;
-                    }
-                    weight = linear_weight * 2.0;
-                    break;
-                }
-                case 1: // Hammer
-                {
-                    float hold_start = 0.2;
-                    float hold_end = 0.5;
-
-                    if (local_progress < hold_start)
-                    {
-                        weight = sin((local_progress / hold_start) * PI / 2.0);
-                    }
-                    else if (local_progress <= hold_end)
-                    {
-                        weight = 1.0;
-                    }
-                    else
-                    {
-                        weight = cos(((local_progress - hold_end) / (1.0 - hold_end)) * PI / 2.0);
-                    }
-                    break;
-                }
-                case 0: // Standard Sine
-                default:
-                {
-                    weight = sin(local_progress * PI);
-                    break;
-                }
+                float progress = (global_time - start_time) / rise_dur;
+                weight = 0.5 * (1.0 - cos(progress * PI));
+            }
+            else if (fall_dur > 0.0 && global_time > t3)
+            {
+                float progress = (end_time - global_time) / fall_dur;
+                weight = 0.5 * (1.0 - cos(progress * PI));
+            }
+            else
+            {
+                weight = 1.0;
             }
         }
 
