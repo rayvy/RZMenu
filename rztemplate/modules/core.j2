@@ -127,6 +127,7 @@ run = CustomShaderComputeShapes
 {% set _hover_comps = [] %}
 {% set _cd_flags = {
     'xray': false,
+    'xray_custom': false,
     'frametrace': false,
     'rabbit0': false,
     'rabbit1': false,
@@ -160,7 +161,9 @@ run = CustomShaderComputeShapes
     {% for obj in scene.objects %}
         {% for key in obj.keys() if key.startswith('CustomDraw.') %}
             {% set cd_name = key[11:] %}
-            {% if cd_name.startswith('XRAY') %}
+            {% if cd_name in ['XRAY.MASK', 'XRAY.LAYER0', 'XRAY.LAYER1', 'XRAY.LAYER2'] %}
+                {% if _cd_flags.update({'xray_custom': true}) %}{% endif %}
+            {% elif cd_name.startswith('XRAY') %}
                 {% if _cd_flags.update({'xray': true}) %}{% endif %}
             {% elif cd_name.startswith('TRANSPARENT') %}
                 {% if _cd_flags.update({'transparent': true}) %}{% endif %}
@@ -396,6 +399,51 @@ z110 = 0
 w110 = 0
 run = CommandListComputeDimensions
 run = CommandListRZMain
+
+{% if _cd_flags.xray_custom %}
+if $rzm_xray_ready0 || $rzm_xray_ready1 || $rzm_xray_ready2
+
+    run = BuiltInCommandListUnbindAllRenderTargets
+    o0 = set_viewport bb
+
+    if $rzm_xray_probe_slot0 == 0
+        ps-t20 = ResourceRZMXRay0_O0
+    else
+        ps-t20 = ResourceRZMXRay0_O1
+    endif
+
+    if $rzm_xray_probe_slot1 == 0
+        ps-t21 = ResourceRZMXRay1_O0
+    else
+        ps-t21 = ResourceRZMXRay1_O1
+    endif
+
+    if $rzm_xray_probe_slot2 == 0
+        ps-t22 = ResourceRZMXRay2_O0
+    else
+        ps-t22 = ResourceRZMXRay2_O1
+    endif
+
+    if $rzm_xray_probe_slot3 == 0
+        ps-t23 = ResourceRZMXRayMASK_O0
+    else
+        ps-t23 = ResourceRZMXRayMASK_O1
+    endif
+
+    run = CustomShaderRZMXRayComposite
+
+    ps-t20 = null
+    ps-t21 = null
+    ps-t22 = null
+    ps-t23 = null
+endif
+
+post $rzm_xray_ready0 = 0
+post $rzm_xray_ready1 = 0
+post $rzm_xray_ready2 = 0
+
+post run = CommandListRZMXRayClear
+{% endif %}
 
 x24 = $rayvich_back_values_x24
 y24 = $rayvich_back_values_y24
@@ -816,6 +864,258 @@ filename = ./modules/blueG.dds
 [ResourceModuleTexFXTex]
 type = Texture2D
 filename = ./modules/TexFXTex.dds
+{% endif %}
+
+{% if _cd_flags.xray_custom %}
+; ============================================================
+; CUSTOM X-RAY SYSTEM
+; ============================================================
+
+[CommandListRZMXRayCapture]
+run = CommandListRZMXRayEnsureTargets
+run = CommandListRZMXRayBackupOutputs
+run = BuiltInCommandListUnbindAllRenderTargets
+
+if $xrayLayer == 0
+    run = CustomShaderLowLayerCapture
+elif $xrayLayer == 1
+    run = CustomShaderMidLayerCapture
+elif $xrayLayer == 2
+    run = CustomShaderHighLayerCapture
+elif $xrayLayer == 3
+    run = CustomShaderMaskLayerCapture
+endif
+
+run = BuiltInCommandListUnbindAllRenderTargets
+run = CommandListRZMXRayRestoreOutputs
+
+if $xrayLayer == 0
+    $rzm_xray_ready0 = 1
+elif $xrayLayer == 1
+    $rzm_xray_ready1 = 1
+elif $xrayLayer == 2
+    $rzm_xray_ready2 = 1
+endif
+
+[CustomShaderLowLayerCapture]
+cull = front
+o0 = ref ResourceRZMXRay0_O0
+o1 = ref ResourceRZMXRay0_O1
+if ResourceRZMXRay0_OD !== null
+    oD = ref ResourceRZMXRay0_OD
+endif
+drawindexed = $xrayC, $xrayO, 0
+
+[CustomShaderMidLayerCapture]
+cull = back
+o0 = ref ResourceRZMXRay1_O0
+o1 = ref ResourceRZMXRay1_O1
+if ResourceRZMXRay1_OD !== null
+    oD = ref ResourceRZMXRay1_OD
+endif
+drawindexed = $xrayC, $xrayO, 0
+
+[CustomShaderHighLayerCapture]
+cull = none
+o0 = ref ResourceRZMXRay2_O0
+o1 = ref ResourceRZMXRay2_O1
+if ResourceRZMXRay2_OD !== null
+    oD = ref ResourceRZMXRay2_OD
+endif
+drawindexed = $xrayC, $xrayO, 0
+
+[CustomShaderMaskLayerCapture]
+cull = none
+depth_clip_enable = true
+depth_enable = true
+depth_write_mask = zero
+depth_func = greater_equal
+stencil_enable = false
+blend = disable
+alpha_to_coverage = 0
+sample_mask = ffffffff
+o0 = ref ResourceRZMXRayMASK_O0
+o1 = ref ResourceRZMXRayMASK_O1
+oD = ref ResourceRZMGameOD
+drawindexed = $xrayC, $xrayO, 0
+
+[CommandListRZMXRayEnsureTargets]
+if rt_width * rt_height != $rzm_xray_pixels
+    $rzm_xray_pixels = rt_width * rt_height
+    ResourceRZMXRay0_O0 = null
+    ResourceRZMXRay0_O1 = null
+    ResourceRZMXRay0_OD = null
+    ResourceRZMXRay1_O0 = null
+    ResourceRZMXRay1_O1 = null
+    ResourceRZMXRay1_OD = null
+    ResourceRZMXRay2_O0 = null
+    ResourceRZMXRay2_O1 = null
+    ResourceRZMXRay2_OD = null
+    ResourceRZMXRayMASK_O0 = null
+    ResourceRZMXRayMASK_O1 = null
+endif
+
+if ResourceRZMXRay0_O0 === null
+    ResourceRZMXRay0_O0 = copy_desc o0 unless_null
+    ResourceRZMXRay0_O1 = copy_desc o0 unless_null
+endif
+if ResourceRZMXRay0_OD === null
+    ResourceRZMXRay0_OD = copy_desc oD unless_null
+endif
+
+if ResourceRZMXRay1_O0 === null
+    ResourceRZMXRay1_O0 = copy_desc o0 unless_null
+    ResourceRZMXRay1_O1 = copy_desc o0 unless_null
+endif
+if ResourceRZMXRay1_OD === null
+    ResourceRZMXRay1_OD = copy_desc oD unless_null
+endif
+
+if ResourceRZMXRay2_O0 === null
+    ResourceRZMXRay2_O0 = copy_desc o0 unless_null
+    ResourceRZMXRay2_O1 = copy_desc o0 unless_null
+endif
+if ResourceRZMXRay2_OD === null
+    ResourceRZMXRay2_OD = copy_desc oD unless_null
+endif
+
+if ResourceRZMXRayMASK_O0 === null
+    ResourceRZMXRayMASK_O0 = copy_desc o0 unless_null
+    ResourceRZMXRayMASK_O1 = copy_desc o0 unless_null
+endif
+
+[CommandListRZMXRayBackupOutputs]
+ResourceRZMGameO0 = ref o0
+ResourceRZMGameO1 = ref o1
+ResourceRZMGameO2 = ref o2
+ResourceRZMGameO3 = ref o3
+ResourceRZMGameO4 = ref o4
+ResourceRZMGameO5 = ref o5
+ResourceRZMGameOD = ref oD
+
+[CommandListRZMXRayRestoreOutputs]
+o0 = ref ResourceRZMGameO0
+o1 = ref ResourceRZMGameO1
+o2 = ref ResourceRZMGameO2
+o3 = ref ResourceRZMGameO3
+o4 = ref ResourceRZMGameO4
+o5 = ref ResourceRZMGameO5
+oD = ref ResourceRZMGameOD
+
+[CommandListRZMXRayClear]
+if ResourceRZMXRay0_O0 !== null
+    clear = ResourceRZMXRay0_O0
+    clear = ResourceRZMXRay0_O1
+endif
+if ResourceRZMXRay0_OD !== null
+    clear = ResourceRZMXRay0_OD
+endif
+
+if ResourceRZMXRay1_O0 !== null
+    clear = ResourceRZMXRay1_O0
+    clear = ResourceRZMXRay1_O1
+endif
+if ResourceRZMXRay1_OD !== null
+    clear = ResourceRZMXRay1_OD
+endif
+
+if ResourceRZMXRay2_O0 !== null
+    clear = ResourceRZMXRay2_O0
+    clear = ResourceRZMXRay2_O1
+endif
+if ResourceRZMXRay2_OD !== null
+    clear = ResourceRZMXRay2_OD
+endif
+
+if ResourceRZMXRayMASK_O0 !== null
+    clear = ResourceRZMXRayMASK_O0
+    clear = ResourceRZMXRayMASK_O1
+endif
+
+[CustomShaderRZMXRayComposite]
+local $x24_backup
+local $y24_backup
+local $z24_backup
+local $w24_backup
+$x24_backup = x24
+$y24_backup = y24
+$z24_backup = z24
+$w24_backup = w24
+
+local $x25_backup
+local $y25_backup
+local $z25_backup
+local $w25_backup
+$x25_backup = x25
+$y25_backup = y25
+$z25_backup = z25
+$w25_backup = w25
+
+x24 = $rzm_xray_opacity0
+y24 = $rzm_xray_opacity1
+z24 = $rzm_xray_opacity2
+w24 = $rzm_xray_opacity
+
+x25 = $rzm_xray_ready0
+y25 = $rzm_xray_ready1
+z25 = $rzm_xray_ready2
+w25 = 0
+
+vs = ./modules/mortal_kombat_xray.hlsl
+hs = null
+ds = null
+gs = null
+ps = ./modules/mortal_kombat_xray.hlsl
+cs = null
+
+alpha_to_coverage = 0
+sample_mask = ffffffff
+
+blend_factor[0] = 0
+blend_factor[1] = 0
+blend_factor[2] = 0
+blend_factor[3] = 0
+
+blend = ADD SRC_ALPHA INV_SRC_ALPHA
+alpha = ADD ONE ZERO
+
+cull = none
+topology = TRIANGLE_LIST
+
+draw = 3, 0
+
+x24 = $x24_backup
+y24 = $y24_backup
+z24 = $z24_backup
+w24 = $w24_backup
+
+x25 = $x25_backup
+y25 = $y25_backup
+z25 = $z25_backup
+w25 = $w25_backup
+
+[ResourceRZMXRay0_O0]
+[ResourceRZMXRay0_O1]
+[ResourceRZMXRay0_OD]
+
+[ResourceRZMXRay1_O0]
+[ResourceRZMXRay1_O1]
+[ResourceRZMXRay1_OD]
+
+[ResourceRZMXRay2_O0]
+[ResourceRZMXRay2_O1]
+[ResourceRZMXRay2_OD]
+
+[ResourceRZMXRayMASK_O0]
+[ResourceRZMXRayMASK_O1]
+
+[ResourceRZMGameO0]
+[ResourceRZMGameO1]
+[ResourceRZMGameO2]
+[ResourceRZMGameO3]
+[ResourceRZMGameO4]
+[ResourceRZMGameO5]
+[ResourceRZMGameOD]
 {% endif %}
 
 {%endmacro%}

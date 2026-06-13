@@ -200,6 +200,12 @@ filename = ./SK/{{ comp_name }}_{{ utils.format_var(config.shape_name) }}.buf
 {% endfor %}
 
 {% if active_configs | length > 0 and stride == 40 %}
+; Shape Config Index Mapping for {{ comp_name }}:
+; --------------------------------------
+{% for config in active_configs -%}
+; Index {{ loop.index0 }}: {{ config.shape_name }} (Type: {{ config.shape_type }}{% if config.shape_type == "Linear" %}, Link: {{ config.value_link }}{% else %}, Start/End: {{ config.anim_start_frame }}/{{ config.anim_end_frame }}{% endif %})
+{% endfor -%}
+; --------------------------------------
 [Resource{{ comp_name }}_ShapeConfigs]
 type = Buffer
 format = R32_FLOAT

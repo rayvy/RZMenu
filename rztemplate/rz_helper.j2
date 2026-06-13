@@ -298,6 +298,11 @@ endif
                 {% set safe_name = utils.format_from_idiot(real_obj.name) %}
             run = CustomShader{{ safe_name }}Sandevistan
             run = CustomShader.rzm.CustomDraw.FRAMETRACE
+            {% elif cd_name in ['XRAY.MASK', 'XRAY.LAYER0', 'XRAY.LAYER1', 'XRAY.LAYER2'] %}
+            $xrayLayer = {{ 3 if cd_name == 'XRAY.MASK' else (0 if cd_name == 'XRAY.LAYER0' else (1 if cd_name == 'XRAY.LAYER1' else 2)) }}
+            $xrayC = $CD_INDEX_COUNT
+            $xrayO = $CD_FIRST_INDEX
+            run = CommandListRZMXRayCapture
             {% else %}
             run = CustomShader.rzm.CustomDraw.{{ cd_name }}
             {% endif %}
@@ -334,6 +339,11 @@ endif
                 {% set safe_name = utils.format_from_idiot(real_obj.name) %}
             run = CustomShader{{ safe_name }}Sandevistan
             run = CustomShader.rzm.CustomDraw.FRAMETRACE
+            {% elif cd_name in ['XRAY.MASK', 'XRAY.LAYER0', 'XRAY.LAYER1', 'XRAY.LAYER2'] %}
+            $xrayLayer = {{ 3 if cd_name == 'XRAY.MASK' else (0 if cd_name == 'XRAY.LAYER0' else (1 if cd_name == 'XRAY.LAYER1' else 2)) }}
+            $xrayC = $CD_INDEX_COUNT
+            $xrayO = $CD_FIRST_INDEX
+            run = CommandListRZMXRayCapture
             {% else %}
             run = CustomShader.rzm.CustomDraw.{{ cd_name }}
             {% endif %}

@@ -11,7 +11,37 @@
 } %}
 
 {%macro config(mod_file,scene)%}
+{% set xray_custom_active = {'val': false} %}
+{% if scene and scene.objects %}
+    {% for obj in scene.objects %}
+        {% for key in obj.keys() if key.startswith('CustomDraw.') %}
+            {% set cd_name = key[11:] %}
+            {% if cd_name in ['XRAY.MASK', 'XRAY.LAYER0', 'XRAY.LAYER1', 'XRAY.LAYER2'] %}
+                {% if xray_custom_active.update({'val': true}) %}{% endif %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+{% endif %}
 [Constants]
+{% if xray_custom_active.val %}
+global persist $rzm_xray_opacity = 1.0
+global persist $rzm_xray_opacity0 = 1.0
+global persist $rzm_xray_opacity1 = 0.5
+global persist $rzm_xray_opacity2 = 0.1
+global persist $rzm_xray_probe_slot0 = 0
+global persist $rzm_xray_probe_slot1 = 0
+global persist $rzm_xray_probe_slot2 = 0
+global persist $rzm_xray_probe_slot3 = 0
+
+global $rzm_xray_ready0 = 0
+global $rzm_xray_ready1 = 0
+global $rzm_xray_ready2 = 0
+global $rzm_xray_pixels = 0
+global $xrayLayer = 0
+
+global $xrayC = 0
+global $xrayO = 0
+{% endif %}
 global $active = 0
 global $isGameMenu = 0
 global $LocalVisibility = 0
