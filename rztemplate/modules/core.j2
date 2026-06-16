@@ -1148,7 +1148,7 @@ w25 = $w25_backup
 
 {% if _hover_comps | length > 0 %}
 ; ============================================================
-; RZM Hover Detect - per-component detect shaders
+; RZM Hover Detect - per-component bake and detect shaders
 ; ============================================================
 
 {% for component in _hover_comps %}
@@ -1160,27 +1160,45 @@ cs = /modules/rzm_object_detect.hlsl
 cs-t0 = vb0
 cs-t1 = ib
 cs-t2 = ResourceRZMDetect{{ component.fullname }}ObjectMap
-cs-cb0 = vs-cb0
-cs-cb1 = vs-cb1
+cs-t3 = ResourceRZMBakeRT
 cs-u0 = ResourceRZMDetectID
 x24 = $cursorX
 y24 = $cursorY
 z24 = $screenW
 w24 = $screenH
 x25 = $isMouseButtonDown
-x26 = $RZMWorldProfileCB0
-y26 = $RZMWorldProfileCB1
-z26 = $RZMWorldProfileMode
-w26 = 2
-if $isGameMenu == 1
-    x26 = $RZMMenuProfileCB0
-    y26 = $RZMMenuProfileCB1
-    z26 = $RZMMenuProfileMode
-    w26 = 2
-endif
+w26 = 8.0
+x27 = cursor_x
+y27 = cursor_y
+z27 = res_width
+w27 = res_height
 dispatch = 1, 1, 1
 
+{% for part in component.parts if part.vertex_count > 0 %}
+[CustomShaderRZMBake{{ part.fullname }}]
+run = BuiltInCommandListUnbindAllRenderTargets
+clear = ResourceRZMBakeRT 0.0
+{% for slot in range(8) %}
+run = CustomShaderRZMBakeSample{{ slot }}_{{ part.fullname }}
 {% endfor %}
+
+{% set part_index_count = part.objects | map(attribute='index_count') | sum %}
+{% set step_size = (part_index_count // 8) if part_index_count >= 8 else 1 %}
+{% for slot in range(8) %}
+[CustomShaderRZMBakeSample{{ slot }}_{{ part.fullname }}]
+gs = ./modules/rzm_gs_probe.hlsl
+gs-t1 = Resource{{ part.fullname }}IB
+ps = ./modules/rzm_gs_probe.hlsl
+topology = point_list
+o0 = set_viewport no_view_cache ResourceRZMBakeRT
+x26 = {{ slot }}
+y26 = {{ slot * step_size }}
+drawindexed = 1, {{ slot * step_size }}, 0
+
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
 ; ============================================================
 ; RZM Hover Detect - pin shader
 ; Reads best hit from frame accumulator, writes to pinned
@@ -1318,6 +1336,7 @@ y72 = $rzm_jiggle_mult_radius
 z72 = $rzm_jiggle_mult_strength
 w72 = $rzm_jiggle_mult_spring
 x73 = $rzm_jiggle_mult_damping
+y73 = 1.00
 
 cs-t67 = ResourceRZMDetectCapturedID_{{ component.fullname }}
 cs-t68 = ResourceRZMJiggleParams_{{ component.fullname }}

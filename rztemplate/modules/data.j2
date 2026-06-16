@@ -630,7 +630,20 @@ array = 1
 type = RWBuffer
 format = R32G32B32A32_FLOAT
 array = 8
+
+[ResourceRZMBakeRT]
+type = Texture2D
+mode = mono
+width = 8
+height = 2
+mips = 1
+array = 1
+msaa = 1
+msaa_quality = 0
+format = DXGI_FORMAT_R32G32B32A32_FLOAT
+bind_flags = render_target shader_resource
 {% endif %}
+
 
 {# --- Jiggle per-component resources --- #}
 {% for component in mod_file.components if component.draw_vb != "" %}
@@ -679,7 +692,7 @@ type = Buffer
 format = R32G32B32A32_FLOAT
 array = {{ _j_objs | length * 4 }}
 data = {% for item in _j_objs -%}
-{{ "%.6f"|format(item.id | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.radius', 0.25) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.strength', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.falloff', 1.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.drag_scale', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_damp', 0.86) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_spring', 0.176) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_damp', 0.96) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_spring', 0.055) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_kick', 1.18) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.max_offset', 0.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.target_follow', 0.12) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.mouse_y', 1.0) | float) }} 0.000000 0.000000 0.000000{% if not loop.last %} {% endif %}
+{{ "%.6f"|format(item.id | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.radius', 0.25) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.strength', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.falloff', 1.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.drag_scale', 1.0) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_damp', 0.86) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.grab_spring', 0.176) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_damp', 0.96) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_spring', 0.055) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.rel_kick', 1.18) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.max_offset', 0.5) | float) }} {{ "%.6f"|format(item.obj.get('rzm.Jiggle.target_follow', 0.12) | float) }} 0.000000 0.000000 0.000000 0.000000{% if not loop.last %} {% endif %}
 {%- endfor %}
 
 [ResourceRZMJiggleMask_{{ component.fullname }}]

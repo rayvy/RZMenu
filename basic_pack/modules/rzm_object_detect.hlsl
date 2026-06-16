@@ -1,75 +1,22 @@
 // rzm_object_detect.hlsl
-// RZMenu: Component-level GPU cursor hit detector.
-//
-// One dispatch processes a whole component ObjectMap:
-//
-//   gObjectMap[0]     = float4(objectCount, 0, 0, 0)
-//   gObjectMap[1 + i] = float4(firstIndex, indexCount, mode, objectID)
-//
-// If objectID <= 0, firstIndex is used as the output ID.
+// RZMenu: component-level cursor hit detector driven by GS calibration probe.
 //
 // Expected bindings:
-//   cs-t0  = post-skinned vertex buffer, stride 40:
-//            float3 position, float3 normal, float4 tangent
-//   cs-t1  = index buffer, R32_UINT
-//   cs-t2  = component ObjectMap, Buffer<float4>
-//   cs-u0  = RWBuffer<float4>, closest-hit accumulator (ResourceRZMDetectID)
-//   cs-cb0 = candidate VS cb0
-//   cs-cb1 = candidate VS cb1
+//   cs-t0 = vertex buffer, stride 40: float3 position, float3 normal, float4 tangent
+//   cs-t1 = index buffer, R32_UINT
+//   cs-t2 = component ObjectMap, Buffer<float4>
+//   cs-t3 = ResourceRZMBakeRT, 8x2 R32G32B32A32_FLOAT
+//           row 0: clip.xyzw per calibration sample
+//           row 1: vertexIndex, sampleSlot, 0, valid
+//   cs-u0 = RWBuffer<float4>, closest-hit accumulator
 //
-// INI params (via IniParams):
-//   x24/y24 = cursor position (pixels or normalized UV)
-//   z24/w24 = screen width/height
-//
-//   x26 = cb0 base row
-//   y26 = cb1 base row  (-1 = raw vb0 already world-space)
-//   z26 = mode: localMode * 10 + clipMode
-//         localMode 0 = raw vb0, 1 = basis cb1, 2 = row-dot cb1
-//         clipMode  0 = basis cb0, 1 = row-dot cb0,
-//                   2 = basis cb0 + cb0[21].xy viewport offset
-//   w26 = hit padding in pixels
-//
-// Accumulated output (ResourceRZMDetectID):
-//   [0] legacy ABI, do not reorder:
-//       x = closest hit ID (-1 on miss)
-//       y = closest depth
-//       z = firstIndex of the winning range
-//       w = hit triangle count (debug)
-//   [1] hit point:
-//       xyz = cursor hit point on object, world space
-//       w   = object mode from ObjectMap
-//   [2] face:
-//       x = firstIndex
-//       y = absolute indexBase of hit face
-//       z = local triangle index inside object range
-//       w = face ID (absolute indexBase / 3)
-//   [3] vertices:
-//       x/y/z = absolute vertex indices of hit face
-//       w     = nearest vertex slot: 0, 1, or 2
-//   [4] barycentric:
-//       xyz = barycentric hit weights for v0/v1/v2
-//       w   = 1 if cursor was inside triangle, 0 if padding/edge hit
-//   [5] face direction:
-//       xyz = geometric face normal, world space
-//       w   = screen winding sign (-1 or 1)
-//   [6] nearest vertex:
-//       xyz = nearest vertex position, world space
-//       w   = nearest vertex screen distance squared
-//   [7] reserved:
-//       x = layout version
-//       y = object index in ObjectMap
-//       z = object count
-//       w = reserved
-//
-// Multiple dispatches may write into the same UAV; closest depth wins.
-// Dispatch with exactly one group: dispatch = 1, 1, 1
+// No cb slot discovery is used. A local->clip transform is reconstructed from
+// 4 non-coplanar GS-captured samples and then applied to all vertices in CS.
 
 #define THREADS_PER_GROUP 128u
-#define CB0_ROWS          196u
-#define CB1_ROWS          29u
 #define MAX_OBJECTS       256u
-#define RZM_DETECT_SLOTS  8u
-#define RZM_DETECT_LAYOUT_VERSION 2.0f
+#define CALIB_SAMPLES     8u
+#define RZM_DETECT_LAYOUT_VERSION 5.1f
 
 struct VertexAttributes
 {
@@ -89,19 +36,32 @@ struct HitPayload
     float4 slot7;
 };
 
+struct Calibration
+{
+    float3 p0;
+    float3 p1;
+    float3 p2;
+    float3 p3;
+    float4 c0;
+    float4 c1;
+    float4 c2;
+    float4 c3;
+    float  invDet;
+    float  valid;
+};
+
 StructuredBuffer<VertexAttributes> gVB0         : register(t0);
 Buffer<uint>                       gIndexBuffer : register(t1);
 Buffer<float4>                     gObjectMap   : register(t2);
+Texture2D<float4>                  gCalibTex    : register(t3);
 RWBuffer<float4>                   gBestHit     : register(u0);
-
-cbuffer cb0 : register(b0) { float4 gCB0[CB0_ROWS]; }
-cbuffer cb1 : register(b1) { float4 gCB1[CB1_ROWS]; }
 
 Texture1D<float4> IniParams : register(t120);
 
-#define CURSOR_PARAMS    IniParams[24]
-#define CLICK_PARAMS     IniParams[25]
-#define TRANSFORM_PARAMS IniParams[26]
+#define CURSOR_PARAMS IniParams[24]
+#define CLICK_PARAMS  IniParams[25]
+#define DETECT_PARAMS IniParams[26]
+#define ALT_CURSOR_PARAMS IniParams[27]
 
 groupshared float  sBestDepth[THREADS_PER_GROUP];
 groupshared float  sBestID[THREADS_PER_GROUP];
@@ -115,85 +75,151 @@ groupshared float4 sSlot5[THREADS_PER_GROUP];
 groupshared float4 sSlot6[THREADS_PER_GROUP];
 groupshared float4 sSlot7[THREADS_PER_GROUP];
 
-float3 TransformBasisCB1(float3 p, uint baseRow)
+float Det3(float3 a, float3 b, float3 c)
 {
-    return gCB1[baseRow + 0u].xyz * p.x
-         + gCB1[baseRow + 1u].xyz * p.y
-         + gCB1[baseRow + 2u].xyz * p.z
-         + gCB1[baseRow + 3u].xyz;
+    return dot(a, cross(b, c));
 }
 
-float3 TransformRowDotCB1(float3 p, uint baseRow)
+float2 CursorUVFromParams(float4 cursorParams)
 {
-    float4 hp = float4(p, 1.0f);
-    return float3(
-        dot(gCB1[baseRow + 0u], hp),
-        dot(gCB1[baseRow + 1u], hp),
-        dot(gCB1[baseRow + 2u], hp)
-    );
+    float2 screenRes = max(cursorParams.zw, float2(1.0f, 1.0f));
+    float2 cursor = cursorParams.xy;
+    if (cursor.x > 1.0f || cursor.y > 1.0f)
+        cursor /= screenRes;
+    return saturate(cursor);
 }
 
-float3 ToWorld(float3 p, int cb1Base, uint localMode)
+bool NormalizedCursorValid(float4 cursorParams)
 {
-    if (localMode == 1u && cb1Base >= 0)
-        return TransformBasisCB1(p, (uint)cb1Base);
-    if (localMode == 2u && cb1Base >= 0)
-        return TransformRowDotCB1(p, (uint)cb1Base);
-    return p;
+    return cursorParams.z > 0.0f
+        && cursorParams.w > 0.0f
+        && cursorParams.x > 0.0f
+        && cursorParams.y > 0.0f
+        && cursorParams.x < 1.0f
+        && cursorParams.y < 1.0f;
 }
 
-float4 ProjectBasisCB0(float3 p, uint baseRow)
+bool ReadCalibSample(uint slot, out float3 localPos, out float4 clipPos)
 {
-    return gCB0[baseRow + 0u] * p.x
-         + gCB0[baseRow + 1u] * p.y
-         + gCB0[baseRow + 2u] * p.z
-         + gCB0[baseRow + 3u];
+    localPos = float3(0.0f, 0.0f, 0.0f);
+    clipPos = float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    float4 clip = gCalibTex.Load(int3(slot, 0, 0));
+    float4 meta = gCalibTex.Load(int3(slot, 1, 0));
+
+    if (meta.w < 0.5f || abs(meta.y - (float)slot) > 0.5f)
+        return false;
+
+    uint vertexIndex = (uint)(meta.x + 0.5f);
+
+    uint vertexCount;
+    uint vertexStride;
+    gVB0.GetDimensions(vertexCount, vertexStride);
+    if (vertexIndex >= vertexCount)
+        return false;
+
+    if (!all(abs(clip) < float4(1000000.0f, 1000000.0f, 1000000.0f, 1000000.0f)))
+        return false;
+
+    if (abs(clip.w) <= 1e-5f)
+        return false;
+
+    localPos = gVB0[vertexIndex].position;
+    clipPos = clip;
+    return true;
 }
 
-float4 ProjectRowDotCB0(float3 p, uint baseRow)
+void SelectCalibration(out Calibration cal)
 {
-    float4 hp = float4(p, 1.0f);
-    return float4(
-        dot(gCB0[baseRow + 0u], hp),
-        dot(gCB0[baseRow + 1u], hp),
-        dot(gCB0[baseRow + 2u], hp),
-        dot(gCB0[baseRow + 3u], hp)
-    );
+    float3 p[CALIB_SAMPLES];
+    float4 c[CALIB_SAMPLES];
+    float  v[CALIB_SAMPLES];
+
+    [unroll]
+    for (uint i = 0u; i < CALIB_SAMPLES; ++i)
+    {
+        v[i] = ReadCalibSample(i, p[i], c[i]) ? 1.0f : 0.0f;
+    }
+
+    float bestVol = 0.0f;
+    uint bestA = 0u;
+    uint bestB = 1u;
+    uint bestC = 2u;
+    uint bestD = 3u;
+
+    [loop]
+    for (uint a = 0u; a < CALIB_SAMPLES - 3u; ++a)
+    {
+        [loop]
+        for (uint b = a + 1u; b < CALIB_SAMPLES - 2u; ++b)
+        {
+            [loop]
+            for (uint cc = b + 1u; cc < CALIB_SAMPLES - 1u; ++cc)
+            {
+                [loop]
+                for (uint d = cc + 1u; d < CALIB_SAMPLES; ++d)
+                {
+                    float valid = v[a] * v[b] * v[cc] * v[d];
+                    float3 e1 = p[b] - p[a];
+                    float3 e2 = p[cc] - p[a];
+                    float3 e3 = p[d] - p[a];
+                    float vol = abs(Det3(e1, e2, e3)) * valid;
+
+                    if (vol > bestVol)
+                    {
+                        bestVol = vol;
+                        bestA = a;
+                        bestB = b;
+                        bestC = cc;
+                        bestD = d;
+                    }
+                }
+            }
+        }
+    }
+
+    cal.p0 = p[bestA];
+    cal.p1 = p[bestB];
+    cal.p2 = p[bestC];
+    cal.p3 = p[bestD];
+    cal.c0 = c[bestA];
+    cal.c1 = c[bestB];
+    cal.c2 = c[bestC];
+    cal.c3 = c[bestD];
+
+    float det = Det3(cal.p1 - cal.p0, cal.p2 - cal.p0, cal.p3 - cal.p0);
+    cal.valid = bestVol > 1e-8f && abs(det) > 1e-8f ? 1.0f : 0.0f;
+    cal.invDet = cal.valid > 0.5f ? rcp(det) : 0.0f;
 }
 
-float4 ToClip(float3 worldPos, uint cb0Base, uint clipMode)
+float4 LocalToClip(Calibration cal, float3 localPos)
 {
-    if (clipMode == 1u)
-        return ProjectRowDotCB0(worldPos, cb0Base);
+    float3 e1 = cal.p1 - cal.p0;
+    float3 e2 = cal.p2 - cal.p0;
+    float3 e3 = cal.p3 - cal.p0;
+    float3 d = localPos - cal.p0;
 
-    float4 clip = ProjectBasisCB0(worldPos, cb0Base);
-    if (clipMode == 2u)
-        clip.xy += gCB0[21u].xy * clip.w;
-    return clip;
+    float b1 = Det3(d, e2, e3) * cal.invDet;
+    float b2 = Det3(e1, d, e3) * cal.invDet;
+    float b3 = Det3(e1, e2, d) * cal.invDet;
+    float b0 = 1.0f - b1 - b2 - b3;
+
+    return cal.c0 * b0 + cal.c1 * b1 + cal.c2 * b2 + cal.c3 * b3;
 }
 
 bool ClipToScreenUV(float4 clipPos, out float2 uv, out float depth)
 {
-    uv    = float2(0.0f, 0.0f);
+    uv = float2(0.0f, 0.0f);
     depth = 3.402823e+38f;
 
     if (clipPos.w <= 1e-5f)
         return false;
 
     float2 ndc = clipPos.xy / clipPos.w;
-    uv    = float2(ndc.x * 0.5f + 0.5f, 0.5f - ndc.y * 0.5f);
+    uv = float2(ndc.x * 0.5f + 0.5f, 0.5f - ndc.y * 0.5f);
     depth = 1.0f - clipPos.z / clipPos.w;
 
     return all(abs(ndc) < float2(1000.0f, 1000.0f)) && abs(depth) < 1000.0f;
-}
-
-float2 CursorUV()
-{
-    float2 screenRes = max(CURSOR_PARAMS.zw, float2(1.0f, 1.0f));
-    float2 cursor    = CURSOR_PARAMS.xy;
-    if (cursor.x > 1.0f || cursor.y > 1.0f)
-        cursor /= screenRes;
-    return saturate(cursor);
 }
 
 float Cross2(float2 a, float2 b)
@@ -218,8 +244,7 @@ float3 Barycentric2D(float2 p, float2 a, float2 b, float2 c)
 
     float v = (d11 * d20 - d01 * d21) / denom;
     float w = (d00 * d21 - d01 * d20) / denom;
-    float u = 1.0f - v - w;
-    return float3(u, v, w);
+    return float3(1.0f - v - w, v, w);
 }
 
 bool PointInTriangle(float2 p, float2 a, float2 b, float2 c)
@@ -234,8 +259,8 @@ bool PointInTriangle(float2 p, float2 a, float2 b, float2 c)
 
 float DistSqPointSegment(float2 p, float2 a, float2 b, out float t)
 {
-    float2 ab    = b - a;
-    float  denom = max(dot(ab, ab), 1e-10f);
+    float2 ab = b - a;
+    float denom = max(dot(ab, ab), 1e-10f);
     t = saturate(dot(p - a, ab) / denom);
     float2 d = p - (a + ab * t);
     return dot(d, d);
@@ -246,16 +271,16 @@ bool CursorHitsTriangle(
     float2 a,
     float2 b,
     float2 c,
-    float  padUV,
+    float padUV,
     out float3 bary,
     out float inside)
 {
-    bary   = float3(0.0f, 0.0f, 0.0f);
+    bary = float3(0.0f, 0.0f, 0.0f);
     inside = 0.0f;
 
     float2 pad = float2(padUV, padUV);
-    float2 mn  = min(a, min(b, c)) - pad;
-    float2 mx  = max(a, max(b, c)) + pad;
+    float2 mn = min(a, min(b, c)) - pad;
+    float2 mx = max(a, max(b, c)) + pad;
 
     if (any(cursor < mn) || any(cursor > mx))
         return false;
@@ -300,13 +325,13 @@ uint NearestVertexSlot(float2 cursor, float2 s0, float2 s1, float2 s2, out float
     return 2u;
 }
 
-float3 SelectVertexPosition(uint slot, float3 w0, float3 w1, float3 w2)
+float3 SelectVertexPosition(uint slot, float3 p0, float3 p1, float3 p2)
 {
     if (slot == 0u)
-        return w0;
+        return p0;
     if (slot == 1u)
-        return w1;
-    return w2;
+        return p1;
+    return p2;
 }
 
 uint SelectVertexIndex(uint slot, uint i0, uint i1, uint i2)
@@ -322,7 +347,7 @@ float3 SafeNormalize(float3 v)
 {
     float lenSq = dot(v, v);
     if (lenSq <= 1e-20f)
-        return float3(0.0f, 0.0f, 0.0f);
+        return float3(0.0f, 0.0f, 1.0f);
     return v * rsqrt(lenSq);
 }
 
@@ -332,26 +357,24 @@ void InitPayload(out HitPayload payload)
     payload.slot2 = float4(0.0f, 0.0f, 0.0f, 0.0f);
     payload.slot3 = float4(0.0f, 0.0f, 0.0f, 0.0f);
     payload.slot4 = float4(0.0f, 0.0f, 0.0f, 0.0f);
-    payload.slot5 = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    payload.slot5 = float4(0.0f, 0.0f, 1.0f, 0.0f);
     payload.slot6 = float4(0.0f, 0.0f, 0.0f, 0.0f);
     payload.slot7 = float4(RZM_DETECT_LAYOUT_VERSION, 0.0f, 0.0f, 0.0f);
 }
 
 void TestTriangleRange(
-    uint  tid,
-    uint  objectIndex,
-    uint  objectCount,
-    uint  firstIndex,
-    uint  indexCount,
-    uint  baseVertex,
+    Calibration cal,
+    uint tid,
+    uint objectIndex,
+    uint objectCount,
+    uint firstIndex,
+    uint indexCount,
     float objectMode,
     float objectID,
-    uint  cb0Base,
-    int   cb1Base,
-    uint  localMode,
-    uint  clipMode,
-    float2 cursor,
-    float  padUV,
+    float2 primaryCursor,
+    float2 altCursor,
+    bool useAltCursor,
+    float padUV,
     inout float bestDepth,
     inout float bestID,
     inout float bestFirstIndex,
@@ -364,43 +387,58 @@ void TestTriangleRange(
     for (uint tri = tid; tri < triangleCount; tri += THREADS_PER_GROUP)
     {
         uint indexBase = firstIndex + tri * 3u;
-        uint i0 = gIndexBuffer[indexBase + 0u] + baseVertex;
-        uint i1 = gIndexBuffer[indexBase + 1u] + baseVertex;
-        uint i2 = gIndexBuffer[indexBase + 2u] + baseVertex;
+        uint i0 = gIndexBuffer[indexBase + 0u];
+        uint i1 = gIndexBuffer[indexBase + 1u];
+        uint i2 = gIndexBuffer[indexBase + 2u];
 
-        float3 w0 = ToWorld(gVB0[i0].position, cb1Base, localMode);
-        float3 w1 = ToWorld(gVB0[i1].position, cb1Base, localMode);
-        float3 w2 = ToWorld(gVB0[i2].position, cb1Base, localMode);
+        float3 p0 = gVB0[i0].position;
+        float3 p1 = gVB0[i1].position;
+        float3 p2 = gVB0[i2].position;
 
         float2 s0, s1, s2;
-        float  d0, d1, d2;
-        bool ok0 = ClipToScreenUV(ToClip(w0, cb0Base, clipMode), s0, d0);
-        bool ok1 = ClipToScreenUV(ToClip(w1, cb0Base, clipMode), s1, d1);
-        bool ok2 = ClipToScreenUV(ToClip(w2, cb0Base, clipMode), s2, d2);
+        float d0, d1, d2;
+        bool ok0 = ClipToScreenUV(LocalToClip(cal, p0), s0, d0);
+        bool ok1 = ClipToScreenUV(LocalToClip(cal, p1), s1, d1);
+        bool ok2 = ClipToScreenUV(LocalToClip(cal, p2), s2, d2);
 
-        float3 bary;
-        float  inside;
-        if (ok0 && ok1 && ok2 && CursorHitsTriangle(cursor, s0, s1, s2, padUV, bary, inside))
+        float3 primaryBary = float3(0.0f, 0.0f, 0.0f);
+        float primaryInside = 0.0f;
+        float3 altBary = float3(0.0f, 0.0f, 0.0f);
+        float altInside = 0.0f;
+        bool primaryHit = false;
+        bool altHit = false;
+
+        if (ok0 && ok1 && ok2)
         {
+            primaryHit = CursorHitsTriangle(primaryCursor, s0, s1, s2, padUV, primaryBary, primaryInside);
+            altHit = useAltCursor && CursorHitsTriangle(altCursor, s0, s1, s2, padUV, altBary, altInside);
+        }
+
+        if (primaryHit || altHit)
+        {
+            float2 cursor = altHit ? altCursor : primaryCursor;
+            float3 bary = altHit ? altBary : primaryBary;
+            float inside = altHit ? altInside : primaryInside;
+
             hitCount += 1.0f;
             float triDepth = min(d0, min(d1, d2));
             if (triDepth < bestDepth)
             {
                 float nearestDistSq;
                 uint nearestSlot = NearestVertexSlot(cursor, s0, s1, s2, nearestDistSq);
-                float3 faceNormal = SafeNormalize(cross(w1 - w0, w2 - w0));
+                float3 faceNormal = SafeNormalize(cross(p1 - p0, p2 - p0));
                 float winding = Cross2(s1 - s0, s2 - s0) < 0.0f ? -1.0f : 1.0f;
 
-                bestDepth      = triDepth;
-                bestID         = objectID;
+                bestDepth = triDepth;
+                bestID = objectID;
                 bestFirstIndex = (float)firstIndex;
 
-                payload.slot1 = float4(w0 * bary.x + w1 * bary.y + w2 * bary.z, objectMode);
+                payload.slot1 = float4(p0 * bary.x + p1 * bary.y + p2 * bary.z, objectMode);
                 payload.slot2 = float4((float)firstIndex, (float)indexBase, (float)tri, (float)(indexBase / 3u));
                 payload.slot3 = float4((float)i0, (float)i1, (float)i2, (float)nearestSlot);
                 payload.slot4 = float4(bary, inside);
                 payload.slot5 = float4(faceNormal, winding);
-                payload.slot6 = float4(SelectVertexPosition(nearestSlot, w0, w1, w2), nearestDistSq);
+                payload.slot6 = float4(SelectVertexPosition(nearestSlot, p0, p1, p2), nearestDistSq);
                 payload.slot7 = float4(RZM_DETECT_LAYOUT_VERSION, (float)objectIndex, (float)objectCount, (float)SelectVertexIndex(nearestSlot, i0, i1, i2));
             }
         }
@@ -413,67 +451,63 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID,
 {
     uint tid = groupThreadID.x;
 
-    uint  cb0Base      = (uint)max(TRANSFORM_PARAMS.x, 0.0f);
-    int   cb1Base      = (int)TRANSFORM_PARAMS.y;
-    uint  mode         = (uint)max(TRANSFORM_PARAMS.z, 0.0f);
-    float hitPadPixels = max(TRANSFORM_PARAMS.w, 0.0f);
+    Calibration cal;
+    SelectCalibration(cal);
 
-    uint localMode = mode / 10u;
-    uint clipMode  = mode - localMode * 10u;
-
-    float bestDepth      = 3.402823e+38f;
-    float bestID         = -1.0f;
+    float bestDepth = 3.402823e+38f;
+    float bestID = -1.0f;
     float bestFirstIndex = 0.0f;
-    float hitCount       = 0.0f;
+    float hitCount = 0.0f;
     HitPayload payload;
     InitPayload(payload);
 
-    uint objectCount = (uint)min(max(gObjectMap[0u].x, 0.0f), (float)MAX_OBJECTS);
-    float2 cursor    = CursorUV();
-    float2 screenRes = max(CURSOR_PARAMS.zw, float2(1.0f, 1.0f));
-    float  padUV     = hitPadPixels / max(screenRes.x, screenRes.y);
-
-    bool isClicked = (CLICK_PARAMS.x > 0.0f);
-
-    if (cb0Base + 3u < CB0_ROWS)
+    if (cal.valid > 0.5f)
     {
+        uint objectCount = (uint)min(max(gObjectMap[0u].x, 0.0f), (float)MAX_OBJECTS);
+        float2 primaryCursor = CursorUVFromParams(CURSOR_PARAMS);
+        float2 altCursor = CursorUVFromParams(ALT_CURSOR_PARAMS);
+        bool useAltCursor = NormalizedCursorValid(ALT_CURSOR_PARAMS);
+        float2 screenRes = max(CURSOR_PARAMS.zw, float2(1.0f, 1.0f));
+        float hitPadPixels = max(DETECT_PARAMS.w, 0.0f);
+        float padUV = hitPadPixels / max(screenRes.x, screenRes.y);
+        bool isClicked = CLICK_PARAMS.x > 0.0f;
+
         [loop]
         for (uint objectIndex = 0u; objectIndex < objectCount; objectIndex++)
         {
-            float4 entry     = gObjectMap[1u + objectIndex];
-            uint firstIndex  = (uint)max(entry.x, 0.0f);
-            uint indexCount  = (uint)max(entry.y, 0.0f);
+            float4 entry = gObjectMap[1u + objectIndex];
+            uint firstIndex = (uint)max(entry.x, 0.0f);
+            uint indexCount = (uint)max(entry.y, 0.0f);
             float objectMode = entry.z;
-            float objectID   = entry.w > 0.0f ? entry.w : (float)firstIndex;
+            float objectID = entry.w > 0.0f ? entry.w : (float)firstIndex;
 
-            bool isHoverType   = (objectMode <= 3.0f) || (objectMode == 7.0f) || (objectMode == 8.0f);
-            bool isClickType   = (objectMode >= 4.0f && objectMode <= 6.0f);
+            bool isHoverType = (objectMode <= 3.0f) || (objectMode == 7.0f) || (objectMode == 8.0f);
+            bool isClickType = (objectMode >= 4.0f && objectMode <= 6.0f);
             bool shouldProcess = isHoverType || (isClickType && isClicked);
 
             if (shouldProcess && indexCount >= 3u)
             {
                 TestTriangleRange(
-                    tid, objectIndex, objectCount,
-                    firstIndex, indexCount, 0u, objectMode, objectID,
-                    cb0Base, cb1Base, localMode, clipMode,
-                    cursor, padUV,
+                    cal, tid, objectIndex, objectCount,
+                    firstIndex, indexCount, objectMode, objectID,
+                    primaryCursor, altCursor, useAltCursor, padUV,
                     bestDepth, bestID, bestFirstIndex, hitCount,
                     payload);
             }
         }
     }
 
-    sBestDepth[tid]      = bestDepth;
-    sBestID[tid]         = bestID;
+    sBestDepth[tid] = bestDepth;
+    sBestID[tid] = bestID;
     sBestFirstIndex[tid] = bestFirstIndex;
-    sHitCount[tid]       = hitCount;
-    sSlot1[tid]          = payload.slot1;
-    sSlot2[tid]          = payload.slot2;
-    sSlot3[tid]          = payload.slot3;
-    sSlot4[tid]          = payload.slot4;
-    sSlot5[tid]          = payload.slot5;
-    sSlot6[tid]          = payload.slot6;
-    sSlot7[tid]          = payload.slot7;
+    sHitCount[tid] = hitCount;
+    sSlot1[tid] = payload.slot1;
+    sSlot2[tid] = payload.slot2;
+    sSlot3[tid] = payload.slot3;
+    sSlot4[tid] = payload.slot4;
+    sSlot5[tid] = payload.slot5;
+    sSlot6[tid] = payload.slot6;
+    sSlot7[tid] = payload.slot7;
     GroupMemoryBarrierWithGroupSync();
 
     for (uint stride = THREADS_PER_GROUP / 2u; stride > 0u; stride >>= 1u)
@@ -483,16 +517,16 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID,
             sHitCount[tid] += sHitCount[tid + stride];
             if (sBestDepth[tid + stride] < sBestDepth[tid])
             {
-                sBestDepth[tid]      = sBestDepth[tid + stride];
-                sBestID[tid]         = sBestID[tid + stride];
+                sBestDepth[tid] = sBestDepth[tid + stride];
+                sBestID[tid] = sBestID[tid + stride];
                 sBestFirstIndex[tid] = sBestFirstIndex[tid + stride];
-                sSlot1[tid]          = sSlot1[tid + stride];
-                sSlot2[tid]          = sSlot2[tid + stride];
-                sSlot3[tid]          = sSlot3[tid + stride];
-                sSlot4[tid]          = sSlot4[tid + stride];
-                sSlot5[tid]          = sSlot5[tid + stride];
-                sSlot6[tid]          = sSlot6[tid + stride];
-                sSlot7[tid]          = sSlot7[tid + stride];
+                sSlot1[tid] = sSlot1[tid + stride];
+                sSlot2[tid] = sSlot2[tid + stride];
+                sSlot3[tid] = sSlot3[tid + stride];
+                sSlot4[tid] = sSlot4[tid + stride];
+                sSlot5[tid] = sSlot5[tid + stride];
+                sSlot6[tid] = sSlot6[tid + stride];
+                sSlot7[tid] = sSlot7[tid + stride];
             }
         }
         GroupMemoryBarrierWithGroupSync();
@@ -500,12 +534,11 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID,
 
     if (tid == 0u && sBestID[0] >= 0.0f)
     {
-        float4 previous      = gBestHit[0];
+        float4 previous = gBestHit[0];
         bool previousInvalid = previous.x < 0.0f || previous.y > 1e30f;
 
         if (previousInvalid || sBestDepth[0] < previous.y)
         {
-            // Write detail slots first; slot 0 remains the legacy validity/depth gate.
             gBestHit[1] = sSlot1[0];
             gBestHit[2] = sSlot2[0];
             gBestHit[3] = sSlot3[0];
