@@ -1168,8 +1168,8 @@ z24 = $screenW
 w24 = $screenH
 x25 = $isMouseButtonDown
 w26 = 8.0
-x27 = cursor_x
-y27 = cursor_y
+x27 = $cursorX
+y27 = $cursorY
 z27 = res_width
 w27 = res_height
 dispatch = 1, 1, 1
@@ -1327,7 +1327,11 @@ w70 = 0.08
 
 x71 = 0.50
 y71 = 1.10
+{% if mod_file.game.name == "ZenlessZoneZero" %}
+z71 = -1.00
+{% else %}
 z71 = 1.00
+{% endif %}
 w71 = 0.00
 
 ; [72].x = number of jiggle collider entries in ResourceRZMJiggleParams

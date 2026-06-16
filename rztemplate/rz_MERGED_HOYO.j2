@@ -259,9 +259,14 @@
                 {% endfor %}
             {% endfor %}
             {% if comp_has_hover.val %}
-            if $ObjectDetectAllowed == 1
+            if $i_had_nasa_pc == 1
                 run = CustomShaderRZMBake{{ part.fullname }}
                 run = CustomShaderRZMDetect{{ component.fullname }}
+            else
+                if $ObjectDetectAllowed == 1
+                    run = CustomShaderRZMBake{{ part.fullname }}
+                    run = CustomShaderRZMDetect{{ component.fullname }}
+                endif
             endif
             {% endif %}
             {# --- Jiggle Interaction --- #}

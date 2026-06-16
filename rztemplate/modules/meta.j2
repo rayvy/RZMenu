@@ -70,8 +70,10 @@
 
 {% macro mod_info_generate(mod_file, scene) %}
 {% if scene.rzm %}
-;RZMenu 3.6.1 (Universal Engine)
+;RZMenu 4.1 (Universal Engine) made by Rayvich
 ;Target Game: {{ scene.rzm.game.name }}
+[Constants]
+global persist $i_had_nasa_pc = 1
 
 ; change key parametr if you want to swap key from {{scene.rzm.meta_data.menu_keybind}} to which you want
 [KeyMenu]
