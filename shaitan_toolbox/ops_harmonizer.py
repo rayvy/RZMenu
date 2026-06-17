@@ -25,7 +25,105 @@ from .harmonizer_utils import (
     generated_aux_name,
     BACKUP_TEXT,
     displace_existing_approved,
+    get_lr_suffix,
+    has_lr_suffix,
+    apply_lr_suffix_to,
 )
+
+
+# ============================================================
+# MIRROR PAIR POST-PROCESSING
+# ============================================================
+
+def _resolve_mirror_pairs(scene):
+    """Post-process step run after build_plan.
+
+    Finds VG items whose original_name carries a .L or .R suffix and whose
+    partner (same base name, opposite side) exists in the plan for the SAME
+    object.  For each complete pair:
+      - Ensures resolved_name carries the correct .L / .R suffix.
+      - If both sides resolved to the SAME base name (no suffix on either),
+        bifurcates them: left gets base+'.L', right gets base+'.R'.
+      - Auto-clusters the pair so edits stay in sync.
+      - If one partner is APPROVED and the other is CONFLICT/UNKNOWN,
+        promotes the weaker partner automatically.
+    """
+    if not scene.rzm_weight_settings.preserve_lr_suffixes:
+        return
+
+    plan = scene.rzm_weight_plan
+    if not plan:
+        return
+
+    existing_ids = {item.cluster_id for item in plan if item.cluster_id}
+    cluster_counter = [0]
+
+    def _new_mirror_cid():
+        while f"mirror_{cluster_counter[0]}" in existing_ids:
+            cluster_counter[0] += 1
+        cid = f"mirror_{cluster_counter[0]}"
+        cluster_counter[0] += 1
+        existing_ids.add(cid)
+        return cid
+
+    # (object_name, base_lower) -> {'L': plan_idx, 'R': plan_idx}
+    by_base = defaultdict(dict)
+    for idx, item in enumerate(plan):
+        if item.status == "IGNORED":
+            continue
+        suffix, base = get_lr_suffix(item.original_name)
+        if suffix is None:
+            continue
+        side = suffix[-1].upper()
+        key = (item.object_name, base.lower())
+        if side not in by_base[key] or item.group_index < plan[by_base[key][side]].group_index:
+            by_base[key][side] = idx
+
+    for (_obj_name, _base_lower), sides in by_base.items():
+        if "L" not in sides or "R" not in sides:
+            continue
+
+        idx_l = sides["L"]
+        idx_r = sides["R"]
+        item_l = plan[idx_l]
+        item_r = plan[idx_r]
+
+        orig_suffix_l, _ = get_lr_suffix(item_l.original_name)
+        sep = orig_suffix_l[0] if orig_suffix_l else "."
+
+        # Fix .L side
+        if not has_lr_suffix(item_l.resolved_name):
+            item_l["_updating_cluster"] = True
+            item_l.resolved_name = apply_lr_suffix_to(item_l.resolved_name, sep + "L")
+            item_l["_updating_cluster"] = False
+
+        # Fix .R side — if both resolved to same base, reuse that base
+        if not has_lr_suffix(item_r.resolved_name):
+            _, base_l = get_lr_suffix(item_l.resolved_name)
+            _, base_r = get_lr_suffix(item_r.resolved_name)
+            target_base = base_l if base_l.lower() == base_r.lower() else item_r.resolved_name
+            item_r["_updating_cluster"] = True
+            item_r.resolved_name = target_base + sep + "R"
+            item_r["_updating_cluster"] = False
+
+        # Auto-promote weaker partner if the other is APPROVED
+        if item_l.status == "APPROVED" and item_r.status not in ("APPROVED", "IGNORED"):
+            item_r["_updating_cluster"] = True
+            item_r.status = "APPROVED"
+            item_r.manual_override = True
+            item_r.decision_reason = "mirror pair auto-resolved from .L partner"
+            item_r["_updating_cluster"] = False
+        elif item_r.status == "APPROVED" and item_l.status not in ("APPROVED", "IGNORED"):
+            item_l["_updating_cluster"] = True
+            item_l.status = "APPROVED"
+            item_l.manual_override = True
+            item_l.decision_reason = "mirror pair auto-resolved from .R partner"
+            item_l["_updating_cluster"] = False
+
+        # Auto-cluster
+        cid = item_l.cluster_id or item_r.cluster_id or _new_mirror_cid()
+        item_l.cluster_id = cid
+        item_r.cluster_id = cid
 
 
 class RZM_OT_build_plan(Operator):
@@ -255,6 +353,8 @@ class RZM_OT_build_plan(Operator):
                 cluster_id=fp_to_cluster_id.get((fp["object_name"], fp["index"]), "")
             )
 
+        if settings.preserve_lr_suffixes:
+            _resolve_mirror_pairs(scene)
         rebuild_matrix_and_summary(scene, target_meshes)
         self.report({"INFO"}, "Remap plan built")
         tag_view3d_redraw()
@@ -592,8 +692,15 @@ class RZM_OT_apply_plan(Operator):
             for item in items:
                 if item.group_index >= len(obj.vertex_groups):
                     continue
-                obj.vertex_groups[item.group_index].name = item.resolved_name
-                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": item.resolved_name, "status": item.status})
+                # Safety: if original had .L/.R and resolved lost it, restore the suffix
+                final_name = item.resolved_name
+                if settings.preserve_lr_suffixes:
+                    orig_suffix, _ = get_lr_suffix(item.original_name)
+                    if orig_suffix is not None and not has_lr_suffix(final_name):
+                        final_name = apply_lr_suffix_to(final_name, orig_suffix)
+                        item.resolved_name = final_name
+                obj.vertex_groups[item.group_index].name = final_name
+                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": final_name, "status": item.status})
             obj["rzm_weight_harmonizer_mapping"] = json.dumps(mapping, ensure_ascii=False)
 
         refresh_matrix_and_summary(scene)

@@ -413,6 +413,7 @@ def draw_base_mesh_setup_ui(self, context, layout):
     row = compact.row(align=True)
     row.prop(settings, "create_missing_bones")
     row.prop(settings, "ignore_multiple_toe", toggle=True)
+    row.prop(settings, "preserve_lr_suffixes", toggle=True)
     row.prop(settings, "show_overlay", toggle=True)
     row.prop(settings, "overlay_all_components", toggle=True)
     row.prop(settings, "overlay_point_size", text="Dots")

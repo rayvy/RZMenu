@@ -82,6 +82,11 @@ class RZMWeightSettings(PropertyGroup):
     )
 
     create_missing_bones: BoolProperty(name="Создавать недостающие кости", default=True)
+    preserve_lr_suffixes: BoolProperty(
+        name="Keep .L/.R",
+        description="Если у оригинальной VG был суффикс .L или .R, сохранить его в renamed-имени после Apply",
+        default=True,
+    )
     ignore_multiple_toe: BoolProperty(
         name="IgnoreMultipleToe",
         description="Схлопывает Toe-подобные цели в Toes.L / Toes.R",
