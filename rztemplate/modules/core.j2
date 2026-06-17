@@ -1288,6 +1288,10 @@ endif
 local $CursorXPast
 local $CursorYPast
 local $WasMouseButtonDown
+local $back_x69 = x69
+local $back_y69 = y69
+local $back_z69 = z69
+local $back_w69 = w69
 
 if $isMouseButtonDown == 1
     if $WasMouseButtonDown == 0
@@ -1327,7 +1331,7 @@ w70 = 0.08
 
 x71 = 0.50
 y71 = 1.10
-{% if mod_file.game.name == "ZenlessZoneZero" %}
+{% if mod_file.game.name in ["ZenlessZoneZero", "GenshinImpact"] %}
 z71 = -1.00
 {% else %}
 z71 = 1.00
@@ -1340,7 +1344,11 @@ y72 = $rzm_jiggle_mult_radius
 z72 = $rzm_jiggle_mult_strength
 w72 = $rzm_jiggle_mult_spring
 x73 = $rzm_jiggle_mult_damping
+{% if mod_file.game.name in ["ZenlessZoneZero", "GenshinImpact"] %}
+y73 = -1.00
+{% else %}
 y73 = 1.00
+{% endif %}
 
 cs-t67 = ResourceRZMDetectCapturedID_{{ component.fullname }}
 cs-t68 = ResourceRZMJiggleParams_{{ component.fullname }}
@@ -1357,6 +1365,11 @@ Dispatch = ({{ component.vertex_count }} + 255) // 256, 1, 1
 
 vb0 = null
 ResourceRZMJiggleTempVB0_{{ component.fullname }} = copy cs-u5
+
+post x69 = $back_x69
+post y69 = $back_y69
+post z69 = $back_z69
+post w69 = $back_w69
 
     {% endif %}
 {% endfor %}
