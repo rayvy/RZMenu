@@ -1,3 +1,5 @@
+// RZMenu
+// Made by: Rayvich
 // vfx_uv_cs.hlsl
 // Production-ready UV animation compute shader.
 

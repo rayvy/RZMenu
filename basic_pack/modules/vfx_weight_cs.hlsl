@@ -1,3 +1,5 @@
+// RZMenu
+// Made by: Rayvich
 // vfx_weight_cs.hlsl
 // Dynamically writes bone weights for VFX particle vertices each frame.
 // Reads per-point weight table (baked at export), samples by particle path_progress.

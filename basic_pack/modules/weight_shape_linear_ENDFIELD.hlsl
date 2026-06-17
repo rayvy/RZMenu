@@ -1,3 +1,5 @@
+// RZM
+// Made by: Rayvich
 struct VertexAttributes {
     uint2 weights; // 4x16-bit UNORM (8 bytes)
     uint indices;  // 4x8-bit UINT (4 bytes)

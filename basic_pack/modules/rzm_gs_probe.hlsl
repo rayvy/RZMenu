@@ -1,4 +1,5 @@
 // rzm_gs_probe.hlsl
+// Made by: Rayvich
 // Native VS -> custom GS/PS calibration probe.
 //
 // Each draw captures one indexed vertex after the native VS:

@@ -1,4 +1,5 @@
 // Generic Texture2D<float4> -> RWBuffer<float4> copier.
+// Made by: Rayvich
 // Bind source texture to cs-t0 and destination buffer to cs-u2.
 
 Texture2D<float4> SourceTex : register(t0);

@@ -1,6 +1,6 @@
 // rzm_jiggle_interaction.hlsl
 // RZMenu / 3DMigoto / XXMI
-//
+// Made by: Rayvich
 // Polished single-buffer Null-spring jiggle.
 // Adapted from jiggle_physx_by_rayvich_ouroboros_targettrail_v05.hlsl
 // by Rayvich for RZMenu ecosystem (per-component auto-generation).

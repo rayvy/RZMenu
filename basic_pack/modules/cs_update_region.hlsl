@@ -1,3 +1,6 @@
+// RZMenu
+// Made by: Rayvich
+
 RWTexture2D<float4> Atlas : register(u0);
 Texture2D<float4> SourceTexture : register(t0);
 Texture2D<float4> MorphTexture : register(t1);

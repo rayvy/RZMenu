@@ -1,6 +1,6 @@
 // rzm_object_detect.hlsl
 // RZMenu: component-level cursor hit detector driven by GS calibration probe.
-//
+// Made by: Rayvich
 // Expected bindings:
 //   cs-t0 = vertex buffer, stride 40: float3 position, float3 normal, float4 tangent
 //   cs-t1 = index buffer, R32_UINT

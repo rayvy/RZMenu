@@ -1,3 +1,5 @@
+// RZMenu
+// Made by: Rayvich
 struct VertexAttributes {
     float3 position;
     float3 normal;

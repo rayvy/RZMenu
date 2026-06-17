@@ -1,3 +1,5 @@
+// RZMenu
+// Made by: Rayvich
 // vfx_curve_physics_cs.hlsl
 // Compute shader using character motion history (matrices) to trail spline positions in World Space.
 // Coordinate spaces:

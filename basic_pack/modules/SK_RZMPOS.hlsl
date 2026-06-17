@@ -1,5 +1,4 @@
 // **** UNIFIED SHAPE ANIMATION SHADER (SK_RZMPOS) ****
-// Contributors: Zlevir, Antigravity
 
 struct VertexAttributes {
     float3 position;

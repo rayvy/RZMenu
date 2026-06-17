@@ -1,3 +1,5 @@
+// RZMenu
+// Made by: Rayvich
 // ==================================================================
 // == cs.hlsl - Версия "Бригадир" + Phase 0.5 ElementStaticMap
 //           + Phase 0.5.5: Color Bake, BlackList Buffer, loop i+=2

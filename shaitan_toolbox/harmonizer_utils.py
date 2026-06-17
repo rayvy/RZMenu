@@ -86,6 +86,53 @@ def sanitize_suffix(name: str) -> str:
     return cleaned or "Aux"
 
 
+# ============================================================
+# .L / .R MIRROR UTILITIES
+# ============================================================
+
+_LR_PATTERN = re.compile(r'([._])(L|R)$', re.IGNORECASE)
+
+
+def get_lr_suffix(name: str):
+    """Returns (suffix_str, base_name) where suffix_str is e.g. '.L', '_R', or None.
+
+    Examples:
+        'Spine.L' -> ('.L', 'Spine')
+        'leg_R'   -> ('_R', 'leg')
+        'Torso'   -> (None, 'Torso')
+    """
+    m = _LR_PATTERN.search(name)
+    if m:
+        sep = m.group(1)
+        side = m.group(2).upper()
+        base = name[:m.start()]
+        return (sep + side), base
+    return None, name
+
+
+def has_lr_suffix(name: str) -> bool:
+    """Returns True if name ends with a .L / .R / _L / _R suffix."""
+    return _LR_PATTERN.search(name) is not None
+
+
+def make_mirrored_name(name: str) -> str:
+    """Flips .L <-> .R in a name.  'Spine.L' -> 'Spine.R', 'leg_R' -> 'leg_L'."""
+    suffix, base = get_lr_suffix(name)
+    if suffix is None:
+        return name
+    sep = suffix[0]
+    side = 'R' if suffix[-1].upper() == 'L' else 'L'
+    return base + sep + side
+
+
+def apply_lr_suffix_to(resolved_name: str, original_suffix: str) -> str:
+    """Given a resolved name and the original .L/.R suffix, return resolved_name
+    with that suffix applied — but only if resolved_name doesn't already have one."""
+    if has_lr_suffix(resolved_name):
+        return resolved_name
+    return resolved_name + original_suffix
+
+
 def compact_bone_prefix(name: str | None) -> str:
     if not name:
         return "Root"
