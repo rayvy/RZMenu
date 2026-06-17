@@ -28,6 +28,7 @@ from .harmonizer_utils import (
     get_lr_suffix,
     has_lr_suffix,
     apply_lr_suffix_to,
+    strip_blender_collision_suffix,
 )
 
 
@@ -659,15 +660,48 @@ class RZM_OT_apply_plan(Operator):
 
         creation_rows = defaultdict(list)
         for _object_name, items in grouped.items():
-            local_reserved = set()
+            # Pre-populate with names that WON'T be temp-renamed (IGNORED VGs
+            # and any VG not in the plan).  This prevents Blender from silently
+            # adding .001 when our final name collides with an untouched VG.
+            obj_pre = bpy.data.objects.get(_object_name)
+            planned_indices = {item.group_index for item in items}
+            unplanned_names = set()
+            if obj_pre and obj_pre.type == "MESH":
+                unplanned_names = {
+                    vg.name for i, vg in enumerate(obj_pre.vertex_groups)
+                    if i not in planned_indices
+                }
+            local_reserved = set(unplanned_names)
             for item in sorted(items, key=lambda row: row.group_index):
                 requested = item.resolved_name.strip()
+
+                # Determine LR suffix for this item once, reuse below.
+                orig_suffix = None
+                if settings.preserve_lr_suffixes:
+                    orig_suffix, _ = get_lr_suffix(item.original_name)
+
+                # Apply LR suffix BEFORE the conflict check so that two
+                # items both resolving to e.g. "Bone73" with a .R original
+                # are detected as duplicates here, not by Blender (.001).
+                if orig_suffix is not None and not has_lr_suffix(requested):
+                    requested = apply_lr_suffix_to(requested, orig_suffix)
+
                 if not requested or requested in local_reserved:
-                    requested = generated_aux_name(item.nearest_bone, item.original_name, reserved)
-                    item.resolved_name = requested
+                    # Pass combined reserved so the generated name is
+                    # unique against BOTH global bone names AND names
+                    # already claimed by earlier items in this object.
+                    combined = reserved | local_reserved
+                    lr_for_aux = orig_suffix if orig_suffix is not None else ""
+                    requested = generated_aux_name(
+                        item.nearest_bone, item.original_name, combined, lr_suffix=lr_for_aux
+                    )
+                    # Keep global reserved in sync so future objects don't collide.
+                    reserved.add(requested)
                     item.create_bone = True
                     item.is_helper = True
                     item.decision_reason = "duplicate prevented during Apply"
+
+                item.resolved_name = requested
                 local_reserved.add(requested)
                 if requested not in bone_names:
                     creation_rows[requested].append(item)
@@ -685,23 +719,48 @@ class RZM_OT_apply_plan(Operator):
             obj = bpy.data.objects.get(object_name)
             if obj is None or obj.type != "MESH":
                 continue
-            for item in items:
-                if item.group_index < len(obj.vertex_groups):
-                    obj.vertex_groups[item.group_index].name = f"__RZM_TMP__{item.group_index:04d}__"
+
+            # ----------------------------------------------------------------
+            # Temp-rename EVERY vertex group (including IGNORED / unplanned)
+            # so Blender never sees a name collision during the final rename.
+            # ----------------------------------------------------------------
+            all_vg_original_names = {vg.index: vg.name for vg in obj.vertex_groups}
+            planned_indices = {item.group_index for item in items}
+            for vg in obj.vertex_groups:
+                vg.name = f"__RZM_TMP__{vg.index:04d}__"
+
+            # Final rename: planned items get their resolved names.
             mapping = []
             for item in items:
                 if item.group_index >= len(obj.vertex_groups):
                     continue
-                # Safety: if original had .L/.R and resolved lost it, restore the suffix
-                final_name = item.resolved_name
-                if settings.preserve_lr_suffixes:
-                    orig_suffix, _ = get_lr_suffix(item.original_name)
-                    if orig_suffix is not None and not has_lr_suffix(final_name):
-                        final_name = apply_lr_suffix_to(final_name, orig_suffix)
-                        item.resolved_name = final_name
-                obj.vertex_groups[item.group_index].name = final_name
-                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": final_name, "status": item.status})
+                obj.vertex_groups[item.group_index].name = item.resolved_name
+                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": item.resolved_name, "status": item.status})
+
+            # Restore unplanned / IGNORED VGs to their original names.
+            for vg in obj.vertex_groups:
+                if vg.index not in planned_indices:
+                    original = all_vg_original_names.get(vg.index, vg.name)
+                    vg.name = original
+
             obj["rzm_weight_harmonizer_mapping"] = json.dumps(mapping, ensure_ascii=False)
+
+            # ----------------------------------------------------------------
+            # Post-cleanup: strip any .NNN collision suffix Blender may have
+            # silently added.  This is a last-resort safety net.
+            # ----------------------------------------------------------------
+            vg_names_final: set[str] = set()
+            for vg in obj.vertex_groups:
+                clean = strip_blender_collision_suffix(vg.name)
+                if clean != vg.name:
+                    # Only rename if the clean version is not already taken.
+                    if clean not in vg_names_final:
+                        # Temporarily rename to a guaranteed unique placeholder
+                        # so that Blender's rename won't add a new suffix.
+                        placeholder = f"__RZM_CLEAN__{vg.index:04d}__"
+                        vg.name = placeholder
+                        vg.name = clean
+                vg_names_final.add(vg.name)
 
         refresh_matrix_and_summary(scene)
         self.report({"INFO"}, f"Done. New bones: {len(generated)}. VG order and vertex order were not changed")

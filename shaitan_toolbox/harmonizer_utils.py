@@ -69,16 +69,33 @@ def safe_log_ratio(a: float, b: float) -> float:
 
 
 def unique_name(base: str, reserved: set[str]) -> str:
+    """Return a name not in *reserved*, adding a numeric suffix if needed.
+
+    Uses ``base``, ``base1``, ``base2`` … (never the Blender-style ``.001`` format
+    which would clash with Blender's own VG collision-handling).
+    """
     if base not in reserved:
         reserved.add(base)
         return base
     index = 1
     while True:
-        candidate = f"{base}.{index:03d}"
+        candidate = f"{base}{index}"
         if candidate not in reserved:
             reserved.add(candidate)
             return candidate
         index += 1
+
+
+# Matches Blender's auto-appended collision suffixes: .001, .002, .001.001, etc.
+_BLENDER_COLL_RE = re.compile(r'(\.\d+)+$')
+
+
+def strip_blender_collision_suffix(name: str) -> str:
+    """Remove any trailing Blender collision suffixes (.001, .001.002, etc.).
+
+    Example: 'Clavicle0.R.001' → 'Clavicle0.R'
+    """
+    return _BLENDER_COLL_RE.sub('', name)
 
 
 def sanitize_suffix(name: str) -> str:
@@ -143,9 +160,35 @@ def compact_bone_prefix(name: str | None) -> str:
     return value or "Root"
 
 
-def generated_aux_name(nearest_bone_name: str | None, original_group_name: str, reserved: set[str]) -> str:
-    base = f"{compact_bone_prefix(nearest_bone_name)}Bone{sanitize_suffix(original_group_name)}"
-    return unique_name(base, reserved)
+def generated_aux_name(
+    nearest_bone_name: str | None,
+    original_group_name: str,
+    reserved: set[str],
+    lr_suffix: str = "",
+) -> str:
+    """Generate a clean sequential helper name.
+
+    Format: ``{NearestBoneBase}{N}{lr_suffix}``
+
+    Examples (lr_suffix=''):   Pelvis0, Pelvis1, Clavicle0
+    Examples (lr_suffix='.R'): Clavicle0.R, Clavicle1.R, Pelvis0.R
+
+    The nearest-bone name is cleaned (Bip/Skn prefixes removed) and any
+    .L/.R suffix is stripped so the counter part stays neutral.  The
+    lr_suffix is appended AFTER the counter, so all uniqueness checks
+    include it — avoiding Blender's automatic .001 collision suffixes.
+    """
+    clean_bone = compact_bone_prefix(nearest_bone_name)  # strips Bip/Skn, cleans chars
+    _, bone_base = get_lr_suffix(clean_bone)             # strip .L/.R from bone name
+    base = bone_base if bone_base else (clean_bone or sanitize_suffix(original_group_name) or "Aux")
+
+    counter = 0
+    while True:
+        candidate = f"{base}{counter}{lr_suffix}"
+        if candidate not in reserved:
+            reserved.add(candidate)
+            return candidate
+        counter += 1
 
 
 def toe_side_from_name(name: str) -> str | None:
