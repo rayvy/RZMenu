@@ -473,15 +473,43 @@ class RZTemplateEngine:
                 cur_x, cur_y = new_el.position
                 new_el.position = (int(cur_x - origin[0] + offset[0]), int(cur_y - origin[1] + offset[1]))
 
-    def export_config(self, filepath, config_type, target_prop):
+    # Fields that are safe to serialize for ShapeKeyConfig.
+    # Excludes: affected_objects, export_runtime_*, sync_value (runtime/pointers)
+    SHAPE_KEY_SERIALIZABLE_FIELDS = [
+        'shape_name', 'shape_type', 'value_link', 'condition', 'fallback_value',
+        'multiplier', 'inverse', 'input_range_min', 'input_range_max',
+        'anim_type_index', 'anim_start_frame', 'anim_end_frame', 'anim_t2', 'anim_t3',
+        'disable_export', 'bake_weights', 'force_export', 'mark_random',
+        'override_switch_condition', 'override_switch_value_link',
+        'parent_shape', 'sparse_vertex_count', 'slider_min', 'slider_max',
+        'in_game_profiles',
+    ]
+
+    def _serialize_shape_config(self, config):
+        """Serializes a ShapeKeyConfig to a dict, skipping runtime/pointer fields."""
+        result = {}
+        for field in self.SHAPE_KEY_SERIALIZABLE_FIELDS:
+            if hasattr(config, field):
+                result[field] = rzm_to_dict(getattr(config, field))
+        return result
+
+    def export_config(self, filepath, config_type, target_prop=None):
         print(f"[RZM] Exporting Config '{config_type}' to {filepath}...")
         
-        data = {
-            "meta": {"version": "1.0", "format": "RZMC", "type": config_type},
-            "data": rzm_to_dict(target_prop),
-            "assets_map": {},
-            "dependencies": {"images": []}
-        }
+        if config_type == 'SHAPE_KEY_CONFIG':
+            configs_data = [self._serialize_shape_config(c) for c in self.rzm.shape_configs]
+            data = {
+                "meta": {"version": "1.0", "format": "RZMC", "type": config_type},
+                "data": configs_data,
+                "count": len(configs_data),
+            }
+        else:
+            data = {
+                "meta": {"version": "1.0", "format": "RZMC", "type": config_type},
+                "data": rzm_to_dict(target_prop),
+                "assets_map": {},
+                "dependencies": {"images": []}
+            }
         
         try:
             with zipfile.ZipFile(filepath, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -517,12 +545,62 @@ class RZTemplateEngine:
                     br.component_mappings.clear()
                     dict_to_rzm(data.get("data", {}), br)
                     return True
+
+                elif config_type == "SHAPE_KEY_CONFIG":
+                    return self._import_shape_key_config(data)
+
                 else:
                     print(f"[RZM] Unknown configuration type: {config_type}")
-                    # We can support returning the type so UI can display what it imported
                     return False
         except Exception as e:
             print(f"[RZM] Config Import Error: {e}")
             import traceback
             traceback.print_exc()
             return False
+
+    def _import_shape_key_config(self, data):
+        """Merge-imports ShapeKeyConfig data. Only updates configs that already exist in scene."""
+        configs_data = data.get("data", [])
+        if not isinstance(configs_data, list):
+            print("[RZM] SHAPE_KEY_CONFIG: 'data' should be a list.")
+            return False
+
+        rzm = self.rzm
+        # Build lookup: shape_name -> config
+        existing = {c.shape_name: c for c in rzm.shape_configs if c.shape_name}
+
+        updated = 0
+        skipped = 0
+        skip_fields = {'shape_name', 'affected_objects', 'export_runtime_disabled',
+                       'export_runtime_affected_objects', 'sync_value'}
+
+        for saved in configs_data:
+            name = saved.get('shape_name', '')
+            if not name:
+                continue
+            if name not in existing:
+                print(f"[RZM] SK Config Import: shape '{name}' not found in scene, skipping.")
+                skipped += 1
+                continue
+
+            target = existing[name]
+            for field, value in saved.items():
+                if field in skip_fields:
+                    continue
+                if not hasattr(target, field):
+                    continue
+                attr = getattr(target, field)
+                # CollectionProperty (e.g. in_game_profiles)
+                if isinstance(attr, bpy.types.bpy_prop_collection) and isinstance(value, list):
+                    attr.clear()
+                    for item_dict in value:
+                        dict_to_rzm(item_dict, attr.add())
+                else:
+                    try:
+                        setattr(target, field, value)
+                    except Exception as e:
+                        print(f"[RZM] SK Config Import: could not set '{field}' on '{name}': {e}")
+            updated += 1
+
+        print(f"[RZM] SHAPE_KEY_CONFIG import done: {updated} updated, {skipped} skipped.")
+        return True

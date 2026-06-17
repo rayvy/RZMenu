@@ -527,7 +527,10 @@ class RZM_OT_ExportConfig(bpy.types.Operator):
     
     config_type: bpy.props.EnumProperty(
         name="Configuration Type",
-        items=[('BLEND_RESIZE', "Blend Resize", "")]
+        items=[
+            ('BLEND_RESIZE', "Blend Resize", ""),
+            ('SHAPE_KEY_CONFIG', "Shape Key Config", ""),
+        ]
     )
     
     def invoke(self, context, event):
@@ -542,7 +545,7 @@ class RZM_OT_ExportConfig(bpy.types.Operator):
         if self.config_type == 'BLEND_RESIZE':
             target_prop = context.scene.rzm.addons.blend_resize
             
-        if not target_prop:
+        if self.config_type != 'SHAPE_KEY_CONFIG' and not target_prop:
             self.report({'ERROR'}, f"Target property for {self.config_type} not found.")
             return {'CANCELLED'}
             
@@ -575,6 +578,61 @@ class RZM_OT_ImportConfig(bpy.types.Operator):
             self.report({'ERROR'}, "Configuration import failed or was invalid type.")
             return {'CANCELLED'}
 
+
+class RZM_OT_ExportShapeKeyConfig(bpy.types.Operator):
+    """Экспортирует конфигурацию ShapeKey в .rzmc (настройки, без объектных ссылок)"""
+    bl_idname = "rzm.export_shape_key_config"
+    bl_label = "Export Shape Key Config (.rzmc)"
+    bl_description = "Save current Shape Key configurations to a .rzmc file"
+    
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.rzmc", options={'HIDDEN'})
+    filename_ext = ".rzmc"
+    
+    def invoke(self, context, event):
+        self.filepath = "shape_key_config.rzmc"
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    
+    def execute(self, context):
+        rzm = context.scene.rzm
+        if not rzm.shape_configs:
+            self.report({'WARNING'}, "No Shape Key configurations to export.")
+            return {'CANCELLED'}
+        
+        engine = RZTemplateEngine(context)
+        if engine.export_config(self.filepath, 'SHAPE_KEY_CONFIG'):
+            self.report({'INFO'}, f"Shape Key Config exported: {len(rzm.shape_configs)} entries.")
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, "Shape Key Config export failed.")
+            return {'CANCELLED'}
+
+
+class RZM_OT_ImportShapeKeyConfig(bpy.types.Operator):
+    """Импортирует конфигурацию ShapeKey из .rzmc (merge — обновляет только существующие)"""
+    bl_idname = "rzm.import_shape_key_config"
+    bl_label = "Import Shape Key Config (.rzmc)"
+    bl_description = "Load Shape Key configurations from a .rzmc file (updates existing keys only)"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(default="*.rzmc", options={'HIDDEN'})
+    
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    
+    def execute(self, context):
+        engine = RZTemplateEngine(context)
+        if engine.import_config(self.filepath):
+            self.report({'INFO'}, "Shape Key Config imported (existing keys updated).")
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, "Import failed: invalid .rzmc or no matching shape keys.")
+            return {'CANCELLED'}
+
+
 classes_to_register = [
     RZM_OT_SaveTemplate,
     RZM_OT_LoadTemplate,
@@ -582,5 +640,7 @@ classes_to_register = [
     RZM_OT_ExportPartialTemplate,
     RZM_OT_ImportPartialTemplate,
     RZM_OT_ExportConfig,
-    RZM_OT_ImportConfig
+    RZM_OT_ImportConfig,
+    RZM_OT_ExportShapeKeyConfig,
+    RZM_OT_ImportShapeKeyConfig,
 ]

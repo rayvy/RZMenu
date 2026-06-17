@@ -1336,7 +1336,12 @@ def draw_toolbox_content(self, context):
             op_reset.value = 0.0
 
             box.separator()
-            box.label(text="Discovered Configurations:", icon='SHAPEKEY_DATA')
+            cfg_header = box.row(align=True)
+            cfg_header.label(text="Discovered Configurations:", icon='SHAPEKEY_DATA')
+            cfg_io = cfg_header.row(align=True)
+            cfg_io.alignment = 'RIGHT'
+            cfg_io.operator("rzm.import_shape_key_config", text="", icon='IMPORT')
+            cfg_io.operator("rzm.export_shape_key_config", text="", icon='EXPORT')
             box.template_list("RZM_UL_ShapeConfigs", "", rzm, "shape_configs", scene, "rzm_active_shape_config_index")
             
             if rzm.shape_configs and 0 <= scene.rzm_active_shape_config_index < len(rzm.shape_configs):
