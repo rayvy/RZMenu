@@ -721,46 +721,79 @@ class RZM_OT_apply_plan(Operator):
                 continue
 
             # ----------------------------------------------------------------
-            # Temp-rename EVERY vertex group (including IGNORED / unplanned)
-            # so Blender never sees a name collision during the final rename.
+            # Step 1: Temp-rename EVERY vertex group — planned AND unplanned.
+            # After this, no VG has a "real" name, so the final assignment
+            # loop cannot possibly collide with an existing name.
             # ----------------------------------------------------------------
             all_vg_original_names = {vg.index: vg.name for vg in obj.vertex_groups}
             planned_indices = {item.group_index for item in items}
             for vg in obj.vertex_groups:
                 vg.name = f"__RZM_TMP__{vg.index:04d}__"
 
-            # Final rename: planned items get their resolved names.
+            # ----------------------------------------------------------------
+            # Step 2: Assign final names to planned VGs.
+            # Before each assignment, check Blender's live VG list so that
+            # if our tracking data has any inconsistency we still can't
+            # produce a .001 collision suffix.
+            # ----------------------------------------------------------------
+            assigned_names: dict[str, int] = {}   # final_name -> vg.index
+
+            def _safe_name(target: str, own_index: int) -> str:
+                """Return target if free, otherwise base+N+lr_suffix without .001.
+
+                The counter is inserted BEFORE any .L/.R suffix so that
+                Blender's symmetry detection still works:
+                  'Thigh8.R' taken → 'Thigh81.R', 'Thigh82.R', …
+                  'Torso'    taken → 'Torso1',    'Torso2',    …
+                """
+                if obj.vertex_groups.get(target) is None:
+                    return target
+                # Strip any Blender collision suffix (.001 etc.) first.
+                clean = strip_blender_collision_suffix(target)
+                # Separate the .L/.R part so counter lands before it.
+                lr_suffix, bone_base = get_lr_suffix(clean)
+                if not lr_suffix:
+                    bone_base = clean
+                    lr_suffix = ""
+                counter = 1
+                while True:
+                    candidate = f"{bone_base}{counter}{lr_suffix}"
+                    if obj.vertex_groups.get(candidate) is None:
+                        return candidate
+                    counter += 1
+
             mapping = []
-            for item in items:
+            for item in sorted(items, key=lambda r: r.group_index):
                 if item.group_index >= len(obj.vertex_groups):
                     continue
-                obj.vertex_groups[item.group_index].name = item.resolved_name
-                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": item.resolved_name, "status": item.status})
+                vg = obj.vertex_groups[item.group_index]
+                final = _safe_name(item.resolved_name, vg.index)
+                vg.name = final
+                item.resolved_name = final   # keep plan in sync
+                assigned_names[final] = vg.index
+                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": final, "status": item.status})
 
-            # Restore unplanned / IGNORED VGs to their original names.
+            # ----------------------------------------------------------------
+            # Step 3: Restore unplanned / IGNORED VGs to their original names.
+            # Use the same _safe_name guard in case of unexpected collision.
+            # ----------------------------------------------------------------
             for vg in obj.vertex_groups:
                 if vg.index not in planned_indices:
                     original = all_vg_original_names.get(vg.index, vg.name)
-                    vg.name = original
+                    vg.name = _safe_name(original, vg.index)
 
             obj["rzm_weight_harmonizer_mapping"] = json.dumps(mapping, ensure_ascii=False)
 
             # ----------------------------------------------------------------
-            # Post-cleanup: strip any .NNN collision suffix Blender may have
-            # silently added.  This is a last-resort safety net.
+            # Step 4: Post-cleanup — strip any .NNN Blender somehow added.
+            # Works by finding the next free base+N name (no .001 format).
             # ----------------------------------------------------------------
-            vg_names_final: set[str] = set()
             for vg in obj.vertex_groups:
                 clean = strip_blender_collision_suffix(vg.name)
                 if clean != vg.name:
-                    # Only rename if the clean version is not already taken.
-                    if clean not in vg_names_final:
-                        # Temporarily rename to a guaranteed unique placeholder
-                        # so that Blender's rename won't add a new suffix.
-                        placeholder = f"__RZM_CLEAN__{vg.index:04d}__"
-                        vg.name = placeholder
-                        vg.name = clean
-                vg_names_final.add(vg.name)
+                    placeholder = f"__RZM_CLEAN__{vg.index:04d}__"
+                    vg.name = placeholder          # free the slot
+                    vg.name = _safe_name(clean, vg.index)  # assign clean or base+N
 
         refresh_matrix_and_summary(scene)
         self.report({"INFO"}, f"Done. New bones: {len(generated)}. VG order and vertex order were not changed")
