@@ -40,6 +40,7 @@ def draw_mc_tools(layout, context):
     row.operator("rzm.tw_mc_apply_cluster",           text="Apply",   icon='CHECKMARK')
     row.operator("rzm.tw_mc_fix_texture_steps",       text="",        icon='MOD_UVPROJECT')
     row.operator("rzm.tw_mc_export_material_textures", text="",       icon='IMAGE_DATA')
+    row.operator("rzm.tw_mc_validate_export_textures", text="",       icon='CHECKMARK')
     row.operator("rzm.tw_mc_select_preview_material_objects", text="", icon='UV_SYNC_SELECT')
 
     if mc:
@@ -66,6 +67,12 @@ def draw_mc_tools(layout, context):
             row.prop(node.inputs["Default Resolution X"], "default_value", text="X")
             row.prop(node.inputs["Default Resolution Y"], "default_value", text="Y")
             box.label(text="Allowed: 128 / 256 / 512 / 1024 / 2048 / 4096", icon='INFO')
+
+        if node and "Use HSV" in node.inputs and "HSV Base" in node.inputs:
+            box = layout.box()
+            box.label(text="Material HSV", icon='COLOR')
+            box.prop(node.inputs["Use HSV"], "default_value", text="Use HSV")
+            box.prop(node.inputs["HSV Base"], "default_value", text="HSV Base")
 
         layout.separator()
 

@@ -211,6 +211,37 @@ class RZM_OT_TwMcExportMaterialTextures(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_TwMcValidateExportTextures(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_validate_export_textures"
+    bl_label = "Validate TWAA Export Textures"
+    bl_description = "Verify TWAA material PNGs exist in the export folder, auto-export missing textures, and rebuild the TWAA layout"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            summary = texworks_mc.validate_twaa_export_textures(
+                context,
+                auto_export=True,
+                rebuild_layout=True,
+            )
+            trigger_refresh()
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+
+        warnings = len(summary.get("warnings", ()))
+        self.report(
+            {'WARNING'} if warnings else {'INFO'},
+            "TWAA validation: "
+            f"{summary.get('materials', 0)} material(s), "
+            f"{summary.get('checked_slots', 0)} slot(s), "
+            f"exported {summary.get('exported_slots', 0)}, "
+            f"registered {summary.get('registered', 0)}, "
+            f"warnings {warnings}."
+        )
+        return {'FINISHED'}
+
+
 def active_export_collection_objects(context):
     layer_collection = getattr(context.view_layer, "active_layer_collection", None)
     if layer_collection is None:
@@ -399,6 +430,7 @@ classes_to_register = [
     RZM_OT_TwMcBuildAutoAtlasLayout,
     RZM_OT_TwMcFixTextureSteps,
     RZM_OT_TwMcExportMaterialTextures,
+    RZM_OT_TwMcValidateExportTextures,
     RZM_OT_TwMcSelectMaterialObjects,
     RZM_OT_TwMcSelectAllMaterialObjects,
     RZM_OT_TwMcSelectPreviewMaterialObjects,

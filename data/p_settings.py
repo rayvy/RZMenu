@@ -754,6 +754,11 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         description="Apply TWAA TEXCOORD buffer patching after export. Disable to compare raw exported buffers against patched runtime atlas UVs",
         default=True
     )
+    tw_mc_pre_export_validate_textures: BoolProperty(
+        name="TWAA Pre-Export Texture Validator",
+        description="Before export, verify TWAA material texture PNGs exist in Textures/DynAtlas and auto-export missing files from configured RZM material nodes",
+        default=True
+    )
     tw_mc_patch_all_texcoord_payloads: BoolProperty(
         name="TW MC Patch All TEXCOORD Payloads",
         description="Patch TEXCOORD1/2/etc in addition to TEXCOORD.xy. Debug only; default keeps TEXCOORD.xy as the single source of truth",
@@ -1138,6 +1143,7 @@ class RZM_AddonPreferences(bpy.types.AddonPreferences):
         col.prop(self, "show_vg_stats")
         col.prop(self, "safe_export_temp_cleanup")
         col.prop(self, "dog_shit")
+        col.prop(self, "tw_mc_pre_export_validate_textures")
         col.prop(self, "tw_mc_post_patch_enabled")
         col.prop(self, "tw_mc_patch_all_texcoord_payloads")
         col.prop(self, "tw_mc_post_invert_x")

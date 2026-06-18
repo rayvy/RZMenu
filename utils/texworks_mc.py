@@ -24,7 +24,7 @@ UV_NAME = "RZAutoAtlas.UV"
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
 PREVIEW_UV_PREFIX = "TWAA."
 TEXCOORD_UV_NAME = "TEXCOORD.xy"
-SCHEMA = 4
+SCHEMA = 5
 KIND = "RZ_TEXWORKS_MC_MATERIAL"
 ROLE = "SEMANTIC_TEXTURE_HUB"
 DEFAULT_MAX_RASTER_PIXELS = 16 * 1024 * 1024
@@ -446,6 +446,8 @@ def make_or_update_material_group(force=False):
         # ── Resolution (visible on the node, used for TWAA atlas) ──────
         add_socket(group, "Default Resolution X", "INPUT", "NodeSocketInt", 512)
         add_socket(group, "Default Resolution Y", "INPUT", "NodeSocketInt", 512)
+        add_socket(group, "Use HSV", "INPUT", "NodeSocketBool", False)
+        add_socket(group, "HSV Base", "INPUT", "NodeSocketColor", (0.0, 0.0, 0.0, 1.0))
 
         # ── Outputs ────────────────────────────────────────────────────
         add_socket(group, "Base Color",       "OUTPUT", "NodeSocketColor")
@@ -505,6 +507,61 @@ def material_node_default_resolution(mat, settings=None):
         except Exception:
             pass
     return 512, 512
+
+
+def material_hsv_settings(mat):
+    group_node = find_material_group_node(mat)
+    if not group_node:
+        return {
+            "enabled": False,
+            "base": (0.0, 0.0, 0.0, 1.0),
+            "link": "",
+        }
+    enabled = socket_default_bool(group_node.inputs.get("Use HSV"), False)
+    base = socket_default_color(group_node.inputs.get("HSV Base"), (0.0, 0.0, 0.0, 1.0))
+    key = material_key(getattr(mat, "name", "Material"))
+    return {
+        "enabled": bool(enabled),
+        "base": tuple(float(base[index]) for index in range(4)),
+        "link": f"$RZ_TWAA_HSV_{key}",
+    }
+
+
+def ensure_rzm_vector_value(rzm, value_name, vector_value, update_existing=False):
+    if not rzm or not value_name:
+        return None, False
+    clean_target = str(value_name).lstrip("$@#%").strip().lower()
+    for value in getattr(rzm, "rzm_values", ()):
+        clean_name = str(getattr(value, "value_name", "") or "").lstrip("$@#%").strip().lower()
+        if clean_name != clean_target:
+            continue
+        if getattr(value, "value_type", "") != "VECTOR":
+            value.value_type = "VECTOR"
+        if update_existing:
+            value.vector_value = tuple(float(vector_value[index]) for index in range(4))
+        return value, False
+
+    value = rzm.rzm_values.add()
+    value.value_name = value_name
+    value.value_type = "VECTOR"
+    value.vector_value = tuple(float(vector_value[index]) for index in range(4))
+    return value, True
+
+
+def sync_component_hsv_from_material(context, comp, mat):
+    settings = material_hsv_settings(mat)
+    if not comp:
+        return False
+    if not settings["enabled"]:
+        comp.hsv_enabled = False
+        return False
+
+    rzm = context.scene.rzm
+    ensure_rzm_vector_value(rzm, settings["link"], settings["base"], update_existing=False)
+    comp.hsv_enabled = True
+    comp.hsv_link = settings["link"]
+    comp.hsv_base = settings["base"]
+    return True
 
 
 def add_group_instance(mat, group):
@@ -2325,11 +2382,12 @@ def export_cluster_pngs(context, cluster, target_path=None):
     return written
 
 
-def export_active_material_textures_raw(context, target_path=None):
+def export_material_textures_raw(context, mat, target_path=None):
     from ..operators.export_manager import get_target_path
 
     settings = get_settings(context)
-    mat = get_active_material(context)
+    if not mat:
+        raise RuntimeError("No material provided for TWAA texture export")
     slot_sources = collect_slot_sources(mat)
     fallback_w, fallback_h, _fallback_slot = choose_reference_size(settings, slot_sources, mat)
     if target_path is None:
@@ -2380,6 +2438,10 @@ def export_active_material_textures_raw(context, target_path=None):
         raise RuntimeError(f"Material '{mat.name}' has no enabled RZM texture slots")
     connect_exported_material_textures(mat, written, generated_slots)
     return written
+
+
+def export_active_material_textures_raw(context, target_path=None):
+    return export_material_textures_raw(context, get_active_material(context), target_path=target_path)
 
 
 def connect_exported_material_textures(mat, written, generated_slots=None):
@@ -2714,6 +2776,179 @@ def refresh_mc_file_resolution_from_disk(entry):
     return False
 
 
+def resolve_export_target_path(context, target_path=None):
+    if target_path is None:
+        try:
+            from ..operators.export_manager import get_target_path
+
+            target_path = get_target_path(context)
+        except Exception:
+            target_path = None
+    return bpy.path.abspath(target_path) if target_path else None
+
+
+def expected_material_texture_path(context, mat, slot, target_path=None):
+    settings = get_settings(context)
+    root = resolve_export_target_path(context, target_path)
+    if not root:
+        return None, None
+    resource_name = cluster_file_stem(mat.name, slot)
+    file_name = f"{resource_name}.png"
+    rel_path = os.path.join(settings.output_subdir, file_name).replace("\\", "/")
+    return os.path.join(root, rel_path), rel_path
+
+
+def sync_material_texture_entry_from_file(context, mat, slot, file_path, rel_path=None):
+    size = read_png_size(file_path)
+    if not size:
+        return False
+    width, height = int(size[0]), int(size[1])
+    if width <= 0 or height <= 0:
+        return False
+
+    rzm = context.scene.rzm
+    key = material_key(mat.name)
+    resource_name = cluster_file_stem(mat.name, slot)
+    if rel_path is None:
+        settings = get_settings(context)
+        rel_path = os.path.join(settings.output_subdir, os.path.basename(file_path)).replace("\\", "/")
+
+    entry = ensure_mc_file_entry(rzm, resource_name)
+    changed = (
+        entry.material_name != mat.name
+        or entry.material_key != key
+        or entry.slot_name != slot
+        or entry.resource_name != resource_name
+        or entry.relative_path != rel_path
+        or entry.block_name != autoatlas_block_name(slot)
+        or int(entry.resolution[0]) != width
+        or int(entry.resolution[1]) != height
+    )
+    entry.name = resource_name
+    entry.material_name = mat.name
+    entry.material_key = key
+    entry.slot_name = slot
+    entry.resource_name = resource_name
+    entry.relative_path = rel_path
+    entry.block_name = autoatlas_block_name(slot)
+    entry.resolution = (width, height)
+    return changed
+
+
+def relevant_twaa_materials(context):
+    materials = []
+    for mat in bpy.data.materials:
+        if getattr(mat, "disable_twaa_export", False):
+            continue
+        if material_is_relevant_for_twaa(context, mat):
+            materials.append(mat)
+    materials.sort(key=lambda item: material_key(item.name))
+    return materials
+
+
+def validate_twaa_export_textures(context, target_path=None, auto_export=True, rebuild_layout=True):
+    settings = get_settings(context)
+    if not settings.enabled:
+        return {
+            "enabled": False,
+            "materials": 0,
+            "checked_slots": 0,
+            "registered": 0,
+            "exported_materials": 0,
+            "exported_slots": 0,
+            "missing": [],
+            "warnings": ["TexWorks MC is disabled"],
+            "layout": None,
+        }
+
+    root = resolve_export_target_path(context, target_path)
+    if not root:
+        return {
+            "enabled": True,
+            "materials": 0,
+            "checked_slots": 0,
+            "registered": 0,
+            "exported_materials": 0,
+            "exported_slots": 0,
+            "missing": [],
+            "warnings": ["No export target path configured"],
+            "layout": None,
+        }
+
+    materials = relevant_twaa_materials(context)
+    checked_slots = 0
+    registered = 0
+    exported_materials = 0
+    exported_slots = 0
+    missing = []
+    warnings = []
+    changed_entries = False
+
+    for mat in materials:
+        slot_sources = collect_slot_sources(mat)
+        missing_slots = []
+        for slot, source in slot_sources.items():
+            if not source.get("enabled", False):
+                continue
+            checked_slots += 1
+            file_path, rel_path = expected_material_texture_path(context, mat, slot, target_path=root)
+            if file_path and os.path.isfile(file_path) and read_png_size(file_path):
+                if sync_material_texture_entry_from_file(context, mat, slot, file_path, rel_path=rel_path):
+                    registered += 1
+                    changed_entries = True
+                continue
+            missing_slots.append(slot)
+            missing.append({
+                "material": mat.name,
+                "material_key": material_key(mat.name),
+                "slot": slot,
+                "path": file_path or "",
+            })
+
+        if not missing_slots:
+            continue
+        if not auto_export:
+            warnings.append(f"{mat.name}: missing TWAA texture file(s): {', '.join(missing_slots)}")
+            continue
+
+        try:
+            written = export_material_textures_raw(context, mat, target_path=root)
+            exported_materials += 1
+            exported_slots += len([slot for slot in written.keys() if slot in SLOTS])
+            changed_entries = True
+            print(
+                f"[RZM TWAA] Export validator wrote {len(written)} texture file(s) "
+                f"for material '{mat.name}' because missing slots were: {', '.join(missing_slots)}"
+            )
+        except Exception as exc:
+            warning = f"{mat.name}: failed to auto-export missing TWAA textures ({exc})"
+            warnings.append(warning)
+            print(f"[RZM TWAA] WARN: {warning}")
+
+    layout_summary = None
+    if rebuild_layout and changed_entries:
+        layout_summary = rebuild_texworks_autoatlas_blocks(context)
+
+    summary = {
+        "enabled": True,
+        "materials": len(materials),
+        "checked_slots": checked_slots,
+        "registered": registered,
+        "exported_materials": exported_materials,
+        "exported_slots": exported_slots,
+        "missing": missing,
+        "warnings": warnings,
+        "layout": layout_summary,
+    }
+    print(
+        "[RZM TWAA] Export validator: "
+        f"materials={summary['materials']} checked_slots={checked_slots} "
+        f"registered={registered} exported_materials={exported_materials} "
+        f"exported_slots={exported_slots} warnings={len(warnings)}"
+    )
+    return summary
+
+
 def clear_mc_skipped(rzm):
     skipped = getattr(rzm, "tw_mc_skipped", None)
     if skipped is None:
@@ -3000,6 +3235,9 @@ def rebuild_texworks_autoatlas_blocks(context):
             comp.base_rect = (int(rect["x"]), int(rect["y"]), int(rect["w"]), int(rect["h"]))
             comp.rect = (int(rect["x"]), int(rect["y"]), int(rect["w"]), int(rect["h"]))
             comp.tw_is_expanded = False
+            mat = bpy.data.materials.get(mat_data.get("material_name", ""))
+            if mat:
+                sync_component_hsv_from_material(context, comp, mat)
             tw_slot = comp.slots.add()
             tw_slot.name = slot
             tw_slot.active = True

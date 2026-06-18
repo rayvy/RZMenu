@@ -105,8 +105,9 @@ Current simple path works when an exported object range maps to one material clu
 Multi-material objects are harder:
 - one Blender object can contain polygons with several material slots;
 - one exported component can contain many Blender objects;
-- vertices may be shared between faces with different materials;
-- a single shared buffer vertex cannot hold two different runtime UV placements.
+- one mesh vertex may be touched by faces with different materials;
+- one face cannot have two Blender materials, so material ownership is face/loop based;
+- one exported buffer vertex cannot hold two different runtime UV placements.
 
 ### Required Model
 
@@ -131,56 +132,75 @@ For multi-material objects we need one of:
 - Acceptable fallback: per-material contiguous ranges if exporter already splits material submeshes.
 - Unsafe fallback: whole object range. Use only when object has exactly one material.
 
-### Shared Vertex Rule
+### Shared Exported Vertex Rule
 
 If one buffer vertex is used by two materials requiring different TW placements, it must be duplicated before export or represented as two buffer vertices by the exporter.
 
 Test expectation:
-- If exporter/material split already duplicates vertices, post-patcher can patch each material's buffer indices independently.
-- If it does not, TWAA must report a conflict and refuse affine patch for that object/material combination.
+- If the exporter already duplicates material-boundary vertices, the post-patcher can patch each material's buffer indices independently.
+- If it does not, TWAA must not silently patch the entire object as one material.
+- Conflict handling is explicit:
+  - safe path: skip the conflicting material slice and warn;
+  - permissive/debug path: fall back to the legacy whole-object/object-range behavior only when the user opts in;
+  - no hidden mesh splitting or destructive topology repair.
+- Mesh preparation remains the user's responsibility. TWAA should report bad ownership clearly, not mutate the scene to rescue it.
 
 ### Export Strategy Decision
 
-There are two viable implementation paths.
+The MVP path is post-export material slicing. Temporary split-by-material is not the default plan because it requires extra depsgraph/object lifecycle churn and has a higher Blender crash risk.
 
-#### A. Temporary Separate By Material
-
-Before export, create temporary export meshes split by material.
-
-Pros:
-- reliable material-to-buffer ownership;
-- each exported mesh/range can be patched as a single material cluster;
-- avoids shared-vertex UV conflicts;
-- easiest path for MVP and hard testing.
-
-Cons:
-- slower export;
-- requires careful temporary object lifecycle;
-- must be written without depsgraph side effects or persistent scene damage.
-
-Decision:
-- Use this as the first robust implementation for multi-material meshes.
-- Never destructively split the user's authoring mesh.
-- Temporary split output must be cleaned/restored like SafeExport helper objects.
-
-#### B. Post-Export Per-Material Buffer Split
+#### A. Post-Export Per-Material Buffer Slice
 
 After export, patch only vertices belonging to material-specific triangles.
 
 Pros:
-- faster in the long term;
-- avoids Blender depsgraph mutation during export.
+- avoids Blender depsgraph mutation during export;
+- keeps authoring meshes untouched;
+- works with the exporter's real buffer output instead of predicting object splits;
+- naturally supports one Blender object with many materials when cache ownership is good.
 
 Cons:
-- requires exact material -> triangle -> exported vertex mapping;
+- requires exact material -> face/loop -> exported vertex mapping;
 - must account for stride/layout from dump files;
-- fails if exporter does not duplicate material-boundary vertices;
-- high risk of partial-face/interpolation artifacts without strict validation.
+- fails or falls back if the exporter does not duplicate material-boundary vertices;
+- needs strong debug logs because bad cache ownership is otherwise visually confusing.
 
 Decision:
-- Do not use this as the MVP path.
-- Implement later only after export cache stores exact `vertex_indices_by_material` or equivalent validated ranges.
-- If shared vertices are detected, fail loudly instead of trying to patch ambiguous data.
+- Use this as the first production direction.
+- Extend export cache with `material_slices` / `vertex_indices_by_material`.
+- Patch exact exported indices or compact index ranges, never infer multi-material ownership from the whole object range.
+- Do not auto-split meshes for TWAA MVP.
+
+#### B. Legacy / Fallback Whole-Object Patch
+
+This is allowed only as a compatibility fallback for old scenes or intentionally loose debug exports.
+
+Pros:
+- keeps single-material objects working with the current cache format;
+- gives users an escape hatch for poorly prepared meshes.
+
+Cons:
+- corrupt for mixed-material objects if used silently;
+- may make UV placement visually wrong when one object owns multiple TWAA materials;
+- cannot solve shared exported vertices that require two atlas placements.
+
+Decision:
+- Default: use whole-object range only when the object has exactly one active TWAA material.
+- For mixed-material objects, require `material_slices`.
+- If `material_slices` are missing, skip with a warning unless an explicit debug fallback is enabled.
+
+#### C. Temporary Split By Material
+
+Temporary split-by-material remains a possible rescue/prototype path, but not the main migration plan.
+
+Reason:
+- It can create reliable ownership, but it touches object/mesh/depsgraph state heavily.
+- Frequent pointer churn inside one export frame is too risky for Blender stability.
+- It also hides bad authoring/export topology instead of exposing the real ownership problem.
+
+Decision:
+- Keep it out of MVP.
+- Reconsider only as an explicit user-run repair/export helper, never as hidden SafeExport behavior.
 
 ### Rebuild Stage Behavior
 
@@ -211,7 +231,51 @@ Implementation direction:
 
 This heuristic is only for texture-less fallback rebuild. Real texture inputs keep texture-density based sizing.
 
-## Major Feature 2: Final Atlas Bake
+## Major Feature 2: Material-Level HSV
+
+Purpose: allow each TWAA material/component to keep a dynamic HSV control without forcing the user to build manual TexWorks component variables.
+
+### Authoring Surface
+
+HSV is configured on the `RZM TexWorks Material` node group:
+
+- `Use HSV`: boolean socket / checkbox.
+- `HSV Base`: color/vector socket, default initialized color for the runtime variable.
+
+The node group setting is the authoring source. TexWorks component fields are generated/synced data.
+
+### Generated Runtime Variables
+
+For every material with `Use HSV` enabled:
+
+- create a stable variable stem from the material key, for example `RZ_TWAA_HSV_<MaterialKey>`;
+- emit four component variables in J2:
+  - `RZ_TWAA_HSV_<MaterialKey>_X`
+  - `RZ_TWAA_HSV_<MaterialKey>_Y`
+  - `RZ_TWAA_HSV_<MaterialKey>_Z`
+  - `RZ_TWAA_HSV_<MaterialKey>_W`
+- initialize them from `HSV Base`;
+- bind the generated vector to the matching TexWorks component HSV fields.
+
+### Sync Rules
+
+When `bpy.ops.rzm.tw_mc_build_autoatlas_layout()` creates or refreshes TWAA blocks:
+
+1. For every material marked `Use HSV`, add/keep HSV fields on the corresponding TexWorks component.
+2. Enable HSV for that component.
+3. Set `hsv_link` to the generated `RZ_TWAA_HSV_<MaterialKey>` stem.
+4. Initialize `hsv_base` from the material node `HSV Base`.
+5. Do not reset user-edited HSV runtime values during layout refresh unless the material explicitly disables HSV.
+6. When `Use HSV` is disabled, keep stale generated data inert rather than deleting user-tuned variables immediately.
+
+### Non-Goals For First HSV Pass
+
+- no HSV mask workflow yet;
+- no complex driver/live-preview graph;
+- no per-decal HSV;
+- no final atlas bake dependency.
+
+## Major Feature 3: Final Atlas Bake
 
 Purpose: collapse DynAtlas cluster PNGs into final DDS atlas underlays while keeping Blender materials and TexWorks components separated.
 
@@ -226,22 +290,12 @@ This is an optimization bake, not a destructive material merge.
 - Participating materials keep their component identity so a future mod update can add, remove, or repack clusters by rebuilding the layout.
 - Dynamic per-component features, especially HSV, can stay live on top of the static baked underlay.
 
-### HSV Extension
+### HSV Rule
 
-Materials can be marked as `has HSV`.
-
-When `bpy.ops.rzm.tw_mc_build_autoatlas_layout()` creates or refreshes TWAA blocks:
-
-1. For every material/component marked `has HSV`, add/keep HSV fields on the corresponding TexWorks component.
-2. Enable HSV for that component.
-3. Optionally attach an HSV mask slot/resource.
-4. Do not reset existing HSV mask data during layout refresh.
-5. Do not wipe user-edited HSV variables during layout refresh unless the material explicitly disables HSV.
-
-Rule:
 - Texture data can be baked into the static atlas for optimization.
 - HSV stays dynamic per component/material.
 - The bake must not collapse materials into one final material because HSV needs component identity.
+- Material-level HSV is defined by Major Feature 2 and must continue to work after bake.
 
 ### Pipeline
 
@@ -341,14 +395,16 @@ Expected:
 - one triangulated object, two materials.
 - one object with 3-8 material slots.
 - one material reused on multiple objects and also inside a multi-material object.
-- temporary separate-by-material export path.
+- post-export material-slice path with `vertex_indices_by_material`.
 - post-export path with deliberately shared boundary vertices.
+- legacy whole-object fallback explicitly enabled for a bad mixed-material mesh.
 
 Expected:
 - one cluster per Blender material;
 - exact per-material buffer vertex indices or clear conflict warning;
 - no whole-object patch when material count > 1.
-- MVP separate-by-material path exports correct visuals even when authoring mesh has many materials.
+- MVP material-slice path exports correct visuals when the exporter/cache provides distinct material-owned vertices.
+- bad mixed-material ownership produces a warning/skip or explicit debug fallback, not silent corruption.
 
 ### Vertex Sharing Stress
 
@@ -359,7 +415,22 @@ Expected:
 
 Expected:
 - if exporter duplicates material-boundary vertices, patch succeeds;
-- if not, TWAA reports shared-vertex conflict instead of corrupting UV.
+- if not, TWAA reports shared-vertex conflict and skips or uses explicit fallback instead of silently corrupting UV.
+
+### Material HSV
+
+- material with `Use HSV` disabled.
+- material with `Use HSV` enabled and default `HSV Base`.
+- layout rebuild after editing `HSV Base`.
+- layout rebuild after user edits runtime HSV variables.
+- disable `Use HSV` after variables already exist.
+
+Expected:
+- disabled materials emit no active HSV binding.
+- enabled materials generate stable `_X/_Y/_Z/_W` variables.
+- component `hsv_enabled`, `hsv_link`, and `hsv_base` sync from the material node.
+- user-tuned runtime values are not wiped by layout refresh.
+- disabling HSV makes stale generated data inert rather than destructively deleting it.
 
 ### Runtime Patch
 
@@ -395,6 +466,7 @@ Expected:
 - Do not patch whole object ranges when object has multiple material slots.
 - Do not infer runtime placement from object custom props.
 - Do not rebuild TWAA layout automatically during SafeExport.
+- Do not hidden-split authoring meshes during normal export.
 - Do not use manifest groups in post-export patching.
 - Do not round cluster image dimensions to 16; only round block atlas dimensions.
 - Do not assume square atlas dimensions.
@@ -402,6 +474,80 @@ Expected:
 - Do not patch TEXCOORD1/TEXCOORD2 by default.
 - Do not make final atlas bake destructive for material/component identity.
 - Do not reset HSV masks or user HSV variables during TWAA layout refresh.
+
+## Target Architecture
+
+TWAA should become an automatic material atlas pipeline, not a manual TexWorks editor mode.
+
+High-level flow:
+
+```text
+Imported / transferred asset
+  -> Material schema detection
+  -> Game texture-slot adapter
+  -> Optional texture map remap/packing
+  -> TWAA material cluster rebuild
+  -> TWAA virtual atlas layout
+  -> Export cache material slices
+  -> TEXCOORD post patch
+  -> TexWorks-compatible generated resources/J2
+```
+
+### Module Boundaries
+
+- `utils/TWAA_CORE.py`
+  - pure packing/UV/island/material-cluster algorithms;
+  - no Blender data mutation;
+  - no J2/ini emission.
+- `utils/texworks_mc.py`
+  - Blender material/node/faces/image IO bridge;
+  - calls TWAA_CORE;
+  - writes cluster PNGs and manifests;
+  - syncs generated TWAA data into TexWorks blocks/components.
+- `utils/twaa_texcoord_patcher.py`
+  - reads export cache and dump layout;
+  - patches only affine virtual-atlas placement;
+  - uses `material_slices` when present;
+  - legacy object-range fallback stays explicit.
+- TWAA J2 module
+  - emits generated variables/resources/commands from TWAA IR;
+  - owns `RZ_TWAA_*` variables;
+  - does not expose generated internals in normal TexWorks UI.
+
+### Core Algorithm
+
+1. Collect export candidates from the current export context.
+2. Read only versioned `RZM TexWorks Material` node groups.
+3. Resolve material slots through the current game adapter.
+4. Build a material-first face inventory:
+   - object name;
+   - polygon index;
+   - material slot;
+   - material key;
+   - UV layer;
+   - area/density hints.
+5. For each material key, build or update one material cluster.
+6. Write cluster PNGs to `Textures/DynAtlas`.
+7. Register cluster files as TWAA-managed source artifacts.
+8. Build virtual atlas blocks per texture slot.
+9. Sync one TexWorks component per Blender material.
+10. Generate TWAA runtime IR:
+    - resources;
+    - block/component rects;
+    - HSV variables;
+    - material-slot routing;
+    - debug report.
+11. During export, cache material-owned buffer indices/ranges.
+12. Post-export, patch TEXCOORD by exact material slice.
+13. If material slice ownership is missing or ambiguous, skip/warn or use explicit fallback.
+
+### User-Facing Philosophy
+
+- Default workflow should be: bring an asset from another game, assign/repair material schema, rebuild, export.
+- TWAA automates repetitive texture-slot mapping, cluster generation, atlas placement, and runtime binding.
+- Manual work should be reserved for genuinely ambiguous artistic choices, not routine atlas bookkeeping.
+- Destructive manual atlas authoring is avoided; DynAtlas files are intermediate authoring artifacts.
+- The final game limitation of one texture slot per texture type is handled by virtual atlas placement, not by forcing the user to hand-merge source assets.
 
 ## Not Implemented Yet / Backlog
 
@@ -453,17 +599,46 @@ Expected:
 
 - Multi-material object handling is not production-ready.
 - MVP decision still needs implementation:
-  - use separate-by-material temp export path first for reliability;
-  - keep post-export per-material mesh slicing as a later optimization.
+  - use post-export per-material buffer slicing as the main path;
+  - avoid hidden split-by-material temp export in normal SafeExport;
+  - keep temporary split only as an explicit repair/prototype helper if ever needed.
 - Required rule:
   - one Blender material = one TexWorks component;
   - multi-material meshes must not be patched as one whole object range.
+- Need `material_slices` in export cache:
+  - material key;
+  - source object;
+  - material slot;
+  - exported vertex indices;
+  - compacted exported vertex ranges;
+  - optional index/triangle ranges for diagnostics.
 - Need explicit conflict detection for shared exported vertices across material boundaries.
-- Need per-material exported vertex range/cache data before post-export patching can be trusted on mixed-material meshes.
+- Need skip/warn/debug-fallback behavior when ownership is ambiguous.
+
+### Component Based Export
+
+- Long-term goal: Component Manager can understand texture availability and material usage, not only object/component membership.
+- It should be able to read:
+  - which materials are used by each component;
+  - which texture slots exist for each material;
+  - which TWAA clusters/resources are generated or missing;
+  - which game adapter is active.
+- Manual mapping must be possible, but defaults should come from the selected game preset.
+- Cross-game remap examples:
+  - Genshin Impact asset -> Zenless Zone Zero texture slot/channel mapping;
+  - PBR single-map workflow -> game-specific packed MaterialMap/LightMap channels;
+  - separate Roughness/Metallic/AO maps -> packed runtime texture according to adapter rules.
+- This is a later plan and should not block the current TWAA stabilization.
 
 ### Final Atlas Bake
 
 - `Bake Current Atlas` is not implemented.
+- This is a later plan until the authoring model is stable enough.
+- Conceptual blockers:
+  - Substance Painter roundtrip;
+  - dynamic HSV;
+  - planned decals;
+  - Blender node/driver/live-preview organization.
 - Required final bake steps:
   - stitch DynAtlas cluster PNGs into block atlas PNGs using TW block component rects;
   - convert via `texconv.exe`;
@@ -475,10 +650,30 @@ Expected:
 
 ### HSV Path
 
-- Material/component `has HSV` flag is not implemented.
-- TW component HSV variables are not generated yet.
-- HSV masks must not be reset during layout rebuild.
+- Material node `Use HSV` flag is not implemented.
+- Material node `HSV Base` socket is not implemented.
+- TW component HSV fields are not generated from material settings yet.
+- TWAA `_X/_Y/_Z/_W` variables are not emitted by J2 yet.
+- HSV masks are out of scope for the first HSV pass.
 - Final bake must preserve dynamic HSV components instead of destructively flattening everything.
+
+### Substance Painter Bridge
+
+- Current cluster sizes must stay Substance-friendly:
+  - minimum practical cluster size: 256 unless a later bridge proves smaller textures are usable;
+  - maximum practical cluster size: 4096 for normal workflow, with 8192 treated as heavy/exceptional if enabled.
+- Need a bridge workflow to reduce manual repeated clicks:
+  - export/update per-material DynAtlas PNG set;
+  - detect changed files from Substance;
+  - reimport or refresh Blender image nodes automatically;
+  - keep TWAA material keys and file names stable;
+  - rebuild only dirty materials when possible.
+- Later bridge options:
+  - watched folder refresh;
+  - Substance project template naming convention;
+  - one-click "Send To Substance" / "Refresh From Substance";
+  - debug report listing changed slots/materials.
+- This bridge is a workflow automation target, not a dependency for the first stable TWAA patcher.
 
 ### Performance
 

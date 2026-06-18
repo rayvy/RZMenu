@@ -677,6 +677,55 @@ class CurveVFXPreviewSubModule:
         self.affected_curves = []
 
 
+class TWAATextureExportValidatorSubModule:
+    """Ensures generated TWAA material textures exist before the game exporter runs."""
+
+    def pre_export(self, context):
+        try:
+            addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+            addon = context.preferences.addons.get(addon_name)
+            prefs = addon.preferences if addon else None
+            if prefs and not getattr(prefs, "tw_mc_pre_export_validate_textures", True):
+                print("[SafeExport] [TWAA] Pre-export texture validator disabled.")
+                return
+
+            from . import texworks_mc
+
+            summary = texworks_mc.validate_twaa_export_textures(
+                context,
+                auto_export=True,
+                rebuild_layout=True,
+            )
+            if not summary.get("enabled", True):
+                print("[SafeExport] [TWAA] Texture validator skipped: disabled.")
+                return
+            if summary.get("exported_slots") or summary.get("registered"):
+                print(
+                    "[SafeExport] [TWAA] Texture validator repaired "
+                    f"{summary.get('exported_slots', 0)} exported slot(s), "
+                    f"{summary.get('registered', 0)} existing registration(s)."
+                )
+            elif summary.get("warnings"):
+                print(f"[SafeExport] [TWAA] Texture validator warnings: {summary['warnings'][:3]}")
+            else:
+                print(
+                    "[SafeExport] [TWAA] Texture validator OK: "
+                    f"{summary.get('materials', 0)} material(s), "
+                    f"{summary.get('checked_slots', 0)} slot(s)."
+                )
+        except Exception as exc:
+            import traceback
+
+            print(f"[SafeExport] [TWAA] Texture validator failed: {exc}")
+            traceback.print_exc()
+
+    def post_export(self, context):
+        pass
+
+    def restore(self, context):
+        pass
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  MAIN: SafeExport context manager
 # ══════════════════════════════════════════════════════════════════════════════
@@ -714,6 +763,7 @@ class SafeExport:
             self.sub_modules = [
                 # VertexGroupReorderSubModule(),     # Standalone candidate: manually move mask* VG to the end.
                 AnchorLayoutCleanupSubModule(),      # [0] Handle anchor VGs layout and restoration.
+                TWAATextureExportValidatorSubModule(), # [TWAA] Validate/export missing material textures.
                 # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
                 XXMIMissingDataPredictorSubModule(), # [1] Добавляем COLOR/TEXCOORD
                 CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
@@ -726,6 +776,7 @@ class SafeExport:
             self.sub_modules = [
                 # VertexGroupReorderSubModule(),     # Standalone candidate: manually move mask* VG to the end.
                 AnchorLayoutCleanupSubModule(),      # [0] Handle anchor VGs layout and restoration.
+                TWAATextureExportValidatorSubModule(), # [TWAA] Validate/export missing material textures.
                 predictor,                           # [1] Добавляем COLOR/TEXCOORD перманентно
                 # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
                 CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
