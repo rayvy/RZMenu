@@ -149,15 +149,28 @@ class AnchorLayoutCleanupSubModule:
             # Handle anchor layout alignment if set
             anchor = getattr(obj, "rzm_export_vg_anchor", None)
             if anchor and anchor.type == 'MESH':
-                target_order = [vg.name for vg in anchor.vertex_groups]
-                if target_order:
+                anchor_order = [vg.name for vg in anchor.vertex_groups]
+                if anchor_order:
                     # Capture original state of all vertex groups for restoration
-                    self._anchor_states[obj.name] = self._capture_vertex_groups(obj)
+                    state = self._capture_vertex_groups(obj)
+                    self._anchor_states[obj.name] = state
+
+                    preserved_tail = self._get_preserved_tail_groups(obj, anchor_order)
+                    target_order = [
+                        name for name in anchor_order
+                        if name not in preserved_tail and not self._is_mask_vertex_group(name)
+                    ]
                     
                     # Rebuild in the anchor's order
                     self._rebuild_vertex_groups_in_order(obj, target_order)
                     self._normalize_vertex_groups(context, obj)
-                    print(f"  [AnchorLayout] {obj.name}: Aligned VG layout to anchor '{anchor.name}'")
+                    if preserved_tail:
+                        self._append_preserved_vertex_groups(obj, state, preserved_tail)
+                    print(
+                        f"  [AnchorLayout] {obj.name}: Aligned VG layout to anchor "
+                        f"'{anchor.name}'"
+                        + (f", preserved {len(preserved_tail)} helper VG(s) at tail" if preserved_tail else "")
+                    )
 
     def post_export(self, context):
         self._restore_all(context)
@@ -212,6 +225,48 @@ class AnchorLayoutCleanupSubModule:
         if obj.vertex_groups and 0 <= active_index < len(obj.vertex_groups):
             obj.vertex_groups.active_index = active_index
 
+    @staticmethod
+    def _is_mask_vertex_group(name):
+        return name.lower().startswith("mask")
+
+    def _get_modifier_vertex_group_names(self, obj):
+        names = set()
+
+        for mod in getattr(obj, "modifiers", []):
+            try:
+                props = mod.bl_rna.properties
+            except Exception:
+                props = []
+
+            for prop in props:
+                identifier = getattr(prop, "identifier", "")
+                if "vertex_group" not in identifier:
+                    continue
+
+                try:
+                    value = getattr(mod, identifier)
+                except Exception:
+                    continue
+
+                if isinstance(value, str) and value:
+                    names.add(value)
+
+        return names
+
+    def _get_preserved_tail_groups(self, obj, anchor_order):
+        anchor_names = set(anchor_order)
+        modifier_group_names = self._get_modifier_vertex_group_names(obj)
+        preserved = []
+
+        for vg in obj.vertex_groups:
+            name = vg.name
+            if self._is_mask_vertex_group(name):
+                preserved.append(name)
+            elif name not in anchor_names and name in modifier_group_names:
+                preserved.append(name)
+
+        return preserved
+
     def _rebuild_vertex_groups_in_order(self, obj, target_order):
         current_names = [vg.name for vg in obj.vertex_groups]
         locks = {vg.name: vg.lock_weight for vg in obj.vertex_groups}
@@ -246,6 +301,37 @@ class AnchorLayoutCleanupSubModule:
             for vert_index, weight in entries:
                 weight_map[weight].append(vert_index)
                 
+            for weight, indices in weight_map.items():
+                vg.add(indices, weight, 'REPLACE')
+
+    def _append_preserved_vertex_groups(self, obj, state, preserved_names):
+        existing_names = {vg.name for vg in obj.vertex_groups}
+        name_to_group = {}
+
+        for name in preserved_names:
+            if name in existing_names:
+                continue
+            vg = obj.vertex_groups.new(name=name)
+            vg.lock_weight = state['locks'].get(name, False)
+            name_to_group[name] = vg
+            existing_names.add(name)
+
+        if not name_to_group:
+            return
+
+        from collections import defaultdict
+        group_weights = defaultdict(lambda: defaultdict(list))
+
+        for vert_index, entries in state['weights'].items():
+            for name, weight in entries:
+                if name in name_to_group:
+                    group_weights[name][weight].append(vert_index)
+
+        for name, weight_map in group_weights.items():
+            vg = name_to_group.get(name)
+            if not vg:
+                continue
+
             for weight, indices in weight_map.items():
                 vg.add(indices, weight, 'REPLACE')
 
