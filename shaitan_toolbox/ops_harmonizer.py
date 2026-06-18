@@ -33,98 +33,698 @@ from .harmonizer_utils import (
 
 
 # ============================================================
+# LR-SAFE NAME PREFLIGHT
+# ============================================================
+# Blender appends .001/.002 AFTER the whole vertex-group name.
+# That means a valid mirror name like "Forearm.L" becomes
+# "Forearm.L.001", and naïve suffix checks stop seeing .L/.R.
+# These helpers treat Blender collision tails as garbage BEFORE
+# any deduplication, pairing, or final rename happens.
+
+import re
+
+_RZM_BLENDER_AUTO_SUFFIX_RE = re.compile(r"(?:\.\d{3})+$")
+_RZM_FINAL_LR_RE = re.compile(r"^(?P<base>.+?)(?P<sep>[._\-\s])(?P<side>[LRlr])$")
+_RZM_SAFE_NAME_RE = re.compile(r"[^0-9A-Za-zА-Яа-я_\.\-\s]+")
+
+
+def _rzm_strip_auto_suffix(name):
+    """Remove Blender's trailing .001/.002 collision suffixes.
+
+    The local regex is intentionally used even though harmonizer_utils also
+    exposes strip_blender_collision_suffix: old versions missed names like
+    Bone.L.001 because the LR suffix was not at the literal end anymore.
+    """
+    name = str(name or "").strip()
+    try:
+        name = strip_blender_collision_suffix(name)
+    except Exception:
+        pass
+    return _RZM_BLENDER_AUTO_SUFFIX_RE.sub("", name).strip()
+
+
+def _rzm_sanitize_name(name, fallback="Aux"):
+    name = _rzm_strip_auto_suffix(name)
+    name = _RZM_SAFE_NAME_RE.sub("_", name)
+    name = re.sub(r"\s+", " ", name).strip(" ._-")
+    return name or fallback
+
+
+def _rzm_lr_parts(name):
+    """Return (side, base, suffix, clean_name).
+
+    side:  'L', 'R', or None
+    base:  name without LR suffix and without Blender .NNN tail
+    suffix: original separator + uppercase side, e.g. '.L', '_R', or None
+    clean_name: full cleaned name without Blender .NNN
+    """
+    clean = _rzm_sanitize_name(name)
+    match = _RZM_FINAL_LR_RE.match(clean)
+    if not match:
+        return None, clean, None, clean
+
+    side = match.group("side").upper()
+    sep = match.group("sep") or "."
+    base = match.group("base").strip(" ._-") or clean
+    return side, base, f"{sep}{side}", f"{base}{sep}{side}"
+
+
+def _rzm_name_key(name):
+    return _rzm_sanitize_name(name).casefold()
+
+
+def _rzm_base_key(name):
+    _side, base, _suffix, _clean = _rzm_lr_parts(name)
+    return re.sub(r"[._\-\s]+", "_", base).strip("_").casefold()
+
+
+def _rzm_stem_counter_parts(stem):
+    """Split readable Harmonizer counter from a name stem.
+
+    Clavicle2   -> (Clavicle2, 1)
+    Clavicle2_2 -> (Clavicle2, 2)
+    Clavicle_12 -> (Clavicle, 12)
+
+    Only our own underscore counter is treated as a counter.  Digits that are
+    part of the real bone name stay untouched.
+    """
+    stem = _rzm_sanitize_name(_rzm_lr_parts(stem)[1])
+    m = re.match(r"^(?P<root>.+?)_(?P<num>[2-9]\d*)$", stem)
+    if not m:
+        return stem, 1
+    root = m.group("root").strip(" ._-") or stem
+    return root, int(m.group("num"))
+
+
+def _rzm_numbered_stem(root, counter):
+    root = _rzm_sanitize_name(root)
+    return root if int(counter) <= 1 else f"{root}_{int(counter)}"
+
+
+def _rzm_apply_suffix(base, suffix):
+    base = _rzm_lr_parts(base)[1]
+    base = _rzm_sanitize_name(base)
+    return f"{base}{suffix}" if suffix else base
+
+
+def _rzm_conflict_name(candidate, used_names):
+    """Create a readable unique name without Blender-style .001.
+
+    Counters are inserted before .L/.R and increment an existing Harmonizer
+    counter instead of nesting it:
+        Thigh.R        -> Thigh_2.R
+        Belly3.R       -> Belly3_2.R
+        Clavicle2_2.R  -> Clavicle2_3.R
+        Torso          -> Torso_2
+    """
+    side, base, suffix, clean = _rzm_lr_parts(candidate)
+    suffix = suffix or ""
+    stem = base if side else clean
+    root, start_counter = _rzm_stem_counter_parts(stem)
+
+    first_stem = _rzm_numbered_stem(root, start_counter)
+    first_name = _rzm_apply_suffix(first_stem, suffix) if side else first_stem
+    if first_name not in used_names:
+        return first_name, False
+
+    counter = max(start_counter + 1, 2)
+    while True:
+        stem = _rzm_numbered_stem(root, counter)
+        candidate = _rzm_apply_suffix(stem, suffix) if side else stem
+        if candidate not in used_names:
+            return candidate, True
+        counter += 1
+
+
+def _rzm_item_status_rank(item):
+    status = getattr(item, "status", "")
+    return {
+        "APPROVED": 40,
+        "CONFLICT": 30,
+        "UNKNOWN": 20,
+        "IGNORED": 0,
+    }.get(status, 10)
+
+
+def _rzm_get_item_guard(item):
+    try:
+        return bool(item.get("_updating_cluster", False))
+    except Exception:
+        return bool(getattr(item, "_updating_cluster", False))
+
+
+def _rzm_set_item_guard(item, value):
+    """Temporarily suppress cluster-sync update callbacks on plan items.
+
+    The UI has cluster synchronization: changing resolved_name on one item can
+    copy the same name into every item in the cluster.  That is useful for
+    normal manual edits, but it is poison inside LR preflight because a mirror
+    pair must be assigned as stem.L + stem.R, not stem.R + stem.R.
+    
+    Blender PropertyGroup supports custom-property syntax, while unit-test
+    fakes usually only support normal attributes, so support both.
+    """
+    try:
+        item["_updating_cluster"] = bool(value)
+    except Exception:
+        try:
+            setattr(item, "_updating_cluster", bool(value))
+        except Exception:
+            pass
+
+
+def _rzm_silent_set_resolved_name(item, new_name):
+    old_guard = _rzm_get_item_guard(item)
+    _rzm_set_item_guard(item, True)
+    try:
+        item.resolved_name = new_name
+    finally:
+        _rzm_set_item_guard(item, old_guard)
+
+
+def _rzm_push_plan_guard(plan):
+    """Guard every plan row against cluster-name update callbacks.
+
+    Some Blender PropertyGroup update callbacks can sync the whole cluster when
+    one resolved_name changes.  Pair-safe preflight must be a transaction, so
+    all rows are guarded for the entire pass, not only the row currently being
+    edited.
+    """
+    state = []
+    for item in list(plan or []):
+        old_guard = _rzm_get_item_guard(item)
+        state.append((item, old_guard))
+        _rzm_set_item_guard(item, True)
+    return state
+
+
+def _rzm_pop_plan_guard(state):
+    for item, old_guard in reversed(state or []):
+        _rzm_set_item_guard(item, old_guard)
+
+
+def _rzm_item_debug_dict(item, plan_index=None):
+    orig_side, orig_base, orig_suffix, orig_clean = _rzm_lr_parts(getattr(item, "original_name", ""))
+    res_side, res_base, res_suffix, res_clean = _rzm_lr_parts(getattr(item, "resolved_name", ""))
+    data = {
+        "plan_index": plan_index,
+        "object": getattr(item, "object_name", ""),
+        "vg_index": int(getattr(item, "group_index", -1)),
+        "original_name": getattr(item, "original_name", ""),
+        "resolved_name": getattr(item, "resolved_name", ""),
+        "status": getattr(item, "status", ""),
+        "cluster_id": getattr(item, "cluster_id", ""),
+        "manual_override": bool(getattr(item, "manual_override", False)),
+        "create_bone": bool(getattr(item, "create_bone", False)),
+        "is_helper": bool(getattr(item, "is_helper", False)),
+        "decision_reason": getattr(item, "decision_reason", ""),
+        "original_lr": {
+            "side": orig_side,
+            "base": orig_base,
+            "suffix": orig_suffix,
+            "clean": orig_clean,
+        },
+        "resolved_lr": {
+            "side": res_side,
+            "base": res_base,
+            "suffix": res_suffix,
+            "clean": res_clean,
+        },
+    }
+    return data
+
+
+def _rzm_plan_index_lookup(plan):
+    return {id(item): i for i, item in enumerate(list(plan or []))}
+
+
+def _rzm_duplicate_name_groups(items, plan_index_by_id=None):
+    buckets = defaultdict(list)
+    for item in list(items or []):
+        name = _rzm_sanitize_name(getattr(item, "resolved_name", ""))
+        buckets[name].append(item)
+
+    groups = []
+    for name, rows in sorted(buckets.items(), key=lambda kv: (kv[0].casefold(), len(kv[1]))):
+        if len(rows) <= 1:
+            continue
+        groups.append({
+            "name": name,
+            "count": len(rows),
+            "items": [
+                _rzm_item_debug_dict(row, None if plan_index_by_id is None else plan_index_by_id.get(id(row)))
+                for row in sorted(rows, key=lambda r: int(getattr(r, "group_index", -1)))
+            ],
+        })
+    return groups
+
+
+def _rzm_blender_suffix_groups(items, plan_index_by_id=None):
+    groups = []
+    for item in list(items or []):
+        name = getattr(item, "resolved_name", "") or ""
+        if _RZM_BLENDER_AUTO_SUFFIX_RE.search(name):
+            groups.append(_rzm_item_debug_dict(item, None if plan_index_by_id is None else plan_index_by_id.get(id(item))))
+    return groups
+
+
+def _rzm_broken_pair_details(pair_contracts, plan_index_by_id=None):
+    broken = []
+    for contract in list(pair_contracts or []):
+        item_l = contract["L"]
+        item_r = contract["R"]
+        l_side, l_base, _ls, _lc = _rzm_lr_parts(getattr(item_l, "resolved_name", ""))
+        r_side, r_base, _rs, _rc = _rzm_lr_parts(getattr(item_r, "resolved_name", ""))
+        if l_side != "L" or r_side != "R" or l_base != r_base:
+            broken.append({
+                "base_key": contract.get("base_key", ""),
+                "pair_index": contract.get("pair_index", 0),
+                "cluster_id": contract.get("cluster_id", ""),
+                "L": _rzm_item_debug_dict(item_l, None if plan_index_by_id is None else plan_index_by_id.get(id(item_l))),
+                "R": _rzm_item_debug_dict(item_r, None if plan_index_by_id is None else plan_index_by_id.get(id(item_r))),
+                "reason": "resolved names are not identical except for final .L/.R",
+            })
+    return broken
+
+
+def _rzm_write_name_error(scene, *, stage, object_name, reason, items, pair_contracts=None, extra=None):
+    plan_index_by_id = _rzm_plan_index_lookup(getattr(scene, "rzm_weight_plan", []))
+    payload = {
+        "stage": stage,
+        "object": object_name,
+        "reason": reason,
+        "duplicate_groups": _rzm_duplicate_name_groups(items, plan_index_by_id),
+        "blender_suffix_rows": _rzm_blender_suffix_groups(items, plan_index_by_id),
+        "broken_mirror_pairs": _rzm_broken_pair_details(pair_contracts or [], plan_index_by_id),
+        "extra": extra or {},
+    }
+    try:
+        scene["rzm_harmonizer_name_error"] = json.dumps(payload, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    print("\n" + "=" * 90)
+    print("[RZM Weight Harmonizer] NAME PREFLIGHT ERROR")
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    print("=" * 90 + "\n")
+    return payload
+
+
+def _rzm_error_short_message(payload):
+    dups = payload.get("duplicate_groups") or []
+    if dups:
+        first = dups[0]
+        members = []
+        for row in first.get("items", [])[:4]:
+            members.append(
+                f"#{row.get('vg_index')} {row.get('original_name')} -> {row.get('resolved_name')}"
+                + (f" [cluster={row.get('cluster_id')}]" if row.get('cluster_id') else "")
+            )
+        tail = " | ".join(members)
+        more = " ..." if len(first.get("items", [])) > 4 else ""
+        return f"duplicate '{first.get('name')}' used by {first.get('count')} rows: {tail}{more}"
+
+    suffix_rows = payload.get("blender_suffix_rows") or []
+    if suffix_rows:
+        row = suffix_rows[0]
+        return f"Blender suffix survived at #{row.get('vg_index')}: {row.get('original_name')} -> {row.get('resolved_name')}"
+
+    broken = payload.get("broken_mirror_pairs") or []
+    if broken:
+        row = broken[0]
+        return f"broken mirror pair {row.get('base_key')}: {row.get('L', {}).get('resolved_name')} / {row.get('R', {}).get('resolved_name')}"
+
+    return payload.get("reason", "unknown name preflight error")
+
+
+def _rzm_choose_mirror_stem(item_l, item_r):
+    """Pick the ONE stem owned by a remembered L/R pair.
+
+    This is the contract rule: a remembered mirror pair is never deduplicated
+    as two independent rows.  If either side already carries a readable
+    Harmonizer counter, the whole pair is promoted to that counter.
+
+    Example:
+        8.L candidate -> Clavicle2.L
+        8.R candidate -> Clavicle2_2.R
+        pair stem     -> Clavicle2_2
+        final         -> Clavicle2_2.L / Clavicle2_2.R
+    """
+    _ls, l_base, _l_suffix, _l_clean = _rzm_lr_parts(getattr(item_l, "resolved_name", ""))
+    _rs, r_base, _r_suffix, _r_clean = _rzm_lr_parts(getattr(item_r, "resolved_name", ""))
+
+    l_root, l_counter = _rzm_stem_counter_parts(l_base)
+    r_root, r_counter = _rzm_stem_counter_parts(r_base)
+
+    if l_root.casefold() == r_root.casefold():
+        # Highest counter wins for BOTH sides.  No "I grabbed Clavicle first,
+        # you get Clavicle_2" nonsense inside a mirror contract.
+        return _rzm_numbered_stem(l_root, max(l_counter, r_counter))
+
+    # If roots differ, prefer the more explicit countered candidate.  This
+    # covers user/manual edits that moved one side away from the initial match.
+    if l_counter != r_counter:
+        root = l_root if l_counter > r_counter else r_root
+        return _rzm_numbered_stem(root, max(l_counter, r_counter))
+
+    # Otherwise choose the stronger UI/solver decision, but still only the stem.
+    def quality(item):
+        return (
+            1 if getattr(item, "manual_override", False) else 0,
+            _rzm_item_status_rank(item),
+            0 if getattr(item, "create_bone", False) else 1,
+            -int(getattr(item, "group_index", 0)),
+        )
+
+    leader = item_l if quality(item_l) >= quality(item_r) else item_r
+    return _rzm_lr_parts(getattr(leader, "resolved_name", ""))[1]
+
+
+def _rzm_preflight_plan_names(scene, settings, *, stage="build"):
+    """Normalize and deduplicate plan names BEFORE touching Blender names.
+
+    This function treats original mirror pairs as an atomic contract.
+    A pair is not two independent names.  It is one stem allocation that
+    produces stem.L and stem.R together.  If either side conflicts, the
+    whole pair moves to stem_2.L and stem_2.R, never only one side.
+
+    Guarantees for non-ignored plan items:
+      * no trailing Blender .001/.002 tails;
+      * original .L/.R survives even if the original was .L.001/.R.001;
+      * remembered mirror pairs end as the same stem + opposite sides;
+      * names are unique inside every mesh object;
+      * conflict counters are readable (_2, _3), never Blender .001.
+
+    A JSON report is stored on the scene for debugging.  If something still
+    manages to break the contract, rzm_harmonizer_name_error contains the exact
+    duplicate/broken rows.
+    """
+    empty_report = {"stage": stage, "objects": {}, "mirror_pairs": [], "renamed": [], "conflicts": [], "errors": []}
+    if not scene.rzm_weight_plan:
+        return empty_report
+
+    preserve_lr = bool(getattr(settings, "preserve_lr_suffixes", True))
+    grouped = defaultdict(list)
+    report = {"stage": stage, "objects": {}, "mirror_pairs": [], "renamed": [], "conflicts": [], "errors": []}
+    plan_guard_state = _rzm_push_plan_guard(scene.rzm_weight_plan)
+
+    try:
+        def item_key(item):
+            return (getattr(item, "object_name", ""), int(getattr(item, "group_index", -1)))
+
+        def set_resolved(item, new_name, reason=""):
+            new_name = _rzm_sanitize_name(new_name)
+            old_name = getattr(item, "resolved_name", "")
+            if old_name == new_name:
+                return False
+            # All plan items are guarded for the full preflight transaction, but
+            # keep this setter guarded too for external direct calls/tests.
+            _rzm_silent_set_resolved_name(item, new_name)
+            if reason:
+                old_reason = getattr(item, "decision_reason", "") or ""
+                if reason not in old_reason:
+                    item.decision_reason = (old_reason + "; " if old_reason else "") + reason
+            report["renamed"].append({
+                "object": getattr(item, "object_name", ""),
+                "index": int(getattr(item, "group_index", -1)),
+                "from": old_name,
+                "to": new_name,
+                "reason": reason,
+            })
+            return True
+
+        def suffix_for_pair(item_l, item_r):
+            _ls, _lb, l_suffix, _lc = _rzm_lr_parts(getattr(item_l, "original_name", ""))
+            _rs, _rb, r_suffix, _rc = _rzm_lr_parts(getattr(item_r, "original_name", ""))
+            # Pair must be byte-identical except for the last side letter.  Prefer
+            # dot style because Blender and armature symmetry tools understand it.
+            if (l_suffix and l_suffix.startswith(".")) or (r_suffix and r_suffix.startswith(".")):
+                sep = "."
+            elif l_suffix:
+                sep = l_suffix[0]
+            elif r_suffix:
+                sep = r_suffix[0]
+            else:
+                sep = "."
+            return f"{sep}L", f"{sep}R"
+
+        def pair_names_for_stem(stem, l_suffix, r_suffix):
+            stem = _rzm_sanitize_name(_rzm_lr_parts(stem)[1])
+            return _rzm_apply_suffix(stem, l_suffix), _rzm_apply_suffix(stem, r_suffix)
+
+        def allocate_pair_names(stem, l_suffix, r_suffix, used):
+            """Allocate stem.L/stem.R atomically.
+
+            If either side is occupied, both sides receive the same readable
+            counter.  Existing Harmonizer counters are incremented rather than
+            nested:
+                Clavicle2_2.L/R occupied -> Clavicle2_3.L/R
+            """
+            root, start_counter = _rzm_stem_counter_parts(stem)
+            counter = start_counter
+            while True:
+                attempt_stem = _rzm_numbered_stem(root, counter)
+                left_name, right_name = pair_names_for_stem(attempt_stem, l_suffix, r_suffix)
+                if left_name not in used and right_name not in used:
+                    return left_name, right_name, counter != start_counter
+                counter += 1
+
+        def mark_duplicate_created(item, tag):
+            item.create_bone = True
+            item.is_helper = True
+            reason = getattr(item, "decision_reason", "") or ""
+            if tag not in reason:
+                item.decision_reason = (reason + "; " if reason else "") + tag
+
+        # First pass: clean Blender .NNN garbage and restore sacred original LR side.
+        # This pass is intentionally not responsible for uniqueness.  It only creates
+        # a clean candidate that later pair/single allocation can consume.
+        for item in scene.rzm_weight_plan:
+            if item.status == "IGNORED":
+                continue
+
+            grouped[item.object_name].append(item)
+
+            candidate = _rzm_sanitize_name(item.resolved_name or item.original_name)
+            if preserve_lr:
+                orig_side, _orig_base, orig_suffix, _orig_clean = _rzm_lr_parts(item.original_name)
+                if orig_side and orig_suffix:
+                    candidate = _rzm_apply_suffix(candidate, orig_suffix)
+
+            set_resolved(item, candidate, "name preflight cleaned Blender suffix")
+
+        # Second pass: build remembered mirror contracts from ORIGINAL names, not from
+        # current guesses.  Blender may mutate current names, candidates may be wrong,
+        # clusters may sync both sides to one name, but original .L/.R is the truth.
+        pair_contracts_by_object = defaultdict(list)
+        paired_keys = set()
+
+        if preserve_lr:
+            existing_ids = {item.cluster_id for item in scene.rzm_weight_plan if item.cluster_id}
+            mirror_counter = 0
+
+            def new_mirror_cluster_id():
+                nonlocal mirror_counter
+                while f"mirror_{mirror_counter}" in existing_ids:
+                    mirror_counter += 1
+                cid = f"mirror_{mirror_counter}"
+                existing_ids.add(cid)
+                mirror_counter += 1
+                return cid
+
+            for object_name, items in grouped.items():
+                by_original_base = defaultdict(lambda: {"L": [], "R": []})
+                for item in items:
+                    side, base, _suffix, _clean = _rzm_lr_parts(item.original_name)
+                    if side not in {"L", "R"}:
+                        continue
+                    by_original_base[_rzm_base_key(base)][side].append(item)
+
+                for base_key, sides in by_original_base.items():
+                    left_items = sorted(sides["L"], key=lambda row: row.group_index)
+                    right_items = sorted(sides["R"], key=lambda row: row.group_index)
+                    pair_count = min(len(left_items), len(right_items))
+                    for pair_index in range(pair_count):
+                        item_l = left_items[pair_index]
+                        item_r = right_items[pair_index]
+                        l_suffix, r_suffix = suffix_for_pair(item_l, item_r)
+                        stem = _rzm_choose_mirror_stem(item_l, item_r)
+
+                        cid = item_l.cluster_id or item_r.cluster_id or new_mirror_cluster_id()
+                        item_l.cluster_id = cid
+                        item_r.cluster_id = cid
+
+                        # If one side was accepted and the twin was unresolved, promote
+                        # the twin.  Names are still side-specific and allocated later.
+                        if item_l.status == "APPROVED" and item_r.status not in {"APPROVED", "IGNORED"}:
+                            item_r.status = "APPROVED"
+                            item_r.manual_override = True
+                            item_r.decision_reason = "mirror pair auto-resolved from .L partner"
+                        elif item_r.status == "APPROVED" and item_l.status not in {"APPROVED", "IGNORED"}:
+                            item_l.status = "APPROVED"
+                            item_l.manual_override = True
+                            item_l.decision_reason = "mirror pair auto-resolved from .R partner"
+
+                        pair_contracts_by_object[object_name].append({
+                            "base_key": base_key,
+                            "pair_index": pair_index,
+                            "cluster_id": cid,
+                            "stem": stem,
+                            "L": item_l,
+                            "R": item_r,
+                            "l_suffix": l_suffix,
+                            "r_suffix": r_suffix,
+                        })
+                        paired_keys.add(item_key(item_l))
+                        paired_keys.add(item_key(item_r))
+
+        # Third pass: per-object uniqueness.  Mirror pairs are allocated FIRST and
+        # atomically.  Singles then fit around those reserved names.  This prevents:
+        #     6.L -> Clavicle.R
+        #     6.R -> Clavicle_3.R
+        # because the pair asks for two names together: Clavicle.L + Clavicle.R.
+        for object_name, items in grouped.items():
+            used = set()
+            final_names = []
+
+            pair_contracts = sorted(
+                pair_contracts_by_object.get(object_name, []),
+                key=lambda c: min(c["L"].group_index, c["R"].group_index),
+            )
+
+            for contract in pair_contracts:
+                item_l = contract["L"]
+                item_r = contract["R"]
+                old_l = item_l.resolved_name
+                old_r = item_r.resolved_name
+                left_name, right_name, had_conflict = allocate_pair_names(
+                    contract["stem"],
+                    contract["l_suffix"],
+                    contract["r_suffix"],
+                    used,
+                )
+                used.add(left_name)
+                used.add(right_name)
+                final_names.extend([left_name, right_name])
+
+                set_resolved(item_l, left_name, "mirror contract preserved .L/.R side")
+                set_resolved(item_r, right_name, "mirror contract preserved .L/.R side")
+
+                if had_conflict:
+                    mark_duplicate_created(item_l, "mirror pair duplicate resolved before Blender rename")
+                    mark_duplicate_created(item_r, "mirror pair duplicate resolved before Blender rename")
+                    report["conflicts"].append({
+                        "object": object_name,
+                        "type": "mirror_pair",
+                        "base": contract["base_key"],
+                        "requested_stem": contract["stem"],
+                        "resolved_L": left_name,
+                        "resolved_R": right_name,
+                    })
+
+                report["mirror_pairs"].append({
+                    "object": object_name,
+                    "base": contract["base_key"],
+                    "pair_index": contract["pair_index"],
+                    "cluster_id": contract["cluster_id"],
+                    "requested_stem": contract["stem"],
+                    "L": {"index": int(item_l.group_index), "from": old_l, "to": item_l.resolved_name},
+                    "R": {"index": int(item_r.group_index), "from": old_r, "to": item_r.resolved_name},
+                })
+
+            singles = [item for item in sorted(items, key=lambda row: row.group_index) if item_key(item) not in paired_keys]
+            for item in singles:
+                candidate = _rzm_sanitize_name(item.resolved_name or item.original_name)
+
+                if preserve_lr:
+                    _orig_side, _orig_base, orig_suffix, _orig_clean = _rzm_lr_parts(item.original_name)
+                    if orig_suffix:
+                        candidate = _rzm_apply_suffix(candidate, orig_suffix)
+
+                final_name, had_conflict = _rzm_conflict_name(candidate, used)
+                used.add(final_name)
+                final_names.append(final_name)
+
+                if final_name != item.resolved_name:
+                    set_resolved(item, final_name, "single duplicate resolved before Blender rename" if had_conflict else "name preflight normalized")
+
+                if had_conflict:
+                    mark_duplicate_created(item, "duplicate resolved before Blender rename")
+                    report["conflicts"].append({
+                        "object": object_name,
+                        "type": "single",
+                        "index": int(item.group_index),
+                        "requested": candidate,
+                        "resolved": final_name,
+                    })
+
+            # Validation: every remembered pair must still be identical except side.
+            plan_index_by_id = _rzm_plan_index_lookup(scene.rzm_weight_plan)
+            duplicate_groups = _rzm_duplicate_name_groups(items, plan_index_by_id)
+            suffix_rows = _rzm_blender_suffix_groups(items, plan_index_by_id)
+            broken_pairs = _rzm_broken_pair_details(pair_contracts, plan_index_by_id)
+
+            report["objects"][object_name] = {
+                "planned": len(items),
+                "unique_final_names": len({getattr(item, "resolved_name", "") for item in items}),
+                "has_duplicates": bool(duplicate_groups),
+                "has_blender_suffix": bool(suffix_rows),
+                "broken_mirror_pairs": broken_pairs,
+                "duplicate_groups": duplicate_groups,
+                "blender_suffix_rows": suffix_rows,
+            }
+
+            if duplicate_groups or suffix_rows or broken_pairs:
+                payload = _rzm_write_name_error(
+                    scene,
+                    stage=stage,
+                    object_name=object_name,
+                    reason="post-preflight validation failed",
+                    items=items,
+                    pair_contracts=pair_contracts,
+                    extra={"object_report": report["objects"][object_name]},
+                )
+                report["errors"].append(payload)
+
+        try:
+            scene["rzm_harmonizer_name_preflight"] = json.dumps(report, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+        return report
+    finally:
+        _rzm_pop_plan_guard(plan_guard_state)
+
+def _rzm_preflight_after_edit(scene, *, stage="edit"):
+    """Run pair-safe preflight after UI/manual edits.
+
+    Several operators change one plan row at a time.  If the row belongs to a
+    remembered mirror pair, the partner must be repaired immediately so the UI
+    and the final Apply step see the same pair-safe names.
+    """
+    try:
+        _rzm_preflight_plan_names(scene, scene.rzm_weight_settings, stage=stage)
+    except Exception as exc:
+        print(f"[RZM Weight Harmonizer] name preflight failed at {stage}: {exc}")
+
+# ============================================================
 # MIRROR PAIR POST-PROCESSING
 # ============================================================
 
 def _resolve_mirror_pairs(scene):
-    """Post-process step run after build_plan.
+    """Compatibility wrapper used by Build Plan.
 
-    Finds VG items whose original_name carries a .L or .R suffix and whose
-    partner (same base name, opposite side) exists in the plan for the SAME
-    object.  For each complete pair:
-      - Ensures resolved_name carries the correct .L / .R suffix.
-      - If both sides resolved to the SAME base name (no suffix on either),
-        bifurcates them: left gets base+'.L', right gets base+'.R'.
-      - Auto-clusters the pair so edits stay in sync.
-      - If one partner is APPROVED and the other is CONFLICT/UNKNOWN,
-        promotes the weaker partner automatically.
+    The old implementation tried to fix .L/.R after the plan was already
+    built, but it looked at raw names.  Raw Blender names may be .L.001,
+    therefore the pair was invisible.  The real work now lives in
+    _rzm_preflight_plan_names(), which strips .001 before LR detection,
+    remembers complete mirror pairs, and deduplicates final names before
+    Blender can mutate them.
     """
-    if not scene.rzm_weight_settings.preserve_lr_suffixes:
+    settings = scene.rzm_weight_settings
+    if not getattr(settings, "preserve_lr_suffixes", True):
         return
-
-    plan = scene.rzm_weight_plan
-    if not plan:
-        return
-
-    existing_ids = {item.cluster_id for item in plan if item.cluster_id}
-    cluster_counter = [0]
-
-    def _new_mirror_cid():
-        while f"mirror_{cluster_counter[0]}" in existing_ids:
-            cluster_counter[0] += 1
-        cid = f"mirror_{cluster_counter[0]}"
-        cluster_counter[0] += 1
-        existing_ids.add(cid)
-        return cid
-
-    # (object_name, base_lower) -> {'L': plan_idx, 'R': plan_idx}
-    by_base = defaultdict(dict)
-    for idx, item in enumerate(plan):
-        if item.status == "IGNORED":
-            continue
-        suffix, base = get_lr_suffix(item.original_name)
-        if suffix is None:
-            continue
-        side = suffix[-1].upper()
-        key = (item.object_name, base.lower())
-        if side not in by_base[key] or item.group_index < plan[by_base[key][side]].group_index:
-            by_base[key][side] = idx
-
-    for (_obj_name, _base_lower), sides in by_base.items():
-        if "L" not in sides or "R" not in sides:
-            continue
-
-        idx_l = sides["L"]
-        idx_r = sides["R"]
-        item_l = plan[idx_l]
-        item_r = plan[idx_r]
-
-        orig_suffix_l, _ = get_lr_suffix(item_l.original_name)
-        sep = orig_suffix_l[0] if orig_suffix_l else "."
-
-        # Fix .L side
-        if not has_lr_suffix(item_l.resolved_name):
-            item_l["_updating_cluster"] = True
-            item_l.resolved_name = apply_lr_suffix_to(item_l.resolved_name, sep + "L")
-            item_l["_updating_cluster"] = False
-
-        # Fix .R side — if both resolved to same base, reuse that base
-        if not has_lr_suffix(item_r.resolved_name):
-            _, base_l = get_lr_suffix(item_l.resolved_name)
-            _, base_r = get_lr_suffix(item_r.resolved_name)
-            target_base = base_l if base_l.lower() == base_r.lower() else item_r.resolved_name
-            item_r["_updating_cluster"] = True
-            item_r.resolved_name = target_base + sep + "R"
-            item_r["_updating_cluster"] = False
-
-        # Auto-promote weaker partner if the other is APPROVED
-        if item_l.status == "APPROVED" and item_r.status not in ("APPROVED", "IGNORED"):
-            item_r["_updating_cluster"] = True
-            item_r.status = "APPROVED"
-            item_r.manual_override = True
-            item_r.decision_reason = "mirror pair auto-resolved from .L partner"
-            item_r["_updating_cluster"] = False
-        elif item_r.status == "APPROVED" and item_l.status not in ("APPROVED", "IGNORED"):
-            item_l["_updating_cluster"] = True
-            item_l.status = "APPROVED"
-            item_l.manual_override = True
-            item_l.decision_reason = "mirror pair auto-resolved from .R partner"
-            item_l["_updating_cluster"] = False
-
-        # Auto-cluster
-        cid = item_l.cluster_id or item_r.cluster_id or _new_mirror_cid()
-        item_l.cluster_id = cid
-        item_r.cluster_id = cid
+    _rzm_preflight_plan_names(scene, settings, stage="mirror-postprocess")
 
 
 class RZM_OT_build_plan(Operator):
@@ -354,8 +954,10 @@ class RZM_OT_build_plan(Operator):
                 cluster_id=fp_to_cluster_id.get((fp["object_name"], fp["index"]), "")
             )
 
-        if settings.preserve_lr_suffixes:
-            _resolve_mirror_pairs(scene)
+        # Final plan names are normalized before UI/export sees them.
+        # This is the pre-dedup pass: no .001 tails, preserved .L/.R,
+        # and no same-name collisions inside a mesh.
+        _rzm_preflight_plan_names(scene, settings, stage="build")
         rebuild_matrix_and_summary(scene, target_meshes)
         self.report({"INFO"}, "Remap plan built")
         tag_view3d_redraw()
@@ -382,10 +984,13 @@ class RZM_OT_assign_matrix_suggestion(Operator):
     canonical_name: StringProperty()
 
     def execute(self, context):
-        displaced, error, cl_info = assign_plan_item_to_canonical(context.scene, self.plan_index, self.canonical_name)
+        scene = context.scene
+        displaced, error, cl_info = assign_plan_item_to_canonical(scene, self.plan_index, self.canonical_name)
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
+        _rzm_preflight_after_edit(scene, stage="assign-matrix-suggestion")
+        refresh_matrix_and_summary(scene)
         self.report({"INFO"}, f"Assigned{cl_info}" + ("; previous owner returned to Conflict" if displaced else ""))
         return {"FINISHED"}
 
@@ -414,6 +1019,8 @@ class RZM_OT_assign_matrix_manual_index(Operator):
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
+        _rzm_preflight_after_edit(scene, stage="assign-matrix-manual")
+        refresh_matrix_and_summary(scene)
         self.report({"INFO"}, f"Assigned manually{cl_info}" + ("; previous owner returned to Conflict" if displaced else ""))
         return {"FINISHED"}
 
@@ -431,6 +1038,7 @@ class RZM_OT_clear_matrix_cell(Operator):
                 item.status = "CONFLICT"
                 item.decision_reason = "manually cleared from matrix"
                 item.conflict_cluster = self.canonical_name
+                _rzm_preflight_after_edit(scene, stage="clear-matrix-cell")
                 refresh_matrix_and_summary(scene)
                 self.report({"INFO"}, "Cell cleared; previous VG sent to Conflict")
                 return {"FINISHED"}
@@ -456,6 +1064,8 @@ class RZM_OT_assign_selected_to_matrix_row(Operator):
         if error:
             self.report({"ERROR"}, error)
             return {"CANCELLED"}
+        _rzm_preflight_after_edit(scene, stage="assign-selected-to-row")
+        refresh_matrix_and_summary(scene)
         self.report({"INFO"}, f"Assigned{cl_info}" + ("; old owner returned to Conflict" if displaced else ""))
         return {"FINISHED"}
 
@@ -478,6 +1088,7 @@ class RZM_OT_approve_selected_conflict(Operator):
         item.manual_override = True
         item.decision_reason = "manual approve"
         item.conflict_cluster = ""
+        _rzm_preflight_after_edit(scene, stage="approve-conflict")
         refresh_matrix_and_summary(scene)
         return {"FINISHED"}
 
@@ -507,6 +1118,7 @@ class RZM_OT_demote_approved_detail(Operator):
             return {"CANCELLED"}
         item.status = "CONFLICT"
         item.decision_reason = "manually demoted"
+        _rzm_preflight_after_edit(scene, stage="demote-approved")
         refresh_matrix_and_summary(scene)
         return {"FINISHED"}
 
@@ -538,6 +1150,8 @@ class RZM_OT_assign_candidate(Operator):
             item.is_helper = is_helper
             item.manual_override = True
             item.resolved_name = value
+            _rzm_preflight_after_edit(scene, stage="assign-candidate")
+            refresh_matrix_and_summary(scene)
             self.report({"INFO"}, f"Candidate assigned: {value}{cluster_info}")
         tag_view3d_redraw()
         return {"FINISHED"}
@@ -562,6 +1176,8 @@ class RZM_OT_force_aux_name(Operator):
         item.is_helper = True
         item.manual_override = True
         item.resolved_name = aux_name
+        _rzm_preflight_after_edit(scene, stage="force-aux-name")
+        refresh_matrix_and_summary(scene)
         tag_view3d_redraw()
         return {"FINISHED"}
 
@@ -643,6 +1259,44 @@ class RZM_OT_apply_plan(Operator):
     bl_label = "APPLY HARMONIZATION"
     bl_options = {"REGISTER", "UNDO"}
 
+    # ------------------------------------------------------------------
+    # NAMING RULES (enforced here, nowhere else):
+    #
+    #   1. If original_name ends with .L / .R (or _L / _R), the final name
+    #      MUST end with the SAME suffix.  This is absolute.
+    #   2. All final names within one object must be unique.
+    #   3. When a conflict arises, a readable counter is inserted BEFORE
+    #      the suffix:
+    #         Thigh.R  taken → Thigh_2.R  → Thigh_3.R  …
+    #         Belly3.R taken → Belly3_2.R → Belly3_3.R …
+    #         Torso    taken → Torso_2    → Torso_3    …
+    #   4. .001 / .002 style Blender auto-suffixes are FORBIDDEN.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_names(items, settings, _global_reserved=None):
+        """Legacy entry point kept for external callers/tests.
+
+        Final name resolution is now scene-level (_rzm_preflight_plan_names),
+        because mirror pairs and duplicate conflicts need to be solved with
+        the full object context.  This fallback only performs local cleanup and
+        per-object dedup if someone calls the method directly.
+        """
+        used = set()
+        for item in sorted(items, key=lambda r: r.group_index):
+            candidate = _rzm_sanitize_name(item.resolved_name or item.original_name)
+            if getattr(settings, "preserve_lr_suffixes", True):
+                _side, _base, orig_suffix, _clean = _rzm_lr_parts(item.original_name)
+                if orig_suffix:
+                    candidate = _rzm_apply_suffix(candidate, orig_suffix)
+            final_name, had_conflict = _rzm_conflict_name(candidate, used)
+            used.add(final_name)
+            item.resolved_name = final_name
+            if had_conflict:
+                item.create_bone = True
+                item.is_helper = True
+                item.decision_reason = "duplicate resolved before Blender rename"
+
     def execute(self, context):
         scene = context.scene
         settings = scene.rzm_weight_settings
@@ -651,149 +1305,105 @@ class RZM_OT_apply_plan(Operator):
             return {"CANCELLED"}
 
         bone_names = {bone.name for bone in armature.data.bones}
-        reserved = set(bone_names)
-        reserved.update(item.resolved_name for item in scene.rzm_weight_plan if item.resolved_name)
-        grouped = defaultdict(list)
+
+        # ── Phase 1: resolve all names BEFORE touching Blender API ────────────
+        # Existing armature bone names are allowed as vertex-group names.
+        # They are not collisions; they are the whole point of harmonization.
+        # Only duplicate names inside the same mesh are disambiguated.
+        _rzm_preflight_plan_names(scene, settings, stage="apply")
+
+        grouped: dict[str, list] = defaultdict(list)
         for item in scene.rzm_weight_plan:
             if item.status != "IGNORED":
                 grouped[item.object_name].append(item)
 
-        creation_rows = defaultdict(list)
+        # ── Phase 2: determine which bones need to be created ─────────────────
+        creation_rows: dict[str, list] = defaultdict(list)
         for _object_name, items in grouped.items():
-            # Pre-populate with names that WON'T be temp-renamed (IGNORED VGs
-            # and any VG not in the plan).  This prevents Blender from silently
-            # adding .001 when our final name collides with an untouched VG.
-            obj_pre = bpy.data.objects.get(_object_name)
-            planned_indices = {item.group_index for item in items}
-            unplanned_names = set()
-            if obj_pre and obj_pre.type == "MESH":
-                unplanned_names = {
-                    vg.name for i, vg in enumerate(obj_pre.vertex_groups)
-                    if i not in planned_indices
-                }
-            local_reserved = set(unplanned_names)
-            for item in sorted(items, key=lambda row: row.group_index):
-                requested = item.resolved_name.strip()
-
-                # Determine LR suffix for this item once, reuse below.
-                orig_suffix = None
-                if settings.preserve_lr_suffixes:
-                    orig_suffix, _ = get_lr_suffix(item.original_name)
-
-                # Apply LR suffix BEFORE the conflict check so that two
-                # items both resolving to e.g. "Bone73" with a .R original
-                # are detected as duplicates here, not by Blender (.001).
-                if orig_suffix is not None and not has_lr_suffix(requested):
-                    requested = apply_lr_suffix_to(requested, orig_suffix)
-
-                if not requested or requested in local_reserved:
-                    # Pass combined reserved so the generated name is
-                    # unique against BOTH global bone names AND names
-                    # already claimed by earlier items in this object.
-                    combined = reserved | local_reserved
-                    lr_for_aux = orig_suffix if orig_suffix is not None else ""
-                    requested = generated_aux_name(
-                        item.nearest_bone, item.original_name, combined, lr_suffix=lr_for_aux
-                    )
-                    # Keep global reserved in sync so future objects don't collide.
-                    reserved.add(requested)
-                    item.create_bone = True
-                    item.is_helper = True
-                    item.decision_reason = "duplicate prevented during Apply"
-
-                item.resolved_name = requested
-                local_reserved.add(requested)
-                if requested not in bone_names:
-                    creation_rows[requested].append(item)
+            for item in items:
+                if item.resolved_name not in bone_names:
+                    creation_rows[item.resolved_name].append(item)
 
         requests = {}
-        for name, items in creation_rows.items():
-            centroid = sum((Vector(item.centroid) for item in items), Vector((0.0, 0.0, 0.0))) / max(len(items), 1)
-            parents = Counter(item.nearest_bone for item in items if item.nearest_bone)
+        for name, citems in creation_rows.items():
+            centroid = sum((Vector(i.centroid) for i in citems), Vector()) / max(len(citems), 1)
+            parents = Counter(i.nearest_bone for i in citems if i.nearest_bone)
             requests[name] = {"centroid": centroid, "parent": parents.most_common(1)[0][0] if parents else ""}
 
         generated = create_missing_bones(context, armature, requests)
         serialize_backup(scene, armature, generated)
 
+        # ── Phase 3: rename vertex groups ─────────────────────────────────────
         for object_name, items in grouped.items():
             obj = bpy.data.objects.get(object_name)
             if obj is None or obj.type != "MESH":
                 continue
 
-            # ----------------------------------------------------------------
-            # Step 1: Temp-rename EVERY vertex group — planned AND unplanned.
-            # After this, no VG has a "real" name, so the final assignment
-            # loop cannot possibly collide with an existing name.
-            # ----------------------------------------------------------------
-            all_vg_original_names = {vg.index: vg.name for vg in obj.vertex_groups}
             planned_indices = {item.group_index for item in items}
+            all_original = {vg.index: vg.name for vg in obj.vertex_groups}
+
+            # Temp-rename EVERY VG (planned + ignored) so no name is "live"
+            # when we start assigning final names → Blender cannot add .001.
             for vg in obj.vertex_groups:
                 vg.name = f"__RZM_TMP__{vg.index:04d}__"
 
-            # ----------------------------------------------------------------
-            # Step 2: Assign final names to planned VGs.
-            # Before each assignment, check Blender's live VG list so that
-            # if our tracking data has any inconsistency we still can't
-            # produce a .001 collision suffix.
-            # ----------------------------------------------------------------
-            assigned_names: dict[str, int] = {}   # final_name -> vg.index
+            # Assign final names exactly as preflight decided.  Do NOT run a
+            # last-minute row-by-row dedup here: that is precisely how a mirror
+            # pair can be broken into Clavicle.R / Clavicle_2.R.  If preflight
+            # somehow failed, cancel loudly instead of letting Blender invent
+            # .001 tails or silently flipping sides.
+            valid_items = [item for item in sorted(items, key=lambda r: r.group_index) if item.group_index < len(obj.vertex_groups)]
+            planned_final_names = [item.resolved_name for item in valid_items]
 
-            def _safe_name(target: str, own_index: int) -> str:
-                """Return target if free, otherwise base+N+lr_suffix without .001.
+            duplicate_groups = _rzm_duplicate_name_groups(valid_items, _rzm_plan_index_lookup(scene.rzm_weight_plan))
+            if duplicate_groups:
+                payload = _rzm_write_name_error(
+                    scene,
+                    stage="apply-final-validation",
+                    object_name=object_name,
+                    reason="duplicate planned VG names",
+                    items=valid_items,
+                    extra={
+                        "object_vertex_group_count": len(obj.vertex_groups),
+                        "note": "These are the exact plan rows that still share one resolved_name right before Blender rename.",
+                    },
+                )
+                self.report({"ERROR"}, f"Name preflight failed for {object_name}: {_rzm_error_short_message(payload)}. Details: scene['rzm_harmonizer_name_error'] / console")
+                return {"CANCELLED"}
 
-                The counter is inserted BEFORE any .L/.R suffix so that
-                Blender's symmetry detection still works:
-                  'Thigh8.R' taken → 'Thigh81.R', 'Thigh82.R', …
-                  'Torso'    taken → 'Torso1',    'Torso2',    …
-                """
-                if obj.vertex_groups.get(target) is None:
-                    return target
-                # Strip any Blender collision suffix (.001 etc.) first.
-                clean = strip_blender_collision_suffix(target)
-                # Separate the .L/.R part so counter lands before it.
-                lr_suffix, bone_base = get_lr_suffix(clean)
-                if not lr_suffix:
-                    bone_base = clean
-                    lr_suffix = ""
-                counter = 1
-                while True:
-                    candidate = f"{bone_base}{counter}{lr_suffix}"
-                    if obj.vertex_groups.get(candidate) is None:
-                        return candidate
-                    counter += 1
+            suffix_rows = _rzm_blender_suffix_groups(valid_items, _rzm_plan_index_lookup(scene.rzm_weight_plan))
+            if suffix_rows:
+                payload = _rzm_write_name_error(
+                    scene,
+                    stage="apply-final-validation",
+                    object_name=object_name,
+                    reason="Blender .001 suffix survived",
+                    items=valid_items,
+                    extra={"offending_rows": suffix_rows},
+                )
+                self.report({"ERROR"}, f"Name preflight failed for {object_name}: {_rzm_error_short_message(payload)}. Details: scene['rzm_harmonizer_name_error'] / console")
+                return {"CANCELLED"}
 
+            used_names = set()
             mapping = []
             for item in sorted(items, key=lambda r: r.group_index):
                 if item.group_index >= len(obj.vertex_groups):
                     continue
-                vg = obj.vertex_groups[item.group_index]
-                final = _safe_name(item.resolved_name, vg.index)
-                vg.name = final
-                item.resolved_name = final   # keep plan in sync
-                assigned_names[final] = vg.index
-                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": final, "status": item.status})
+                final_name = item.resolved_name
+                used_names.add(final_name)
+                obj.vertex_groups[item.group_index].name = final_name
+                mapping.append({"original_index": item.group_index, "original_name": item.original_name, "resolved_name": final_name, "status": item.status})
 
-            # ----------------------------------------------------------------
-            # Step 3: Restore unplanned / IGNORED VGs to their original names.
-            # Use the same _safe_name guard in case of unexpected collision.
-            # ----------------------------------------------------------------
+            # Restore unplanned / IGNORED VGs (mask groups etc.) without allowing
+            # them to collide with planned names and trigger Blender .001 tails.
             for vg in obj.vertex_groups:
                 if vg.index not in planned_indices:
-                    original = all_vg_original_names.get(vg.index, vg.name)
-                    vg.name = _safe_name(original, vg.index)
+                    wanted = all_original.get(vg.index, vg.name)
+                    final_name, _had_conflict = _rzm_conflict_name(wanted, used_names)
+                    used_names.add(final_name)
+                    vg.name = final_name
 
             obj["rzm_weight_harmonizer_mapping"] = json.dumps(mapping, ensure_ascii=False)
-
-            # ----------------------------------------------------------------
-            # Step 4: Post-cleanup — strip any .NNN Blender somehow added.
-            # Works by finding the next free base+N name (no .001 format).
-            # ----------------------------------------------------------------
-            for vg in obj.vertex_groups:
-                clean = strip_blender_collision_suffix(vg.name)
-                if clean != vg.name:
-                    placeholder = f"__RZM_CLEAN__{vg.index:04d}__"
-                    vg.name = placeholder          # free the slot
-                    vg.name = _safe_name(clean, vg.index)  # assign clean or base+N
 
         refresh_matrix_and_summary(scene)
         self.report({"INFO"}, f"Done. New bones: {len(generated)}. VG order and vertex order were not changed")
@@ -978,6 +1588,8 @@ class RZM_OT_cluster_merge_groups(Operator):
                 other.create_bone = best_create_bone
                 other["_updating_cluster"] = False
 
+        _rzm_preflight_after_edit(scene, stage="cluster-merge")
+
         try:
             target_names = {item.object_name for item in plan}
             target_meshes = [bpy.data.objects.get(name) for name in target_names if bpy.data.objects.get(name)]
@@ -1050,6 +1662,8 @@ class RZM_OT_quick_attach_bone(Operator):
         found_item.is_helper = is_helper
         found_item.manual_override = True
         found_item.resolved_name = self.bone_name
+
+        _rzm_preflight_after_edit(scene, stage="quick-attach-bone")
 
         try:
             target_names = {item.object_name for item in plan}
