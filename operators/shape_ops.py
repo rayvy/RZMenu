@@ -90,6 +90,7 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 'parent_shape': c.parent_shape,
                 'fallback_value': c.fallback_value,
                 'sparse_vertex_count': c.sparse_vertex_count,
+                'sparse_vertex_counts': getattr(c, 'sparse_vertex_counts', ""),
             }
 
         legacy_settings = {s.shape_name: s for s in rzm.shapes if s.shape_name}
@@ -128,6 +129,7 @@ class RZM_OT_ShapeKeyExport(bpy.types.Operator):
                 config.parent_shape = s.get('parent_shape', "")
                 config.fallback_value = s.get('fallback_value', 0.0)
                 config.sparse_vertex_count = s.get('sparse_vertex_count', 0)
+                config.sparse_vertex_counts = s.get('sparse_vertex_counts', "")
             # 2. Fallback to Legacy config if first time discovery
             elif name in legacy_settings:
                 legacy = legacy_settings[name]

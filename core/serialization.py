@@ -481,7 +481,7 @@ class RZTemplateEngine:
         'anim_type_index', 'anim_start_frame', 'anim_end_frame', 'anim_t2', 'anim_t3',
         'disable_export', 'bake_weights', 'force_export', 'mark_random',
         'override_switch_condition', 'override_switch_value_link',
-        'parent_shape', 'sparse_vertex_count', 'slider_min', 'slider_max',
+        'parent_shape', 'sparse_vertex_count', 'sparse_vertex_counts', 'slider_min', 'slider_max',
         'in_game_profiles',
     ]
 

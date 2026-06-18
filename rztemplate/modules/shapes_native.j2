@@ -146,7 +146,16 @@ x115 = {{ vertex_count }}
     cs-t54 = copy Resource{{ comp_name }}_{{ utils.format_var(config.shape_name) }}_ShapeConfigs
     {% endif %}
     Resource{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_{% endif %}{{ comp_name }}{% if rzm.game.selection in ["ArknightsEndfield", "WutheringWaves"] %}_VB0{% else %}Position{% endif %} = ref cs-u5
-    Dispatch = ({{ config.sparse_vertex_count if (config.sparse_vertex_count is defined and config.sparse_vertex_count > 0) else vertex_count }} + 255) // 256, 1, 1
+    {% set sparse_dispatch = [] %}
+    {% if config.sparse_vertex_counts is defined and config.sparse_vertex_counts %}
+        {% for sparse_entry in config.sparse_vertex_counts.splitlines() %}
+            {% set sparse_parts = sparse_entry.split('\t') %}
+            {% if sparse_parts | length >= 2 and sparse_parts[0] == comp_name %}
+                {% set _ = sparse_dispatch.append(sparse_parts[1] | int) %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+    Dispatch = ({{ sparse_dispatch[0] if sparse_dispatch | length > 0 and sparse_dispatch[0] > 0 else (config.sparse_vertex_count if (config.sparse_vertex_count is defined and config.sparse_vertex_count > 0) else vertex_count) }} + 255) // 256, 1, 1
 {% endfor %}
 
 cs-u5 = null

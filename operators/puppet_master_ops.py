@@ -100,6 +100,83 @@ def _get_shape_buffer_name(base_name, sk_name, is_xxmi, dump_name):
     
     return f"{clean_base}_{clean_sk}.buf"
 
+def _format_ini_id(value):
+    if not value:
+        return ""
+    result = str(value)
+    for char in " !@#$%^&*()+-={}|[]\\:\";'<>?,./":
+        result = result.replace(char, "_")
+    return result
+
+def _format_shape_var(value):
+    if not value:
+        return ""
+    return _format_ini_id("_".join(str(value).strip("$@#~").split()))
+
+def _parse_sparse_component_counts(raw):
+    counts = {}
+    if not raw:
+        return counts
+    for line in str(raw).splitlines():
+        comp_name, sep, count_text = line.partition("\t")
+        if not sep:
+            continue
+        try:
+            count = int(count_text)
+        except (TypeError, ValueError):
+            continue
+        if comp_name and count > 0:
+            counts[comp_name] = count
+    return counts
+
+def _serialize_sparse_component_counts(counts):
+    return "\n".join(
+        f"{comp_name}\t{int(count)}"
+        for comp_name, count in sorted(counts.items())
+        if comp_name and int(count) > 0
+    )
+
+def _component_sparse_aliases(base_name, is_xxmi, dump_name):
+    raw_base = (dump_name + base_name) if is_xxmi else (base_name if base_name else "Main")
+    legacy_clean = re.sub(r'[\\/:*?"<>|]', '_', str(raw_base)).replace(' ', '_').replace('.', '_')
+    aliases = {legacy_clean, _format_ini_id(raw_base)}
+    aliases.discard("")
+    return aliases
+
+def _set_shape_sparse_count(rzm, shape_name, component_names, sparse_count):
+    if not rzm or not shape_name or sparse_count <= 0:
+        return
+
+    for cfg in rzm.shape_configs:
+        if cfg.shape_name != shape_name:
+            continue
+
+        counts = _parse_sparse_component_counts(getattr(cfg, "sparse_vertex_counts", ""))
+        for component_name in component_names:
+            if component_name:
+                counts[component_name] = sparse_count
+        cfg.sparse_vertex_counts = _serialize_sparse_component_counts(counts)
+
+        # Legacy fallback for older templates/failed component lookup. Keep the
+        # maximum so fallback dispatch is never smaller than a baked sparse file.
+        cfg.sparse_vertex_count = max(int(getattr(cfg, "sparse_vertex_count", 0)), int(sparse_count))
+        break
+
+def _get_shape_sparse_count(config, component_name):
+    counts = _parse_sparse_component_counts(getattr(config, "sparse_vertex_counts", ""))
+    return int(counts.get(component_name, 0))
+
+def _clear_sparse_counts(rzm, shape_names=None):
+    if not rzm:
+        return
+    shape_names = set(shape_names) if shape_names else None
+    for cfg in rzm.shape_configs:
+        if shape_names is not None and cfg.shape_name not in shape_names:
+            continue
+        cfg.sparse_vertex_count = 0
+        if hasattr(cfg, "sparse_vertex_counts"):
+            cfg.sparse_vertex_counts = ""
+
 # ---------------------------------------------------------------------------
 # CLASSIFICATION
 # ---------------------------------------------------------------------------
@@ -178,6 +255,7 @@ def _convert_shape_buffers_to_sparse(output_dir, base_name, shape_names, is_xxmi
     stride_f32 = stride // 4
     buf_v_count = len(original_bytes) // stride
     orig_f32 = np.frombuffer(original_bytes, dtype=np.float32).reshape(buf_v_count, stride_f32)
+    component_aliases = _component_sparse_aliases(base_name, is_xxmi, dump_name)
     
     converted = 0
     for sk_name in shape_names:
@@ -219,10 +297,7 @@ def _convert_shape_buffers_to_sparse(output_dir, base_name, shape_names, is_xxmi
         # Save sparse vertex count to Blender property
         try:
             rzm = bpy.context.scene.rzm
-            for cfg in rzm.shape_configs:
-                if cfg.shape_name == sk_name:
-                    cfg.sparse_vertex_count = sparse_count
-                    break
+            _set_shape_sparse_count(rzm, sk_name, component_aliases, sparse_count)
         except Exception as e:
             print(f"[RZM] [SPARSE] Failed to save sparse vertex count for {sk_name}: {e}")
         
@@ -1328,24 +1403,31 @@ def _patch_ini_dispatches(mod_root, rzm):
         lines = content.splitlines()
         
         current_shape = None
+        shape_resources = [
+            (cfg, _format_shape_var(cfg.shape_name))
+            for cfg in rzm.shape_configs
+            if cfg.shape_name
+        ]
+        shape_resources.sort(key=lambda item: len(item[1]), reverse=True)
         for i, line in enumerate(lines):
             # Matches: cs-t51 = copy ResourceGirl_Sport
-            match = re.search(r'cs-t51\s*=\s*copy\s*Resource(?:[A-Za-z0-9_]+)_([A-Za-z0-9_]+)', line)
+            match = re.search(r'cs-t51\s*=\s*copy\s*Resource([A-Za-z0-9_]+)', line)
             if match:
-                shape_var_name = match.group(1)
                 current_shape = None
-                for cfg in rzm.shape_configs:
-                    cleaned_name = cfg.shape_name.strip("$@#~")
-                    for char in " !@#$%^&*()+-={}|[]\\:\";'<>?,./":
-                        cleaned_name = cleaned_name.replace(char, '_')
-                    cleaned_name = "_".join(cleaned_name.split())
-                    if shape_var_name == cleaned_name:
-                        current_shape = cfg
+                resource_name = match.group(1)
+                for cfg, shape_var_name in shape_resources:
+                    suffix = f"_{shape_var_name}"
+                    if resource_name.endswith(suffix):
+                        current_shape = (cfg, resource_name[:-len(suffix)])
                         break
             elif line.strip().startswith("Dispatch") and current_shape is not None:
-                if current_shape.sparse_vertex_count > 0:
+                cfg, component_name = current_shape
+                sparse_count = _get_shape_sparse_count(cfg, component_name)
+                if sparse_count <= 0:
+                    sparse_count = int(getattr(cfg, "sparse_vertex_count", 0))
+                if sparse_count > 0:
                     indent = line[:line.find("Dispatch")]
-                    lines[i] = f"{indent}Dispatch = ({current_shape.sparse_vertex_count} + 255) // 256, 1, 1"
+                    lines[i] = f"{indent}Dispatch = ({sparse_count} + 255) // 256, 1, 1"
                     modified = True
                 current_shape = None
                 
@@ -1375,6 +1457,7 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
         limit         = addons.puppet_master_limit
         components    = get_components_to_process(context, per_component)
         if not components: return {'CANCELLED'}
+        _clear_sparse_counts(context.scene.rzm)
         
         from .export_cache import get_cache
         cache = get_cache() or {}
@@ -1426,6 +1509,7 @@ class RZM_OT_PuppetMasterBakeSingle(bpy.types.Operator):
         limit        = rzm.addons.puppet_master_limit
         components   = get_components_to_process(context, per_component=False)
         if not components: return {'CANCELLED'}
+        _clear_sparse_counts(rzm, shape_names={target_shape})
         
         from .export_cache import get_cache
         cache = get_cache() or {}
