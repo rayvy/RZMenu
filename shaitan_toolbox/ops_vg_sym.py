@@ -1,5 +1,11 @@
 import bpy
+import re
+from collections import defaultdict
 from mathutils import Vector
+
+
+SIDE_SUFFIX_RE = re.compile(r"^(.*)\.([LRlr])(\.\d{3})?$")
+
 
 def get_armature_linked_to_mesh(obj):
     """Finds the armature linked to the mesh through a modifier."""
@@ -41,6 +47,225 @@ def calculate_all_vg_centers_optimized(obj):
             world_centers[i] = obj_matrix_world @ local_center
             
     return world_centers
+
+
+def mirror_vertex_group_name(name, existing_names):
+    """Return the mirrored .L/.R group name if that counterpart exists."""
+    match = SIDE_SUFFIX_RE.match(name)
+    if not match:
+        return name
+
+    base, side, numeric_suffix = match.groups()
+    mirror_side = "R" if side == "L" else "L" if side == "R" else "r" if side == "l" else "l"
+    mirrored_name = f"{base}.{mirror_side}{numeric_suffix or ''}"
+    return mirrored_name if mirrored_name in existing_names else name
+
+
+def vertex_weight_map(obj, vertex_index, group_names):
+    weights = {}
+    for item in obj.data.vertices[vertex_index].groups:
+        if item.weight > 0.0 and 0 <= item.group < len(group_names):
+            weights[group_names[item.group]] = float(item.weight)
+    return weights
+
+
+def remap_weight_map(weights, existing_names):
+    remapped = defaultdict(float)
+    for name, weight in weights.items():
+        remapped[mirror_vertex_group_name(name, existing_names)] += weight
+    return dict(remapped)
+
+
+def average_weight_maps(first, second):
+    averaged = {}
+    for name in set(first) | set(second):
+        weight = (first.get(name, 0.0) + second.get(name, 0.0)) * 0.5
+        if weight > 0.0:
+            averaged[name] = weight
+    return averaged
+
+
+def find_exact_mirror_vertex_pairs(mesh):
+    coord_to_indices = defaultdict(list)
+    for vertex in mesh.vertices:
+        coord_to_indices[(vertex.co.x, vertex.co.y, vertex.co.z)].append(vertex.index)
+
+    pairs = []
+    center_indices = []
+    skipped = 0
+    visited = set()
+
+    for coord, indices in coord_to_indices.items():
+        if coord in visited:
+            continue
+
+        mirror_coord = (-coord[0], coord[1], coord[2])
+        mirror_indices = coord_to_indices.get(mirror_coord)
+
+        if mirror_indices is None:
+            skipped += len(indices)
+            visited.add(coord)
+            continue
+
+        if mirror_coord == coord:
+            center_indices.extend(indices)
+            visited.add(coord)
+            continue
+
+        visited.add(coord)
+        visited.add(mirror_coord)
+
+        if len(indices) != len(mirror_indices):
+            skipped += len(indices) + len(mirror_indices)
+            continue
+
+        for left_index, right_index in zip(sorted(indices), sorted(mirror_indices)):
+            pairs.append((left_index, right_index))
+
+    return pairs, center_indices, skipped
+
+
+def make_center_vertex_weight_map(weights, existing_names):
+    result = dict(weights)
+    processed = set()
+
+    for name, weight in list(weights.items()):
+        if name in processed:
+            continue
+
+        mirror_name = mirror_vertex_group_name(name, existing_names)
+        if mirror_name == name:
+            continue
+
+        mirror_weight = weights.get(mirror_name, 0.0)
+        average = (weight + mirror_weight) * 0.5
+        if average > 0.0:
+            result[name] = average
+            result[mirror_name] = average
+        else:
+            result.pop(name, None)
+            result.pop(mirror_name, None)
+        processed.add(name)
+        processed.add(mirror_name)
+
+    return result
+
+
+def write_vertex_weights(obj, vertex_maps):
+    if not vertex_maps:
+        return
+
+    group_by_name = {vg.name: vg for vg in obj.vertex_groups}
+    processed_indices = sorted(vertex_maps)
+    original_locks = {vg.name: vg.lock_weight for vg in obj.vertex_groups}
+    assigned_by_group = defaultdict(list)
+
+    for vertex_index in processed_indices:
+        for item in obj.data.vertices[vertex_index].groups:
+            assigned_by_group[item.group].append(vertex_index)
+
+    try:
+        for vg in obj.vertex_groups:
+            vg.lock_weight = False
+
+        for vg in obj.vertex_groups:
+            assigned_indices = assigned_by_group.get(vg.index)
+            if assigned_indices:
+                vg.remove(assigned_indices)
+
+        batched = defaultdict(lambda: defaultdict(list))
+        for vertex_index, weights in vertex_maps.items():
+            for name, weight in weights.items():
+                if weight > 0.0 and name in group_by_name:
+                    batched[name][float(weight)].append(vertex_index)
+
+        for name, weight_to_indices in batched.items():
+            group = group_by_name[name]
+            for weight, indices in weight_to_indices.items():
+                group.add(indices, weight, 'REPLACE')
+    finally:
+        for vg in obj.vertex_groups:
+            vg.lock_weight = original_locks.get(vg.name, False)
+
+
+def symmetrize_mesh_vertex_weights_exact(obj):
+    mesh = obj.data
+    pairs, center_indices, skipped = find_exact_mirror_vertex_pairs(mesh)
+    group_names = [vg.name for vg in obj.vertex_groups]
+    existing_names = set(group_names)
+    vertex_maps = {}
+
+    for first_index, second_index in pairs:
+        first_weights = vertex_weight_map(obj, first_index, group_names)
+        second_weights = vertex_weight_map(obj, second_index, group_names)
+        second_as_first = remap_weight_map(second_weights, existing_names)
+
+        averaged_first = average_weight_maps(first_weights, second_as_first)
+        averaged_second = remap_weight_map(averaged_first, existing_names)
+
+        vertex_maps[first_index] = averaged_first
+        vertex_maps[second_index] = averaged_second
+
+    for vertex_index in center_indices:
+        weights = vertex_weight_map(obj, vertex_index, group_names)
+        vertex_maps[vertex_index] = make_center_vertex_weight_map(weights, existing_names)
+
+    write_vertex_weights(obj, vertex_maps)
+    mesh.update()
+
+    return {
+        "pairs": len(pairs),
+        "center": len(center_indices),
+        "skipped": skipped,
+        "processed": len(vertex_maps),
+    }
+
+
+class RZM_ST_OT_SymmetrizeVGWeightsExact(bpy.types.Operator):
+    bl_idname = "rzm_st.symmetrize_vg_weights_exact"
+    bl_label = "Symmetrize VG Weights (Exact)"
+    bl_description = "Symmetrize selected mesh vertex weights using exact raw mesh X mirror coordinates"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return any(obj.type == 'MESH' and obj.vertex_groups for obj in context.selected_objects)
+
+    def execute(self, context):
+        targets = [obj for obj in context.selected_objects if obj.type == 'MESH' and obj.vertex_groups]
+        if not targets:
+            self.report({'ERROR'}, "Select at least one mesh with vertex groups")
+            return {'CANCELLED'}
+
+        active_obj = context.view_layer.objects.active
+        original_mode = active_obj.mode if active_obj else 'OBJECT'
+        if active_obj and original_mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        processed_objects = 0
+        total_pairs = 0
+        total_center = 0
+        total_skipped = 0
+
+        try:
+            for obj in targets:
+                result = symmetrize_mesh_vertex_weights_exact(obj)
+                processed_objects += 1
+                total_pairs += result["pairs"]
+                total_center += result["center"]
+                total_skipped += result["skipped"]
+        finally:
+            if active_obj:
+                context.view_layer.objects.active = active_obj
+                if original_mode != 'OBJECT':
+                    bpy.ops.object.mode_set(mode=original_mode)
+
+        self.report(
+            {'INFO'},
+            f"Symmetrized weights: {processed_objects} object(s), {total_pairs} mirror pairs, "
+            f"{total_center} center verts, {total_skipped} skipped"
+        )
+        return {'FINISHED'}
 
 class RZM_ST_OT_SymmetrizeVGNames(bpy.types.Operator):
     bl_idname = "rzm_st.symmetrize_vg_names"
@@ -208,6 +433,7 @@ class RZM_ST_OT_SymmetrizeVGNamesConfirm(bpy.types.Operator):
         return {'FINISHED'}
 
 classes_to_register = [
+    RZM_ST_OT_SymmetrizeVGWeightsExact,
     RZM_ST_OT_SymmetrizeVGNames,
     RZM_ST_OT_SymmetrizeVGNamesConfirm,
 ]

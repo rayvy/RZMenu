@@ -63,6 +63,7 @@ def draw_setup_scripts_ui(self, context, layout):
     
     col_tools.operator("rzm_st.mirror_cut", text="Mirror Cut X (Clear Left)", icon='MOD_MIRROR')
     col_tools.operator("rzm_st.vg_sym_rename_all", text="Symmetrize VG Names (Median)", icon='MOD_MIRROR')
+    col_tools.operator("rzm_st.symmetrize_vg_weights_exact", text="Symmetrize VG Weights (Exact)", icon='GROUP_VERTEX')
     col_tools.operator("rzm_st.clean_duplicate_side_markers", text="Clean duplicate .L/.R markers", icon='SORTALPHA')
     col_tools.operator("rzm_st.vg_weight_align", text="Align VG Index & Naming (Source)", icon='SORT_ASC')
     col_tools.operator("rzm_weights.vg_name_transfer", text="VG Name Transfer (by index)", icon='FILE_REFRESH')
