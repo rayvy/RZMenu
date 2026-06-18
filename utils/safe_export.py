@@ -131,52 +131,181 @@ class AnchorLayoutCleanupSubModule:
     Handles vertex group reordering to match the anchor object if rzm_export_vg_anchor is set.
     """
     def __init__(self):
-        # Stores anchor alignment state: {obj_name: (original_vgs_data)} if we need to restore it
-        self._anchor_states = {}
+        self._temp_objects = []
+        self._original_states = {}
+        self._prev_active = None
+        self._prev_selected = []
 
     def pre_export(self, context):
-        self._anchor_states.clear()
+        self._temp_objects.clear()
+        self._original_states.clear()
+        self._prev_active = context.view_layer.objects.active
+        self._prev_selected = list(context.selected_objects)
 
-        from .xxmi_data_predictor import get_export_targets
-        targets = get_export_targets(context)
+        targets_by_obj = self._collect_anchor_targets(context)
+        if not targets_by_obj:
+            return
 
-        print(f"[SafeExport] [AnchorLayout] Processing {len(targets)} mesh targets...")
+        print(f"[SafeExport] [AnchorLayout] Creating temporary export instances for {len(targets_by_obj)} mesh target(s)...")
 
-        for obj in targets:
+        for obj, component_names in targets_by_obj.items():
             if obj.type != 'MESH' or not obj.data:
                 continue
 
-            # Handle anchor layout alignment if set
             anchor = getattr(obj, "rzm_export_vg_anchor", None)
-            if anchor and anchor.type == 'MESH':
-                anchor_order = [vg.name for vg in anchor.vertex_groups]
-                if anchor_order:
-                    # Capture original state of all vertex groups for restoration
-                    state = self._capture_vertex_groups(obj)
-                    self._anchor_states[obj.name] = state
+            if not anchor or anchor.type != 'MESH' or not anchor.vertex_groups:
+                continue
 
-                    preserved_tail = self._get_preserved_tail_groups(obj, anchor_order)
-                    target_order = [
-                        name for name in anchor_order
-                        if name not in preserved_tail and not self._is_mask_vertex_group(name)
-                    ]
-                    
-                    # Rebuild in the anchor's order
-                    self._rebuild_vertex_groups_in_order(obj, target_order)
-                    self._normalize_vertex_groups(context, obj)
-                    if preserved_tail:
-                        self._append_preserved_vertex_groups(obj, state, preserved_tail)
-                    print(
-                        f"  [AnchorLayout] {obj.name}: Aligned VG layout to anchor "
-                        f"'{anchor.name}'"
-                        + (f", preserved {len(preserved_tail)} helper VG(s) at tail" if preserved_tail else "")
-                    )
+            original_state = self._store_original_object_state(obj)
+            self._original_states[obj] = original_state
+            obj.name = original_state['temp_source_name']
+
+            for coll in original_state['collections']:
+                try:
+                    coll.objects.unlink(obj)
+                except Exception:
+                    pass
+
+            for index, component_name in enumerate(component_names):
+                temp_obj = self._make_temp_object(context, obj, original_state, component_name, index, len(component_names))
+                self._prepare_anchor_layout(context, temp_obj, anchor)
+                self._temp_objects.append(temp_obj)
+
+        if self._temp_objects:
+            bpy.ops.object.select_all(action='DESELECT')
+            for temp_obj in self._temp_objects:
+                try:
+                    temp_obj.select_set(True)
+                except Exception:
+                    pass
+            context.view_layer.objects.active = self._temp_objects[0]
+            context.view_layer.update()
 
     def post_export(self, context):
         self._restore_all(context)
 
     def restore(self, context):
         self._restore_all(context)
+
+    def _collect_anchor_targets(self, context):
+        ordered = {}
+
+        try:
+            from .component_collector import ComponentCollector
+            components = ComponentCollector(context).get_components(force_fallback=False)
+        except Exception as e:
+            print(f"  [AnchorLayout] Component collection failed, falling back to scene scan: {e}")
+            components = {}
+
+        for component_name, objects in (components or {}).items():
+            for obj in objects:
+                if self._has_export_anchor(obj):
+                    ordered.setdefault(obj, [])
+                    if component_name not in ordered[obj]:
+                        ordered[obj].append(component_name)
+
+        for obj in context.scene.objects:
+            if self._has_export_anchor(obj):
+                ordered.setdefault(obj, [None])
+
+        return ordered
+
+    def _has_export_anchor(self, obj):
+        if not obj or obj.type != 'MESH' or not obj.data:
+            return False
+        if "RZM_BACKUP" in obj.name or "_RZM_SAFE" in obj.name:
+            return False
+        anchor = getattr(obj, "rzm_export_vg_anchor", None)
+        return bool(anchor and anchor.type == 'MESH' and anchor.vertex_groups)
+
+    def _store_original_object_state(self, obj):
+        original_name = obj.name
+        return {
+            'name': original_name,
+            'temp_source_name': f"{original_name}_RZM_SAFE_SOURCE",
+            'collections': list(obj.users_collection),
+            'hide_viewport': obj.hide_viewport,
+            'hide_render': obj.hide_render,
+            'hide_select': obj.hide_select,
+            'selected': obj.select_get(),
+        }
+
+    def _make_temp_object(self, context, source_obj, original_state, component_name, index, total_count):
+        temp_obj = source_obj.copy()
+        temp_obj.data = source_obj.data.copy()
+        temp_obj.name = self._make_temp_name(original_state['name'], component_name, index, total_count)
+        temp_obj.data.name = f"{temp_obj.name}_Mesh"
+        temp_obj.hide_viewport = False
+        temp_obj.hide_render = False
+        temp_obj.hide_select = False
+        temp_obj["RZM_SAFE_EXPORT_TEMP"] = True
+        temp_obj["RZM_SAFE_EXPORT_SOURCE"] = original_state['name']
+        if component_name:
+            temp_obj["RZM_SAFE_EXPORT_COMPONENT"] = component_name
+
+        target_collections = self._component_collections(original_state['collections'], component_name)
+        if not target_collections:
+            target_collections = [context.scene.collection]
+
+        for coll in target_collections:
+            try:
+                coll.objects.link(temp_obj)
+            except RuntimeError:
+                pass
+
+        return temp_obj
+
+    def _make_temp_name(self, original_name, component_name, index, total_count):
+        if total_count <= 1 or not component_name:
+            return original_name
+
+        safe_component = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in component_name)
+        if safe_component.lower() in original_name.lower():
+            return original_name
+
+        return f"{safe_component}_{original_name}"
+
+    def _component_collections(self, collections, component_name):
+        if not component_name:
+            return collections
+
+        matches = [
+            coll for coll in collections
+            if self._component_name_matches(coll.name, component_name)
+        ]
+        return matches or collections
+
+    @staticmethod
+    def _component_name_matches(candidate, component_name):
+        def clean(value):
+            return "".join(ch.lower() for ch in str(value) if ch.isalnum())
+
+        candidate_key = clean(candidate)
+        component_key = clean(component_name)
+        return bool(component_key and component_key in candidate_key)
+
+    def _prepare_anchor_layout(self, context, obj, anchor):
+        anchor_order = [vg.name for vg in anchor.vertex_groups]
+        if not anchor_order:
+            return
+
+        state = self._capture_vertex_groups(obj)
+        preserved_tail = self._get_preserved_tail_groups(obj, anchor_order)
+        target_order = [
+            name for name in anchor_order
+            if name not in preserved_tail and not self._is_mask_vertex_group(name)
+        ]
+
+        self._rebuild_vertex_groups_in_order(obj, target_order)
+        self._normalize_vertex_groups(context, obj)
+        if preserved_tail:
+            self._append_preserved_vertex_groups(obj, state, preserved_tail)
+
+        print(
+            f"  [AnchorLayout] {obj.name}: temp export VG layout aligned to "
+            f"'{anchor.name}'"
+            + (f", preserved {len(preserved_tail)} helper VG(s) at tail" if preserved_tail else "")
+        )
 
     def _capture_vertex_groups(self, obj):
         group_names = [vg.name for vg in obj.vertex_groups]
@@ -372,22 +501,62 @@ class AnchorLayoutCleanupSubModule:
                 context.view_layer.objects.active = prev_active
 
     def _restore_all(self, context):
-        if not self._anchor_states:
+        if not self._temp_objects and not self._original_states:
             return
 
-        print(f"[SafeExport] [AnchorLayout] Restoring {len(self._anchor_states)} mesh target(s)...")
+        print(
+            f"[SafeExport] [AnchorLayout] Removing {len(self._temp_objects)} temp object(s) "
+            f"and restoring {len(self._original_states)} source object(s)..."
+        )
 
-        # Restore anchor layout changes if any were made
-        for obj_name, state in self._anchor_states.items():
-            obj = context.scene.objects.get(obj_name)
-            if obj:
+        for temp_obj in list(self._temp_objects):
+            try:
+                mesh = temp_obj.data
+                bpy.data.objects.remove(temp_obj, do_unlink=True)
+                if mesh and mesh.users == 0:
+                    bpy.data.meshes.remove(mesh, do_unlink=True)
+            except ReferenceError:
+                pass
+            except Exception as e:
+                print(f"  [AnchorLayout] Error removing temp object: {e}")
+
+        for obj, state in list(self._original_states.items()):
+            try:
+                if obj and obj.name in bpy.data.objects:
+                    obj.name = state['name']
+                    obj.hide_viewport = state['hide_viewport']
+                    obj.hide_render = state['hide_render']
+                    obj.hide_select = state['hide_select']
+                    for coll in state['collections']:
+                        if obj.name not in coll.objects:
+                            coll.objects.link(obj)
+            except ReferenceError:
+                pass
+            except Exception as e:
+                print(f"  [AnchorLayout] Error restoring source object '{state.get('name', '<unknown>')}': {e}")
+
+        try:
+            bpy.ops.object.select_all(action='DESELECT')
+            for selected_obj in self._prev_selected:
                 try:
-                    self._restore_vertex_groups(obj, state)
-                    print(f"  [AnchorLayout] {obj_name}: Restored original VG layout/weights after anchor alignment")
-                except Exception as e:
-                    print(f"  [AnchorLayout] Error restoring anchor layout for {obj_name}: {e}")
+                    if selected_obj and selected_obj.name in bpy.data.objects:
+                        selected_obj.select_set(True)
+                except ReferenceError:
+                    pass
+            if self._prev_active and self._prev_active.name in bpy.data.objects:
+                context.view_layer.objects.active = self._prev_active
+        except Exception as e:
+            print(f"  [AnchorLayout] Error restoring selection: {e}")
 
-        self._anchor_states.clear()
+        self._temp_objects.clear()
+        self._original_states.clear()
+        self._prev_active = None
+        self._prev_selected = []
+
+        try:
+            context.view_layer.update()
+        except Exception:
+            pass
 
 
 class MeshBackupSubModule:
