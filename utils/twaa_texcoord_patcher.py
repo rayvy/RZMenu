@@ -8,8 +8,11 @@ import bpy
 
 MANIFEST_TEXT_PREFIX = "RZAutoAtlas."
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
-PATCHER_BUILD = "tw-blocks-affine-only-v14-20260606"
+PATCHER_BUILD = "tw-blocks-material-slices-v15-20260619"
 _SAMPLE_LIMIT = 192
+SOURCE_UV_LAYER_NAME = "TEXCOORD.xy"
+_UV_KEY_DIGITS = 4
+_UV_MATCH_EPS = 0.01
 
 
 def _finite(value):
@@ -250,6 +253,49 @@ def _fract(value):
 
 def _clamp01(value):
     return max(0.0, min(1.0, float(value)))
+
+
+def _uv_key(u, v):
+    return round(float(u), _UV_KEY_DIGITS), round(float(v), _UV_KEY_DIGITS)
+
+
+def _uv_match_keys(u, v):
+    """Return likely source-UV keys for a buffer UV.
+
+    XXMI/GIMI exports may preserve Blender UVs directly or store the V axis in
+    top-left texture space. Fract variants are last-resort for wrapped UVs.
+    Matching is still scoped by Blender vertex index, so these variants should
+    disambiguate material-boundary loops without turning object-wide overlaps
+    into false positives.
+    """
+    u = float(u)
+    v = float(v)
+    candidates = [
+        (u, v),
+        (u, 1.0 - v),
+        (_fract(u), _fract(v)),
+        (_fract(u), 1.0 - _fract(v)),
+    ]
+    result = []
+    seen = set()
+    for cand_u, cand_v in candidates:
+        key = _uv_key(cand_u, cand_v)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(key)
+    return result
+
+
+def _uv_match_points(u, v):
+    u = float(u)
+    v = float(v)
+    return [
+        (u, v),
+        (u, 1.0 - v),
+        (_fract(u), _fract(v)),
+        (_fract(u), 1.0 - _fract(v)),
+    ]
 
 
 def _addon_preferences(context):
@@ -699,6 +745,227 @@ def _resolve_export_material_key(context, obj, obj_data):
     return "", "no-matching-material-slot"
 
 
+def _object_twaa_material_keys(context, obj):
+    valid_keys = _twaa_component_keys(context)
+    result = {}
+    if not obj or not valid_keys:
+        return result
+    for index, slot in enumerate(getattr(obj, "material_slots", ())):
+        key = _slot_material_key(slot, valid_keys)
+        if key:
+            result[int(index)] = key
+    return result
+
+
+def _source_uv_layer(mesh):
+    if not mesh:
+        return None
+    uv = mesh.uv_layers.get(SOURCE_UV_LAYER_NAME)
+    if uv:
+        return uv
+    return mesh.uv_layers.active
+
+
+def _accumulate_loop_material_lookup(mesh, material_keys_by_slot, by_vertex_uv, by_vertex, by_vertex_points):
+    uv_layer = _source_uv_layer(mesh)
+    if not mesh or not uv_layer:
+        return 0
+
+    loop_count = 0
+    uv_data = uv_layer.data
+    for poly in getattr(mesh, "polygons", ()):
+        key = material_keys_by_slot.get(int(poly.material_index))
+        if not key:
+            continue
+        for loop_index in poly.loop_indices:
+            try:
+                loop = mesh.loops[loop_index]
+                uv = uv_data[loop_index].uv
+            except Exception:
+                continue
+            vertex_index = int(loop.vertex_index)
+            by_vertex.setdefault(vertex_index, set()).add(key)
+            by_vertex_uv.setdefault((vertex_index, _uv_key(uv.x, uv.y)), set()).add(key)
+            by_vertex_points.setdefault(vertex_index, []).append((float(uv.x), float(uv.y), key))
+            loop_count += 1
+    return loop_count
+
+
+def _build_loop_material_lookup(obj, material_keys_by_slot):
+    by_vertex_uv = {}
+    by_vertex = {}
+    by_vertex_points = {}
+    loop_count = 0
+
+    mesh = getattr(obj, "data", None)
+    loop_count += _accumulate_loop_material_lookup(mesh, material_keys_by_slot, by_vertex_uv, by_vertex, by_vertex_points)
+
+    eval_obj = None
+    try:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(depsgraph)
+        eval_mesh = eval_obj.to_mesh()
+        if eval_mesh and eval_mesh != mesh:
+            loop_count += _accumulate_loop_material_lookup(eval_mesh, material_keys_by_slot, by_vertex_uv, by_vertex, by_vertex_points)
+    except Exception:
+        pass
+    finally:
+        if eval_obj is not None:
+            try:
+                eval_obj.to_mesh_clear()
+            except Exception:
+                pass
+
+    return by_vertex_uv, by_vertex, by_vertex_points, loop_count
+
+
+def _nearest_loop_material(vertex_index, u, v, by_vertex_points):
+    points = by_vertex_points.get(int(vertex_index)) or []
+    if not points:
+        return "", "no-nearest"
+
+    best_dist = None
+    best_keys = set()
+    for cand_u, cand_v in _uv_match_points(u, v):
+        for src_u, src_v, key in points:
+            du = cand_u - src_u
+            dv = cand_v - src_v
+            dist = du * du + dv * dv
+            if best_dist is None or dist < best_dist - 1.0e-12:
+                best_dist = dist
+                best_keys = {key}
+            elif abs(dist - best_dist) <= 1.0e-12:
+                best_keys.add(key)
+
+    if best_dist is None or best_dist > (_UV_MATCH_EPS * _UV_MATCH_EPS):
+        return "", "nearest-too-far"
+    if len(best_keys) == 1:
+        return next(iter(best_keys)), "vertex+uv-nearest"
+    return "", "ambiguous-nearest"
+
+
+def _classify_vertex_material_from_lookup(vertex_index, u, v, by_vertex_uv, by_vertex, by_vertex_points):
+    for key_variant in _uv_match_keys(u, v):
+        keys = by_vertex_uv.get((int(vertex_index), key_variant))
+        if keys and len(keys) == 1:
+            return next(iter(keys)), "vertex+uv"
+        if keys and len(keys) > 1:
+            return "", "ambiguous-vertex+uv"
+
+    key, source = _nearest_loop_material(vertex_index, u, v, by_vertex_points)
+    if key or source == "ambiguous-nearest":
+        return key, source
+
+    keys = by_vertex.get(int(vertex_index))
+    if keys and len(keys) == 1:
+        return next(iter(keys)), "vertex-only"
+    if keys and len(keys) > 1:
+        return "", "ambiguous-vertex"
+    return "", "unmapped-vertex"
+
+
+def _compact_ranges(indices):
+    ordered = sorted({int(index) for index in indices})
+    if not ordered:
+        return []
+    ranges = []
+    start = prev = ordered[0]
+    for index in ordered[1:]:
+        if index == prev + 1:
+            prev = index
+            continue
+        ranges.append([start, prev + 1])
+        start = prev = index
+    ranges.append([start, prev + 1])
+    return ranges
+
+
+def _build_material_vertex_slices(context, obj, obj_data, data, stride, layout, start, end):
+    material_keys_by_slot = _object_twaa_material_keys(context, obj)
+    unique_keys = sorted(set(material_keys_by_slot.values()))
+    if len(unique_keys) <= 1:
+        return [], {
+            "mode": "single-or-none",
+            "material_keys": unique_keys,
+            "ambiguous": 0,
+            "unmapped": 0,
+        }
+
+    by_vertex_uv, by_vertex, by_vertex_points, loop_count = _build_loop_material_lookup(obj, material_keys_by_slot)
+    if not loop_count:
+        return [], {
+            "mode": "no-loop-lookup",
+            "material_keys": unique_keys,
+            "ambiguous": 0,
+            "unmapped": 0,
+        }
+
+    vertex_map = obj_data.get("vertex_map") or []
+    slices = {key: [] for key in unique_keys}
+    source_counts = {}
+    ambiguous = 0
+    unmapped = 0
+    total_vertices = len(data) // stride
+    end = min(int(end), total_vertices)
+    start = max(0, int(start))
+
+    for vertex in range(start, end):
+        local_index = vertex - start
+        if vertex_map and 0 <= local_index < len(vertex_map):
+            try:
+                blender_vertex = int(vertex_map[local_index])
+            except Exception:
+                unmapped += 1
+                continue
+        else:
+            blender_vertex = local_index
+
+        base = vertex * stride + int(layout["offset"])
+        try:
+            u, v = _read_pair(data, base, layout["storage"])
+        except Exception:
+            unmapped += 1
+            continue
+        if not (_finite(u) and _finite(v)):
+            unmapped += 1
+            continue
+
+        key, source = _classify_vertex_material_from_lookup(
+            blender_vertex,
+            u,
+            v,
+            by_vertex_uv,
+            by_vertex,
+            by_vertex_points,
+        )
+        if key:
+            slices.setdefault(key, []).append(vertex)
+            source_counts[source] = source_counts.get(source, 0) + 1
+        elif source.startswith("ambiguous"):
+            ambiguous += 1
+        else:
+            unmapped += 1
+
+    result = []
+    for key, indices in sorted(slices.items()):
+        if not indices:
+            continue
+        result.append({
+            "material_key": key,
+            "indices": sorted(set(indices)),
+            "ranges": _compact_ranges(indices),
+        })
+
+    return result, {
+        "mode": "loop-material-lookup",
+        "material_keys": unique_keys,
+        "loop_count": loop_count,
+        "ambiguous": ambiguous,
+        "unmapped": unmapped,
+        "source_counts": source_counts,
+    }
+
+
 def _component_matches_material(component, material_key):
     key = str(material_key or "")
     return str(getattr(component, "name", "") or "") == key
@@ -784,6 +1051,35 @@ def _stride_for_texcoord(path, comp_data):
                 return stride
     stride = int(comp_data.get("texcoord_stride", 0) or 0)
     return stride if stride >= 4 else None
+
+
+def _patch_vertex_indices(data, stride, layout, vertex_indices, pos_size, invert_x, invert_y):
+    patched = 0
+    total_vertices = len(data) // stride
+    offset = int(layout["offset"])
+    for vertex in vertex_indices:
+        vertex = int(vertex)
+        if vertex < 0 or vertex >= total_vertices:
+            continue
+        base = vertex * stride + offset
+        try:
+            u, v = _read_pair(data, base, layout["storage"])
+        except Exception:
+            continue
+        if not (_finite(u) and _finite(v)):
+            continue
+        out_u, out_v = _affine_cluster_to_buffer_uv(
+            float(u),
+            float(v),
+            pos_size,
+            invert_x,
+            invert_y,
+        )
+        if not (_finite(out_u) and _finite(out_v)):
+            continue
+        _write_pair(data, base, out_u, out_v, layout["storage"])
+        patched += 1
+    return patched
 
 
 def patch_exported_twaa_texcoords(context):
@@ -894,6 +1190,101 @@ def patch_exported_twaa_texcoords(context):
                     f"({', '.join(_format_candidate(item) for item in skipped_layouts)}). "
                     "Enable 'TW MC Patch All TEXCOORD Payloads' only for debug."
                 )
+
+            material_keys_by_slot = _object_twaa_material_keys(context, obj)
+            object_twaa_keys = sorted(set(material_keys_by_slot.values()))
+            if len(object_twaa_keys) > 1:
+                slices, slice_diag = _build_material_vertex_slices(
+                    context,
+                    obj,
+                    obj_data,
+                    data,
+                    stride,
+                    layouts[0],
+                    start,
+                    start + count,
+                )
+                if not slices:
+                    warning = (
+                        f"{obj.name}: multi-material TWAA object has no usable material slices; "
+                        f"diag={slice_diag}"
+                    )
+                    warnings.append(warning)
+                    print(f"[RZM TWAA] SKIP: {warning}")
+                    continue
+
+                print(
+                    f"[RZM TWAA] Material slices selected for {obj.name}: "
+                    + ", ".join(
+                        f"{item['material_key']}={len(item['indices'])}v/{len(item['ranges'])}r"
+                        for item in slices
+                    )
+                    + f" diag={slice_diag}"
+                )
+
+                invert_x, invert_y = _post_invert_settings(context)
+                print(f"[RZM TWAA] Addon post invert: x={invert_x} y={invert_y}")
+                obj_patched_values = 0
+                obj_patched_vertices = 0
+                patched_layouts = []
+
+                for material_slice in slices:
+                    slice_key = material_slice["material_key"]
+                    slice_layout = _find_twaa_component_layout(context, slice_key)
+                    if not slice_layout:
+                        warning = f"{obj.name}: no TWAA component in rzm.tw_blocks for material slice {slice_key}"
+                        warnings.append(warning)
+                        print(f"[RZM TWAA] SKIP: {warning}")
+                        continue
+                    slice_pos_size = slice_layout["pos_size"]
+                    if slice_layout.get("mismatches"):
+                        warning = (
+                            f"{slice_key}: TWAA component rect mismatch across blocks; "
+                            f"using {slice_layout['block']} rect={slice_layout['rect']} atlas={slice_layout['atlas_size']}"
+                        )
+                        warnings.append(warning)
+                        print(f"[RZM TWAA] WARN: {warning}")
+
+                    slice_patched_any = False
+                    for layout in layouts:
+                        layout_patched = _patch_vertex_indices(
+                            data,
+                            stride,
+                            layout,
+                            material_slice["indices"],
+                            slice_pos_size,
+                            invert_x,
+                            invert_y,
+                        )
+                        if layout_patched:
+                            obj_patched_values += layout_patched
+                            slice_patched_any = True
+                            patched_layouts.append(f"{slice_key}@{_format_candidate(layout)}")
+                    if slice_patched_any:
+                        obj_patched_vertices += len(material_slice["indices"])
+                        print(
+                            f"[RZM TWAA] Affine material slice for {obj.name}: "
+                            f"material={slice_key} vertices={len(material_slice['indices'])} "
+                            f"ranges={material_slice['ranges'][:8]} "
+                            f"block={slice_layout['block']} rect={slice_layout['rect']} "
+                            f"scale=({slice_pos_size[0]:.6f}, {slice_pos_size[1]:.6f}) "
+                            f"offset=({slice_pos_size[2]:.6f}, {slice_pos_size[3]:.6f})"
+                        )
+
+                if obj_patched_values:
+                    patched_vertices += obj_patched_vertices
+                    patched_objects += 1
+                    file_changed = True
+                    print(
+                        f"[RZM TWAA] Patched {obj_patched_values} TEXCOORD values "
+                        f"({obj_patched_vertices} sliced vertices) for {obj.name} "
+                        f"in {os.path.basename(path)} @ {', '.join(patched_layouts)}"
+                    )
+                else:
+                    warning = f"{obj.name}: material slices were detected but no TEXCOORD values were patched"
+                    warnings.append(warning)
+                    print(f"[RZM TWAA] SKIP: {warning}")
+                continue
 
             print(
                 f"[RZM TWAA] TEXCOORD payloads selected "
