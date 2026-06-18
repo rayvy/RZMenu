@@ -10,10 +10,10 @@
 {# 1. Общие глобальные переменные и логика Present #}
 {% macro _macro_shared_constants_and_present(rzm, scene=none) %}
 [Constants]
-global persist $SKC_LastTime = 0
+global $SKC_LastTime = 0
 {% for config in rzm.shape_configs if not config.export_runtime_disabled %}
     {% set past_var = utils.format_var(config.shape_name) ~ "_SKCPast" %}
-    global persist ${{ past_var }} = 0
+    global ${{ past_var }} = 0
 {% endfor %}
 
 [Present]
@@ -61,7 +61,7 @@ $FREQ = ($FREQ + $dt) % 10000.0
         endif
     {% endif %}
 
-    post ${{ past_var }} = {{ input_var }}
+    ${{ past_var }} = {{ input_var }}
 {% endfor %}
 
 if $shape_changed
