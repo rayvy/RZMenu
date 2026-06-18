@@ -209,19 +209,16 @@
                 {% if entry.material_name not in auto_material_names %}
                     {% set _ = auto_material_names.append(entry.material_name) %}
                 {% endif %}
-            {% endfor %}
-            {% if auto_material_names|length == 1 %}
-                {% set auto_material_name = auto_material_names[0] %}
-                {% for entry in scene.rzm.tw_mc_files if entry.resource_name and entry.material_name == auto_material_name and entry.block_name in twaa_block_names %}
-                    {% set auto_slot = entry.slot_name %}
-                    {% if auto_slot and auto_slot not in assigned_tex_slots %}
+                {% set auto_slot = entry.slot_name %}
+                {% if auto_slot and auto_slot not in assigned_tex_slots %}
+                    ; TWAA auto texture assignment: {{ entry.material_name }} -> {{ auto_slot }} via {{ entry.block_name }}
                     Resource\{{ tex_ns }}\{{ auto_slot }} = ref Resource{{ utils.clean_resource(entry.block_name if entry.block_name else "RZAutoAtlas" ~ auto_slot) }}
-                        {% set _ = assigned_tex_slots.append(auto_slot) %}
-                        {% set _ = found_textures.append(1) %}
-                    {% endif %}
-                {% endfor %}
-            {% elif auto_material_names|length > 1 %}
-                    ; TWAA auto texture assignment skipped: multiple registered materials on one object
+                    {% set _ = assigned_tex_slots.append(auto_slot) %}
+                    {% set _ = found_textures.append(1) %}
+                {% endif %}
+            {% endfor %}
+            {% if auto_material_names|length > 1 %}
+                    ; TWAA auto texture assignment: {{ auto_material_names|length }} registered materials share atlas block resources on this object
             {% endif %}
         {% endif %}
     {% endif %}
