@@ -125,13 +125,25 @@ class RZM_OT_FullExport(bpy.types.Operator):
 
     def execute(self, context):
         from ..utils.safe_export import SafeExport
-        with SafeExport(context):
-            return self.execute_internal(context)
+        from ..utils.export_timing import ExportProfiler, set_current_profiler
+
+        profiler = ExportProfiler("RZM Full Export")
+        set_current_profiler(profiler)
+        try:
+            with profiler.measure("safe_export.total"):
+                with SafeExport(context):
+                    return self.execute_internal(context)
+        finally:
+            profiler.report()
+            set_current_profiler(None)
 
     def execute_internal(self, context):
+        from ..utils.export_timing import measure
+
         rzm = context.scene.rzm
         game = rzm.game.selection
-        target_path = get_target_path(context)
+        with measure("full_export.resolve_target_path"):
+            target_path = get_target_path(context)
         
         print("-" * 30)
         print(f"DEBUG: RZM Full Export Start")
@@ -143,7 +155,8 @@ class RZM_OT_FullExport(bpy.types.Operator):
 
         # -1. Texture Collection & Missing Resources Check
         try:
-            missing_count = collect_missing_textures(context)
+            with measure("full_export.collect_missing_textures"):
+                missing_count = collect_missing_textures(context)
             if missing_count > 0:
                 print(f"[RZM Full Export] Marked {missing_count} missing textures for auto-generation.")
         except Exception as e:
@@ -153,14 +166,16 @@ class RZM_OT_FullExport(bpy.types.Operator):
         if getattr(rzm.addons, "export_shapekeys", False):
             try:
                 print("[RZM Full Export] Discovering Shape Keys...")
-                bpy.ops.rzm.shape_key_export()
+                with measure("full_export.shape_key_discovery"):
+                    bpy.ops.rzm.shape_key_export()
             except Exception as e:
                 self.report({'WARNING'}, f"Shape discovery failed: {e}")
 
         # 0. Auto-Setup & Initialization Check
         if self.execute_init:
             try:
-                bpy.ops.rzm.autosetup_game()
+                with measure("full_export.autosetup_game"):
+                    bpy.ops.rzm.autosetup_game()
             except Exception as e:
                 self.report({'WARNING'}, f"Auto-Setup failed: {e}")
 
@@ -169,7 +184,8 @@ class RZM_OT_FullExport(bpy.types.Operator):
         if not os.path.exists(modules_path):
             print(f"DEBUG: 'modules' folder not found at {modules_path}. Calling initialize_mod...")
             try:
-                bpy.ops.rzm.initialize_mod()
+                with measure("full_export.initialize_mod"):
+                    bpy.ops.rzm.initialize_mod()
             except Exception as e:
                 self.report({'ERROR'}, f"Auto-Initialization failed: {e}")
                 return {'CANCELLED'}
@@ -178,14 +194,16 @@ class RZM_OT_FullExport(bpy.types.Operator):
             
         # 1. Export Atlas
         try:
-            bpy.ops.rzm.export_atlas()
+            with measure("full_export.export_atlas"):
+                bpy.ops.rzm.export_atlas()
         except Exception as e:
             self.report({'ERROR'}, f"Atlas export failed: {e}")
             return {'CANCELLED'}
         
         # 2. Font Maker (Export Fonts)
         try:
-            bpy.ops.rzm.export_fonts()
+            with measure("full_export.export_fonts"):
+                bpy.ops.rzm.export_fonts()
         except Exception as e:
             self.report({'ERROR'}, f"Font export failed: {e}")
             return {'CANCELLED'}
@@ -199,16 +217,20 @@ class RZM_OT_FullExport(bpy.types.Operator):
             from ..core.style_packer import pack_styles
             from ..core.element_static_map import export_element_static_map
             from ..core.element_blacklist import export_element_blacklist
-            pack_project_images(context.scene, target_path)
-            pack_styles(context.scene, target_path)
+            with measure("full_export.pack_project_images"):
+                pack_project_images(context.scene, target_path)
+            with measure("full_export.pack_styles"):
+                pack_styles(context.scene, target_path)
             
             if context.scene.rzm and context.scene.rzm.elements:
                 static_map_path = os.path.join(target_path, "res", "element_static_map.buf")
                 image_mapping = context.scene.rzm.image_mapping
-                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
+                with measure("full_export.export_element_static_map"):
+                    flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
                 context.scene.rzm["elem_static_flags"] = flags_map
                 blacklist_path = os.path.join(target_path, "res", "element_blacklist.buf")
-                export_element_blacklist(context.scene.rzm.elements, blacklist_path)
+                with measure("full_export.export_element_blacklist"):
+                    export_element_blacklist(context.scene.rzm.elements, blacklist_path)
                 
             print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf, element_blacklist.buf).")
         except Exception as e:
@@ -218,7 +240,8 @@ class RZM_OT_FullExport(bpy.types.Operator):
 
         try:
             from ..utils.shape_export_filter import prepare_shape_config_export_runtime
-            prepare_shape_config_export_runtime(rzm)
+            with measure("full_export.prepare_shape_runtime"):
+                prepare_shape_config_export_runtime(rzm)
         except Exception as e:
             self.report({'ERROR'}, f"ShapeKey export filter preparation failed: {e}")
             import traceback
@@ -226,38 +249,41 @@ class RZM_OT_FullExport(bpy.types.Operator):
             return {'CANCELLED'}
 
         # 3. Target Game Export
-        if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
-            if hasattr(bpy.ops, "xxmi"):
-                bpy.ops.xxmi.exportadvanced()
-            else:
-                self.report({'ERROR'}, "XXMI Tools not found. Cannot export mod.")
-                return {'CANCELLED'}
-                
-        elif game == 'WutheringWaves':
-            if hasattr(bpy.ops, "wwmi_tools"):
-                bpy.ops.wwmi_tools.export_mod()
-            else:
-                self.report({'ERROR'}, "WWMI Tools not found. Cannot export mod.")
-                return {'CANCELLED'}
+        with measure(f"full_export.game_export.{game}"):
+            if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
+                if hasattr(bpy.ops, "xxmi"):
+                    bpy.ops.xxmi.exportadvanced()
+                else:
+                    self.report({'ERROR'}, "XXMI Tools not found. Cannot export mod.")
+                    return {'CANCELLED'}
+                    
+            elif game == 'WutheringWaves':
+                if hasattr(bpy.ops, "wwmi_tools"):
+                    bpy.ops.wwmi_tools.export_mod()
+                else:
+                    self.report({'ERROR'}, "WWMI Tools not found. Cannot export mod.")
+                    return {'CANCELLED'}
 
-        elif game == 'ArknightsEndfield':
-            if hasattr(bpy.ops, "efmi_tools"):
-                bpy.ops.efmi_tools.export_mod()
-            else:
-                self.report({'ERROR'}, "EFMI Tools not found. Cannot export mod.")
-                return {'CANCELLED'}
+            elif game == 'ArknightsEndfield':
+                if hasattr(bpy.ops, "efmi_tools"):
+                    bpy.ops.efmi_tools.export_mod()
+                else:
+                    self.report({'ERROR'}, "EFMI Tools not found. Cannot export mod.")
+                    return {'CANCELLED'}
         
         # 3.1 Puppet Master Baking (Automated Post-Export)
         if getattr(rzm.addons, "export_shapekeys", False):
             try:
                 print("[RZM Full Export] Triggering Puppet Master Baking (Full Mode)...")
-                bpy.ops.rzm.puppet_master_bake(full_export_mode=True)
+                with measure("full_export.puppet_master_bake"):
+                    bpy.ops.rzm.puppet_master_bake(full_export_mode=True)
             except Exception as e:
                 self.report({'WARNING'}, f"Puppet Master bake failed: {e}")
         
         # 4. Custom Scripts Execution
         if self.execute_post:
-            run_custom_scripts(context, target_path)
+            with measure("full_export.custom_scripts"):
+                run_custom_scripts(context, target_path)
         else:
             print("DEBUG: Skipping custom post-export scripts (execute_post=False)")
 

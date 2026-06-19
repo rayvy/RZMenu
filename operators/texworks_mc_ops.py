@@ -73,6 +73,55 @@ class RZM_OT_TwMcEnsureMaterialNode(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_TwMcAddMaskNode(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_add_mask_node"
+    bl_label = "Add TWAA Mask Node"
+    bl_description = "Add a disconnected RZM TWAA Mask Slot node with inputs 0..7 to the active material"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        mat = context.object.active_material if context.object else None
+        try:
+            node = texworks_mc.add_mask_node(mat)
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+        self.report({'INFO'}, f"Added TWAA mask node: {node.name}")
+        return {'FINISHED'}
+
+
+class RZM_OT_TwMcCreateMaskFromSelection(bpy.types.Operator):
+    bl_idname = "rzm.tw_mc_create_mask_from_selection"
+    bl_label = "Create TWAA Mask"
+    bl_description = "Create a TWAA HSV mask from selected faces, or from selected objects when no faces are selected"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    slot_index: bpy.props.IntProperty(
+        name="Mask Slot",
+        description="Mask input slot. Use -1 to pick the first free input 0..7",
+        default=-1,
+        min=-1,
+        max=7,
+    )
+
+    def execute(self, context):
+        try:
+            result = texworks_mc.create_mask_image_from_selection(
+                context,
+                slot_index=self.slot_index,
+            )
+            trigger_refresh()
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+        self.report(
+            {'INFO'},
+            f"Created TWAA mask TH{result['slot_index']}: "
+            f"{result['faces']} face(s), {result['width']}x{result['height']}"
+        )
+        return {'FINISHED'}
+
+
 class RZM_OT_TwMcRebuildCluster(bpy.types.Operator):
     bl_idname = "rzm.tw_mc_rebuild_cluster"
     bl_label = "Rebuild MC Cluster"
@@ -235,7 +284,9 @@ class RZM_OT_TwMcValidateExportTextures(bpy.types.Operator):
             "TWAA validation: "
             f"{summary.get('materials', 0)} material(s), "
             f"{summary.get('checked_slots', 0)} slot(s), "
+            f"{summary.get('checked_masks', 0)} mask(s), "
             f"exported {summary.get('exported_slots', 0)}, "
+            f"masks {summary.get('exported_masks', 0)}, "
             f"registered {summary.get('registered', 0)}, "
             f"warnings {warnings}."
         )
@@ -424,6 +475,8 @@ classes_to_register = [
     RZM_OT_TwMcCreateMaterial,
     RZM_OT_TwMcQuestionDummy,
     RZM_OT_TwMcEnsureMaterialNode,
+    RZM_OT_TwMcAddMaskNode,
+    RZM_OT_TwMcCreateMaskFromSelection,
     RZM_OT_TwMcRebuildCluster,
     RZM_OT_TwMcExportCluster,
     RZM_OT_TwMcApplyCluster,

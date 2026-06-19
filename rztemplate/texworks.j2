@@ -85,6 +85,12 @@ mips = 1
 [Resource{{ utils.clean_resource(entry.resource_name) }}]
 filename = {{ entry.relative_path if entry.relative_path else "Textures/DynAtlas/" ~ entry.resource_name ~ ".png" }}
 {% endfor %}
+{% if rzm.tw_mc_mask_files is defined %}
+{% for entry in rzm.tw_mc_mask_files if entry.resource_name %}
+[Resource{{ utils.clean_resource(entry.resource_name) }}]
+filename = {{ entry.relative_path if entry.relative_path else "Textures/DynAtlas/" ~ entry.resource_name ~ ".png" }}
+{% endfor %}
+{% endif %}
 
 ; --- 2. GLOBAL OVERRIDES (Atlas Protection) ---
 {% for over in rzm.tw_overrides %}

@@ -783,19 +783,23 @@ class SafeExport:
             ]
 
     def __enter__(self):
+        from .export_timing import measure
+
         print("[SafeExport] ═══ Старт pre-export ═══")
 
         # Принудительная синхронизация depsgraph перед началом работы.
         # Предотвращает EXCEPTION_ACCESS_VIOLATION в build_materials при
         # работе с мешами у которых есть модификаторы или shape keys.
         try:
-            self.context.view_layer.update()
+            with measure("safe_export.pre.view_layer_update"):
+                self.context.view_layer.update()
         except Exception as e:
             print(f"[SafeExport] WARN: view_layer.update() failed: {e}")
 
         for sub in self.sub_modules:
             try:
-                sub.pre_export(self.context)
+                with measure(f"safe_export.pre.{sub.__class__.__name__}"):
+                    sub.pre_export(self.context)
             except Exception as e:
                 import traceback
                 print(f"[SafeExport] ОШИБКА в pre_export ({sub.__class__.__name__}): {e}")
@@ -804,7 +808,8 @@ class SafeExport:
         # Повторная синхронизация после добавления UV/COLOR слоёв предиктором,
         # чтобы XXMI Tools видел актуальное состояние мешей.
         try:
-            self.context.view_layer.update()
+            with measure("safe_export.pre.post_update"):
+                self.context.view_layer.update()
         except Exception as e:
             print(f"[SafeExport] WARN: post-pre_export view_layer.update() failed: {e}")
 
@@ -812,6 +817,8 @@ class SafeExport:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        from .export_timing import measure
+
         had_error = exc_type is not None
 
         if had_error:
@@ -820,7 +827,8 @@ class SafeExport:
             for sub in reversed(self.sub_modules):
                 if hasattr(sub, 'restore'):
                     try:
-                        sub.restore(self.context)
+                        with measure(f"safe_export.restore.{sub.__class__.__name__}"):
+                            sub.restore(self.context)
                     except Exception as e:
                         import traceback
                         print(f"[SafeExport] ОШИБКА в restore ({sub.__class__.__name__}): {e}")
@@ -829,7 +837,8 @@ class SafeExport:
         print("[SafeExport] ═══ Старт post-export cleanup ═══")
         if not had_error:
             try:
-                summary = self._twaa_texcoord_patcher(self.context)
+                with measure("safe_export.post.twaa_texcoord_patcher"):
+                    summary = self._twaa_texcoord_patcher(self.context)
                 if summary.get("patched_vertices", 0):
                     print(
                         "[SafeExport] [TWAA] Patched "
@@ -844,14 +853,16 @@ class SafeExport:
                 traceback.print_exc()
         for sub in reversed(self.sub_modules):
             try:
-                sub.post_export(self.context)
+                with measure(f"safe_export.post.{sub.__class__.__name__}"):
+                    sub.post_export(self.context)
             except Exception as e:
                 import traceback
                 print(f"[SafeExport] ОШИБКА в post_export ({sub.__class__.__name__}): {e}")
                 traceback.print_exc()
 
         try:
-            self.context.view_layer.update()
+            with measure("safe_export.post.view_layer_update"):
+                self.context.view_layer.update()
         except Exception as e:
             print(f"[SafeExport] WARN: post-export view_layer.update() failed: {e}")
 

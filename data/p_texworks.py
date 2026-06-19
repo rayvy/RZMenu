@@ -280,6 +280,17 @@ class TexWorksMCFile(bpy.types.PropertyGroup):
     resolution: IntVectorProperty(name="Resolution", size=2, default=(0, 0))
 
 
+class TexWorksMCMaskFile(bpy.types.PropertyGroup):
+    name: StringProperty(name="Entry Name")
+    material_name: StringProperty(name="Material")
+    material_key: StringProperty(name="Material Key")
+    slot_index: IntProperty(name="Mask Slot", default=0, min=0, max=7)
+    resource_name: StringProperty(name="Resource")
+    relative_path: StringProperty(name="Relative Path")
+    value_name: StringProperty(name="HSV Value")
+    resolution: IntVectorProperty(name="Resolution", size=2, default=(0, 0))
+
+
 class TexWorksMCSkipped(bpy.types.PropertyGroup):
     name: StringProperty(name="Entry Name")
     material_name: StringProperty(name="Material")

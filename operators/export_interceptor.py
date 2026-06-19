@@ -55,12 +55,18 @@ MAX_ATTEMPTS   = 5
 
 def _xxmi_hook(self, *args, **kwargs):
     """Wraps ModExporter.export() — captures cache after successful export."""
-    result = _xxmi_original(self, *args, **kwargs)
+    from ..utils.export_timing import measure
+
+    with measure("xxmi.original_export"):
+        result = _xxmi_original(self, *args, **kwargs)
     try:
-        cache = build_cache_from_xxmi(self)
+        with measure("xxmi.build_cache"):
+            cache = build_cache_from_xxmi(self)
         if cache:
-            set_cache(cache)
-            save_export_logs(cache)
+            with measure("xxmi.set_cache"):
+                set_cache(cache)
+            with measure("xxmi.save_export_logs"):
+                save_export_logs(cache)
             print(f'[RZM] [CACHE] XXMI export cached: '
                   f'{len(cache["components"])} components  '
                   f'(use rzm_cache_info() in Python console to inspect)')
@@ -68,14 +74,16 @@ def _xxmi_hook(self, *args, **kwargs):
             # Run curve VFX patcher
             try:
                 from ..utils import vfx_buffer_patcher
-                vfx_buffer_patcher.patch_buffers(bpy.context, cache)
+                with measure("xxmi.vfx_buffer_patcher"):
+                    vfx_buffer_patcher.patch_buffers(bpy.context, cache)
             except Exception as patch_err:
                 print(f"[RZM] [CACHE] VFX buffer patcher failed (non-fatal): {patch_err}")
 
             # Run anticollider mask exporter
             try:
                 from ..utils import mask_exporter
-                mask_exporter.export_masks(bpy.context, cache)
+                with measure("xxmi.mask_exporter"):
+                    mask_exporter.export_masks(bpy.context, cache)
             except Exception as mask_err:
                 print(f"[RZM] [CACHE] Mask exporter failed (non-fatal): {mask_err}")
         else:
@@ -153,26 +161,34 @@ def _efmi_hook(self, *args, **kwargs):
     EFMI clears self.buffers at the end of export_mod(), but right after write_files() 
     they are still available.
     """
-    result = _efmi_original(self, *args, **kwargs)
+    from ..utils.export_timing import measure
+
+    with measure("efmi.original_write_files"):
+        result = _efmi_original(self, *args, **kwargs)
     try:
-        cache = build_cache_from_efmi(self)
+        with measure("efmi.build_cache"):
+            cache = build_cache_from_efmi(self)
         if cache:
-            set_cache(cache)
-            save_export_logs(cache)
+            with measure("efmi.set_cache"):
+                set_cache(cache)
+            with measure("efmi.save_export_logs"):
+                save_export_logs(cache)
             print(f'[RZM] [CACHE] EFMI export cached: '
                   f'{len(cache["components"])} components')
             
             # Run curve VFX patcher
             try:
                 from ..utils import vfx_buffer_patcher
-                vfx_buffer_patcher.patch_buffers(bpy.context, cache)
+                with measure("efmi.vfx_buffer_patcher"):
+                    vfx_buffer_patcher.patch_buffers(bpy.context, cache)
             except Exception as patch_err:
                 print(f"[RZM] [CACHE] VFX buffer patcher failed (non-fatal): {patch_err}")
 
             # Run anticollider mask exporter
             try:
                 from ..utils import mask_exporter
-                mask_exporter.export_masks(bpy.context, cache)
+                with measure("efmi.mask_exporter"):
+                    mask_exporter.export_masks(bpy.context, cache)
             except Exception as mask_err:
                 print(f"[RZM] [CACHE] Mask exporter failed (non-fatal): {mask_err}")
         else:

@@ -8,6 +8,8 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
     bl_description = "Generate font atlases using PIL and save them to the mod export directory"
 
     def execute(self, context):
+        from ..utils.export_timing import measure
+
         try:
             from PIL import Image, ImageDraw, ImageFont
         except ImportError:
@@ -43,7 +45,8 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
         # Force text pack to build the character map cache BEFORE fonts are generated
         try:
             from ..core.text_packer import pack_project_text
-            pack_project_text(scene, out_dir)
+            with measure("fonts.pack_project_text"):
+                pack_project_text(scene, out_dir)
         except Exception as e:
             self.report({'WARNING'}, f"Failed to pre-pack text for font mapping: {e}")
 
@@ -105,7 +108,8 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
                     # Export as temporary PNG first
                     import tempfile
                     temp_png = os.path.join(tempfile.gettempdir(), f"rzm_font_temp_{i}_{os.getpid()}.png")
-                    self.create_font_atlas(slot, font_path, temp_png, font_index, Image, ImageDraw, ImageFont)
+                    with measure(f"fonts.create_font_atlas.slot_{i}"):
+                        self.create_font_atlas(slot, font_path, temp_png, font_index, Image, ImageDraw, ImageFont)
                     
                     # Convert to DDS
                     from ..core.dds_packer import get_texconv_path
@@ -115,7 +119,8 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
                         # Use R8G8B8A8_UNORM for fonts! 
                         # BC7 is lossy and corrupts the metadata pixels in the bottom rows.
                         cmd = [texconv, "-f", "R8G8B8A8_UNORM", "-y", "-o", res_dir, temp_png]
-                        subprocess.run(cmd, capture_output=True, check=True)
+                        with measure(f"fonts.convert_dds.slot_{i}"):
+                            subprocess.run(cmd, capture_output=True, check=True)
                         
                         # texconv creates <basename_of_temp_png>.dds in res_dir
                         generated_dds = os.path.join(res_dir, os.path.splitext(os.path.basename(temp_png))[0] + ".dds")
@@ -133,7 +138,8 @@ class RZM_OT_ExportFonts(bpy.types.Operator):
                         self.report({'ERROR'}, "texconv.exe not found. Font DDS export failed.")
                 else:
                     # Standard PNG export
-                    self.create_font_atlas(slot, font_path, output_file, font_index, Image, ImageDraw, ImageFont)
+                    with measure(f"fonts.create_font_atlas.slot_{i}"):
+                        self.create_font_atlas(slot, font_path, output_file, font_index, Image, ImageDraw, ImageFont)
                     created_files.append(output_file)
             except Exception as e:
                 self.report({'ERROR'}, f"Failed to generate atlas for slot {i}: {e}")

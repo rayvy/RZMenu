@@ -341,11 +341,14 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
+        from ..utils.export_timing import measure
+
         rzm = context.scene.rzm
         export_settings = rzm.export_settings
         
         if export_settings.atlas_is_dirty:
-            bpy.ops.rzm.update_atlas_layout()
+            with measure("atlas.update_layout"):
+                bpy.ops.rzm.update_atlas_layout()
         else:
             print("[RZM] Atlas is not dirty, skipping layout update.")
         
@@ -547,12 +550,13 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             preset_tag = " (UKNOWN-GAME LINEAR PRESET)"
 
         # 4. Генерируем пиксели
-        atlas_pixels = create_atlas_pixels(
-            images_to_render, 
-            atlas_w, 
-            atlas_h, 
-            uv_data
-        )
+        with measure("atlas.create_pixels"):
+            atlas_pixels = create_atlas_pixels(
+                images_to_render,
+                atlas_w,
+                atlas_h,
+                uv_data
+            )
 
         if atlas_pixels.size > 0:
             intended_format = export_settings.atlas_format
@@ -563,7 +567,8 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             if intended_format == 'DDS':
                 from ..core.dds_packer import pack_to_dds
                 final_filepath = os.path.join(export_path, "icons.dds")
-                success, msg = pack_to_dds(atlas_pixels, atlas_w, atlas_h, final_filepath, dds_format=effective_dds)
+                with measure("atlas.write_dds"):
+                    success, msg = pack_to_dds(atlas_pixels, atlas_w, atlas_h, final_filepath, dds_format=effective_dds)
                 if success:
                     exported_success = True
                     export_settings.last_exported_format = "DDS"
@@ -574,22 +579,23 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             
             # Export as PNG (either by choice or fallback)
             if intended_format == 'PNG':
-                temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
-                
-                # Use Non-Color space to ensure bit-exact saving without Blender's gamma correction
-                temp_image.colorspace_settings.name = 'Non-Color'
-                
-                temp_image.pixels.foreach_set(atlas_pixels)
-                
-                final_filepath = os.path.join(export_path, "icons.png")
-                temp_image.filepath_raw = final_filepath
-                temp_image.file_format = 'PNG'
-                temp_image.save()
-                
-                bpy.data.images.remove(temp_image)
-                
-                # Inject metadata for PNG
-                inject_metadata_profile(final_filepath, profile=effective_icc)
+                with measure("atlas.write_png"):
+                    temp_image = bpy.data.images.new("RZ_Atlas_Temp", width=atlas_w, height=atlas_h, alpha=True)
+                    
+                    # Use Non-Color space to ensure bit-exact saving without Blender's gamma correction
+                    temp_image.colorspace_settings.name = 'Non-Color'
+                    
+                    temp_image.pixels.foreach_set(atlas_pixels)
+                    
+                    final_filepath = os.path.join(export_path, "icons.png")
+                    temp_image.filepath_raw = final_filepath
+                    temp_image.file_format = 'PNG'
+                    temp_image.save()
+                    
+                    bpy.data.images.remove(temp_image)
+                    
+                    # Inject metadata for PNG
+                    inject_metadata_profile(final_filepath, profile=effective_icc)
                 
                 export_settings.last_exported_format = "PNG"
                 exported_success = True

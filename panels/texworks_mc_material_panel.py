@@ -21,6 +21,8 @@ def draw_mc_tools(layout, context):
     op = row.operator("rzm.tw_mc_ensure_material_node", text="Add/Update Node", icon='NODETREE')
     op.rebuild_group = False
     op.connect_surface = False
+    row.operator("rzm.tw_mc_add_mask_node", text="Add Mask Node", icon='TEXTURE')
+    row.operator("rzm.tw_mc_create_mask_from_selection", text="Create Mask", icon='BRUSH_DATA')
 
     row = layout.row(align=True)
     op = row.operator("rzm.tw_mc_ensure_material_node", text="Connect Preview", icon='MATERIAL')

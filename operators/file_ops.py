@@ -288,7 +288,8 @@ class RZM_OT_LoadTemplate(bpy.types.Operator):
                     rzm.elements, rzm.rzm_values, rzm.toggle_definitions, rzm.images,
                     rzm.conditions, rzm.shapes, rzm.dependency_statuses,
                     rzm.tw_resources, rzm.tw_overrides,
-                    rzm.tw_materials, rzm.tw_blocks
+                    rzm.tw_materials, rzm.tw_blocks,
+                    rzm.tw_mc_files, rzm.tw_mc_mask_files, rzm.tw_mc_skipped
                 ]
                 for coll in collections_to_clear:
                     coll.clear()
@@ -389,6 +390,7 @@ class RZM_OT_ResetScene(bpy.types.Operator):
             rzm.conditions, rzm.shapes, rzm.dependency_statuses,
             rzm.tw_resources, rzm.tw_overrides,
             rzm.tw_materials, rzm.tw_blocks,
+            rzm.tw_mc_files, rzm.tw_mc_mask_files, rzm.tw_mc_skipped,
             rzm.fonts,      # NEW
             rzm.run_links,  # NEW
             rzm.keybinds    # NEW

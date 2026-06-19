@@ -18,6 +18,7 @@ except Exception:
 
 
 GROUP_NAME = "RZM TexWorks Material"
+MASK_GROUP_NAME = "RZM TWAA Mask Slot"
 RESOURCE_PREFIX = "RZAutoAtlas"
 OUTPUT_SUBDIR = "Textures/DynAtlas"
 UV_NAME = "RZAutoAtlas.UV"
@@ -32,6 +33,7 @@ SUBSTANCE_CLUSTER_SIZES = (128, 256, 512, 1024, 2048, 4096)
 VALID_TWAA_TEXTURE_SIZES = SUBSTANCE_CLUSTER_SIZES
 
 SLOTS = ("Diffuse", "LightMap", "MaterialMap", "NormalMap", "Extra")
+TH_MASK_SLOTS = tuple(range(8))
 SLOT_FILE_SUFFIX = {
     "Diffuse": "Diffuse",
     "LightMap": "LightMap",
@@ -468,6 +470,26 @@ def make_or_update_material_group(force=False):
     return group
 
 
+def make_or_update_mask_group(force=False):
+    group = bpy.data.node_groups.get(MASK_GROUP_NAME)
+    if group is None:
+        group = bpy.data.node_groups.new(MASK_GROUP_NAME, "ShaderNodeTree")
+        force = True
+
+    needs_rebuild = (
+        force
+        or group.get("rzm_texworks_schema") != 1
+        or group.get("rzm_texworks_kind") != "RZ_TWAA_MASK_SLOT"
+    )
+    if needs_rebuild:
+        clear_group(group)
+        for index in TH_MASK_SLOTS:
+            add_socket(group, str(index), "INPUT", "NodeSocketColor", (0.0, 0.0, 0.0, 1.0))
+        group["rzm_texworks_schema"] = 1
+        group["rzm_texworks_kind"] = "RZ_TWAA_MASK_SLOT"
+    return group
+
+
 def set_material_node_default_resolution(group_node, resolution, force=False):
     if not group_node:
         return
@@ -583,6 +605,254 @@ def add_group_instance(mat, group):
         node.location.x = max(n.location.x for n in nodes) + 300
         node.location.y = max((n.location.y for n in nodes), default=0) + 40
     return node
+
+
+def add_mask_node(mat):
+    if not mat:
+        raise RuntimeError("No material provided for TWAA mask node")
+    group = make_or_update_mask_group()
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    node = nodes.new("ShaderNodeGroup")
+    node.node_tree = group
+    node.name = MASK_GROUP_NAME
+    node.label = MASK_GROUP_NAME
+
+    material_node = find_material_group_node(mat)
+    if material_node:
+        node.location.x = material_node.location.x
+        node.location.y = material_node.location.y - 640
+    elif nodes:
+        node.location.x = max(n.location.x for n in nodes) + 300
+        node.location.y = min((n.location.y for n in nodes), default=0) - 220
+    return node
+
+
+def mask_uv_layer_for_mesh(mesh, mat):
+    preview = mesh.uv_layers.get(preview_uv_name_for_material(mat))
+    if preview:
+        return preview
+    texcoord = mesh.uv_layers.get(TEXCOORD_UV_NAME)
+    if texcoord:
+        return texcoord
+    return mesh.uv_layers.active if mesh.uv_layers else None
+
+
+def selected_polygon_indices_for_object(obj):
+    if not obj or obj.type != "MESH":
+        return set()
+    mesh = obj.data
+    if obj.mode == 'EDIT':
+        try:
+            import bmesh
+            bm = bmesh.from_edit_mesh(mesh)
+            bm.faces.ensure_lookup_table()
+            return {int(face.index) for face in bm.faces if face.select}
+        except Exception:
+            return set()
+    return {int(poly.index) for poly in mesh.polygons if poly.select}
+
+
+def collect_mask_candidate_objects(context, mat):
+    selected = [obj for obj in context.selected_objects if obj and obj.type == "MESH"]
+    if selected:
+        return selected
+    obj = context.object
+    return [obj] if obj and obj.type == "MESH" else []
+
+
+def collect_twaa_mask_faces(context, mat):
+    candidates = collect_mask_candidate_objects(context, mat)
+    selected_by_object = {}
+    any_selected_faces = False
+    for obj in candidates:
+        selected = selected_polygon_indices_for_object(obj)
+        selected_by_object[obj.name] = selected
+        if selected:
+            any_selected_faces = True
+
+    faces = []
+    objects = []
+    warnings = []
+    for obj in candidates:
+        mat_indices = material_slot_indices(obj, mat)
+        if not mat_indices:
+            continue
+        mesh = obj.data
+        uv_layer = mask_uv_layer_for_mesh(mesh, mat)
+        if not uv_layer:
+            warnings.append(f"{obj.name}: no UV layer for TWAA mask")
+            continue
+        selected = selected_by_object.get(obj.name, set())
+        obj_faces = 0
+        for poly in mesh.polygons:
+            if int(poly.material_index) not in mat_indices:
+                continue
+            if any_selected_faces and int(poly.index) not in selected:
+                continue
+            uvs = []
+            for loop_index in poly.loop_indices:
+                uv = uv_layer.data[loop_index].uv
+                uvs.append((float(uv.x), float(uv.y)))
+            if len(uvs) < 3:
+                continue
+            faces.append({
+                "object": obj.name,
+                "mesh": mesh.name,
+                "poly_index": int(poly.index),
+                "uvs": uvs,
+                "uv_layer_name": uv_layer.name,
+            })
+            obj_faces += 1
+        if obj_faces:
+            objects.append(obj.name)
+
+    return faces, sorted(set(objects)), warnings, "selected-faces" if any_selected_faces else "selected-objects"
+
+
+def first_available_mask_slot(mat, requested_slot=None):
+    nodes = list(iter_mask_group_nodes(mat))
+    if not nodes:
+        nodes = [add_mask_node(mat)]
+
+    slots = [int(requested_slot)] if requested_slot is not None and int(requested_slot) >= 0 else list(TH_MASK_SLOTS)
+    for node in nodes:
+        for index in slots:
+            socket = node.inputs.get(str(index))
+            if socket and not socket.is_linked:
+                return node, int(index), socket
+    if requested_slot is not None and int(requested_slot) >= 0:
+        raise RuntimeError(f"TWAA mask slot {int(requested_slot)} is already linked")
+    raise RuntimeError("No free TWAA mask slot. Disconnect one of inputs 0..7 or add another mask node.")
+
+
+def uv_to_mask_pixel(uv, width, height):
+    u = clamp01(float(uv[0]))
+    v = clamp01(float(uv[1]))
+    return u * (int(width) - 1), (1.0 - v) * (int(height) - 1)
+
+
+def rasterize_mask_faces(faces, width, height):
+    width = int(width)
+    height = int(height)
+    buffer = array("f", [0.0]) * (width * height * 4)
+    if np is not None:
+        try:
+            dest = np.frombuffer(buffer, dtype=np.float32).reshape(height, width, 4)
+            white = np.array((1.0, 1.0, 1.0, 1.0), dtype=np.float32)
+            for face in faces:
+                for uv_a, uv_b, uv_c in face_triangles(face.get("uvs") or ()):
+                    pa = uv_to_mask_pixel(uv_a, width, height)
+                    pb = uv_to_mask_pixel(uv_b, width, height)
+                    pc = uv_to_mask_pixel(uv_c, width, height)
+                    min_x = max(0, int(math.floor(min(pa[0], pb[0], pc[0]))))
+                    max_x = min(width - 1, int(math.ceil(max(pa[0], pb[0], pc[0]))))
+                    min_y = max(0, int(math.floor(min(pa[1], pb[1], pc[1]))))
+                    max_y = min(height - 1, int(math.ceil(max(pa[1], pb[1], pc[1]))))
+                    if max_x < min_x or max_y < min_y:
+                        continue
+                    denom = ((pb[1] - pc[1]) * (pa[0] - pc[0]) + (pc[0] - pb[0]) * (pa[1] - pc[1]))
+                    if abs(denom) < 1.0e-8:
+                        continue
+                    xs = np.arange(min_x, max_x + 1, dtype=np.float32) + 0.5
+                    bbox_w = max_x - min_x + 1
+                    max_cells = 1024 * 1024
+                    rows_per_chunk = max(1, min(max_y - min_y + 1, max_cells // max(1, bbox_w)))
+                    for y_start in range(min_y, max_y + 1, rows_per_chunk):
+                        y_end = min(max_y, y_start + rows_per_chunk - 1)
+                        ys = np.arange(y_start, y_end + 1, dtype=np.float32) + 0.5
+                        grid_x, grid_y = np.meshgrid(xs, ys)
+                        w0 = ((pb[1] - pc[1]) * (grid_x - pc[0]) + (pc[0] - pb[0]) * (grid_y - pc[1])) / denom
+                        w1 = ((pc[1] - pa[1]) * (grid_x - pc[0]) + (pa[0] - pc[0]) * (grid_y - pc[1])) / denom
+                        w2 = 1.0 - w0 - w1
+                        mask = (w0 >= -1.0e-5) & (w1 >= -1.0e-5) & (w2 >= -1.0e-5)
+                        if mask.any():
+                            dest[y_start:y_end + 1, min_x:max_x + 1][mask] = white
+            return buffer
+        except Exception as exc:
+            print(f"[RZM TexWorks MC] NumPy mask raster fallback: {exc}")
+
+    for face in faces:
+        for uv_a, uv_b, uv_c in face_triangles(face.get("uvs") or ()):
+            pa = uv_to_mask_pixel(uv_a, width, height)
+            pb = uv_to_mask_pixel(uv_b, width, height)
+            pc = uv_to_mask_pixel(uv_c, width, height)
+            min_x = max(0, int(math.floor(min(pa[0], pb[0], pc[0]))))
+            max_x = min(width - 1, int(math.ceil(max(pa[0], pb[0], pc[0]))))
+            min_y = max(0, int(math.floor(min(pa[1], pb[1], pc[1]))))
+            max_y = min(height - 1, int(math.ceil(max(pa[1], pb[1], pc[1]))))
+            for y in range(min_y, max_y + 1):
+                for x in range(min_x, max_x + 1):
+                    if barycentric(x + 0.5, y + 0.5, pa, pb, pc) is not None:
+                        write_pixel(buffer, width, height, x, y, (1.0, 1.0, 1.0, 1.0))
+    return buffer
+
+
+def create_mask_image_from_selection(context, mat=None, slot_index=None, target_path=None):
+    mat = mat or get_active_material(context)
+    if not mat:
+        raise RuntimeError("No active material for TWAA mask creation")
+    mask_node, index, input_socket = first_available_mask_slot(mat, requested_slot=slot_index)
+    faces, objects, warnings, scope = collect_twaa_mask_faces(context, mat)
+    if not faces:
+        detail = "; ".join(warnings) if warnings else "no selected object/faces use the active material"
+        raise RuntimeError(f"No faces available for TWAA mask: {detail}")
+
+    registered_size = registered_cluster_size(context, mat, preferred_slot="Diffuse")
+    if registered_size:
+        width, height = registered_size
+    else:
+        width, height = 0, 0
+    if width <= 0 or height <= 0:
+        sources = collect_slot_sources(mat)
+        width, height, _slot = choose_reference_size(get_settings(context), sources, mat)
+    width, height = snap_twaa_texture_size(width, height)
+
+    resource_name = f"{material_key(mat.name)}_TH_{int(index)}"
+    file_name = f"{resource_name}.png"
+    pixels = rasterize_mask_faces(faces, width, height)
+    root = resolve_export_target_path(context, target_path)
+    image = None
+    file_path = None
+    if root:
+        out_dir = os.path.join(root, get_settings(context).output_subdir)
+        os.makedirs(out_dir, exist_ok=True)
+        file_path = os.path.join(out_dir, file_name)
+        write_png_rgba8(file_path, width, height, pixels)
+        image = bpy.data.images.load(file_path, check_existing=True)
+    if image is None:
+        image = create_or_replace_image(file_name, width, height, pixels)
+    image.name = file_name
+    if file_path:
+        image.filepath = file_path
+        image.filepath_raw = file_path
+    try:
+        image.colorspace_settings.name = "Non-Color"
+    except Exception:
+        pass
+
+    nodes = mat.node_tree.nodes
+    tex_node = nodes.new("ShaderNodeTexImage")
+    tex_node.name = resource_name
+    tex_node.label = resource_name
+    tex_node.image = image
+    tex_node.location = (mask_node.location.x - 430, mask_node.location.y - int(index) * 180)
+    mat.node_tree.links.new(tex_node.outputs["Color"], input_socket)
+
+    export_material_mask_textures_raw(context, mat, target_path=root)
+    return {
+        "material": mat.name,
+        "slot_index": int(index),
+        "resource_name": resource_name,
+        "image_name": image.name,
+        "file_path": file_path or "",
+        "width": int(width),
+        "height": int(height),
+        "faces": len(faces),
+        "objects": objects,
+        "scope": scope,
+        "warnings": warnings,
+    }
 
 
 def classify_texture_node(node):
@@ -2447,6 +2717,12 @@ def export_material_textures_raw(context, mat, target_path=None):
     if not written:
         raise RuntimeError(f"Material '{mat.name}' has no enabled RZM texture slots")
     connect_exported_material_textures(mat, written, generated_slots)
+
+    mask_written, mask_warnings = export_material_mask_textures_raw(context, mat, target_path=target_path)
+    for warning in mask_warnings:
+        print(f"[RZM TWAA] WARN: {warning}")
+    for index, file_path in sorted(mask_written.items()):
+        written[f"TH{index}"] = file_path
     return written
 
 
@@ -2617,6 +2893,95 @@ def upstream_image_nodes(socket, visited=None):
     return result
 
 
+def iter_mask_group_nodes(mat):
+    if not mat or not mat.use_nodes or not mat.node_tree:
+        return
+    for node in mat.node_tree.nodes:
+        if (
+            node.bl_idname == "ShaderNodeGroup"
+            and node.node_tree
+            and (
+                node.node_tree.name == MASK_GROUP_NAME
+                or node.node_tree.get("rzm_texworks_kind") == "RZ_TWAA_MASK_SLOT"
+            )
+        ):
+            yield node
+
+
+def collect_material_mask_slots(mat):
+    masks = {}
+    warnings = []
+    for group_node in iter_mask_group_nodes(mat):
+        node_active = False
+        for index in TH_MASK_SLOTS:
+            socket = group_node.inputs.get(str(index))
+            if not socket:
+                continue
+            image_nodes = [node for node in upstream_image_nodes(socket) if getattr(node, "image", None)]
+            if not image_nodes:
+                continue
+            image_node = image_nodes[0]
+            image = image_node.image
+            if not getattr(image_node, "name", "") or not image or not getattr(image, "name", ""):
+                warnings.append(f"{mat.name}: mask slot {index} has no named Image Texture")
+                continue
+            masks[int(index)] = {
+                "slot_index": int(index),
+                "image": image,
+                "image_node": image_node,
+                "image_node_name": image_node.name,
+                "image_name": image.name,
+                "group_node_name": group_node.name,
+                "value_stem": f"${material_key(mat.name)}_TH_{int(index)}",
+                "resource_name": f"{material_key(mat.name)}_TH_{int(index)}",
+            }
+            node_active = True
+        if not node_active:
+            warnings.append(f"{mat.name}: {group_node.name} has no connected mask textures")
+    return masks, warnings
+
+
+def export_material_mask_textures_raw(context, mat, target_path=None):
+    settings = get_settings(context)
+    root = resolve_export_target_path(context, target_path)
+    if not root:
+        raise RuntimeError("No export target path configured")
+    masks, warnings = collect_material_mask_slots(mat)
+    rzm = context.scene.rzm
+    key = material_key(mat.name)
+    prune_mc_mask_file_entries(rzm, key, masks.keys())
+    if not masks:
+        return {}, warnings
+
+    out_dir = os.path.join(root, settings.output_subdir)
+    os.makedirs(out_dir, exist_ok=True)
+    written = {}
+    for index, data in sorted(masks.items()):
+        image = data["image"]
+        pixels, width, height = image_pixels(image)
+        if pixels is None or width <= 0 or height <= 0:
+            warnings.append(f"{mat.name}: mask slot {index} image '{data['image_name']}' has no readable pixels")
+            continue
+        resource_name = data["resource_name"]
+        file_name = f"{resource_name}.png"
+        file_path = os.path.join(out_dir, file_name)
+        write_png_rgba8(file_path, width, height, pixels)
+        rel_path = os.path.join(settings.output_subdir, file_name).replace("\\", "/")
+        entry = ensure_mc_mask_file_entry(rzm, resource_name)
+        if entry:
+            entry.name = resource_name
+            entry.material_name = mat.name
+            entry.material_key = key
+            entry.slot_index = int(index)
+            entry.resource_name = resource_name
+            entry.relative_path = rel_path
+            entry.value_name = data["value_stem"]
+            entry.resolution = (width, height)
+        ensure_rzm_vector_value(rzm, data["value_stem"], (0.0, 0.0, 0.0, 1.0), update_existing=False)
+        written[index] = file_path
+    return written, warnings
+
+
 def replace_material_slot_images(mat, cluster, written=None):
     node = find_material_group_node(mat)
     if not node:
@@ -2744,6 +3109,35 @@ def ensure_mc_file_entry(rzm, resource_name):
     return item
 
 
+def ensure_mc_mask_file_entry(rzm, resource_name):
+    files = getattr(rzm, "tw_mc_mask_files", None)
+    if files is None:
+        return None
+    for item in files:
+        if item.resource_name == resource_name:
+            return item
+    item = files.add()
+    item.name = resource_name
+    return item
+
+
+def prune_mc_mask_file_entries(rzm, material_key_value, valid_indices):
+    files = getattr(rzm, "tw_mc_mask_files", None)
+    if files is None:
+        return 0
+    valid_indices = {int(index) for index in valid_indices}
+    removed = 0
+    for index in range(len(files) - 1, -1, -1):
+        item = files[index]
+        if item.material_key != material_key_value:
+            continue
+        if int(item.slot_index) in valid_indices:
+            continue
+        files.remove(index)
+        removed += 1
+    return removed
+
+
 def read_png_size(path):
     try:
         with open(path, "rb") as handle:
@@ -2808,6 +3202,17 @@ def expected_material_texture_path(context, mat, slot, target_path=None):
     return os.path.join(root, rel_path), rel_path
 
 
+def expected_material_mask_texture_path(context, mat, slot_index, target_path=None):
+    settings = get_settings(context)
+    root = resolve_export_target_path(context, target_path)
+    if not root:
+        return None, None
+    resource_name = f"{material_key(mat.name)}_TH_{int(slot_index)}"
+    file_name = f"{resource_name}.png"
+    rel_path = os.path.join(settings.output_subdir, file_name).replace("\\", "/")
+    return os.path.join(root, rel_path), rel_path
+
+
 def sync_material_texture_entry_from_file(context, mat, slot, file_path, rel_path=None):
     size = read_png_size(file_path)
     if not size:
@@ -2863,9 +3268,11 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
             "enabled": False,
             "materials": 0,
             "checked_slots": 0,
+            "checked_masks": 0,
             "registered": 0,
             "exported_materials": 0,
             "exported_slots": 0,
+            "exported_masks": 0,
             "missing": [],
             "warnings": ["TexWorks MC is disabled"],
             "layout": None,
@@ -2877,9 +3284,11 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
             "enabled": True,
             "materials": 0,
             "checked_slots": 0,
+            "checked_masks": 0,
             "registered": 0,
             "exported_materials": 0,
             "exported_slots": 0,
+            "exported_masks": 0,
             "missing": [],
             "warnings": ["No export target path configured"],
             "layout": None,
@@ -2887,9 +3296,11 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
 
     materials = relevant_twaa_materials(context)
     checked_slots = 0
+    checked_masks = 0
     registered = 0
     exported_materials = 0
     exported_slots = 0
+    exported_masks = 0
     missing = []
     warnings = []
     changed_entries = False
@@ -2914,6 +3325,43 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
                 "slot": slot,
                 "path": file_path or "",
             })
+
+        masks, mask_warnings = collect_material_mask_slots(mat)
+        warnings.extend(mask_warnings)
+        missing_masks = []
+        for index in sorted(masks.keys()):
+            checked_masks += 1
+            file_path, _rel_path = expected_material_mask_texture_path(context, mat, index, target_path=root)
+            if file_path and os.path.isfile(file_path) and read_png_size(file_path):
+                continue
+            missing_masks.append(index)
+            missing.append({
+                "material": mat.name,
+                "material_key": material_key(mat.name),
+                "slot": f"TH{index}",
+                "path": file_path or "",
+            })
+
+        if missing_masks:
+            if not auto_export:
+                warnings.append(
+                    f"{mat.name}: missing TWAA mask file(s): "
+                    f"{', '.join(f'TH{index}' for index in missing_masks)}"
+                )
+            else:
+                try:
+                    mask_written, mask_export_warnings = export_material_mask_textures_raw(context, mat, target_path=root)
+                    warnings.extend(mask_export_warnings)
+                    exported_masks += len(mask_written)
+                    print(
+                        f"[RZM TWAA] Export validator wrote {len(mask_written)} mask file(s) "
+                        f"for material '{mat.name}' because missing masks were: "
+                        f"{', '.join(f'TH{index}' for index in missing_masks)}"
+                    )
+                except Exception as exc:
+                    warning = f"{mat.name}: failed to auto-export missing TWAA masks ({exc})"
+                    warnings.append(warning)
+                    print(f"[RZM TWAA] WARN: {warning}")
 
         if not missing_slots:
             continue
@@ -2943,9 +3391,11 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
         "enabled": True,
         "materials": len(materials),
         "checked_slots": checked_slots,
+        "checked_masks": checked_masks,
         "registered": registered,
         "exported_materials": exported_materials,
         "exported_slots": exported_slots,
+        "exported_masks": exported_masks,
         "missing": missing,
         "warnings": warnings,
         "layout": layout_summary,
@@ -2953,8 +3403,10 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
     print(
         "[RZM TWAA] Export validator: "
         f"materials={summary['materials']} checked_slots={checked_slots} "
+        f"checked_masks={checked_masks} "
         f"registered={registered} exported_materials={exported_materials} "
-        f"exported_slots={exported_slots} warnings={len(warnings)}"
+        f"exported_slots={exported_slots} exported_masks={exported_masks} "
+        f"warnings={len(warnings)}"
     )
     return summary
 
