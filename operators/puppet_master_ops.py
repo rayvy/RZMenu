@@ -1104,6 +1104,8 @@ def _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, or
 def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                            single_shape_name=None, full_export_mode=False,
                            orient_mat=None, mirror_enabled=None):
+    from ..utils.export_timing import measure
+
     t_start   = time.time()
     vb0_path  = None
     dump_name = (os.path.basename(os.path.normpath(bpy.path.abspath(context.scene.xxmi.dump_path)))
@@ -1147,21 +1149,23 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                                 print(f"    [INFO] Found {base_name} VB0 via hash: {hash_name}")
                                 break
 
-    try:
-        from .export_cache import component_cache
-        comp_cache = component_cache(base_name)
-    except Exception:
-        comp_cache = None
+    with measure(f"puppet.component.{base_name}.component_cache"):
+        try:
+            from .export_cache import component_cache
+            comp_cache = component_cache(base_name)
+        except Exception:
+            comp_cache = None
 
     rzm      = context.scene.rzm
-    prepare_shape_config_export_runtime(rzm)
-    active_configs = active_shape_configs(rzm)
-    affected_names = _component_affected_names(base_name, comp_cache, dump_name, is_xxmi, comp_objects=comp_objects)
-    all_keys = _component_shape_key_names(
-        active_configs,
-        affected_names,
-        single_shape_name=single_shape_name,
-    )
+    with measure(f"puppet.component.{base_name}.resolve_shape_keys"):
+        prepare_shape_config_export_runtime(rzm)
+        active_configs = active_shape_configs(rzm)
+        affected_names = _component_affected_names(base_name, comp_cache, dump_name, is_xxmi, comp_objects=comp_objects)
+        all_keys = _component_shape_key_names(
+            active_configs,
+            affected_names,
+            single_shape_name=single_shape_name,
+        )
 
     if not all_keys:
         return True
@@ -1174,19 +1178,23 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
     output_dir = os.path.join(mod_root, "SK")
     os.makedirs(output_dir, exist_ok=True)
 
-    with open(vb0_path, "rb") as f:
-        original_bytes = f.read()
+    with measure(f"puppet.component.{base_name}.read_vb0"):
+        with open(vb0_path, "rb") as f:
+            original_bytes = f.read()
     original_data = bytearray(original_bytes)
 
     stride = 40 if is_xxmi else 16 if game in {'ArknightsEndfield', 'WutheringWaves'} else 32
 
     # Создаем заглушки-буферы
-    _write_noop_shape_buffers(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes)
+    with measure(f"puppet.component.{base_name}.write_noop_buffers"):
+        _write_noop_shape_buffers(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes)
 
-    sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
+    with measure(f"puppet.component.{base_name}.scan_shape_owners"):
+        sk_owner_map = _scan_sk_owners(comp_objects, all_keys)
 
     # [NEW] Check for weight morphs too
-    weight_keys = [c for c in active_weight_shape_configs(rzm) if c.shape_name in all_keys]
+    with measure(f"puppet.component.{base_name}.resolve_weight_keys"):
+        weight_keys = [c for c in active_weight_shape_configs(rzm) if c.shape_name in all_keys]
 
     if not sk_owner_map and not weight_keys:
         _convert_shape_buffers_to_sparse(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes, stride)
@@ -1301,14 +1309,16 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                 print(f"  [MOD BAKE] Attempt A: Baking modifiers for {obj.name}...")
                 try:
                     # Попытка А: Запекаем всё (включая Surface Deform, если он есть)
-                    bpy.ops.rz.shape_key_apply_modifiers()
+                    with measure(f"puppet.component.{base_name}.mod_bake.{obj.name}"):
+                        bpy.ops.rz.shape_key_apply_modifiers()
                 except Exception:
                     # Фоллбек (Попытка Б): Если А упала, пробуем удалить SD и запечь остальное
                     if needs_sd and temp_obj.modifiers.get(sd_mod.name):
                         print(f"  [MOD BAKE] Attempt A failed, trying Attempt B (removing Surface Deform)...")
                         temp_obj.modifiers.remove(temp_obj.modifiers.get(sd_mod.name))
                         try:
-                            bpy.ops.rz.shape_key_apply_modifiers()
+                            with measure(f"puppet.component.{base_name}.mod_bake_retry.{obj.name}"):
+                                bpy.ops.rz.shape_key_apply_modifiers()
                         except Exception as e2:
                             print(f"  [ERROR] Mod bake failed (Attempt B) for {obj.name}: {e2}")
                             bake_success = False
@@ -1327,7 +1337,8 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                     actual_donor = ready_map.get(sd_target, sd_target)
                     from .rzm_surface_baker import transfer_surface_shape_keys
                     print(f"  [SURFACE BAKE] Transferring {len(keys_to_transfer)} keys from {actual_donor.name} to {obj.name}")
-                    transfer_surface_shape_keys(temp_obj, actual_donor, keys_to_transfer)
+                    with measure(f"puppet.component.{base_name}.surface_transfer.{obj.name}"):
+                        transfer_surface_shape_keys(temp_obj, actual_donor, keys_to_transfer)
                 except Exception as e:
                     print(f"  [ERROR] Surface bake failed for {obj.name}: {e}")
                     bake_success = False
@@ -1338,12 +1349,13 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
                 ready_map[obj] = temp_obj
 
         # ── 2. EXACT MATCH PATH (Выгрузка) ─────────────────────────────────────
-        fast_path_slots, stats_exact, failed_exact = _process_exact_matches(
-            context, sk_owner_map, ready_map, comp_cache,
-            original_bytes, stride, buf_v_count,
-            output_dir, base_name, dump_name, is_xxmi, game_name=game,
-            orient_mat=orient_mat, mirror_enabled=mirror_enabled
-        )
+        with measure(f"puppet.component.{base_name}.exact_match"):
+            fast_path_slots, stats_exact, failed_exact = _process_exact_matches(
+                context, sk_owner_map, ready_map, comp_cache,
+                original_bytes, stride, buf_v_count,
+                output_dir, base_name, dump_name, is_xxmi, game_name=game,
+                orient_mat=orient_mat, mirror_enabled=mirror_enabled
+            )
 
         # ── 3. SLOW PATH (Fallback) ────────────────────────────────────────────
         sk_owner_map_slow = {sk: owners for sk, owners in failed_exact.items() if owners['direct'] or owners['via_target']}
@@ -1351,19 +1363,23 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
 
         if sk_owner_map_slow:
             print(f"  [SLOW PATH] Spatial Barycentric Fallback")
-            stats_slow = _run_slow_path(
-                context, sk_owner_map_slow, comp_cache,
-                original_bytes, stride, buf_v_count,
-                output_dir, base_name, dump_name, is_xxmi, limit, t_start,
-                game_name=game, fast_path_slots=fast_path_slots,
-                orient_mat=orient_mat, mirror_enabled=mirror_enabled
-            )
+            with measure(f"puppet.component.{base_name}.slow_path"):
+                stats_slow = _run_slow_path(
+                    context, sk_owner_map_slow, comp_cache,
+                    original_bytes, stride, buf_v_count,
+                    output_dir, base_name, dump_name, is_xxmi, limit, t_start,
+                    game_name=game, fast_path_slots=fast_path_slots,
+                    orient_mat=orient_mat, mirror_enabled=mirror_enabled
+                )
 
         # ── 4. BLENDWORKS (Weights) ────────────────────────────────────────────
         # [NEW] Проверка и запуск слоя весов
-        _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name=dump_name, comp_cache=comp_cache)
-        _convert_shape_buffers_to_sparse(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes, stride)
-        _validate_shape_buffer_sizes(output_dir, base_name, all_keys, is_xxmi, dump_name, stride)
+        with measure(f"puppet.component.{base_name}.bake_weights"):
+            _bake_weights_layer(context, base_name, comp_objects, mod_root, all_keys, original_bytes, stride, is_xxmi, dump_name=dump_name, comp_cache=comp_cache)
+        with measure(f"puppet.component.{base_name}.convert_sparse"):
+            _convert_shape_buffers_to_sparse(output_dir, base_name, all_keys, is_xxmi, dump_name, original_bytes, stride)
+        with measure(f"puppet.component.{base_name}.validate_buffers"):
+            _validate_shape_buffer_sizes(output_dir, base_name, all_keys, is_xxmi, dump_name, stride)
 
         # ── SUMMARY ──
         print(f"\n  [SUMMARY] {base_name} component finished in {time.time() - t_start:.3f}s")
@@ -1449,15 +1465,19 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
     full_export_mode: bpy.props.BoolProperty(default=False)
 
     def execute(self, context):
+        from ..utils.export_timing import measure
+
         from .export_manager import get_target_path
         mod_root = get_target_path(context)
         if not mod_root or not os.path.exists(mod_root): return {'CANCELLED'}
         addons        = context.scene.rzm.addons
         per_component = False if self.full_export_mode else addons.puppet_master_per_component
         limit         = addons.puppet_master_limit
-        components    = get_components_to_process(context, per_component)
+        with measure("puppet.get_components"):
+            components = get_components_to_process(context, per_component)
         if not components: return {'CANCELLED'}
-        _clear_sparse_counts(context.scene.rzm)
+        with measure("puppet.clear_sparse_counts"):
+            _clear_sparse_counts(context.scene.rzm)
         
         from .export_cache import get_cache
         cache = get_cache() or {}
@@ -1482,14 +1502,17 @@ class RZM_OT_PuppetMasterBake(bpy.types.Operator):
                 pass
 
             # [REWORK] Resolve dynamic orientation and mirror per component
-            orient_mat, mirror_enabled = _resolve_component_transform(
-                context, is_xxmi, game, mod_name, base_name, classifications
-            )
+            with measure(f"puppet.component.{base_name}.resolve_transform"):
+                orient_mat, mirror_enabled = _resolve_component_transform(
+                    context, is_xxmi, game, mod_name, base_name, classifications
+                )
 
-            bake_component_shapes(context, base_name, objs, mod_root, limit,
-                                   full_export_mode=self.full_export_mode,
-                                   orient_mat=orient_mat, mirror_enabled=mirror_enabled)
-        _patch_ini_dispatches(mod_root, context.scene.rzm)
+            with measure(f"puppet.component.{base_name}.total"):
+                bake_component_shapes(context, base_name, objs, mod_root, limit,
+                                       full_export_mode=self.full_export_mode,
+                                       orient_mat=orient_mat, mirror_enabled=mirror_enabled)
+        with measure("puppet.patch_ini_dispatches"):
+            _patch_ini_dispatches(mod_root, context.scene.rzm)
         return {'FINISHED'}
 
 
