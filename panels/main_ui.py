@@ -58,6 +58,7 @@ class RZM_UL_ToggleDefinitions(bpy.types.UIList):
         row = layout.row(align=True)
         row.prop(item, "toggle_name", text="", emboss=False, icon='CHECKBOX_HLT')
         row.prop(item, "toggle_length", text="Bits")
+        row.prop(item, "toggle_start_index", text="Default")
 
 class RZM_UL_Shapes(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -1163,17 +1164,14 @@ def draw_toolbox_content(self, context):
         from ..shaitan_toolbox.ui import draw_shaitan_toolbox
         draw_shaitan_toolbox(self, context, layout)
         return
-    elif scene.rzm_toolbox_mode == 'TEXWORKS':
-        from .ui_debug_panel import VIEW3D_PT_RZConstructorDebugPanel
-        VIEW3D_PT_RZConstructorDebugPanel.draw_tex_works_config(self, layout, rzm, context)
+    elif scene.rzm_toolbox_mode != 'TEXWORKS':
+        # 1. ALWAYS SHOW MESH PROPERTIES AT TOP
+        VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)
         return
 
-    # 1. ALWAYS SHOW MESH PROPERTIES AT TOP
-    VIEW3D_PT_RZConstructorPanel.draw_object_properties(self, context, layout)
-
     layout.separator(factor=1.0)
-    
-    # 2. PROJECT CONFIGURATION AT BOTTOM
+
+    # 2. PROJECT CONFIGURATION
     box = layout.box()
     box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
     box.label(text="Run Links & Keybinds → Qt 'Run Links' panel", icon='INFO')
@@ -1236,63 +1234,16 @@ def draw_toolbox_content(self, context):
                     op.tier_id = tid
 
     elif tab == 'SHAPES':
-        # --- LEGACY SYSTEM (RZMShape) ---
-        row = box.row(align=True)
-        row.operator("rzm.add_shape", text="Add Shape", icon='ADD')
-        row.operator("rzm.remove_shape", text="", icon='REMOVE')
-        box.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
+        warn = box.box()
+        warn.alert = True
+        warn.label(text="Legacy Shape UI is locked.", icon='ERROR')
+        warn.label(text="To activate shape keys, go to the Native Shapes panel.")
+        warn.label(text="A large redesign is planned later.")
 
-        if rzm.shapes and 0 <= context.scene.rzm_active_shape_index < len(rzm.shapes):
-            active_shape = rzm.shapes[context.scene.rzm_active_shape_index]
-            from ..operators.tier_ops import get_tier_ids
-            available = get_tier_ids(context)
-            if available:
-                box.label(text="Export Tiers:")
-                s_active = {t.tier_id for t in active_shape.export_tiers}
-                flow = box.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-                for tid in available:
-                    is_act = tid in s_active
-                    op_str = "rzm.remove_shape_tier" if is_act else "rzm.add_shape_tier"
-                    op = flow.operator(op_str, text=tid, depress=is_act)
-                    op.shape_index = context.scene.rzm_active_shape_index
-                    op.tier_id = tid
-
-            # --- Shape Properties ---
-            s_box = box.box()
-            s_box.prop(active_shape, "shape_name")
-            s_box.prop(active_shape, "shape_type")
-            s_box.prop(active_shape, "force_export")
-            
-            if active_shape.shape_type == 'Anim':
-                s_box.prop(active_shape, "anim_condition")
-
-            # --- Shape Keys List ---
-            s_box.separator()
-            row_k = s_box.row()
-            row_k.label(text="Shape Keyframes:", icon='SHAPEKEY_DATA')
-            op_add = row_k.operator("rzm.add_shape_key", text="", icon='ADD', emboss=False)
-            op_add.shape_index = context.scene.rzm_active_shape_index
-            op_rem = row_k.operator("rzm.remove_shape_key", text="", icon='REMOVE', emboss=False)
-            op_rem.shape_index = context.scene.rzm_active_shape_index
-            op_rem.key_index = context.scene.rzm_active_shape_key_index
-            
-            s_box.template_list("RZM_UL_ShapeKeys", "", active_shape, "shape_keys", context.scene, "rzm_active_shape_key_index")
-            
-            if active_shape.shape_keys and 0 <= context.scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
-                key = active_shape.shape_keys[context.scene.rzm_active_shape_key_index]
-                sbox = s_box.box()
-                sbox.prop(key, "key_name")
-                sbox.prop(key, "mode")
-                if key.mode == 'ADVANCED':
-                    sbox.prop(key, "input_range_min")
-                    sbox.prop(key, "input_range_max")
-                    sbox.prop(key, "multiplier")
-                if active_shape.shape_type == 'Anim':
-                    sbox.separator()
-                    sbox.label(text="Animation Settings:")
-                    sbox.prop(key, "anim_type_index")
-                    sbox.prop(key, "anim_start_frame")
-                    sbox.prop(key, "anim_end_frame")
+        if rzm.shapes:
+            disabled = box.column()
+            disabled.enabled = False
+            disabled.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
 
     elif tab == 'NATIVE_SHAPES':
         # --- NEW SYSTEM (Discovery & Puppet Master) ---
@@ -1832,6 +1783,12 @@ def draw_toolbox_content(self, context):
     
     if scene.rzm_show_material_transfer:
         draw_material_transfer_ui(context, mt_box)
+
+    # TEXWORKS lives with long-form configuration tools instead of the daily toolbox.
+    tw_box = layout.box()
+    tw_box.label(text="TEXWORKS", icon='TEXTURE')
+    from .ui_debug_panel import VIEW3D_PT_RZConstructorDebugPanel
+    VIEW3D_PT_RZConstructorDebugPanel.draw_tex_works_config(self, tw_box, rzm, context)
 
 
 class VIEW3D_PT_RZConstructorToolboxPanel_Internal(bpy.types.Panel):
