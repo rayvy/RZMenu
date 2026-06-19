@@ -730,6 +730,207 @@ class TWAATextureExportValidatorSubModule:
 #  MAIN: SafeExport context manager
 # ══════════════════════════════════════════════════════════════════════════════
 
+class TWAAPreExportUVSubModule:
+    """Builds non-destructive TWAA export meshes with pre-offset TEXCOORD.xy UVs."""
+
+    def __init__(self):
+        self._temp_objects = []
+        self._source_states = {}
+        self._prev_active = None
+        self._prev_selected = []
+
+    def pre_export(self, context):
+        from . import texworks_mc
+
+        self._temp_objects.clear()
+        self._source_states.clear()
+        self._prev_active = context.view_layer.objects.active
+        self._prev_selected = list(context.selected_objects)
+
+        layouts = texworks_mc.twaa_block_layouts_by_material(context)
+        if not layouts:
+            return
+
+        targets = [
+            obj for obj in list(context.scene.objects)
+            if self._is_candidate(context, obj, layouts, texworks_mc)
+        ]
+        if not targets:
+            return
+
+        total_loops = 0
+        split_objects = 0
+        print(f"[SafeExport] [TWAA PreUV] Preparing {len(targets)} TWAA mesh target(s) before export...")
+
+        for obj in targets:
+            try:
+                created, patched = self._replace_with_twaa_temps(context, obj, layouts, texworks_mc)
+                split_objects += max(0, created - 1)
+                total_loops += patched
+            except Exception as exc:
+                import traceback
+                print(f"[SafeExport] [TWAA PreUV] ERROR preparing '{getattr(obj, 'name', '<unknown>')}': {exc}")
+                traceback.print_exc()
+
+        if self._temp_objects:
+            try:
+                bpy.ops.object.select_all(action='DESELECT')
+                for obj in self._temp_objects:
+                    obj.select_set(True)
+                context.view_layer.objects.active = self._temp_objects[0]
+            except Exception:
+                pass
+            print(
+                f"[SafeExport] [TWAA PreUV] Ready: temp_objects={len(self._temp_objects)} "
+                f"extra_splits={split_objects} patched_loops={total_loops}"
+            )
+
+    def post_export(self, context):
+        self._restore_all(context)
+
+    def restore(self, context):
+        self._restore_all(context)
+
+    def _is_candidate(self, context, obj, layouts, texworks_mc):
+        if not obj or obj.type != 'MESH' or not obj.data:
+            return False
+        if obj.name.endswith("_RZM_TWAA_SOURCE") or obj.get("RZM_TWAA_EXPORT_TEMP"):
+            return False
+        if "_RZM_SAFE_SOURCE" in obj.name:
+            return False
+        if getattr(obj, "hide_viewport", False) or getattr(obj, "hide_render", False):
+            return False
+        return texworks_mc.object_has_twaa_material_faces(context, obj, layouts=layouts)
+
+    def _store_source_state(self, obj):
+        return {
+            "name": obj.name,
+            "source_name": f"{obj.name}_RZM_TWAA_SOURCE",
+            "collections": list(obj.users_collection),
+            "hide_viewport": obj.hide_viewport,
+            "hide_render": obj.hide_render,
+            "hide_select": obj.hide_select,
+            "selected": obj.select_get(),
+        }
+
+    def _replace_with_twaa_temps(self, context, source_obj, layouts, texworks_mc):
+        state = self._store_source_state(source_obj)
+        self._source_states[source_obj] = state
+        source_obj.name = state["source_name"]
+        for coll in state["collections"]:
+            try:
+                coll.objects.unlink(source_obj)
+            except Exception:
+                pass
+
+        used_indices = texworks_mc.object_used_material_indices(source_obj)
+        if not used_indices:
+            return 0, 0
+        split_by_material = len(used_indices) > 1
+        created = 0
+        patched = 0
+
+        for material_index in used_indices:
+            temp_obj = source_obj.copy()
+            temp_obj.data = source_obj.data.copy()
+            temp_obj.name = self._temp_name(state["name"], source_obj, material_index, split_by_material, texworks_mc)
+            temp_obj.data.name = f"{temp_obj.name}_Mesh"
+            temp_obj.hide_viewport = False
+            temp_obj.hide_render = False
+            temp_obj.hide_select = False
+            temp_obj["RZM_TWAA_EXPORT_TEMP"] = True
+            temp_obj["RZM_TWAA_EXPORT_SOURCE"] = state["name"]
+            temp_obj["RZM_TWAA_EXPORT_MATERIAL_INDEX"] = int(material_index)
+
+            if split_by_material:
+                texworks_mc.prune_mesh_to_material_index(temp_obj.data, material_index)
+
+            summary = texworks_mc.apply_twaa_layout_to_object_uv(context, temp_obj, layouts=layouts)
+            patched += int(summary.get("patched_loops", 0) or 0)
+
+            for coll in state["collections"] or [context.scene.collection]:
+                try:
+                    coll.objects.link(temp_obj)
+                except RuntimeError:
+                    pass
+            self._temp_objects.append(temp_obj)
+            created += 1
+
+        if split_by_material:
+            print(f"  [TWAA PreUV] {state['name']}: separate by material -> {created} temp object(s)")
+        return created, patched
+
+    def _temp_name(self, original_name, source_obj, material_index, split_by_material, texworks_mc):
+        if not split_by_material:
+            return original_name
+        mat = None
+        if 0 <= int(material_index) < len(source_obj.material_slots):
+            mat = source_obj.material_slots[int(material_index)].material
+        suffix = texworks_mc.material_key(mat.name if mat else f"Material{material_index}")
+        return f"{original_name}__{suffix}"
+
+    def _restore_all(self, context):
+        if not self._temp_objects and not self._source_states:
+            return
+
+        print(
+            f"[SafeExport] [TWAA PreUV] Removing {len(self._temp_objects)} temp object(s) "
+            f"and restoring {len(self._source_states)} source object(s)..."
+        )
+
+        for temp_obj in list(self._temp_objects):
+            try:
+                mesh = temp_obj.data
+                bpy.data.objects.remove(temp_obj, do_unlink=True)
+                if mesh and mesh.users == 0:
+                    bpy.data.meshes.remove(mesh, do_unlink=True)
+            except ReferenceError:
+                pass
+            except Exception as exc:
+                print(f"  [TWAA PreUV] Error removing temp object: {exc}")
+
+        for obj, state in list(self._source_states.items()):
+            try:
+                if obj and obj.name in bpy.data.objects:
+                    obj.name = state["name"]
+                    obj.hide_viewport = state["hide_viewport"]
+                    obj.hide_render = state["hide_render"]
+                    obj.hide_select = state["hide_select"]
+                    for coll in state["collections"]:
+                        try:
+                            if obj.name not in coll.objects:
+                                coll.objects.link(obj)
+                        except Exception:
+                            pass
+            except ReferenceError:
+                pass
+            except Exception as exc:
+                print(f"  [TWAA PreUV] Error restoring source '{state.get('name', '<unknown>')}': {exc}")
+
+        try:
+            bpy.ops.object.select_all(action='DESELECT')
+            for obj in self._prev_selected:
+                try:
+                    if obj and obj.name in bpy.data.objects:
+                        obj.select_set(True)
+                except ReferenceError:
+                    pass
+            if self._prev_active and self._prev_active.name in bpy.data.objects:
+                context.view_layer.objects.active = self._prev_active
+        except Exception:
+            pass
+
+        self._temp_objects.clear()
+        self._source_states.clear()
+        self._prev_active = None
+        self._prev_selected = []
+
+        try:
+            context.view_layer.update()
+        except Exception:
+            pass
+
+
 class SafeExport:
     """
     Контекстный менеджер безопасного экспорта.
@@ -750,12 +951,11 @@ class SafeExport:
 
         # Импортируем здесь чтобы избежать circular imports при загрузке модуля
         from .xxmi_data_predictor import XXMIMissingDataPredictorSubModule
-        from .twaa_texcoord_patcher import patch_exported_twaa_texcoords
-        self._twaa_texcoord_patcher = patch_exported_twaa_texcoords
 
         # Читаем настройку очистки временных слоев из настроек аддона
         addon_name = __package__.split(".")[0] if "." in __package__ else __package__
-        pref = context.preferences.addons[addon_name].preferences
+        addon = context.preferences.addons.get(addon_name)
+        pref = addon.preferences if addon else None
         temp_cleanup = getattr(pref, "safe_export_temp_cleanup", False)
 
         if temp_cleanup:
@@ -764,6 +964,7 @@ class SafeExport:
                 # VertexGroupReorderSubModule(),     # Standalone candidate: manually move mask* VG to the end.
                 AnchorLayoutCleanupSubModule(),      # [0] Handle anchor VGs layout and restoration.
                 TWAATextureExportValidatorSubModule(), # [TWAA] Validate/export missing material textures.
+                TWAAPreExportUVSubModule(),          # [TWAA] Temp split by material + pre-offset TEXCOORD.xy.
                 # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
                 XXMIMissingDataPredictorSubModule(), # [1] Добавляем COLOR/TEXCOORD
                 CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
@@ -777,6 +978,7 @@ class SafeExport:
                 # VertexGroupReorderSubModule(),     # Standalone candidate: manually move mask* VG to the end.
                 AnchorLayoutCleanupSubModule(),      # [0] Handle anchor VGs layout and restoration.
                 TWAATextureExportValidatorSubModule(), # [TWAA] Validate/export missing material textures.
+                TWAAPreExportUVSubModule(),          # [TWAA] Temp split by material + pre-offset TEXCOORD.xy.
                 predictor,                           # [1] Добавляем COLOR/TEXCOORD перманентно
                 # MeshBackupSubModule(),             # Отключено: вызывает краши depsgraph из-за подмены мешей
                 CurveVFXPreviewSubModule(),          # [2] Убираем VFX preview
@@ -835,7 +1037,10 @@ class SafeExport:
                         traceback.print_exc()
 
         print("[SafeExport] ═══ Старт post-export cleanup ═══")
-        if not had_error:
+        # LEGACY: post-export TWAA buffer patching is disabled.
+        # TWAA now prepares temp export meshes before export and writes final TEXCOORD.xy there.
+        # Keep utils/twaa_texcoord_patcher.py intact for diagnostics/future fallback.
+        if False and not had_error:
             try:
                 with measure("safe_export.post.twaa_texcoord_patcher"):
                     summary = self._twaa_texcoord_patcher(self.context)

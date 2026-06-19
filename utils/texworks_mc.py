@@ -3095,6 +3095,178 @@ def post_invert_settings(context):
     )
 
 
+def twaa_block_layouts_by_material(context):
+    rzm = getattr(context.scene, "rzm", None)
+    if not rzm:
+        return {}
+    layouts = {}
+    for block in getattr(rzm, "tw_blocks", ()):
+        block_name = str(getattr(block, "name", "") or "")
+        resource_name = str(getattr(block, "resource_name", "") or "")
+        if not (block_name.casefold().startswith(RESOURCE_PREFIX.casefold()) or resource_name.casefold().startswith(RESOURCE_PREFIX.casefold())):
+            continue
+        try:
+            atlas_w, atlas_h = [int(value) for value in block.block_resource_size[:2]]
+        except Exception:
+            continue
+        if atlas_w <= 0 or atlas_h <= 0:
+            continue
+        for comp in getattr(block, "components", ()):
+            key = str(getattr(comp, "name", "") or "")
+            if not key:
+                continue
+            try:
+                x, y, w, h = [int(value) for value in comp.rect[:4]]
+            except Exception:
+                continue
+            if w <= 0 or h <= 0:
+                continue
+            item = {
+                "material_key": key,
+                "block": block_name or resource_name,
+                "atlas_size": [atlas_w, atlas_h],
+                "rect": [x, y, w, h],
+                "scale_x": float(w) / float(atlas_w),
+                "scale_y": float(h) / float(atlas_h),
+                "offset_x": float(x) / float(atlas_w),
+                "offset_y": float(atlas_h - y - h) / float(atlas_h),
+            }
+            current = layouts.get(key)
+            if current is None:
+                layouts[key] = item
+            elif current["atlas_size"] != item["atlas_size"] or current["rect"] != item["rect"]:
+                current.setdefault("mismatches", []).append(item)
+    return layouts
+
+
+def twaa_layout_for_material(context, mat, layouts=None):
+    if not mat or material_ignores_twaa(mat) or getattr(mat, "disable_twaa_export", False):
+        return None
+    layouts = layouts if layouts is not None else twaa_block_layouts_by_material(context)
+    return layouts.get(material_key(mat.name))
+
+
+def ensure_export_texcoord_layer(mesh):
+    if not mesh:
+        return None
+    layer = mesh.uv_layers.get(TEXCOORD_UV_NAME)
+    if layer:
+        try:
+            mesh.uv_layers.active = layer
+            layer.active_render = True
+        except Exception:
+            pass
+        return layer
+    for candidate in mesh.uv_layers:
+        if is_twaa_preview_uv_name(candidate.name):
+            continue
+        try:
+            candidate.name = TEXCOORD_UV_NAME
+            mesh.uv_layers.active = candidate
+            candidate.active_render = True
+        except Exception:
+            pass
+        return candidate
+    try:
+        layer = mesh.uv_layers.new(name=TEXCOORD_UV_NAME)
+        mesh.uv_layers.active = layer
+        layer.active_render = True
+        return layer
+    except Exception:
+        return None
+
+
+def affine_twaa_uv(u, v, layout):
+    return (
+        float(u) * float(layout["scale_x"]) + float(layout["offset_x"]),
+        float(v) * float(layout["scale_y"]) + float(layout["offset_y"]),
+    )
+
+
+def apply_twaa_layout_to_object_uv(context, obj, layouts=None):
+    if not obj or obj.type != "MESH" or not obj.data:
+        return {
+            "patched_loops": 0,
+            "patched_materials": [],
+            "warnings": [f"{getattr(obj, 'name', '<none>')}: not a mesh"],
+        }
+    layouts = layouts if layouts is not None else twaa_block_layouts_by_material(context)
+    mesh = obj.data
+    uv_layer = ensure_export_texcoord_layer(mesh)
+    if not uv_layer:
+        return {"patched_loops": 0, "patched_materials": [], "warnings": [f"{obj.name}: no TEXCOORD.xy UV layer"]}
+
+    layout_by_slot = {}
+    for index, slot in enumerate(obj.material_slots):
+        mat = slot.material
+        layout = twaa_layout_for_material(context, mat, layouts=layouts)
+        if layout:
+            layout_by_slot[int(index)] = layout
+    if not layout_by_slot:
+        return {"patched_loops": 0, "patched_materials": [], "warnings": []}
+
+    patched = 0
+    patched_keys = set()
+    for poly in mesh.polygons:
+        layout = layout_by_slot.get(int(poly.material_index))
+        if not layout:
+            continue
+        for loop_index in poly.loop_indices:
+            uv = uv_layer.data[loop_index].uv
+            new_u, new_v = affine_twaa_uv(float(uv.x), float(uv.y), layout)
+            uv_layer.data[loop_index].uv = (new_u, new_v)
+            patched += 1
+        patched_keys.add(layout["material_key"])
+
+    try:
+        mesh.uv_layers.active = uv_layer
+        uv_layer.active_render = True
+        mesh.update()
+    except Exception:
+        pass
+    return {
+        "patched_loops": patched,
+        "patched_materials": sorted(patched_keys),
+        "warnings": [],
+    }
+
+
+def object_used_material_indices(obj):
+    if not obj or obj.type != "MESH" or not obj.data:
+        return []
+    return sorted({int(poly.material_index) for poly in obj.data.polygons})
+
+
+def object_has_twaa_material_faces(context, obj, layouts=None):
+    if not obj or obj.type != "MESH" or not obj.data:
+        return False
+    layouts = layouts if layouts is not None else twaa_block_layouts_by_material(context)
+    for index in object_used_material_indices(obj):
+        if index < 0 or index >= len(obj.material_slots):
+            continue
+        if twaa_layout_for_material(context, obj.material_slots[index].material, layouts=layouts):
+            return True
+    return False
+
+
+def prune_mesh_to_material_index(mesh, material_index):
+    try:
+        import bmesh
+    except Exception as exc:
+        raise RuntimeError(f"bmesh unavailable for TWAA material split: {exc}") from exc
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        bm.faces.ensure_lookup_table()
+        delete_faces = [face for face in bm.faces if int(face.material_index) != int(material_index)]
+        if delete_faces:
+            bmesh.ops.delete(bm, geom=delete_faces, context='FACES')
+        bm.to_mesh(mesh)
+        mesh.update()
+    finally:
+        bm.free()
+
+
 def clear_collection(collection):
     for index in range(len(collection) - 1, -1, -1):
         collection.remove(index)

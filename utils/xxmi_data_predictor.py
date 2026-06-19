@@ -10,6 +10,8 @@
 #
 # ТОЛЬКО для XXMI-игры: GenshinImpact, ZenlessZoneZero, HonkaiStarRail
 
+import re
+
 import bpy
 import numpy as np
 
@@ -19,6 +21,18 @@ XXMI_GAMES = frozenset({'GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail'})
 # vertex_colors API хранит в linear float (0-1)
 # 0xFF = 255 → 1.0,  0x80 = 128 → 128/255 ≈ 0.502
 DEFAULT_COLOR = (1.0, 0.502, 0.502, 0.3)
+
+
+def is_clean_texcoord_export_name(name):
+    name = str(name or "").strip()
+    if not name:
+        return False
+    upper = name.upper()
+    if "RZM_BACKUP" in upper:
+        return False
+    if re.search(r"\.\d+$", name):
+        return False
+    return bool(re.fullmatch(r"TEXCOORD\d*\.xy", name))
 
 
 def assign_dummy_uv_coordinates(obj, uv_layer):
@@ -280,7 +294,7 @@ class XXMIMissingDataPredictorSubModule:
                 lst = getattr(context.scene, list_name, None)
                 if lst:
                     for item in lst:
-                        if item.target_name:
+                        if item.target_name and is_clean_texcoord_export_name(item.target_name):
                             target_names.add(item.target_name)
             except Exception:
                 pass
@@ -289,7 +303,7 @@ class XXMIMissingDataPredictorSubModule:
         for o in context.scene.objects:
             if o.type == 'MESH' and o.data is not None:
                 for uv in o.data.uv_layers:
-                    if uv.name.startswith("TEXCOORD"):
+                    if is_clean_texcoord_export_name(uv.name):
                         target_names.add(uv.name)
 
         # 3. Дефолты если совсем ничего нет
