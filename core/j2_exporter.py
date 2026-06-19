@@ -7,6 +7,7 @@ from .image_packer import get_image_mapping_for_j2
 from .style_packer import pack_styles
 from .element_static_map import export_element_static_map
 from .element_blacklist import export_element_blacklist
+from .element_default_props import export_element_default_props
 
 # Add libs to sys.path so we can import jinja2
 ADDON_DIR = Path(__file__).parent.parent
@@ -86,6 +87,7 @@ class RZMenuJ2Exporter:
 
         # 1. Pack Texts, Styles & Static Element Map
         elem_static_flags = {}
+        elem_default_flags = {}
         try:
             from ..operators.export_manager import get_target_path
             export_path = get_target_path(self.context)
@@ -102,6 +104,10 @@ class RZMenuJ2Exporter:
                     )
                     blacklist_path = str(Path(export_path) / 'res' / 'element_blacklist.buf')
                     export_element_blacklist(scene.rzm.elements, blacklist_path)
+                    default_props_path = str(Path(export_path) / 'res' / 'element_default_props.buf')
+                    elem_default_flags = export_element_default_props(
+                        scene.rzm.elements, default_props_path
+                    )
                 print(f"RZMenu: All resource buffers (text, images, styles, static_map) packed to {export_path}")
         except Exception as e:
             print(f"RZMenu Text Packing Error: {e}")
@@ -113,6 +119,8 @@ class RZMenuJ2Exporter:
             'rzm_export_cache': export_cache,
             # Phase 0.5/0.5.5: static flags per element id for j2 template
             'elem_static_flags': elem_static_flags,
+            # Phase 0.6: safe visual defaults per element id for j2 template
+            'elem_default_flags': elem_default_flags,
             # Placeholder variables for EFMI/XXMI specific logic
             'extracted_object': None,
             'merged_object': None,

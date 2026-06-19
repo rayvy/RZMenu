@@ -177,7 +177,7 @@ def get_export_targets(context):
     try:
         from .component_collector import ComponentCollector
         collector = ComponentCollector(context)
-        components = collector.get_components(force_fallback=True)
+        components = collector.get_components(force_fallback=True, write_cache=False)
         if components:
             for objs in components.values():
                 for obj in objs:

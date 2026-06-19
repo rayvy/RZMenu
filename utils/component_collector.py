@@ -81,7 +81,7 @@ class ComponentCollector:
                 obj_item = comp_item.objects.add()
                 obj_item.name = obj.name
 
-    def get_components(self, per_component=False, force_fallback=False):
+    def get_components(self, per_component=False, force_fallback=False, write_cache=True):
         """
         Returns a dictionary: {'Component0': [obj1, obj2], ...}
         """
@@ -96,8 +96,14 @@ class ComponentCollector:
             # Fallback to principle 2 (scene recreation)
             print("\n[ComponentCollector] Attempting fallback logic (scene info)...")
             results = self._collect_from_scene()
-            if results:
-                self._save_to_component_manager(results)
+            if results and write_cache:
+                try:
+                    self._save_to_component_manager(results)
+                except Exception as e:
+                    print(f"[ComponentCollector] Failed to save components to scene cache: {e}")
+
+        if not results:
+            return {}
             
         for key in list(results.keys()):
             results[key] = list(set(results[key]))

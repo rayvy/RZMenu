@@ -217,6 +217,7 @@ class RZM_OT_FullExport(bpy.types.Operator):
             from ..core.style_packer import pack_styles
             from ..core.element_static_map import export_element_static_map
             from ..core.element_blacklist import export_element_blacklist
+            from ..core.element_default_props import export_element_default_props
             with measure("full_export.pack_project_images"):
                 pack_project_images(context.scene, target_path)
             with measure("full_export.pack_styles"):
@@ -231,8 +232,12 @@ class RZM_OT_FullExport(bpy.types.Operator):
                 blacklist_path = os.path.join(target_path, "res", "element_blacklist.buf")
                 with measure("full_export.export_element_blacklist"):
                     export_element_blacklist(context.scene.rzm.elements, blacklist_path)
+                default_props_path = os.path.join(target_path, "res", "element_default_props.buf")
+                with measure("full_export.export_element_default_props"):
+                    default_flags = export_element_default_props(context.scene.rzm.elements, default_props_path)
+                context.scene.rzm["elem_default_flags"] = default_flags
                 
-            print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf, element_blacklist.buf).")
+            print("[RZM Full Export] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf, element_blacklist.buf, element_default_props.buf).")
         except Exception as e:
             self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
             import traceback
@@ -361,6 +366,7 @@ class RZM_OT_BatchExport(bpy.types.Operator):
             from ..core.style_packer import pack_styles
             from ..core.element_static_map import export_element_static_map
             from ..core.element_blacklist import export_element_blacklist
+            from ..core.element_default_props import export_element_default_props
             pack_project_images(context.scene, target_path)
             pack_styles(context.scene, target_path)
             
@@ -371,8 +377,11 @@ class RZM_OT_BatchExport(bpy.types.Operator):
                 context.scene.rzm["elem_static_flags"] = flags_map
                 blacklist_path = os.path.join(target_path, "res", "element_blacklist.buf")
                 export_element_blacklist(context.scene.rzm.elements, blacklist_path)
+                default_props_path = os.path.join(target_path, "res", "element_default_props.buf")
+                default_flags = export_element_default_props(context.scene.rzm.elements, default_props_path)
+                context.scene.rzm["elem_default_flags"] = default_flags
                 
-            print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf, element_blacklist.buf).")
+            print("[RZM Batch] Resource buffers packed (images.bin, anim_frames.bin, styles.bin, element_static_map.buf, element_blacklist.buf, element_default_props.buf).")
         except Exception as e:
             self.report({'WARNING'}, f"Resource buffer packing failed: {e}")
             import traceback
