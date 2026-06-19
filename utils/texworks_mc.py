@@ -3129,8 +3129,10 @@ def twaa_block_layouts_by_material(context):
                 "scale_x": float(w) / float(atlas_w),
                 "scale_y": float(h) / float(atlas_h),
                 "offset_x": float(x) / float(atlas_w),
-                "offset_y": float(atlas_h - y - h) / float(atlas_h),
+                "offset_y_top": float(y) / float(atlas_h),
+                "offset_y_bottom": float(atlas_h - y - h) / float(atlas_h),
             }
+            item["offset_y"] = item["offset_y_bottom"]
             current = layouts.get(key)
             if current is None:
                 layouts[key] = item
@@ -3176,10 +3178,24 @@ def ensure_export_texcoord_layer(mesh):
         return None
 
 
-def affine_twaa_uv(u, v, layout):
+def object_uv_layer_flips_v(obj, uv_layer_name):
+    try:
+        data = obj.get(f"3DMigoto:{uv_layer_name}")
+    except Exception:
+        data = None
+    if isinstance(data, dict):
+        return bool(data.get("flip_v", False))
+    try:
+        return bool(data["flip_v"])
+    except Exception:
+        return False
+
+
+def affine_twaa_uv(u, v, layout, flip_v=False):
+    offset_y = layout["offset_y_bottom"] if flip_v else layout["offset_y_top"]
     return (
         float(u) * float(layout["scale_x"]) + float(layout["offset_x"]),
-        float(v) * float(layout["scale_y"]) + float(layout["offset_y"]),
+        float(v) * float(layout["scale_y"]) + float(offset_y),
     )
 
 
@@ -3205,6 +3221,7 @@ def apply_twaa_layout_to_object_uv(context, obj, layouts=None):
     if not layout_by_slot:
         return {"patched_loops": 0, "patched_materials": [], "warnings": []}
 
+    flip_v = object_uv_layer_flips_v(obj, uv_layer.name)
     patched = 0
     patched_keys = set()
     for poly in mesh.polygons:
@@ -3213,7 +3230,7 @@ def apply_twaa_layout_to_object_uv(context, obj, layouts=None):
             continue
         for loop_index in poly.loop_indices:
             uv = uv_layer.data[loop_index].uv
-            new_u, new_v = affine_twaa_uv(float(uv.x), float(uv.y), layout)
+            new_u, new_v = affine_twaa_uv(float(uv.x), float(uv.y), layout, flip_v=flip_v)
             uv_layer.data[loop_index].uv = (new_u, new_v)
             patched += 1
         patched_keys.add(layout["material_key"])
@@ -3466,6 +3483,8 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
             "layout": None,
         }
 
+    rzm = context.scene.rzm
+    gc_summary = garbage_collect_twaa_registry(context, rzm)
     materials = relevant_twaa_materials(context)
     checked_slots = 0
     checked_masks = 0
@@ -3475,7 +3494,12 @@ def validate_twaa_export_textures(context, target_path=None, auto_export=True, r
     exported_masks = 0
     missing = []
     warnings = []
-    changed_entries = False
+    changed_entries = bool(
+        gc_summary["removed_files"]
+        or gc_summary["removed_masks"]
+        or gc_summary["removed_components"]
+        or gc_summary["removed_blocks"]
+    )
 
     for mat in materials:
         slot_sources = collect_slot_sources(mat)
@@ -3589,6 +3613,89 @@ def clear_mc_skipped(rzm):
         return
     for index in range(len(skipped) - 1, -1, -1):
         skipped.remove(index)
+
+
+def is_current_autoatlas_block_name(name):
+    return str(name or "") in {autoatlas_block_name(slot) for slot in SLOTS}
+
+
+def twaa_live_material_keys(context):
+    return {material_key(mat.name) for mat in relevant_twaa_materials(context)}
+
+
+def garbage_collect_twaa_registry(context, rzm=None):
+    """Remove TWAA registry data whose Blender material is no longer live."""
+    rzm = rzm or getattr(getattr(context, "scene", None), "rzm", None)
+    if not rzm:
+        return {
+            "valid_keys": set(),
+            "removed_files": [],
+            "removed_masks": [],
+            "removed_components": [],
+            "removed_blocks": [],
+        }
+
+    valid_keys = twaa_live_material_keys(context)
+    removed_files = []
+    files = getattr(rzm, "tw_mc_files", None)
+    if files is not None:
+        for index in range(len(files) - 1, -1, -1):
+            item = files[index]
+            key = getattr(item, "material_key", "") or material_key(getattr(item, "material_name", ""))
+            if key in valid_keys:
+                continue
+            removed_files.append(getattr(item, "resource_name", "") or getattr(item, "name", "") or key)
+            files.remove(index)
+
+    removed_masks = []
+    mask_files = getattr(rzm, "tw_mc_mask_files", None)
+    if mask_files is not None:
+        for index in range(len(mask_files) - 1, -1, -1):
+            item = mask_files[index]
+            key = getattr(item, "material_key", "") or material_key(getattr(item, "material_name", ""))
+            if key in valid_keys:
+                continue
+            removed_masks.append(getattr(item, "resource_name", "") or getattr(item, "name", "") or key)
+            mask_files.remove(index)
+
+    removed_components = []
+    removed_blocks = []
+    blocks = getattr(rzm, "tw_blocks", None)
+    if blocks is not None:
+        for block_index in range(len(blocks) - 1, -1, -1):
+            block = blocks[block_index]
+            block_name = str(getattr(block, "name", "") or "")
+            resource_name = str(getattr(block, "resource_name", "") or "")
+            if not (is_current_autoatlas_block_name(block_name) or is_current_autoatlas_block_name(resource_name)):
+                continue
+            components = getattr(block, "components", None)
+            if components is not None:
+                for comp_index in range(len(components) - 1, -1, -1):
+                    comp = components[comp_index]
+                    key = str(getattr(comp, "name", "") or "")
+                    if key in valid_keys:
+                        continue
+                    removed_components.append(f"{block_name or resource_name}:{key}")
+                    components.remove(comp_index)
+            if components is None or len(components) == 0:
+                removed_blocks.append(block_name or resource_name)
+                blocks.remove(block_index)
+
+    if removed_files or removed_masks or removed_components or removed_blocks:
+        print(
+            "[RZM TWAA] Garbage collector: "
+            f"valid_materials={len(valid_keys)} removed_files={len(removed_files)} "
+            f"removed_masks={len(removed_masks)} removed_components={len(removed_components)} "
+            f"removed_blocks={len(removed_blocks)}"
+        )
+
+    return {
+        "valid_keys": valid_keys,
+        "removed_files": removed_files,
+        "removed_masks": removed_masks,
+        "removed_components": removed_components,
+        "removed_blocks": removed_blocks,
+    }
 
 
 def included_view_layer_objects(context):
@@ -3822,6 +3929,7 @@ def rebuild_texworks_autoatlas_blocks(context):
     settings = get_settings(context)
     rzm = context.scene.rzm
     clear_mc_skipped(rzm)
+    gc_summary = garbage_collect_twaa_registry(context, rzm)
     removed_legacy_blocks = remove_legacy_dotted_autoatlas_blocks(rzm)
     migrated_refs = migrate_legacy_autoatlas_references(rzm)
     materials = mc_entries_by_material(context, rzm, collect_skipped=True)
@@ -3829,6 +3937,7 @@ def rebuild_texworks_autoatlas_blocks(context):
     print(
         f"[RZM TexWorks MC] Rebuild AutoAtlas layout: "
         f"tw_mc_files={len(rzm.tw_mc_files)} materials={len(materials)} "
+        f"removed_stale={len(gc_summary['removed_files']) + len(gc_summary['removed_masks']) + len(gc_summary['removed_components']) + len(gc_summary['removed_blocks'])} "
         f"removed_legacy_blocks={len(removed_legacy_blocks)} migrated_refs={len(migrated_refs)}"
     )
     packed_by_mat, atlas_w, atlas_h = pack_material_components(materials, settings)
@@ -3839,10 +3948,20 @@ def rebuild_texworks_autoatlas_blocks(context):
             "blocks": 0,
             "atlas_size": [atlas_w, atlas_h],
             "skipped": len(getattr(rzm, "tw_mc_skipped", ())),
+            "removed_stale": gc_summary,
         }
 
     slots = sorted({slot for mat_data in materials.values() for slot in mat_data["slots"].keys()}, key=lambda s: SLOTS.index(s) if s in SLOTS else 999)
     block_names = [autoatlas_block_name(slot) for slot in slots]
+    for index in range(len(rzm.tw_blocks) - 1, -1, -1):
+        block = rzm.tw_blocks[index]
+        block_name = str(getattr(block, "name", "") or "")
+        resource_name = str(getattr(block, "resource_name", "") or "")
+        if not (is_current_autoatlas_block_name(block_name) or is_current_autoatlas_block_name(resource_name)):
+            continue
+        if block_name in block_names or resource_name in block_names:
+            continue
+        rzm.tw_blocks.remove(index)
 
     for slot in slots:
         block_name = autoatlas_block_name(slot)
@@ -3890,6 +4009,7 @@ def rebuild_texworks_autoatlas_blocks(context):
         "cleaned_legacy_object_props": sorted(set(cleaned_objects)),
         "removed_legacy_blocks": removed_legacy_blocks,
         "migrated_legacy_references": migrated_refs,
+        "removed_stale": gc_summary,
         "skipped": len(getattr(rzm, "tw_mc_skipped", ())),
     }
     print(
