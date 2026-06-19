@@ -190,6 +190,27 @@ def has_active_modifiers(obj):
         return True
     return False
 
+def _build_modifier_bake_mask(obj):
+    from .gret_shape_key_utils import ignored_modifier_types
+
+    mask = []
+    for modifier in obj.modifiers:
+        mask.append(
+            bool(
+                modifier.show_viewport
+                and modifier.type not in ignored_modifier_types
+                and modifier.type not in {'ARMATURE', 'DATA_TRANSFER'}
+            )
+        )
+    return mask[:32] + [False] * (32 - len(mask))
+
+def _modifier_bake_names(obj, modifier_mask):
+    return [
+        f"{modifier.name}:{modifier.type}"
+        for modifier, enabled in zip(obj.modifiers, modifier_mask)
+        if enabled
+    ]
+
 def _component_affected_names(base_name, comp_cache, dump_name, is_xxmi, comp_objects=None):
     names = {str(base_name or "").lower()}
     if dump_name:
@@ -1306,19 +1327,24 @@ def bake_component_shapes(context, base_name, comp_objects, mod_root, limit,
 
             # ЭТАП 2: Запекание модификаторов (Двойной Try-Except)
             if needs_mod_bake:
-                print(f"  [MOD BAKE] Attempt A: Baking modifiers for {obj.name}...")
+                modifier_mask = _build_modifier_bake_mask(temp_obj)
+                bake_modifiers = _modifier_bake_names(temp_obj, modifier_mask)
+                print(f"  [MOD BAKE] Attempt A: Baking modifiers for {obj.name}: {bake_modifiers}")
                 try:
                     # Попытка А: Запекаем всё (включая Surface Deform, если он есть)
                     with measure(f"puppet.component.{base_name}.mod_bake.{obj.name}"):
-                        bpy.ops.rz.shape_key_apply_modifiers()
+                        bpy.ops.rz.shape_key_apply_modifiers(modifier_mask=modifier_mask)
                 except Exception:
                     # Фоллбек (Попытка Б): Если А упала, пробуем удалить SD и запечь остальное
                     if needs_sd and temp_obj.modifiers.get(sd_mod.name):
                         print(f"  [MOD BAKE] Attempt A failed, trying Attempt B (removing Surface Deform)...")
                         temp_obj.modifiers.remove(temp_obj.modifiers.get(sd_mod.name))
                         try:
+                            modifier_mask = _build_modifier_bake_mask(temp_obj)
+                            bake_modifiers = _modifier_bake_names(temp_obj, modifier_mask)
+                            print(f"  [MOD BAKE] Attempt B: Baking modifiers for {obj.name}: {bake_modifiers}")
                             with measure(f"puppet.component.{base_name}.mod_bake_retry.{obj.name}"):
-                                bpy.ops.rz.shape_key_apply_modifiers()
+                                bpy.ops.rz.shape_key_apply_modifiers(modifier_mask=modifier_mask)
                         except Exception as e2:
                             print(f"  [ERROR] Mod bake failed (Attempt B) for {obj.name}: {e2}")
                             bake_success = False
