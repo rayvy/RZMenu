@@ -151,10 +151,14 @@
                 {% endif %}
             {% endfor %}
         {% endif %}
+        {% set is_zzz_normalmap = mod_file.game.name == "ZenlessZoneZero" and texture.name.lower().endswith("normalmap") %}
         {% if (not scene.rzm or scene.rzm.export_texture_slots == 0) or component.draw_vb == "" %}
             {% if seen_hashes is not none and texture.hash not in seen_hashes %}
                 ;Сама логика запускается
-                {% if blocked_by_tw %}
+                {% if blocked_by_tw or is_zzz_normalmap %}
+                {% if is_zzz_normalmap %}
+                ;Я не знаю по какой хуйне, но все нормалмапы в зенлессе имеют одинаковый ебучий хэш. По этому да, он отключён
+                {% endif %}
                 ;[TextureOverride{{ tex_override_name }}]
                 ;hash = {{ texture.hash }}
                 ;this = Resource{{ tex_override_name }}
@@ -166,7 +170,10 @@
                 {% if seen_hashes.append(texture.hash) %}{% endif %}
             {% elif seen_hashes is none %}
                 ;Сама логика запускается
-                {% if blocked_by_tw %}
+                {% if blocked_by_tw or is_zzz_normalmap %}
+                {% if is_zzz_normalmap %}
+                ;Я не знаю по какой хуйне, но все нормалмапы в зенлессе имеют одинаковый ебучий хэш. По этому да, он отключён
+                {% endif %}
                 ;[TextureOverride{{ tex_override_name }}]
                 ;hash = {{ texture.hash }}
                 ;this = Resource{{ tex_override_name }}
