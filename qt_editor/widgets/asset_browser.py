@@ -10,6 +10,9 @@ from ..utils.icons import IconManager
 from ..core.signals import SIGNALS
 import json
 
+ASSET_THUMB_SIZE = 64
+ASSET_THUMB_BATCH = 1
+
 # --- ПОМОЩНИК ДЛЯ ПУТЕЙ ---
 def get_base_templates_dir():
     """Возвращает путь к папке base_templates внутри аддона."""
@@ -615,6 +618,24 @@ class RZAssetBrowserPanel(RZEditorPanel):
         self._last_selected_id = None
         self._last_selected_type = None
         self._is_rebuilding = False
+        self._images_data = []
+        self._images_by_id = {}
+        self._items_by_image_id = {}
+        self._icon_cache = {}
+        self._thumb_queue = []
+        self._thumb_queued_ids = set()
+
+        self._refresh_timer = QtCore.QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._do_refresh_data)
+
+        self._visible_thumb_timer = QtCore.QTimer(self)
+        self._visible_thumb_timer.setSingleShot(True)
+        self._visible_thumb_timer.timeout.connect(self._queue_visible_thumbnail_loads)
+
+        self._thumb_timer = QtCore.QTimer(self)
+        self._thumb_timer.setInterval(25)
+        self._thumb_timer.timeout.connect(self._load_next_thumbnail_batch)
 
         # --- TOOLBAR ---
         toolbar = QtWidgets.QHBoxLayout()
@@ -673,6 +694,7 @@ class RZAssetBrowserPanel(RZEditorPanel):
         # --- LIST WIDGET ---
         self.list_widget = RZAssetListWidget()
         self.list_widget.itemSelectionChanged.connect(self.on_selection_changed)
+        self.list_widget.verticalScrollBar().valueChanged.connect(self._schedule_visible_thumbnail_load)
         self.splitter.addWidget(self.list_widget)
         
         # --- DETAILS PANEL ---
@@ -732,6 +754,30 @@ class RZAssetBrowserPanel(RZEditorPanel):
         """Compatibility stub - source badge is now drawn inside draw_type_badge."""
         return pixmap
 
+    def _make_image_icon_pixmap(self, image_id, ext, source_type, pixmap):
+        if not pixmap or pixmap.isNull():
+            return None
+        cache_key = (image_id, ext, source_type, pixmap.cacheKey())
+        cached = self._icon_cache.get(cache_key)
+        if cached:
+            return cached
+
+        icon_pix = pixmap.scaled(
+            ASSET_THUMB_SIZE,
+            ASSET_THUMB_SIZE,
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation
+        )
+        icon_pix = self.draw_type_badge(icon_pix, ext, source_type=source_type)
+        self._icon_cache[cache_key] = icon_pix
+        return icon_pix
+
+    def _set_item_image_icon(self, item, image_id, ext, source_type):
+        pix = ImageCache.instance().get_pixmap(image_id)
+        icon_pix = self._make_image_icon_pixmap(image_id, ext, source_type, pix)
+        if icon_pix:
+            item.setIcon(QtGui.QIcon(icon_pix))
+
     def on_selection_changed(self):
         if self._is_rebuilding: return
         
@@ -751,11 +797,12 @@ class RZAssetBrowserPanel(RZEditorPanel):
 
         # Ищем полные данные в результатах read.get_available_images()
         # Для простоты, мы можем заново запросить список или передать данные при наполнении
-        all_imgs = read.get_available_images()
         asset_data = None
         
         if asset_type == "IMAGE":
-            asset_data = next((img for img in all_imgs if img['id'] == asset_id), None)
+            asset_data = self._images_by_id.get(asset_id)
+            if asset_data:
+                ImageCache.instance().pre_cache_image(asset_id)
         elif asset_type == "TEMPLATE":
             asset_data = {"type": "TEMPLATE", "path": asset_id, "name": item.text()}
 
@@ -771,18 +818,26 @@ class RZAssetBrowserPanel(RZEditorPanel):
             SIGNALS.structure_changed.emit()
 
     def _connect_signals(self):
-        SIGNALS.structure_changed.connect(self.refresh_data)
+        SIGNALS.structure_changed.connect(self._schedule_refresh_data)
 
     def _disconnect_signals(self):
         try:
-            SIGNALS.structure_changed.disconnect(self.refresh_data)
+            SIGNALS.structure_changed.disconnect(self._schedule_refresh_data)
         except (RuntimeError, TypeError):
             pass
+
+    def _schedule_refresh_data(self):
+        if not self._is_panel_active:
+            return
+        if not self._refresh_timer.isActive():
+            self._refresh_timer.start(30)
 
     def refresh_data(self):
         """Initial refresh entry point."""
         # Auto-load check
-        images = read.get_available_images()
+        self._images_data = read.get_available_images()
+        self._images_by_id = {img['id']: img for img in self._images_data}
+        images = self._images_data
         if not images:
             # Это может вызвать рекурсию если не аккуратно, но reload эмиттит сигнал
             # blender_bridge.reload_base_icons() 
@@ -790,10 +845,13 @@ class RZAssetBrowserPanel(RZEditorPanel):
             pass
         self.rebuild_view()
 
+    def _do_refresh_data(self):
+        self.refresh_data()
+
     def on_reload_clicked(self):
         """Ручная перезагрузка"""
         blender_bridge.reload_base_icons()
-        self.rebuild_view()
+        self.refresh_data()
 
     def rebuild_view(self, *args):
         """Главная функция построения списка"""
@@ -803,6 +861,13 @@ class RZAssetBrowserPanel(RZEditorPanel):
         v_scroll = self.list_widget.verticalScrollBar()
         old_scroll = v_scroll.value()
 
+        self._thumb_timer.stop()
+        self._thumb_queue = []
+        self._thumb_queued_ids.clear()
+        self._items_by_image_id = {}
+
+        self.list_widget.setUpdatesEnabled(False)
+        self.list_widget.blockSignals(True)
         self.list_widget.clear()
         
         filter_mode = self.combo_filter.currentText() # All, Images, Templates
@@ -814,7 +879,7 @@ class RZAssetBrowserPanel(RZEditorPanel):
         # 1. СБОР ДАННЫХ
         # A. Images
         if filter_mode in ["All", "Images"]:
-            all_images = read.get_available_images()
+            all_images = self._images_data
             for img in all_images:
                 # Filter Source
                 if src_mode != "ALL":
@@ -884,17 +949,25 @@ class RZAssetBrowserPanel(RZEditorPanel):
             if item_data['type'] == "IMAGE":
                 list_item.setData(QtCore.Qt.UserRole, item_data['id'])
                 list_item.setData(QtCore.Qt.UserRole + 1, "IMAGE")
+                list_item.setData(QtCore.Qt.UserRole + 2, item_data['ext'])
+                list_item.setData(QtCore.Qt.UserRole + 3, item_data.get('source_type', 'CUSTOM'))
                 list_item.setToolTip(f"ID: {item_data['id']} (Image)")
                 
                 pix = cache.get_pixmap(item_data['id'])
                 if pix:
-                    src = item_data.get('source_type', '')
-                    pix = self.draw_type_badge(pix, item_data['ext'], source_type=src)
-                    list_item.setIcon(QtGui.QIcon(pix))
+                    icon_pix = self._make_image_icon_pixmap(
+                        item_data['id'],
+                        item_data['ext'],
+                        item_data.get('source_type', ''),
+                        pix
+                    )
+                    if icon_pix:
+                        list_item.setIcon(QtGui.QIcon(icon_pix))
                 # Build detailed tooltip for hover
                 src_label = item_data.get('source_type', 'CUSTOM')
                 ext_label = item_data['ext'].upper() if item_data['ext'] else 'PNG'
                 list_item.setToolTip(f"ID: {item_data['id']} | {src_label} | {ext_label}")
+                self._items_by_image_id[item_data['id']] = list_item
                 
             elif item_data['type'] == "TEMPLATE":
                 list_item.setData(QtCore.Qt.UserRole, item_data['filepath'])
@@ -920,9 +993,72 @@ class RZAssetBrowserPanel(RZEditorPanel):
         # Restore scroll
         QtCore.QTimer.singleShot(50, lambda: v_scroll.setValue(old_scroll))
             
+        self.list_widget.blockSignals(False)
+        self.list_widget.setUpdatesEnabled(True)
         self._is_rebuilding = False
 
         if not items_to_show:
             empty = QtWidgets.QListWidgetItem("No items found")
             empty.setFlags(QtCore.Qt.NoItemFlags)
             self.list_widget.addItem(empty)
+        elif self._last_selected_id is not None:
+            self.on_selection_changed()
+
+        self._schedule_visible_thumbnail_load()
+
+    def _schedule_visible_thumbnail_load(self, *args):
+        if not self._is_panel_active:
+            return
+        self._visible_thumb_timer.start(80)
+
+    def _queue_visible_thumbnail_loads(self):
+        if self._is_rebuilding or self.list_widget.count() <= 0:
+            return
+
+        viewport = self.list_widget.viewport()
+        top_row = self.list_widget.indexAt(QtCore.QPoint(4, 4)).row()
+        bottom_row = self.list_widget.indexAt(QtCore.QPoint(4, max(4, viewport.height() - 4))).row()
+
+        if top_row < 0:
+            top_row = 0
+        if bottom_row < 0:
+            bottom_row = min(self.list_widget.count() - 1, top_row + 96)
+
+        start = max(0, top_row - 32)
+        end = min(self.list_widget.count() - 1, bottom_row + 64)
+
+        cache = ImageCache.instance()
+        for row in range(start, end + 1):
+            item = self.list_widget.item(row)
+            if not item or item.data(QtCore.Qt.UserRole + 1) != "IMAGE":
+                continue
+            image_id = item.data(QtCore.Qt.UserRole)
+            if cache.get_pixmap(image_id) is not None:
+                continue
+            if image_id in self._thumb_queued_ids:
+                continue
+            self._thumb_queued_ids.add(image_id)
+            self._thumb_queue.append(image_id)
+
+        if self._thumb_queue and not self._thumb_timer.isActive():
+            self._thumb_timer.start()
+
+    def _load_next_thumbnail_batch(self):
+        if not self._thumb_queue:
+            self._thumb_timer.stop()
+            return
+
+        cache = ImageCache.instance()
+        for _ in range(min(ASSET_THUMB_BATCH, len(self._thumb_queue))):
+            image_id = self._thumb_queue.pop(0)
+            self._thumb_queued_ids.discard(image_id)
+            cache.pre_cache_image(image_id)
+
+            item = self._items_by_image_id.get(image_id)
+            if item and self.list_widget.row(item) >= 0:
+                ext = item.data(QtCore.Qt.UserRole + 2) or ""
+                source_type = item.data(QtCore.Qt.UserRole + 3) or ""
+                self._set_item_image_icon(item, image_id, ext, source_type)
+
+        if not self._thumb_queue:
+            self._thumb_timer.stop()

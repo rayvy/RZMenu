@@ -879,7 +879,6 @@ def get_available_images() -> list[dict]:
         return results
         
     for img in rzm.images:
-        ImageCache.instance().pre_cache_image(img.id)
         img_dict = {
             'id': img.id,
             'name': img.display_name,
@@ -889,6 +888,7 @@ def get_available_images() -> list[dict]:
             'uv_size': [img.uv_size[0], img.uv_size[1]],
             'fit_mode': getattr(img, 'fit_mode', 'FILL'),
         }
+        ImageCache.instance()._fit_modes[img.id] = img_dict['fit_mode']
         
         # Инфо об анимации
         if img_dict['source_type'] == 'ANIMATED':

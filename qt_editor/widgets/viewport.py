@@ -17,7 +17,6 @@ from ..context.states import RZInteractionState
 from .lib.theme import get_current_theme
 from .panel_base import RZEditorPanel
 from ..core.logic import FormulaEvaluator
-from .lib.animations import SpringAnimation, LiquidFillEffect
 
 class RZStyleCache:
     """
@@ -248,16 +247,7 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         self.elem_type = elem_type
         self.name = name
 
-        # --- PHASE 2.2: ANIMATION LAYER ---
-        self._tilt_spring = SpringAnimation(stiffness=200, damping=20, parent=None)
-        self._tilt_spring.value_changed.connect(self._on_tilt_changed)
-
-        self._select_fill = LiquidFillEffect(None)
-        self._select_fill.update_requested.connect(self.update)
         self._is_selected_state = False
-
-        self._drag_velocity = QtCore.QPointF(0, 0)
-        self._last_drag_pos = None
 
         self._is_hovered_state = False
         self._is_pressed_state = False
@@ -322,16 +312,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
         # inline: avoids memory growth if element data cycles through many states.
         self._pixmap_cache = {}
 
-    def _on_tilt_changed(self, angle):
-        self.setRotation(angle)
-        self.update_handles_pos()
-        
-    def set_target_tilt(self, angle):
-        self._tilt_spring.set_target(angle)
-
-    def set_selection_progress(self, progress):
-        self._select_fill.set_progress(progress)
-
     def hoverEnterEvent(self, event):
         self._is_hovered_state = True
         self.update()
@@ -395,8 +375,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
             self._is_selected_state = bool(value)
-            # Liquid fill removed from default selection per user feedback
-            # self.set_selection_progress(1.0 if self._is_selected_state else 0.0)
         if change == QtWidgets.QGraphicsItem.ItemScenePositionHasChanged:
             self.update_handles_pos()
         return super().itemChange(change, value)
@@ -477,8 +455,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
     def set_drop_highlight(self, active):
         if self._is_drop_target != active:
             self._is_drop_target = active
-            # Liquid fill is ONLY for drop target highlights now
-            self.set_selection_progress(1.0 if active else 0.0)
             self.update()
 
     def set_handles_visible(self, visible):
@@ -874,12 +850,6 @@ class RZElementItem(QtWidgets.QGraphicsRectItem):
             painter.setPen(QtGui.QPen(QtGui.QColor(t.get('vp_active', '#FF8C00')), 1.0, QtCore.Qt.DashLine))
             painter.drawRect(rect)
 
-        # --- PHASE 2.2: SELECTION FILL (LIQUID) ---
-        if self._is_selected_state:
-            select_col = QtGui.QColor(t.get('vp_active', '#FF8C00'))
-            select_col.setAlpha(60)
-            self._select_fill.draw(painter, QtCore.QRectF(rect), select_col)
-
         # --- PHASE 3: BACKGROUND / IMAGE ---
         has_image = False
         if self.image_id != -1:
@@ -1134,11 +1104,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
         self._last_click_pos = None
         self._active_id = -1
 
-        # --- PHASE 2.2: DRAG PHYSICS ---
-        self._last_drag_pos = None
-        self._drag_velocity = QtCore.QPointF(0, 0)
-        self._velocity_smooth = 0.7 
-
         # Connect signals for style cache
         SIGNALS.styles_changed.connect(RZStyleCache.instance().on_structure_changed)
         SIGNALS.structure_changed.connect(RZStyleCache.instance().refresh)
@@ -1296,8 +1261,6 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
             if target_item and not target_item.is_locked_pos and not getattr(target_item, "_is_layout_controlled", False) and not target_item.pos_is_formula:
                 self._is_dragging_items = True
                 self._drag_start_pos = event.scenePos()
-                self._last_drag_pos = event.scenePos()
-                self._drag_velocity = QtCore.QPointF(0, 0)
                 self._accum_x = 0.0; self._accum_y = 0.0
                 
                 # Rayvich: Multi-Drag Fix - Use context manager's selection as source of truth
@@ -1448,47 +1411,13 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 new_pos = QtCore.QPointF(item_start.x() + leader_shift_x, item_start.y() + leader_shift_y)
                 item.setPos(new_pos)
 
-            # --- PHASE 2.4: REFINED FLYING PAPER PHYSICS ---
-            if hasattr(self, '_last_drag_pos') and self._last_drag_pos:
-                dist = (current_pos - self._last_drag_pos).manhattanLength()
-                vx = current_pos.x() - self._last_drag_pos.x()
-                
-                # Smooth velocity tracker
-                self._drag_velocity.setX(self._drag_velocity.x() * (1.0 - self._velocity_smooth) + vx * self._velocity_smooth)
-                
-                # Threshold check: only tilt if moving fast enough (5.0 px per frame)
-                is_fast = dist > 5.0
-                tilt_angle = max(-15.0, min(15.0, self._drag_velocity.x() * 0.5)) if is_fast else 0.0
-                
-                # Apply tilt and hide handles if tilt is significant
-                ctx = RZContextManager.get_instance().get_snapshot()
-                handles_visible = abs(tilt_angle) < 5.0
-                
-                for uid in ctx.selected_ids:
-                    it = self._items_map.get(uid)
-                    if it and hasattr(it, 'set_target_tilt'):
-                        it.set_target_tilt(tilt_angle)
-                        # Hide handles during large tilts to prevent Gizmo detachment
-                        if hasattr(it, 'set_handles_visible'):
-                            it.set_handles_visible(handles_visible and not it.is_locked_size)
-            
-            self._last_drag_pos = current_pos
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self._is_dragging_items:
-            # --- PHASE 2.2: RESET PHYSICS ---
-            ctx = RZContextManager.get_instance().get_snapshot()
-            for uid in ctx.selected_ids:
-                it = self._items_map.get(uid)
-                if it and hasattr(it, 'set_target_tilt'):
-                    it.set_target_tilt(0.0)
-
             self._is_dragging_items = False
             self._drag_start_pos = None
-            self._last_drag_pos = None
-            self._drag_velocity = QtCore.QPointF(0, 0)
             
             # --- COMMIT BATCH UPDATE ---
             if hasattr(self, '_initial_item_positions') and self._initial_item_positions:

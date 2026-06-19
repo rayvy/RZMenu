@@ -102,7 +102,8 @@ class ImageCache:
             # 2. Чтение пикселей (Самый безопасный метод)
             # Копируем пиксели в numpy массив float32 (0.0 - 1.0)
             # Используем slice [:], это создает копию списка, безопасно для памяти
-            raw_pixels = np.array(bl_image.pixels[:], dtype=np.float32)
+            raw_pixels = np.empty(width * height * 4, dtype=np.float32)
+            bl_image.pixels.foreach_get(raw_pixels)
             
             # Конвертация в 0-255 uint8
             pixels_uint8 = (raw_pixels * 255).astype(np.uint8)
@@ -150,6 +151,8 @@ class ImageCache:
     def get_fit_mode(self, image_id):
         if image_id == -1:
             return 'FILL'
+        if image_id in self._fit_modes:
+            return self._fit_modes[image_id]
         scene = bpy.context.scene
         if hasattr(scene, "rzm") and hasattr(scene.rzm, "images"):
             for img in scene.rzm.images:
