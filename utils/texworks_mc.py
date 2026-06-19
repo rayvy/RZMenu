@@ -24,7 +24,7 @@ UV_NAME = "RZAutoAtlas.UV"
 PREVIEW_UV_NAME = "RZAutoAtlas.UV.preview"
 PREVIEW_UV_PREFIX = "TWAA."
 TEXCOORD_UV_NAME = "TEXCOORD.xy"
-SCHEMA = 5
+SCHEMA = 6
 KIND = "RZ_TEXWORKS_MC_MATERIAL"
 ROLE = "SEMANTIC_TEXTURE_HUB"
 DEFAULT_MAX_RASTER_PIXELS = 16 * 1024 * 1024
@@ -446,6 +446,7 @@ def make_or_update_material_group(force=False):
         # ── Resolution (visible on the node, used for TWAA atlas) ──────
         add_socket(group, "Default Resolution X", "INPUT", "NodeSocketInt", 512)
         add_socket(group, "Default Resolution Y", "INPUT", "NodeSocketInt", 512)
+        add_socket(group, "Ignore TWAA", "INPUT", "NodeSocketBool", False)
         add_socket(group, "Use HSV", "INPUT", "NodeSocketBool", False)
         add_socket(group, "HSV Base", "INPUT", "NodeSocketColor", (0.0, 0.0, 0.0, 1.0))
 
@@ -525,6 +526,13 @@ def material_hsv_settings(mat):
         "base": tuple(float(base[index]) for index in range(4)),
         "link": f"$RZ_TWAA_HSV_{key}",
     }
+
+
+def material_ignores_twaa(mat):
+    group_node = find_material_group_node(mat)
+    if not group_node:
+        return False
+    return socket_default_bool(group_node.inputs.get("Ignore TWAA"), False)
 
 
 def ensure_rzm_vector_value(rzm, value_name, vector_value, update_existing=False):
@@ -2399,6 +2407,7 @@ def export_material_textures_raw(context, mat, target_path=None):
     os.makedirs(out_dir, exist_ok=True)
     rzm = context.scene.rzm
     key = material_key(mat.name)
+    register_entries = not material_ignores_twaa(mat)
     written = {}
     generated_slots = set()
 
@@ -2423,15 +2432,16 @@ def export_material_textures_raw(context, mat, target_path=None):
         file_path = os.path.join(out_dir, file_name)
         write_png_rgba8(file_path, width, height, pixels)
 
-        entry = ensure_mc_file_entry(rzm, resource_name)
-        entry.name = resource_name
-        entry.material_name = mat.name
-        entry.material_key = key
-        entry.slot_name = slot
-        entry.resource_name = resource_name
-        entry.relative_path = os.path.join(settings.output_subdir, file_name).replace("\\", "/")
-        entry.block_name = autoatlas_block_name(slot)
-        entry.resolution = (width, height)
+        if register_entries:
+            entry = ensure_mc_file_entry(rzm, resource_name)
+            entry.name = resource_name
+            entry.material_name = mat.name
+            entry.material_key = key
+            entry.slot_name = slot
+            entry.resource_name = resource_name
+            entry.relative_path = os.path.join(settings.output_subdir, file_name).replace("\\", "/")
+            entry.block_name = autoatlas_block_name(slot)
+            entry.resolution = (width, height)
         written[slot] = file_path
 
     if not written:
@@ -2987,7 +2997,7 @@ def object_has_material_faces(obj, mat):
 
 
 def material_is_relevant_for_twaa(context, mat):
-    if not mat or not find_material_group_node(mat):
+    if not mat or not find_material_group_node(mat) or material_ignores_twaa(mat):
         return False
     included_objects = included_view_layer_objects(context)
     for obj in included_objects:
@@ -3267,6 +3277,10 @@ def rebuild_texworks_autoatlas_blocks(context):
 
 def register_cluster_files(context, cluster):
     rzm = context.scene.rzm
+    mat = cluster.get("material")
+    if material_ignores_twaa(mat):
+        cluster["manifest"]["ignored_twaa"] = True
+        return cluster["manifest"]
     sync_mc_file_entries(rzm, cluster["manifest"])
     return cluster["manifest"]
 
@@ -3275,6 +3289,11 @@ def sync_texworks_data(context, cluster, remove_missing=False):
     settings = get_settings(context)
     rzm = context.scene.rzm
     manifest = cluster["manifest"]
+
+    if material_ignores_twaa(cluster.get("material")):
+        manifest["ignored_twaa"] = True
+        context.scene["rzm_tw_mc_last_manifest_json"] = json.dumps(manifest, indent=2, sort_keys=True)
+        return manifest
 
     sync_mc_file_entries(rzm, manifest)
 

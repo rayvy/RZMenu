@@ -68,6 +68,11 @@ def draw_mc_tools(layout, context):
             row.prop(node.inputs["Default Resolution Y"], "default_value", text="Y")
             box.label(text="Allowed: 128 / 256 / 512 / 1024 / 2048 / 4096", icon='INFO')
 
+        if node and "Ignore TWAA" in node.inputs:
+            box = layout.box()
+            box.label(text="TWAA Registration", icon='HIDE_ON')
+            box.prop(node.inputs["Ignore TWAA"], "default_value", text="Ignore TWAA")
+
         if node and "Use HSV" in node.inputs and "HSV Base" in node.inputs:
             box = layout.box()
             box.label(text="Material HSV", icon='COLOR')
