@@ -637,6 +637,8 @@ if $inputMode == 0
             $holdTimer = 0.0
         endif
     endif
+else
+    $clickTriggerID = -1
 endif
 
 {% if _cd_flags.transparent %}
@@ -1466,6 +1468,7 @@ $pastCursorY = $cursorY
 $id = -1
 if $inputMode == 0
 $hoveredID = -1
+$hoveredClassType = -1
 endif
 $dt = time - $ts
 $dtCustom = time - $ts
