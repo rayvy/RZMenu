@@ -169,7 +169,15 @@ Local $current_sizeY
         run = CustomShaderRCI2D
     {%elif class_name == 'TEXT'%}
         {% set _esf = elem_static_flags if (elem_static_flags is defined and elem_static_flags is mapping) else scene.rzm.elem_static_flags %}
+        {% if elem_default_flags is defined and elem_default_flags is mapping %}
+            {% set _edf = elem_default_flags %}
+        {% elif scene.rzm.elem_default_flags is defined %}
+            {% set _edf = scene.rzm.elem_default_flags %}
+        {% else %}
+            {% set _edf = {} %}
+        {% endif %}
         {% set _eflags = _esf[element.id|string] | default(0) %}
+        {% set _eflags = _eflags + (_edf[element.id|string] | default(0)) %}
         $elemFlags = {{ _eflags }}
         w111 = $id
         {{generate_text(element)}}
@@ -603,14 +611,23 @@ endif
     {% set is_main_element = not is_preset and not is_helper %}
     {% set _eflags = 0 %}
     {% set _esf = {} %}
+    {% set _edf = {} %}
     {% if elem_static_flags is defined and elem_static_flags is mapping %}
         {% set _esf = elem_static_flags %}
     {% elif scene.rzm.elem_static_flags is defined %}
         {% set _esf = scene.rzm.elem_static_flags %}
     {% endif %}
+    {% if elem_default_flags is defined and elem_default_flags is mapping %}
+        {% set _edf = elem_default_flags %}
+    {% elif scene.rzm.elem_default_flags is defined %}
+        {% set _edf = scene.rzm.elem_default_flags %}
+    {% endif %}
     {% set _eid_str = element.id | string %}
     {% if _esf and _eid_str in _esf %}
         {% set _eflags = _esf[_eid_str] %}
+    {% endif %}
+    {% if _edf and _eid_str in _edf %}
+        {% set _eflags = _eflags + _edf[_eid_str] %}
     {% endif %}
     {# For presets/helpers _eflags stays 0 (FLAG_IS_ELEMENT not set in flags_map for them).
        Phase 0.5.5: presets/helpers set FLAG_IS_ELEMENT manually and route their true id via w111. #}
@@ -709,7 +726,20 @@ $imageID = {{ inst_id }}
 
 {%macro generate_fx(element)%}
     ; style allocation (ID +1 offset: 0 = no style, 1+ = actual styles)
+    {% set _style_from_default = false %}
+    {% set _edf = {} %}
+    {% if elem_default_flags is defined and elem_default_flags is mapping %}
+        {% set _edf = elem_default_flags %}
+    {% elif scene.rzm.elem_default_flags is defined %}
+        {% set _edf = scene.rzm.elem_default_flags %}
+    {% endif %}
+    {% set _eid_str = element.id | string %}
+    {% if _edf and _eid_str in _edf and ((_edf[_eid_str] // 256) % 2 == 1) and not element.is_preset and not element.is_helper %}
+        {% set _style_from_default = true %}
+    {% endif %}
+    {% if not _style_from_default %}
     y110 = {{ element.style_id + 1 }}
+    {% endif %}
 {%endmacro%}
 
 {% macro generate_text(element, host_element=none) %}

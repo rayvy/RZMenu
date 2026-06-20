@@ -10,6 +10,7 @@ RWBuffer<uint>   IndexBuffer          : register(u1);
 Buffer<float4>   ResourceStyleBuffer  : register(t105);
 
 Buffer<float4>   ElementStaticMap     : register(t106);
+Buffer<float4>   ElementDefaultProps  : register(t107);
 Buffer<uint4>    ElementBlackList     : register(t108);
 
 Texture1D<float4> IniParams : register(t120);
@@ -66,6 +67,10 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define BL_COLOR     0x001u
 #define BL_IMAGE_ID  0x002u
 #define BL_TEXT_ID   0x004u
+
+#define FLAG_USE_DEFAULT_STYLE 0x100u
+#define FLAG_USE_DEFAULT_FONT  0x200u
+#define FLAG_USE_DEFAULT_ROT   0x400u
 
 
 // ================================================================
@@ -152,8 +157,10 @@ void WriteElement(
             }
         }
 
+        bool writes_text_id = (draw_mode == 3.0f || draw_mode == 4.0f);
+
         [branch]
-        if (found_image > 0u && fn_type != 2.0f)
+        if (found_image > 0u && !writes_text_id)
         {
             float ini_image = DataBuffer[base_idx + 3].x;
             if (ini_image < 0.5f)
@@ -165,7 +172,7 @@ void WriteElement(
         }
 
         [branch]
-        if (found_text > 0u && fn_type == 2.0f)
+        if (found_text > 0u && writes_text_id)
         {
             float ini_text = DataBuffer[base_idx + 3].x;
             if (ini_text < 0.5f)
@@ -219,7 +226,7 @@ void WriteElement(
                 DataBuffer[base_idx + 2] = float4(found_r, found_g, found_b, found_a);
 
             [branch]
-            if ((bl_mask & BL_IMAGE_ID) && found_image > 0u && fn_type != 2.0f)
+            if ((bl_mask & BL_IMAGE_ID) && found_image > 0u && !writes_text_id)
             {
                 float4 temp = DataBuffer[base_idx + 3];
                 temp.x = (float)found_image;
@@ -227,11 +234,75 @@ void WriteElement(
             }
 
             [branch]
-            if ((bl_mask & BL_TEXT_ID) && found_text > 0u && fn_type == 2.0f)
+            if ((bl_mask & BL_TEXT_ID) && found_text > 0u && writes_text_id)
             {
                 float4 temp = DataBuffer[base_idx + 3];
                 temp.x = (float)found_text;
                 DataBuffer[base_idx + 3] = temp;
+            }
+        }
+    }
+
+    // ── ElementDefaultProps lookup ─────────────────────────────────
+    [branch]
+    if ((flags & FLAG_IS_ELEMENT) && (flags & (FLAG_USE_DEFAULT_STYLE | FLAG_USE_DEFAULT_FONT | FLAG_USE_DEFAULT_ROT)))
+    {
+        uint  target_id = element_id;
+        float default_style = 0.0f;
+        float default_font = 0.0f;
+        float default_rot = 0.0f;
+        bool  found_defaults = false;
+
+        uint num_default_structs = 0;
+        ElementDefaultProps.GetDimensions(num_default_structs);
+        int low_def = 0;
+        int high_def = (int)(num_default_structs / 2) - 2; // Exclude sentinel at the end
+
+        [loop]
+        while (low_def <= high_def)
+        {
+            int mid = (low_def + high_def) / 2;
+            float4 A = ElementDefaultProps[mid * 2];
+            uint entry_id = (uint)A.x;
+
+            if (entry_id == target_id)
+            {
+                default_style = A.y;
+                default_font = A.z;
+                default_rot = A.w;
+                found_defaults = true;
+                break;
+            }
+            if (entry_id < target_id)
+            {
+                low_def = mid + 1;
+            }
+            else
+            {
+                high_def = mid - 1;
+            }
+        }
+
+        [branch]
+        if (found_defaults)
+        {
+            [branch]
+            if ((flags & FLAG_USE_DEFAULT_STYLE) && default_style > 0.5f)
+            {
+                float4 s6 = DataBuffer[base_idx + 6];
+                if (s6.y < 0.5f) s6.y = default_style;
+                DataBuffer[base_idx + 6] = s6;
+            }
+
+            [branch]
+            if (flags & (FLAG_USE_DEFAULT_FONT | FLAG_USE_DEFAULT_ROT))
+            {
+                float4 s4 = DataBuffer[base_idx + 4];
+                if ((flags & FLAG_USE_DEFAULT_FONT) && default_font > 0.5f && s4.y < 0.5f)
+                    s4.y = default_font;
+                if ((flags & FLAG_USE_DEFAULT_ROT) && abs(default_rot) > 0.000001f && abs(s4.w) <= 0.000001f)
+                    s4.w = default_rot;
+                DataBuffer[base_idx + 4] = s4;
             }
         }
     }

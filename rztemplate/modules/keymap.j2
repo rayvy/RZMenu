@@ -99,20 +99,46 @@ post $nav_key_request_right = 0
 key = VK_RCONTROL
 key = 0xC3
 condition = $inputMode == 1
-run = CommandListGamepadToggleEdit
+type = hold
+post $gamepad_edit_pressed = 0
+$gamepad_edit_pressed = 1
 
 [CommandListGamepadToggleEdit]
-if $isGamepadEditing == 0
-	if $hoveredID != -1
-		$isGamepadEditing = 1
-		$GamepadEditedID = $hoveredID
-	endif
-else
+if $isGamepadEditing == 1
 	$isGamepadEditing = 0
 	$GamepadEditedID = -1
+else
+	if $hoveredID != -1
+		if $hoveredClassType == 3
+			$clickTriggerID = $hoveredID
+		else
+			$isGamepadEditing = 1
+			$GamepadEditedID = $hoveredID
+		endif
+	endif
 endif
 
 [CommandListGamepadProcessInput]
+if $inputMode == 1
+	if $gamepad_click_cooldown > 0
+		$gamepad_click_cooldown = $gamepad_click_cooldown - $dt
+	endif
+	if $gamepad_edit_pressed == 1
+		if $gamepad_edit_was_pressed == 0
+			if $gamepad_click_cooldown <= 0
+				run = CommandListGamepadToggleEdit
+				$gamepad_click_cooldown = 0.25
+			endif
+		endif
+		$gamepad_edit_was_pressed = 1
+		$gamepad_edit_release_timer = 0
+	else
+		$gamepad_edit_release_timer = $gamepad_edit_release_timer + 1
+		if $gamepad_edit_release_timer > 5
+			$gamepad_edit_was_pressed = 0
+		endif
+	endif
+endif
 $Gamepad_Interaction_Increase = 0
 $Gamepad_Interaction_Decrease = 0
 $Gamepad_Interaction_Type = 0

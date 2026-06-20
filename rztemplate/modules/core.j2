@@ -637,6 +637,8 @@ if $inputMode == 0
             $holdTimer = 0.0
         endif
     endif
+else
+    $clickTriggerID = -1
 endif
 
 {% if _cd_flags.transparent %}
@@ -1466,6 +1468,7 @@ $pastCursorY = $cursorY
 $id = -1
 if $inputMode == 0
 $hoveredID = -1
+$hoveredClassType = -1
 endif
 $dt = time - $ts
 $dtCustom = time - $ts
@@ -1502,6 +1505,7 @@ cs-u0 = ResourceDataBuffer
 cs-u1 = ResourceIndexBuffer
 cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
+cs-t107 = ResourceElementDefaultProps
 cs-t108 = ResourceElementBlackList
 
 cs = /modules/draw_controller.hlsl
@@ -2311,6 +2315,11 @@ filename = .\res\styles.bin
 type = Buffer
 format = R32G32B32A32_FLOAT
 filename = .\res\element_static_map.buf
+
+[ResourceElementDefaultProps]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\element_default_props.buf
 
 [ResourceElementBlackList]
 type = Buffer

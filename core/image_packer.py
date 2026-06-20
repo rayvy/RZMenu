@@ -321,6 +321,29 @@ def pack_project_images(scene, export_dir):
     # Persist mapping
     scene.rzm.image_mapping_json = json.dumps(mapping)
 
+    # Debug sidecar: makes runtime atlas issues inspectable without decoding
+    # images.bin by hand.
+    debug_path = os.path.join(res_dir, "images_debug.json")
+    try:
+        debug_instances = []
+        for inst_id in range(len(instances) // 3):
+            base = inst_id * 3
+            debug_instances.append({
+                "inst_id": inst_id,
+                "meta": list(instances[base]),
+                "rect": list(instances[base + 1]),
+                "anim": list(instances[base + 2]),
+            })
+
+        with open(debug_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                "instances": debug_instances,
+                "mapping": mapping,
+            }, f, indent=2, sort_keys=True)
+        print(f"  [Image Packer] debug: {debug_path}")
+    except Exception as e:
+        print(f"  [Image Packer] WARNING writing images_debug.json: {e}")
+
     return mapping
 
 
