@@ -593,6 +593,8 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                     header.prop(toggle_def, "show_occupancy", text="", icon=icon_exp, emboss=False)
                 
                 header.label(text=base_name, icon='OUTLINER_OB_MESH')
+                if toggle_def:
+                    header.prop(toggle_def, "toggle_start_index", text="Default")
                 op_sel_all = header.operator("rzm.select_objects_with_toggle", text="", icon='SELECT_SET')
                 op_sel_all.toggle_name = base_name
                 op_dec = header.operator("rzm.resize_object_toggle_bitmask", text="", icon='REMOVE', emboss=False)

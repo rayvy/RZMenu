@@ -4,6 +4,15 @@ import string
 from ..core.utils import find_toggle_def
 
 
+def build_default_toggle_bits(toggle_def):
+    length = max(1, min(32, int(toggle_def.toggle_length)))
+    bits = [0] * length
+    default_index = int(getattr(toggle_def, "toggle_start_index", 0))
+    if 0 <= default_index < length:
+        bits[default_index] = 1
+    return bits
+
+
 def resize_toggle_definition_and_assignments(context, full_toggle_key, new_len):
     """Resize project toggle definition and every object assignment for this toggle."""
     if not full_toggle_key.startswith("rzm.Toggle."):
@@ -126,7 +135,7 @@ class RZM_OT_AssignObjectToggle(bpy.types.Operator):
             return {'CANCELLED'}
         
         prop_name = f"rzm.Toggle.{self.toggle_name}"
-        target_obj[prop_name] = [0] * toggle_def.toggle_length
+        target_obj[prop_name] = build_default_toggle_bits(toggle_def)
         
         return {'FINISHED'}
 
