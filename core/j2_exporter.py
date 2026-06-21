@@ -8,6 +8,7 @@ from .style_packer import pack_styles
 from .element_static_map import export_element_static_map
 from .element_blacklist import export_element_blacklist
 from .element_default_props import export_element_default_props
+from .element_draw_data import build_element_draw_data, export_element_draw_data
 
 # Add libs to sys.path so we can import jinja2
 ADDON_DIR = Path(__file__).parent.parent
@@ -93,17 +94,33 @@ class RZMenuJ2Exporter:
             export_path = get_target_path(self.context)
             if export_path:
                 # This now updates scene.rzm.text_mapping_json internally
-                get_text_mapping_for_j2(scene, export_path)
-                get_image_mapping_for_j2(scene, export_path)
+                text_mapping = get_text_mapping_for_j2(scene, export_path)
+                image_mapping = get_image_mapping_for_j2(scene, export_path)
                 pack_styles(scene, export_path)
                 # Phase 0.5/0.5.5: Export ElementStaticMap and BlackList buffers
                 if scene.rzm and scene.rzm.elements:
+                    draw_data = build_element_draw_data(
+                        scene.rzm.elements,
+                        text_mapping,
+                        image_mapping,
+                    )
+                    export_element_draw_data(draw_data, Path(export_path) / 'res')
                     static_map_path = str(Path(export_path) / 'res' / 'element_static_map.buf')
                     elem_static_flags = export_element_static_map(
-                        scene.rzm.elements, static_map_path, scene.rzm.image_mapping
+                        scene.rzm.elements,
+                        static_map_path,
+                        image_mapping,
+                        text_mapping,
+                        draw_data,
                     )
                     blacklist_path = str(Path(export_path) / 'res' / 'element_blacklist.buf')
-                    export_element_blacklist(scene.rzm.elements, blacklist_path)
+                    export_element_blacklist(
+                        scene.rzm.elements,
+                        blacklist_path,
+                        image_mapping,
+                        text_mapping,
+                        draw_data,
+                    )
                     default_props_path = str(Path(export_path) / 'res' / 'element_default_props.buf')
                     elem_default_flags = export_element_default_props(
                         scene.rzm.elements, default_props_path

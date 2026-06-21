@@ -214,24 +214,45 @@ class RZM_OT_FullExport(bpy.types.Operator):
         # so we must pack them explicitly here before calling the game exporter.
         try:
             from ..core.image_packer import pack_project_images
+            from ..core.text_packer import pack_project_text
             from ..core.style_packer import pack_styles
             from ..core.element_static_map import export_element_static_map
             from ..core.element_blacklist import export_element_blacklist
             from ..core.element_default_props import export_element_default_props
+            from ..core.element_draw_data import build_element_draw_data, export_element_draw_data
+            with measure("full_export.pack_project_text"):
+                text_mapping = pack_project_text(context.scene, target_path)
             with measure("full_export.pack_project_images"):
-                pack_project_images(context.scene, target_path)
+                image_mapping = pack_project_images(context.scene, target_path)
             with measure("full_export.pack_styles"):
                 pack_styles(context.scene, target_path)
             
             if context.scene.rzm and context.scene.rzm.elements:
+                draw_data = build_element_draw_data(
+                    context.scene.rzm.elements,
+                    text_mapping,
+                    image_mapping,
+                )
+                export_element_draw_data(draw_data, os.path.join(target_path, "res"))
                 static_map_path = os.path.join(target_path, "res", "element_static_map.buf")
-                image_mapping = context.scene.rzm.image_mapping
                 with measure("full_export.export_element_static_map"):
-                    flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
+                    flags_map = export_element_static_map(
+                        context.scene.rzm.elements,
+                        static_map_path,
+                        image_mapping,
+                        text_mapping,
+                        draw_data,
+                    )
                 context.scene.rzm["elem_static_flags"] = flags_map
                 blacklist_path = os.path.join(target_path, "res", "element_blacklist.buf")
                 with measure("full_export.export_element_blacklist"):
-                    export_element_blacklist(context.scene.rzm.elements, blacklist_path)
+                    export_element_blacklist(
+                        context.scene.rzm.elements,
+                        blacklist_path,
+                        image_mapping,
+                        text_mapping,
+                        draw_data,
+                    )
                 default_props_path = os.path.join(target_path, "res", "element_default_props.buf")
                 with measure("full_export.export_element_default_props"):
                     default_flags = export_element_default_props(context.scene.rzm.elements, default_props_path)
@@ -363,20 +384,40 @@ class RZM_OT_BatchExport(bpy.types.Operator):
         # 2.5 Pack resource buffers (images.bin, anim_frames.bin, styles.bin)
         try:
             from ..core.image_packer import pack_project_images
+            from ..core.text_packer import pack_project_text
             from ..core.style_packer import pack_styles
             from ..core.element_static_map import export_element_static_map
             from ..core.element_blacklist import export_element_blacklist
             from ..core.element_default_props import export_element_default_props
-            pack_project_images(context.scene, target_path)
+            from ..core.element_draw_data import build_element_draw_data, export_element_draw_data
+            text_mapping = pack_project_text(context.scene, target_path)
+            image_mapping = pack_project_images(context.scene, target_path)
             pack_styles(context.scene, target_path)
             
             if context.scene.rzm and context.scene.rzm.elements:
+                draw_data = build_element_draw_data(
+                    context.scene.rzm.elements,
+                    text_mapping,
+                    image_mapping,
+                )
+                export_element_draw_data(draw_data, os.path.join(target_path, "res"))
                 static_map_path = os.path.join(target_path, "res", "element_static_map.buf")
-                image_mapping = context.scene.rzm.image_mapping
-                flags_map = export_element_static_map(context.scene.rzm.elements, static_map_path, image_mapping)
+                flags_map = export_element_static_map(
+                    context.scene.rzm.elements,
+                    static_map_path,
+                    image_mapping,
+                    text_mapping,
+                    draw_data,
+                )
                 context.scene.rzm["elem_static_flags"] = flags_map
                 blacklist_path = os.path.join(target_path, "res", "element_blacklist.buf")
-                export_element_blacklist(context.scene.rzm.elements, blacklist_path)
+                export_element_blacklist(
+                    context.scene.rzm.elements,
+                    blacklist_path,
+                    image_mapping,
+                    text_mapping,
+                    draw_data,
+                )
                 default_props_path = os.path.join(target_path, "res", "element_default_props.buf")
                 default_flags = export_element_default_props(context.scene.rzm.elements, default_props_path)
                 context.scene.rzm["elem_default_flags"] = default_flags
