@@ -17,6 +17,9 @@ FLAG_USE_STATIC_IMG = 0x01
 FLAG_USE_STATIC_TEXT = 0x02
 FLAG_IS_ELEMENT = 0x04
 FLAG_USE_STATIC_COLOR = 0x08
+FLAG_USE_DEFAULT_STYLE = 0x100
+FLAG_USE_DEFAULT_FONT = 0x200
+FLAG_USE_DEFAULT_ROT = 0x400
 
 BL_COLOR = 0x001
 BL_IMAGE_ID = 0x002
@@ -183,6 +186,15 @@ def build_element_draw_data(elements, text_mapping=None, image_mapping=None):
                 flags |= FLAG_USE_STATIC_TEXT
             if has_color > 0.5:
                 flags |= FLAG_USE_STATIC_COLOR
+            if _safe_int(_get(elem, "style_id", -1), -1) >= 0:
+                flags |= FLAG_USE_DEFAULT_STYLE
+            if _safe_int(_get(elem, "font_slot", 0), 0) > 0:
+                flags |= FLAG_USE_DEFAULT_FONT
+            rotation = _safe_float(_get(elem, "rotation", 0.0), 0.0)
+            rotation_is_formula = bool(_get(elem, "rotation_is_formula"))
+            transform_is_formula = bool(_get(elem, "transform_is_formula"))
+            if abs(rotation) > 0.000001 and not rotation_is_formula and not transform_is_formula:
+                flags |= FLAG_USE_DEFAULT_ROT
 
         blacklist = 0
         if is_main:

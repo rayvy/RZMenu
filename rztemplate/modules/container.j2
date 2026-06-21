@@ -61,15 +61,45 @@ Local $current_sizeY
 {% endif %}
 {%endmacro%}
 
+{%macro packed_leaf(element,parent_element,mod_file,scene,class_name)%}
+$classType = {{ utils.get_cls_id(element) }}
+$id = {{ element.id }}
+$element_align = {{ utils.ALIGNMENT_MAP.get(element.alignment, 0) }}
+{{generate_position_and_size(element,parent_element,mod_file,scene)}}
+{% if class_name == 'TEXT' %}
+$texSizeX = {{ utils.TEXT_ALIGN_MAP.get(element.text_align, 0) }}
+run = CommandListDrawPackedLeafText
+{% else %}
+run = CommandListDrawPackedLeafImage
+{% endif %}
+{%endmacro%}
+
 {#MAINSTUFF#}
 {%macro main(element,parent_element,mod_file,scene)%}
     {% set class_name = utils.get_cls(element)|trim %}
     {% set parent_class_name = utils.get_cls(parent_element)|trim if parent_element else none %}
     {% set element_tags = utils.tier_tags(element) %}
+    {% set raw_img_mode = element.image_mode[0] if element.image_mode is iterable and element.image_mode is not string else element.image_mode %}
+    {% set has_children = (scene.rzm.elements | selectattr('parent_id', 'equalto', element.id) | list | length) > 0 %}
+    {% set has_presets = element.preset_ids|length > 0 %}
+    {% set has_underlayers = element.underlayer_preset_ids|length > 0 %}
+    {% set has_helpers = element.helper_ids|length > 0 %}
+    {% set has_props = element.properties|length > 0 %}
+    {% set is_regular_element = not element.is_preset and not element.is_helper %}
+    {% set visible_static = element.visibility_mode != 'CONDITIONAL' and element.visibility_mode != 'HIDED' %}
+    {% set no_events = not element.hover_event_enabled and not element.click_event_enabled and not element.hold_event_enabled %}
+    {% set no_links = not element.value_link and not element.trackable %}
+    {% set no_relations = not has_children and not has_presets and not has_underlayers and not has_helpers %}
+    {% set no_dynamic_visuals = not element.color_is_formula and not element.transform_is_formula and not element.rotation_is_formula %}
+    {% set fast_text = is_regular_element and class_name == 'TEXT' and visible_static and no_events and no_links and no_relations and not has_props and not utils.has_any_attribute(element) and element.text_id and not element.text_id_is_data and element.text_mode == 'SINGLE' and element.conditional_texts|length == 0 and not (element.text_id|string).startswith('~') and not element.hover_text_id and no_dynamic_visuals %}
+    {% set fast_image = is_regular_element and class_name == 'CONTAINER' and visible_static and no_events and no_links and no_relations and not has_props and raw_img_mode == 'SINGLE' and element.image_id is defined and element.image_id != -1 and element.hover_image_id is defined and element.hover_image_id == -1 and element.conditional_images|length == 0 and not element.hover_text_id and no_dynamic_visuals %}
     {% if element_tags %}
     ;[META-INFO] [START] [DELETE] [ELEMENT] [{{ element.element_name }}_{{ element.id }}] {{ element_tags }}
     {% endif %}
     [CommandListElement{{ element.element_name }}_{{ element.id }}]
+    {% if fast_text or fast_image %}
+    {{packed_leaf(element,parent_element,mod_file,scene,class_name)}}
+    {% else %}
     {{base(element,parent_element,mod_file,scene)}}
     {% if parent_class_name == 'GRID_CONTAINER' and (class_name == 'BUTTON' or class_name == 'SLIDER') %}
     {% else %}
@@ -253,6 +283,7 @@ Local $current_sizeY
 
     endif
     endif
+    {% endif %}
     {% if element_tags %}
     ;[META-INFO] [END] [DELETE] [ELEMENT] [{{ element.element_name }}_{{ element.id }}] {{ element_tags }}
     {% endif %}

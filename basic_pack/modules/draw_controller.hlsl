@@ -58,6 +58,7 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define FLAG_USE_DEFAULT_STYLE 0x100u
 #define FLAG_USE_DEFAULT_FONT  0x200u
 #define FLAG_USE_DEFAULT_ROT   0x400u
+#define FLAG_LOAD_PACKED_FLAGS 0x800u
 
 #define BL_COLOR     0x001u
 #define BL_IMAGE_ID  0x002u
@@ -72,15 +73,18 @@ void ApplyPackedElementData(
     uint element_id
 )
 {
-    [branch]
-    if (!(flags & FLAG_IS_ELEMENT))
-        return;
-
     uint draw_base = element_id * ELEMENT_DRAW_RECORDS_PER_ELEMENT;
     float4 d1 = ElementDrawData[draw_base + 1u];
     float4 d2 = ElementDrawData[draw_base + 2u];
     float4 d3 = ElementDrawData[draw_base + 3u];
     float4 d4 = ElementDrawData[draw_base + 4u];
+
+    if (flags & FLAG_LOAD_PACKED_FLAGS)
+        flags = (flags & ~FLAG_LOAD_PACKED_FLAGS) | (uint)d3.x;
+
+    [branch]
+    if (!(flags & FLAG_IS_ELEMENT))
+        return;
 
     uint found_image = (uint)d1.z;
     uint found_text  = (uint)d1.w;

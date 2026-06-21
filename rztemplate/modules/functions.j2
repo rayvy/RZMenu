@@ -26,6 +26,30 @@ y110 = 0
 $isPreset = 0
 endif
 
+[CommandListDrawPackedLeafBase]
+$isPreset = 0
+$isElement = 1
+run = CommandListRestoreElement
+$PositionX = $positionX
+$PositionY = $positionY
+$SizeX = $sizeX
+$SizeY = $sizeY
+run = CommandListCoreAlignment.Check
+$elemFlags = 2048
+w111 = $id
+
+[CommandListDrawPackedLeafText]
+run = CommandListDrawPackedLeafBase
+$TextIsData = 0
+$TextID = 0
+$texPosY = 0
+$texSizeY = 0
+run = CustomShaderRCI2D_TEXT
+
+[CommandListDrawPackedLeafImage]
+run = CommandListDrawPackedLeafBase
+run = CustomShaderRCI2D
+
 
 [CommandListCoreAlignment.Check]
 if $element_align == 0
