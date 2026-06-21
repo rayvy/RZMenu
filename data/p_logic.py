@@ -216,12 +216,62 @@ def update_shape_cluster_sync(self, context):
                     config.sync_value = shape.sync_value
             break
 
+def update_shape_group_preview(self, context):
+    """Preview-sync a group value into SKC members assigned to that group."""
+    rzm = getattr(context.scene, "rzm", None) if context and context.scene else None
+    if not rzm:
+        return
+
+    self_path = self.path_from_id() if hasattr(self, "path_from_id") else ""
+    for shape in rzm.shapes:
+        for group_index, group in enumerate(shape.groups):
+            group_path = group.path_from_id() if hasattr(group, "path_from_id") else ""
+            if group == self or (self_path and group_path == self_path):
+                targets = {
+                    member.target_shape_name
+                    for member in shape.shape_keys
+                    if getattr(member, "target_shape_name", "")
+                    and (
+                        member.group_index == group_index
+                        or str(group_index) in {
+                            part.strip()
+                            for part in getattr(member, "group_indices", "").split(",")
+                            if part.strip()
+                        }
+                    )
+                }
+                for config in rzm.shape_configs:
+                    if config.shape_name in targets:
+                        config.sync_value = group.preview_value
+                return
+
 class RZMShapeClusterGroup(bpy.types.PropertyGroup):
     """A variant group inside a Shape manager. Group 0 is the permanent default."""
     group_name: StringProperty(name="Group Name", default="Default")
     condition: StringProperty(
         name="Condition",
         description="Optional condition that enables this manager group. Empty = always active."
+    )
+    fallback_value: FloatProperty(
+        name="Fallback Value",
+        description="Value used when the group condition is not active",
+        default=0.0
+    )
+    override_switch_condition: StringProperty(
+        name="Override Condition",
+        description="If active, Anim members in this group behave as Linear using Override Value Link."
+    )
+    override_switch_value_link: StringProperty(
+        name="Override Value Link",
+        description="Variable to use when Override Condition is active."
+    )
+    preview_value: FloatProperty(
+        name="Preview",
+        description="Viewport-only preview value applied to SKC members in this group",
+        min=0.0,
+        max=1.0,
+        default=0.0,
+        update=update_shape_group_preview
     )
 
 class RZMShapeKey(bpy.types.PropertyGroup):
@@ -230,6 +280,11 @@ class RZMShapeKey(bpy.types.PropertyGroup):
     target_shape_name: StringProperty(
         name="ShapeKey Config",
         description="Name of the discovered ShapeKeyConfig controlled by this manager."
+    )
+    group_indices: StringProperty(
+        name="Groups",
+        description="Comma-separated group indices for multi-group clusters",
+        default=""
     )
     group_index: IntProperty(
         name="Group",
@@ -280,6 +335,11 @@ class RZMShape(bpy.types.PropertyGroup):
     shape_keys: CollectionProperty(type=RZMShapeKey)
     groups: CollectionProperty(type=RZMShapeClusterGroup)
     active_group_index: IntProperty(name="Active Group", default=0, min=0)
+    use_multi_groups: BoolProperty(
+        name="Multi-groups",
+        description="Expose variant groups for this cluster. Disabled keeps only default group 0.",
+        default=False
+    )
     sync_value: FloatProperty(
         name="Preview Value",
         description="Viewport-only preview value applied to all SKC members in this manager",

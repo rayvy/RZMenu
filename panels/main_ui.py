@@ -64,6 +64,7 @@ class RZM_UL_Shapes(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
         row.prop(item, "shape_name", text="", emboss=False, icon='SHAPEKEY_DATA')
+        row.prop(item, "shape_type", text="")
         row.label(text=f"SKC: {len(item.shape_keys)}")
 
 class RZM_UL_ShapeKeys(bpy.types.UIList):
@@ -71,8 +72,6 @@ class RZM_UL_ShapeKeys(bpy.types.UIList):
         row = layout.row(align=True)
         label = item.target_shape_name if item.target_shape_name else f"Legacy Key {item.key_name}"
         row.label(text=label, icon='SHAPEKEY_DATA')
-        row.prop(item, "group_index", text="G")
-        row.prop(item, "mode", text="")
         if item.mode == 'ADVANCED':
             row.label(text="*", icon='SETTINGS')
 
@@ -1142,6 +1141,183 @@ def draw_material_transfer_ui(context, layout):
                     rem_op.target_part = part.name
                     rem_op.donor_index = idx
 
+def draw_shape_keys_simple_ui(context, layout):
+    scene = context.scene
+    rzm = scene.rzm
+
+    sources_box = layout.box()
+    sources_row = sources_box.row(align=True)
+    sources_row.label(text="Sources:", icon='GROUP')
+    sources_row.operator("rzm.add_shape_discovery_collection", text="", icon='ADD')
+    sources_row.operator("rzm.remove_shape_discovery_collection", text="", icon='REMOVE')
+    sources_row.operator("rzm.shape_key_export", text="Discover", icon='FILE_REFRESH')
+    sources_box.template_list(
+        "RZM_UL_ShapeDiscoveryCollections", "",
+        rzm, "shape_discovery_collections",
+        scene, "rzm_active_shape_coll_index",
+        rows=3
+    )
+
+    manager_box = layout.box()
+    manager_header = manager_box.row(align=True)
+    manager_header.label(text="Clusters:", icon='LINKED')
+    manager_header.operator("rzm.add_shape", text="", icon='ADD')
+    rem_shape = manager_header.operator("rzm.remove_shape", text="", icon='REMOVE')
+    rem_shape.shape_index = scene.rzm_active_shape_index
+    sync_shape = manager_header.operator("rzm.sync_shape_cluster", text="Sync", icon='FILE_REFRESH')
+    sync_shape.shape_index = scene.rzm_active_shape_index
+    manager_box.template_list(
+        "RZM_UL_Shapes", "",
+        rzm, "shapes",
+        scene, "rzm_active_shape_index",
+        rows=5
+    )
+
+    if not (rzm.shapes and 0 <= scene.rzm_active_shape_index < len(rzm.shapes)):
+        available_box = layout.box()
+        available_box.label(text="Create a cluster first, then add ShapeKey members.", icon='INFO')
+        return
+
+    active_shape = rzm.shapes[scene.rzm_active_shape_index]
+    has_groups = len(active_shape.groups) > 0
+
+    details = manager_box.box()
+    row = details.row(align=True)
+    row.label(text=f"Variable: {active_shape.shape_name}", icon='DOT')
+    row.prop(active_shape, "use_multi_groups", text="Multi-groups")
+
+    active_group = active_shape.groups[active_shape.active_group_index] if (
+        has_groups and 0 <= active_shape.active_group_index < len(active_shape.groups)
+    ) else None
+
+    if active_shape.use_multi_groups:
+        group_box = details.box()
+        group_header = group_box.row(align=True)
+        group_header.label(text="Groups:", icon='GROUP')
+        if has_groups:
+            group_header.operator("rzm.add_shape_cluster_group", text="", icon='ADD')
+            group_header.operator("rzm.remove_shape_cluster_group", text="", icon='REMOVE')
+        else:
+            group_header.operator("rzm.ensure_shape_default_group", text="Initialize", icon='ADD')
+
+        if has_groups:
+            group_buttons = group_box.row(align=True)
+            for group_index, group in enumerate(active_shape.groups):
+                label = group.group_name if group.group_name else f"Group {group_index}"
+                op = group_buttons.operator(
+                    "rzm.set_shape_cluster_group",
+                    text=label,
+                    depress=(group_index == active_shape.active_group_index)
+                )
+                op.group_index = group_index
+
+            if active_group:
+                row = group_box.row(align=True)
+                row.prop(active_group, "group_name", text="Name")
+                row.prop(active_group, "preview_value", text="Preview", slider=True)
+                group_box.prop(active_group, "condition", text="Condition")
+                group_box.prop(active_group, "fallback_value", text="Fallback")
+                if active_shape.shape_type == 'Anim':
+                    over = group_box.box()
+                    over.label(text="Anim Override:", icon='DRIVER')
+                    over.prop(active_group, "override_switch_condition", text="Condition")
+                    over.prop(active_group, "override_switch_value_link", text="Value Link")
+    else:
+        if active_group:
+            details.prop(active_group, "preview_value", text="Preview", slider=True)
+
+    member_box = details.box()
+    member_header = member_box.row(align=True)
+    member_header.label(text="Members:", icon='SHAPEKEY_DATA')
+    member_header.prop_search(scene, "rzm_shape_member_candidate", rzm, "shape_configs", text="")
+    member_header.operator("rzm.remove_shape_cluster_member", text="", icon='REMOVE')
+    member_box.template_list(
+        "RZM_UL_ShapeKeys", "",
+        active_shape, "shape_keys",
+        scene, "rzm_active_shape_key_index",
+        rows=4
+    )
+
+    if active_shape.shape_keys and 0 <= scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
+        member = active_shape.shape_keys[scene.rzm_active_shape_key_index]
+        edit = member_box.box()
+        edit.label(text=f"Target: {member.target_shape_name if member.target_shape_name else '<empty>'}", icon='DOT')
+        if active_shape.use_multi_groups and has_groups:
+            group_row = edit.row(align=True)
+            group_row.label(text="Groups:")
+            raw_groups = {
+                part.strip()
+                for part in str(getattr(member, "group_indices", "") or "").split(",")
+                if part.strip()
+            }
+            if not raw_groups:
+                raw_groups = {str(member.group_index)}
+            for group_index, group in enumerate(active_shape.groups):
+                op = group_row.operator(
+                    "rzm.toggle_shape_member_group",
+                    text=group.group_name if group.group_name else f"G{group_index}",
+                    depress=(str(group_index) in raw_groups)
+                )
+                op.group_index = group_index
+        edit.prop(member, "mode", text="Mapping")
+        if member.mode == 'ADVANCED':
+            row = edit.row(align=True)
+            row.prop(member, "input_range_min", text="From")
+            row.prop(member, "input_range_max", text="To")
+            edit.prop(member, "multiplier")
+        if active_shape.shape_type == 'Anim':
+            timeline_box = edit.box()
+            timeline_box.label(text="Timeline:", icon='TIME')
+            t1 = member.anim_start_frame
+            t2 = member.anim_t2
+            t3 = member.anim_t3
+            t4 = member.anim_end_frame
+            bar_chars = []
+            for i in range(24):
+                mid = i / 24.0 + (0.5 / 24.0)
+                if mid < t1 or mid > t4:
+                    bar_chars.append("-")
+                elif mid < t2:
+                    bar_chars.append("/")
+                elif mid > t3:
+                    bar_chars.append("\\")
+                else:
+                    bar_chars.append("#")
+            timeline_box.label(text="".join(bar_chars))
+            ctrl = timeline_box.row(align=True)
+            for action, label in [
+                ('SHIFT_LEFT', '<'),
+                ('SHIFT_RIGHT', '>'),
+                ('EXPAND', '+'),
+                ('SHRINK', '-'),
+                ('MORE_HOLD', 'Hold+'),
+                ('LESS_HOLD', 'Hold-'),
+            ]:
+                op = ctrl.operator("rzm.adjust_shape_member_timeline", text=label)
+                op.action = action
+
+    available_box = layout.box()
+    available_header = available_box.row(align=True)
+    icon = 'TRIA_DOWN' if scene.rzm_show_available_shape_keys else 'TRIA_RIGHT'
+    available_header.prop(scene, "rzm_show_available_shape_keys", text="Available Shape Keys", icon=icon, emboss=False)
+    available_header.operator("rzm.import_shape_key_config", text="", icon='IMPORT')
+    available_header.operator("rzm.export_shape_key_config", text="", icon='EXPORT')
+
+    if scene.rzm_show_available_shape_keys:
+        available_box.template_list(
+            "RZM_UL_ShapeConfigs", "",
+            rzm, "shape_configs",
+            scene, "rzm_active_shape_config_index",
+            rows=6
+        )
+        if rzm.shape_configs and 0 <= scene.rzm_active_shape_config_index < len(rzm.shape_configs):
+            active_conf = rzm.shape_configs[scene.rzm_active_shape_config_index]
+            selected_row = available_box.row(align=True)
+            selected_row.label(text=active_conf.shape_name, icon='DOT')
+            selected_row.prop(active_conf, "shape_type", text="")
+            select_op = selected_row.operator("rzm.select_affected_objects", text="", icon='RESTRICT_SELECT_OFF')
+            select_op.config_index = scene.rzm_active_shape_config_index
+
 def draw_toolbox_content(self, context):
     layout = self.layout
     scene = context.scene
@@ -1164,10 +1340,32 @@ def draw_toolbox_content(self, context):
 
     layout.separator(factor=1.0)
 
+    section_row = layout.row(align=True)
+    section_row.prop(scene, "rzm_configs_tab", expand=True)
+
+    if scene.rzm_configs_tab == 'COMPONENTS':
+        box = layout.box()
+        draw_component_manager_ui(context, box)
+        return
+
+    if scene.rzm_configs_tab == 'MATERIAL_TRANSFER':
+        box = layout.box()
+        draw_material_transfer_ui(context, box)
+        return
+
+    if scene.rzm_configs_tab == 'TEXWORKS':
+        box = layout.box()
+        box.label(text="TEXWORKS", icon='TEXTURE')
+        from .ui_debug_panel import VIEW3D_PT_RZConstructorDebugPanel
+        VIEW3D_PT_RZConstructorDebugPanel.draw_tex_works_config(self, box, rzm, context)
+        return
+
+    layout.separator(factor=1.0)
+
     # 2. PROJECT CONFIGURATION
     box = layout.box()
-    box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
-    box.label(text="Run Links & Keybinds → Qt 'Run Links' panel", icon='INFO')
+    # box.label(text="PROJECT CONFIGURATION", icon='SETTINGS')
+    # box.label(text="Run Links & Keybinds → Qt 'Run Links' panel", icon='INFO')
     
     # Tabs Selector inside the box
     row = box.row(align=True)
@@ -1228,9 +1426,19 @@ def draw_toolbox_content(self, context):
 
     elif tab in {'SHAPES', 'NATIVE_SHAPES'}:
         # --- Merged ShapeKey manager + SKC system ---
+        legacy_ui = getattr(rzm.addons, "legacy_sk_ui", False)
+        if not legacy_ui:
+            draw_shape_keys_simple_ui(context, box)
+            return
+
+        box.row(align=True).prop(scene, "rzm_shape_keys_ui_mode", expand=True)
+        if scene.rzm_shape_keys_ui_mode == 'SIMPLE':
+            draw_shape_keys_simple_ui(context, box)
+            return
+
         box.prop(rzm.addons, "export_shapekeys", text="Enable Shape Keys Export", icon='OUTLINER_OB_MESH')
-        
         if rzm.addons.export_shapekeys:
+
             manager_box = box.box()
             manager_box.label(text="Shape Managers / Clusters:", icon='SHAPEKEY_DATA')
             row_m = manager_box.row(align=True)
@@ -1814,33 +2022,6 @@ def draw_toolbox_content(self, context):
 
                 box.separator()
                 box.label(text="Export saves configurations inside the addon's .ini output. No external buffers needed.", icon='INFO')
-
-    # 3. COMPONENT MANAGER & MATERIAL TRANSFER (Below Project Configuration, collapsible)
-    layout.separator(factor=1.0)
-    
-    # COMPONENT MANAGER Collapsible Box
-    cm_box = layout.box()
-    row = cm_box.row()
-    icon = 'TRIA_DOWN' if scene.rzm_show_component_manager else 'TRIA_RIGHT'
-    row.prop(scene, "rzm_show_component_manager", text="COMPONENT MANAGER", icon=icon, emboss=False)
-    
-    if scene.rzm_show_component_manager:
-        draw_component_manager_ui(context, cm_box)
-        
-    # MATERIAL TRANSFER Collapsible Box
-    mt_box = layout.box()
-    row = mt_box.row()
-    icon = 'TRIA_DOWN' if scene.rzm_show_material_transfer else 'TRIA_RIGHT'
-    row.prop(scene, "rzm_show_material_transfer", text="MATERIAL TRANSFER", icon=icon, emboss=False)
-    
-    if scene.rzm_show_material_transfer:
-        draw_material_transfer_ui(context, mt_box)
-
-    # TEXWORKS lives with long-form configuration tools instead of the daily toolbox.
-    tw_box = layout.box()
-    tw_box.label(text="TEXWORKS", icon='TEXTURE')
-    from .ui_debug_panel import VIEW3D_PT_RZConstructorDebugPanel
-    VIEW3D_PT_RZConstructorDebugPanel.draw_tex_works_config(self, tw_box, rzm, context)
 
 
 class VIEW3D_PT_RZConstructorToolboxPanel_Internal(bpy.types.Panel):

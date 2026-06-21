@@ -393,6 +393,8 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
         row.prop(addons, "shape_morph"); row.prop(addons, "shape_morph_anim")
         row = col.row(align=True)
         row.prop(addons, "dtoggle_compute"); row.prop(addons, "rtoggle_compute"); row.prop(addons, "frame_trace")
+        row = col.row(align=True)
+        row.prop(addons, "legacy_sk_ui")
         box.separator()
 
     def draw_tex_works_config(self, layout, rzm, context):

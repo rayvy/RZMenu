@@ -54,7 +54,7 @@ pre run = CommandListRZMPinDetected
 endif
 endif
 {% endif %}
-{% if scene.rzm and scene.rzm.addons.export_shapekeys and scene.rzm.shape_configs %}
+{% if scene.rzm and scene.rzm.shape_configs %}
 [CommandListRZMObjectDataInit]
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
         {% if component.strides %}
@@ -557,12 +557,12 @@ endif
 
 if $active
     if $first_run
-            {% if scene.rzm.addons.export_shapekeys and scene.rzm.shape_configs %}
+            {% if scene.rzm.shape_configs %}
             run = CommandListRZMObjectDataInit
         {% endif %}
         $first_run = 0
     endif
-    {% if scene.rzm.addons.export_shapekeys and scene.rzm.shape_configs %}
+    {% if scene.rzm.shape_configs %}
     ;run = CustomShaderComputeShapes
     {% endif %}
     run = CommandListPreSnippet
@@ -2387,13 +2387,13 @@ filename = .\res\mod_name.{{ font_ext }}
 {% endmacro %}
 
 {% macro shape_generate(mod_file, scene) %}
-{% if scene.rzm.addons.export_shapekeys %}
+{% if scene.rzm.shape_configs %}
 {{ shapes_native.shape_generate(scene=scene, game_name=scene.rzm.game.name, mod_file=mod_file) }}
 {% endif %}
 {% endmacro %}
 
 {% macro shape_generate_arknights(extracted_object, merged_object, buffers, scene) %}
-{% if scene.rzm.addons.export_shapekeys %}
+{% if scene.rzm.shape_configs %}
 {{ shapes_native.shape_generate(scene=scene, game_name=scene.rzm.game.name, extracted_object=extracted_object, merged_object=merged_object, buffers=buffers) }}
 
 {{ weights_native.weight_generate(scene=scene, game_name=scene.rzm.game.name, extracted_object=extracted_object, merged_object=merged_object, buffers=buffers) }}

@@ -265,8 +265,13 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     )
     export_shapekeys: BoolProperty(
         name="Export ShapeKeys",
-        default=False,
+        default=True,
         description="Enable ShapeKey export. Disabled means no ShapeKey system is generated."
+    )
+    legacy_sk_ui: BoolProperty(
+        name="Legacy SK UI",
+        default=False,
+        description="Show the old full technical ShapeKey cockpit in the Shape Keys panel"
     )
     mirror_mesh: BoolProperty(
         name="Mirror Mesh (X)",

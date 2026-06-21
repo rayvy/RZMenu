@@ -554,6 +554,16 @@ def draw_material_twaa_option(self, context):
         box.label(text="RZ Construct Material Settings", icon='MATERIAL')
         box.prop(mat, "disable_twaa_export", text="Disable TWAA Sync Export")
 
+def update_shape_member_candidate(self, context):
+    candidate = str(getattr(self, "rzm_shape_member_candidate", "") or "").strip()
+    if not candidate:
+        return
+    if hasattr(bpy.ops.rzm, "add_shape_cluster_member"):
+        try:
+            bpy.ops.rzm.add_shape_cluster_member(target_shape_name=candidate)
+        except Exception as exc:
+            print(f"[RZM] Could not add ShapeKey member '{candidate}': {exc}")
+
 def register():
     for cls in classes_to_register:
         bpy.utils.register_class(cls)
@@ -865,8 +875,6 @@ def register():
     bpy.types.Scene.rzm_capture_overwrite_id = IntProperty(name="Overwrite ID", default=-1)
     bpy.types.Scene.rzm_show_captures_preview = BoolProperty(name="Show Captures Preview", default=True)
     bpy.types.Scene.rzm_show_capture_tools = BoolProperty(name="Show Capture Tools", default=False)
-    bpy.types.Scene.rzm_show_component_manager = BoolProperty(name="Show Component Manager", default=False)
-    bpy.types.Scene.rzm_show_material_transfer = BoolProperty(name="Show Material Transfer", default=False)
     bpy.types.Scene.rzm_toolbox_tab = EnumProperty(
         name="Toolbox Tab",
         items=[
@@ -877,6 +885,30 @@ def register():
             ('BLEND_RESIZE', "Blend Resize", "Manage bone-based resizing"),
         ],
         default='TOGGLES'
+    )
+    bpy.types.Scene.rzm_shape_keys_ui_mode = EnumProperty(
+        name="Shape Keys UI",
+        items=[
+            ('SIMPLE', "Simple", "Focused ShapeKey manager workflow"),
+            ('COCKPIT', "Cockpit", "Full technical ShapeKey control panel"),
+        ],
+        default='SIMPLE'
+    )
+    bpy.types.Scene.rzm_show_available_shape_keys = BoolProperty(name="Show Available Shape Keys", default=False)
+    bpy.types.Scene.rzm_shape_member_candidate = StringProperty(
+        name="ShapeKey Candidate",
+        default="",
+        update=update_shape_member_candidate
+    )
+    bpy.types.Scene.rzm_configs_tab = EnumProperty(
+        name="Config Area",
+        items=[
+            ('PROJECT', "Project", "Project variables, toggles, Shape Keys, keybinds, and Blend Resize"),
+            ('COMPONENTS', "Components", "Component Manager"),
+            ('MATERIAL_TRANSFER', "Material Transfer", "Material transfer donor mapping"),
+            ('TEXWORKS', "TexWorks", "TexWorks configuration"),
+        ],
+        default='PROJECT'
     )
     
     # --- RZM Shaitan Toolbox properties ---
@@ -1009,6 +1041,10 @@ def unregister():
     del bpy.types.Scene.rzm_show_captures_preview
     del bpy.types.Scene.rzm_show_capture_tools
     del bpy.types.Scene.rzm_toolbox_tab
+    del bpy.types.Scene.rzm_shape_keys_ui_mode
+    del bpy.types.Scene.rzm_show_available_shape_keys
+    del bpy.types.Scene.rzm_shape_member_candidate
+    del bpy.types.Scene.rzm_configs_tab
     del bpy.types.Scene.rzm_editor_mode
     del bpy.types.Scene.rzm_show_debug_panel
     del bpy.types.Scene.rzm_capture_settings

@@ -7,6 +7,16 @@ def shape_config_has_required_value_link(config):
         return True
     return bool(str(getattr(config, "value_link", "") or "").strip())
 
+def shape_config_is_cluster_member(rzm, config):
+    shape_name = getattr(config, "shape_name", "")
+    if not shape_name:
+        return False
+    for shape in getattr(rzm, "shapes", []):
+        for member in getattr(shape, "shape_keys", []):
+            if getattr(member, "target_shape_name", "") == shape_name:
+                return True
+    return False
+
 
 def shape_key_block_is_exportable(key_block):
     if not key_block:
@@ -91,6 +101,7 @@ def prepare_shape_config_export_runtime(rzm):
         disabled = (
             getattr(config, "disable_export", False)
             or not shape_config_has_required_value_link(config)
+            or not shape_config_is_cluster_member(rzm, config)
         )
 
         if not disabled:

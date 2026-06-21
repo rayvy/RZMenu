@@ -24,7 +24,7 @@ def ensure_shape_default_group(shape):
 
 def get_shape_config(rzm, shape_name):
     for config in rzm.shape_configs:
-        if config.shape_name == shape_name:
+        if config.shape_name == shape_name or getattr(config, "name", "") == shape_name:
             return config
     return None
 
@@ -34,18 +34,71 @@ def combine_conditions(*conditions):
         return ""
     return " && ".join(f"({part})" for part in parts)
 
+def combine_group_conditions(groups):
+    parts = [str(getattr(group, "condition", "") or "").strip() for group in groups]
+    parts = [part for part in parts if part]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return f"({parts[0]})"
+    return "(" + " || ".join(f"({part})" for part in parts) + ")"
+
+def member_group_indices(member, shape):
+    raw = str(getattr(member, "group_indices", "") or "").strip()
+    if raw:
+        result = set()
+        for part in raw.split(","):
+            try:
+                idx = int(part.strip())
+            except ValueError:
+                continue
+            if idx >= 0:
+                result.add(idx)
+        if result:
+            return sorted(result)
+    return [max(0, getattr(member, "group_index", 0))]
+
+def set_member_group_indices(member, indices):
+    cleaned = sorted({idx for idx in indices if idx >= 0})
+    if not cleaned:
+        cleaned = [0]
+    member.group_index = cleaned[0]
+    member.group_indices = ",".join(str(idx) for idx in cleaned)
+
 def apply_shape_member_to_config(shape, member, rzm):
     config = get_shape_config(rzm, member.target_shape_name)
     if not config:
         return False
 
     ensure_shape_default_group(shape)
-    group = shape.groups[member.group_index] if member.group_index < len(shape.groups) else shape.groups[0]
+    indices = member_group_indices(member, shape) if getattr(shape, "use_multi_groups", False) else [0]
+    groups = [
+        shape.groups[idx]
+        for idx in indices
+        if 0 <= idx < len(shape.groups)
+    ]
+    if not groups:
+        groups = [shape.groups[0]]
 
     config.value_link = shape.shape_name
+    config.disable_export = False
     config.shape_type = shape.shape_type
-    config.condition = combine_conditions(group.condition, member.condition)
-    config.fallback_value = member.fallback_value
+    config.condition = combine_conditions(combine_group_conditions(groups), member.condition)
+    config.fallback_value = groups[0].fallback_value if groups else member.fallback_value
+    override_group = next(
+        (
+            group for group in groups
+            if getattr(group, "override_switch_condition", "")
+            and getattr(group, "override_switch_value_link", "")
+        ),
+        None
+    )
+    if getattr(shape, "shape_type", "Linear") == "Anim" and override_group:
+        config.override_switch_condition = override_group.override_switch_condition
+        config.override_switch_value_link = override_group.override_switch_value_link
+    else:
+        config.override_switch_condition = ""
+        config.override_switch_value_link = ""
     config.multiplier = member.multiplier
     config.input_range_min = member.input_range_min
     config.input_range_max = member.input_range_max
@@ -468,6 +521,20 @@ class RZM_OT_AddShapeClusterGroup(bpy.types.Operator):
         shape.active_group_index = len(shape.groups) - 1
         return {'FINISHED'}
 
+class RZM_OT_EnsureShapeDefaultGroup(bpy.types.Operator):
+    """Create missing default group 0 on the active Shape manager."""
+    bl_idname = "rzm.ensure_shape_default_group"
+    bl_label = "Initialize Default Group"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        idx = context.scene.rzm_active_shape_index
+        if not (0 <= idx < len(rzm.shapes)):
+            return {'CANCELLED'}
+        ensure_shape_default_group(rzm.shapes[idx])
+        return {'FINISHED'}
+
 class RZM_OT_RemoveShapeClusterGroup(bpy.types.Operator):
     """Remove the active variant group. Group 0 is permanent."""
     bl_idname = "rzm.remove_shape_cluster_group"
@@ -503,6 +570,8 @@ class RZM_OT_AddShapeClusterMember(bpy.types.Operator):
     bl_label = "Add SKC To Manager"
     bl_options = {'REGISTER', 'UNDO'}
 
+    target_shape_name: bpy.props.StringProperty(default="")
+
     def execute(self, context):
         rzm = context.scene.rzm
         shape_idx = context.scene.rzm_active_shape_index
@@ -510,24 +579,28 @@ class RZM_OT_AddShapeClusterMember(bpy.types.Operator):
         if not (0 <= shape_idx < len(rzm.shapes)):
             self.report({'WARNING'}, "No active Shape manager.")
             return {'CANCELLED'}
-        if not (0 <= config_idx < len(rzm.shape_configs)):
+
+        target_name = self.target_shape_name.strip() or context.scene.rzm_shape_member_candidate.strip()
+        config = get_shape_config(rzm, target_name) if target_name else None
+        if not config and 0 <= config_idx < len(rzm.shape_configs):
+            config = rzm.shape_configs[config_idx]
+        if not config:
             self.report({'WARNING'}, "No active ShapeKeyConfig.")
             return {'CANCELLED'}
 
         shape = rzm.shapes[shape_idx]
-        config = rzm.shape_configs[config_idx]
         ensure_shape_default_group(shape)
 
+        initial_group = shape.active_group_index if getattr(shape, "use_multi_groups", False) else 0
         for member in shape.shape_keys:
-            if member.target_shape_name == config.shape_name:
-                member.group_index = shape.active_group_index
+            if member.target_shape_name == config.shape_name and initial_group in member_group_indices(member, shape):
                 apply_shape_member_to_config(shape, member, rzm)
-                self.report({'INFO'}, f"Moved {config.shape_name} to group {member.group_index}.")
+                self.report({'INFO'}, f"{config.shape_name} is already in this group.")
                 return {'FINISHED'}
 
         member = shape.shape_keys.add()
         member.target_shape_name = config.shape_name
-        member.group_index = shape.active_group_index
+        set_member_group_indices(member, [initial_group])
         member.multiplier = config.multiplier
         member.input_range_min = config.input_range_min
         member.input_range_max = config.input_range_max
@@ -538,6 +611,7 @@ class RZM_OT_AddShapeClusterMember(bpy.types.Operator):
         member.anim_end_frame = config.anim_end_frame
         member.fallback_value = config.fallback_value
         apply_shape_member_to_config(shape, member, rzm)
+        context.scene.rzm_shape_member_candidate = ""
         self.report({'INFO'}, f"Added {config.shape_name} to {shape.shape_name}.")
         return {'FINISHED'}
 
@@ -597,6 +671,112 @@ class RZM_OT_SyncShapeCluster(bpy.types.Operator):
         self.report({'INFO'}, f"Synced {synced} SKC entries. Missing: {missing}.")
         return {'FINISHED'}
 
+class RZM_OT_SetShapeClusterGroup(bpy.types.Operator):
+    """Set the active group on the selected Shape manager."""
+    bl_idname = "rzm.set_shape_cluster_group"
+    bl_label = "Set Shape Group"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    group_index: bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        shape_idx = context.scene.rzm_active_shape_index
+        if not (0 <= shape_idx < len(rzm.shapes)):
+            return {'CANCELLED'}
+        shape = rzm.shapes[shape_idx]
+        ensure_shape_default_group(shape)
+        if 0 <= self.group_index < len(shape.groups):
+            shape.active_group_index = self.group_index
+            return {'FINISHED'}
+        return {'CANCELLED'}
+
+class RZM_OT_ToggleShapeMemberGroup(bpy.types.Operator):
+    """Toggle active member membership in a group."""
+    bl_idname = "rzm.toggle_shape_member_group"
+    bl_label = "Toggle Member Group"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    group_index: bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        shape_idx = context.scene.rzm_active_shape_index
+        member_idx = context.scene.rzm_active_shape_key_index
+        if not (0 <= shape_idx < len(rzm.shapes)):
+            return {'CANCELLED'}
+        shape = rzm.shapes[shape_idx]
+        if not (0 <= member_idx < len(shape.shape_keys)):
+            return {'CANCELLED'}
+        ensure_shape_default_group(shape)
+        if not (0 <= self.group_index < len(shape.groups)):
+            return {'CANCELLED'}
+
+        member = shape.shape_keys[member_idx]
+        indices = set(member_group_indices(member, shape))
+        if self.group_index in indices and len(indices) > 1:
+            indices.remove(self.group_index)
+        else:
+            indices.add(self.group_index)
+        set_member_group_indices(member, indices)
+        apply_shape_member_to_config(shape, member, rzm)
+        return {'FINISHED'}
+
+class RZM_OT_AdjustShapeMemberTimeline(bpy.types.Operator):
+    """Adjust active Shape manager member animation envelope."""
+    bl_idname = "rzm.adjust_shape_member_timeline"
+    bl_label = "Adjust Member Timeline"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    action: bpy.props.StringProperty()
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        shape_idx = context.scene.rzm_active_shape_index
+        member_idx = context.scene.rzm_active_shape_key_index
+        if not (0 <= shape_idx < len(rzm.shapes)):
+            return {'CANCELLED'}
+        shape = rzm.shapes[shape_idx]
+        if not (0 <= member_idx < len(shape.shape_keys)):
+            return {'CANCELLED'}
+        member = shape.shape_keys[member_idx]
+
+        step = 0.05
+        t1 = member.anim_start_frame
+        t2 = member.anim_t2
+        t3 = member.anim_t3
+        t4 = member.anim_end_frame
+
+        if self.action == 'SHIFT_LEFT':
+            delta = min(step, t1)
+            member.anim_start_frame = max(0.0, t1 - delta)
+            member.anim_t2 = max(0.0, t2 - delta)
+            member.anim_t3 = max(0.0, t3 - delta)
+            member.anim_end_frame = max(0.0, t4 - delta)
+        elif self.action == 'SHIFT_RIGHT':
+            delta = min(step, 1.0 - t4)
+            member.anim_end_frame = min(1.0, t4 + delta)
+            member.anim_t3 = min(1.0, t3 + delta)
+            member.anim_t2 = min(1.0, t2 + delta)
+            member.anim_start_frame = min(1.0, t1 + delta)
+        elif self.action == 'EXPAND':
+            member.anim_start_frame = max(0.0, t1 - step)
+            member.anim_end_frame = min(1.0, t4 + step)
+        elif self.action == 'SHRINK':
+            if (t4 - t1) > 2 * step:
+                member.anim_start_frame = min(t2, t1 + step)
+                member.anim_end_frame = max(t3, t4 - step)
+        elif self.action == 'MORE_HOLD':
+            member.anim_t2 = max(member.anim_start_frame, t2 - step)
+            member.anim_t3 = min(member.anim_end_frame, t3 + step)
+        elif self.action == 'LESS_HOLD':
+            if (t3 - t2) > step:
+                member.anim_t2 = min(t3, t2 + step)
+                member.anim_t3 = max(t2, t3 - step)
+
+        apply_shape_member_to_config(shape, member, rzm)
+        return {'FINISHED'}
+
 class RZM_OT_CopyShapeMemberTimelineToGroup(bpy.types.Operator):
     """Copy the active cluster member timeline to every member in the same group."""
     bl_idname = "rzm.copy_shape_member_timeline_to_group"
@@ -640,10 +820,14 @@ classes_to_register = [
     RZM_OT_CleanupTrashShapes,
     RZM_OT_AdjustAnimTimeline,
     RZM_OT_AddShapeClusterGroup,
+    RZM_OT_EnsureShapeDefaultGroup,
     RZM_OT_RemoveShapeClusterGroup,
     RZM_OT_AddShapeClusterMember,
     RZM_OT_RemoveShapeClusterMember,
     RZM_OT_SyncShapeCluster,
+    RZM_OT_SetShapeClusterGroup,
+    RZM_OT_ToggleShapeMemberGroup,
+    RZM_OT_AdjustShapeMemberTimeline,
     RZM_OT_CopyShapeMemberTimelineToGroup,
 ]
 
