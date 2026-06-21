@@ -69,11 +69,25 @@ class RZM_UL_Shapes(bpy.types.UIList):
 
 class RZM_UL_ShapeKeys(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        row = layout.row(align=True)
+        shape = data
+        if getattr(shape, "shape_type", "Linear") == "Anim":
+            col = layout.column(align=True)
+            row = col.row(align=True)
+        else:
+            row = layout.row(align=True)
         label = item.target_shape_name if item.target_shape_name else f"Legacy Key {item.key_name}"
         row.label(text=label, icon='SHAPEKEY_DATA')
+        row.prop(item, "mode", text="")
         if item.mode == 'ADVANCED':
-            row.label(text="*", icon='SETTINGS')
+            row.prop(item, "input_range_min", text="From")
+            row.prop(item, "input_range_max", text="To")
+            row.prop(item, "multiplier", text="x")
+        if getattr(shape, "shape_type", "Linear") == "Anim":
+            timeline = col.row(align=True)
+            timeline.prop(item, "anim_start_frame", text="Start", slider=True)
+            timeline.prop(item, "anim_t2", text="Rise", slider=True)
+            timeline.prop(item, "anim_t3", text="Fall", slider=True)
+            timeline.prop(item, "anim_end_frame", text="End", slider=True)
 
 class RZM_UL_ShapeClusterGroups(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -1184,7 +1198,7 @@ def draw_shape_keys_simple_ui(context, layout):
     details = manager_box.box()
     row = details.row(align=True)
     row.label(text=f"Variable: {active_shape.shape_name}", icon='DOT')
-    row.prop(active_shape, "use_multi_groups", text="Multi-groups")
+    row.prop(active_shape, "use_multi_groups", text="Advanced Groups Configuration")
 
     active_group = active_shape.groups[active_shape.active_group_index] if (
         has_groups and 0 <= active_shape.active_group_index < len(active_shape.groups)
@@ -1238,63 +1252,31 @@ def draw_shape_keys_simple_ui(context, layout):
         rows=4
     )
 
-    if active_shape.shape_keys and 0 <= scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
+    if (
+        active_shape.use_multi_groups
+        and has_groups
+        and active_shape.shape_keys
+        and 0 <= scene.rzm_active_shape_key_index < len(active_shape.shape_keys)
+    ):
         member = active_shape.shape_keys[scene.rzm_active_shape_key_index]
         edit = member_box.box()
         edit.label(text=f"Target: {member.target_shape_name if member.target_shape_name else '<empty>'}", icon='DOT')
-        if active_shape.use_multi_groups and has_groups:
-            group_row = edit.row(align=True)
-            group_row.label(text="Groups:")
-            raw_groups = {
-                part.strip()
-                for part in str(getattr(member, "group_indices", "") or "").split(",")
-                if part.strip()
-            }
-            if not raw_groups:
-                raw_groups = {str(member.group_index)}
-            for group_index, group in enumerate(active_shape.groups):
-                op = group_row.operator(
-                    "rzm.toggle_shape_member_group",
-                    text=group.group_name if group.group_name else f"G{group_index}",
-                    depress=(str(group_index) in raw_groups)
-                )
-                op.group_index = group_index
-        edit.prop(member, "mode", text="Mapping")
-        if member.mode == 'ADVANCED':
-            row = edit.row(align=True)
-            row.prop(member, "input_range_min", text="From")
-            row.prop(member, "input_range_max", text="To")
-            edit.prop(member, "multiplier")
-        if active_shape.shape_type == 'Anim':
-            timeline_box = edit.box()
-            timeline_box.label(text="Timeline:", icon='TIME')
-            t1 = member.anim_start_frame
-            t2 = member.anim_t2
-            t3 = member.anim_t3
-            t4 = member.anim_end_frame
-            bar_chars = []
-            for i in range(24):
-                mid = i / 24.0 + (0.5 / 24.0)
-                if mid < t1 or mid > t4:
-                    bar_chars.append("-")
-                elif mid < t2:
-                    bar_chars.append("/")
-                elif mid > t3:
-                    bar_chars.append("\\")
-                else:
-                    bar_chars.append("#")
-            timeline_box.label(text="".join(bar_chars))
-            ctrl = timeline_box.row(align=True)
-            for action, label in [
-                ('SHIFT_LEFT', '<'),
-                ('SHIFT_RIGHT', '>'),
-                ('EXPAND', '+'),
-                ('SHRINK', '-'),
-                ('MORE_HOLD', 'Hold+'),
-                ('LESS_HOLD', 'Hold-'),
-            ]:
-                op = ctrl.operator("rzm.adjust_shape_member_timeline", text=label)
-                op.action = action
+        group_row = edit.row(align=True)
+        group_row.label(text="Groups:")
+        raw_groups = {
+            part.strip()
+            for part in str(getattr(member, "group_indices", "") or "").split(",")
+            if part.strip()
+        }
+        if not raw_groups:
+            raw_groups = {str(member.group_index)}
+        for group_index, group in enumerate(active_shape.groups):
+            op = group_row.operator(
+                "rzm.toggle_shape_member_group",
+                text=group.group_name if group.group_name else f"G{group_index}",
+                depress=(str(group_index) in raw_groups)
+            )
+            op.group_index = group_index
 
     available_box = layout.box()
     available_header = available_box.row(align=True)
@@ -1508,7 +1490,6 @@ def draw_toolbox_content(self, context):
                         r = edit_box.row(align=True)
                         r.prop(member, "anim_t3", text="Fall")
                         r.prop(member, "anim_end_frame", text="End")
-                        edit_box.operator("rzm.copy_shape_member_timeline_to_group", text="Apply Timeline To Group", icon='TIME')
 
             coll_box = box.box()
             coll_box.row().label(text="Discovery Collections:", icon='GROUP')

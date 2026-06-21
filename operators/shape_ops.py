@@ -557,10 +557,14 @@ class RZM_OT_RemoveShapeClusterGroup(bpy.types.Operator):
 
         shape.groups.remove(group_idx)
         for member in shape.shape_keys:
-            if member.group_index == group_idx:
-                member.group_index = 0
-            elif member.group_index > group_idx:
-                member.group_index -= 1
+            indices = []
+            for member_group_index in member_group_indices(member, shape):
+                if member_group_index == group_idx:
+                    continue
+                if member_group_index > group_idx:
+                    member_group_index -= 1
+                indices.append(member_group_index)
+            set_member_group_indices(member, indices or [0])
         shape.active_group_index = max(0, min(group_idx - 1, len(shape.groups) - 1))
         return {'FINISHED'}
 
@@ -794,9 +798,10 @@ class RZM_OT_CopyShapeMemberTimelineToGroup(bpy.types.Operator):
             return {'CANCELLED'}
 
         source = shape.shape_keys[member_idx]
+        source_groups = set(member_group_indices(source, shape))
         count = 0
         for member in shape.shape_keys:
-            if member.group_index != source.group_index:
+            if not source_groups.intersection(member_group_indices(member, shape)):
                 continue
             member.anim_type_index = source.anim_type_index
             member.anim_start_frame = source.anim_start_frame

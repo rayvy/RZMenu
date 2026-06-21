@@ -336,7 +336,7 @@ class RZMShape(bpy.types.PropertyGroup):
     groups: CollectionProperty(type=RZMShapeClusterGroup)
     active_group_index: IntProperty(name="Active Group", default=0, min=0)
     use_multi_groups: BoolProperty(
-        name="Multi-groups",
+        name="Advanced Groups Configuration",
         description="Expose variant groups for this cluster. Disabled keeps only default group 0.",
         default=False
     )
