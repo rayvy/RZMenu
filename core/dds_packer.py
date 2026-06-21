@@ -61,6 +61,7 @@ def pack_to_dds(pixels, width, height, output_path, dds_format='BC7_UNORM'):
     cmd = [
         texconv,
         "-f", dds_format,
+        "-m", "1",
         "-y", # overwrite
         "-o", out_dir
     ]

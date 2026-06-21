@@ -549,19 +549,19 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
 
         if game_selection in ('GenshinImpact', 'HonkaiStarRail'):
             effective_icc = 'SRGB'
-            effective_dds = 'BC7_UNORM_SRGB'
+            effective_dds = 'R8G8B8A8_UNORM_SRGB'
             preset_tag = " (Hoyo sRGB Preset)"
         elif game_selection == 'ArknightsEndfield':
             effective_icc = 'LINEAR'
-            effective_dds = 'BC7_UNORM'
+            effective_dds = 'R8G8B8A8_UNORM'
             preset_tag = " (Endfield Linear Preset)"
         elif game_selection == 'ZenlessZoneZero':
             effective_icc = 'LINEAR'
-            effective_dds = 'BC7_UNORM'
+            effective_dds = 'R8G8B8A8_UNORM'
             preset_tag = " (ZZZ Linear Preset)"
         else:
             effective_icc = 'LINEAR'
-            effective_dds = 'BC7_UNORM'
+            effective_dds = 'R8G8B8A8_UNORM'
             preset_tag = " (UKNOWN-GAME LINEAR PRESET)"
 
         # 4. Генерируем пиксели

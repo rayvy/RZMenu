@@ -201,12 +201,14 @@ class RZMExportSettings(bpy.types.PropertyGroup):
     
     dds_profile: EnumProperty(
         name="DDS Profile",
-        description="Select the compression profile for the exported DDS Atlas",
+        description="Select the DDS format for the exported atlas",
         items=[
+            ('R8G8B8A8_UNORM', "RGBA8 UNORM", "Lossless UI atlas format"),
+            ('R8G8B8A8_UNORM_SRGB', "RGBA8 UNORM SRGB", "Lossless UI atlas format (SRGB)"),
             ('BC7_UNORM', "BC7 UNORM", "BC7 High Quality Compression"),
             ('BC7_UNORM_SRGB', "BC7 UNORM SRGB", "BC7 High Quality Compression (SRGB)"),
         ],
-        default='BC7_UNORM'
+        default='R8G8B8A8_UNORM'
     )
 
     icc_profile: EnumProperty(

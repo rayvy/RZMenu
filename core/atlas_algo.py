@@ -24,7 +24,109 @@ class PackerNode:
         return self
 
 # Зазор между элементами атласа в пикселях (предотвращает texture bleeding).
-ATLAS_MARGIN = 2
+ATLAS_MARGIN = 8
+
+def _bleed_transparent_rgb(pixels: np.ndarray, iterations: int = 8, alpha_threshold: float = 1.0 / 255.0) -> np.ndarray:
+    """
+    Fill RGB in fully transparent pixels from nearby visible pixels while
+    preserving alpha. This keeps transparent black/garbage RGB out of filtering
+    and DDS encoding.
+    """
+    if pixels.size == 0:
+        return pixels
+
+    out = np.array(pixels, copy=True, dtype=np.float32)
+    filled = out[..., 3] > alpha_threshold
+    h, w = filled.shape
+
+    for _ in range(iterations):
+        new_rgb = out[..., :3].copy()
+        new_filled = filled.copy()
+
+        if h > 1:
+            candidates = (~filled[1:, :]) & filled[:-1, :]
+            target_rgb = new_rgb[1:, :]
+            target_filled = new_filled[1:, :]
+            target_rgb[candidates] = out[:-1, :, :3][candidates]
+            target_filled[candidates] = True
+
+            candidates = (~filled[:-1, :]) & filled[1:, :]
+            target_rgb = new_rgb[:-1, :]
+            target_filled = new_filled[:-1, :]
+            target_rgb[candidates] = out[1:, :, :3][candidates]
+            target_filled[candidates] = True
+
+        if w > 1:
+            candidates = (~filled[:, 1:]) & filled[:, :-1]
+            target_rgb = new_rgb[:, 1:]
+            target_filled = new_filled[:, 1:]
+            target_rgb[candidates] = out[:, :-1, :3][candidates]
+            target_filled[candidates] = True
+
+            candidates = (~filled[:, :-1]) & filled[:, 1:]
+            target_rgb = new_rgb[:, :-1]
+            target_filled = new_filled[:, :-1]
+            target_rgb[candidates] = out[:, 1:, :3][candidates]
+            target_filled[candidates] = True
+
+        if np.array_equal(new_filled, filled):
+            break
+
+        out[..., :3] = new_rgb
+        filled = new_filled
+
+    return out
+
+def _write_if_free(atlas_pixels: np.ndarray, occupied: np.ndarray, y_slice, x_slice, src: np.ndarray):
+    region_occupied = occupied[y_slice, x_slice]
+    if np.all(region_occupied):
+        return
+
+    dst = atlas_pixels[y_slice, x_slice]
+    writable = ~region_occupied
+    dst[writable] = src[writable]
+    region_occupied[writable] = True
+
+def _extrude_sprite_padding(atlas_pixels: np.ndarray, occupied: np.ndarray, x: int, y: int, img_pixels: np.ndarray, radius: int):
+    """
+    Copy edge pixels outside the UV rectangle into reserved padding. UVs still
+    point at the original sprite; this only protects filtering/compression.
+    """
+    if radius <= 0:
+        return
+
+    h, w = img_pixels.shape[:2]
+    atlas_h, atlas_w = atlas_pixels.shape[:2]
+    x0, x1 = x, x + w
+    y0, y1 = y, y + h
+
+    for d in range(1, radius + 1):
+        left = x0 - d
+        right = x1 + d - 1
+        bottom = y0 - d
+        top = y1 + d - 1
+
+        if bottom >= 0:
+            _write_if_free(atlas_pixels, occupied, np.s_[bottom:bottom + 1], np.s_[x0:x1], img_pixels[0:1, :, :])
+        if top < atlas_h:
+            _write_if_free(atlas_pixels, occupied, np.s_[top:top + 1], np.s_[x0:x1], img_pixels[-1:, :, :])
+        if left >= 0:
+            _write_if_free(atlas_pixels, occupied, np.s_[y0:y1], np.s_[left:left + 1], img_pixels[:, 0:1, :])
+        if right < atlas_w:
+            _write_if_free(atlas_pixels, occupied, np.s_[y0:y1], np.s_[right:right + 1], img_pixels[:, -1:, :])
+
+        if bottom >= 0 and left >= 0:
+            atlas_pixels[bottom, left] = img_pixels[0, 0]
+            occupied[bottom, left] = True
+        if bottom >= 0 and right < atlas_w:
+            atlas_pixels[bottom, right] = img_pixels[0, -1]
+            occupied[bottom, right] = True
+        if top < atlas_h and left >= 0:
+            atlas_pixels[top, left] = img_pixels[-1, 0]
+            occupied[top, left] = True
+        if top < atlas_h and right < atlas_w:
+            atlas_pixels[top, right] = img_pixels[-1, -1]
+            occupied[top, right] = True
 
 def calculate_atlas_layout(image_sizes_dict: dict, margin: int = ATLAS_MARGIN):
     """
@@ -223,6 +325,8 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
         
     print(f"DEBUG EXPORT: Creating {atlas_w}x{atlas_h} pixel buffer.")
     atlas_pixels = np.zeros((atlas_h, atlas_w, 4), dtype=np.float32)
+    occupied = np.zeros((atlas_h, atlas_w), dtype=bool)
+    placements = []
 
     for name, img in image_dict.items():
         if name not in uv_data: continue
@@ -240,7 +344,10 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
             # Input is (H, W, 4) float32, top-down.
             # We must flip it to bottom-up to match the atlas/Blender orientation.
             img_pixels = np.ascontiguousarray(np.flipud(img), dtype=np.float32)
+            img_pixels = _bleed_transparent_rgb(img_pixels)
             atlas_pixels[y:y+h, x:x+w] = img_pixels
+            occupied[y:y+h, x:x+w] = True
+            placements.append((x, y, img_pixels))
             
         elif hasattr(img, 'pixels'):
             # Blender Image support (for Raster icons / Animated frames)
@@ -269,9 +376,15 @@ def create_atlas_pixels(image_dict: dict, atlas_w: int, atlas_h: int, uv_data: d
                     pass 
 
                 img_pixels = img_pixels.reshape((h, w, 4))
+                img_pixels = _bleed_transparent_rgb(img_pixels)
                 atlas_pixels[y:y+h, x:x+w] = img_pixels
+                occupied[y:y+h, x:x+w] = True
+                placements.append((x, y, img_pixels))
             finally:
                 if old_colorspace != 'Non-Color':
                     img.colorspace_settings.name = old_colorspace
+
+    for x, y, img_pixels in placements:
+        _extrude_sprite_padding(atlas_pixels, occupied, x, y, img_pixels, ATLAS_MARGIN // 2)
     
     return atlas_pixels.flatten()
