@@ -1506,6 +1506,7 @@ cs-t105 = ResourceStyleBuffer
 cs-t106 = ResourceElementStaticMap
 cs-t107 = ResourceElementDefaultProps
 cs-t108 = ResourceElementBlackList
+cs-t109 = ResourceElementDrawData
 
 cs = /modules/draw_controller.hlsl
 
@@ -2324,6 +2325,11 @@ filename = .\res\element_default_props.buf
 type = Buffer
 format = R32G32B32A32_UINT
 filename = .\res\element_blacklist.buf
+
+[ResourceElementDrawData]
+type = Buffer
+format = R32G32B32A32_FLOAT
+filename = .\res\element_draw_data.buf
 
 [Constants]
 global $debugTexShow = 0

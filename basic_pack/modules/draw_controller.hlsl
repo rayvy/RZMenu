@@ -1,29 +1,24 @@
-// RZMenu
-// Made by: Rayvich
-// ==================================================================
-// == cs.hlsl - Версия "Бригадир" + Phase 0.5 ElementStaticMap
-//           + Phase 0.5.5: Color Bake, BlackList Buffer, loop i+=2
-//           + Phase 0.6: Dual Collector (slots 10-21 + 100-111)
-// ==================================================================
-RWBuffer<float4> DataBuffer           : register(u0);
-RWBuffer<uint>   IndexBuffer          : register(u1);
-Buffer<float4>   ResourceStyleBuffer  : register(t105);
+// RZMenu draw controller
+// Direct indexed element draw data path.
 
-Buffer<float4>   ElementStaticMap     : register(t106);
-Buffer<float4>   ElementDefaultProps  : register(t107);
-Buffer<uint4>    ElementBlackList     : register(t108);
+RWBuffer<float4> DataBuffer          : register(u0);
+RWBuffer<uint>   IndexBuffer         : register(u1);
+Buffer<float4>   ResourceStyleBuffer : register(t105);
+
+// Legacy resources are still bound by older templates. The hot path below uses
+// ElementDrawData instead of binary-searching these buffers.
+Buffer<float4>   ElementStaticMap    : register(t106);
+Buffer<float4>   ElementDefaultProps : register(t107);
+Buffer<uint4>    ElementBlackList    : register(t108);
+Buffer<float4>   ElementDrawData     : register(t109);
 
 Texture1D<float4> IniParams : register(t120);
 Buffer<uint>      InputTextBuffer : register(t24);
 
-#define SCREEN_RES       IniParams[99].zw
-
-// ── Slot A (100-111) ─────────────────────────────────────────────
 #define IN_POS           IniParams[100].xy
 #define IN_SIZE          IniParams[100].zw
 #define IN_COLOR         IniParams[101]
 #define IN_TILE_DATA     IniParams[102]
-#define IN_FX_PARAMS     IniParams[104]
 #define IN_MIRROR_MODE   IniParams[105].x
 #define IN_FONT_SLOT     IniParams[105].y
 #define IN_ROT           IniParams[105].w
@@ -37,12 +32,10 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define IN_FLAGS         (uint)IniParams[111].x
 #define IN_ELEMENT_ID    (uint)IniParams[111].w
 
-// ── Slot B (10-21) ───────────────────────────────────────────────
 #define IN_B_POS           IniParams[10].xy
 #define IN_B_SIZE          IniParams[10].zw
 #define IN_B_COLOR         IniParams[11]
 #define IN_B_TILE_DATA     IniParams[12]
-#define IN_B_FX_PARAMS     IniParams[14]
 #define IN_B_MIRROR_MODE   IniParams[15].x
 #define IN_B_FONT_SLOT     IniParams[15].y
 #define IN_B_ROT           IniParams[15].w
@@ -56,26 +49,116 @@ Buffer<uint>      InputTextBuffer : register(t24);
 #define IN_B_FLAGS         (uint)IniParams[21].x
 #define IN_B_ELEMENT_ID    (uint)IniParams[21].w
 
-// ── Flag bits ────────────────────────────────────────────────────
-#define FLAG_USE_STATIC_IMG   0x01u
-#define FLAG_USE_STATIC_TEXT  0x02u
-#define FLAG_IS_ELEMENT       0x04u
-#define FLAG_USE_STATIC_COLOR 0x08u
-#define FLAG_SLOT_B_VALID     0x10u  // set в x21 если второй слот активен
-
-// ── BlackList mask bits ──────────────────────────────────────────
-#define BL_COLOR     0x001u
-#define BL_IMAGE_ID  0x002u
-#define BL_TEXT_ID   0x004u
+#define FLAG_USE_STATIC_IMG    0x01u
+#define FLAG_USE_STATIC_TEXT   0x02u
+#define FLAG_IS_ELEMENT        0x04u
+#define FLAG_USE_STATIC_COLOR  0x08u
+#define FLAG_SLOT_B_VALID      0x10u
 
 #define FLAG_USE_DEFAULT_STYLE 0x100u
 #define FLAG_USE_DEFAULT_FONT  0x200u
 #define FLAG_USE_DEFAULT_ROT   0x400u
 
+#define BL_COLOR     0x001u
+#define BL_IMAGE_ID  0x002u
+#define BL_TEXT_ID   0x004u
 
-// ================================================================
-// Общая функция записи одного элемента в буфер
-// ================================================================
+#define ELEMENT_DRAW_RECORDS_PER_ELEMENT 5u
+
+void ApplyPackedElementData(
+    uint base_idx,
+    uint flags,
+    float draw_mode,
+    uint element_id
+)
+{
+    [branch]
+    if (!(flags & FLAG_IS_ELEMENT))
+        return;
+
+    uint draw_base = element_id * ELEMENT_DRAW_RECORDS_PER_ELEMENT;
+    float4 d1 = ElementDrawData[draw_base + 1u];
+    float4 d2 = ElementDrawData[draw_base + 2u];
+    float4 d3 = ElementDrawData[draw_base + 3u];
+    float4 d4 = ElementDrawData[draw_base + 4u];
+
+    uint found_image = (uint)d1.z;
+    uint found_text  = (uint)d1.w;
+    uint bl_mask     = (uint)d3.y;
+    float has_color  = d4.z;
+    bool writes_text_id = (draw_mode == 3.0f || draw_mode == 4.0f);
+
+    [branch]
+    if ((flags & FLAG_USE_STATIC_COLOR) && has_color > 0.5f)
+    {
+        DataBuffer[base_idx + 2] = float4(d3.z, d3.w, d4.x, d4.y);
+    }
+
+    [branch]
+    if ((flags & FLAG_USE_STATIC_IMG) && found_image > 0u && !writes_text_id)
+    {
+        float4 tile = DataBuffer[base_idx + 3];
+        if (tile.x < 0.5f)
+            tile.x = (float)found_image;
+        DataBuffer[base_idx + 3] = tile;
+    }
+
+    [branch]
+    if ((flags & FLAG_USE_STATIC_TEXT) && found_text > 0u && writes_text_id)
+    {
+        float4 tile = DataBuffer[base_idx + 3];
+        if (tile.x < 0.5f)
+            tile.x = (float)found_text;
+        DataBuffer[base_idx + 3] = tile;
+    }
+
+    [branch]
+    if (bl_mask != 0u)
+    {
+        [branch]
+        if ((bl_mask & BL_COLOR) && has_color > 0.5f)
+        {
+            DataBuffer[base_idx + 2] = float4(d3.z, d3.w, d4.x, d4.y);
+        }
+
+        [branch]
+        if ((bl_mask & BL_IMAGE_ID) && found_image > 0u && !writes_text_id)
+        {
+            float4 tile = DataBuffer[base_idx + 3];
+            tile.x = (float)found_image;
+            DataBuffer[base_idx + 3] = tile;
+        }
+
+        [branch]
+        if ((bl_mask & BL_TEXT_ID) && found_text > 0u && writes_text_id)
+        {
+            float4 tile = DataBuffer[base_idx + 3];
+            tile.x = (float)found_text;
+            DataBuffer[base_idx + 3] = tile;
+        }
+    }
+
+    [branch]
+    if ((flags & FLAG_USE_DEFAULT_STYLE) && d2.y > 0.5f)
+    {
+        float4 params = DataBuffer[base_idx + 6];
+        if (params.y < 0.5f)
+            params.y = d2.y;
+        DataBuffer[base_idx + 6] = params;
+    }
+
+    [branch]
+    if (flags & (FLAG_USE_DEFAULT_FONT | FLAG_USE_DEFAULT_ROT))
+    {
+        float4 mirror = DataBuffer[base_idx + 4];
+        if ((flags & FLAG_USE_DEFAULT_FONT) && d2.z > 0.5f && mirror.y < 0.5f)
+            mirror.y = d2.z;
+        if ((flags & FLAG_USE_DEFAULT_ROT) && abs(d2.w) > 0.000001f && abs(mirror.w) <= 0.000001f)
+            mirror.w = d2.w;
+        DataBuffer[base_idx + 4] = mirror;
+    }
+}
+
 void WriteElement(
     uint   base_idx,
     uint   flags,
@@ -110,209 +193,12 @@ void WriteElement(
 
     DataBuffer[base_idx + 6] = float4(fn_type, style_id, tex_id, draw_mode);
 
-    // ── ElementStaticMap lookup ──────────────────────────────────
-    [branch]
-    if ((flags & FLAG_IS_ELEMENT) && (flags & (FLAG_USE_STATIC_IMG | FLAG_USE_STATIC_TEXT | FLAG_USE_STATIC_COLOR)))
-    {
-        uint  target_id   = element_id;
-        uint  found_image = 0u;
-        uint  found_text  = 0u;
-        float found_r     = 0.0f;
-        float found_g     = 0.0f;
-        float found_b     = 0.0f;
-        float found_a     = 0.5f;
-        float has_color   = 0.0f;
-
-        uint num_structs = 0;
-        ElementStaticMap.GetDimensions(num_structs);
-        int low = 0;
-        int high = (int)(num_structs / 2) - 2; // Exclude sentinel at the end
-
-        [loop]
-        while (low <= high)
-        {
-            int mid = (low + high) / 2;
-            float4 A = ElementStaticMap[mid * 2];
-            uint entry_id = (uint)A.x;
-
-            if (entry_id == target_id)
-            {
-                found_image = (uint)A.y;
-                found_text  = (uint)A.z;
-                has_color   = A.w;
-                float4 B    = ElementStaticMap[mid * 2 + 1];
-                found_r = B.x;
-                found_g = B.y;
-                found_b = B.z;
-                found_a = B.w;
-                break;
-            }
-            if (entry_id < target_id)
-            {
-                low = mid + 1;
-            }
-            else
-            {
-                high = mid - 1;
-            }
-        }
-
-        bool writes_text_id = (draw_mode == 3.0f || draw_mode == 4.0f);
-
-        [branch]
-        if (found_image > 0u && !writes_text_id)
-        {
-            float ini_image = DataBuffer[base_idx + 3].x;
-            if (ini_image < 0.5f)
-            {
-                float4 temp = DataBuffer[base_idx + 3];
-                temp.x = (float)found_image;
-                DataBuffer[base_idx + 3] = temp;
-            }
-        }
-
-        [branch]
-        if (found_text > 0u && writes_text_id)
-        {
-            float ini_text = DataBuffer[base_idx + 3].x;
-            if (ini_text < 0.5f)
-            {
-                float4 temp = DataBuffer[base_idx + 3];
-                temp.x = (float)found_text;
-                DataBuffer[base_idx + 3] = temp;
-            }
-        }
-
-        [branch]
-        if ((flags & FLAG_USE_STATIC_COLOR) && has_color > 0.5f)
-        {
-            DataBuffer[base_idx + 2] = float4(found_r, found_g, found_b, found_a);
-        }
-
-        // ── BlackList ────────────────────────────────────────────
-        uint bl_mask = 0u;
-        uint total_bl_structs = 0;
-        ElementBlackList.GetDimensions(total_bl_structs);
-        int low_bl = 0;
-        int high_bl = (int)total_bl_structs - 2; // Exclude sentinel at the end
-
-        [loop]
-        while (low_bl <= high_bl)
-        {
-            int mid = (low_bl + high_bl) / 2;
-            uint4 bl_entry = ElementBlackList[mid];
-            uint entry_id = bl_entry.x;
-
-            if (entry_id == target_id)
-            {
-                bl_mask = bl_entry.y;
-                break;
-            }
-            if (entry_id < target_id)
-            {
-                low_bl = mid + 1;
-            }
-            else
-            {
-                high_bl = mid - 1;
-            }
-        }
-
-        [branch]
-        if (bl_mask != 0u)
-        {
-            [branch]
-            if ((bl_mask & BL_COLOR) && has_color > 0.5f)
-                DataBuffer[base_idx + 2] = float4(found_r, found_g, found_b, found_a);
-
-            [branch]
-            if ((bl_mask & BL_IMAGE_ID) && found_image > 0u && !writes_text_id)
-            {
-                float4 temp = DataBuffer[base_idx + 3];
-                temp.x = (float)found_image;
-                DataBuffer[base_idx + 3] = temp;
-            }
-
-            [branch]
-            if ((bl_mask & BL_TEXT_ID) && found_text > 0u && writes_text_id)
-            {
-                float4 temp = DataBuffer[base_idx + 3];
-                temp.x = (float)found_text;
-                DataBuffer[base_idx + 3] = temp;
-            }
-        }
-    }
-
-    // ── ElementDefaultProps lookup ─────────────────────────────────
-    [branch]
-    if ((flags & FLAG_IS_ELEMENT) && (flags & (FLAG_USE_DEFAULT_STYLE | FLAG_USE_DEFAULT_FONT | FLAG_USE_DEFAULT_ROT)))
-    {
-        uint  target_id = element_id;
-        float default_style = 0.0f;
-        float default_font = 0.0f;
-        float default_rot = 0.0f;
-        bool  found_defaults = false;
-
-        uint num_default_structs = 0;
-        ElementDefaultProps.GetDimensions(num_default_structs);
-        int low_def = 0;
-        int high_def = (int)(num_default_structs / 2) - 2; // Exclude sentinel at the end
-
-        [loop]
-        while (low_def <= high_def)
-        {
-            int mid = (low_def + high_def) / 2;
-            float4 A = ElementDefaultProps[mid * 2];
-            uint entry_id = (uint)A.x;
-
-            if (entry_id == target_id)
-            {
-                default_style = A.y;
-                default_font = A.z;
-                default_rot = A.w;
-                found_defaults = true;
-                break;
-            }
-            if (entry_id < target_id)
-            {
-                low_def = mid + 1;
-            }
-            else
-            {
-                high_def = mid - 1;
-            }
-        }
-
-        [branch]
-        if (found_defaults)
-        {
-            [branch]
-            if ((flags & FLAG_USE_DEFAULT_STYLE) && default_style > 0.5f)
-            {
-                float4 s6 = DataBuffer[base_idx + 6];
-                if (s6.y < 0.5f) s6.y = default_style;
-                DataBuffer[base_idx + 6] = s6;
-            }
-
-            [branch]
-            if (flags & (FLAG_USE_DEFAULT_FONT | FLAG_USE_DEFAULT_ROT))
-            {
-                float4 s4 = DataBuffer[base_idx + 4];
-                if ((flags & FLAG_USE_DEFAULT_FONT) && default_font > 0.5f && s4.y < 0.5f)
-                    s4.y = default_font;
-                if ((flags & FLAG_USE_DEFAULT_ROT) && abs(default_rot) > 0.000001f && abs(s4.w) <= 0.000001f)
-                    s4.w = default_rot;
-                DataBuffer[base_idx + 4] = s4;
-            }
-        }
-    }
+    ApplyPackedElementData(base_idx, flags, draw_mode, element_id);
 }
-
 
 [numthreads(1, 1, 1)]
 void main(uint3 ThreadId : SV_DispatchThreadID)
 {
-    // ── Slot A всегда пишем ──────────────────────────────────────
     WriteElement(
         IN_BUFFER_OFFSET,
         IN_FLAGS,
@@ -332,12 +218,11 @@ void main(uint3 ThreadId : SV_DispatchThreadID)
         IN_ELEMENT_ID
     );
 
-    // ── Slot B пишем только если активен ────────────────────────
     [branch]
     if (IN_B_FLAGS & FLAG_SLOT_B_VALID)
     {
         WriteElement(
-            IN_BUFFER_OFFSET + 7u,  // <-- сдвиг на один элемент вперёд
+            IN_BUFFER_OFFSET + 7u,
             IN_B_FLAGS,
             IN_B_BUFFER_INDEX,
             IN_B_POS,

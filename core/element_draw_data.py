@@ -226,46 +226,59 @@ def write_element_draw_debug(rows, output_path):
         json.dump([asdict(row) for row in rows], handle, indent=2, sort_keys=True)
 
 
+DRAW_DATA_RECORDS_PER_ELEMENT = 5
+
+
 def write_element_draw_data_buffer(rows, output_path):
     """Write an expanded reserve buffer for the next GPU-side migration.
 
-    Current shaders do not bind this buffer yet. It exists to make the packed
-    source of truth inspectable and ready for a wider draw-data layout.
-    Layout: 4x float4 per element + 4x float4 sentinel.
+    Layout is dense direct-indexed by element_id:
+      base = element_id * DRAW_DATA_RECORDS_PER_ELEMENT
+
+      record 0: { element_id, parent_id, preset_id, underlayer_preset_id }
+      record 1: { helper_id, class_id, image_slot, text_slot }
+      record 2: { text_length, style_id_plus_one, font_slot, rotation }
+      record 3: { flags, blacklist_mask, color_r, color_g }
+      record 4: { color_b, color_a, has_color, 0 }
     """
-    result = bytearray()
+    max_id = max((row.element_id for row in rows), default=0)
+    records = [(0.0, 0.0, 0.0, 0.0)] * ((max_id + 1) * DRAW_DATA_RECORDS_PER_ELEMENT)
     for row in rows:
-        result += struct.pack(
-            "<ffff",
+        base = row.element_id * DRAW_DATA_RECORDS_PER_ELEMENT
+        records[base + 0] = (
             float(row.element_id),
             float(row.parent_id),
             float(row.preset_id),
             float(row.underlayer_preset_id),
         )
-        result += struct.pack(
-            "<ffff",
+        records[base + 1] = (
             float(row.helper_id),
             float(row.class_id),
             float(row.image_slot),
             float(row.text_slot),
         )
-        result += struct.pack(
-            "<ffff",
+        records[base + 2] = (
             float(row.text_length),
             float(row.style_id_plus_one),
             float(row.font_slot),
             float(row.rotation),
         )
-        result += struct.pack(
-            "<ffff",
+        records[base + 3] = (
             float(row.flags),
             float(row.blacklist_mask),
             row.color[0],
             row.color[1],
         )
+        records[base + 4] = (
+            row.color[2],
+            row.color[3],
+            row.has_color,
+            0.0,
+        )
 
-    for _ in range(4):
-        result += struct.pack("<ffff", 0.0, 0.0, 0.0, 0.0)
+    result = bytearray()
+    for record in records:
+        result += struct.pack("<ffff", *record)
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
