@@ -266,7 +266,7 @@ class RZMenuAddonSettings(bpy.types.PropertyGroup):
     export_shapekeys: BoolProperty(
         name="Export ShapeKeys",
         default=False,
-        description="Enable new ShapeKeyConfig discovery and export system"
+        description="Enable ShapeKey export. Disabled means no ShapeKey system is generated."
     )
     mirror_mesh: BoolProperty(
         name="Mirror Mesh (X)",

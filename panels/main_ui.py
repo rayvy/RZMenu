@@ -64,15 +64,25 @@ class RZM_UL_Shapes(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
         row.prop(item, "shape_name", text="", emboss=False, icon='SHAPEKEY_DATA')
-        row.label(text=f"Keys: {len(item.shape_keys)}")
+        row.label(text=f"SKC: {len(item.shape_keys)}")
 
 class RZM_UL_ShapeKeys(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
-        row.prop(item, "key_name", text="Key")
+        label = item.target_shape_name if item.target_shape_name else f"Legacy Key {item.key_name}"
+        row.label(text=label, icon='SHAPEKEY_DATA')
+        row.prop(item, "group_index", text="G")
         row.prop(item, "mode", text="")
         if item.mode == 'ADVANCED':
             row.label(text="*", icon='SETTINGS')
+
+class RZM_UL_ShapeClusterGroups(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        lock_icon = 'LOCKED' if index == 0 else 'GROUP'
+        row.prop(item, "group_name", text="", emboss=False, icon=lock_icon)
+        if item.condition:
+            row.label(text="cond", icon='FILTER')
 
 class RZM_UL_RunLinks(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -1216,23 +1226,82 @@ def draw_toolbox_content(self, context):
                     op.value_index = context.scene.rzm_active_value_index
                     op.tier_id = tid
 
-    elif tab == 'SHAPES':
-        warn = box.box()
-        warn.alert = True
-        warn.label(text="Legacy Shape UI is locked.", icon='ERROR')
-        warn.label(text="To activate shape keys, go to the Native Shapes panel.")
-        warn.label(text="A large redesign is planned later.")
-
-        if rzm.shapes:
-            disabled = box.column()
-            disabled.enabled = False
-            disabled.template_list("RZM_UL_Shapes", "", rzm, "shapes", context.scene, "rzm_active_shape_index")
-
-    elif tab == 'NATIVE_SHAPES':
-        # --- NEW SYSTEM (Discovery & Puppet Master) ---
-        box.prop(rzm.addons, "export_shapekeys", text="Enable Native Shapes Export", icon='OUTLINER_OB_MESH')
+    elif tab in {'SHAPES', 'NATIVE_SHAPES'}:
+        # --- Merged ShapeKey manager + SKC system ---
+        box.prop(rzm.addons, "export_shapekeys", text="Enable Shape Keys Export", icon='OUTLINER_OB_MESH')
         
         if rzm.addons.export_shapekeys:
+            manager_box = box.box()
+            manager_box.label(text="Shape Managers / Clusters:", icon='SHAPEKEY_DATA')
+            row_m = manager_box.row(align=True)
+            row_m.operator("rzm.add_shape", text="Add Manager", icon='ADD')
+            rem_shape = row_m.operator("rzm.remove_shape", text="", icon='REMOVE')
+            rem_shape.shape_index = scene.rzm_active_shape_index
+            sync_shape = row_m.operator("rzm.sync_shape_cluster", text="Sync Manager", icon='FILE_REFRESH')
+            sync_shape.shape_index = scene.rzm_active_shape_index
+            manager_box.template_list("RZM_UL_Shapes", "", rzm, "shapes", scene, "rzm_active_shape_index", rows=4)
+
+            if rzm.shapes and 0 <= scene.rzm_active_shape_index < len(rzm.shapes):
+                active_shape = rzm.shapes[scene.rzm_active_shape_index]
+                if len(active_shape.groups) == 0:
+                    init_row = manager_box.row(align=True)
+                    init_row.operator("rzm.add_shape_cluster_group", text="Initialize Default Group", icon='ADD')
+                detail_box = manager_box.box()
+                detail_box.prop(active_shape, "shape_name", text="Manager Variable")
+                detail_box.prop(active_shape, "shape_type", text="Type")
+                detail_box.prop(active_shape, "sync_value", text="Preview Value", slider=True)
+                detail_box.prop(active_shape, "disable_export", text="Disable Variable Export")
+
+                group_box = detail_box.box()
+                group_row = group_box.row(align=True)
+                group_row.label(text="Groups:", icon='GROUP')
+                group_row.operator("rzm.add_shape_cluster_group", text="", icon='ADD')
+                group_row.operator("rzm.remove_shape_cluster_group", text="", icon='REMOVE')
+                group_box.template_list(
+                    "RZM_UL_ShapeClusterGroups", "",
+                    active_shape, "groups",
+                    active_shape, "active_group_index",
+                    rows=3
+                )
+                if active_shape.groups and 0 <= active_shape.active_group_index < len(active_shape.groups):
+                    active_group = active_shape.groups[active_shape.active_group_index]
+                    group_box.prop(active_group, "group_name")
+                    group_box.prop(active_group, "condition")
+
+                member_box = detail_box.box()
+                member_row = member_box.row(align=True)
+                member_row.label(text="Cluster Members:", icon='LINKED')
+                member_row.operator("rzm.add_shape_cluster_member", text="Add Active SKC", icon='ADD')
+                member_row.operator("rzm.remove_shape_cluster_member", text="", icon='REMOVE')
+                member_box.template_list(
+                    "RZM_UL_ShapeKeys", "",
+                    active_shape, "shape_keys",
+                    scene, "rzm_active_shape_key_index",
+                    rows=5
+                )
+                if active_shape.shape_keys and 0 <= scene.rzm_active_shape_key_index < len(active_shape.shape_keys):
+                    member = active_shape.shape_keys[scene.rzm_active_shape_key_index]
+                    edit_box = member_box.box()
+                    edit_box.prop(member, "target_shape_name", text="Target SKC")
+                    edit_box.prop(member, "group_index", text="Group")
+                    edit_box.prop(member, "condition")
+                    edit_box.prop(member, "fallback_value")
+                    edit_box.prop(member, "mode")
+                    if member.mode == 'ADVANCED':
+                        r = edit_box.row(align=True)
+                        r.prop(member, "input_range_min", text="From")
+                        r.prop(member, "input_range_max", text="To")
+                        edit_box.prop(member, "multiplier")
+                    if active_shape.shape_type == 'Anim':
+                        edit_box.prop(member, "anim_type_index")
+                        r = edit_box.row(align=True)
+                        r.prop(member, "anim_start_frame", text="Start")
+                        r.prop(member, "anim_t2", text="Rise")
+                        r = edit_box.row(align=True)
+                        r.prop(member, "anim_t3", text="Fall")
+                        r.prop(member, "anim_end_frame", text="End")
+                        edit_box.operator("rzm.copy_shape_member_timeline_to_group", text="Apply Timeline To Group", icon='TIME')
+
             coll_box = box.box()
             coll_box.row().label(text="Discovery Collections:", icon='GROUP')
             row_c = coll_box.row(align=True)
@@ -2013,6 +2082,7 @@ classes_to_register = [
     RZM_UL_ToggleDefinitions,
     RZM_UL_Shapes,
     RZM_UL_ShapeKeys,
+    RZM_UL_ShapeClusterGroups,
     RZM_UL_RunLinks,
     RZM_UL_Keybinds,
     RZM_UL_ShapeDiscoveryCollections,

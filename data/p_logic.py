@@ -196,9 +196,52 @@ class RZMCondition(bpy.types.PropertyGroup):
 
 # ─── SHAPE KEY / SHAPE ────────────────────────────────────────────────────────
 
+def update_shape_cluster_sync(self, context):
+    """Preview-sync a Shape manager value into all linked ShapeKeyConfig entries."""
+    rzm = getattr(context.scene, "rzm", None) if context and context.scene else None
+    if not rzm:
+        return
+
+    self_path = self.path_from_id() if hasattr(self, "path_from_id") else ""
+    for shape in rzm.shapes:
+        shape_path = shape.path_from_id() if hasattr(shape, "path_from_id") else ""
+        if shape == self or (self_path and shape_path == self_path):
+            targets = {
+                member.target_shape_name
+                for member in shape.shape_keys
+                if getattr(member, "target_shape_name", "")
+            }
+            for config in rzm.shape_configs:
+                if config.shape_name in targets:
+                    config.sync_value = shape.sync_value
+            break
+
+class RZMShapeClusterGroup(bpy.types.PropertyGroup):
+    """A variant group inside a Shape manager. Group 0 is the permanent default."""
+    group_name: StringProperty(name="Group Name", default="Default")
+    condition: StringProperty(
+        name="Condition",
+        description="Optional condition that enables this manager group. Empty = always active."
+    )
+
 class RZMShapeKey(bpy.types.PropertyGroup):
     """Определяет один шейп-ключ внутри RZMShape и его поведение."""
     key_name: IntProperty(name="Keyframe", description="Номер кадра для этого ключа")
+    target_shape_name: StringProperty(
+        name="ShapeKey Config",
+        description="Name of the discovered ShapeKeyConfig controlled by this manager."
+    )
+    group_index: IntProperty(
+        name="Group",
+        description="Shape manager group index. Group 0 is the permanent default.",
+        default=0,
+        min=0
+    )
+    condition: StringProperty(
+        name="Condition",
+        description="Optional member condition combined with the group condition."
+    )
+    fallback_value: FloatProperty(name="Fallback Value", default=0.0)
     mode: EnumProperty(
         name="Mode",
         items=[
@@ -213,6 +256,8 @@ class RZMShapeKey(bpy.types.PropertyGroup):
     multiplier:      FloatProperty(name="Multiplier", default=1.0)
     anim_type_index: IntProperty(name="Type Index", default=0)
     anim_start_frame: FloatProperty(name="Start Frame", default=0.0, min=0.0, max=1.0)
+    anim_t2:          FloatProperty(name="Rise End",    default=0.5, min=0.0, max=1.0)
+    anim_t3:          FloatProperty(name="Fall Start",  default=0.5, min=0.0, max=1.0)
     anim_end_frame:   FloatProperty(name="End Frame",   default=1.0, min=0.0, max=1.0)
 
 class RZMShape(bpy.types.PropertyGroup):
@@ -233,6 +278,16 @@ class RZMShape(bpy.types.PropertyGroup):
         description="Тиры для которых этот шейп экспортируется. Пусто = все тиры."
     )
     shape_keys: CollectionProperty(type=RZMShapeKey)
+    groups: CollectionProperty(type=RZMShapeClusterGroup)
+    active_group_index: IntProperty(name="Active Group", default=0, min=0)
+    sync_value: FloatProperty(
+        name="Preview Value",
+        description="Viewport-only preview value applied to all SKC members in this manager",
+        min=0.0,
+        max=1.0,
+        default=0.0,
+        update=update_shape_cluster_sync
+    )
 
     # ── Randomization ────────────────────────────────────────────────────────
     val_min:     FloatProperty(name="Min Value", default=0.0,

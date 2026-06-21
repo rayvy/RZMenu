@@ -10,7 +10,7 @@ from .p_images import RZMCaptureSettings, RZMenuImage, ConditionalImage, RZMenuA
 from .p_logic import (
     ValueLinkProperty, ValueProperty, ToggleDefinition,
     BitProperty, AssignedToggle, RZMCondition,
-    RZMShapeKey, RZMShape, RZMTierRef,
+    RZMShapeClusterGroup, RZMShapeKey, RZMShape, RZMTierRef,
     RZMProfileValue, RZMRunLink, RZMKeybind,
     RZMObjectRef, ShapeKeyConfig
 )
@@ -205,7 +205,7 @@ classes_to_register = [
     TexWorksMCMaskFile,
     TexWorksMCSkipped,
     TexWorksMCSettings,
-    RZMShapeKey, RZMShape,
+    RZMShapeClusterGroup, RZMShapeKey, RZMShape,
     RZMObjectRef, ShapeKeyConfig,
     # ─ New API classes: RunLink and Keybind AFTER RZMShape ───────────────────────────
     RZMRunLink,
@@ -872,8 +872,7 @@ def register():
         items=[
             ('TOGGLES',   "Toggles",   "Manage object toggles"),
             ('VARIABLES', "Variables", "Manage global project values"),
-            ('SHAPES',    "Shapes (Legacy)", "Manage legacy manual shape keys"),
-            ('NATIVE_SHAPES', "Native Shapes", "Manage discovered Blender shape keys"),
+            ('SHAPES',    "Shape Keys", "Manage ShapeKey managers and discovered Blender shape keys"),
             ('KEYBINDS',  "Keybinds",  "Manage in-game hotkeys and RunLinks"),
             ('BLEND_RESIZE', "Blend Resize", "Manage bone-based resizing"),
         ],

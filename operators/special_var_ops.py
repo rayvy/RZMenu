@@ -36,6 +36,8 @@ class RZM_OT_AddShape(bpy.types.Operator):
             cnt += 1
             new_name = f"{base_name}_{cnt}"
         new_shape.shape_name = new_name
+        group = new_shape.groups.add()
+        group.group_name = "Default"
         return {'FINISHED'}
 
 class RZM_OT_RemoveShape(bpy.types.Operator):
@@ -87,7 +89,12 @@ class RZM_OT_AddShapeKey(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     shape_index: bpy.props.IntProperty()
     def execute(self, context):
-        context.scene.rzm.shapes[self.shape_index].shape_keys.add()
+        shape = context.scene.rzm.shapes[self.shape_index]
+        if len(shape.groups) == 0:
+            group = shape.groups.add()
+            group.group_name = "Default"
+        member = shape.shape_keys.add()
+        member.group_index = shape.active_group_index if shape.active_group_index < len(shape.groups) else 0
         return {'FINISHED'}
 
 class RZM_OT_RemoveShapeKey(bpy.types.Operator):

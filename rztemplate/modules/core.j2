@@ -1,5 +1,4 @@
 {% import "modules/utils.j2" as utils with context %}
-{% import "modules/shapes_legacy.j2" as shapes_legacy with context %}
 {% import "modules/shapes_native.j2" as shapes_native with context %}
 {% import "modules/weights_native.j2" as weights_native with context %}
 
@@ -55,7 +54,7 @@ pre run = CommandListRZMPinDetected
 endif
 endif
 {% endif %}
-{% if scene.rzm and scene.rzm.shapes %}
+{% if scene.rzm and scene.rzm.addons.export_shapekeys and scene.rzm.shape_configs %}
 [CommandListRZMObjectDataInit]
     {% for component in mod_file.components if component.draw_vb != "" and component.blend_vb != ""  and component.vertex_count > 0 %}
         {% if component.strides %}
@@ -558,12 +557,12 @@ endif
 
 if $active
     if $first_run
-            {% if scene.rzm.shapes %}
+            {% if scene.rzm.addons.export_shapekeys and scene.rzm.shape_configs %}
             run = CommandListRZMObjectDataInit
         {% endif %}
         $first_run = 0
     endif
-    {% if scene.rzm.shapes %}
+    {% if scene.rzm.addons.export_shapekeys and scene.rzm.shape_configs %}
     ;run = CustomShaderComputeShapes
     {% endif %}
     run = CommandListPreSnippet
@@ -2390,8 +2389,6 @@ filename = .\res\mod_name.{{ font_ext }}
 {% macro shape_generate(mod_file, scene) %}
 {% if scene.rzm.addons.export_shapekeys %}
 {{ shapes_native.shape_generate(scene=scene, game_name=scene.rzm.game.name, mod_file=mod_file) }}
-{% else %}
-{{ shapes_legacy.shape_generate(mod_file, scene) }}
 {% endif %}
 {% endmacro %}
 
@@ -2400,8 +2397,6 @@ filename = .\res\mod_name.{{ font_ext }}
 {{ shapes_native.shape_generate(scene=scene, game_name=scene.rzm.game.name, extracted_object=extracted_object, merged_object=merged_object, buffers=buffers) }}
 
 {{ weights_native.weight_generate(scene=scene, game_name=scene.rzm.game.name, extracted_object=extracted_object, merged_object=merged_object, buffers=buffers) }}
-{% else %}
-{{ shapes_legacy.shape_generate_arknights(extracted_object, merged_object, buffers, scene) }}
 {% endif %}
 {% endmacro %}
 
