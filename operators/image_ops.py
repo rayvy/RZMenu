@@ -423,6 +423,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                     if config_key not in svg_render_configs:
                         svg_render_configs[config_key] = {
                             'elem': elem, 
+                            'image': img,
                             'image_id': img_id,
                             'res': (render_w, render_h),
                             'scale': scale, 
@@ -473,7 +474,7 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
                 images_to_render[img.display_name] = img.image_pointer
         
         # Render Unique SVGs
-        from ..core.svg_loader import render_svg_to_pixels
+        from ..core.svg_loader import blender_image_to_pixels, render_svg_to_pixels
         from ..core.animated_loader import frames_to_blender_images
         
         for config_key, cfg in svg_render_configs.items():
@@ -481,13 +482,27 @@ class RZM_OT_ExportAtlas(bpy.types.Operator):
             render_w = int(min(res_w, 1024))
             render_h = int(min(res_h, 1024))
             if render_w <= 0 or render_h <= 0: continue
-            
-            pixels = render_svg_to_pixels(
-                cfg['path'], render_w, render_h, 
-                tint_color=cfg['tint'],
-                scale=cfg['scale'],
-                offset=cfg['offset']
-            )
+
+            pixels = None
+            svg_path = cfg.get('path', "")
+            if svg_path and os.path.exists(svg_path):
+                pixels = render_svg_to_pixels(
+                    svg_path, render_w, render_h,
+                    tint_color=cfg['tint'],
+                    scale=cfg['scale'],
+                    offset=cfg['offset']
+                )
+            else:
+                print(f"[RZM SVG] WARNING: Missing SVG source for '{config_key}': {svg_path}")
+
+            if pixels is None:
+                img = cfg.get('image')
+                preview = getattr(img, 'image_pointer', None) if img else None
+                pixels = blender_image_to_pixels(preview, render_w, render_h, tint_color=cfg['tint'])
+                if pixels is not None:
+                    print(f"[RZM SVG] WARNING: Used packed preview fallback for '{config_key}'.")
+                else:
+                    self.report({'WARNING'}, f"Failed to render SVG '{config_key}' and no packed preview fallback was available.")
             
             if pixels is not None:
                 # Direct pixel ingestion bypassing Blender temporary image overhead
