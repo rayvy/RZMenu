@@ -139,6 +139,19 @@ def _lookup_image(image_mapping, elem_id):
     return max(0, _safe_int(elements.get(str(elem_id), 0), 0))
 
 
+def _mode_value(value, default="SINGLE"):
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value or default
+    try:
+        if len(value) > 0:
+            return str(value[0] or default)
+    except Exception:
+        pass
+    return str(value or default)
+
+
 def build_element_draw_data(elements, text_mapping=None, image_mapping=None):
     """Return canonical per-element packed draw data.
 
@@ -169,8 +182,10 @@ def build_element_draw_data(elements, text_mapping=None, image_mapping=None):
         hover_image_id = _safe_int(_get(elem, "hover_image_id", -1), -1)
         cond_images = _get(elem, "conditional_images")
         has_cond_images = _collection_has_items(cond_images)
+        image_mode = _mode_value(_get(elem, "image_mode", "SINGLE"))
+        has_dynamic_images = has_cond_images and image_mode != "SINGLE"
         image_slot = 0
-        if image_id >= 0 and not has_cond_images and hover_image_id < 0:
+        if image_id >= 0 and not has_dynamic_images and hover_image_id < 0:
             image_slot = _lookup_image(image_mapping, eid)
 
         color_is_formula = bool(_get(elem, "color_is_formula"))
