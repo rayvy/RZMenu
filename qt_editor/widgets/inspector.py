@@ -1079,6 +1079,7 @@ class RZMInspectorPanel(RZEditorPanel):
         self.has_data = False
         self._block_signals = False
         self._is_panel_active = True
+        self._pending_fast_edits = set()
         
         # Performance: Throttle refresh to 60fps max or slightly lower
         self._refresh_timer = QtCore.QTimer(self)
@@ -1393,7 +1394,10 @@ class RZMInspectorPanel(RZEditorPanel):
             
             sig = getattr(widget, signal, None)
             if sig:
-                if signal in ['valueChanged', 'value_changed', 'colorChanged']: 
+                if isinstance(widget, RZSmartSlider) and signal == 'value_changed':
+                    sig.connect(lambda v, f=field_name: self._emit_change(f, v, fast_mode=True))
+                    widget.released.connect(lambda f=field_name: self._commit_fast_edit(f))
+                elif signal in ['valueChanged', 'value_changed', 'colorChanged']: 
                     sig.connect(lambda v: self._emit_change(field_name, v))
                 elif signal == 'currentIndexChanged':
                     sig.connect(lambda i: self._emit_change(field_name, i))
@@ -1920,7 +1924,7 @@ class RZMInspectorPanel(RZEditorPanel):
             self.layout_props.addWidget(self.grp_flags)
         except Exception as e: print(f"[INSPECTOR] Error Flags: {e}")
 
-    def _emit_change(self, key, val, sub=None):
+    def _emit_change(self, key, val, sub=None, fast_mode=False):
         """Handle property changes - directly update core."""
         if self.has_data and not self._block_signals:
             if val == "Mixed": return
@@ -1968,7 +1972,16 @@ class RZMInspectorPanel(RZEditorPanel):
                 return
 
             print(f"[INSPECTOR] Standard update for '{key}': {val} (type: {type(val)})")
-            core.update_property_multi(ctx.selected_ids, key, val, sub)
+            if fast_mode:
+                self._pending_fast_edits.add((key, sub))
+            core.update_property_multi(ctx.selected_ids, key, val, sub, fast_mode=fast_mode)
+
+    def _commit_fast_edit(self, key, sub=None):
+        edit_key = (key, sub)
+        if edit_key not in self._pending_fast_edits:
+            return
+        self._pending_fast_edits.discard(edit_key)
+        core.commit_history(f"RZM: Change {key}")
 
     def _on_id_changed(self):
         if self._block_signals: return
