@@ -22,7 +22,7 @@
 //   [7] x = layout version; y = object index; z = object count; w = nearest vertex index
 //
 // After running:
-//   ResourceRZMPinnedDetectID[0]   = best.x (used by INI store -> $Detected)
+//   ResourceRZMPinnedDetectID[33]  = best.x (used by INI store -> $Detected)
 //   ResourceRZMPinnedDetectInfo[*] = copied extended info, or miss/reset payload
 //   ResourceRZMDetectID[*]         = reset for next frame
 
@@ -42,7 +42,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float4 best    = gAccumulated[0];
     bool   invalid = best.x < 0.0f || best.y > 1e30f;
 
-    gPinnedID[0] = invalid ? -1.0f : best.x;
+    gPinnedID[33] = invalid ? -1.0f : best.x;
 
     [unroll]
     for (uint slot = 0u; slot < RZM_DETECT_SLOTS; slot++)

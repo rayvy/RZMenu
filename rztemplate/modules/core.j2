@@ -1215,16 +1215,15 @@ dispatch = 1, 1, 1
 
 ; ============================================================
 ; RZM Hover Detect - throttled store (called via pre run)
-; store is expensive (CPU readback). Run once every 30 frames.
+; store is expensive (CPU readback). Run at most once per 0.25s.
 ; ============================================================
 
 [CommandListRZMPinDetected]
-local $rzm_detect_counter
-local $rzm_detect_threshold = 60
-$rzm_detect_counter = $rzm_detect_counter + 1
+local $rzm_detect_next_time
+local $rzm_detect_interval = 0.25
 
 if $isMouseButtonDown == 1
-    $rzm_detect_counter = $rzm_detect_threshold
+    $rzm_detect_next_time = time
 endif
 
 if $inputMode == 0
@@ -1234,10 +1233,10 @@ if $hoveredID > 0
     $ObjectDetectAllowed = 0
 else
     $ObjectDetectAllowed = 1
-	if $rzm_detect_counter >= ($rzm_detect_threshold - $CursorIsMoved * 50)
+	if (time) >= $rzm_detect_next_time
 		run = CustomShaderRZMPinDetected
-		store = $Detected, ResourceRZMPinnedDetectID, 0
-		$rzm_detect_counter = 0
+		store = $Detected, ResourceRZMPinnedDetectID, 33
+		$rzm_detect_next_time = time + $rzm_detect_interval
 	endif
 endif
 
