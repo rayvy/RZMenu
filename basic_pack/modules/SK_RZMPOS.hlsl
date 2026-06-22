@@ -21,7 +21,7 @@ Buffer<float> shape_configs : register(t54);
 Texture1D<float4> IniParams : register(t120);
 
 #define PI 3.141592653589793
-#define GLOBAL_SPEED_MULTIPLIER 1.0
+#define GLOBAL_SPEED_MULTIPLIER 5.0
 #define ORIG_V_COUNT ((uint)round(IniParams[115].x))
 
 [numthreads(256, 1, 1)]
