@@ -7,6 +7,7 @@ import os
 from PySide6 import QtWidgets, QtCore, QtGui
 import shiboken6
 from .. import core
+from ..core import perf
 from ..core.signals import SIGNALS
 from ..core import blender_bridge
 from ..systems.layout import GridSolver
@@ -1476,15 +1477,21 @@ class RZViewportScene(QtWidgets.QGraphicsScene):
                 item.set_visual_state(uid in new_sel, uid == active_id)
 
     def update_scene(self, elements_data, selected_ids, active_id):
-        if self._is_user_interaction: return
-        self._active_id = active_id
-        self._sync_items_pool(elements_data)
-        resolved_layout = FormulaEvaluator.resolve_layout(elements_data)
-        self._update_items_state(elements_data, resolved_layout, selected_ids, active_id)
-        self._rebuild_hierarchy(elements_data)
-        self._resolve_positioning(elements_data, resolved_layout)
-        self._refresh_layout_engines()
-        self.update()
+        with perf.scope("viewport.update_scene", f"items={len(elements_data)}"):
+            if self._is_user_interaction: return
+            self._active_id = active_id
+            with perf.scope("viewport.sync_items_pool", f"items={len(elements_data)}"):
+                self._sync_items_pool(elements_data)
+            resolved_layout = FormulaEvaluator.resolve_layout(elements_data)
+            with perf.scope("viewport.update_items_state", f"items={len(elements_data)}"):
+                self._update_items_state(elements_data, resolved_layout, selected_ids, active_id)
+            with perf.scope("viewport.rebuild_hierarchy", f"items={len(elements_data)}"):
+                self._rebuild_hierarchy(elements_data)
+            with perf.scope("viewport.resolve_positioning", f"items={len(elements_data)}"):
+                self._resolve_positioning(elements_data, resolved_layout)
+            with perf.scope("viewport.refresh_layout_engines"):
+                self._refresh_layout_engines()
+            self.update()
 
     def _sync_items_pool(self, elements_data):
         incoming_ids = {d['id'] for d in elements_data}
@@ -2406,7 +2413,8 @@ class RZViewportPanel(RZEditorPanel):
             return
 
         # Optimize: Refresh font configs once per data fetch, not per paintEvent
-        RZFontManager.instance().refresh_font_config()
+        with perf.scope("viewport.refresh_font_config"):
+            RZFontManager.instance().refresh_font_config()
 
         data = core.get_viewport_data()
         ctx = RZContextManager.get_instance().get_snapshot()

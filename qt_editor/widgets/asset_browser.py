@@ -4,7 +4,7 @@ import shutil  # Нужно для копирования файлов
 from PySide6 import QtCore, QtWidgets, QtGui
 from .panel_base import RZEditorPanel
 from .. import core
-from ..core import read, blender_bridge, signals
+from ..core import read, blender_bridge, signals, perf
 from ..utils.image_cache import ImageCache
 from ..utils.icons import IconManager
 from ..core.signals import SIGNALS
@@ -832,6 +832,7 @@ class RZAssetBrowserPanel(RZEditorPanel):
         if not self._refresh_timer.isActive():
             self._refresh_timer.start(30)
 
+    @perf.traced("asset_browser.refresh_data")
     def refresh_data(self):
         """Initial refresh entry point."""
         # Auto-load check
@@ -853,6 +854,7 @@ class RZAssetBrowserPanel(RZEditorPanel):
         blender_bridge.reload_base_icons()
         self.refresh_data()
 
+    @perf.traced("asset_browser.rebuild_view")
     def rebuild_view(self, *args):
         """Главная функция построения списка"""
         self._is_rebuilding = True
@@ -1043,6 +1045,7 @@ class RZAssetBrowserPanel(RZEditorPanel):
         if self._thumb_queue and not self._thumb_timer.isActive():
             self._thumb_timer.start()
 
+    @perf.traced("asset_browser.thumbnail_batch")
     def _load_next_thumbnail_batch(self):
         if not self._thumb_queue:
             self._thumb_timer.stop()

@@ -2,6 +2,7 @@
 import re
 import bpy
 import math
+from . import perf
 
 class FormulaEvaluator:
     """
@@ -22,6 +23,11 @@ class FormulaEvaluator:
         elements_data: list of dicts (from get_viewport_data).
         Returns: Dict {id: {final_x, final_y, final_w, final_h}} in GLOBAL coordinates.
         """
+        with perf.scope("logic.resolve_layout", f"items={len(elements_data)}"):
+            return FormulaEvaluator._resolve_layout_impl(elements_data)
+
+    @staticmethod
+    def _resolve_layout_impl(elements_data):
         # 1. Build Lookup Map by ID
         id_map = {el['id']: el for el in elements_data}
         

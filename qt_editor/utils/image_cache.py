@@ -3,6 +3,7 @@
 import bpy
 import numpy as np
 from PySide6 import QtGui
+from ..core import perf
 
 class ImageCache:
     _instance = None
@@ -35,6 +36,7 @@ class ImageCache:
         self._anim_cache.clear()
         self._fit_modes.clear()
 
+    @perf.traced("image_cache.pre_cache_image", lambda self, image_id: f"id={image_id}")
     def pre_cache_image(self, image_id):
         """
         Принудительно загружает картинку в кэш.
@@ -162,6 +164,7 @@ class ImageCache:
                     return val
         return self._fit_modes.get(image_id, 'FILL')
 
+    @perf.traced("image_cache.get_anim_frame", lambda self, base_name, frame_idx: f"{base_name}:{frame_idx}")
     def get_anim_frame(self, base_name, frame_idx):
         """Достает запеченный кадр анимации из Blender и кэширует его."""
         key = f"{base_name}_anim_{frame_idx:04d}"

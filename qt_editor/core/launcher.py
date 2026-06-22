@@ -4,6 +4,7 @@ import bpy
 from PySide6 import QtWidgets, QtCore
 from .. import window
 from . import signals
+from . import perf
 
 try:
     from PySide6 import QtWidgets, QtCore
@@ -28,7 +29,9 @@ class IntegrationManager:
     def process_qt_events():
         """Оставляет Qt живым внутри Blender"""
         app = QtWidgets.QApplication.instance()
-        if app: app.processEvents()
+        if app:
+            with perf.scope("qt.processEvents"):
+                app.processEvents()
         
         if IntegrationManager._window and not IntegrationManager._window.isVisible():
              IntegrationManager.stop()
@@ -81,6 +84,8 @@ class IntegrationManager:
 
         if not bpy.app.timers.is_registered(cls.process_qt_events):
             bpy.app.timers.register(cls.process_qt_events, persistent=True)
+
+        perf.install_signal_monitor(signals.SIGNALS)
             
         if cls.on_depsgraph_update not in bpy.app.handlers.depsgraph_update_post:
             bpy.app.handlers.depsgraph_update_post.append(cls.on_depsgraph_update)

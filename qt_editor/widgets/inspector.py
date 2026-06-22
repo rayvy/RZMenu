@@ -11,6 +11,7 @@ from .lib.theme import get_current_theme
 from .lib.widgets import RZGroupBox, RZPushButton, RZLabel, RZLineEdit, RZComboBox, RZColorButton, RZCheckBox, RZSpinBox, RZDoubleSpinBox, RZAdvancedColorPanel, RZScrollArea
 from .panel_base import RZEditorPanel
 from .. import core
+from ..core import perf
 from ..core.signals import SIGNALS
 from ..context import RZContextManager
 from ...data.constants import FX_COMMANDS
@@ -1290,6 +1291,7 @@ class RZMInspectorPanel(RZEditorPanel):
         if not self._refresh_timer.isActive():
             self._refresh_timer.start(16) # ~60 FPS update limit
 
+    @perf.traced("inspector.refresh_data")
     def _do_refresh_data(self):
         # ЗАЩИТА: Если мышь зажата (идет перетаскивание ползунка), 
         # мы не обновляем UI, чтобы не сбить фокус и не вызывать лаг.

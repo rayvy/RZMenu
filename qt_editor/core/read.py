@@ -1,5 +1,6 @@
 # RZMenu/qt_editor/core/read.py
 import bpy
+from . import perf
 import re
 from ..utils.image_cache import ImageCache
 from ..utils.string_utils import find_common_pattern
@@ -300,6 +301,11 @@ def get_available_languages():
     return [(lang.index, lang.name) for lang in rzm.meta_data.languages]
 
 def get_selection_details(selected_ids, active_id):
+    with perf.scope("read.get_selection_details", f"selected={len(selected_ids)} active={active_id}"):
+        return _get_selection_details_impl(selected_ids, active_id)
+
+
+def _get_selection_details_impl(selected_ids, active_id):
 
     if not bpy.context or not bpy.context.scene: return None
     elements = bpy.context.scene.rzm.elements
@@ -539,6 +545,11 @@ def get_selection_details(selected_ids, active_id):
     return None
 
 def get_viewport_data():
+    with perf.scope("read.get_viewport_data"):
+        return _get_viewport_data_impl()
+
+
+def _get_viewport_data_impl():
     results = []
     if not bpy.context or not bpy.context.scene: return results
 
@@ -639,6 +650,9 @@ def get_viewport_data():
     # 1. Create a map of ID -> Element Data for fast lookup of preset sources
     # We can use the results list we just built, but we need to index it.
     elem_map = {item['id']: item for item in results}
+    children_by_parent = {}
+    for item in results:
+        children_by_parent.setdefault(item.get('parent_id', -1), []).append(item)
     
     virtual_elements = []
     
@@ -778,22 +792,21 @@ def get_viewport_data():
             def collect_preset_children_recursive(source_elem_id, virtual_parent_id, depth=0):
                 """Recursively collect virtual copies of all descendants of source_elem_id."""
                 if depth > 20: return  # Hard safety limit
-                for child_item in results:
-                    if child_item['parent_id'] == source_elem_id:
-                        # Give child a deterministic virtual ID:
-                        # Use a prime-based hash to minimize collisions in deep trees
-                        child_virtual_id = virtual_parent_id * 1000 + child_item['id'] % 1000
-                        child_v = child_item.copy()
-                        child_v['id'] = child_virtual_id
-                        child_v['parent_id'] = virtual_parent_id
-                        child_v['is_selectable'] = False
-                        child_v['is_locked_pos'] = False
-                        child_v['is_locked_size'] = False
-                        child_v['is_hidden'] = False
-                        child_v['name'] = f"{host_item['name']}::{child_item['name']}"
-                        virtual_elements.append(child_v)
-                        # Recurse into this child's children
-                        collect_preset_children_recursive(child_item['id'], child_virtual_id, depth + 1)
+                for child_item in children_by_parent.get(source_elem_id, []):
+                    # Give child a deterministic virtual ID:
+                    # Use a prime-based hash to minimize collisions in deep trees
+                    child_virtual_id = virtual_parent_id * 1000 + child_item['id'] % 1000
+                    child_v = child_item.copy()
+                    child_v['id'] = child_virtual_id
+                    child_v['parent_id'] = virtual_parent_id
+                    child_v['is_selectable'] = False
+                    child_v['is_locked_pos'] = False
+                    child_v['is_locked_size'] = False
+                    child_v['is_hidden'] = False
+                    child_v['name'] = f"{host_item['name']}::{child_item['name']}"
+                    virtual_elements.append(child_v)
+                    # Recurse into this child's children
+                    collect_preset_children_recursive(child_item['id'], child_virtual_id, depth + 1)
 
             collect_preset_children_recursive(preset_id, virtual_id)
 
@@ -840,20 +853,19 @@ def get_viewport_data():
             # Recursive children for helpers (same logic as presets)
             def collect_helper_children_recursive(source_elem_id, virtual_parent_id, depth=0):
                 if depth > 20: return
-                for child_item in results:
-                    if child_item['parent_id'] == source_elem_id:
-                        child_virtual_id = virtual_parent_id * 1000 + child_item['id'] % 1000
-                        child_v = child_item.copy()
-                        child_v['id'] = child_virtual_id
-                        child_v['parent_id'] = virtual_parent_id
-                        child_v['is_selectable'] = False
-                        child_v['is_locked_pos'] = False
-                        child_v['is_locked_size'] = False
-                        child_v['is_hidden'] = False
-                        child_v['name'] = f"{host_item['name']}::HChild_{child_item['name']}"
-                        child_v['is_helper_instance'] = True
-                        virtual_elements.append(child_v)
-                        collect_helper_children_recursive(child_item['id'], child_virtual_id, depth + 1)
+                for child_item in children_by_parent.get(source_elem_id, []):
+                    child_virtual_id = virtual_parent_id * 1000 + child_item['id'] % 1000
+                    child_v = child_item.copy()
+                    child_v['id'] = child_virtual_id
+                    child_v['parent_id'] = virtual_parent_id
+                    child_v['is_selectable'] = False
+                    child_v['is_locked_pos'] = False
+                    child_v['is_locked_size'] = False
+                    child_v['is_hidden'] = False
+                    child_v['name'] = f"{host_item['name']}::HChild_{child_item['name']}"
+                    child_v['is_helper_instance'] = True
+                    virtual_elements.append(child_v)
+                    collect_helper_children_recursive(child_item['id'], child_virtual_id, depth + 1)
 
             collect_helper_children_recursive(helper_id, virtual_id)
 

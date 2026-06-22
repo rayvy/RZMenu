@@ -27,6 +27,7 @@ from .widgets.lib import theme
 from .widgets.lib.widgets import RZContextAwareWidget
 from .utils.icons import IconManager
 from .core.signals import SIGNALS
+from .core import perf
 from .conf.manager import get_config, set_config_value
 
 class RZMEditorWindow(QtWidgets.QWidget):
@@ -415,6 +416,8 @@ class RZMEditorWindow(QtWidgets.QWidget):
 
     def _update_debug_text(self):
         txt = RZContextManager.get_instance().get_debug_string()
+        if perf.enabled():
+            txt = txt + "\n\n" + "\n".join(perf.summary_lines(limit=8))
         self.debug_label.setText(txt)
         self.debug_label.adjustSize()
 
