@@ -326,10 +326,16 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         if game in ['GenshinImpact', 'ZenlessZoneZero', 'HonkaiStarRail']:
             if hasattr(scene, "xxmi"):
                 xxmi = scene.xxmi
-                box.prop(xxmi, "dump_path", text="Dump")
-                box.prop(xxmi, "destination_path", text="Mod Folder")
-                box.prop(xxmi, "template_path", text="Template")
-                box.prop(xxmi, "use_custom_template")
+                row_dump = box.row(align=True)
+                row_dump.prop(xxmi, "dump_path", text="Dump")
+                op_dump = row_dump.operator("rzm.select_folder", text="", icon='FILE_FOLDER')
+                op_dump.target_type = 'xxmi_dump'
+                
+                row_dest = box.row(align=True)
+                row_dest.prop(xxmi, "destination_path", text="Mod Folder")
+                op_dest = row_dest.operator("rzm.select_folder", text="", icon='FILE_FOLDER')
+                op_dest.target_type = 'xxmi_dest'
+                
                 box.separator()
                 import_row = box.row(align=True)
                 import_row.operator("rzm.quick_import", text="Quick Import", icon='IMPORT')
@@ -340,20 +346,30 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         elif game == 'ArknightsEndfield':
             if hasattr(scene, "efmi_tools_settings"):
                 efmi = scene.efmi_tools_settings
-                box.prop(efmi, "object_source_folder", text="Source")
-                box.prop(efmi, "mod_output_folder", text="Output")
-                box.prop(efmi, "custom_template_path", text="Template")
-                box.prop(efmi, "use_custom_template")
+                row_src = box.row(align=True)
+                row_src.prop(efmi, "object_source_folder", text="Source")
+                op_src = row_src.operator("rzm.select_folder", text="", icon='FILE_FOLDER')
+                op_src.target_type = 'efmi_src'
+                
+                row_dest = box.row(align=True)
+                row_dest.prop(efmi, "mod_output_folder", text="Output")
+                op_dest = row_dest.operator("rzm.select_folder", text="", icon='FILE_FOLDER')
+                op_dest.target_type = 'efmi_dest'
             else:
                 box.label(text="EFMI Tools Not Active", icon='ERROR')
 
         elif game == 'WutheringWaves':
             if hasattr(scene, "wwmi_tools_settings"):
                 wwmi = scene.wwmi_tools_settings
-                box.prop(wwmi, "object_source_folder", text="Source")
-                box.prop(wwmi, "mod_output_folder", text="Output")
-                box.prop(wwmi, "custom_template_path", text="Template")
-                box.prop(wwmi, "use_custom_template")
+                row_src = box.row(align=True)
+                row_src.prop(wwmi, "object_source_folder", text="Source")
+                op_src = row_src.operator("rzm.select_folder", text="", icon='FILE_FOLDER')
+                op_src.target_type = 'wwmi_src'
+                
+                row_dest = box.row(align=True)
+                row_dest.prop(wwmi, "mod_output_folder", text="Output")
+                op_dest = row_dest.operator("rzm.select_folder", text="", icon='FILE_FOLDER')
+                op_dest.target_type = 'wwmi_dest'
             else:
                 box.label(text="WWMI Tools Not Active", icon='ERROR')
 

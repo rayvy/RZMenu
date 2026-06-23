@@ -635,6 +635,51 @@ class RZM_OT_ImportShapeKeyConfig(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class RZM_OT_SelectFolder(bpy.types.Operator):
+    """Select a folder from the file browser and assign it to the target game settings property"""
+    bl_idname = "rzm.select_folder"
+    bl_label = "Select Directory"
+    
+    directory: bpy.props.StringProperty(subtype="DIR_PATH")
+    target_type: bpy.props.StringProperty() # 'xxmi_dump', 'xxmi_dest', 'efmi_src', 'efmi_dest', 'wwmi_src', 'wwmi_dest'
+    
+    def execute(self, context):
+        scene = context.scene
+        path = os.path.normpath(self.directory)
+        if not path.endswith(os.sep):
+            path += os.sep
+            
+        if self.target_type == 'xxmi_dump':
+            if hasattr(scene, "xxmi"):
+                scene.xxmi.dump_path = path
+        elif self.target_type == 'xxmi_dest':
+            if hasattr(scene, "xxmi"):
+                scene.xxmi.destination_path = path
+        elif self.target_type == 'efmi_src':
+            if hasattr(scene, "efmi_tools_settings"):
+                scene.efmi_tools_settings.object_source_folder = path
+        elif self.target_type == 'efmi_dest':
+            if hasattr(scene, "efmi_tools_settings"):
+                scene.efmi_tools_settings.mod_output_folder = path
+        elif self.target_type == 'wwmi_src':
+            if hasattr(scene, "wwmi_tools_settings"):
+                scene.wwmi_tools_settings.object_source_folder = path
+        elif self.target_type == 'wwmi_dest':
+            if hasattr(scene, "wwmi_tools_settings"):
+                scene.wwmi_tools_settings.mod_output_folder = path
+                
+        # Force refresh the UI so path changes are visible immediately
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+                
+        return {'FINISHED'}
+        
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+
 classes_to_register = [
     RZM_OT_SaveTemplate,
     RZM_OT_LoadTemplate,
@@ -645,4 +690,6 @@ classes_to_register = [
     RZM_OT_ImportConfig,
     RZM_OT_ExportShapeKeyConfig,
     RZM_OT_ImportShapeKeyConfig,
+    RZM_OT_SelectFolder,
 ]
+
