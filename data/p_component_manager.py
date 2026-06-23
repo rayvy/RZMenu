@@ -42,7 +42,8 @@ class RZMComponentManagerSettings(bpy.types.PropertyGroup):
         name="Tab",
         items=[
             ('BLEND_COPY', "BlendCopy", ""),
-            ('TEST_SUBCOMP', "TestSubComp", "")
+            ('TEST_SUBCOMP', "TestSubComp", ""),
+            ('CACHE_INFO', "Cache", "Show current RZM export cache diagnostics")
         ],
         default='BLEND_COPY'
     )

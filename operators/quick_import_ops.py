@@ -328,6 +328,12 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
         context.scene.rzm.component_manager.dump_path = dump_dir
         if hasattr(context.scene, "xxmi"):
             context.scene.xxmi.dump_path = dump_dir
+        meta = context.scene.rzm.meta_data
+        meta.character_name = os.path.basename(dump_dir)
+        try:
+            bpy.ops.rzm.reset_namespace_seed()
+        except Exception as e:
+            print(f"[QuickImport] Failed to reset namespace seed: {e}")
             
     pre_objs = {obj.name for obj in context.scene.objects if obj.type == 'MESH'}
     

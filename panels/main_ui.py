@@ -193,8 +193,44 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
                 op = info_row.operator("rzm.remove_image", text="", icon='TRASH', emboss=False)
                 op.image_id_to_remove = rzm_image.id
 
+    def draw_namespace_identity(self, context, layout):
+        scene = context.scene
+        rzm = scene.rzm
+        ns_box = layout.box()
+        try:
+            from ..operators.export_cache import get_cache
+            from ..operators.export_manager import get_target_path
+            from ..core.namespace_hash import namespace_from_context
+
+            cache = get_cache()
+            target_path = None
+            try:
+                target_path = get_target_path(context)
+            except Exception:
+                target_path = None
+            namespace = namespace_from_context(context, export_cache=cache, target_path=target_path, create_seed=False)
+            
+            row = ns_box.row(align=True)
+            row.label(text=f"namespace(WiP): {namespace.namespace}", icon='KEY_HLT')
+            row.operator("rzm.copy_namespace", text="", icon='COPYDOWN')
+            row.operator("rzm.reset_namespace_seed", text="", icon='FILE_REFRESH')
+            
+            row_edit = ns_box.row(align=True)
+            addon_name = __package__.split(".")[0] if "." in __package__ else __package__
+            prefs = context.preferences.addons.get(addon_name)
+            
+            row_edit.prop(rzm.meta_data, "character_name", text="Char")
+            row_edit.prop(rzm.meta_data, "outfit_name", text="Skin")
+            if prefs and prefs.preferences:
+                row_edit.prop(prefs.preferences, "author_name", text="Author")
+        except Exception as e:
+            ns_box.label(text=f"Namespace unavailable: {e}", icon='ERROR')
+
     def draw(self, context):
         layout = self.layout
+        # Namespace / Identity at the very top
+        self.draw_namespace_identity(context, layout)
+        layout.separator()
         scene = context.scene
         rzm = scene.rzm
 
@@ -332,6 +368,8 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         
         # Expose texture slots checkbox directly near the export buttons
         box.prop(rzm, "export_texture_slots", text="Export Texture Slots", icon='TEXTURE_DATA')
+
+
         
         is_pro = (scene.rzm_editor_mode == 'PRO')
         
@@ -1067,6 +1105,111 @@ class RZM_UL_CM_PartList(bpy.types.UIList):
             layout.label(text="", icon='MESH_DATA')
 
 
+def draw_export_cache_info_ui(context, layout):
+    box = layout.box()
+    box.label(text="RZM Export Cache (Experimental)", icon='FILE_FOLDER')
+
+    try:
+        from ..operators.export_cache import get_cache
+        cache = get_cache()
+    except Exception as e:
+        box.label(text=f"Cache read failed: {e}", icon='ERROR')
+        return
+
+    if not cache:
+        box.label(text="No cache available. Run Full Export or Game Buffers first.", icon='INFO')
+        row = box.row()
+        row.enabled = False
+        row.operator("rzm.export_transform_segment", text="Export DISABLED Transform INI", icon='EXPORT')
+        return
+
+    source = cache.get("source", "<unknown>")
+    mod_name = cache.get("mod_name", "<unknown>")
+    components = cache.get("components", {}) or {}
+    object_count = sum(len((comp or {}).get("objects", []) or []) for comp in components.values())
+
+    grid = box.grid_flow(columns=2, align=True)
+    grid.label(text="Source:")
+    grid.label(text=str(source))
+    grid.label(text="Mod:")
+    grid.label(text=str(mod_name))
+    grid.label(text="Components:")
+    grid.label(text=str(len(components)))
+    grid.label(text="Objects:")
+    grid.label(text=str(object_count))
+
+    try:
+        from ..operators.export_manager import get_target_path
+        from ..core.namespace_hash import namespace_from_context
+
+        try:
+            target_path = get_target_path(context)
+        except Exception:
+            target_path = None
+        namespace = namespace_from_context(context, export_cache=cache, target_path=target_path, create_seed=False)
+        row = box.row(align=True)
+        row.label(text=f"Namespace: {namespace.namespace}", icon='KEY_HLT')
+        row.operator("rzm.copy_namespace", text="", icon='COPYDOWN')
+        box.label(text=f"Character: {namespace.character_name} | Skin: {namespace.skin_name}", icon='INFO')
+    except Exception as e:
+        box.label(text=f"Namespace unavailable: {e}", icon='ERROR')
+
+    box.operator("rzm.export_transform_segment", text="Export DISABLED Transform INI", icon='EXPORT')
+
+    try:
+        from ..core.ini_validation import validate_export_cache
+
+        basic = validate_export_cache(cache)
+        strict = validate_export_cache(cache, require_vertex_maps=True)
+        if basic.ok:
+            box.label(text="Basic cache validation: OK", icon='CHECKMARK')
+        else:
+            warn = box.box()
+            warn.alert = True
+            warn.label(text="Basic cache validation failed", icon='ERROR')
+            for issue in basic.errors[:4]:
+                warn.label(text=f"{issue.code}: {issue.message[:80]}")
+
+        if strict.ok:
+            box.label(text="Shape vertex maps: OK", icon='CHECKMARK')
+        else:
+            warn = box.box()
+            warn.label(text="Shape vertex-map warnings", icon='ERROR')
+            for issue in strict.errors[:5]:
+                warn.label(text=f"{issue.code}: {issue.message[:80]}")
+    except Exception as e:
+        box.label(text=f"Validation unavailable: {e}", icon='ERROR')
+
+    details = box.box()
+    details.label(text="Component Ranges", icon='OUTLINER_OB_MESH')
+    if not components:
+        details.label(text="No components in cache.", icon='INFO')
+        return
+
+    for comp_index, (comp_name, comp_data) in enumerate(components.items()):
+        if comp_index >= 6:
+            details.label(text=f"... {len(components) - comp_index} more component(s)")
+            break
+        comp_data = comp_data or {}
+        objects = comp_data.get("objects", []) or []
+        cbox = details.box()
+        cbox.label(
+            text=f"{comp_name or '[Main]'} | verts={comp_data.get('n_verts', '?')} | objects={len(objects)}",
+            icon='MESH_DATA',
+        )
+        for obj_index, obj_data in enumerate(objects[:4]):
+            vb_offset = obj_data.get("vb_offset", "?")
+            vb_count = obj_data.get("vb_count", "?")
+            has_map = bool(obj_data.get("vertex_map"))
+            icon = 'CHECKMARK' if has_map else 'ERROR'
+            cbox.label(
+                text=f"[{vb_offset} + {vb_count}] {obj_data.get('name', '<unnamed>')}",
+                icon=icon,
+            )
+        if len(objects) > 4:
+            cbox.label(text=f"... {len(objects) - 4} more object(s)")
+
+
 
 def draw_component_manager_ui(context, layout):
     scene = context.scene
@@ -1115,6 +1258,9 @@ def draw_component_manager_ui(context, layout):
                     row.label(text=part.name, icon='MESH_DATA')
             else:
                 c_box.label(text="No subcomponents", icon='INFO')
+
+    elif cm.active_tab == 'CACHE_INFO':
+        draw_export_cache_info_ui(context, layout)
 
 def draw_material_transfer_ui(context, layout):
     scene = context.scene
