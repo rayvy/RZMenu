@@ -209,6 +209,37 @@ def draw_color_attribute_quick_button(self, context):
     )
 
 
+def draw_solid_shading_preset_header(self, context):
+    prefs = addon_prefs(context)
+    if not (prefs and getattr(prefs, "dog_shit", False)):
+        return
+
+    space = getattr(context, "space_data", None)
+    if not space or space.type != 'VIEW_3D':
+        return
+
+    layout = self.layout
+    row = layout.row(align=True)
+    flat_texture = row.operator("rzm.xzibit_solid_shading_preset", text="", icon='TEXTURE')
+    flat_texture.preset = 'FLAT_TEXTURE'
+    flat_attribute = row.operator("rzm.xzibit_solid_shading_preset", text="", icon='GROUP_VCOL')
+    flat_attribute.preset = 'FLAT_ATTRIBUTE'
+
+    row.separator()
+
+    studio_texture = row.operator("rzm.xzibit_solid_shading_preset", text="", icon='TEXTURE')
+    studio_texture.preset = 'STUDIO_TEXTURE'
+    studio_material = row.operator("rzm.xzibit_solid_shading_preset", text="", icon='MATERIAL')
+    studio_material.preset = 'STUDIO_MATERIAL'
+    studio_attribute = row.operator("rzm.xzibit_solid_shading_preset", text="", icon='GROUP_VCOL')
+    studio_attribute.preset = 'STUDIO_ATTRIBUTE'
+
+    row.separator()
+
+    no_outline = row.operator("rzm.xzibit_solid_shading_preset", text="", icon='MOD_OUTLINE')
+    no_outline.preset = 'STUDIO_MATERIAL_NO_OUTLINE'
+
+
 def register():
     panel_patchers.clear()
     for panel_type in material_context_panel_types():
@@ -222,9 +253,16 @@ def register():
         bpy.types.DATA_PT_uv_texture.append(draw_uv_texcoord_quick_button)
     if hasattr(bpy.types, "DATA_PT_vertex_colors"):
         bpy.types.DATA_PT_vertex_colors.append(draw_color_attribute_quick_button)
+    if hasattr(bpy.types, "VIEW3D_HT_header"):
+        bpy.types.VIEW3D_HT_header.append(draw_solid_shading_preset_header)
     print(f"[RZM TWAA] Material context hook patched {len(panel_patchers)} panel(s).")
 
 def unregister():
+    if hasattr(bpy.types, "VIEW3D_HT_header"):
+        try:
+            bpy.types.VIEW3D_HT_header.remove(draw_solid_shading_preset_header)
+        except Exception:
+            pass
     if hasattr(bpy.types, "DATA_PT_vertex_colors"):
         try:
             bpy.types.DATA_PT_vertex_colors.remove(draw_color_attribute_quick_button)

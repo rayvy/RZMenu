@@ -4,6 +4,100 @@ import bpy
 TEXCOORD_LAYER_NAME = "TEXCOORD.xy"
 COLOR_ATTR_NAME = "COLOR"
 
+SOLID_SHADING_PRESETS = {
+    'FLAT_TEXTURE': {
+        "label": "FLAT + TEXTURE",
+        "light": "FLAT",
+        "color_type": ("TEXTURE",),
+        "show_outline": True,
+    },
+    'FLAT_ATTRIBUTE': {
+        "label": "FLAT + ATTRIBUTE",
+        "light": "FLAT",
+        "color_type": ("ATTRIBUTE", "VERTEX"),
+        "show_outline": True,
+    },
+    'STUDIO_TEXTURE': {
+        "label": "STUDIO + TEXTURE",
+        "light": "STUDIO",
+        "color_type": ("TEXTURE",),
+        "show_outline": True,
+    },
+    'STUDIO_MATERIAL': {
+        "label": "STUDIO + MATERIAL",
+        "light": "STUDIO",
+        "color_type": ("MATERIAL",),
+        "show_outline": True,
+    },
+    'STUDIO_ATTRIBUTE': {
+        "label": "STUDIO + ATTRIBUTE",
+        "light": "STUDIO",
+        "color_type": ("ATTRIBUTE", "VERTEX"),
+        "show_outline": True,
+    },
+    'STUDIO_MATERIAL_NO_OUTLINE': {
+        "label": "STUDIO + MATERIAL + NO OUTLINE",
+        "light": "STUDIO",
+        "color_type": ("MATERIAL",),
+        "show_outline": False,
+    },
+}
+
+
+def addon_prefs(context):
+    addon_name = __package__.split(".")[0]
+    addon = context.preferences.addons.get(addon_name)
+    if not addon:
+        for addon_key, addon_entry in context.preferences.addons.items():
+            if str(addon_key).endswith(addon_name):
+                addon = addon_entry
+                break
+    return addon.preferences if addon else None
+
+
+def _enum_contains(owner, prop_name, value):
+    try:
+        enum_items = owner.bl_rna.properties[prop_name].enum_items
+    except Exception:
+        return True
+
+    try:
+        return value in enum_items.keys()
+    except Exception:
+        try:
+            return value in {item.identifier for item in enum_items}
+        except Exception:
+            return True
+
+
+def _first_supported_enum(owner, prop_name, values):
+    for value in values:
+        if _enum_contains(owner, prop_name, value):
+            return value
+    return values[0] if values else None
+
+
+def apply_solid_shading_preset(space, preset_id):
+    shading = getattr(space, "shading", None)
+    preset = SOLID_SHADING_PRESETS[preset_id]
+    if shading is None:
+        raise RuntimeError("Viewport shading settings are not available")
+
+    shading.type = 'SOLID'
+
+    light = _first_supported_enum(shading, "light", (preset["light"],))
+    if light is not None:
+        shading.light = light
+
+    color_type = _first_supported_enum(shading, "color_type", preset["color_type"])
+    if color_type is not None:
+        shading.color_type = color_type
+
+    if hasattr(shading, "show_outline"):
+        shading.show_outline = preset["show_outline"]
+
+    return preset
+
 
 def iter_target_meshes(context, active_only=False):
     active = context.active_object
@@ -180,9 +274,50 @@ class RZM_OT_XzibitXXMIPreparationWithWeights(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_XzibitSolidShadingPreset(bpy.types.Operator):
+    bl_idname = "rzm.xzibit_solid_shading_preset"
+    bl_label = "Solid Shading Preset"
+    bl_description = "Switch the active 3D viewport to a prepared Solid shading preset"
+    bl_options = {'REGISTER'}
+
+    preset: bpy.props.EnumProperty(
+        name="Preset",
+        items=[
+            (preset_id, preset["label"], "")
+            for preset_id, preset in SOLID_SHADING_PRESETS.items()
+        ],
+    )
+
+    @classmethod
+    def poll(cls, context):
+        prefs = addon_prefs(context)
+        if not (prefs and getattr(prefs, "dog_shit", False)):
+            return False
+        space = getattr(context, "space_data", None)
+        return bool(space and space.type == 'VIEW_3D' and getattr(space, "shading", None))
+
+    @classmethod
+    def description(cls, context, properties):
+        preset = SOLID_SHADING_PRESETS.get(getattr(properties, "preset", ""), None)
+        if preset:
+            return f"Switch Solid viewport to {preset['label']}"
+        return cls.bl_description
+
+    def execute(self, context):
+        try:
+            preset = apply_solid_shading_preset(context.space_data, self.preset)
+        except Exception as exc:
+            self.report({'ERROR'}, f"Solid shading preset failed: {exc}")
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, f"Solid preset: {preset['label']}")
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_XzibitRenameActiveUVTexcoord,
     RZM_OT_XzibitCreateColorAttribute,
     RZM_OT_XzibitXXMIPreparation,
     RZM_OT_XzibitXXMIPreparationWithWeights,
+    RZM_OT_XzibitSolidShadingPreset,
 ]
