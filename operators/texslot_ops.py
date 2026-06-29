@@ -161,6 +161,51 @@ class RZM_OT_CopyTexSlotsToSelected(bpy.types.Operator):
         self.report({'INFO'}, f"Applied {len(tex_keys)} slots, conditions, and init attachments to {len(selected_objs)} objects")
         return {'FINISHED'}
 
+class RZM_OT_SyncTexSlotsToMaterial(bpy.types.Operator):
+    """Sync the active object's TexSlot custom properties to its material nodes."""
+    bl_idname = "rzm.sync_tex_slots_to_material"
+    bl_label = "Sync to Material"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        import os
+        target_obj = context.active_object
+        if not target_obj:
+            self.report({'WARNING'}, "No active object selected")
+            return {'CANCELLED'}
+            
+        tex_keys = [k for k in target_obj.keys() if k.startswith("rzm.TexSlot.")]
+        if not tex_keys:
+            self.report({'INFO'}, "No texture slots assigned to this object")
+            return {'CANCELLED'}
+            
+        mat = None
+        if target_obj.material_slots and target_obj.material_slots[0].material:
+            mat = target_obj.material_slots[0].material
+        else:
+            self.report({'WARNING'}, f"Object '{target_obj.name}' has no material assigned.")
+            return {'CANCELLED'}
+            
+        # Ensure shader nodes are enabled
+        if not mat.use_nodes:
+            mat.use_nodes = True
+            
+        try:
+            from ..operators.quick_import_ops import setup_shader_nodes
+        except (ImportError, ValueError):
+            from operators.quick_import_ops import setup_shader_nodes
+            
+        count = 0
+        for key in tex_keys:
+            slot_name = key.replace("rzm.TexSlot.", "")
+            image_path = target_obj[key]
+            if image_path and os.path.exists(image_path):
+                setup_shader_nodes(mat, slot_name, image_path)
+                count += 1
+                
+        self.report({'INFO'}, f"Successfully synced {count} texture(s) to material '{mat.name}'")
+        return {'FINISHED'}
+
 classes_to_register = [
     RZM_OT_AssignObjectTexSlot,
     RZM_OT_RemoveObjectTexSlot,
@@ -168,4 +213,5 @@ classes_to_register = [
     RZM_OT_RemoveObjectTexCond,
     RZM_OT_ToggleObjectTexInitAttach,
     RZM_OT_CopyTexSlotsToSelected,
+    RZM_OT_SyncTexSlotsToMaterial,
 ]

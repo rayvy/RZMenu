@@ -721,6 +721,7 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         box = layout.box()
         row = box.row(align=True)
         row.label(text="RZ-TexSlots", icon='TEXTURE_DATA')
+        row.operator("rzm.sync_tex_slots_to_material", text="", icon='FILE_REFRESH')
         row.operator("rzm.copy_tex_slots_to_selected", text="", icon='PASTEDOWN')
         row.menu("RZM_MT_assign_tex_slot_menu", text="Assign", icon="ADD")
 

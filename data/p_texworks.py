@@ -162,6 +162,50 @@ class TexWorksSlot(bpy.types.PropertyGroup):
     hsv_link: StringProperty(name="HSV Variable", description="Link to a VECTOR value ($MyVar)")
     hsv_base: FloatVectorProperty(name="HSV Base", size=4, default=(0.0, 0.0, 0.0, 1.0))
 
+    # Stencil Mode (Rect vs Sparse Stencil Buffer)
+    stencil_mode: EnumProperty(
+        name="Stencil Mode",
+        items=[
+            ('RECT', "Rect-based (Legacy)", "Standard rectangular stencil projection"),
+            ('SPARSE', "Sparse Decal (Stencil Buffer)", "Bake selection to non-topological sparse buffer")
+        ],
+        default='RECT'
+    )
+    # Sparse settings
+    sparse_mapping_method: EnumProperty(
+        name="Virtual map",
+        items=[
+            ("BEST_FIT_PLANE", "Best-fit Plane", "Stable non-operator projection from selected faces"),
+            ("LOCAL_XY", "Local XY", "Project selected faces using local X/Y"),
+            ("LOCAL_XZ", "Local XZ", "Project selected faces using local X/Z"),
+            ("LOCAL_YZ", "Local YZ", "Project selected faces using local Y/Z"),
+        ],
+        default="BEST_FIT_PLANE",
+    )
+    sparse_padding_pixels: IntProperty(
+        name="Seam padding",
+        description="Dilate only into atlas texels unused by any UV face",
+        min=0,
+        max=32,
+        default=4,
+    )
+    sparse_flip_target_v: BoolProperty(
+        name="Flip target V",
+        description="Convert Blender bottom-left UV origin into texture-address Y direction",
+        default=True,
+    )
+    sparse_flip_decal_v: BoolProperty(
+        name="Flip decal V",
+        description="Convert temporary Blender UV into DirectX-style decal texture V",
+        default=True,
+    )
+    # Cached diagnostics
+    sparse_record_count: IntProperty(name="Records Count", default=0)
+    sparse_bbox_min: IntVectorProperty(name="Bounding Box Min", size=2, default=(0, 0))
+    sparse_bbox_max: IntVectorProperty(name="Bounding Box Max", size=2, default=(0, 0))
+    sparse_file_size: FloatProperty(name="File Size (KB)", default=0.0)
+    sparse_has_baked: BoolProperty(name="Has Baked Data", default=False)
+
 # --- 4. COMPONENTS & MAIN BLOCKS ---
 
 class TexWorksComponent(bpy.types.PropertyGroup):

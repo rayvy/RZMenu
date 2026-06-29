@@ -1120,8 +1120,11 @@ class RZM_OT_RescaleActiveTwBlock(bpy.types.Operator):
             scale_rect(comp, "base_rect")
             scale_rect(comp, "rect")
             for slot in comp.slots:
-                scale_rect(slot, "rect")
-                scale_rect(slot, "multi_pass_rect")
+                if slot.stencil_mode == 'RECT':
+                    scale_rect(slot, "rect")
+                    scale_rect(slot, "multi_pass_rect")
+                else:
+                    slot.sparse_has_baked = False
                 slot.calc_res_x = self.new_resolution
                 slot.calc_res_y = self.new_resolution
 
@@ -1131,6 +1134,210 @@ class RZM_OT_RescaleActiveTwBlock(bpy.types.Operator):
             f"Rescaled active TexWorks block '{block.name}' {self.old_resolution}->{self.new_resolution}; rects changed: {changed}"
         )
         return {'FINISHED'}
+
+class RZM_OT_BakeSparseStencil(bpy.types.Operator):
+    bl_idname = "rzm.bake_sparse_stencil"
+    bl_label = "Bake Sparse Decal Stencil"
+    bl_description = "Bake selected mesh faces into a packed structured CS buffer using evaluated geometry"
+    bl_options = {"REGISTER", "UNDO"}
+
+    block_index: bpy.props.IntProperty()
+    comp_index: bpy.props.IntProperty()
+    slot_index: bpy.props.IntProperty()
+
+    def execute(self, context):
+        rzm = context.scene.rzm
+        try:
+            block = rzm.tw_blocks[self.block_index]
+            comp = block.components[self.comp_index]
+            slot = comp.slots[self.slot_index]
+        except IndexError:
+            self.report({"ERROR"}, "Invalid Slot selection")
+            return {"CANCELLED"}
+
+        source_object = context.active_object
+        if source_object is None or source_object.type != "MESH":
+            self.report({"ERROR"}, "Select an active mesh object")
+            return {"CANCELLED"}
+
+        # Get original mesh and check face selection
+        orig_mesh = source_object.data
+        if source_object.mode == "EDIT":
+            source_object.update_from_editmode()
+
+        orig_selected = {p.index for p in orig_mesh.polygons if p.select}
+        if not orig_selected:
+            self.report({"ERROR"}, "Select at least one mesh face on the active object")
+            return {"CANCELLED"}
+
+        try:
+            # 1. Setup target paths
+            target_path = get_target_path(context)
+            if not target_path:
+                self.report({"ERROR"}, "Active mod target path not set. Check XXMI settings.")
+                return {"CANCELLED"}
+
+            destination = os.path.join(target_path, "TexWorks", "DecalStencils")
+            os.makedirs(destination, exist_ok=True)
+
+            from ..utils.sparse_baker import (
+                _safe_export_name,
+                _make_uv_reader,
+                _selection_diagnostics,
+                _build_virtual_decal_uv,
+                _build_occupancy,
+                _build_core_records,
+                _add_padding_records,
+                _write_buffer,
+            )
+
+            export_name = _safe_export_name(slot.name)
+
+            buffer_filename = f"{export_name}.buf"
+            json_filename = f"{export_name}.json"
+            buffer_path = os.path.join(destination, buffer_filename)
+            json_path = os.path.join(destination, json_filename)
+
+            # 2. Extract evaluated mesh using depsgraph
+            depsgraph = context.evaluated_depsgraph_get()
+            eval_obj = source_object.evaluated_get(depsgraph)
+            source_mesh = eval_obj.to_mesh()
+
+            # Map original face selection to evaluated mesh faces using original_index
+            selected_faces = []
+            for p in source_mesh.polygons:
+                orig_idx = getattr(p, "original_index", -1)
+                if orig_idx == -1 or orig_idx >= len(orig_mesh.polygons):
+                    orig_idx = p.index
+                if orig_idx in orig_selected:
+                    selected_faces.append(p.index)
+
+            if not selected_faces:
+                # Fallback: check evaluated face selections
+                selected_faces = [p.index for p in source_mesh.polygons if p.select]
+
+            if not selected_faces:
+                raise RuntimeError("No faces found on the evaluated mesh. Try modifying selection or modifiers.")
+
+            # 3. Read target UV Map
+            uv_name = orig_mesh.uv_layers.active.name if orig_mesh.uv_layers.active else ""
+            if not uv_name:
+                raise RuntimeError("Mesh has no active UV Map")
+
+            read_target_uv, uv_reader_metadata = _make_uv_reader(source_mesh, uv_name)
+
+            diagnostics = _selection_diagnostics(source_mesh, selected_faces)
+            virtual_uv_by_loop, unwrap_metadata = _build_virtual_decal_uv(
+                source_mesh,
+                selected_faces,
+                slot.sparse_mapping_method,
+            )
+
+            # Use slot.calc_res_x / calc_res_y as atlas dimensions
+            width = slot.calc_res_x
+            height = slot.calc_res_y
+
+            occupancy, all_degenerate_triangles, clipped_triangles = _build_occupancy(
+                source_mesh,
+                read_target_uv,
+                width,
+                height,
+                slot.sparse_flip_target_v,
+            )
+
+            core_records, core_metadata = _build_core_records(
+                source_mesh,
+                read_target_uv,
+                virtual_uv_by_loop,
+                selected_faces,
+                width,
+                height,
+                slot.sparse_flip_target_v,
+                slot.sparse_flip_decal_v,
+            )
+
+            if not core_records:
+                raise RuntimeError("Selected faces produced zero atlas texels. Check resolution and target UV Map.")
+
+            padding_records = _add_padding_records(
+                core_records,
+                occupancy,
+                width,
+                height,
+                slot.sparse_padding_pixels,
+            )
+
+            all_records = dict(core_records)
+            all_records.update(padding_records)
+
+            # 4. Write binary buffer
+            _write_buffer(buffer_path, all_records, width, height)
+
+            # 5. Build warnings
+            warnings = []
+            if diagnostics["connected_components"] > 1:
+                warnings.append("Selection has multiple disconnected components.")
+            if diagnostics["closed_components"] > 0:
+                warnings.append("Selection contains a closed component without a boundary.")
+            if clipped_triangles > 0:
+                warnings.append("Some target UV triangles leave the 0..1 atlas range and were clipped.")
+            if core_metadata["conflicting_target_texels"] > 0:
+                warnings.append("Target UV overlap detected inside the stencil.")
+
+            # 6. Write JSON metadata
+            metadata = {
+                "format_version": 1,
+                "algorithm": "selected_faces_virtual_unwrap_to_sparse_atlas_texels",
+                "record_layout": ["target_x_float", "target_y_float", "decal_u", "decal_v"],
+                "record_stride_bytes": 16,
+                "shader_resource_format": "R32G32B32A32_FLOAT",
+                "object": source_object.name,
+                "target_uv": uv_name,
+                "atlas_size": [width, height],
+                "flip_target_v": slot.sparse_flip_target_v,
+                "flip_decal_v": slot.sparse_flip_decal_v,
+                "unwrap_method": slot.sparse_mapping_method,
+                "selected_face_count": len(selected_faces),
+                "core_record_count": len(core_records),
+                "padding_record_count": len(padding_records),
+                "record_count": len(all_records),
+                "selection_diagnostics": diagnostics,
+                "warnings": warnings,
+            }
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            # 7. Update slot stats cached properties
+            slot.sparse_record_count = len(all_records)
+            slot.sparse_file_size = os.path.getsize(buffer_path) / 1024.0
+            
+            # Find bounds
+            min_x, min_y = width, height
+            max_x, max_y = -1, -1
+            for index in all_records.keys():
+                x = index % width
+                y = index // width
+                if x < min_x: min_x = x
+                if y < min_y: min_y = y
+                if x > max_x: max_x = x
+                if y > max_y: max_y = y
+
+            slot.sparse_bbox_min = (min_x, min_y)
+            slot.sparse_bbox_max = (max_x, max_y)
+            slot.sparse_has_baked = True
+
+            # Clean up the evaluated mesh
+            eval_obj.to_mesh_clear()
+
+            trigger_refresh()
+            self.report({"INFO"}, f"Baked {len(all_records)} sparse records successfully.")
+            return {"FINISHED"}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.report({"ERROR"}, f"Bake failed: {e}")
+            return {"CANCELLED"}
 
 classes_to_register = [
     RZM_OT_UpdateTwItem,
@@ -1147,6 +1354,7 @@ classes_to_register = [
     RZM_OT_SetSlotCalcRes,
     RZM_OT_CalcSplittedIslandConfig,
     RZM_OT_RescaleActiveTwBlock,
+    RZM_OT_BakeSparseStencil,
     RZM_OT_TwCreateEasyMask,
     RZM_OT_ClearTwResources, RZM_OT_ClearTwOverrides, RZM_OT_TwResOverFill,
     RZ_OT_TexWorksExportHierarchy, RZ_OT_TexWorksDebugSync

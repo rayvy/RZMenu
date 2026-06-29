@@ -4,6 +4,22 @@ import os
 import re
 from bpy_extras.io_utils import ImportHelper
 
+def split_camel_case(s):
+    # Replace non-alphabetical characters with space
+    s = re.sub(r'[^a-zA-Z]', ' ', s)
+    # Split camelcase
+    s = re.sub(r'([a-z])([A-Z])', r'\1 \2', s)
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1 \2', s)
+    return [w.lower() for w in s.split()]
+
+def get_resolved_component(name):
+    words = split_camel_case(name)
+    specificity = ["natlanfx", "fx", "face", "hair", "dress", "costume", "shoe", "socks", "pant", "glove", "arm", "leg", "weapon", "extra", "body", "head"]
+    present = [w for w in specificity if w in words]
+    if present:
+        return present[0]
+    return None
+
 # Parse texture bindings from the frame analysis log file
 def parse_textures_from_log(log_filepath):
     textures = {}  # index (int) -> texture_name (str)
@@ -336,6 +352,7 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
             print(f"[QuickImport] Failed to reset namespace seed: {e}")
             
     pre_objs = {obj.name for obj in context.scene.objects if obj.type == 'MESH'}
+    pre_mats = {mat.name for mat in bpy.data.materials}
     
     # Process multiple files if selected
     import_filenames = []
@@ -420,16 +437,28 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
         clean_obj_name = obj.name.split('-')[0].split('=')[0].split('.')[0].strip()
         
         # Ensure the object has a material assigned to its first slot
-        mat = None
-        if obj.material_slots:
-            if obj.material_slots[0].material:
-                mat = obj.material_slots[0].material
-            else:
-                mat = bpy.data.materials.new(name=f"mat_{clean_obj_name}")
+        mat_name = f"mat_{clean_obj_name}"
+        mat = bpy.data.materials.get(mat_name)
+        
+        if mat:
+            if obj.material_slots:
                 obj.material_slots[0].material = mat
+            else:
+                obj.data.materials.append(mat)
         else:
-            mat = bpy.data.materials.new(name=f"mat_{clean_obj_name}")
-            obj.data.materials.append(mat)
+            if obj.material_slots and obj.material_slots[0].material:
+                mat = obj.material_slots[0].material
+                if mat.name != mat_name:
+                    mat.name = mat_name
+            else:
+                mat = bpy.data.materials.new(name=mat_name)
+                if obj.material_slots:
+                    obj.material_slots[0].material = mat
+                else:
+                    obj.data.materials.append(mat)
+            
+        # Check if this material is brand-new (not in the database before quick import ran)
+        is_new_material = mat.name not in pre_mats
             
         mat.disable_twaa_export = not is_asset_mode
         
@@ -440,6 +469,12 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
             
             # Check if texture is for this mesh
             if clean_obj_name.lower() in f_lower:
+                # Component check (prevent mismatched face/natlanfx etc. from attaching to head)
+                mesh_comp = get_resolved_component(clean_obj_name)
+                tex_comp = get_resolved_component(f_no_ext)
+                if mesh_comp is not None and tex_comp is not None and mesh_comp != tex_comp:
+                    continue
+
                 # Find matching keyword
                 matched_type = None
                 for t in ["Diffuse", "DiffuseUlt", "NormalMap", "LightMap", "StockingMap", "MaterialMap", "GlowMap", "GlowGradient", "WengineFx"]:
@@ -453,7 +488,8 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
                         full_tex_path = os.path.join(dump_dir, f)
                         portable_path = get_portable_path(full_tex_path)
                         obj[f"rzm.TexSlot.{slot_name}"] = portable_path
-                        setup_shader_nodes(mat, slot_name, full_tex_path)
+                        if is_asset_mode or is_new_material:
+                            setup_shader_nodes(mat, slot_name, full_tex_path)
                         print(f"[QuickImport] Prefix match: Assigned texture {f} to slot {slot_name} on mesh {obj.name}")
                         
         # 2. Fallback to parsing txt binds
@@ -463,9 +499,9 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
                 if not slot_name or obj.get(f"rzm.TexSlot.{slot_name}"):
                     continue  # already set by prefix matching
                     
-                obj_words = set(re.findall(r'[a-zA-Z]+', obj.name.lower()))
-                tex_words = set(re.findall(r'[a-zA-Z]+', tex_name.lower()))
-                parts = {"body", "head", "hair", "dress", "face", "arm", "leg", "weapon", "extra"}
+                obj_words = set(split_camel_case(obj.name))
+                tex_words = set(split_camel_case(tex_name))
+                parts = {"body", "head", "hair", "dress", "face", "arm", "leg", "weapon", "extra", "fx", "natlanfx"}
                 obj_parts = obj_words.intersection(parts)
                 tex_parts = tex_words.intersection(parts)
                 
@@ -476,7 +512,8 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
                 if found_path:
                     portable_path = get_portable_path(found_path)
                     obj[f"rzm.TexSlot.{slot_name}"] = portable_path
-                    setup_shader_nodes(mat, slot_name, found_path)
+                    if is_asset_mode or is_new_material:
+                        setup_shader_nodes(mat, slot_name, found_path)
                     print(f"[QuickImport] Log match: Assigned texture {tex_name} to slot {slot_name} on mesh {obj.name}")
                     
     # Apply harmonization

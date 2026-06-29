@@ -790,76 +790,113 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                 row.prop(slot, "name", text="Slot Name")
                                 row.operator("rzm.remove_tw_slot", text="", icon='X').block_index = b_idx; op.comp_index = c_idx; op.index = s_idx
                                 
-                                # --- UV CALCULATOR (Auto-Config) ---
-                                calc_box = s_item.box()
-                                calc_box.label(text="UV Calculator (Auto-Config):", icon='UV')
-                                
-                                # Resolution Controls
-                                res_row = calc_box.row(align=True)
-                                res_row.prop(slot, "calc_res_x", text="X")
-                                res_row.prop(slot, "calc_res_y", text="Y")
-                                
-                                # Presets
-                                pre_row = calc_box.row(align=True)
-                                pre2 = pre_row.operator("rzm.set_slot_calc_res", text="Set 2048")
-                                pre2.block_index = b_idx; pre2.comp_index = c_idx; pre2.slot_index = s_idx; pre2.res = 2048
-                                
-                                pre4 = pre_row.operator("rzm.set_slot_calc_res", text="Set 4096")
-                                pre4.block_index = b_idx; pre4.comp_index = c_idx; pre4.slot_index = s_idx; pre4.res = 4096
-                                
-                                # Padding
-                                calc_box.prop(slot, "calc_padding", text="Padding (Px)")
-                                
-                                # Calc Buttons
-                                op_row = calc_box.row(align=True)
-                                op0 = op_row.operator("rzm.calc_slot_config", text="Calculate Pass 0", icon='PLAY')
-                                op0.block_index = b_idx; op0.comp_index = c_idx; op0.slot_index = s_idx; op0.target_pass = 0
-                                
-                                op1 = op_row.operator("rzm.calc_slot_config", text="Calculate Pass 1", icon='PLAY')
-                                op1.block_index = b_idx; op1.comp_index = c_idx; op1.slot_index = s_idx; op1.target_pass = 1
-                                
-                                ops_ext = calc_box.operator("rzm.calc_splitted_island_config", text="Calc Splitted Island (Exp)", icon='MOD_UVPROJECT')
-                                ops_ext.block_index = b_idx; ops_ext.comp_index = c_idx; ops_ext.slot_index = s_idx
+                                s_item.prop(slot, "stencil_mode", text="Stencil Mode")
 
-                                # --- TRANSFORM GROUP (PASS 0) ---
-                                t_box = s_item.box()
-                                t_box.label(text="Transform (Pass 0 / Main):", icon='NODE_SOCKET_MATRIX')
-                                col = t_box.column(align=True)
-                                col.prop(slot, "rect", text="Atlas Rect")
-                                
-                                row = col.row(align=True)
-                                row.prop(slot, "rotation")
-                                row.prop(slot, "mirror", text="", icon='MOD_MIRROR', toggle=True)
-                                row.prop(slot, "flip", text="", icon='UV_SYNC_SELECT', toggle=True)
+                                if slot.stencil_mode == 'RECT':
+                                    # --- UV CALCULATOR (Auto-Config) ---
+                                    calc_box = s_item.box()
+                                    calc_box.label(text="UV Calculator (Auto-Config):", icon='UV')
+                                    
+                                    # Resolution Controls
+                                    res_row = calc_box.row(align=True)
+                                    res_row.prop(slot, "calc_res_x", text="X")
+                                    res_row.prop(slot, "calc_res_y", text="Y")
+                                    
+                                    # Presets
+                                    pre_row = calc_box.row(align=True)
+                                    pre2 = pre_row.operator("rzm.set_slot_calc_res", text="Set 2048")
+                                    pre2.block_index = b_idx; pre2.comp_index = c_idx; pre2.slot_index = s_idx; pre2.res = 2048
+                                    
+                                    pre4 = pre_row.operator("rzm.set_slot_calc_res", text="Set 4096")
+                                    pre4.block_index = b_idx; pre4.comp_index = c_idx; pre4.slot_index = s_idx; pre4.res = 4096
+                                    
+                                    # Padding
+                                    calc_box.prop(slot, "calc_padding", text="Padding (Px)")
+                                    
+                                    # Calc Buttons
+                                    op_row = calc_box.row(align=True)
+                                    op0 = op_row.operator("rzm.calc_slot_config", text="Calculate Pass 0", icon='PLAY')
+                                    op0.block_index = b_idx; op0.comp_index = c_idx; op0.slot_index = s_idx; op0.target_pass = 0
+                                    
+                                    op1 = op_row.operator("rzm.calc_slot_config", text="Calculate Pass 1", icon='PLAY')
+                                    op1.block_index = b_idx; op1.comp_index = c_idx; op1.slot_index = s_idx; op1.target_pass = 1
+                                    
+                                    ops_ext = calc_box.operator("rzm.calc_splitted_island_config", text="Calc Splitted Island (Exp)", icon='MOD_UVPROJECT')
+                                    ops_ext.block_index = b_idx; ops_ext.comp_index = c_idx; ops_ext.slot_index = s_idx
 
-                                # --- WARPING & LATTICE ---
-                                w_box = s_item.box()
-                                w_box.label(text="Warping & Lattice (3x3):", icon='GRID')
-                                
-                                # Pass 0 Warp
-                                p0_w = w_box.box()
-                                row = p0_w.row(align=True)
-                                row.prop(slot, "warp_p0_enabled", text="Pass 0 Warp")
-                                row.prop(slot, "warp_p0_debug", text="Debug", icon='CONSOLE')
-                                if slot.warp_p0_enabled:
-                                    grid = p0_w.grid_flow(columns=3, even_columns=True, even_rows=False, align=True)
-                                    for i in range(9):
-                                        col = grid.column(align=True)
-                                        col.prop(slot, "warp_p0_grid", index=i*2, text="X")
-                                        col.prop(slot, "warp_p0_grid", index=i*2+1, text="Y")
-                                
-                                # Pass 1 Warp (only if multi-pass enabled)
-                                if slot.multi_pass_mode != 'NONE':
-                                    p1_w = w_box.box()
-                                    row = p1_w.row(align=True)
-                                    row.prop(slot, "warp_p1_enabled", text="Pass 1 Warp")
-                                    row.prop(slot, "warp_p1_debug", text="Debug", icon='CONSOLE')
-                                    if slot.warp_p1_enabled:
-                                        grid = p1_w.grid_flow(columns=3, even_columns=True, even_rows=False, align=True)
+                                    # --- TRANSFORM GROUP (PASS 0) ---
+                                    t_box = s_item.box()
+                                    t_box.label(text="Transform (Pass 0 / Main):", icon='NODE_SOCKET_MATRIX')
+                                    col = t_box.column(align=True)
+                                    col.prop(slot, "rect", text="Atlas Rect")
+                                    
+                                    row = col.row(align=True)
+                                    row.prop(slot, "rotation")
+                                    row.prop(slot, "mirror", text="", icon='MOD_MIRROR', toggle=True)
+                                    row.prop(slot, "flip", text="", icon='UV_SYNC_SELECT', toggle=True)
+
+                                    # --- WARPING & LATTICE ---
+                                    w_box = s_item.box()
+                                    w_box.label(text="Warping & Lattice (3x3):", icon='GRID')
+                                    
+                                    # Pass 0 Warp
+                                    p0_w = w_box.box()
+                                    row = p0_w.row(align=True)
+                                    row.prop(slot, "warp_p0_enabled", text="Pass 0 Warp")
+                                    row.prop(slot, "warp_p0_debug", text="Debug", icon='CONSOLE')
+                                    if slot.warp_p0_enabled:
+                                        grid = p0_w.grid_flow(columns=3, even_columns=True, even_rows=False, align=True)
                                         for i in range(9):
                                             col = grid.column(align=True)
-                                            col.prop(slot, "warp_p1_grid", index=i*2, text="X")
-                                            col.prop(slot, "warp_p1_grid", index=i*2+1, text="Y")
+                                            col.prop(slot, "warp_p0_grid", index=i*2, text="X")
+                                            col.prop(slot, "warp_p0_grid", index=i*2+1, text="Y")
+                                    
+                                    # Pass 1 Warp (only if multi-pass enabled)
+                                    if slot.multi_pass_mode != 'NONE':
+                                        p1_w = w_box.box()
+                                        row = p1_w.row(align=True)
+                                        row.prop(slot, "warp_p1_enabled", text="Pass 1 Warp")
+                                        row.prop(slot, "warp_p1_debug", text="Debug", icon='CONSOLE')
+                                        if slot.warp_p1_enabled:
+                                            grid = p1_w.grid_flow(columns=3, even_columns=True, even_rows=False, align=True)
+                                            for i in range(9):
+                                                col = grid.column(align=True)
+                                                col.prop(slot, "warp_p1_grid", index=i*2, text="X")
+                                                col.prop(slot, "warp_p1_grid", index=i*2+1, text="Y")
+                                else:
+                                    # --- SPARSE DECAL SETTINGS ---
+                                    sp_box = s_item.box()
+                                    sp_box.label(text="Sparse Stencil Settings:", icon='UV')
+                                    
+                                    res_row = sp_box.row(align=True)
+                                    res_row.prop(slot, "calc_res_x", text="Width")
+                                    res_row.prop(slot, "calc_res_y", text="Height")
+                                    
+                                    sp_box.prop(slot, "sparse_mapping_method", text="Virtual Map")
+                                    sp_box.prop(slot, "sparse_padding_pixels", text="Seam Padding")
+                                    
+                                    flip_row = sp_box.row(align=True)
+                                    flip_row.prop(slot, "sparse_flip_target_v", text="Flip Target V")
+                                    flip_row.prop(slot, "sparse_flip_decal_v", text="Flip Decal V")
+                                    
+                                    # Big Bake Button
+                                    op = sp_box.operator("rzm.bake_sparse_stencil", text="Bake Sparse Stencil", icon='PLAY')
+                                    op.block_index = b_idx
+                                    op.comp_index = c_idx
+                                    op.slot_index = s_idx
+                                    
+                                    # Diagnostics report
+                                    diag_box = sp_box.box()
+                                    diag_box.label(text="Bake Diagnostics:", icon='INFO')
+                                    if slot.sparse_has_baked:
+                                        col = diag_box.column(align=True)
+                                        col.label(text=f"Status: Baked ({slot.sparse_record_count} points)")
+                                        col.label(text=f"File Size: {slot.sparse_file_size:.2f} KB")
+                                        gpu_mem = (slot.sparse_record_count * 12) / 1024.0
+                                        col.label(text=f"Expected GPU memory: {gpu_mem:.2f} KB")
+                                        col.label(text=f"Bounds: [{slot.sparse_bbox_min[0]}, {slot.sparse_bbox_min[1]}] -> [{slot.sparse_bbox_max[0]}, {slot.sparse_bbox_max[1]}]")
+                                    else:
+                                        diag_box.label(text="Status: Not Baked yet. Select faces and click Bake.")
 
                                 # --- LAYERS (Вкладки) ---
                                 layer_box = s_item.box()
@@ -929,17 +966,18 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                     m_row.prop(slot, "pass0_use_mask", text="P0")
                                     m_row.prop(slot, "pass1_use_mask", text="P1")
 
-                                # --- MULTI-PASS ---
-                                mp_box = s_item.box()
-                                mp_box.prop(slot, "multi_pass_mode", text="Pass Mode")
-                                if slot.multi_pass_mode != 'NONE':
-                                    mp_box.label(text="Transform (Multi-pass):")
-                                    mp_box.prop(slot, "multi_pass_rect", text="Atlas Rect")
-                                    
-                                    mp_row = mp_box.row(align=True)
-                                    mp_row.prop(slot, "multi_pass_rotation", text="Rot")
-                                    mp_row.prop(slot, "multi_pass_mirror", text="", icon='MOD_MIRROR', toggle=True)
-                                    mp_row.prop(slot, "multi_pass_flip", text="", icon='UV_SYNC_SELECT', toggle=True)
+                                if slot.stencil_mode == 'RECT':
+                                    # --- MULTI-PASS ---
+                                    mp_box = s_item.box()
+                                    mp_box.prop(slot, "multi_pass_mode", text="Pass Mode")
+                                    if slot.multi_pass_mode != 'NONE':
+                                        mp_box.label(text="Transform (Multi-pass):")
+                                        mp_box.prop(slot, "multi_pass_rect", text="Atlas Rect")
+                                        
+                                        mp_row = mp_box.row(align=True)
+                                        mp_row.prop(slot, "multi_pass_rotation", text="Rot")
+                                        mp_row.prop(slot, "multi_pass_mirror", text="", icon='MOD_MIRROR', toggle=True)
+                                        mp_row.prop(slot, "multi_pass_flip", text="", icon='UV_SYNC_SELECT', toggle=True)
 
     def draw_special_variables(self, layout, rzm):
         layout.separator()
