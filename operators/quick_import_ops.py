@@ -462,6 +462,8 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
             
         mat.disable_twaa_export = not is_asset_mode
         
+        assigned_slots = set()
+        
         # 1. Fuzzy matching based on texture filenames (just like QuickImportXXMI_Full)
         for f in texture_files:
             f_no_ext, _ = os.path.splitext(f)
@@ -487,16 +489,18 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
                     if slot_name:
                         full_tex_path = os.path.join(dump_dir, f)
                         portable_path = get_portable_path(full_tex_path)
-                        obj[f"rzm.TexSlot.{slot_name}"] = portable_path
+                        if is_asset_mode:
+                            obj[f"rzm.TexSlot.{slot_name}"] = portable_path
                         if is_asset_mode or is_new_material:
                             setup_shader_nodes(mat, slot_name, full_tex_path)
+                        assigned_slots.add(slot_name)
                         print(f"[QuickImport] Prefix match: Assigned texture {f} to slot {slot_name} on mesh {obj.name}")
                         
         # 2. Fallback to parsing txt binds
         if auto_assign_slots and parsed_textures:
             for idx, tex_name in parsed_textures.items():
                 slot_name = map_texture_to_slot(idx, tex_name, valid_slots)
-                if not slot_name or obj.get(f"rzm.TexSlot.{slot_name}"):
+                if not slot_name or slot_name in assigned_slots or obj.get(f"rzm.TexSlot.{slot_name}"):
                     continue  # already set by prefix matching
                     
                 obj_words = set(split_camel_case(obj.name))
@@ -511,9 +515,11 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
                 found_path = find_texture_file(dump_dir, tex_name)
                 if found_path:
                     portable_path = get_portable_path(found_path)
-                    obj[f"rzm.TexSlot.{slot_name}"] = portable_path
+                    if is_asset_mode:
+                        obj[f"rzm.TexSlot.{slot_name}"] = portable_path
                     if is_asset_mode or is_new_material:
                         setup_shader_nodes(mat, slot_name, found_path)
+                    assigned_slots.add(slot_name)
                     print(f"[QuickImport] Log match: Assigned texture {tex_name} to slot {slot_name} on mesh {obj.name}")
                     
     # Apply harmonization
