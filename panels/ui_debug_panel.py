@@ -883,6 +883,9 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                     mirror_row.prop(slot, "sparse_mirror_x", text="Target Mirror X")
                                     mirror_row.prop(slot, "sparse_mirror_y", text="Target Mirror Y")
                                     
+                                    sp_box.prop(slot, "sparse_offset", text="Offset")
+                                    sp_box.prop(slot, "sparse_scale", text="Scale")
+                                    
                                     # Big Bake Button
                                     op = sp_box.operator("rzm.bake_sparse_stencil", text="Bake Sparse Stencil", icon='PLAY')
                                     op.block_index = b_idx

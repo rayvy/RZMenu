@@ -14,6 +14,8 @@ Texture1D<float4> IniParams : register(t120);
 #define OverlayColor    IniParams[47]
 #define StateFlags      IniParams[24]
 #define UseMask         (StateFlags.w > 0.5f)
+#define DecalOffset     IniParams[48].xy
+#define DecalScale      IniParams[48].zw
 
 #define RZM_STAMP_MAGIC 0x444D5A52u
 
@@ -76,7 +78,17 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID) {
         if (mirrorTargetY) targetPos.y = targetDim.y - 1u - targetPos.y;
     }
 
-    uv = ApplyDecalRuntimeTransform(saturate(uv));
+    // Offset & Scale Transform
+    float2 local_uv = uv;
+    float2 scale = DecalScale;
+    if (scale.x == 0.0f) scale.x = 1.0f;
+    if (scale.y == 0.0f) scale.y = 1.0f;
+    local_uv = (local_uv - 0.5f) / scale - DecalOffset + 0.5f;
+
+    // Discard pixel if UV goes out of bounds to avoid edge stretching
+    if (local_uv.x < 0.0f || local_uv.x > 1.0f || local_uv.y < 0.0f || local_uv.y > 1.0f) return;
+
+    uv = ApplyDecalRuntimeTransform(local_uv);
 
     float4 decalColor = DecalTexture.SampleLevel(samLinear, uv, 0) * ColorMultiplier;
     decalColor.a *= weight;

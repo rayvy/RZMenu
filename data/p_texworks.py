@@ -209,6 +209,18 @@ class TexWorksSlot(bpy.types.PropertyGroup):
         description="Mirror target coordinate along Y axis in Pass 1",
         default=False,
     )
+    sparse_offset: FloatVectorProperty(
+        name="Offset",
+        description="Shift decal center (X, Y)",
+        size=2,
+        default=(0.0, 0.0)
+    )
+    sparse_scale: FloatVectorProperty(
+        name="Scale",
+        description="Scale decal size (X, Y)",
+        size=2,
+        default=(1.0, 1.0)
+    )
     # Cached diagnostics
     sparse_record_count: IntProperty(name="Records Count", default=0)
     sparse_bbox_min: IntVectorProperty(name="Bounding Box Min", size=2, default=(0, 0))

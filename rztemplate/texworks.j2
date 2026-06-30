@@ -560,6 +560,13 @@ cs-t7 = Resource.TexWorks.{{ ns.cfg_block }}.{{ ns.cfg_comp }}.{{ slot.name }}.C
 ;z45 = {{ "%.1f"|format(comp.rect[2]) }}
 ;w45 = {{ "%.1f"|format(comp.rect[3]) }}
 
+{% if is_sparse %}
+x48 = {{ "%.4f"|format(ns.target_slot.sparse_offset[0]) }}
+y48 = {{ "%.4f"|format(ns.target_slot.sparse_offset[1]) }}
+z48 = {{ "%.4f"|format(ns.target_slot.sparse_scale[0]) }}
+w48 = {{ "%.4f"|format(ns.target_slot.sparse_scale[1]) }}
+{% endif %}
+
 {% if scene.rzm.addons.debugger_info %}
 ; Debug override data from UI (Linked to persist vars)
 {% endif %}
