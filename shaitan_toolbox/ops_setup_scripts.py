@@ -962,10 +962,59 @@ class RZM_ST_OT_VGWeightAlign(bpy.types.Operator):
 # 6. SETUP ARMATURE (STAGE 1 & 2)
 # ============================================================
 
+def classify_bone(name):
+    nl = name.lower()
+    
+    # 1. Hidden Helpers
+    if (any(x in nl for x in ["twist", "scale", "adj", "offset", "extra", "att", "tweak", "helper", "cf", "corrective", "knee"]) or 
+        name.startswith("+") or 
+        # Helpers for limbs
+        (any(limb in nl for limb in ["calf", "toe", "hand", "thigh", "foot", "clavicle", "upperarm", "forearm"]) and
+         not nl.startswith("bip001") and
+         not any(f in nl for f in ["finger", "toe0.", "toe0 ", "toe0_"]))):
+        return "Hidden Helpers"
+        
+    # 2. Face
+    is_face = False
+    if any(x in nl for x in ["face", "brow", "jaw", "lip", "cheek", "nose", "mouth", "tongue", "eyelash", "tooth", "teeth"]):
+        is_face = True
+    if "eye" in nl:
+        is_face = True
+    if "ear" in nl and "forearm" not in nl:
+        is_face = True
+        
+    if is_face:
+        if "head" not in nl or "bip001" not in nl:
+            return "Face"
+            
+    # 3. Hair
+    if any(x in nl for x in ["hair", "bang", "fringe", "lock", "ponytail", "pigtail", "ahoge"]):
+        return "Hair"
+        
+    # 4. Skirt
+    if "skirt" in nl:
+        return "Skirt"
+        
+    # 5. Cloth
+    if any(x in nl for x in ["cloth", "dress", "sleeve", "ribbon", "cape", "coat", "jacket", "pant", "apron", "frill", "belt", "bowknot", "cuff"]):
+        return "Cloth"
+        
+    # 6. Weapon
+    if any(x in nl for x in ["weapon", "sword", "shield", "bow", "claymore", "marionette", "prop"]):
+        return "Weapon"
+        
+    # 7. Main
+    main_keywords = ["bip001", "pelvis", "spine", "neck", "head", "clavicle", "upperarm", "forearm", "hand", "thigh", "calf", "foot", "toe0", "finger"]
+    if any(x in nl for x in main_keywords):
+        return "Main"
+        
+    return "Other"
+
+
 class RZM_ST_OT_SetupArmature(bpy.types.Operator):
     bl_idname = "rzm_st.setup_armature"
     bl_label = "Setup Armature"
-    bl_description = "Stage 1: Rename bones (.L/.R suffix) & Stage 2: Calculate bone roll to POS_X"
+    bl_description = "Standardize bone names, calculate bone roll to POS_X, sort into collections, and reposition bones"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -1071,15 +1120,119 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
             # Select all edit bones to apply roll calculation
             for eb in armature.edit_bones:
                 eb.select = True
+                eb.select_head = True
+                eb.select_tail = True
+            
+            if armature.edit_bones:
+                armature.edit_bones.active = armature.edit_bones[0]
                 
             # Perform roll calculation
             bpy.ops.armature.calculate_roll(type='POS_X')
             
+            # Stage 3: Themed Bone Collections (sorting bones)
+            # Go back to OBJECT mode to modify bone collections
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+            colls = {}
+            for cat in ["Main", "Hidden Helpers", "Face", "Hair", "Skirt", "Cloth", "Weapon", "Other"]:
+                c = armature.collections.get(cat)
+                if not c:
+                    c = armature.collections.new(cat)
+                colls[cat] = c
+                
+            colls["Hidden Helpers"].is_visible = False
+            
+            for bone in list(armature.bones):
+                cat = classify_bone(bone.name)
+                # Unassign from other collections
+                for c in list(armature.collections):
+                    c.unassign(bone)
+                # Assign to correct collection
+                colls[cat].assign(bone)
+                
+            # Clean up empty non-custom collections
+            for c in list(armature.collections):
+                if c.name not in colls and len(c.bones) == 0:
+                    armature.collections.remove(c)
+                    
+            self.report({'INFO'}, "Stage 3 Complete: Sorted bones into themed collections.")
+            
+            # Stage 4: Bone Repositioning (Parent-to-Child)
+            bpy.ops.object.mode_set(mode='EDIT')
+            ebs = armature.edit_bones
+            
+            repositioned_count = 0
+            for eb in ebs:
+                nl = eb.name.lower()
+                eb_cat = classify_bone(eb.name)
+                
+                # Face bones are skipped
+                if eb_cat == "Face":
+                    continue
+                    
+                # Special Case: Head goes straight up by 0.2m along global Z
+                if "head" in nl and "bip001" in nl:
+                    eb.tail = eb.head + Vector((0.0, 0.0, 0.2))
+                    repositioned_count += 1
+                    continue
+                    
+                children = eb.children
+                # Filter children to be in the exact same collection
+                valid_children = [child for child in children if classify_bone(child.name) == eb_cat]
+                
+                target_child = None
+                if len(valid_children) == 1:
+                    target_child = valid_children[0]
+                elif len(valid_children) > 1:
+                    # Multi-child priority rules
+                    if "pelvis" in nl:
+                        for child in valid_children:
+                            if "spine" in child.name.lower():
+                                target_child = child
+                                break
+                    elif "spine" in nl:
+                        for child in valid_children:
+                            if "spine" in child.name.lower() or "neck" in child.name.lower():
+                                target_child = child
+                                break
+                    elif "neck" in nl:
+                        for child in valid_children:
+                            if "head" in child.name.lower():
+                                target_child = child
+                                break
+                    elif "hand" in nl:
+                        for child in valid_children:
+                            if "finger2" in child.name.lower():
+                                target_child = child
+                                break
+                        if not target_child:
+                            for child in valid_children:
+                                if "finger1" in child.name.lower():
+                                    target_child = child
+                                    break
+                                    
+                    # Fallback to first if priority didn't match
+                    if not target_child:
+                        target_child = valid_children[0]
+                        
+                if target_child:
+                    diff = target_child.head - eb.head
+                    if diff.length > 0.001:
+                        eb.tail = target_child.head
+                        repositioned_count += 1
+                else:
+                    # Terminal bone rules: Point in parent direction
+                    if eb.parent:
+                        parent_dir = (eb.parent.tail - eb.parent.head)
+                        if parent_dir.length > 0.001:
+                            eb.tail = eb.head + parent_dir.normalized() * eb.length
+                            repositioned_count += 1
+
             # Restore original mode
             if original_mode != 'EDIT':
                 bpy.ops.object.mode_set(mode=original_mode)
                 
-            self.report({'INFO'}, f"Armature Setup Complete! Renamed {renamed_count} bones and calculated roll (POS_X).")
+            self.report({'INFO'}, f"Armature Setup Complete! Renamed {renamed_count} bones, calculated roll (POS_X), sorted collections, and repositioned {repositioned_count} bones.")
             return {'FINISHED'}
             
         except Exception as e:

@@ -63,7 +63,7 @@ def draw_setup_scripts_ui(self, context, layout):
     
     active_obj = context.active_object
     if active_obj and active_obj.type == 'ARMATURE':
-        col_arm.operator("rzm_st.setup_armature", text="Setup Armature (Stage 1 & 2)", icon='BONE_DATA')
+        col_arm.operator("rzm_st.setup_armature", text="Setup Armature (Full Pipeline)", icon='BONE_DATA')
     else:
         col_arm.label(text="Select an armature to enable Setup Tools", icon='INFO')
         row_btn = col_arm.row()
