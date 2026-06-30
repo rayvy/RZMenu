@@ -966,10 +966,10 @@ def classify_bone(name):
     nl = name.lower()
     
     # 1. Hidden Helpers
-    if (any(x in nl for x in ["twist", "scale", "adj", "offset", "extra", "att", "tweak", "helper", "cf", "corrective", "knee"]) or 
+    if (any(x in nl for x in ["twist", "scale", "adj", "offset", "extra", "att", "tweak", "helper", "cf", "corrective", "knee", "elbow"]) or 
         name.startswith("+") or 
         # Helpers for limbs
-        (any(limb in nl for limb in ["calf", "toe", "hand", "thigh", "foot", "clavicle", "upperarm", "forearm"]) and
+        (any(limb in nl for limb in ["calf", "toe", "hand", "thigh", "foot", "clavicle", "upperarm", "forearm", "elbow"]) and
          not nl.startswith("bip001") and
          not any(f in nl for f in ["finger", "toe0.", "toe0 ", "toe0_"]))):
         return "Hidden Helpers"
@@ -1000,7 +1000,13 @@ def classify_bone(name):
         return "Cloth"
         
     # 6. Weapon
-    if any(x in nl for x in ["weapon", "sword", "shield", "bow", "claymore", "marionette", "prop"]):
+    is_weapon = False
+    if any(x in nl for x in ["weapon", "sword", "shield", "claymore", "marionette", "prop"]):
+        is_weapon = True
+    if "bow" in nl and "elbow" not in nl:
+        is_weapon = True
+        
+    if is_weapon:
         return "Weapon"
         
     # 7. Main
@@ -1113,26 +1119,7 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
             
             self.report({'INFO'}, f"Stage 1 Complete: Renamed {renamed_count} bones.")
             
-            # Stage 2: Calculate Roll (POS_X)
-            # Switch to EDIT mode to access edit_bones
-            bpy.ops.object.mode_set(mode='EDIT')
-            
-            # Select all edit bones to apply roll calculation
-            for eb in armature.edit_bones:
-                eb.select = True
-                eb.select_head = True
-                eb.select_tail = True
-            
-            if armature.edit_bones:
-                armature.edit_bones.active = armature.edit_bones[0]
-                
-            # Perform roll calculation
-            bpy.ops.armature.calculate_roll(type='POS_X')
-            
             # Stage 3: Themed Bone Collections (sorting bones)
-            # Go back to OBJECT mode to modify bone collections
-            bpy.ops.object.mode_set(mode='OBJECT')
-            
             colls = {}
             for cat in ["Main", "Hidden Helpers", "Face", "Hair", "Skirt", "Cloth", "Weapon", "Other"]:
                 c = armature.collections.get(cat)
@@ -1157,7 +1144,7 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
                     
             self.report({'INFO'}, "Stage 3 Complete: Sorted bones into themed collections.")
             
-            # Stage 4: Bone Repositioning (Parent-to-Child)
+            # Stage 4: Bone Repositioning (Parent-to-Child, ONLY Main bones)
             bpy.ops.object.mode_set(mode='EDIT')
             ebs = armature.edit_bones
             
@@ -1166,8 +1153,8 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
                 nl = eb.name.lower()
                 eb_cat = classify_bone(eb.name)
                 
-                # Face bones are skipped
-                if eb_cat == "Face":
+                # Only reposition Main skeleton bones! Skip all others (Hair, Face, Skirt, Helpers, Cloth, etc.)
+                if eb_cat != "Main":
                     continue
                     
                 # Special Case: Head goes straight up by 0.2m along global Z
@@ -1177,7 +1164,7 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
                     continue
                     
                 children = eb.children
-                # Filter children to be in the exact same collection
+                # Filter children to be in the exact same collection (Main)
                 valid_children = [child for child in children if classify_bone(child.name) == eb_cat]
                 
                 target_child = None
@@ -1228,11 +1215,23 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
                             eb.tail = eb.head + parent_dir.normalized() * eb.length
                             repositioned_count += 1
 
+            # Stage 2: Calculate Roll (POS_X) - Executed AFTER repositioning
+            for eb in ebs:
+                eb.select = True
+                eb.select_head = True
+                eb.select_tail = True
+            
+            if ebs:
+                ebs.active = ebs[0]
+                
+            # Perform roll calculation
+            bpy.ops.armature.calculate_roll(type='POS_X')
+
             # Restore original mode
             if original_mode != 'EDIT':
                 bpy.ops.object.mode_set(mode=original_mode)
                 
-            self.report({'INFO'}, f"Armature Setup Complete! Renamed {renamed_count} bones, calculated roll (POS_X), sorted collections, and repositioned {repositioned_count} bones.")
+            self.report({'INFO'}, f"Armature Setup Complete! Renamed {renamed_count} bones, sorted collections, repositioned {repositioned_count} bones, and calculated roll (POS_X).")
             return {'FINISHED'}
             
         except Exception as e:
