@@ -293,13 +293,33 @@ def setup_per_component_collection(context, folder, new_objs):
                     sub_coll = bpy.data.collections.new(sub_coll_name)
                     context.scene.collection.children.link(sub_coll)
                     
-                # Duplicate data to new container in collections
+                # Create sub-collections inside the component collection in the specific order
+                og_coll_name = f"OG{sub_coll_name}"
+                basemesh_coll_name = f"BASEMESH{sub_coll_name}"
+                custom_coll_name = f"CUSTOM{sub_coll_name}"
+                
+                og_coll = bpy.data.collections.get(og_coll_name)
+                if not og_coll:
+                    og_coll = bpy.data.collections.new(og_coll_name)
+                    sub_coll.children.link(og_coll)
+                    
+                basemesh_coll = bpy.data.collections.get(basemesh_coll_name)
+                if not basemesh_coll:
+                    basemesh_coll = bpy.data.collections.new(basemesh_coll_name)
+                    sub_coll.children.link(basemesh_coll)
+                    
+                custom_coll = bpy.data.collections.get(custom_coll_name)
+                if not custom_coll:
+                    custom_coll = bpy.data.collections.new(custom_coll_name)
+                    sub_coll.children.link(custom_coll)
+                    
+                # Duplicate data to new container in collections (under OG sub-collection)
                 new_data = obj.data.copy()
                 ob = bpy.data.objects.new(name=clean_name, object_data=new_data)
                 ob.location = obj.location
                 ob.rotation_euler = obj.rotation_euler
                 ob.scale = obj.scale
-                sub_coll.objects.link(ob)
+                og_coll.objects.link(ob)
                 created_meshes.append(ob)
                 
                 # Delete vertices of the original container object

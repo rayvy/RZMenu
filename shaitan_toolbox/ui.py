@@ -54,6 +54,24 @@ def draw_setup_scripts_ui(self, context, layout):
 
     layout.separator()
 
+    # ─── Armature Setup Tools ───
+    box_armature = layout.box()
+    box_armature.label(text="Armature Setup Tools", icon='ARMATURE_DATA')
+    
+    col_arm = box_armature.column(align=True)
+    col_arm.scale_y = 1.2
+    
+    active_obj = context.active_object
+    if active_obj and active_obj.type == 'ARMATURE':
+        col_arm.operator("rzm_st.setup_armature", text="Setup Armature (Stage 1 & 2)", icon='BONE_DATA')
+    else:
+        col_arm.label(text="Select an armature to enable Setup Tools", icon='INFO')
+        row_btn = col_arm.row()
+        row_btn.enabled = False
+        row_btn.operator("rzm_st.setup_armature", text="Setup Armature (Requires Active Armature)", icon='BONE_DATA')
+
+    layout.separator()
+
     # ─── Mesh & Vertex Group Tools ───
     box_tools = layout.box()
     box_tools.label(text="Mesh & Vertex Group Tools", icon='TOOL_SETTINGS')

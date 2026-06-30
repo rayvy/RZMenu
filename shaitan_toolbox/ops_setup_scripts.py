@@ -958,6 +958,128 @@ class RZM_ST_OT_VGWeightAlign(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+# ============================================================
+# 6. SETUP ARMATURE (STAGE 1 & 2)
+# ============================================================
+
+class RZM_ST_OT_SetupArmature(bpy.types.Operator):
+    bl_idname = "rzm_st.setup_armature"
+    bl_label = "Setup Armature"
+    bl_description = "Stage 1: Rename bones (.L/.R suffix) & Stage 2: Calculate bone roll to POS_X"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == 'ARMATURE'
+
+    def execute(self, context):
+        obj = context.active_object
+        armature = obj.data
+        
+        # Save current mode
+        original_mode = obj.mode
+        
+        # Ensure we are in Object Mode to safely rename bones on the armature
+        if obj.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+        try:
+            # Stage 1: Rename bones
+            renamed_count = 0
+            for bone in armature.bones:
+                old_name = bone.name
+                name = old_name
+                
+                # Check left side
+                has_l = False
+                if " L " in name:
+                    name = name.replace(" L ", " ")
+                    has_l = True
+                if " l " in name:
+                    name = name.replace(" l ", " ")
+                    has_l = True
+                if name.endswith(" L"):
+                    name = name[:-2]
+                    has_l = True
+                if name.endswith(" l"):
+                    name = name[:-2]
+                    has_l = True
+                if name.endswith("_L"):
+                    name = name[:-2]
+                    has_l = True
+                if name.endswith("_l"):
+                    name = name[:-2]
+                    has_l = True
+                    
+                # Check right side
+                has_r = False
+                if " R " in name:
+                    name = name.replace(" R ", " ")
+                    has_r = True
+                if " r " in name:
+                    name = name.replace(" r ", " ")
+                    has_r = True
+                if name.endswith(" R"):
+                    name = name[:-2]
+                    has_r = True
+                if name.endswith(" r"):
+                    name = name[:-2]
+                    has_r = True
+                if name.endswith("_R"):
+                    name = name[:-2]
+                    has_r = True
+                if name.endswith("_r"):
+                    name = name[:-2]
+                    has_r = True
+                    
+                # Normalize spaces (e.g. double spaces to single space)
+                while "  " in name:
+                    name = name.replace("  ", " ")
+                name = name.strip()
+                
+                # Append suffix
+                if has_l:
+                    if not name.endswith(".L"):
+                        name = name + ".L"
+                if has_r:
+                    if not name.endswith(".R"):
+                        name = name + ".R"
+                        
+                if name != old_name:
+                    bone.name = name
+                    renamed_count += 1
+            
+            self.report({'INFO'}, f"Stage 1 Complete: Renamed {renamed_count} bones.")
+            
+            # Stage 2: Calculate Roll (POS_X)
+            # Switch to EDIT mode to access edit_bones
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+            # Select all edit bones to apply roll calculation
+            for eb in armature.edit_bones:
+                eb.select = True
+                
+            # Perform roll calculation
+            bpy.ops.armature.calculate_roll(type='POS_X')
+            
+            # Restore original mode
+            if original_mode != 'EDIT':
+                bpy.ops.object.mode_set(mode=original_mode)
+                
+            self.report({'INFO'}, f"Armature Setup Complete! Renamed {renamed_count} bones and calculated roll (POS_X).")
+            return {'FINISHED'}
+            
+        except Exception as e:
+            try:
+                if obj.mode != original_mode:
+                    bpy.ops.object.mode_set(mode=original_mode)
+            except Exception:
+                pass
+            self.report({'ERROR'}, f"Failed to setup armature: {str(e)}")
+            return {'CANCELLED'}
+
+
 # Регистрация классов
 classes_to_register = [
     RZM_ST_OT_MirrorCut,
@@ -969,4 +1091,5 @@ classes_to_register = [
     RZM_ST_OT_GenerateBones,
     RZM_ST_OT_VGWeightAlign,
     RZM_ST_OT_SyncBaseMeshToBasis,
+    RZM_ST_OT_SetupArmature,
 ]
