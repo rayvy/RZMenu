@@ -393,10 +393,10 @@ filename = {{ comp_path }}/{{ slot.name }}/{{ clean_comp }}{{ clean_slot }}.MASK
 {# New Config Buffers for Slot #}
 {% if not comp.use_shared_config %}
 {% if slot.stencil_mode == 'SPARSE' %}
-[Resource_RZM_DecalStamp_{{ block.name }}_{{ comp.name }}_{{ slot.name }}]
+[Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Stamp.P0]
 type = Buffer
 stride = 12
-filename = TexWorks\DecalStencils\{{ slot.name | replace(" ", "_") | replace("-", "_") }}.buf
+filename = TexWorks/{{ block.name }}/{{ comp.name }}/{{ slot.name }}/Stamp/P0.buf
 {% else %}
 [Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.P0]
 type = Buffer
@@ -516,34 +516,45 @@ run = CommandListTexWorks.RestoreTexWorksVALS
 {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 {% set material = rzm.tw_materials.get(layer.name) %}
 
+{% set ns = {'target_slot': slot, 'cfg_block': block.name, 'cfg_comp': comp.name} %}
+{% if comp.use_shared_config %}
+    {% set _ = ns.update({'cfg_block': comp.shared_config_block if comp.shared_config_block else block.name}) %}
+    {% set _ = ns.update({'cfg_comp': comp.shared_config_component if comp.shared_config_component else comp.name}) %}
+    {% for b in rzm.tw_blocks if b.name == ns.cfg_block %}
+        {% for c in b.components if c.name == ns.cfg_comp %}
+            {% for s in c.slots if s.name == slot.name %}
+                {% set _ = ns.update({'target_slot': s}) %}
+            {% endfor %}
+        {% endfor %}
+    {% endfor %}
+{% endif %}
+
 {# SHARED PARAMETERS MACRO #}
 {% macro layer_shader_params(pass_idx) %}
-{% if slot.stencil_mode == 'SPARSE' %}
+{% set warp_enabled = (pass_idx == 0 and ns.target_slot.warp_p0_enabled) or (pass_idx == 1 and ns.target_slot.warp_p1_enabled) %}
+{% set is_sparse = ns.target_slot.stencil_mode is defined and ns.target_slot.stencil_mode == 'SPARSE' %}
+{% if is_sparse %}
 cs = /modules/decal_draw_sparse_struct.hlsl
-cs-u0 = ref Resource{{ block_res }}
-cs-t0 = null
-cs-t5 = {% if slot.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
-cs-t6 = Resource_RZM_DecalStamp_{{ block.name }}_{{ comp.name }}_{{ slot.name }}
+{% elif warp_enabled %}
+cs = /modules/decal_draw_wrap.hlsl
 {% else %}
-{% set warp_enabled = (pass_idx == 0 and slot.warp_p0_enabled) or (pass_idx == 1 and slot.warp_p1_enabled) %}
-cs = /modules/{% if warp_enabled %}decal_draw_wrap.hlsl{% else %}decal_draw.hlsl{% endif %}
-
+cs = /modules/decal_draw.hlsl
+{% endif %}
 cs-u0 = ref Resource{{ block_res }}
 cs-t0 = null
-cs-t5 = {% if slot.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
+cs-t5 = {% if ns.target_slot.mask_enabled %}Resource{{ tex_block_name }}{{ comp.name }}{{ slot.name }}Mask{% else %}null{% endif %}
 
-{% set cfg_block = comp.shared_config_block if comp.use_shared_config and comp.shared_config_block else block.name %}
-{% set cfg_comp = comp.shared_config_component if comp.use_shared_config and comp.shared_config_component else comp.name %}
+{% if is_sparse %}
+cs-t6 = Resource.TexWorks.{{ ns.cfg_block }}.{{ ns.cfg_comp }}.{{ slot.name }}.Stamp.P0
+{% else %}
+cs-t6 = Resource.TexWorks.{{ ns.cfg_block }}.{{ ns.cfg_comp }}.{{ slot.name }}.Config.P{{ pass_idx }}
 
-cs-t6 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.P{{ pass_idx }}
-
-{% if pass_idx == 0 and slot.warp_p0_enabled %}
-cs-t7 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P0
-{% elif pass_idx == 1 and slot.warp_p1_enabled %}
-cs-t7 = Resource.TexWorks.{{ cfg_block }}.{{ cfg_comp }}.{{ slot.name }}.Config.Warp.P1
+{% if pass_idx == 0 and ns.target_slot.warp_p0_enabled %}
+cs-t7 = Resource.TexWorks.{{ ns.cfg_block }}.{{ ns.cfg_comp }}.{{ slot.name }}.Config.Warp.P0
+{% elif pass_idx == 1 and ns.target_slot.warp_p1_enabled %}
+cs-t7 = Resource.TexWorks.{{ ns.cfg_block }}.{{ ns.cfg_comp }}.{{ slot.name }}.Config.Warp.P1
 {% endif %}
 {% endif %}
-
 ;x45 = {{ "%.1f"|format(comp.rect[0]) }}
 ;y45 = {{ "%.1f"|format(comp.rect[1]) }}
 ;z45 = {{ "%.1f"|format(comp.rect[2]) }}
@@ -565,19 +576,19 @@ if ${{ l_var_base }}Index0 >= 0
         cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
-    w24 = {{ 1.0 if (slot.mask_enabled and slot.pass0_use_mask) else 0.0 }}
-    {% if slot.stencil_mode == 'SPARSE' %}
-    dispatch = ({{ slot.sparse_record_count }} + 255) // 256, 1, 1
+    w24 = {{ 1.0 if (ns.target_slot.mask_enabled and ns.target_slot.pass0_use_mask) else 0.0 }}
+    {% if ns.target_slot.stencil_mode is defined and ns.target_slot.stencil_mode == 'SPARSE' %}
+    dispatch = {{ ((ns.target_slot.sparse_record_count + 255) // 256) }}, 1, 1
     {% else %}
-    dispatch = ({{ slot.rect[2] }} + 31) // 32, ({{ slot.rect[3] }} + 31) // 32, 1
+    dispatch = ({{ ns.target_slot.rect[2] }} + 31) // 32, ({{ ns.target_slot.rect[3] }} + 31) // 32, 1
     {% endif %}
 endif
 
 {# --- PASS 1 SHADER --- #}
-{% if slot.multi_pass_mode != 'NONE' %}
+{% if ns.target_slot.multi_pass_mode != 'NONE' %}
 [CustomShaderUpdateLayer_{{ block.name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}_P1]
 {{ layer_shader_params(1) }}
-{% set p1_idx_var = l_var_base ~ "Index1" if slot.multi_pass_mode == 'INDIVIDUAL' else l_var_base ~ "Index0" %}
+{% set p1_idx_var = l_var_base ~ "Index1" if ns.target_slot.multi_pass_mode == 'INDIVIDUAL' else l_var_base ~ "Index0" %}
 if ${{ p1_idx_var }} >= 0
     {# Index Switching Pass 1 #}
     {% for i in range(layer.count) %}
@@ -586,11 +597,11 @@ if ${{ p1_idx_var }} >= 0
         cs-t0 = Resource_{{ tex_block_name }}_{{ comp.name }}_{{ slot.name }}_{{ layer.name }}.{{ i }}
     {% endfor %}
     endif
-    w24 = {{ 1.0 if (slot.mask_enabled and slot.pass1_use_mask) else 0.0 }}
-    {% if slot.stencil_mode == 'SPARSE' %}
-    dispatch = ({{ slot.sparse_record_count }} + 255) // 256, 1, 1
+    w24 = {{ 1.0 if (ns.target_slot.mask_enabled and ns.target_slot.pass1_use_mask) else 0.0 }}
+    {% if ns.target_slot.stencil_mode is defined and ns.target_slot.stencil_mode == 'SPARSE' %}
+    dispatch = {{ ((ns.target_slot.sparse_record_count + 255) // 256) }}, 1, 1
     {% else %}
-    dispatch = ({{ slot.multi_pass_rect[2] }} + 31) // 32, ({{ slot.multi_pass_rect[3] }} + 31) // 32, 1
+    dispatch = ({{ ns.target_slot.multi_pass_rect[2] }} + 31) // 32, ({{ ns.target_slot.multi_pass_rect[3] }} + 31) // 32, 1
     {% endif %}
 endif
 {% endif %}
@@ -613,11 +624,23 @@ global $TW_Global_Init_Needed_{{ block.name }} = 1
 global $TW_{{ block.name }}_{{ comp.name }}_Is_Updated = 0
 global $Comp_{{ block.name }}_{{ comp.name }}_PastSum = -1
         {% for slot in comp.slots if slot.active %}
+            {% set ns = {'target_slot': slot} %}
+            {% if comp.use_shared_config %}
+                {% set cfg_block = comp.shared_config_block if comp.shared_config_block else block.name %}
+                {% set cfg_comp = comp.shared_config_component if comp.shared_config_component else comp.name %}
+                {% for b in rzm.tw_blocks if b.name == cfg_block %}
+                    {% for c in b.components if c.name == cfg_comp %}
+                        {% for s in c.slots if s.name == slot.name %}
+                            {% set _ = ns.update({'target_slot': s}) %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
             {% for layer in slot.decal_layers if layer.active %}
                 {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 global persist ${{ l_var_base }}Index0 = -1
 global ${{ l_var_base }}IndexPast0 = -1
-                {% if slot.multi_pass_mode == 'INDIVIDUAL' %}
+                {% if ns.target_slot.multi_pass_mode == 'INDIVIDUAL' %}
 global persist ${{ l_var_base }}Index1 = -1
 global ${{ l_var_base }}IndexPast1 = -1
                 {% endif %}
@@ -728,10 +751,22 @@ endif
 {% for block in rzm.tw_blocks %}
     {% for comp in block.components %}
         {% for slot in comp.slots if slot.active %}
+            {% set ns = {'target_slot': slot} %}
+            {% if comp.use_shared_config %}
+                {% set cfg_block = comp.shared_config_block if comp.shared_config_block else block.name %}
+                {% set cfg_comp = comp.shared_config_component if comp.shared_config_component else comp.name %}
+                {% for b in rzm.tw_blocks if b.name == cfg_block %}
+                    {% for c in b.components if c.name == cfg_comp %}
+                        {% for s in c.slots if s.name == slot.name %}
+                            {% set _ = ns.update({'target_slot': s}) %}
+                        {% endfor %}
+                    {% endfor %}
+                {% endfor %}
+            {% endif %}
             {% for layer in slot.decal_layers if layer.active %}
                 {% set l_var_base = "TW_D" ~ comp.name ~ slot.name ~ layer.name %}
 ${{ l_var_base }}IndexPast0 = ${{ l_var_base }}Index0
-                {% if slot.multi_pass_mode == 'INDIVIDUAL' %}
+                {% if ns.target_slot.multi_pass_mode == 'INDIVIDUAL' %}
 ${{ l_var_base }}IndexPast1 = ${{ l_var_base }}Index1
                 {% endif %}
             {% endfor %}

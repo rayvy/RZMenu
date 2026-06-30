@@ -1,5 +1,6 @@
 # RZMenu/operators/texworks_ops.py
 import bpy
+import json
 import os
 from .export_manager import get_target_path
 
@@ -1177,7 +1178,7 @@ class RZM_OT_BakeSparseStencil(bpy.types.Operator):
                 self.report({"ERROR"}, "Active mod target path not set. Check XXMI settings.")
                 return {"CANCELLED"}
 
-            destination = os.path.join(target_path, "TexWorks", "DecalStencils")
+            destination = os.path.join(target_path, "TexWorks", block.name, comp.name, slot.name, "Stamp")
             os.makedirs(destination, exist_ok=True)
 
             from ..utils.sparse_baker import (
@@ -1193,7 +1194,7 @@ class RZM_OT_BakeSparseStencil(bpy.types.Operator):
 
             export_name = _safe_export_name(slot.name)
 
-            buffer_filename = f"{export_name}.buf"
+            buffer_filename = "P0.buf"
             json_filename = f"{export_name}.json"
             buffer_path = os.path.join(destination, buffer_filename)
             json_path = os.path.join(destination, json_filename)
