@@ -999,6 +999,12 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
                 if " l " in name:
                     name = name.replace(" l ", " ")
                     has_l = True
+                if "_L_" in name:
+                    name = name.replace("_L_", "_")
+                    has_l = True
+                if "_l_" in name:
+                    name = name.replace("_l_", "_")
+                    has_l = True
                 if name.endswith(" L"):
                     name = name[:-2]
                     has_l = True
@@ -1019,6 +1025,12 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
                     has_r = True
                 if " r " in name:
                     name = name.replace(" r ", " ")
+                    has_r = True
+                if "_R_" in name:
+                    name = name.replace("_R_", "_")
+                    has_r = True
+                if "_r_" in name:
+                    name = name.replace("_r_", "_")
                     has_r = True
                 if name.endswith(" R"):
                     name = name[:-2]
