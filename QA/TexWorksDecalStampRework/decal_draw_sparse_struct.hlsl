@@ -1,7 +1,12 @@
 RWTexture2D<float4> Target : register(u0);
 Texture2D<float4> DecalTexture : register(t0);
 Texture2D<float4> SlotMask : register(t5);
-StructuredBuffer<uint3> StampBuffer : register(t6);
+struct StampRecord {
+    uint target_xy;
+    uint decal_uv;
+    uint weight_flags;
+};
+StructuredBuffer<StampRecord> StampBuffer : register(t6);
 Texture1D<float4> IniParams : register(t120);
 
 #define ColorMultiplier IniParams[43]
@@ -39,18 +44,18 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID) {
     StampBuffer.GetDimensions(structCount, stride);
     if (structCount <= 1u) return;
 
-    uint3 header = StampBuffer[0];
-    if (header.x != RZM_STAMP_MAGIC) return;
+    StampRecord header = StampBuffer[0];
+    if (header.target_xy != RZM_STAMP_MAGIC) return;
 
     uint recordIndex = dispatchThreadID.x;
     uint recordCount = structCount - 1u;
     if (recordIndex >= recordCount) return;
 
-    uint3 stamp = StampBuffer[recordIndex + 1u];
+    StampRecord stamp = StampBuffer[recordIndex + 1u];
 
-    uint2 targetPos = uint2(UnpackLo16(stamp.x), UnpackHi16(stamp.x));
-    float2 uv = float2(UnpackUnorm16(stamp.y), UnpackUnorm16Hi(stamp.y));
-    float weight = UnpackUnorm16(stamp.z);
+    uint2 targetPos = uint2(UnpackLo16(stamp.target_xy), UnpackHi16(stamp.target_xy));
+    float2 uv = float2(UnpackUnorm16(stamp.decal_uv), UnpackUnorm16Hi(stamp.decal_uv));
+    float weight = UnpackUnorm16(stamp.weight_flags);
 
     uint2 targetDim;
     Target.GetDimensions(targetDim.x, targetDim.y);

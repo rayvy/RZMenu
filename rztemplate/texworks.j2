@@ -394,9 +394,9 @@ filename = {{ comp_path }}/{{ slot.name }}/{{ clean_comp }}{{ clean_slot }}.MASK
 {% if not comp.use_shared_config %}
 {% if slot.stencil_mode == 'SPARSE' %}
 [Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Stamp.P0]
-type = Buffer
+type = StructuredBuffer
 stride = 12
-filename = TexWorks/{{ block.name }}/{{ comp.name }}/{{ slot.name }}/Stamp/P0.buf
+filename = ./TexWorks/{{ block.name }}/{{ comp.name }}/{{ slot.name }}/Stamp/P0.buf
 {% else %}
 [Resource.TexWorks.{{ block.name }}.{{ comp.name }}.{{ slot.name }}.Config.P0]
 type = Buffer
