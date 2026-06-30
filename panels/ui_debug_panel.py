@@ -879,6 +879,10 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                     flip_row.prop(slot, "sparse_flip_target_v", text="Flip Target V")
                                     flip_row.prop(slot, "sparse_flip_decal_v", text="Flip Decal V")
                                     
+                                    mirror_row = sp_box.row(align=True)
+                                    mirror_row.prop(slot, "sparse_mirror_x", text="Target Mirror X")
+                                    mirror_row.prop(slot, "sparse_mirror_y", text="Target Mirror Y")
+                                    
                                     # Big Bake Button
                                     op = sp_box.operator("rzm.bake_sparse_stencil", text="Bake Sparse Stencil", icon='PLAY')
                                     op.block_index = b_idx
@@ -966,13 +970,16 @@ class VIEW3D_PT_RZConstructorDebugPanel(bpy.types.Panel):
                                     m_row.prop(slot, "pass0_use_mask", text="P0")
                                     m_row.prop(slot, "pass1_use_mask", text="P1")
 
-                                if slot.stencil_mode == 'RECT':
+                                if True:
                                     # --- MULTI-PASS ---
                                     mp_box = s_item.box()
                                     mp_box.prop(slot, "multi_pass_mode", text="Pass Mode")
                                     if slot.multi_pass_mode != 'NONE':
-                                        mp_box.label(text="Transform (Multi-pass):")
-                                        mp_box.prop(slot, "multi_pass_rect", text="Atlas Rect")
+                                        if slot.stencil_mode == 'RECT':
+                                            mp_box.label(text="Transform (Multi-pass):")
+                                            mp_box.prop(slot, "multi_pass_rect", text="Atlas Rect")
+                                        else:
+                                            mp_box.label(text="Decal Transform (Pass 1):")
                                         
                                         mp_row = mp_box.row(align=True)
                                         mp_row.prop(slot, "multi_pass_rotation", text="Rot")

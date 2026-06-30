@@ -577,6 +577,8 @@ if ${{ l_var_base }}Index0 >= 0
     {% endfor %}
     endif
     w24 = {{ 1.0 if (ns.target_slot.mask_enabled and ns.target_slot.pass0_use_mask) else 0.0 }}
+    y24 = 0.0
+    z24 = 0.0
     {% if ns.target_slot.stencil_mode is defined and ns.target_slot.stencil_mode == 'SPARSE' %}
     dispatch = {{ ((ns.target_slot.sparse_record_count + 255) // 256) }}, 1, 1
     {% else %}
@@ -598,6 +600,8 @@ if ${{ p1_idx_var }} >= 0
     {% endfor %}
     endif
     w24 = {{ 1.0 if (ns.target_slot.mask_enabled and ns.target_slot.pass1_use_mask) else 0.0 }}
+    y24 = {{ (1.0 if ns.target_slot.sparse_mirror_x else 0.0) + (2.0 if ns.target_slot.sparse_mirror_y else 0.0) }}
+    z24 = 1.0
     {% if ns.target_slot.stencil_mode is defined and ns.target_slot.stencil_mode == 'SPARSE' %}
     dispatch = {{ ((ns.target_slot.sparse_record_count + 255) // 256) }}, 1, 1
     {% else %}

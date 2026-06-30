@@ -199,6 +199,16 @@ class TexWorksSlot(bpy.types.PropertyGroup):
         description="Convert temporary Blender UV into DirectX-style decal texture V",
         default=True,
     )
+    sparse_mirror_x: BoolProperty(
+        name="Target Mirror X",
+        description="Mirror target coordinate along X axis in Pass 1",
+        default=True,
+    )
+    sparse_mirror_y: BoolProperty(
+        name="Target Mirror Y",
+        description="Mirror target coordinate along Y axis in Pass 1",
+        default=False,
+    )
     # Cached diagnostics
     sparse_record_count: IntProperty(name="Records Count", default=0)
     sparse_bbox_min: IntVectorProperty(name="Bounding Box Min", size=2, default=(0, 0))

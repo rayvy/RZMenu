@@ -29,7 +29,8 @@ float UnpackUnorm16(uint v) { return (float)(v & 0xFFFFu) * (1.0f / 65535.0f); }
 float UnpackUnorm16Hi(uint v) { return (float)((v >> 16) & 0xFFFFu) * (1.0f / 65535.0f); }
 
 float2 ApplyDecalRuntimeTransform(float2 uv) {
-    int mirrorMode = (int)IniParams[108].x;
+    bool isPass1 = StateFlags.z > 0.5f;
+    int mirrorMode = isPass1 ? (int)IniParams[108].y : (int)IniParams[108].x;
     bool mirror = mirrorMode == 1 || mirrorMode == 3;
     bool flip = mirrorMode == 2 || mirrorMode == 3;
     if (mirror) uv.x = 1.0f - uv.x;
@@ -64,6 +65,15 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID) {
     if (CompRect.z > 0.0f && CompRect.w > 0.0f) {
         if (targetPos.x < (uint)CompRect.x || targetPos.x >= (uint)(CompRect.x + CompRect.z) ||
             targetPos.y < (uint)CompRect.y || targetPos.y >= (uint)(CompRect.y + CompRect.w)) return;
+    }
+
+    bool isPass1 = StateFlags.z > 0.5f;
+    if (isPass1) {
+        float yVal = StateFlags.y + 0.1f;
+        bool mirrorTargetX = (yVal >= 1.0f && yVal < 2.0f) || (yVal >= 3.0f);
+        bool mirrorTargetY = (yVal >= 2.0f);
+        if (mirrorTargetX) targetPos.x = targetDim.x - 1u - targetPos.x;
+        if (mirrorTargetY) targetPos.y = targetDim.y - 1u - targetPos.y;
     }
 
     uv = ApplyDecalRuntimeTransform(saturate(uv));
