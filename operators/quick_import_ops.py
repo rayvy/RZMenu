@@ -353,8 +353,113 @@ def setup_per_component_collection(context, folder, new_objs):
                 
     return created_meshes
 
+def get_object_buffer_hash(ob):
+    import re
+    ob_clean_name = ob.name.split('.')[0].lower()
+    for obj in bpy.data.objects:
+        if "3DMigoto:VBLayout" in obj:
+            container_clean_name = obj.name.split('-')[0].lower()
+            if ob_clean_name in container_clean_name or container_clean_name in ob_clean_name:
+                m = re.search(r"vb\d*=(?P<hash>[a-fA-F0-9]+)", obj.name)
+                if m:
+                    return m.group("hash").lower()
+    return f"fallback_{len(ob.data.vertices)}_{len(ob.vertex_groups)}"
+
+def run_weight_harmonization_with_temp_merge(context, target_objs, fbx_match_mode=False):
+    # Only process clean objects (ignore KeepEmpty containers)
+    objs_to_process = [obj for obj in target_objs if "-KeepEmpty" not in obj.name]
+    
+    groups = {}
+    for obj in objs_to_process:
+        h = get_object_buffer_hash(obj)
+        groups.setdefault(h, []).append(obj)
+        
+    for h, objs in groups.items():
+        if len(objs) <= 1:
+            run_weight_harmonization(context, objs, fbx_match_mode=fbx_match_mode)
+            continue
+            
+        print(f"[QuickImport] Harmonizing group for buffer hash {h} via temporary merge: {[o.name for o in objs]}")
+        
+        orig_selected = [o for o in context.selected_objects]
+        orig_active = context.view_layer.objects.active
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        
+        dups = []
+        for obj in objs:
+            dup = obj.copy()
+            dup.data = obj.data.copy()
+            context.scene.collection.objects.link(dup)
+            dup.select_set(True)
+            dups.append(dup)
+            
+        primary_dup = next((d for d in dups if "body" in d.name.lower()), dups[0])
+        context.view_layer.objects.active = primary_dup
+        
+        try:
+            bpy.ops.object.join()
+            temp_merged = primary_dup
+            
+            # Weld vertices on temp merged to get cleaner matching
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.remove_doubles(threshold=0.0001)
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+            run_weight_harmonization(context, [temp_merged], fbx_match_mode=fbx_match_mode)
+            
+            mapping_str = temp_merged.get("rzm_weight_harmonizer_mapping", "")
+            rename_map = {}
+            if mapping_str:
+                import json
+                try:
+                    mapping_data = json.loads(mapping_str)
+                    rename_map = {item["original_name"]: item["resolved_name"] for item in mapping_data}
+                except Exception as e:
+                    print(f"[QuickImport] Failed to parse mapping data: {e}")
+            
+            # Apply renaming mapping to all original separate meshes
+            for obj in objs:
+                orig_vgs = {vg.name: vg for vg in obj.vertex_groups}
+                for vg in obj.vertex_groups:
+                    vg.name = f"__RZM_TMP__{vg.index:04d}__"
+                for orig_name, vg in orig_vgs.items():
+                    vg.name = rename_map.get(orig_name, orig_name)
+                if mapping_str:
+                    obj["rzm_weight_harmonizer_mapping"] = mapping_str
+                    
+            # Delete temp merged object
+            bpy.ops.object.select_all(action='DESELECT')
+            temp_merged.select_set(True)
+            temp_mesh_data = temp_merged.data
+            bpy.ops.object.delete()
+            try:
+                bpy.data.meshes.remove(temp_mesh_data)
+            except Exception:
+                pass
+                
+        except Exception as e:
+            print(f"[QuickImport] Error during temporary merge harmonization: {e}")
+            for dup in dups:
+                try:
+                    if dup.name in bpy.data.objects:
+                        bpy.data.objects.remove(dup, do_unlink=True)
+                except Exception:
+                    pass
+                    
+        for o in orig_selected:
+            try:
+                o.select_set(True)
+            except Exception:
+                pass
+        try:
+            context.view_layer.objects.active = orig_active
+        except Exception:
+            pass
+
 # Shared execution logic
-def perform_quick_import(operator, context, filepath, apply_harmonization, auto_assign_slots, flip_mesh, flip_normal, is_asset_mode, files=None, fbx_match_mode=False):
+def perform_quick_import(operator, context, filepath, apply_harmonization, auto_assign_slots, flip_mesh, flip_normal, is_asset_mode, files=None, fbx_match_mode=False, merge_component_parts=True):
     rzm = context.scene.rzm
     game = rzm.game.selection
     
@@ -551,7 +656,10 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
                     
     # Apply harmonization
     if apply_harmonization:
-        run_weight_harmonization(context, target_objs, fbx_match_mode=fbx_match_mode)
+        if merge_component_parts:
+            run_weight_harmonization_with_temp_merge(context, target_objs, fbx_match_mode=fbx_match_mode)
+        else:
+            run_weight_harmonization(context, target_objs, fbx_match_mode=fbx_match_mode)
         
     # Update Component Manager from dump
     if not is_asset_mode:
@@ -608,6 +716,12 @@ class RZM_OT_QuickImport(bpy.types.Operator, ImportHelper):
         default=True
     )
     
+    merge_component_parts: bpy.props.BoolProperty(
+        name="Merge Component Parts",
+        description="Automatically join all imported parts belonging to the same component into a single mesh",
+        default=True
+    )
+    
     flip_mesh: bpy.props.BoolProperty(
         name="Flip Mesh (X)",
         description="Mirrors mesh over the X Axis on import, and invert winding order",
@@ -625,7 +739,8 @@ class RZM_OT_QuickImport(bpy.types.Operator, ImportHelper):
             self, context, self.filepath,
             self.apply_harmonization, self.auto_assign_slots,
             self.flip_mesh, self.flip_normal, is_asset_mode=False,
-            files=self.files, fbx_match_mode=self.fbx_match_mode
+            files=self.files, fbx_match_mode=self.fbx_match_mode,
+            merge_component_parts=self.merge_component_parts
         )
 
 class RZM_OT_QuickAssetImport(bpy.types.Operator, ImportHelper):
@@ -663,6 +778,12 @@ class RZM_OT_QuickAssetImport(bpy.types.Operator, ImportHelper):
         default=False
     )
     
+    merge_component_parts: bpy.props.BoolProperty(
+        name="Merge Component Parts",
+        description="Automatically join all imported parts belonging to the same component into a single mesh",
+        default=True
+    )
+    
     flip_mesh: bpy.props.BoolProperty(
         name="Flip Mesh (X)",
         description="Mirrors mesh over the X Axis on import, and invert winding order",
@@ -680,7 +801,8 @@ class RZM_OT_QuickAssetImport(bpy.types.Operator, ImportHelper):
             self, context, self.filepath,
             apply_harmonization=True, auto_assign_slots=self.auto_assign_slots,
             flip_mesh=self.flip_mesh, flip_normal=self.flip_normal, is_asset_mode=True,
-            files=self.files, fbx_match_mode=self.fbx_match_mode
+            files=self.files, fbx_match_mode=self.fbx_match_mode,
+            merge_component_parts=self.merge_component_parts
         )
 
 classes_to_register = [
