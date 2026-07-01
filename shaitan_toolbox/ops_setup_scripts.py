@@ -1244,8 +1244,218 @@ class RZM_ST_OT_SetupArmature(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+def get_shape_key_items(self, context):
+    obj = context.active_object
+    if not obj or obj.type != 'MESH' or not obj.data.shape_keys:
+        return [("", "No Shape Keys", "")]
+    
+    items = []
+    basis = obj.data.shape_keys.reference_key
+    for kb in obj.data.shape_keys.key_blocks:
+        if kb == basis:
+            continue
+        items.append((kb.name, kb.name, f"Merge into {kb.name}"))
+        
+    if not items:
+        return [("", "No Shape Keys", "")]
+    return items
+
+
+class RZM_ST_ShapeMergeItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty()
+    keep: bpy.props.BoolProperty(default=False)
+
+
+class RZM_ST_OT_MergeShapeKeys(bpy.types.Operator):
+    """Merge selected source shape keys into a target shape key by summing offsets"""
+    bl_idname = "rzm_st.merge_shape_keys"
+    bl_label = "Merge Shape Keys"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    create_new_target: bpy.props.BoolProperty(
+        name="Create New Target",
+        description="Merge into a new shape key instead of an existing one",
+        default=False
+    )
+    
+    new_target_name: bpy.props.StringProperty(
+        name="New Target Name",
+        description="Name of the new shape key to create and merge into",
+        default="MergedShape"
+    )
+
+    target_shape: bpy.props.EnumProperty(
+        name="Target Shape Key",
+        description="The shape key that will receive the merged offsets",
+        items=get_shape_key_items
+    )
+
+    filter_pattern: bpy.props.StringProperty(
+        name="Filter Sources",
+        description="Filter shape keys in the list below by name",
+        default=""
+    )
+
+    delete_sources: bpy.props.BoolProperty(
+        name="Delete Sources after Merge",
+        description="Remove the matched source shape keys from the object after they are merged",
+        default=True
+    )
+
+    sources: bpy.props.CollectionProperty(type=RZM_ST_ShapeMergeItem)
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return (
+            obj is not None
+            and obj.type == 'MESH'
+            and obj.data is not None
+            and obj.data.shape_keys is not None
+        )
+
+    def invoke(self, context, event):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH' or not obj.data.shape_keys:
+            self.report({'ERROR'}, "Active object is not a mesh or has no shape keys.")
+            return {'CANCELLED'}
+
+        # Clear and repopulate sources collection
+        self.sources.clear()
+        
+        basis = obj.data.shape_keys.reference_key
+        # Add all shape keys (except basis)
+        for kb in obj.data.shape_keys.key_blocks:
+            if kb == basis:
+                continue
+            item = self.sources.add()
+            item.name = kb.name
+            item.keep = False  # Always False by default! No auto-decisions.
+
+        # Trigger properties dialog
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.active_object
+        
+        layout.prop(self, "create_new_target")
+        if self.create_new_target:
+            layout.prop(self, "new_target_name")
+            target_name = self.new_target_name.strip()
+        else:
+            layout.prop(self, "target_shape")
+            target_name = self.target_shape
+            
+        layout.prop(self, "delete_sources")
+        
+        box = layout.box()
+        box.label(text="Select Shape Keys to Merge:", icon='SHAPEKEY_DATA')
+        
+        # Search/Filter field (no auto-selection, just visual filtering)
+        box.prop(self, "filter_pattern", icon='VIEWZOOM')
+        
+        col = box.column(align=True)
+        any_drawn = False
+        
+        import fnmatch
+        pattern = f"*{self.filter_pattern.lower()}*" if self.filter_pattern else "*"
+        
+        for item in self.sources:
+            # Exclude current target shape key from the sources list
+            if item.name == target_name:
+                continue
+            
+            # Filter visually
+            if not fnmatch.fnmatch(item.name.lower(), pattern):
+                continue
+                
+            col.prop(item, "keep", text=item.name)
+            any_drawn = True
+            
+        if not any_drawn:
+            if self.filter_pattern:
+                col.label(text="No shape keys match filter.", icon='INFO')
+            else:
+                col.label(text="No shape keys available.", icon='INFO')
+
+    def execute(self, context):
+        import numpy as np
+
+        obj = context.active_object
+        if not obj or obj.type != 'MESH' or not obj.data.shape_keys:
+            self.report({'ERROR'}, "Active object is not a mesh or has no shape keys.")
+            return {'CANCELLED'}
+
+        target_name = self.new_target_name.strip() if self.create_new_target else self.target_shape
+        if not target_name:
+            self.report({'ERROR'}, "No target shape key name specified.")
+            return {'CANCELLED'}
+
+        shape_keys = obj.data.shape_keys
+        basis = shape_keys.reference_key
+        num_verts = len(basis.data)
+
+        # Retrieve selected shape key blocks from checked sources
+        source_kbs = []
+        for item in self.sources:
+            if item.keep and item.name != target_name:
+                kb = shape_keys.key_blocks.get(item.name)
+                if kb:
+                    source_kbs.append(kb)
+
+        if not source_kbs:
+            self.report({'WARNING'}, "No source shape keys were selected for merge.")
+            return {'FINISHED'}
+
+        # Get basis coordinates
+        basis_co = np.empty(num_verts * 3, dtype=np.float32)
+        basis.data.foreach_get("co", basis_co)
+        basis_co = basis_co.reshape((num_verts, 3))
+
+        total_offset = np.zeros((num_verts, 3), dtype=np.float32)
+        target_kb = shape_keys.key_blocks.get(target_name)
+
+        if target_kb:
+            target_co = np.empty(num_verts * 3, dtype=np.float32)
+            target_kb.data.foreach_get("co", target_co)
+            target_co = target_co.reshape((num_verts, 3))
+            total_offset += (target_co - basis_co)
+        else:
+            # Create new target shape key
+            target_kb = obj.shape_key_add(name=target_name, from_mix=False)
+            self.report({'INFO'}, f"Created new target shape key '{target_name}'")
+
+        # Accumulate offsets from selected keys
+        for src_kb in source_kbs:
+            src_co = np.empty(num_verts * 3, dtype=np.float32)
+            src_kb.data.foreach_get("co", src_co)
+            src_co = src_co.reshape((num_verts, 3))
+            total_offset += (src_co - basis_co)
+
+        # Apply merged coordinates
+        new_target_co = basis_co + total_offset
+        target_kb.data.foreach_set("co", new_target_co.ravel())
+        obj.data.update()
+
+        # Delete sources if requested
+        deleted_names = []
+        if self.delete_sources:
+            for kb in source_kbs:
+                deleted_names.append(kb.name)
+                obj.shape_key_remove(kb)
+
+        msg = f"Merged {len(source_kbs)} shape keys into '{target_name}'."
+        if deleted_names:
+            msg += f" Deleted {len(deleted_names)} source keys."
+        self.report({'INFO'}, msg)
+        
+        return {'FINISHED'}
+
+
 # Регистрация классов
 classes_to_register = [
+    RZM_ST_ShapeMergeItem,
     RZM_ST_OT_MirrorCut,
     RZM_ST_OT_VGSymRename,
     RZM_ST_OT_CleanDuplicateSideMarkers,
@@ -1256,4 +1466,5 @@ classes_to_register = [
     RZM_ST_OT_VGWeightAlign,
     RZM_ST_OT_SyncBaseMeshToBasis,
     RZM_ST_OT_SetupArmature,
+    RZM_ST_OT_MergeShapeKeys,
 ]

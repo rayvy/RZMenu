@@ -99,6 +99,7 @@ def draw_setup_scripts_ui(self, context, layout):
     col_sk_fix = box_tools.column(align=True)
     col_sk_fix.scale_y = 1.2
     col_sk_fix.operator("rzm_st.sync_base_mesh_to_basis", text="Apply Basis to Raw Mesh", icon='CHECKMARK')
+    col_sk_fix.operator("rzm_st.merge_shape_keys", text="Merge Shape Keys", icon='AUTOMERGE_ON')
     
     # Comparison Mode Selector
     box_tools.separator()
