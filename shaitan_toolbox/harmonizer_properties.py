@@ -67,6 +67,16 @@ class RZMWeightSettings(PropertyGroup):
     target_armature: PointerProperty(name="Таргетная арматура", type=bpy.types.Object, poll=poll_armature)
     reference_mesh: PointerProperty(name="Канонический референс-мэш", type=bpy.types.Object, poll=poll_mesh)
 
+    match_mode: EnumProperty(
+        name="Режим сопоставления",
+        description="Выбор алгоритма сопоставления костей",
+        items=[
+            ("CLUSTER", "Auto (Clustered)", "Группировка по кластерам и автосопоставление"),
+            ("FBX", "FBX Match (No New Bones)", "Прямое сопоставление с FBX референсом без создания новых костей"),
+        ],
+        default="CLUSTER",
+    )
+
     approved_threshold: FloatProperty(name="Strong", default=0.72, min=0.0, max=1.0, precision=2)
     conflict_threshold: FloatProperty(name="Floor", default=0.34, min=0.0, max=1.0, precision=2)
     unique_margin: FloatProperty(name="Margin", default=0.10, min=0.0, max=1.0, precision=2)

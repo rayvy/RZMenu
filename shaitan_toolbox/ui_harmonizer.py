@@ -400,6 +400,8 @@ def draw_base_mesh_setup_ui(self, context, layout):
     row = refs.row(align=True)
     row.prop(settings, "target_armature")
     row.prop(settings, "reference_mesh")
+    row = refs.row(align=True)
+    row.prop(settings, "match_mode", text="Mode")
 
     compact = layout.box()
     row = compact.row(align=True)

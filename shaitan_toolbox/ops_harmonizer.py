@@ -45,7 +45,7 @@ import re
 
 _RZM_BLENDER_AUTO_SUFFIX_RE = re.compile(r"(?:\.\d{3})+$")
 _RZM_FINAL_LR_RE = re.compile(r"^(?P<base>.+?)(?P<sep>[._\-\s])(?P<side>[LRlr])$")
-_RZM_SAFE_NAME_RE = re.compile(r"[^0-9A-Za-zА-Яа-я_\.\-\s]+")
+_RZM_SAFE_NAME_RE = re.compile(r"[^0-9A-Za-zА-Яа-я_\.\-\s\+]+")
 
 
 def _rzm_strip_auto_suffix(name):
@@ -787,22 +787,26 @@ class RZM_OT_build_plan(Operator):
         clusters = []
         from .harmonizer_utils import fingerprint_similarity
 
-        for fp in all_target_fps:
-            best_cluster = None
-            best_sim = -1.0
-            for cluster in clusters:
-                if any(other["object_name"] == fp["object_name"] for other in cluster):
-                    continue
-                leader = cluster[0]
-                sim = fingerprint_similarity(fp, leader, character_scale)
-                if sim >= settings.consensus_threshold and sim > best_sim:
-                    best_cluster = cluster
-                    best_sim = sim
-
-            if best_cluster is not None:
-                best_cluster.append(fp)
-            else:
+        if settings.match_mode == 'FBX':
+            for fp in all_target_fps:
                 clusters.append([fp])
+        else:
+            for fp in all_target_fps:
+                best_cluster = None
+                best_sim = -1.0
+                for cluster in clusters:
+                    if any(other["object_name"] == fp["object_name"] for other in cluster):
+                        continue
+                    leader = cluster[0]
+                    sim = fingerprint_similarity(fp, leader, character_scale)
+                    if sim >= settings.consensus_threshold and sim > best_sim:
+                        best_cluster = cluster
+                        best_sim = sim
+
+                if best_cluster is not None:
+                    best_cluster.append(fp)
+                else:
+                    clusters.append([fp])
 
         # Печать логов кластеризации в консоль
         print(f"\n--- [RZM Weight Harmonizer] Clustered {len(all_target_fps)} groups into {len(clusters)} clusters ---")
@@ -874,12 +878,14 @@ class RZM_OT_build_plan(Operator):
             second_score = second[1] if second else 0.0
             margin = best_score - second_score
 
-            if best and best_score >= settings.conflict_threshold:
+            is_fbx_mode = (settings.match_mode == 'FBX')
+
+            if best and (is_fbx_mode or best_score >= settings.conflict_threshold):
                 resolved_name = best[0]["name"]
                 claimed.add(resolved_name)
                 cluster_key = (fp["object_name"], fp["index"])
                 conflict_names = sorted(assignment_conflicts.get(cluster_key, set()))
-                has_local_rival = second is not None and second_score >= settings.conflict_threshold and margin < settings.unique_margin
+                has_local_rival = second is not None and (is_fbx_mode or second_score >= settings.conflict_threshold) and margin < settings.unique_margin
                 has_assignment_rival = bool(conflict_names)
 
                 if has_local_rival or has_assignment_rival:
@@ -893,11 +899,13 @@ class RZM_OT_build_plan(Operator):
                 else:
                     status = "APPROVED"
                     reason = "strong score" if best_score >= settings.approved_threshold else "clean isolated match promoted above Floor"
+                    if is_fbx_mode:
+                        reason = "FBX direct match"
 
                 # Вычисляем оригинальный скор без консенсуса для вывода инфо
                 individual_candidates = top_candidates(fp, reference_fps, character_scale, settings, limit=1)
                 orig_score = individual_candidates[0][1] if individual_candidates else 0.0
-                if orig_score < settings.conflict_threshold and best_score >= settings.conflict_threshold:
+                if not is_fbx_mode and orig_score < settings.conflict_threshold and best_score >= settings.conflict_threshold:
                     reason += f" (consensus boost from {orig_score*100:.0f}%)"
 
                 add_plan_item(
@@ -909,7 +917,7 @@ class RZM_OT_build_plan(Operator):
                     best_score,
                     margin,
                     candidates,
-                    resolved_name not in armature_names,
+                    False if is_fbx_mode else (resolved_name not in armature_names),
                     False,
                     reason,
                     ", ".join(conflict_names),
@@ -1330,7 +1338,9 @@ class RZM_OT_apply_plan(Operator):
             parents = Counter(i.nearest_bone for i in citems if i.nearest_bone)
             requests[name] = {"centroid": centroid, "parent": parents.most_common(1)[0][0] if parents else ""}
 
-        generated = create_missing_bones(context, armature, requests)
+        generated = []
+        if settings.create_missing_bones and settings.match_mode != 'FBX':
+            generated = create_missing_bones(context, armature, requests)
         serialize_backup(scene, armature, generated)
 
         # ── Phase 3: rename vertex groups ─────────────────────────────────────

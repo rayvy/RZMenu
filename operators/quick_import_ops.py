@@ -204,7 +204,7 @@ def auto_detect_harmonizer_targets(context, new_objs):
                 settings.reference_mesh = body_refs[0] if body_refs else other_meshes[0]
 
 # Run weight harmonization via Shaitan Toolbox
-def run_weight_harmonization(context, new_objs):
+def run_weight_harmonization(context, new_objs, fbx_match_mode=False):
     auto_detect_harmonizer_targets(context, new_objs)
     settings = context.scene.rzm_weight_settings
     
@@ -212,30 +212,37 @@ def run_weight_harmonization(context, new_objs):
         print("[QuickImport] Weight Harmonization skipped: Armature or Reference Mesh not set/detected.")
         return False
         
-    orig_active = context.view_layer.objects.active
-    orig_selected = list(context.selected_objects)
-    
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in new_objs:
-        if obj != settings.reference_mesh:
-            obj.select_set(True)
-            
-    if context.selected_objects:
-        context.view_layer.objects.active = context.selected_objects[0]
-        # Build weight plan
-        bpy.ops.rzm_weights.build_plan()
-        # Apply weight plan
-        bpy.ops.rzm_weights.apply_plan()
+    orig_match_mode = settings.match_mode
+    if fbx_match_mode:
+        settings.match_mode = 'FBX'
         
-    # Restore selection state
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in orig_selected:
-        try:
-            obj.select_set(True)
-        except Exception:
-            pass
-    context.view_layer.objects.active = orig_active
-    return True
+    try:
+        orig_active = context.view_layer.objects.active
+        orig_selected = list(context.selected_objects)
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in new_objs:
+            if obj != settings.reference_mesh:
+                obj.select_set(True)
+                
+        if context.selected_objects:
+            context.view_layer.objects.active = context.selected_objects[0]
+            # Build weight plan
+            bpy.ops.rzm_weights.build_plan()
+            # Apply weight plan
+            bpy.ops.rzm_weights.apply_plan()
+            
+        # Restore selection state
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in orig_selected:
+            try:
+                obj.select_set(True)
+            except Exception:
+                pass
+        context.view_layer.objects.active = orig_active
+        return True
+    finally:
+        settings.match_mode = orig_match_mode
 
 # Post-import processing stage placeholder
 def post_import_processing(context, target_objs, is_asset_mode):
@@ -347,7 +354,7 @@ def setup_per_component_collection(context, folder, new_objs):
     return created_meshes
 
 # Shared execution logic
-def perform_quick_import(operator, context, filepath, apply_harmonization, auto_assign_slots, flip_mesh, flip_normal, is_asset_mode, files=None):
+def perform_quick_import(operator, context, filepath, apply_harmonization, auto_assign_slots, flip_mesh, flip_normal, is_asset_mode, files=None, fbx_match_mode=False):
     rzm = context.scene.rzm
     game = rzm.game.selection
     
@@ -544,7 +551,7 @@ def perform_quick_import(operator, context, filepath, apply_harmonization, auto_
                     
     # Apply harmonization
     if apply_harmonization:
-        run_weight_harmonization(context, target_objs)
+        run_weight_harmonization(context, target_objs, fbx_match_mode=fbx_match_mode)
         
     # Update Component Manager from dump
     if not is_asset_mode:
@@ -583,6 +590,12 @@ class RZM_OT_QuickImport(bpy.types.Operator, ImportHelper):
         default=True
     )
     
+    fbx_match_mode: bpy.props.BoolProperty(
+        name="FBX Match Mode",
+        description="Disable clustering and prevent adding new bones during harmonization (ideal for FBX matching)",
+        default=False
+    )
+    
     auto_assign_slots: bpy.props.BoolProperty(
         name="Auto Assign TexSlots",
         description="Parse texture binds from the log and assign them to RZ-TexSlots",
@@ -612,7 +625,7 @@ class RZM_OT_QuickImport(bpy.types.Operator, ImportHelper):
             self, context, self.filepath,
             self.apply_harmonization, self.auto_assign_slots,
             self.flip_mesh, self.flip_normal, is_asset_mode=False,
-            files=self.files
+            files=self.files, fbx_match_mode=self.fbx_match_mode
         )
 
 class RZM_OT_QuickAssetImport(bpy.types.Operator, ImportHelper):
@@ -638,6 +651,12 @@ class RZM_OT_QuickAssetImport(bpy.types.Operator, ImportHelper):
         default=True
     )
     
+    fbx_match_mode: bpy.props.BoolProperty(
+        name="FBX Match Mode",
+        description="Disable clustering and prevent adding new bones during harmonization (ideal for FBX matching)",
+        default=False
+    )
+    
     create_mesh_collection: bpy.props.BoolProperty(
         name="Per Component Collection",
         description="Create a separate collection for mesh data and keep empty container for custom properties",
@@ -661,7 +680,7 @@ class RZM_OT_QuickAssetImport(bpy.types.Operator, ImportHelper):
             self, context, self.filepath,
             apply_harmonization=True, auto_assign_slots=self.auto_assign_slots,
             flip_mesh=self.flip_mesh, flip_normal=self.flip_normal, is_asset_mode=True,
-            files=self.files
+            files=self.files, fbx_match_mode=self.fbx_match_mode
         )
 
 classes_to_register = [
