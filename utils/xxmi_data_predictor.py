@@ -333,12 +333,7 @@ class XXMIMissingDataPredictorSubModule:
 
     def _get_target_colors(self, context):
         """Возвращает список ожидаемых vertex color слоев."""
-        color_names = {'COLOR'}
-        for o in context.scene.objects:
-            if o.type == 'MESH' and o.data is not None:
-                for col in o.data.vertex_colors:
-                    color_names.add(col.name)
-        return sorted(color_names)
+        return ['COLOR']
 
     def _add_color_attribute(self, obj, name):
         """Добавляет vertex color layer с дефолтным значением."""
