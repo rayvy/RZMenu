@@ -374,6 +374,106 @@ class RZM_OT_XzibitClearSelectedWeights(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+def move_uv_layer_last(uv_layers, index):
+    saved_active_index = uv_layers.active_index
+    uv_layers.active_index = index
+    name = uv_layers.active.name
+    uv_layers.active.name = uv_layers.active.name + "_"  # Free up the current name
+    uv_layers.new(name=name, do_init=True)  # do_init causes the active UV map to be duplicated
+    uv_layers.remove(uv_layers[index])
+    uv_layers.active_index = saved_active_index
+
+
+def move_uv_layer_to_index(uv_layers, from_index, to_index):
+    assert from_index >= 0 and from_index < len(uv_layers)
+    assert to_index >= 0 and to_index < len(uv_layers)
+    if from_index == to_index:
+        return
+
+    if from_index <= to_index:
+        for _ in range(to_index, from_index, -1):
+            move_uv_layer_last(uv_layers, from_index + 1)
+        for _ in range(0, len(uv_layers) - to_index):
+            move_uv_layer_last(uv_layers, from_index)
+    else:
+        move_uv_layer_last(uv_layers, from_index)
+        for _ in range(to_index, from_index, -1):
+            move_uv_layer_last(uv_layers, from_index + 1)
+        for _ in range(0, len(uv_layers) - to_index - 1):
+            move_uv_layer_last(uv_layers, min(from_index, to_index))
+
+
+class RZM_OT_XzibitUVTextureMove(bpy.types.Operator):
+    """Move the active UV map up/down in the list"""
+
+    bl_idname = 'rzm.xzibit_uv_texture_move'
+    bl_label = "Move UV Map"
+    bl_description = "Move the active UV map up/down in the list"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    direction: bpy.props.EnumProperty(
+        name="Direction",
+        description="Direction in the list to move the UV map",
+        items = (
+            ('UP', "Up", "Move UV map up"),
+            ('DOWN', "Down", "Move UV map down"),
+        ),
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.type == 'MESH'
+
+    def execute(self, context):
+        uv_layers = context.active_object.data.uv_layers
+        if len(uv_layers) == 1:
+            return {'FINISHED'}
+        index = uv_layers.active_index
+
+        if self.direction == 'UP' and index > 0:
+            move_uv_layer_to_index(uv_layers, index, index - 1)
+            uv_layers.active_index -= 1
+        elif self.direction == 'DOWN' and index < len(uv_layers) - 1:
+            move_uv_layer_to_index(uv_layers, index, index + 1)
+            uv_layers.active_index += 1
+
+        return {'FINISHED'}
+
+
+class RZM_OT_XzibitSculptSelection(bpy.types.Operator):
+    """Set the sculpt mask from the current vertex selection"""
+
+    bl_idname = "rzm.xzibit_sculpt_selection"
+    bl_label = "Sculpt Selection"
+    bl_context = 'mesh_edit'
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.mode == 'EDIT_MESH'
+
+    def execute(self, context):
+        # Set the sculpt mask from the current edit-mode vertex selection
+        obj = context.active_object
+        obj.data.vertex_paint_mask_ensure()
+
+        bpy.ops.object.mode_set(mode='SCULPT')
+
+        import bmesh
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+
+        mask = bm.verts.layers.float['.sculpt_mask']
+        bm.verts.ensure_lookup_table()
+        for vert in obj.data.vertices:
+            bm.verts[vert.index][mask] = 0.0 if vert.select else 1.0
+
+        bm.to_mesh(obj.data)
+        bm.free()
+
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_XzibitRenameActiveUVTexcoord,
     RZM_OT_XzibitCreateColorAttribute,
@@ -381,5 +481,8 @@ classes_to_register = [
     RZM_OT_XzibitXXMIPreparationWithWeights,
     RZM_OT_XzibitSolidShadingPreset,
     RZM_OT_XzibitClearSelectedWeights,
+    RZM_OT_XzibitUVTextureMove,
+    RZM_OT_XzibitSculptSelection,
 ]
+
 

@@ -92,6 +92,41 @@ class RZMContextMaterialPanelPatcher(PanelPatcher):
         return node
 
 
+class RZMUVTexturePanelPatcher(PanelPatcher):
+    panel_type = getattr(bpy.types, 'DATA_PT_uv_texture', None)
+
+    def visit_Call(self, node):
+        super().generic_visit(node)
+        if getattr(node.func, 'attr', "") == 'template_list':
+            for kw in node.keywords:
+                if kw.arg == 'rows':
+                    kw.value.value = 4
+        return node
+
+    def visit_Expr(self, node):
+        super().generic_visit(node)
+        try:
+            call = node.value
+            if (
+                getattr(call.func, 'attr', '') == 'operator'
+                and call.args
+                and getattr(call.args[0], 'value', '') == 'mesh.uv_texture_remove'
+            ):
+                move_code = (
+                    "col.separator()\n"
+                    "op_up = col.operator('rzm.xzibit_uv_texture_move', icon='TRIA_UP', text='')\n"
+                    "op_up.direction = 'UP'\n"
+                    "op_down = col.operator('rzm.xzibit_uv_texture_move', icon='TRIA_DOWN', text='')\n"
+                    "op_down.direction = 'DOWN'"
+                )
+                import ast
+                injected_nodes = ast.parse(move_code).body
+                return [node] + injected_nodes
+        except Exception:
+            pass
+        return node
+
+
 def material_context_panel_types():
     names = (
         "EEVEE_MATERIAL_PT_context_material",
@@ -193,6 +228,12 @@ def draw_uv_texcoord_quick_button(self, context):
         text="Active to TEXCOORD.xy",
         icon='UV_DATA',
     )
+    # Add Move UV up/down buttons:
+    op_up = row.operator("rzm.xzibit_uv_texture_move", text="", icon='TRIA_UP')
+    op_up.direction = 'UP'
+    op_down = row.operator("rzm.xzibit_uv_texture_move", text="", icon='TRIA_DOWN')
+    op_down.direction = 'DOWN'
+
 
 
 def draw_color_attribute_quick_button(self, context):
@@ -255,6 +296,11 @@ def draw_clear_weights_quick_button(self, context):
     )
 
 
+def draw_sculpt_selection_menu(self, context):
+    self.layout.separator()
+    self.layout.operator("rzm.xzibit_sculpt_selection")
+
+
 def register():
     panel_patchers.clear()
     for panel_type in material_context_panel_types():
@@ -262,6 +308,11 @@ def register():
         patcher.panel_type = panel_type
         patcher.patch(debug=False)
         panel_patchers.append(patcher)
+
+    uv_patcher = RZMUVTexturePanelPatcher()
+    uv_patcher.patch(debug=False)
+    panel_patchers.append(uv_patcher)
+
     if hasattr(bpy.types, "DATA_PT_context_mesh"):
         bpy.types.DATA_PT_context_mesh.prepend(draw_xxmi_preparation_header)
     if hasattr(bpy.types, "DATA_PT_uv_texture"):
@@ -272,9 +323,16 @@ def register():
         bpy.types.DATA_PT_vertex_groups.append(draw_clear_weights_quick_button)
     if hasattr(bpy.types, "VIEW3D_HT_header"):
         bpy.types.VIEW3D_HT_header.append(draw_solid_shading_preset_header)
+    if hasattr(bpy.types, "VIEW3D_MT_select_edit_mesh"):
+        bpy.types.VIEW3D_MT_select_edit_mesh.append(draw_sculpt_selection_menu)
     print(f"[RZM TWAA] Material context hook patched {len(panel_patchers)} panel(s).")
 
 def unregister():
+    if hasattr(bpy.types, "VIEW3D_MT_select_edit_mesh"):
+        try:
+            bpy.types.VIEW3D_MT_select_edit_mesh.remove(draw_sculpt_selection_menu)
+        except Exception:
+            pass
     if hasattr(bpy.types, "VIEW3D_HT_header"):
         try:
             bpy.types.VIEW3D_HT_header.remove(draw_solid_shading_preset_header)
@@ -303,4 +361,5 @@ def unregister():
     for patcher in reversed(panel_patchers):
         patcher.unpatch()
     panel_patchers.clear()
+
 
