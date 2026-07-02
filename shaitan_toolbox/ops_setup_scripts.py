@@ -1453,6 +1453,82 @@ class RZM_ST_OT_MergeShapeKeys(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_ST_OT_ClearWeightsBySuffix(bpy.types.Operator):
+    bl_idname = "rzm_st.clear_weights_by_suffix"
+    bl_label = "Clear Weights by Suffix"
+    bl_description = "Remove all vertex weights/bindings from vertex groups ending in specific suffixes (.L/.l or .R/.r) without deleting the groups themselves"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    suffix_type: bpy.props.EnumProperty(
+        name="Suffix Type",
+        items=[
+            ('LEFT', ".L / .l", "Clear weights for groups ending with .L or .l"),
+            ('RIGHT', ".R / .r", "Clear weights for groups ending with .R or .r"),
+        ],
+        default='LEFT'
+    )
+
+    @classmethod
+    def poll(cls, context):
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        return len(selected_meshes) > 0
+
+    def execute(self, context):
+        suffixes = []
+        if self.suffix_type == 'LEFT':
+            suffixes = ['.l', '.L']
+        elif self.suffix_type == 'RIGHT':
+            suffixes = ['.r', '.R']
+
+        selected_meshes = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        modified_count = 0
+        cleared_groups_total = 0
+
+        for obj in selected_meshes:
+            if not obj.vertex_groups:
+                continue
+
+            original_mode = obj.mode
+            if obj.mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            try:
+                target_vgs = []
+                for vg in obj.vertex_groups:
+                    name = vg.name
+                    if any(name.endswith(sfx) for sfx in suffixes):
+                        target_vgs.append(vg)
+
+                if not target_vgs:
+                    if obj.mode != original_mode:
+                        bpy.ops.object.mode_set(mode=original_mode)
+                    continue
+
+                num_verts = len(obj.data.vertices)
+                vert_indices = list(range(num_verts))
+
+                for vg in target_vgs:
+                    vg.remove(vert_indices)
+
+                obj.data.update()
+                modified_count += 1
+                cleared_groups_total += len(target_vgs)
+
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to clear suffix weights for {obj.name}: {e}")
+
+            if obj.mode != original_mode:
+                bpy.ops.object.mode_set(mode=original_mode)
+
+        if modified_count > 0:
+            self.report({'INFO'}, f"Cleared weights for {cleared_groups_total} group(s) across {modified_count} object(s).")
+            return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, "No matching vertex groups or objects modified.")
+            return {'CANCELLED'}
+
+
 # Регистрация классов
 classes_to_register = [
     RZM_ST_ShapeMergeItem,
@@ -1467,4 +1543,6 @@ classes_to_register = [
     RZM_ST_OT_SyncBaseMeshToBasis,
     RZM_ST_OT_SetupArmature,
     RZM_ST_OT_MergeShapeKeys,
+    RZM_ST_OT_ClearWeightsBySuffix,
 ]
+

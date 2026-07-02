@@ -86,8 +86,16 @@ def draw_setup_scripts_ui(self, context, layout):
     col_tools.operator("rzm_st.vg_weight_align", text="Align VG Index & Naming (Source)", icon='SORT_ASC')
     col_tools.operator("rzm_weights.vg_name_transfer", text="VG Name Transfer (by index)", icon='FILE_REFRESH')
     col_tools.operator("rzm_st.generate_bones", text="Generate Missing Bones", icon='BONE_DATA')
+    
+    col_tools.separator()
+    row_suffix = col_tools.row(align=True)
+    op_l = row_suffix.operator("rzm_st.clear_weights_by_suffix", text="Clear .L / .l Weights", icon='X')
+    op_l.suffix_type = 'LEFT'
+    op_r = row_suffix.operator("rzm_st.clear_weights_by_suffix", text="Clear .R / .r Weights", icon='X')
+    op_r.suffix_type = 'RIGHT'
 
     box_tools.separator()
+
     box_tools.label(text="Clear Vertex SK delta (ACTIVE SK/ALL SK):", icon='SHAPEKEY_DATA')
     row_shape = box_tools.row(align=True)
     row_shape.scale_y = 1.2

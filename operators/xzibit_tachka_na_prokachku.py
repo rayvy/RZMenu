@@ -314,10 +314,72 @@ class RZM_OT_XzibitSolidShadingPreset(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RZM_OT_XzibitClearSelectedWeights(bpy.types.Operator):
+    bl_idname = "rzm.xzibit_clear_selected_weights"
+    bl_label = "Clear Selected Vertices Weights"
+    bl_description = "Completely remove all vertex group weights from selected vertices"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == 'MESH' and len(obj.vertex_groups) > 0
+
+    def execute(self, context):
+        targets = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not targets:
+            if context.active_object and context.active_object.type == 'MESH':
+                targets = [context.active_object]
+
+        cleared_objs = 0
+        for obj in targets:
+            if not obj.vertex_groups:
+                continue
+
+            if obj.mode == 'EDIT':
+                import bmesh
+                bm = bmesh.from_edit_mesh(obj.data)
+                deform_layer = bm.verts.layers.deform.active
+                if not deform_layer:
+                    continue
+                
+                bm.verts.ensure_lookup_table()
+                affected_count = 0
+                for v in bm.verts:
+                    if v.select:
+                        deform = v[deform_layer]
+                        if deform:
+                            for g_idx in list(deform.keys()):
+                                del deform[g_idx]
+                            affected_count += 1
+                if affected_count > 0:
+                    bmesh.update_edit_mesh(obj.data)
+                    cleared_objs += 1
+            else:
+                # Object mode
+                selected_indices = [v.index for v in obj.data.vertices if v.select]
+                if not selected_indices:
+                    continue
+                
+                for vg in obj.vertex_groups:
+                    vg.remove(selected_indices)
+                obj.data.update()
+                cleared_objs += 1
+
+        if cleared_objs > 0:
+            self.report({'INFO'}, f"Cleared weights for selected vertices on {cleared_objs} object(s).")
+            return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, "No selected vertices or no weights to clear.")
+            return {'CANCELLED'}
+
+
 classes_to_register = [
     RZM_OT_XzibitRenameActiveUVTexcoord,
     RZM_OT_XzibitCreateColorAttribute,
     RZM_OT_XzibitXXMIPreparation,
     RZM_OT_XzibitXXMIPreparationWithWeights,
     RZM_OT_XzibitSolidShadingPreset,
+    RZM_OT_XzibitClearSelectedWeights,
 ]
+

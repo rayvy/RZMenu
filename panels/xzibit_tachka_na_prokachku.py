@@ -240,6 +240,21 @@ def draw_solid_shading_preset_header(self, context):
     no_outline.preset = 'STUDIO_MATERIAL_NO_OUTLINE'
 
 
+def draw_clear_weights_quick_button(self, context):
+    obj = context.object
+    if not obj or obj.type != 'MESH':
+        return
+
+    layout = self.layout
+    layout.separator(factor=0.3)
+    row = layout.row(align=True)
+    row.operator(
+        "rzm.xzibit_clear_selected_weights",
+        text="Clear Selected Weights",
+        icon='X',
+    )
+
+
 def register():
     panel_patchers.clear()
     for panel_type in material_context_panel_types():
@@ -253,6 +268,8 @@ def register():
         bpy.types.DATA_PT_uv_texture.append(draw_uv_texcoord_quick_button)
     if hasattr(bpy.types, "DATA_PT_vertex_colors"):
         bpy.types.DATA_PT_vertex_colors.append(draw_color_attribute_quick_button)
+    if hasattr(bpy.types, "DATA_PT_vertex_groups"):
+        bpy.types.DATA_PT_vertex_groups.append(draw_clear_weights_quick_button)
     if hasattr(bpy.types, "VIEW3D_HT_header"):
         bpy.types.VIEW3D_HT_header.append(draw_solid_shading_preset_header)
     print(f"[RZM TWAA] Material context hook patched {len(panel_patchers)} panel(s).")
@@ -261,6 +278,11 @@ def unregister():
     if hasattr(bpy.types, "VIEW3D_HT_header"):
         try:
             bpy.types.VIEW3D_HT_header.remove(draw_solid_shading_preset_header)
+        except Exception:
+            pass
+    if hasattr(bpy.types, "DATA_PT_vertex_groups"):
+        try:
+            bpy.types.DATA_PT_vertex_groups.remove(draw_clear_weights_quick_button)
         except Exception:
             pass
     if hasattr(bpy.types, "DATA_PT_vertex_colors"):
@@ -281,3 +303,4 @@ def unregister():
     for patcher in reversed(panel_patchers):
         patcher.unpatch()
     panel_patchers.clear()
+
