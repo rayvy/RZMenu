@@ -1,5 +1,8 @@
 # RZMenu/operators/capture_ops.py
 import bpy
+import os
+import re
+import time
 from ..core import capture_logic as captures
 from ..core.utils import get_next_image_id
 
@@ -147,7 +150,67 @@ class RZM_OT_AutoCapture(bpy.types.Operator):
                             region.tag_redraw()
         return {'FINISHED'}
 
+
+def sanitize_filename(name):
+    # Remove characters that are illegal in file names on Windows and Unix-like OSes
+    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
+
+
+class RZM_OT_CaptureExternal(bpy.types.Operator):
+    bl_idname = "rzm.capture_external"
+    bl_label = "Capture External"
+    bl_description = "Renders the viewport and saves it directly to the export folder"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        settings = scene.rzm_capture_settings
+        
+        # Verify export path
+        export_dir = bpy.path.abspath(settings.export_path)
+        if not export_dir:
+            self.report({'ERROR'}, "Export path is empty. Please set it in Capture Settings.")
+            return {'CANCELLED'}
+            
+        try:
+            os.makedirs(export_dir, exist_ok=True)
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to create/access export path: {e}")
+            return {'CANCELLED'}
+            
+        # Determine filename
+        active_obj = context.active_object
+        if settings.use_object_name and active_obj:
+            base_name = sanitize_filename(active_obj.name)
+            if not base_name:
+                base_name = "unnamed_object"
+        else:
+            base_name = f"capture_{int(time.time())}"
+            
+        filename = f"{base_name}.png"
+        filepath = os.path.join(export_dir, filename)
+        
+        # Pass custom_filepath to execute_capture
+        success = captures.execute_capture(context, settings, force_framing=False, custom_filepath=filepath)
+
+        if not success:
+            self.report({'ERROR'}, "Capture failed. Check system console for details.")
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, f"Saved snapshot to {filename}")
+        
+        # Redraw UI
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'UI':
+                            region.tag_redraw()
+        return {'FINISHED'}
+
+
 classes_to_register = [
     RZM_OT_CaptureImage,
     RZM_OT_AutoCapture,
+    RZM_OT_CaptureExternal,
 ]

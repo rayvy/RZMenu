@@ -48,6 +48,22 @@ class RZMCaptureSettings(bpy.types.PropertyGroup):
     camera_mode: EnumProperty(name="Camera Source", items=[('VIEW', "From Viewport", ""), ('SCENE', "From Scene Camera", "")], default='VIEW', description="Источник, из которого будет производиться захват")
     use_overlays: BoolProperty(name="Use Overlays", default=False, description="Включить оверлеи в итоговое изображение")
     resolution: IntProperty(name="Resolution", default=128, min=32, max=1024, description="Разрешение итогового квадратного изображения")
+    export_to_folder: BoolProperty(
+        name="Export to Folder",
+        description="Save captured images directly to a folder instead of RZMenu images list",
+        default=False
+    )
+    export_path: StringProperty(
+        name="Export Path",
+        description="Target directory for captured images",
+        subtype='DIR_PATH',
+        default=""
+    )
+    use_object_name: BoolProperty(
+        name="Use Object Name",
+        description="Use active object's name as filename, otherwise a timestamp",
+        default=True
+    )
 
 class RZMenuImage(bpy.types.PropertyGroup):
     """Хранит информацию об одном изображении в проекте."""

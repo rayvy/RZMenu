@@ -159,10 +159,20 @@ class VIEW3D_PT_RZConstructorPanel(bpy.types.Panel):
         col.separator()
         col.prop(settings, "use_overlays", text="Include Viewport Overlays")
         col.prop(settings, "resolution", text="Image Size (px)")
-        capture_box.separator()
-        row = capture_box.row(align=True)
-        row.prop(context.scene, "rzm_capture_overwrite_id", text="Overwrite ID")
-        row.operator("rzm.capture_image", text="Capture")
+        col.separator()
+        col.prop(settings, "export_to_folder", text="Export to Folder")
+        
+        if settings.export_to_folder:
+            col.prop(settings, "export_path", text="Path")
+            col.prop(settings, "use_object_name", text="Use Object Name")
+            capture_box.separator()
+            row = capture_box.row(align=True)
+            row.operator("rzm.capture_external", text="Capture External")
+        else:
+            capture_box.separator()
+            row = capture_box.row(align=True)
+            row.prop(context.scene, "rzm_capture_overwrite_id", text="Overwrite ID")
+            row.operator("rzm.capture_image", text="Capture")
 
     def draw_captures_preview_ui(self, context, layout):
         scene = context.scene

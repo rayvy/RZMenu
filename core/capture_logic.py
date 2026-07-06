@@ -4,10 +4,11 @@ import os
 import tempfile
 import time
 
-def execute_capture(context: bpy.types.Context, settings: bpy.types.PropertyGroup, force_framing=False):
+def execute_capture(context: bpy.types.Context, settings: bpy.types.PropertyGroup, force_framing=False, custom_filepath=None):
     """
     Основная функция-исполнитель.
     force_framing используется для Auto-Capture, чтобы всегда кадрировать объект.
+    custom_filepath позволяет сохранять результат напрямую во внешний файл (не загружая в Blender).
     """
     scene = context.scene
 
@@ -47,8 +48,12 @@ def execute_capture(context: bpy.types.Context, settings: bpy.types.PropertyGrou
     entered_local_view = False
     is_already_local = (space.local_view is not None)
     
-    temp_dir = tempfile.gettempdir()
-    temp_filepath = os.path.join(temp_dir, f"rzm_capture_{int(time.time())}.png")
+    is_custom = (custom_filepath is not None)
+    if is_custom:
+        temp_filepath = custom_filepath
+    else:
+        temp_dir = tempfile.gettempdir()
+        temp_filepath = os.path.join(temp_dir, f"rzm_capture_{int(time.time())}.png")
 
     try:
         # ИСПОЛЬЗУЕМ 'with context.temp_override' - ЭТО ПРАВИЛЬНЫЙ СПОСОБ
@@ -92,8 +97,11 @@ def execute_capture(context: bpy.types.Context, settings: bpy.types.PropertyGrou
             
             # 7. Загрузка результата
             if os.path.exists(temp_filepath):
-                output_image = bpy.data.images.load(temp_filepath, check_existing=False)
-                output_image.pack()
+                if not is_custom:
+                    output_image = bpy.data.images.load(temp_filepath, check_existing=False)
+                    output_image.pack()
+                else:
+                    output_image = True
             else:
                 print("RZM CAPTURE ERROR: Rendered file not found.")
 
@@ -125,7 +133,7 @@ def execute_capture(context: bpy.types.Context, settings: bpy.types.PropertyGrou
         except Exception as e:
             print(f"RZM CAPTURE ERROR during cleanup: {e}")
 
-        if os.path.exists(temp_filepath):
+        if not is_custom and os.path.exists(temp_filepath):
             try: os.remove(temp_filepath)
             except Exception: pass
             
